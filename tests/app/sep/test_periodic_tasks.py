@@ -263,9 +263,11 @@ class TestApplyEffectiveEnabled:
         await session.commit()
         await _seed_periodic_task(celery_beat_session, SNIPPETS_TASK, enabled=True)
 
-        spy = mocker.spy(celery_beat_session, "add")
+        add_spy = mocker.spy(celery_beat_session, "add")
+        commit_spy = mocker.spy(celery_beat_session, "commit")
         await apply_effective_enabled(session, celery_beat_session)
-        spy.assert_not_called()
+        add_spy.assert_not_called()
+        commit_spy.assert_not_called()
 
     async def test_app_keys_filter_limits_scope(
         self, session: AsyncSession, celery_beat_session: AsyncSession

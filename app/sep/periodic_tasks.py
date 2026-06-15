@@ -31,6 +31,7 @@ enumerated writers of ``AppState.enabled``: startup seeding
 
 from collections.abc import Collection
 
+from sqlalchemy_celery_beat import PeriodicTask
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -96,17 +97,23 @@ async def apply_effective_enabled(
     if not rows:
         return
     app_state = await AppStateManager.all_states(sep_session)
+    tasks = await BasePeriodicTaskManager.list(
+        celery_beat_session,
+        PeriodicTask.name.in_([row.periodic_task_name for row in rows]),
+    )
+    tasks_by_name = {task.name: task for task in tasks}
+    changed = False
     for row in rows:
-        effective = app_state.get(row.app_key, True) and row.user_enabled
-        task = await BasePeriodicTaskManager.first(
-            celery_beat_session, name=row.periodic_task_name
-        )
+        task = tasks_by_name.get(row.periodic_task_name)
         if task is None:
             continue
+        effective = app_state.get(row.app_key, True) and row.user_enabled
         if task.enabled != effective:
             task.enabled = effective
             celery_beat_session.add(task)
-    await celery_beat_session.commit()
+            changed = True
+    if changed:
+        await celery_beat_session.commit()
 
 
 async def sync_app_periodic_task_gating(
