@@ -16,15 +16,15 @@
  */
 
 /**
- * React Query hooks for the runtime Settings admin API (SEP-983).
+ * React Query hooks for the runtime Settings admin API.
  *
- * The settings surface is split across two FastAPI sub-apps:
- *   - `/api/sep/admin/settings`   — SEPSettings, SnippetsSettings, MessagesSettings
- *   - `/api/tasks/admin/settings` — TasksSettings
- *
- * `useSettingsList` fans out to both endpoints in parallel and merges their
- * `groups` client-side into a single class-keyed list. The two endpoints expose
- * disjoint setting classes, so the merge is a concatenation in a stable order.
+ * Every settings group is reached through the single SEP gateway endpoint
+ * `/api/sep/admin/settings`. SEP serves its own classes (SEPSettings,
+ * SnippetsSettings, MessagesSettings) locally and proxies `TasksSettings`
+ * server-side from the Tasks sub-app, so the frontend never calls
+ * `/api/tasks/admin/settings/*` directly (API-First Rule 1). The list response
+ * already carries all groups, so there is no client-side fan-out or merge, and
+ * PATCH/DELETE for any class — including `TasksSettings` — go to `/api/sep`.
  *
  * All request/response shapes come from the generated OpenAPI types — this file
  * never hand-rolls an API model.
@@ -47,30 +47,16 @@ export type SettingsPatch = components['schemas']['SettingsPatch'];
 /** The redacted literal the API returns in place of a secret value. */
 export const REDACTED_SECRET = '**********';
 
-/**
- * Setting classes served by the Tasks sub-app; everything else is on SEP.
- *
- * MAINTENANCE: this is the single source of truth for PATCH/DELETE routing. If
- * the Tasks sub-app ever registers a new settings class, add it here — otherwise
- * its mutations would be silently routed to the SEP endpoint and 404.
- */
-const TASKS_CLASSES: ReadonlySet<SettingClass> = new Set(['TasksSettings']);
-
-/** Base path (relative to the axios client's `/api` baseURL) for a class. */
-function settingsBase(settingClass: SettingClass): string {
-  return TASKS_CLASSES.has(settingClass) ? '/tasks/admin/settings' : '/sep/admin/settings';
-}
-
 export const SETTINGS_QUERY_KEY = ['settings', 'list'] as const;
 
-const SETTINGS_ENDPOINTS = ['/sep/admin/settings/', '/tasks/admin/settings/'] as const;
+/** Base path (relative to the axios client's `/api` baseURL) for every class. */
+const SETTINGS_BASE = '/sep/admin/settings';
 
 /**
- * Fetch every overridable settings class from both sub-apps and merge the
- * responses into a single, stably-ordered group list keyed by `setting_class`.
+ * Fetch every overridable settings class from the SEP gateway as one request.
  *
- * Both sub-apps ship together, so a single `Promise.all` (all-or-nothing) is
- * intentional — there is no partial-availability mode to degrade into. Pass
+ * SEP aggregates its local classes and the proxied `TasksSettings` group into a
+ * single `groups` list, so there is no client-side fan-out or merge. Pass
  * `enabled: false` to skip fetching entirely (e.g. for non-admin viewers).
  */
 export function useSettingsList(options: { enabled?: boolean } = {}) {
@@ -78,20 +64,8 @@ export function useSettingsList(options: { enabled?: boolean } = {}) {
     queryKey: SETTINGS_QUERY_KEY,
     enabled: options.enabled ?? true,
     queryFn: async () => {
-      const responses = await Promise.all(
-        SETTINGS_ENDPOINTS.map((url) => apiClient.get<SettingsListResponse>(url)),
-      );
-
-      // Merge by class. Endpoints are disjoint today, but de-dupe defensively so
-      // a class that ever appears on both is collapsed (last write wins) rather
-      // than rendered twice.
-      const byClass = new Map<SettingClass, SettingClassGroup>();
-      for (const { data } of responses) {
-        for (const group of data.groups) {
-          byClass.set(group.setting_class, group);
-        }
-      }
-      return Array.from(byClass.values());
+      const { data } = await apiClient.get<SettingsListResponse>(`${SETTINGS_BASE}/`);
+      return data.groups;
     },
     staleTime: 30 * 1000,
   });
@@ -148,7 +122,7 @@ export function usePatchSetting() {
     mutationFn: async ({ settingClass, key, value }) => {
       const body: SettingsPatch = { [key]: value as SettingsPatch[string] };
       const { data } = await apiClient.patch<SettingResponse[]>(
-        `${settingsBase(settingClass)}/${settingClass}`,
+        `${SETTINGS_BASE}/${settingClass}`,
         body,
       );
       return data;
@@ -172,7 +146,7 @@ export function useResetSetting() {
   const queryClient = useQueryClient();
   return useMutation<void, ApiError, ResetSettingVars>({
     mutationFn: async ({ settingClass, key }) => {
-      await apiClient.delete(`${settingsBase(settingClass)}/${settingClass}/${key}`);
+      await apiClient.delete(`${SETTINGS_BASE}/${settingClass}/${key}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });

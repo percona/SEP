@@ -166,6 +166,7 @@ exclude_dirs = [
     "venv",
     "app/tests/",
     "app/sep/plugins/dipper/payloads/",
+    "app/sep/sync/syncers/system_facts/payload.py",  # host-run payload; reads packages via rpm/dpkg-query (literal argv)
 ]
 
 [tool.ruff]
@@ -276,6 +277,9 @@ order-by-type = false
 "scripts/*.py" = [
     "T201", # CLI scripts use print() for user-facing output
     "S603", # CLI scripts coordinate git/gh/make subprocesses with literal arg lists
+]
+"app/sep/sync/syncers/system_facts/payload.py" = [
+    "S603", # host-run payload coordinates rpm/dpkg-query with literal arg lists
 ]
 
 
