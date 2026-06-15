@@ -31,7 +31,11 @@ vi.mock('../../../contexts/auth', () => ({
 import SettingsPage from '../../../pages/SettingsPage';
 
 const SEP_URL = 'http://localhost/api/sep/admin/settings/';
-const TASKS_URL = 'http://localhost/api/tasks/admin/settings/';
+
+/** SEP aggregates its local classes and the proxied TasksSettings into one list. */
+const combinedListResponse = {
+  groups: [...sepListResponse.groups, ...tasksListResponse.groups],
+};
 
 function renderPage() {
   return render(<SettingsPage />, { wrapper: makeWrapper() });
@@ -39,10 +43,7 @@ function renderPage() {
 
 beforeEach(() => {
   authState.isAdmin = true;
-  server.use(
-    http.get(SEP_URL, () => HttpResponse.json(sepListResponse)),
-    http.get(TASKS_URL, () => HttpResponse.json(tasksListResponse)),
-  );
+  server.use(http.get(SEP_URL, () => HttpResponse.json(combinedListResponse)));
 });
 
 afterEach(() => {
