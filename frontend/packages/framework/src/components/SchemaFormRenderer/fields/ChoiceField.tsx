@@ -54,7 +54,7 @@ export function ChoiceField({ field }: ChoiceFieldProps) {
             control={control}
             rules={rules}
             render={({ field: rhfField }) => (
-              <MuiRadioGroup row {...rhfField}>
+              <MuiRadioGroup row aria-label={field.label} {...rhfField}>
                 {field.choices.map((choice) => (
                   <FormControlLabel
                     key={choice.value}

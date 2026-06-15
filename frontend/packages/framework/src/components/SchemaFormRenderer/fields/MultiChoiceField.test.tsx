@@ -16,14 +16,20 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FormProvider, useForm } from 'react-hook-form';
 import { MultiChoiceField } from './MultiChoiceField';
 import type { MultiChoiceField as MultiChoiceFieldType, ChoiceOption } from '../types';
 
-function Harness({ field }: { field: MultiChoiceFieldType }) {
-  const methods = useForm({ defaultValues: { [field.name]: [] as string[] } });
+function Harness({
+  field,
+  defaultSelected = [],
+}: {
+  field: MultiChoiceFieldType;
+  defaultSelected?: string[];
+}) {
+  const methods = useForm({ defaultValues: { [field.name]: defaultSelected } });
   return (
     <FormProvider {...methods}>
       <MultiChoiceField field={field} />
@@ -61,5 +67,24 @@ describe('MultiChoiceField', () => {
     await waitFor(() => {
       expect(screen.getByRole('tooltip')).toHaveTextContent('Beta is retired.');
     });
+  });
+
+  it('keeps an already-selected disabled option de-selectable', async () => {
+    const user = userEvent.setup();
+    const field: MultiChoiceFieldType = {
+      type: 'multi_choice',
+      name: 'flags',
+      label: 'Flags',
+      choices: CHOICES,
+    };
+    render(<Harness field={field} defaultSelected={['b']} />);
+
+    await user.click(screen.getByRole('combobox'));
+
+    // A disabled value that is already selected must stay interactive so the
+    // user can clear it; only unselected disabled options are blocked.
+    const listbox = await screen.findByRole('listbox');
+    const betaOption = within(listbox).getByRole('option', { name: /Beta/ });
+    expect(betaOption).not.toHaveAttribute('aria-disabled', 'true');
   });
 });

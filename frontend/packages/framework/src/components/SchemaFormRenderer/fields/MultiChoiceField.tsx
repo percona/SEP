@@ -64,7 +64,14 @@ export function MultiChoiceField({ field }: MultiChoiceFieldProps) {
           }}
         >
           {field.choices.map((choice) => (
-            <MenuItem key={choice.value} value={choice.value} disabled={choice.disabled}>
+            <MenuItem
+              key={choice.value}
+              value={choice.value}
+              // Only block disabled options that are not already selected, so a
+              // value that was selected before becoming disabled can still be
+              // de-selected (a fully disabled MenuItem swallows the toggle).
+              disabled={choice.disabled && !selected.includes(choice.value)}
+            >
               <Checkbox checked={selected.includes(choice.value)} />
               <ListItemText primary={renderChoiceLabel(choice)} />
             </MenuItem>

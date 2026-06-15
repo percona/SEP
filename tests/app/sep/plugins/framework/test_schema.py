@@ -929,6 +929,24 @@ class TestChoiceDisabled:
         with pytest.raises(ValidationError):
             Choice(label="A", value="a", disabled=True, disabled_reason="")
 
+    def test_disabled_reason_requires_disabled(self) -> None:
+        """Reject a ``disabled_reason`` on a still-selectable option.
+
+        A reason without ``disabled=True`` is an inconsistent wire shape (the
+        UI helpers only surface the reason for disabled options), so the model
+        rejects it rather than emitting a misleading payload.
+        """
+        with pytest.raises(ValidationError):
+            Choice(label="A", value="a", disabled_reason="Coming soon.")
+
+        with pytest.raises(ValidationError):
+            Choice(
+                label="A",
+                value="a",
+                disabled=False,
+                disabled_reason="Coming soon.",
+            )
+
     def test_choice_field_round_trips_disabled_choice(self) -> None:
         """A disabled choice survives validation through the ChoiceField union."""
         section = FormSection.model_validate(
