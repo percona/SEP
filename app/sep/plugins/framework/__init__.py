@@ -37,6 +37,7 @@ from app.sep.plugins.framework.deps import make_task_dep
 from app.sep.plugins.framework.responses import (
     build_default_task_response,
     build_task_list_responses,
+    derive_create_response_model,
 )
 from app.sep.plugins.framework.rules import (
     absent,
@@ -105,6 +106,7 @@ __all__ = [
     "cascade_delete_tasks",
     "cascade_update_predecessors",
     "cascade_update_tasks",
+    "derive_create_response_model",
     "evaluate_conditional_rules",
     "extract_latest_task_status",
     "falsy",
