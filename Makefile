@@ -29,6 +29,10 @@ endif
 PIP?="${VENV_BIN}/pip"
 APPS=tasks inventory sep
 PYTEST_WORKERS?=auto
+# COV=0 drops --cov=app (and the fail_under coverage gate) so a local run skips
+# the coverage instrumentation tax; CI and coverage-main keep the default COV=1.
+COV?=1
+PYTEST_PATHS?=tests/
 
 # WeasyPrint loads native libs (libgobject-2.0, libpango, libcairo) at import
 # time. Homebrew installs them under /opt/homebrew/lib (Apple Silicon) or
@@ -162,7 +166,7 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --cov=app tests/
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) ${PYTEST_PATHS}
 
 changelog-add:
 ifndef TICKET
