@@ -192,7 +192,7 @@ class TestStopTask:
     """
 
     @staticmethod
-    async def _make_running_history(
+    async def _persist_history(
         session: AsyncSession,
         status: TaskHistoryStatusEnum,
         name: str,
@@ -245,7 +245,7 @@ class TestStopTask:
         self, executor: ConcreteExecutor, session: AsyncSession
     ):
         """Assert stop_task sets status to STOPPED, sets finished_at, and persists."""
-        saved_history = await self._make_running_history(
+        saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.RUNNING, "stop-task-1"
         )
 
@@ -264,9 +264,15 @@ class TestStopTask:
         mock_stop.assert_awaited_once_with(saved_history)
         assert result.status == TaskHistoryStatusEnum.STOPPED
         assert result.finished_at is not None
+        result_id = result.id
 
-        # Prove the change persisted to the real DB, not just the in-memory row.
-        refetched = await TaskHistoryManager.get_or_404(session, id=result.id)
+        # Prove the change persisted across a transaction boundary, not just in
+        # the identity map: rollback discards uncommitted state (the committed
+        # save survives), then refetch forces a fresh read from the DB. Capture
+        # the id first — rollback expires ``result``, so a later attribute read
+        # would trigger a sync lazy-load.
+        await session.rollback()
+        refetched = await TaskHistoryManager.get_or_404(session, id=result_id)
         assert refetched.status == TaskHistoryStatusEnum.STOPPED
         assert refetched.finished_at is not None
 
@@ -275,7 +281,7 @@ class TestStopTask:
         self, executor: ConcreteExecutor, session: AsyncSession
     ):
         """Assert stop_task drives sync_task_history (via its _sync boundary)."""
-        saved_history = await self._make_running_history(
+        saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.RUNNING, "stop-task-2"
         )
 
@@ -291,14 +297,14 @@ class TestStopTask:
         ):
             await executor.stop_task(session, saved_history)
 
-        mock_sync.assert_awaited_once()
+        mock_sync.assert_awaited_once_with(saved_history, writer_session=None)
 
     @pytest.mark.asyncio
     async def test_emits_stopped_annotation_when_sync_still_running(
         self, executor: ConcreteExecutor, session: AsyncSession
     ):
         """Assert STOPPED annotation is emitted when sync returns still-RUNNING."""
-        saved_history = await self._make_running_history(
+        saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.RUNNING, "stop-task-3"
         )
 
@@ -328,7 +334,7 @@ class TestStopTask:
         ``sync_task_history`` emits once; ``stop_task`` must detect that and
         skip its own emit.
         """
-        saved_history = await self._make_running_history(
+        saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.RUNNING, "stop-task-4"
         )
 
@@ -354,7 +360,7 @@ class TestStopTask:
         self, executor: ConcreteExecutor, session: AsyncSession
     ):
         """Assert STOPPED annotation is emitted when task was not RUNNING before sync."""
-        saved_history = await self._make_running_history(
+        saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.PENDING, "stop-task-5"
         )
 
@@ -383,7 +389,7 @@ class TestStopTask:
         ``was_running`` is False, so the real ``sync_task_history`` does not
         emit even though it returns STOPPED; ``stop_task`` owns the single emit.
         """
-        saved_history = await self._make_running_history(
+        saved_history = await self._persist_history(
             session, TaskHistoryStatusEnum.PENDING, "stop-task-6"
         )
 
