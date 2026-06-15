@@ -827,17 +827,20 @@ class BaseManager:
         if cls.create.__func__ is not BaseManager.create.__func__:
             return await cls.create(session, instance_create, **extra_fields), True
 
-        # Conflict-tolerant create: a concurrent first-insert no-ops instead of raising
-        # a duplicate-key error that ``save()`` would surface as HTTP 400/409.
         instance = cls._construct_instance(instance_create, **extra_fields)
-        pk_name = inspect(cls.Model).primary_key[0].name
-        values = {
-            column.name: getattr(instance, column.name)
-            for column in cls.Model.__table__.columns
-        }
-        if values.get(pk_name) is None:
-            # Let the database assign the autoincrement primary key.
-            values.pop(pk_name)
+        pk_names = {column.name for column in inspect(cls.Model).primary_key}
+        values = {}
+        for column in cls.Model.__table__.columns:
+            value = getattr(instance, column.name)
+            carries_default = (
+                column.default is not None or column.server_default is not None
+            )
+            # Skip a None whose value the database supplies: any PK column (e.g.
+            # autoincrement) and any column with a SQLAlchemy/server default. Passing
+            # it explicitly would override that default with NULL.
+            if value is None and (column.name in pk_names or carries_default):
+                continue
+            values[column.name] = value
         statement = idempotent_insert(session.get_bind().name, cls.Model).values(
             **values
         )
@@ -850,15 +853,13 @@ class BaseManager:
             )
             raise HTTPBadRequestException from None
         created = result.rowcount == 1
-        # The row is guaranteed to exist now (ours or the concurrent winner's). A core
-        # insert does not populate the constructed instance's PK, so we must refetch.
+        # A core insert does not populate the constructed instance's PK, so refetch.
         row = await cls.first(
             session, **instance_create.model_dump(include=filter_include)
         )
         if row is None:
-            # A miss means filter_include reaches outside the unique constraint, so
-            # the refetch can't see the winning row. Fail loud instead of returning
-            # (None, False) and deferring a confusing crash to the caller.
+            # Fail loud rather than return (None, False) and defer a confusing crash
+            # to the caller.
             raise RuntimeError(
                 f"{cls.Model.__name__}.get_or_create resolved a unique conflict but "
                 f"no row matched filter_include={filter_include!r}; filter_include "
