@@ -22,3 +22,4 @@ export { PluginCreatePage } from './PluginCreatePage';
 export { PluginDetailPage } from './PluginDetailPage';
 export { PluginListPage } from './PluginListPage';
 export { PluginSchedulePage } from './PluginSchedulePage';
+export type { PluginFormSlotProps, RenderFormSlot } from './types';
