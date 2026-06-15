@@ -31,12 +31,15 @@ from app.core.settings_override.registry import ReloadClassification
 
 
 class SettingResponse(BaseModel):
-    """A single setting's metadata and current value.
+    """Represent a single setting's metadata and current value.
 
     :param setting_class: The settings class the field belongs to.
     :type setting_class: SettingClassEnum
     :param key: The field name on the settings class.
     :type key: str
+    :param key_path: Carry the canonical key segments for ``key`` such that
+        ``"__".join(key_path) == key``.
+    :type key_path: list[str]
     :param value: The current value visible through the proxy, dumped to a
         JSON-safe shape via the field's annotation. ``SecretStr`` fields are
         redacted to ``"**********"``.
@@ -67,6 +70,7 @@ class SettingResponse(BaseModel):
 
     setting_class: SettingClassEnum
     key: str
+    key_path: list[str] = Field(default_factory=list)
     value: Any
     default_value: Any
     type: str
