@@ -332,10 +332,7 @@ archives_schema = PluginSchema(
                             when=F("swap_drop") == SwapDropEnum.SWAP_ARCHIVE_DROP
                         ),
                     ],
-                    # Hidden unless swap_drop == SWAP_ARCHIVE_DROP. Only Purge Only
-                    # is selectable in the current scope, so this field never
-                    # renders; the gate keeps it from appearing if other archive
-                    # types become selectable later.
+                    # Hidden now because only Purge Only is selectable in scope.
                     forbidden=[
                         FieldGate(
                             when=F("swap_drop") != SwapDropEnum.SWAP_ARCHIVE_DROP

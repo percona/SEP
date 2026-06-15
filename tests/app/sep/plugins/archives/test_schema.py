@@ -74,8 +74,6 @@ class TestArchivesSchemaStructure:
             "dest_db_name",
         }
         assert expected.issubset(all_names), f"Missing fields: {expected - all_names}"
-        # The duplicate explicit alert-on-fail form field was removed; the
-        # capability control (capabilities.alert_on_fail) is the single source.
         assert "alert_on_fail" not in all_names
 
     def test_no_explicit_alert_on_fail_form_field(self):
@@ -115,7 +113,6 @@ class TestArchivesSchemaStructure:
             "disable_bulk_insert",
             "delete_data",
         }
-        # WHERE must remain visible (not tucked into Advanced).
         assert "where" not in advanced_names
         options = next((s for s in archives_schema.forms if s.title == "Options"), None)
         assert options is not None
@@ -167,7 +164,9 @@ class TestArchivesSchemaFieldGates:
         )
         assert swp_field.requires is not None
         assert len(swp_field.requires) == 1
-        assert swp_field.requires[0].when.to_dict() == {"equals": {"swap_drop": 2}}
+        assert swp_field.requires[0].when.to_dict() == {
+            "equals": {"swap_drop": SwapDropEnum.SWAP_ARCHIVE_DROP.value}
+        }
 
     def test_swp_table_suffix_hidden_unless_swap_archive_drop(self):
         """swp_table_suffix is hidden (forbidden) unless swap_drop == 2.
@@ -204,12 +203,10 @@ class TestArchivesSchemaFieldGates:
         )
         assert where_field.requires is not None
         requires_gates = [g.when.to_dict() for g in where_field.requires]
-        # requires fires when swap_drop != SWAP_DROP (1) -> true for PURGE_ONLY (0).
         assert {
             "not_equals": {"swap_drop": SwapDropEnum.SWAP_DROP.value}
         } in requires_gates
         forbidden_gates = [g.when.to_dict() for g in (where_field.forbidden or [])]
-        # forbidden targets only SWAP_DROP; never PURGE_ONLY.
         assert {
             "equals": {"swap_drop": SwapDropEnum.SWAP_DROP.value}
         } in forbidden_gates
