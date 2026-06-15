@@ -223,7 +223,8 @@ def assemble_envelope(
     :param alert_on_fail: Whether to alert on task failure. Defaults to ``False``.
     :return: The assembled ``TaskWrite``, ready to POST to the Tasks API.
     :raises ValueError: When no service was resolved (the connectivity meta has no
-        source).
+        source), or when the resolved service declares no port and no default port
+        is registered for its type.
     :raises TypeError: When ``spec`` is neither a ``RunCommandSpec`` nor a
         ``RunPythonSpec``.
     """
@@ -235,9 +236,16 @@ def assemble_envelope(
         )
 
     host = service.node.address
+    port = service.port or _DEFAULT_PORTS.get(service.type)
+    if port is None:
+        raise ValueError(
+            "assemble_envelope cannot resolve a connectivity port for service type "
+            f"{service.type.value!r}: it declares no port and no default is "
+            "registered for its type"
+        )
     connectivity = {
         CONNECTIVITY_META_HOST_KEY: host,
-        CONNECTIVITY_META_PORT_KEY: service.port or _DEFAULT_PORTS.get(service.type),
+        CONNECTIVITY_META_PORT_KEY: port,
         CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
     }
 

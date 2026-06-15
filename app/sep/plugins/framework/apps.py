@@ -291,7 +291,9 @@ class TaskExecutionApp(BaseApp):
 
         :raises ValueError: When a ``schema=`` app supplies a ``task_spec_builder``;
             when ``task_spec_builder`` collides with ``script_source`` or
-            ``payload_builder``; or when a create-enabled app has no payload source.
+            ``payload_builder``; when a create-enabled app has no payload source; or
+            when a create-disabled app sets a create-route option
+            (``connectivity_check`` or ``create_response_model``).
         """
         if self.app_schema is not None and self.task_spec_builder is not None:
             raise ValueError(
@@ -316,6 +318,13 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: the create capability needs a payload source — a "
                 "task_spec_builder or a payload_builder"
+            )
+        if not self.capabilities.create and (
+            self.connectivity_check or self.create_response_model is not None
+        ):
+            raise ValueError(
+                "TaskExecutionApp: connectivity_check and create_response_model are "
+                "create-route options; enable capabilities.create or drop them"
             )
 
     def _validate_route_knobs(self) -> None:

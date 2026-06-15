@@ -266,6 +266,24 @@ class TestAssembleEnvelopeGuards:
                 owner=TaskOwner.CHECKSUMS,
             )
 
+    def test_unresolvable_port_raises(self) -> None:
+        """Raise when the service has no port and no default for its type."""
+        service = _service(
+            address="mongo-host",
+            service_type=ServiceTypeEnum.MONGODB,
+            name="mongo-1",
+            port=None,
+        )
+        spec = RunCommandSpec(command="cmd", args="")
+
+        with pytest.raises(ValueError, match="connectivity port"):
+            assemble_envelope(
+                spec,
+                ResolvedEntities(service=service, entities={}),
+                name="task-1",
+                owner=TaskOwner.CHECKSUMS,
+            )
+
 
 class _ResolveForm(AppFormModel):
     """Carry one of each resolvable ref plus a manual host for resolve tests."""

@@ -629,6 +629,22 @@ class TestDefinitionValidation:
         with pytest.raises(ValueError, match="layout"):
             _synth_app(views=Views(list_view=_LIST_VIEW))
 
+    def test_create_disabled_with_connectivity_check_raises(self) -> None:
+        """Assert a create-disabled app with connectivity_check is rejected."""
+        with pytest.raises(ValueError, match="connectivity_check"):
+            _synth_app(
+                capabilities=AppCapabilities(create=False),
+                connectivity_check=True,
+            )
+
+    def test_create_disabled_with_create_response_model_raises(self) -> None:
+        """Assert a create-disabled app with create_response_model is rejected."""
+        with pytest.raises(ValueError, match="create_response_model"):
+            _synth_app(
+                capabilities=AppCapabilities(create=False),
+                create_response_model=_SynthResponse,
+            )
+
 
 class TestSchemaPassthrough:
     """Cover the transitional ``schema=`` app with a ``payload_builder``."""
