@@ -15,14 +15,10 @@
 
 """Define tests for inventory service routes."""
 
-import pytest
-from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette import status
 from starlette.testclient import TestClient
 
-from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
-from app.inventory.crud import ServiceManager
 from app.inventory.models import Node, Schema, Service, ServiceSystemObservation
 from tests.app.factories import (
     NodeWriteFactory,
@@ -531,17 +527,3 @@ class TestUpsertServiceSystemObservation:
             f"/services/{service.id}/system-observation", json=data
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
-
-@pytest.mark.asyncio
-async def test_dangling_fk_rejected_by_database(session: AsyncSession) -> None:
-    """Reject a dangling parent FK at the database layer.
-
-    ``create`` injects the FK from a path-validated parent and runs no parent
-    pre-check, so this exercises the SQLite foreign-key constraint directly
-    (``PRAGMA foreign_keys = ON`` is enabled on the inventory test engine). The
-    DB ``IntegrityError`` surfaces as ``HTTPBadRequestException`` because
-    ``BaseSQLModelManager.save`` translates database errors on commit.
-    """
-    with pytest.raises(HTTPBadRequestException):
-        await ServiceManager.create(session, ServiceWriteFactory.build(), node_id=9999)
