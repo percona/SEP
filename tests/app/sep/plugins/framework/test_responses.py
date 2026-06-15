@@ -25,6 +25,8 @@ from app.core.requests import RemoteAPI
 from app.sep.plugins.framework import (
     build_default_task_response,
     build_task_list_responses,
+    ConnectivityWarning,
+    derive_create_response_model,
 )
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner
 from tests.app.factories import TaskFactory
@@ -292,3 +294,77 @@ class TestBuildDefaultTaskResponse:
         result = build_default_task_response(_TaskResponse, task)
 
         assert result.status is None
+
+
+class _CreateBase(BaseModel):
+    """Represent a minimal base model for the create-response factory tests."""
+
+    name: str
+    backend: str
+
+
+class TestDeriveCreateResponseModel:
+    """Test suite for ``derive_create_response_model``."""
+
+    def test_adds_connectivity_warning_and_preserves_base_fields(self) -> None:
+        """Derive a model carrying every base field plus ``connectivity_warning``."""
+        derived = derive_create_response_model(_CreateBase, name="ThingCreateResponse")
+
+        assert set(_CreateBase.model_fields) <= set(derived.model_fields)
+        assert "connectivity_warning" in derived.model_fields
+
+    def test_connectivity_warning_is_optional_warning_defaulting_none(self) -> None:
+        """Type the added field ``ConnectivityWarning | None`` defaulting to ``None``."""
+        derived = derive_create_response_model(_CreateBase, name="ThingCreateResponse")
+        field = derived.model_fields["connectivity_warning"]
+
+        assert field.annotation == (ConnectivityWarning | None)
+        assert field.default is None
+        assert field.is_required() is False
+
+    def test_name_fixes_class_name_and_schema_title(self) -> None:
+        """Set ``model.__name__`` and the JSON-schema ``title`` from ``name``."""
+        derived = derive_create_response_model(_CreateBase, name="ThingCreateResponse")
+
+        assert derived.__name__ == "ThingCreateResponse"
+        assert derived.model_json_schema()["title"] == "ThingCreateResponse"
+
+    def test_doc_sets_docstring_and_schema_description(self) -> None:
+        """Set the model docstring and schema ``description`` from ``doc``."""
+        derived = derive_create_response_model(
+            _CreateBase, name="ThingCreateResponse", doc="A derived create response."
+        )
+
+        assert derived.__doc__ == "A derived create response."
+        assert (
+            derived.model_json_schema()["description"] == "A derived create response."
+        )
+
+    def test_doc_none_yields_no_schema_description(self) -> None:
+        """Omit the schema ``description`` when no ``doc`` is supplied."""
+        derived = derive_create_response_model(_CreateBase, name="ThingCreateResponse")
+
+        assert "description" not in derived.model_json_schema()
+
+    def test_extra_fields_added_alongside_connectivity_warning(self) -> None:
+        """Add cascade ``extra_fields`` beside the default ``connectivity_warning``."""
+        derived = derive_create_response_model(
+            _CreateBase,
+            name="ThingCreateResponse",
+            extra_fields={"pre_checks_auto_fire_warning": (str | None, None)},
+        )
+
+        assert "pre_checks_auto_fire_warning" in derived.model_fields
+        assert "connectivity_warning" in derived.model_fields
+
+    def test_extra_fields_cannot_clobber_connectivity_warning(self) -> None:
+        """Keep the canonical ``connectivity_warning`` even when ``extra_fields`` collides."""
+        derived = derive_create_response_model(
+            _CreateBase,
+            name="ThingCreateResponse",
+            extra_fields={"connectivity_warning": (str, ...)},
+        )
+        field = derived.model_fields["connectivity_warning"]
+
+        assert field.annotation == (ConnectivityWarning | None)
+        assert field.is_required() is False

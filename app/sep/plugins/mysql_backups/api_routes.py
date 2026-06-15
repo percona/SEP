@@ -28,13 +28,12 @@ from fastapi import status as http_status
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.pagination.deps import make_pagination_dep
 from app.sep.deps import (
-    HasNoConflictedRunningTasks,
     InventoryAPI,
     IsApiAuthenticated,
     TaskAPI,
 )
 from app.sep.plugins.framework import get_task_latest_status
-from app.sep.plugins.framework.api import schema_endpoint
+from app.sep.plugins.framework.api import derive_execute_route, schema_endpoint
 from app.sep.plugins.mysql_backups.deps import (
     BackupsTask,
     build_backup_task_payload_from_model,
@@ -48,7 +47,7 @@ from app.sep.plugins.mysql_backups.models import (
     BackupResponse,
 )
 from app.sep.plugins.mysql_backups.schema import mysql_backups_schema
-from app.tasks.models import Task, TaskHistoryResponse, TaskHistoryStatusEnum
+from app.tasks.models import Task, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -112,24 +111,14 @@ async def mysql_backups_api_create(
     return build_mysql_backups_api_task_response(task, status=None)
 
 
-@router.post(
-    "/{task_name}/execute",
-    status_code=http_status.HTTP_201_CREATED,
-    dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
+derive_execute_route(
+    router,
+    name="mysql_backups_api_execute",
+    description="Execute a MySQL backup task.",
+    task_dep=BackupsTask,
+    write_model=BackupExecuteWrite,
+    response_model=BackupExecutionResponse,
 )
-async def mysql_backups_api_execute(
-    task: BackupsTask,
-    body: BackupExecuteWrite,
-    tasks_api: TaskAPI,
-) -> BackupExecutionResponse:
-    """Execute a MySQL backup task."""
-    logger.info("Executing mysql_backups task %r", task.name)
-    created = await tasks_api.post(
-        f"/execute/{task.name}",
-        json=body.model_dump(exclude_none=True),
-    )
-    task_history = TaskHistoryResponse.model_validate(created)
-    return BackupExecutionResponse(task_name=task.name, task_id=task_history.id)
 
 
 @router.delete(

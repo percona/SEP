@@ -15,6 +15,7 @@
 
 """Tests for the backup_pg plugin JSON API routes under /api/plugins/backup_pg/."""
 
+from datetime import datetime, timedelta, UTC
 from typing import Any
 from unittest.mock import AsyncMock, call
 
@@ -545,12 +546,8 @@ class TestBackupPgApiExecute:
         assert response.status_code == status.HTTP_409_CONFLICT
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
-    def test_execute_serializes_eta_as_iso_string(
-        self, test_client, mock_task_api_dep
-    ) -> None:
-        """``eta`` is serialized as an ISO string before being forwarded as JSON."""
-        from datetime import datetime, timedelta, UTC
-
+    def test_execute_forwards_future_eta(self, test_client, mock_task_api_dep) -> None:
+        """A future ``eta`` is accepted and forwarded on the upstream execute call."""
         eta = datetime.now(tz=UTC) + timedelta(hours=1)
         task = build_backup_task("pg-backup-task")
         mock_task_api_dep.get = AsyncMock(return_value=task)
@@ -564,19 +561,16 @@ class TestBackupPgApiExecute:
 
         assert response.status_code == status.HTTP_201_CREATED
         forwarded = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
-        assert isinstance(forwarded["eta"], str)
-        # ISO round-trips back to an aware datetime
-        assert datetime.fromisoformat(forwarded["eta"]).tzinfo is not None
+        assert forwarded["eta"] == eta
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
-    def test_execute_drops_past_eta(self, test_client, mock_task_api_dep) -> None:
-        """A past ``eta`` is dropped from the upstream payload (runs immediately)."""
-        from datetime import datetime, timedelta, UTC
-
+    def test_execute_returns_422_for_past_eta(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """A past ``eta`` is rejected with 422 by Pydantic validation."""
         eta = datetime.now(tz=UTC) - timedelta(hours=1)
         task = build_backup_task("pg-backup-task")
         mock_task_api_dep.get = AsyncMock(return_value=task)
-        mock_task_api_dep.post = AsyncMock(return_value=build_execute_response())
 
         response = test_client.post(
             f"{API_BASE}/pg-backup-task/execute",
@@ -584,9 +578,7 @@ class TestBackupPgApiExecute:
             headers=BEARER_HEADERS,
         )
 
-        assert response.status_code == status.HTTP_201_CREATED
-        forwarded = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
-        assert "eta" not in forwarded
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 class TestBackupPgApiAuth:
