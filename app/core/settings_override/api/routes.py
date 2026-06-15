@@ -85,7 +85,6 @@ async def _no_remote_api() -> None:
     no-op, keeping their behaviour identical to before remote support existed.
 
     :return: Always ``None``.
-    :rtype: None
     """
     return
 
@@ -113,16 +112,11 @@ async def _proxy_settings_request(
 
     :param remote_api: The async client for the owning sub-app, already
         authenticated (the SEP wiring forwards the caller's Bearer token).
-    :type remote_api: RemoteAPI
     :param method: The :class:`RemoteAPI` verb to call (``"get"`` / ``"patch"`` /
         ``"delete"``).
-    :type method: str
     :param path: The remote path to request, relative to the client's base URL.
-    :type path: str
     :param kwargs: Extra keyword arguments forwarded to the verb (e.g. ``json``).
-    :type kwargs: Any
     :return: The parsed JSON payload, or ``None`` on an upstream ``204``.
-    :rtype: Any
     :raises HTTPException: Re-raised unchanged for an upstream client error
         (status < 500).
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -145,13 +139,10 @@ def _remote_wiring(
     """Resolve the remote-class lookup and the handler's ``remote_api`` annotation.
 
     :param remote_classes: The configured ``(enum, base_path)`` pairs, or ``None``.
-    :type remote_classes: list[RemoteClassEntry] | None
     :param remote_api_dep: The ``Annotated[RemoteAPI, Depends(...)]`` alias, or
         ``None`` when no remote classes are wired.
-    :type remote_api_dep: Any
     :return: A ``(setting_class -> base_path)`` map and the dependency annotation
         to use on the handlers (the no-op ``None`` dependency when unset).
-    :rtype: tuple[dict[SettingClassEnum, str], Any]
     :raises ValueError: If ``remote_classes`` is non-empty but ``remote_api_dep``
         is ``None``, so the misconfiguration fails fast at router construction
         instead of as a runtime ``500`` when a handler calls ``None.get(...)``.
@@ -180,13 +171,9 @@ async def _remote_list_group(
     (a genuine contract bug) rather than being masked as a ``502``.
 
     :param remote_api: The authenticated client for the owning sub-app.
-    :type remote_api: RemoteAPI
     :param setting_class: The remote class whose group to extract.
-    :type setting_class: SettingClassEnum
     :param base_path: The remote settings router's mount path.
-    :type base_path: str
     :return: The validated group for ``setting_class``.
-    :rtype: SettingClassGroup
     :raises HTTPBadGatewayException: If the upstream call fails, or the upstream
         response omits ``setting_class``.
     """
@@ -213,15 +200,10 @@ async def _remote_detail(
     """Proxy a DETAIL read for a remote settings class and validate the response.
 
     :param remote_api: The authenticated client for the owning sub-app.
-    :type remote_api: RemoteAPI
     :param base_path: The remote settings router's mount path.
-    :type base_path: str
     :param setting_class: The remote class the field belongs to.
-    :type setting_class: SettingClassEnum
     :param key: The field name to read.
-    :type key: str
     :return: The validated response for the field.
-    :rtype: SettingResponse
     :raises HTTPException: Re-raised unchanged for an upstream client error
         (status < 500).
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -244,15 +226,10 @@ async def _remote_patch(
     """Proxy a PATCH batch for a remote settings class and validate the response.
 
     :param remote_api: The authenticated client for the owning sub-app.
-    :type remote_api: RemoteAPI
     :param base_path: The remote settings router's mount path.
-    :type base_path: str
     :param setting_class: The remote class the override targets.
-    :type setting_class: SettingClassEnum
     :param body: The batch of ``{key: value, ...}`` overrides to forward.
-    :type body: SettingsPatch
     :return: One validated :class:`SettingResponse` per applied key.
-    :rtype: list[SettingResponse]
     :raises HTTPException: Re-raised unchanged for an upstream client error
         (status < 500), e.g. the upstream per-field ``422``.
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -278,13 +255,9 @@ async def _remote_delete(
     """Proxy a DELETE for a remote settings class.
 
     :param remote_api: The authenticated client for the owning sub-app.
-    :type remote_api: RemoteAPI
     :param base_path: The remote settings router's mount path.
-    :type base_path: str
     :param setting_class: The remote class the field belongs to.
-    :type setting_class: SettingClassEnum
     :param key: The field name whose override to revert.
-    :type key: str
     :raises HTTPException: Re-raised unchanged for an upstream client error
         (status < 500), e.g. a ``409`` on a NOT_OVERRIDABLE field.
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -306,19 +279,13 @@ def _settings_response_from_field(
     """Build a :class:`SettingResponse` for one field on a settings class.
 
     :param setting_class: The settings class identifier (enum member).
-    :type setting_class: SettingClassEnum
     :param settings_cls: The Pydantic settings class declaring the field.
-    :type settings_cls: type[BaseYamlSettings]
     :param proxy: The proxy whose attribute access yields the field's current
         value (snapshot if present, else the wrapped Pydantic instance).
-    :type proxy: OverridableSettingsProxy
     :param field_meta: The introspected metadata for the field.
-    :type field_meta: FieldMetadata
     :param has_override: Whether a ``settingoverride`` row exists for this
         ``(class, key)`` pair.
-    :type has_override: bool
     :return: The structured response for the field.
-    :rtype: SettingResponse
     """
     if "__" in field_meta.key:
         field_info, current_value = resolve_nested_value(
@@ -362,17 +329,11 @@ def _field_responses(
     keeps its single entry.
 
     :param setting_class: The settings class identifier (enum member).
-    :type setting_class: SettingClassEnum
     :param settings_cls: The Pydantic settings class declaring ``field_meta``.
-    :type settings_cls: type[BaseYamlSettings]
     :param proxy: The proxy whose attribute access yields current values.
-    :type proxy: OverridableSettingsProxy
     :param field_meta: The introspected metadata for the top-level field.
-    :type field_meta: FieldMetadata
     :param override_keys: The canonical keys (and prefixes) carrying an override.
-    :type override_keys: set[str]
     :return: One or more responses for the field.
-    :rtype: list[SettingResponse]
     """
     leaves = (
         list(iter_nested_leaf_keys(settings_cls, field_meta.key))
@@ -413,9 +374,7 @@ def _format_annotation(annotation: Any) -> str:
     :func:`repr` when the annotation has no ``__name__``.
 
     :param annotation: The annotation to render.
-    :type annotation: Any
     :return: A human-readable name for the annotation.
-    :rtype: str
     """
     if annotation is None:
         return "None"
@@ -443,11 +402,8 @@ def _validate_patch_body(
     value.
 
     :param settings_cls: The Pydantic settings class to validate against.
-    :type settings_cls: type[BaseYamlSettings]
     :param body: The PATCH payload as a :class:`SettingsPatch` root model.
-    :type body: SettingsPatch
     :return: The list of ``(key, coerced_value)`` tuples ready to persist.
-    :rtype: list[tuple[str, Any]]
     :raises HTTPUnprocessableEntityException: If any key fails validation;
         the exception's ``detail`` is a structured list of Pydantic-style
         error entries.
@@ -532,16 +488,11 @@ def _validate_nested_key(
     (structured Pydantic error on failure).
 
     :param settings_cls: The Pydantic settings class to validate against.
-    :type settings_cls: type[BaseYamlSettings]
     :param key: The ``__``-delimited override key.
-    :type key: str
     :param raw_value: The raw value to coerce to the leaf type.
-    :type raw_value: Any
     :param errors: The running list of structured error entries, mutated in place.
-    :type errors: list[dict[str, Any]]
     :param to_apply: The running list of ``(key, coerced_value)`` tuples,
         mutated in place.
-    :type to_apply: list[tuple[str, Any]]
     """
     top_resolved = _resolve_field_in_model(settings_cls, key.split("__", 1)[0])
     if top_resolved is None:
@@ -624,13 +575,9 @@ async def _fire_inline_rebind_callbacks(
 
     :param request: The incoming request; its ``app.state`` carries the sub-app's
         rebind-callback registry.
-    :type request: Request
     :param setting_class: The settings class whose snapshot was just republished.
-    :type setting_class: SettingClassEnum
     :param proxy: The proxy holding the freshly-published snapshot.
-    :type proxy: OverridableSettingsProxy
     :param previous: The snapshot in effect immediately before the inline publish.
-    :type previous: Mapping[str, object]
     """
     callbacks = getattr(request.app.state, "override_callbacks", None)
     if not callbacks:
@@ -663,23 +610,19 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
 
     :param classes: One ``(SettingClassEnum, settings_cls, proxy)`` triple per
         settings class to expose on this router.
-    :type classes: list[ClassEntry]
     :param session_dep: An ``Annotated[AsyncSession, Depends(...)]`` type alias
         for the sub-app's session dependency (e.g. ``app.sep.deps.SessionDep``
         or ``app.tasks.deps.SessionDep``). Used as the parameter annotation on
         each generated handler so FastAPI resolves the session per-request.
-    :type session_dep: Any
     :param admin_dep: A FastAPI ``Depends(...)`` callable that gates access to
         admin users only (e.g. ``app.sep.deps.IsApiAdmin`` or
         ``app.api.deps.IsAdminDep``). Applied at the router level so every
         endpoint inherits the admin gate.
-    :type admin_dep: params.Depends
     :param mutation_deps: Optional list of FastAPI ``Depends(...)`` callables
         applied only to the state-changing endpoints (PATCH / DELETE). The
         SEP wiring passes ``[RequireBearerForUnsafeMethods]`` so cookie sessions cannot
         mutate settings; the Tasks wiring leaves this empty because its
         admin dependency is bearer-only via ``OAuth2PasswordBearer``.
-    :type mutation_deps: list[params.Depends] | None
     :param remote_classes: Optional ``(SettingClassEnum, remote_base_path)`` pairs
         for settings classes whose storage lives in another sub-app. Such a class
         has no local config singleton or override table; the LIST handler appends
@@ -687,16 +630,13 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
         DETAIL / PATCH / DELETE handlers dispatch on ``setting_class`` to the
         remote sub-app via ``remote_api_dep``. Defaults to no remote classes, in
         which case the router is purely local and behaves exactly as before.
-    :type remote_classes: list[RemoteClassEntry] | None
     :param remote_api_dep: An ``Annotated[RemoteAPI, Depends(...)]`` type alias
         for the client used to reach the remote sub-app (e.g. ``app.sep.deps.TaskAPI``,
         which forwards the caller's Bearer token). Required when ``remote_classes``
         is non-empty; ignored otherwise. Used as the parameter annotation on each
         handler so FastAPI resolves the client per-request.
-    :type remote_api_dep: Any
     :return: A configured :class:`APIRouter` ready to mount under a sub-app's
         ``/settings`` prefix.
-    :rtype: APIRouter
     """
     router = APIRouter(dependencies=[admin_dep])
     class_lookup = {member: (cls, proxy) for member, cls, proxy in classes}
@@ -708,9 +648,7 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
         """Return the settings class and proxy for ``setting_class`` or 404.
 
         :param setting_class: The class identifier requested by the client.
-        :type setting_class: SettingClassEnum
         :return: The settings class and its proxy.
-        :rtype: tuple[type[BaseYamlSettings], OverridableSettingsProxy]
         :raises HTTPNotFoundException: If ``setting_class`` is not configured
             on this router.
         """
@@ -735,12 +673,9 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
         request with ``502`` -- the LIST never silently drops a remote group.
 
         :param session: The sub-app's database session.
-        :type session: AsyncSession
         :param remote_api: The client for remote settings classes (``None`` when
             the router wires none).
-        :type remote_api: RemoteAPI | None
         :return: Grouped responses, one group per configured settings class.
-        :rtype: SettingsListResponse
         """
         groups = []
         for setting_class, settings_cls, proxy in classes:
@@ -778,16 +713,11 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
         """Return one field's metadata and current value.
 
         :param setting_class: The settings class the field belongs to.
-        :type setting_class: SettingClassEnum
         :param key: The field name on the settings class.
-        :type key: str
         :param session: The sub-app's database session.
-        :type session: AsyncSession
         :param remote_api: The client for remote settings classes (``None`` when
             the router wires none).
-        :type remote_api: RemoteAPI | None
         :return: The structured response for the field.
-        :rtype: SettingResponse
         :raises HTTPNotFoundException: If the class isn't exposed or the key
             doesn't exist on the class.
         """
@@ -834,18 +764,12 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
 
         :param request: The incoming request; its ``app.state`` carries the
             sub-app's rebind-callback registry.
-        :type request: Request
         :param setting_class: The settings class the override targets.
-        :type setting_class: SettingClassEnum
         :param body: The batch of ``{key: value, ...}`` overrides.
-        :type body: SettingsPatch
         :param session: The sub-app's database session.
-        :type session: AsyncSession
         :param remote_api: The client for remote settings classes (``None`` when
             the router wires none).
-        :type remote_api: RemoteAPI | None
         :return: One :class:`SettingResponse` per applied key, in input order.
-        :rtype: list[SettingResponse]
         :raises HTTPNotFoundException: If the class isn't exposed.
         :raises HTTPUnprocessableEntityException: If any key fails validation;
             no rows are written.
@@ -905,16 +829,11 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
 
         :param request: The incoming request; its ``app.state`` carries the
             sub-app's rebind-callback registry.
-        :type request: Request
         :param setting_class: The settings class the field belongs to.
-        :type setting_class: SettingClassEnum
         :param key: The field name on the settings class.
-        :type key: str
         :param session: The sub-app's database session.
-        :type session: AsyncSession
         :param remote_api: The client for remote settings classes (``None`` when
             the router wires none).
-        :type remote_api: RemoteAPI | None
         :raises HTTPNotFoundException: If the class isn't exposed or the key
             doesn't exist on the class.
         :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
@@ -950,11 +869,8 @@ def _field_meta_or_404(settings_cls: type[BaseYamlSettings], key: str) -> FieldM
     whose ``key`` is the full nested string).
 
     :param settings_cls: The Pydantic settings class to look up the field on.
-    :type settings_cls: type[BaseYamlSettings]
     :param key: The field name (or ``__``-delimited nested key) to find.
-    :type key: str
     :return: The metadata for the field.
-    :rtype: FieldMetadata
     :raises HTTPNotFoundException: If ``key`` is not a declared field of
         ``settings_cls`` (nor a resolvable nested key).
     """
@@ -985,11 +901,8 @@ def _applied_field_meta(
     :func:`_validate_patch_body`, so the nested lookups cannot 404.
 
     :param settings_cls: The Pydantic settings class the keys belong to.
-    :type settings_cls: type[BaseYamlSettings]
     :param to_apply: The list of ``(key, value)`` tuples being applied.
-    :type to_apply: list[tuple[str, Any]]
     :return: A mapping from override key to its field metadata.
-    :rtype: dict[str, FieldMetadata]
     """
     field_meta_by_key = {f.key: f for f in iter_class_fields(settings_cls)}
     for key, _ in to_apply:
@@ -1013,9 +926,7 @@ def _assert_key_deletable(
     silently.
 
     :param settings_cls: The Pydantic settings class the field belongs to.
-    :type settings_cls: type[BaseYamlSettings]
     :param field_meta: The resolved metadata for the key being deleted.
-    :type field_meta: FieldMetadata
     :raises HTTPUnprocessableEntityException: If the key names a ``NESTED_ONLY``
         parent, or a nested key under a non-nested-overridable parent.
     :raises HTTPConflictException: If the key names a ``NOT_OVERRIDABLE`` field.
@@ -1071,11 +982,8 @@ async def _persist_overrides(
     its values cleanly.
 
     :param session: The sub-app's database session.
-    :type session: AsyncSession
     :param setting_class: The settings class the rows belong to.
-    :type setting_class: SettingClassEnum
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
-    :type to_apply: list[tuple[str, Any]]
     """
     try:
         await _stage_and_commit_overrides(
@@ -1097,11 +1005,8 @@ async def _stage_and_commit_overrides(
     """Stage every (setting_class, key) row and commit the batch.
 
     :param session: The sub-app's database session.
-    :type session: AsyncSession
     :param setting_class: The settings class the rows belong to.
-    :type setting_class: SettingClassEnum
     :param to_apply: The list of ``(key, coerced_value)`` tuples to persist.
-    :type to_apply: list[tuple[str, Any]]
     """
     for key, value in to_apply:
         existing = await SettingsOverrideManager.first(
