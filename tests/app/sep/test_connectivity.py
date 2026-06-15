@@ -188,6 +188,7 @@ class TestCheckAndWarnConnectivity:
         assert "10.0.0.1:5432" in flashed.text
         assert "postgresql" in flashed.text
         assert "node1" in flashed.text
+        assert "Could not reach the Tasks API" in flashed.text
 
     @pytest.mark.asyncio
     async def test_check_sends_correct_payload(self, dummy_request, mock_tasks_api):
