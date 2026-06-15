@@ -1098,16 +1098,27 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
         :type extra_fields: Any
         :return: The updated and saved child instance.
         :rtype: T
-        :raises HTTPBadRequestException: If the associated parent instance does not
-            exist.
+        :raises HTTPBadRequestException: If the parent foreign key is supplied but
+            references no existing parent (or is explicitly ``null``). The check is
+            skipped entirely when the client omits the foreign key, preserving the
+            base manager's ``exclude_unset`` partial-update semantics.
         """
-        parent_id = getattr(updated_instance, cls.connected_by, None)
-        try:
-            await cls.ParentManager.get(session, id=parent_id)
-        except NoResultFound:
-            raise HTTPBadRequestException(
-                f"Invalid {cls.connected_by}: {parent_id}",
-            ) from None
+        supplied_fields = updated_instance.model_dump(exclude_unset=True)
+        if cls.connected_by in extra_fields or cls.connected_by in supplied_fields:
+            parent_id = extra_fields.get(
+                cls.connected_by,
+                supplied_fields.get(cls.connected_by),
+            )
+            if parent_id is None:
+                raise HTTPBadRequestException(
+                    f"Invalid {cls.connected_by}: {parent_id}",
+                )
+            try:
+                await cls.ParentManager.get(session, id=parent_id)
+            except NoResultFound:
+                raise HTTPBadRequestException(
+                    f"Invalid {cls.connected_by}: {parent_id}",
+                ) from None
         return await super().update(
             session,
             existing_instance,
