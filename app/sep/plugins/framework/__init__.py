@@ -15,6 +15,12 @@
 
 """Provide shared building blocks for schema-driven plugins."""
 
+from app.sep.plugins.framework.apps import (
+    AppCapabilities,
+    Cascade,
+    TaskExecutionApp,
+    Views,
+)
 from app.sep.plugins.framework.base import BaseApp
 from app.sep.plugins.framework.cascade import (
     build_derived_payload,
@@ -52,6 +58,14 @@ from app.sep.plugins.framework.form_dsl import (
     ServiceRef,
     TableRef,
     Ui,
+)
+from app.sep.plugins.framework.payload import (
+    assemble_envelope,
+    EnvelopeSpec,
+    resolve_refs,
+    ResolvedEntities,
+    RunCommandSpec,
+    RunPythonSpec,
 )
 from app.sep.plugins.framework.responses import (
     build_default_task_response,
@@ -92,14 +106,17 @@ from app.sep.plugins.framework.task_status import (
 )
 
 __all__ = [
+    "AppCapabilities",
     "AppFormModel",
     "BaseApp",
     "CardinalityRule",
+    "Cascade",
     "CascadeFailure",
     "CascadeResult",
     "Choices",
     "ConditionalRulesModel",
     "ConnectivityWarning",
+    "EnvelopeSpec",
     "F",
     "FailRule",
     "FieldExpr",
@@ -111,12 +128,17 @@ __all__ = [
     "HostRef",
     "Predicate",
     "Requires",
+    "ResolvedEntities",
+    "RunCommandSpec",
+    "RunPythonSpec",
     "SchemaRef",
     "SectionLayout",
     "SectionRules",
     "ServiceRef",
     "TableRef",
+    "TaskExecutionApp",
     "Ui",
+    "Views",
     "absent",
     "all_",
     "all_equal",
@@ -128,6 +150,7 @@ __all__ = [
     "any_present",
     "any_truthy",
     "apply_conditional_rules",
+    "assemble_envelope",
     "batch_get_latest_statuses",
     "build_default_task_response",
     "build_derived_payload",
@@ -153,6 +176,7 @@ __all__ = [
     "not_",
     "present",
     "record_connectivity_warning",
+    "resolve_refs",
     "truthy",
     "xor_",
 ]
