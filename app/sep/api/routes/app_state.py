@@ -28,6 +28,7 @@ cannot be toggled (toggle returns 409) and are reported with
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.celery.deps import CeleryBeatSessionDep
 from app.sep.crud import AppStateManager
 from app.sep.deps import (
     PROTECTED_APP_KEYS,
@@ -35,6 +36,7 @@ from app.sep.deps import (
     ToggleableAppKeyDep,
 )
 from app.sep.models import AppState, AppStateBase, AppStateWrite
+from app.sep.periodic_tasks import apply_effective_enabled
 from app.sep.plugins.framework.registry import get_app_registry
 
 router = APIRouter(tags=["admin", "apps"])
@@ -118,6 +120,7 @@ async def update_app_state(
     app_key: ToggleableAppKeyDep,
     body: AppStateWrite,
     session: SessionDep,
+    celery_beat_session: CeleryBeatSessionDep,
 ) -> AppState:
     """Toggle an app's enabled state.
 
@@ -128,12 +131,18 @@ async def update_app_state(
     read guard, which treats a missing row as enabled. Returns the updated row,
     projected through :class:`AppStateResponse` by FastAPI's ``response_model``.
 
+    After the ``AppState`` write commits, the app's owned periodic schedules are
+    re-gated via :func:`app.sep.periodic_tasks.apply_effective_enabled` so a
+    disabled app also stops its Celery beat tasks (and re-enabling resumes them,
+    subject to each schedule's ``user_enabled`` override).
+
     :param app_key: The app key to toggle.
     :type app_key: str
     :param body: The desired enabled state.
     :type body: AppStateWrite
-    :param session: The database session.
+    :param session: The SEP database session.
     :type session: SessionDep
+    :param celery_beat_session: The celery-beat database session.
     :return: The updated app-state row.
     :rtype: AppState
     """
@@ -142,6 +151,7 @@ async def update_app_state(
         AppStateBase(app_key=app_key, enabled=body.enabled),
         filter_include={"app_key"},
     )
-    if created:
-        return state
-    return await AppStateManager.update(session, state, body)
+    if not created:
+        state = await AppStateManager.update(session, state, body)
+    await apply_effective_enabled(session, celery_beat_session, app_keys={app_key})
+    return state

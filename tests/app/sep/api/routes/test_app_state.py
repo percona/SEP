@@ -23,8 +23,12 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
+from sqlalchemy_celery_beat import IntervalSchedule
+from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel import SQLModel
 
+from app.core.celery.crud import BasePeriodicTaskManager
+from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
@@ -38,7 +42,28 @@ from app.sep.deps import (
     validate_csrf,
 )
 from app.sep.main import sep_app
-from app.sep.models import AppState
+from app.sep.models import AppState, SEPPluginPeriodicTask
+
+SNIPPETS_TASK = "sep__sync_snippets"
+
+
+async def _seed_periodic_task(
+    session: AsyncSession, name: str, *, enabled: bool
+) -> PeriodicTask:
+    """Create a celery-beat ``PeriodicTask`` row with its interval schedule."""
+    schedule = IntervalSchedule(every=10, period=Period.MINUTES)
+    session.add(schedule)
+    await session.flush()
+    task = PeriodicTask(
+        name=name,
+        task="app.sep.celery.sync_snippets",
+        enabled=enabled,
+        schedule_model=schedule,
+    )
+    session.add(task)
+    await session.commit()
+    await session.refresh(task)
+    return task
 
 
 @pytest_asyncio.fixture(name="override_session")
@@ -59,13 +84,20 @@ async def override_session_fixture() -> AsyncIterator[AsyncSession]:
 
 @pytest.fixture(name="api_admin_client")
 def api_admin_client_fixture(
-    admin_user: CasdoorUser, override_session: AsyncSession
+    admin_user: CasdoorUser,
+    override_session: AsyncSession,
+    celery_beat_session: AsyncSession,
 ) -> Iterator[TestClient]:
-    """Yield an admin-authenticated client with the Bearer gate satisfied."""
+    """Yield an admin-authenticated client with the Bearer gate satisfied.
+
+    Overrides the celery-beat session too, so the toggle's periodic-task gate
+    runs against the in-memory beat DB instead of the real scheduler database.
+    """
     sep_app.dependency_overrides[validate_csrf] = lambda: True
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
+    sep_app.dependency_overrides[get_celery_beat_session] = lambda: celery_beat_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
@@ -316,3 +348,61 @@ class TestUpdateAppState:
         """GET listing remains accessible via cookie auth — only PUT needs Bearer."""
         response = api_admin_cookie_client.get("/api/admin/apps/")
         assert response.status_code == status.HTTP_200_OK
+
+    async def test_toggle_gates_owned_periodic_task(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        celery_beat_session: AsyncSession,
+    ) -> None:
+        """Disabling an app flips its owned ``PeriodicTask.enabled``; re-enabling restores it."""
+        override_session.add(AppState(app_key="snippets", enabled=True))
+        override_session.add(
+            SEPPluginPeriodicTask(
+                periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=True
+            )
+        )
+        await override_session.commit()
+        await _seed_periodic_task(celery_beat_session, SNIPPETS_TASK, enabled=True)
+
+        response = api_admin_client.put(
+            "/api/admin/apps/snippets/state", json={"enabled": False}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        task = await BasePeriodicTaskManager.first(
+            celery_beat_session, name=SNIPPETS_TASK
+        )
+        assert task.enabled is False
+
+        response = api_admin_client.put(
+            "/api/admin/apps/snippets/state", json={"enabled": True}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        task = await BasePeriodicTaskManager.first(
+            celery_beat_session, name=SNIPPETS_TASK
+        )
+        assert task.enabled is True
+
+    async def test_first_toggle_creates_row_and_gates(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+        celery_beat_session: AsyncSession,
+    ) -> None:
+        """The gate fires on the ``created=True`` branch (no pre-existing AppState row)."""
+        override_session.add(
+            SEPPluginPeriodicTask(
+                periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=True
+            )
+        )
+        await override_session.commit()
+        await _seed_periodic_task(celery_beat_session, SNIPPETS_TASK, enabled=True)
+
+        response = api_admin_client.put(
+            "/api/admin/apps/snippets/state", json={"enabled": False}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        task = await BasePeriodicTaskManager.first(
+            celery_beat_session, name=SNIPPETS_TASK
+        )
+        assert task.enabled is False

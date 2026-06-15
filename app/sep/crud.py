@@ -15,6 +15,7 @@
 
 """Define database operations for SEP."""
 
+from collections.abc import Collection
 from typing import Any
 
 from sqlmodel import col, select
@@ -23,6 +24,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.db.crud import BaseSQLModelManager
 from app.sep.models import (
     AppState,
+    SEPPluginPeriodicTask,
     SyncInstance,
     SyncInstanceWrite,
     SyncInventoryEntityTypeEnum,
@@ -308,3 +310,27 @@ class AppStateManager(BaseSQLModelManager):
         """
         row = await cls.first(session, app_key=app_key)
         return True if row is None else row.enabled
+
+
+class SEPPluginPeriodicTaskManager(BaseSQLModelManager):
+    """Manage the plugin-owned periodic-task gating rows.
+
+    :ivar Model: The SQLModel class this manager is responsible for
+        (``SEPPluginPeriodicTask``).
+    """
+
+    Model = SEPPluginPeriodicTask
+
+    @classmethod
+    async def for_app_keys(
+        cls, session: AsyncSession, app_keys: Collection[str] | None = None
+    ) -> list[SEPPluginPeriodicTask]:
+        """Return wrapper rows, optionally filtered to the given app keys.
+
+        :param session: The SQLAlchemy asynchronous session to use for the query.
+        :param app_keys: The app keys to restrict to, or ``None`` for every row.
+        :return: The matching wrapper rows.
+        """
+        if app_keys is None:
+            return await cls.list(session)
+        return await cls.list(session, col(SEPPluginPeriodicTask.app_key).in_(app_keys))
