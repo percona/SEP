@@ -55,7 +55,7 @@ interface PluginListPageProps {
   rowClickHref?: (row: Record<string, unknown>) => string;
   /** When true, list views that declare an ``actions`` column show row delete controls. */
   allowListEntityDelete?: boolean;
-  /** Optional per-cell override for non-``actions`` columns (falls back to ``formatCellValue``). */
+  /** Optional per-cell override for non-`actions` columns (falls back to `formatCellValue`). */
   renderListColumn?: RenderListColumnOverride;
 }
 

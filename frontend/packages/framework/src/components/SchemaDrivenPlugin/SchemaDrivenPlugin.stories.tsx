@@ -44,6 +44,31 @@ const mockSchema: PluginSchema = {
   ],
 } as unknown as PluginSchema;
 
+// The edit route is registered only for multi-entity plugins, so the
+// renderEditForm story needs an entity-backed schema (vs. the single-entity
+// `mockSchema` the create story uses).
+const mockEntitySchema: PluginSchema = {
+  pluginName: 'inventory',
+  display_name: 'Inventory',
+  capabilities: {},
+  entities: [
+    {
+      name: 'nodes',
+      display_name: 'Node',
+      forms: [
+        {
+          title: 'Node',
+          fields: [
+            { type: 'string', name: 'label', label: 'Label', required: true },
+            { type: 'integer', name: 'timeout', label: 'Timeout (s)', default: 60 },
+          ],
+        },
+      ],
+      list_view: { columns: [{ key: 'label', label: 'Label' }] },
+    },
+  ],
+} as unknown as PluginSchema;
+
 const withProviders = (initialPath: string) => (Story: ComponentType) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
@@ -99,4 +124,44 @@ const renderCreateForm: RenderFormSlot = ({
 export const WithRenderCreateFormSlot: Story = {
   args: { pluginName: 'checksums', mockSchema, mockTasks: [], renderCreateForm },
   decorators: [withProviders('/new')],
+};
+
+/**
+ * `renderEditForm` whole-form slot (SEP-1355). Mirrors `renderCreateForm`: the
+ * framework keeps the route, page chrome (back button + title), the update
+ * mutation, and the snackbars; only the form body is replaced. The edit route
+ * is multi-entity only, so this story uses `mockEntitySchema`, seeds the edited
+ * row via `mockEntityItems`, and renders at the `/<entity>/<id>/edit` route.
+ */
+const renderEditForm: RenderFormSlot = ({
+  sections,
+  onSubmit,
+  loading,
+  defaultValues,
+  renderField,
+}) => (
+  <Paper variant="outlined" sx={{ p: 2 }}>
+    <Alert severity="info" sx={{ mb: 2 }}>
+      Custom edit form provided by a plugin via the renderEditForm slot.
+    </Alert>
+    <SchemaFormRenderer
+      sections={sections}
+      onSubmit={onSubmit}
+      loading={loading}
+      defaultValues={defaultValues}
+      renderField={renderField}
+      submitLabel="Save changes"
+    />
+  </Paper>
+);
+
+export const WithRenderEditFormSlot: Story = {
+  args: {
+    pluginName: 'inventory',
+    mockSchema: mockEntitySchema,
+    mockTasks: [],
+    mockEntityItems: { nodes: [{ id: '5', label: 'n1', timeout: 60 }] },
+    renderEditForm,
+  },
+  decorators: [withProviders('/nodes/5/edit')],
 };

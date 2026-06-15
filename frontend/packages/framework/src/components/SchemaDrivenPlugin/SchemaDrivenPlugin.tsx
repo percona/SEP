@@ -92,7 +92,7 @@ interface SchemaDrivenPluginProps {
   renderCreateForm?: RenderFormSlot;
   /** Whole-form slot for the edit page; framework keeps chrome / mutation / snackbars. */
   renderEditForm?: RenderFormSlot;
-  /** Per-cell list column override (non-``actions`` columns), threaded to the list page. */
+  /** Per-cell list column override (non-`actions` columns), threaded to the list page. */
   renderListColumn?: RenderListColumnOverride;
 }
 
