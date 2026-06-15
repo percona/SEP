@@ -39,6 +39,7 @@ from sqlmodel import col, select, SQLModel, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db import BaseSQLModel
+from app.core.db.utils import idempotent_insert
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
@@ -787,6 +788,13 @@ class BaseManager:
         in `instance_create` and (optionally) specified in `filter_include`. If such an
         instance exists, it returns it. Otherwise, it creates and saves a new one.
 
+        The creation step is conflict-tolerant: it uses a dialect-aware idempotent
+        insert (``INSERT ... ON CONFLICT DO NOTHING`` / ``INSERT IGNORE``) so that two
+        calls racing to create the same row do not surface a duplicate-key error. The
+        losing call no-ops on the insert and refetches the winning row with
+        ``created=False``. ``created`` is ``True`` only for the call whose insert
+        actually landed.
+
         :param session: The SQLAlchemy asynchronous session to use for database
             operations.
         :type session: AsyncSession
@@ -795,18 +803,69 @@ class BaseManager:
         :type instance_create: B
         :param filter_include: The set of fields of `instance_create` to be included in
             the search filter. Use None (default) for all fields.
+        :type filter_include: set[str] | None
         :param extra_fields: Additional fields to be set on the created instance.
         :type extra_fields: Any
         :return: The existing or newly created instance of `cls.Model`, and a bool
             specifying whether a new instance was created.
         :rtype: tuple[T, bool]
+        :raises HTTPBadRequestException: If a ``DatabaseError`` occurs during the
+            insert commit.
+        :raises RuntimeError: If the post-conflict refetch matches no row, meaning
+            ``filter_include`` reaches outside a unique constraint.
         """
         existent_instance = await cls.first(
             session, **instance_create.model_dump(include=filter_include)
         )
         if existent_instance:
             return existent_instance, False
-        return await cls.create(session, instance_create, **extra_fields), True
+
+        # Managers that override create() carry domain guards/side-effects (e.g.
+        # SyncItemManager raises if a matching item is already in progress). The
+        # conflict-tolerant fast path below bypasses create() entirely, so it must
+        # only apply when create() is the inherited base implementation.
+        if cls.create.__func__ is not BaseManager.create.__func__:
+            return await cls.create(session, instance_create, **extra_fields), True
+
+        instance = cls._construct_instance(instance_create, **extra_fields)
+        pk_names = {column.name for column in inspect(cls.Model).primary_key}
+        values = {}
+        for column in cls.Model.__table__.columns:
+            value = getattr(instance, column.name)
+            carries_default = (
+                column.default is not None or column.server_default is not None
+            )
+            # Skip a None whose value the database supplies: any PK column (e.g.
+            # autoincrement) and any column with a SQLAlchemy/server default. Passing
+            # it explicitly would override that default with NULL.
+            if value is None and (column.name in pk_names or carries_default):
+                continue
+            values[column.name] = value
+        statement = idempotent_insert(session.get_bind().name, cls.Model).values(
+            **values
+        )
+        try:
+            result = await cls._exec(session, statement)
+            await session.commit()
+        except DatabaseError:
+            logger.exception(
+                "DatabaseError in get_or_create for %s", cls.Model.__name__
+            )
+            raise HTTPBadRequestException from None
+        created = result.rowcount == 1
+        # A core insert does not populate the constructed instance's PK, so refetch.
+        row = await cls.first(
+            session, **instance_create.model_dump(include=filter_include)
+        )
+        if row is None:
+            # Fail loud rather than return (None, False) and defer a confusing crash
+            # to the caller.
+            raise RuntimeError(
+                f"{cls.Model.__name__}.get_or_create resolved a unique conflict but "
+                f"no row matched filter_include={filter_include!r}; filter_include "
+                f"must be a subset of a unique constraint."
+            )
+        return row, created
 
     @classmethod
     async def update(
