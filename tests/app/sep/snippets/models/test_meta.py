@@ -29,6 +29,7 @@ from app.sep.snippets.forms import (
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,
+    SnippetVisibilityCondition,
 )
 
 FLOAT_DEFAULT_STEP = 0.1
@@ -419,3 +420,60 @@ class TestConvertValidationErrors:
         except ValidationError as exc:
             errors = SnippetMetaParameter.convert_validation_errors(exc, "bad_input")
             assert any("bad_input" in e for e in errors)
+
+
+class TestVisibilityCondition:
+    """Test the visible_when / visible_when_not conditional-visibility DSL.
+
+    These gates are *client-enforced only*: the React renderer hides the field
+    and drops its value from the payload. The snippet execute endpoint does not
+    server-reject a directly-submitted hidden value.
+    """
+
+    def test_string_shorthand_normalized_to_condition(self):
+        """A bare string is shorthand for a truthiness condition on that param."""
+        param = SnippetMetaParameter(name="start", visible_when_not="list")
+        assert isinstance(param.visible_when_not, SnippetVisibilityCondition)
+        assert param.visible_when_not.parameter == "list"
+        assert param.visible_when_not.equals is None
+
+    def test_visible_when_string_shorthand(self):
+        """visible_when accepts the same bare-string shorthand."""
+        param = SnippetMetaParameter(name="start", visible_when="list")
+        assert param.visible_when.parameter == "list"
+        assert param.visible_when.equals is None
+
+    def test_mapping_with_equals(self):
+        """A mapping with equals yields an equality match condition."""
+        param = SnippetMetaParameter(
+            name="region",
+            visible_when_not={"parameter": "mode", "equals": "advanced"},
+        )
+        assert param.visible_when_not.parameter == "mode"
+        assert param.visible_when_not.equals == "advanced"
+
+    def test_no_condition_leaves_fields_none(self):
+        """A parameter without conditions keeps both visibility fields as None."""
+        param = SnippetMetaParameter(name="start")
+        assert param.visible_when is None
+        assert param.visible_when_not is None
+
+    def test_both_conditions_set_raises(self):
+        """Declaring both visible_when and visible_when_not is rejected."""
+        with pytest.raises(ValidationError, match="visible_when"):
+            SnippetMetaParameter(name="start", visible_when="a", visible_when_not="b")
+
+    def test_self_reference_raises(self):
+        """A condition that references the parameter itself is rejected."""
+        with pytest.raises(ValidationError, match="itself|self"):
+            SnippetMetaParameter(name="start", visible_when_not="start")
+
+    def test_required_with_condition_raises(self):
+        """Combining required=True with a visibility condition is rejected."""
+        with pytest.raises(ValidationError, match="required"):
+            SnippetMetaParameter(name="start", required=True, visible_when_not="list")
+
+    def test_blank_parameter_name_raises(self):
+        """An empty referenced parameter name is rejected."""
+        with pytest.raises(ValidationError):
+            SnippetMetaParameter(name="start", visible_when_not={"parameter": ""})

@@ -20,6 +20,7 @@ __all__ = [
     "SnippetMetaParameterChoice",
     "SnippetMetaParameterType",
     "SnippetMetaParametersValidationResult",
+    "SnippetVisibilityCondition",
 ]
 
 import logging
@@ -88,6 +89,31 @@ class SnippetMetaParametersValidationResult(NamedTuple):
 
     parameters: list["SnippetMetaParameter"]
     errors: list[str]
+
+
+class SnippetVisibilityCondition(BaseModel):
+    """Reference a sibling parameter for a conditional-visibility rule.
+
+    A condition names one sibling parameter and matches either its truthiness
+    (when ``equals`` is ``None``) or its equality against a literal value.
+
+    .. note::
+        Visibility conditions are *client-enforced only*. They lower onto the
+        framework's ``forbidden`` :class:`~app.sep.plugins.framework.rules.FieldGate`,
+        which the React renderer evaluates to hide the field and drop its value
+        from the submitted payload. The snippet execute endpoint validates only
+        type/presence (``BaseSnippetArgs``) and does not server-reject a value
+        that is submitted directly for a hidden field.
+
+    :param parameter: The name of the sibling parameter the rule references.
+    :type parameter: NonEmptyStr
+    :param equals: The literal the referenced parameter must equal for the
+        condition to match. Defaults to ``None``, meaning a truthiness match.
+    :type equals: str | int | float | bool | None
+    """
+
+    parameter: NonEmptyStr
+    equals: ParameterType = None
 
 
 class SnippetMetaParameterChoice(TypedDict):
@@ -169,6 +195,16 @@ class SnippetMetaParameter(BaseModel):
         TextInputHTMLElement.TEXT or TextInputHTMLElement.TEXTAREA. Defaults to None,
         which uses TextInputHTMLElement.TEXT.
     :type html_elem: TextInputHTMLElement | None
+    :param visible_when: Hide this parameter unless the referenced sibling
+        condition matches. Accepts a bare parameter name (truthiness match) or a
+        mapping with ``parameter`` and optional ``equals``. Mutually exclusive
+        with ``visible_when_not``. Client-enforced only (see
+        :class:`SnippetVisibilityCondition`). Defaults to None.
+    :type visible_when: SnippetVisibilityCondition | None
+    :param visible_when_not: Hide this parameter when the referenced sibling
+        condition matches. Same grammar as ``visible_when``. Mutually exclusive
+        with ``visible_when``. Client-enforced only. Defaults to None.
+    :type visible_when_not: SnippetVisibilityCondition | None
     """
 
     name: NonEmptyStr = Field(
@@ -197,6 +233,48 @@ class SnippetMetaParameter(BaseModel):
     le: ParameterType = None
     step: float | None = None
     html_elem: TextInputHTMLElement | None = None
+    visible_when: SnippetVisibilityCondition | None = None
+    visible_when_not: SnippetVisibilityCondition | None = None
+
+    @field_validator("visible_when", "visible_when_not", mode="before")
+    @classmethod
+    def normalize_visibility_condition(cls, value: Any) -> Any:
+        """Normalize a bare string into a truthiness visibility condition.
+
+        :param value: The input value to normalize.
+        :type value: Any
+        :return: A condition mapping when given a bare string, else the input.
+        :rtype: Any
+        """
+        if isinstance(value, str):
+            return {"parameter": value}
+        return value
+
+    @model_validator(mode="after")
+    def validate_visibility_conditions(self) -> Self:
+        """Validate the visible_when / visible_when_not conditions.
+
+        :return: The validated :class:`SnippetMetaParameter` instance.
+        :rtype: SnippetMetaParameter
+        :raises ValueError: If both conditions are declared, a condition
+            references the parameter itself, or a condition is combined with
+            ``required=True`` (a hidden field is dropped client-side and would
+            then fail server-side required validation).
+        """
+        if self.visible_when is not None and self.visible_when_not is not None:
+            raise ValueError("declare only one of 'visible_when' or 'visible_when_not'")
+        condition = self.visible_when or self.visible_when_not
+        if condition is None:
+            return self
+        if condition.parameter == self.name:
+            raise ValueError(
+                "a visibility condition cannot reference the parameter itself"
+            )
+        if self.required:
+            raise ValueError(
+                "a required parameter cannot declare a visibility condition"
+            )
+        return self
 
     @model_validator(mode="after")
     def set_default_step(self) -> Self:

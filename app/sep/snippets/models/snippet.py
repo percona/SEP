@@ -735,9 +735,38 @@ class BaseSnippet(BaseModel):
                 errors.extend(
                     SnippetMetaParameter.convert_validation_errors(exc, param)
                 )
+        errors.extend(BaseSnippet._validate_visibility_references(valid_parameters))
         return SnippetMetaParametersValidationResult(
             parameters=valid_parameters, errors=errors
         )
+
+    @staticmethod
+    def _validate_visibility_references(
+        parameters: list[SnippetMetaParameter],
+    ) -> list[str]:
+        """Validate that visibility conditions reference declared parameters.
+
+        A ``visible_when`` / ``visible_when_not`` condition may only reference a
+        sibling parameter declared in the same snippet. References to unknown
+        parameters are surfaced as errors consistent with the per-parameter
+        validation output.
+
+        :param parameters: The successfully validated snippet parameters.
+        :type parameters: list[SnippetMetaParameter]
+        :return: A list of error messages for unknown references.
+        :rtype: list[str]
+        """
+        declared = {param.name for param in parameters}
+        errors = []
+        for param in parameters:
+            for attr in ("visible_when", "visible_when_not"):
+                condition = getattr(param, attr)
+                if condition is not None and condition.parameter not in declared:
+                    errors.append(
+                        f"Parameter error ({param.name!r}) at {f'{attr}.parameter'!r}: "
+                        f"references unknown parameter {condition.parameter!r}"
+                    )
+        return errors
 
     @staticmethod
     @validate_call

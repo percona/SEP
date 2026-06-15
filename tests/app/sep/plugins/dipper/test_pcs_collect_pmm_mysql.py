@@ -162,3 +162,37 @@ class TestPcsCollectPmmMysqlHaDbaasConsolidation:
         )
         assert result.returncode == ARGPARSE_ERROR_EXIT_CODE
         assert "ha-name" in result.stderr
+
+
+class TestPcsCollectPmmMysqlListVisibility:
+    """Tests for hiding date/HA/DBaaS fields in list-services mode (SEP-1319)."""
+
+    _GATED_PARAMETERS = ("start", "end", "ha", "ha-name", "dbaas")
+
+    def test_frontmatter_marks_fields_hidden_when_list(self):
+        """start, end, ha, ha-name, and dbaas declare visible_when_not: list."""
+        frontmatter = _frontmatter()
+        for name in self._GATED_PARAMETERS:
+            block = _parameter_block(frontmatter, name)
+            assert "visible_when_not: list" in block
+
+    @pytest.mark.asyncio
+    async def test_schema_forbids_gated_fields_when_list(self):
+        """The synthesised schema hides the gated fields when ``list`` is truthy."""
+        from app.sep.plugins.snippets.schema import field_for
+        from app.sep.snippets.models.snippet import BaseSnippet
+
+        meta = await BaseSnippet.get_meta_by_path(SCRIPT)
+        snippet = BaseSnippet(
+            filename="pcs-collect-pmm-mysql.py",
+            size=1,
+            md5_digest="a" * 32,
+            meta=meta,
+        )
+        validated = snippet.validated_parameters
+        assert validated.errors == []
+        by_name = {p.name: field_for(p) for p in validated.parameters}
+        for name in self._GATED_PARAMETERS:
+            gate = by_name[name].forbidden
+            assert gate is not None, name
+            assert gate[0].when.to_dict() == {"truthy": "list"}

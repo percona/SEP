@@ -343,6 +343,39 @@ class TestValidatedParameters:
         assert len(result.parameters) == 0
         assert len(result.errors) == 0
 
+    def test_visibility_condition_referencing_declared_param(self):
+        """A condition referencing a declared sibling produces no errors."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={
+                "parameters": [
+                    {"name": "list", "type": "bool"},
+                    {"name": "start", "type": "str", "visible_when_not": "list"},
+                ]
+            },
+        )
+        result = snippet.validated_parameters
+        assert len(result.errors) == 0
+        assert len(result.parameters) == EXPECTED_PARAM_COUNT
+
+    def test_visibility_condition_referencing_unknown_param(self):
+        """A condition referencing an undeclared sibling surfaces an error."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={
+                "parameters": [
+                    {"name": "start", "type": "str", "visible_when_not": "nope"},
+                ]
+            },
+        )
+        result = snippet.validated_parameters
+        assert len(result.errors) > 0
+        assert any("nope" in e for e in result.errors)
+
 
 class TestCanExecute:
     """Test the can_execute property."""

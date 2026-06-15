@@ -29,8 +29,10 @@ from app.sep.plugins.framework.schema import (
 )
 from app.sep.plugins.snippets.schema import (
     build_snippet_schema,
+    field_for,
     SNIPPETS_PLUGIN_SCHEMA,
 )
+from app.sep.snippets.models.meta import SnippetMetaParameter
 
 
 def test_static_schema_has_no_forms_and_keyed_columns():
@@ -228,3 +230,56 @@ async def test_per_snippet_schema_maps_choices_to_choice_field(create_snippet):
     assert values == ["info", "debug"]
     labels = [choice.label for choice in field.choices]
     assert labels == ["Info", "debug"]
+
+
+class TestVisibilityGates:
+    """Test that field_for lowers visibility conditions onto forbidden gates.
+
+    These gates are client-enforced: the React renderer hides the field and
+    drops its value. The snippet execute endpoint does not server-reject a
+    directly-submitted hidden value.
+    """
+
+    def test_no_condition_leaves_forbidden_none(self):
+        """A parameter without a visibility condition carries no forbidden gate."""
+        field = field_for(SnippetMetaParameter(name="start", type="str"))
+        assert field.forbidden is None
+
+    def test_visible_when_not_truthy_lowers_to_truthy_gate(self):
+        """visible_when_not (truthiness) forbids the field when the ref is truthy."""
+        field = field_for(
+            SnippetMetaParameter(name="start", type="str", visible_when_not="list")
+        )
+        assert len(field.forbidden) == 1
+        assert field.forbidden[0].when.to_dict() == {"truthy": "list"}
+
+    def test_visible_when_truthy_lowers_to_negated_gate(self):
+        """visible_when (truthiness) forbids the field when the ref is NOT truthy."""
+        field = field_for(
+            SnippetMetaParameter(name="start", type="str", visible_when="list")
+        )
+        assert len(field.forbidden) == 1
+        assert field.forbidden[0].when.to_dict() == {"not": {"truthy": "list"}}
+
+    def test_visible_when_not_equals_lowers_to_equals_gate(self):
+        """visible_when_not with equals forbids the field on an equality match."""
+        field = field_for(
+            SnippetMetaParameter(
+                name="region",
+                type="str",
+                visible_when_not={"parameter": "mode", "equals": "advanced"},
+            )
+        )
+        assert field.forbidden[0].when.to_dict() == {"equals": {"mode": "advanced"}}
+
+    def test_condition_on_choice_field(self):
+        """A choice-typed parameter still receives the forbidden gate."""
+        field = field_for(
+            SnippetMetaParameter(
+                name="region",
+                type="str",
+                choices=["us", "eu"],
+                visible_when_not="list",
+            )
+        )
+        assert field.forbidden[0].when.to_dict() == {"truthy": "list"}

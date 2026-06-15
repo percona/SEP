@@ -58,9 +58,11 @@
 #   - name: start
 #     label: Start time (UTC)
 #     description: Starting timestamp for graph data (YYYY-MM-DDTHH:MM:SS). Defaults to 24h ago.
+#     visible_when_not: list
 #   - name: end
 #     label: End time (UTC)
 #     description: Ending timestamp for graph data (YYYY-MM-DDTHH:MM:SS). Defaults to 24h after start.
+#     visible_when_not: list
 #   - name: width
 #     label: Image width
 #     description: Width of images in pixels.
@@ -105,11 +107,13 @@
 #       - value: async
 #         label: Async Replication
 #     arg_format: "--ha ${value}"
+#     visible_when_not: list
 #   - name: ha-name
 #     label: Cluster / replica-set name
 #     description: Required for PXC and Group Replication; ignored for Async or when no HA mode is selected.
 #     group: High Availability
 #     arg_format: "--ha-name ${value}"
+#     visible_when_not: list
 #   - name: dbaas
 #     label: DBaaS mode
 #     description: Collect DBaaS-related graphs (mutually exclusive).
@@ -120,6 +124,7 @@
 #       - value: aurora
 #         label: Amazon Aurora MySQL
 #     arg_format: "--dbaas ${value}"
+#     visible_when_not: list
 # ---
 
 from __future__ import annotations
