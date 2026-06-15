@@ -19,8 +19,11 @@ import type { ComponentType, ReactNode } from 'react';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider, Link } from 'react-router-dom';
+import { Controller, useFormContext } from 'react-hook-form';
+import Slider from '@mui/material/Slider';
+import Typography from '@mui/material/Typography';
 import { ALERT_CONFIG_QUERY_KEY } from '@sep/api';
-import type { FormSection } from './types';
+import type { FormSection, RenderFieldOverride } from './types';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 
 const MULTI_SECTION_SCHEMA: FormSection[] = [
@@ -571,5 +574,61 @@ export const UnsavedChangesGuard: StoryObj = {
         <RouterProvider router={router} />
       </QueryClientProvider>
     );
+  },
+};
+
+/**
+ * `renderField` override (SEP-1355). Replaces the default numeric widget for the
+ * `samplingRate` field with a MUI Slider, while every other field falls back to
+ * the framework default via `renderDefault()`. The slider writes through
+ * react-hook-form (`Controller`), so its value participates in validation and
+ * submission exactly like a built-in widget.
+ */
+function SamplingRateSlider({ name }: { name: string }) {
+  const { control } = useFormContext();
+  return (
+    <Controller
+      name={name}
+      control={control}
+      render={({ field }) => (
+        <div>
+          <Typography gutterBottom>Sampling rate: {String(field.value ?? 0)}</Typography>
+          <Slider
+            value={typeof field.value === 'number' ? field.value : 0}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(_, v) => field.onChange(v)}
+            valueLabelDisplay="auto"
+          />
+        </div>
+      )}
+    />
+  );
+}
+
+const renderSamplingSlider: RenderFieldOverride = ({ field, renderDefault }) =>
+  field.name === 'samplingRate' ? <SamplingRateSlider name={field.name} /> : renderDefault();
+
+export const WithRenderFieldOverride: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Sampling',
+        description:
+          'The "Sampling rate" field is rendered by a renderField override (a Slider); the other fields use the framework defaults.',
+        fields: [
+          { type: 'string', name: 'title', label: 'Title', required: true },
+          { type: 'float', name: 'samplingRate', label: 'Sampling rate', default: 0.1 },
+          { type: 'bool', name: 'dryRun', label: 'Dry run', default: true },
+        ],
+      },
+    ],
+    submitLabel: 'Submit',
+    renderField: renderSamplingSlider,
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
   },
 };

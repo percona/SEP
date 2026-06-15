@@ -20,10 +20,17 @@ __all__ = ["router"]
 from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.models import SettingClassEnum
 from app.sep.config import sep_settings, SEPSettings
-from app.sep.deps import IsApiAdmin, RequireBearerForUnsafeMethods, SessionDep
+from app.sep.deps import IsApiAdmin, RequireBearerForUnsafeMethods, SessionDep, TaskAPI
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
+# TasksSettings is owned by the Tasks sub-app (its own database and override
+# layer), so SEP cannot register it as a local class. It is proxied server-side
+# through ``tasks_api`` -- the same pattern as ``dashboard``/``hosts``/``task_stats``
+# -- so the React Settings page reaches every group through ``/api/sep`` only and
+# never calls ``/api/tasks/admin/settings/*`` directly (API-First Rule 1). The
+# Tasks router mounts its settings at ``/admin/settings`` (see
+# ``app/tasks/settings/routes.py``).
 router = build_settings_router(
     classes=[
         (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
@@ -33,4 +40,6 @@ router = build_settings_router(
     session_dep=SessionDep,
     admin_dep=IsApiAdmin,
     mutation_deps=[RequireBearerForUnsafeMethods],
+    remote_classes=[(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")],
+    remote_api_dep=TaskAPI,
 )

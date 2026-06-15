@@ -29,6 +29,7 @@ from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
 from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppState, AppStateBase
+from app.sep.periodic_tasks import sync_app_periodic_task_gating
 from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings
 
@@ -47,6 +48,7 @@ SYSTEM_PERIODIC_TASKS = [
             SystemPeriodicTaskData(
                 name="sep__sync_snippets",
                 task_name="app.sep.celery.sync_snippets",
+                owner_app_key="snippets",
             ),
         ],
     ),
@@ -62,6 +64,7 @@ if _alerts_plugin_enabled:
                 SystemPeriodicTaskData(
                     name="sep__backup_alert_config",
                     task_name="app.sep.celery.backup_alert_config",
+                    owner_app_key="alerts",
                 ),
             ],
         ),
@@ -93,6 +96,7 @@ if _report_plugin_enabled:
                         extra_kwargs={"kwargs": json.dumps(_task_kwargs)}
                         if _task_kwargs
                         else None,
+                        owner_app_key="report",
                     ),
                 ],
             ),
@@ -105,7 +109,9 @@ async def init_sep_db() -> None:
     Seeds one :class:`app.sep.models.AppState` row per non-protected plugin in
     ``SEP.PLUGINS`` using get-or-create (the YAML ``enabled`` value is read only
     on insert; existing rows are never overwritten), removes rows for apps no
-    longer configured, then seeds the SEP periodic tasks.
+    longer configured, then seeds the SEP periodic tasks and gates each
+    plugin-owned schedule by its app state via
+    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating`.
     """
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:
@@ -128,3 +134,4 @@ async def init_sep_db() -> None:
                 session, col(AppState.app_key).in_(orphan_keys)
             )
     await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "sep__")
+    await sync_app_periodic_task_gating(SYSTEM_PERIODIC_TASKS)

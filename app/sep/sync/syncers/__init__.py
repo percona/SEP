@@ -15,3 +15,4 @@
 
 from app.sep.sync.syncers.mysql.syncer import MySQLSyncer
 from app.sep.sync.syncers.pmm import PMMSyncer
+from app.sep.sync.syncers.system_facts.syncer import SystemFactsSyncer
