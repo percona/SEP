@@ -1110,9 +1110,6 @@ class BaseSQLModelChildManager(BaseSQLModelManager):
                 supplied_fields.get(cls.connected_by),
             )
             if parent_id is None:
-                # The FK columns are non-nullable; an explicit ``null`` cannot
-                # persist. Reject deterministically rather than letting the
-                # ``None`` filter match every parent row.
                 raise HTTPBadRequestException(
                     f"Invalid {cls.connected_by}: {parent_id}",
                 )
