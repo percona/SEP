@@ -15,7 +15,6 @@
 
 """Define dependencies for the Archives plugin."""
 
-import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -23,6 +22,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Body, Depends, Form
 
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -34,7 +34,6 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
@@ -46,6 +45,11 @@ from app.sep.plugins.archives.models import (
     PurgeConfig,
     PurgeConfigAll,
 )
+from app.sep.plugins.framework import (
+    build_default_task_response,
+    build_task_list_responses,
+    make_task_dep,
+)
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -55,7 +59,6 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
-_STATUS_FETCH_CONCURRENCY = 10
 
 
 async def _resolve_source_tables(
@@ -86,9 +89,9 @@ async def _resolve_source_tables(
             service_id=service_id,
         )
         source_data["source_db"] = schema.name
-    elif source_db := form.source_db_name.rstrip():
+    elif source_db := form.source_db_name.strip():
         source_data["source_db"] = source_db
-        if source_table := form.source_table_name.rstrip():
+        if source_table := form.source_table_name.strip():
             source_data["source_table"] = source_table
         return source_data, schema
 
@@ -128,7 +131,7 @@ async def _resolve_destination_tables(
             form.dest_table_id,
         )
         dest_data["dest_table"] = dest_table.name
-    elif dest_table := form.dest_table_name.rstrip():
+    elif dest_table := form.dest_table_name.strip():
         dest_data["dest_table"] = dest_table
     elif form.dest_file is not None:
         dest_data["dest_file"] = form.dest_file
@@ -174,10 +177,51 @@ async def _resolve_destination_host_and_db(
             service_id=form.dest_service_id,
         )
         dest_data["dest_db"] = dest_schema.name
-    elif dest_db := form.dest_db_name.rstrip():
+    elif dest_db := form.dest_db_name.strip():
         dest_data["dest_db"] = dest_db
 
     return dest_data
+
+
+def _assert_not_self_archive(
+    source_data: dict[str, str],
+    dest_tables: dict[str, str],
+    dest_host_db: dict[str, Any],
+    source_host: str,
+    source_port: int,
+) -> None:
+    """Raise if destination resolves to the same host, port, schema, and table as source.
+
+    Called after all inventory resolutions are complete so names are concrete.
+    Skips the check when there is no destination table (file destination or
+    swap_drop path) or when there is no resolved source table (source_query path).
+
+    :param source_data: Resolved source fields (``source_db``, ``source_table``).
+    :type source_data: dict[str, str]
+    :param dest_tables: Resolved destination table fields (``dest_table``).
+    :type dest_tables: dict[str, str]
+    :param dest_host_db: Resolved destination host fields (``dest_host``, ``dest_port``, ``dest_db``).
+    :type dest_host_db: dict[str, Any]
+    :param source_host: The source service node address.
+    :type source_host: str
+    :param source_port: The source service port.
+    :type source_port: int
+    :raises HTTPUnprocessableEntityException: If source and destination are the same table.
+    """
+    if "dest_table" not in dest_tables or not source_data.get("source_table"):
+        return
+    effective_dest_host = dest_host_db.get("dest_host") or source_host
+    effective_dest_port = dest_host_db.get("dest_port") or source_port
+    effective_dest_db = dest_host_db.get("dest_db") or source_data.get("source_db")
+    if (
+        effective_dest_host == source_host
+        and effective_dest_port == source_port
+        and (effective_dest_db or "") == (source_data.get("source_db") or "")
+        and dest_tables["dest_table"] == source_data["source_table"]
+    ):
+        raise HTTPUnprocessableEntityException(
+            detail="Source and Destination tables cannot be the same."
+        )
 
 
 async def _build_archives_payload(
@@ -234,6 +278,14 @@ async def _build_archives_payload(
 
     dest_host_db = await _resolve_destination_host_and_db(form, inventory_api)
     purge_item_data.update(dest_host_db)
+
+    _assert_not_self_archive(
+        source_data,
+        dest_tables,
+        dest_host_db,
+        service.node.address,
+        service.port or DEFAULT_MYSQL_PORT,
+    )
 
     purge_config = PurgeConfig(
         all=PurgeConfigAll(
@@ -295,55 +347,9 @@ ArchivesApiGeneratedTask = Annotated[
 ]
 
 
-async def get_archives_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Archives plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Archives plugin. If the task does not exist or is not
-    owned by Archives, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Archiver.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.ARCHIVER)
-
+get_archives_task = make_task_dep(TaskOwner.ARCHIVER)
 
 ArchivesTask = Annotated[Task, Depends(get_archives_task)]
-
-
-def _extract_latest_task_status(
-    histories: list[dict[str, Any]],
-) -> TaskHistoryStatusEnum | None:
-    """Return the latest known status from a task history payload."""
-    for history in histories:
-        if (status := history.get("status")) is not None:
-            return TaskHistoryStatusEnum(status)
-    return None
-
-
-async def get_archives_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for an archive task.
-
-    :param task_name: The name of the archive task.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
-    :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(f"/{task_name}/history/")
-    return _extract_latest_task_status(response["items"])
 
 
 def build_archives_api_task_response(
@@ -359,10 +365,11 @@ def build_archives_api_task_response(
     :return: A validated archive task API response object.
     :rtype: ArchivesTaskResponse
     """
-    return ArchivesTaskResponse(
-        **task.model_dump(),
-        service_type=ServiceTypeEnum.MYSQL,
-        status=status,
+    return build_default_task_response(
+        ArchivesTaskResponse,
+        task,
+        status,
+        extras={"service_type": ServiceTypeEnum.MYSQL},
     )
 
 
@@ -376,22 +383,11 @@ async def get_archives_api_task_responses(
     :return: The archive task responses enriched with service_type and status.
     :rtype: list[ArchivesTaskResponse]
     """
-    response = await tasks_api.get("/", params={"owner": TaskOwner.ARCHIVER.value})
-    tasks = [Task.model_validate(task) for task in response.get("items", [])]
-    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
-
-    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
-        async with sem:
-            return await get_archives_task_status(task.name, tasks_api)
-
-    task_statuses = await asyncio.gather(*(_bounded_status(task) for task in tasks))
-    return [
-        build_archives_api_task_response(
-            task,
-            status=task_status,
-        )
-        for task, task_status in zip(tasks, task_statuses, strict=True)
-    ]
+    return await build_task_list_responses(
+        tasks_api,
+        owner=TaskOwner.ARCHIVER.value,
+        response_builder=build_archives_api_task_response,
+    )
 
 
 def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:

@@ -31,7 +31,6 @@ from app.core.pagination.deps import PaginationDep
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
-    IsApiAuthenticated,
     TaskAPI,
 )
 from app.sep.plugins.backup_mongo.restore.deps import (
@@ -40,9 +39,9 @@ from app.sep.plugins.backup_mongo.restore.deps import (
     create_restore_task_group,
     delete_restore_task_group,
     get_restore_mongo_api_task_responses,
-    get_restore_mongo_task_status,
     get_restores_task,
     RestoreParentTask,
+    RestoresTask,
     RestoreTaskGroupFromBody,
     RestoreUpdateFormFromBody,
     UnprotectedRestoreParentTask,
@@ -55,8 +54,9 @@ from app.sep.plugins.backup_mongo.restore.models import (
     RestoreTaskResponse,
 )
 from app.sep.plugins.backup_mongo.restore.schema import restore_mongo_schema
-from app.sep.plugins.framework.api import schema_endpoint
-from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
+from app.sep.plugins.framework import get_task_latest_status
+from app.sep.plugins.framework.api import derive_execute_route, schema_endpoint
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -137,32 +137,18 @@ async def restore_mongo_api_update(
         form,
         inventory_api,
     )
-    task_status = await get_restore_mongo_task_status(updated_task.name, tasks_api)
+    task_status = await get_task_latest_status(tasks_api, updated_task.name)
     return build_restore_mongo_api_task_response(updated_task, status=task_status)
 
 
-@router.post(
-    "/{task_name}/execute",
-    status_code=http_status.HTTP_201_CREATED,
-    dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
+derive_execute_route(
+    router,
+    name="restore_mongo_api_execute",
+    description="Execute a restore task.",
+    task_dep=RestoresTask,
+    write_model=RestoreExecuteWrite,
+    response_model=RestoreExecutionResponse,
 )
-async def restore_mongo_api_execute(
-    task_name: str,
-    body: RestoreExecuteWrite,
-    tasks_api: TaskAPI,
-) -> RestoreExecutionResponse:
-    """Execute a restore task."""
-    task = await get_restores_task(task_name, tasks_api)
-    logger.info("Executing backup_mongo restore task %r", task.name)
-    created = await tasks_api.post(
-        f"/execute/{task.name}",
-        json=body.model_dump(exclude_none=True),
-    )
-    task_history = TaskHistoryResponse.model_validate(created)
-    return RestoreExecutionResponse(
-        task_name=task.name,
-        task_id=task_history.id,
-    )
 
 
 @router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)

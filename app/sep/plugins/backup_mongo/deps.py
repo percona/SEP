@@ -18,7 +18,6 @@
 import asyncio
 import json
 import logging
-from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -33,7 +32,6 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
@@ -52,6 +50,13 @@ from app.sep.plugins.backup_mongo.models import (
     BackupType,
 )
 from app.sep.plugins.backup_mongo.schema import BACKUP_MONGO_DERIVED
+from app.sep.plugins.framework import (
+    batch_get_latest_statuses,
+    build_default_task_response,
+    extract_latest_task_status,
+    get_task_latest_status,
+    make_task_dep,
+)
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -299,33 +304,6 @@ async def build_backup_task_payload_from_form(
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload_from_form)]
 
 
-def extract_latest_task_status(
-    histories: Iterable[dict[str, Any]],
-) -> TaskHistoryStatusEnum | None:
-    """Return the latest known status from a task history payload."""
-    for history in histories:
-        if (status := history.get("status")) is not None:
-            return TaskHistoryStatusEnum(status)
-    return None
-
-
-async def get_backup_mongo_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for a backup task.
-
-    :param task_name: The name of the backup task.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
-    :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(f"/{task_name}/history/")
-    return extract_latest_task_status(response["items"])
-
-
 def build_backup_mongo_api_task_response(
     task: Task,
     *,
@@ -342,11 +320,14 @@ def build_backup_mongo_api_task_response(
     """
     data = task.data
     meta = data.get("meta") or {}
-    return BackupTaskResponse(
-        **task.model_dump(),
-        hostname=meta.get("target"),
-        status=status,
-        backup_type=str(data.get("backup_type", "")),
+    return build_default_task_response(
+        BackupTaskResponse,
+        task,
+        status,
+        extras={
+            "hostname": meta.get("target"),
+            "backup_type": str(data.get("backup_type", "")),
+        },
     )
 
 
@@ -357,24 +338,6 @@ def _backup_parent_list_params(pagination: Pagination) -> dict[str, Any]:
         "parent_is_null": "true",
         "backup_type": BackupType.PBM_CONFIG.value,
         **pagination.model_dump(),
-    }
-
-
-async def _fetch_latest_task_statuses_for_names(
-    tasks_api: TaskAPI,
-    names: Sequence[str],
-) -> dict[str, TaskHistoryStatusEnum | None]:
-    """Resolve latest history status for ``names`` via the tasks batch endpoint."""
-    if not names:
-        return {}
-    try:
-        response = await tasks_api.post("/history/latest", json={"names": list(names)})
-    except Exception:
-        logger.exception("Failed to batch-fetch latest history status for backup list")
-        return dict.fromkeys(names)
-    return {
-        name: TaskHistoryStatusEnum(value) if value is not None else None
-        for name, value in response.items()
     }
 
 
@@ -412,7 +375,7 @@ async def get_backup_mongo_api_task_responses(
             params=_backup_parent_list_params(pagination),
         )
         parents = [Task.model_validate(item) for item in response["items"]]
-        status_map = await _fetch_latest_task_statuses_for_names(
+        status_map = await batch_get_latest_statuses(
             tasks_api,
             [task.name for task in parents],
         )
@@ -436,7 +399,7 @@ async def get_backup_mongo_api_task_responses(
         )
     )
     parents = [Task.model_validate(item) for item in parent_items]
-    status_map = await _fetch_latest_task_statuses_for_names(
+    status_map = await batch_get_latest_statuses(
         tasks_api,
         [task.name for task in parents],
     )
@@ -536,7 +499,7 @@ async def build_backup_mongo_api_detail_response(
     """
     derived_names = backup_derived_task_names(task.name)
     gather_results = await asyncio.gather(
-        get_backup_mongo_task_status(task.name, tasks_api),
+        get_task_latest_status(tasks_api, task.name),
         *(_fetch_backup_derived_detail(name, tasks_api) for name in derived_names),
         return_exceptions=True,
     )
@@ -591,26 +554,7 @@ async def resolve_backup_parent_task(
     return task
 
 
-async def get_backups_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Backups plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Backups plugin. If the task does not exist or is not
-    owned by Backups, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Backups.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.BACKUP_MONGO)
-
+get_backups_task = make_task_dep(TaskOwner.BACKUP_MONGO)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 

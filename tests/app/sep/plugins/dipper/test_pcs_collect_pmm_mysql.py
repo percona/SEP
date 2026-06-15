@@ -14,6 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 """Tests for the pcs-collect-pmm-mysql.py payload script."""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -32,12 +33,18 @@ class TestPcsCollectPmmMysqlInsecureFlag:
 
     @pytest.fixture(scope="class")
     def help_output(self):
-        """Run the script with --help and capture the output."""
+        """Run the script with --help and capture the output.
+
+        Pin ``COLUMNS`` so argparse wraps the help text at a fixed width: under
+        ``pytest -n`` (no tty) the inherited terminal width can be narrow enough
+        to split ``self-signed`` across lines and break a substring assertion.
+        """
         return subprocess.run(
             [sys.executable, str(SCRIPT), "--help"],
             capture_output=True,
             text=True,
             check=False,
+            env={**os.environ, "COLUMNS": "80"},
         )
 
     def test_insecure_flag_in_help(self, help_output):

@@ -118,6 +118,7 @@ const detailTask: TaskDetailTask = {
   updated_at: null,
   created_by: 'SYSTEM',
   last_updated_by: null,
+  anonymized_entities: [],
 };
 
 const detailBundle: TaskDetailBundle = {

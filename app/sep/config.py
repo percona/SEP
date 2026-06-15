@@ -80,8 +80,10 @@ class Plugin(BaseCaseInsensitiveModel):
     URI path, and CSS class. It includes custom validators to resolve the module
     path and set default values based on the plugin's name.
 
-    :param name: The name of the plugin.
-    :type name: str
+    :param name: The name of the plugin. Optional: a MODULE_NAME-only entry
+        omits it and the :class:`app.sep.plugins.framework.registry.AppRegistry`
+        derives descriptive metadata from the module basename instead.
+    :type name: str | None
     :param module_name: The name of the module associated with the plugin. This field is
         automatically prefixed with ``app.sep.plugins.`` during validation.
     :type module_name: StrImportableModule
@@ -114,7 +116,7 @@ class Plugin(BaseCaseInsensitiveModel):
     :type api_router_path: StrImportableAttribute | None
     """
 
-    name: str
+    name: str | None = None
     module_name: StrImportableModule
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""

@@ -994,10 +994,7 @@ class TaskStats(BaseModel):
         :return: A dictionary summarizing the number of passed and failed tasks.
         :rtype: dict[str, int]
         """
-        status = {
-            "pass": 0,  # nosec B105
-            "fail": 0,
-        }
+        status = dict.fromkeys(("pass", "fail"), 0)
         for task in self.tasks:
             match task.status:
                 case TaskHistoryStatusEnum.FAILED:
