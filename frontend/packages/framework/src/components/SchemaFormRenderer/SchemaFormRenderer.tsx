@@ -42,6 +42,7 @@ import { useCardinalityRules } from './hooks/useCardinalityRules';
 import { useFailRules } from './hooks/useFailRules';
 import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard';
 import { coerceFormValues } from './utils/validationMapper';
+import { flattenSectionFields } from './utils/flattenSectionFields';
 import type { FormSection, PluginField, RenderFieldOverride } from './types';
 
 function fieldDefault(field: PluginField): unknown {
@@ -66,7 +67,7 @@ function fieldDefault(field: PluginField): unknown {
 }
 
 function flattenFields(sections: FormSection[]): PluginField[] {
-  return sections.flatMap((s) => s.fields);
+  return flattenSectionFields(sections);
 }
 
 const ConditionalFieldSlot = memo(function ConditionalFieldSlot({

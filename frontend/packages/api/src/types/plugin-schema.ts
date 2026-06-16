@@ -206,12 +206,40 @@ export type PluginField =
   | HostField
   | ScriptPreviewField;
 
+// ── One-of group (SEP-1366) ─────────────────────────────────────────────
+
+/** One mutually-exclusive branch inside a {@link OneOfGroup}. */
+export interface OneOfBranch {
+  value: string;
+  label: string;
+  fields: PluginField[];
+}
+
+/**
+ * Labelled either/or field group rendered as a segmented control.
+ * Branch leaves use dotted paths when nested on the write model.
+ */
+export interface OneOfGroup {
+  type: 'one_of';
+  /** Stable group id for React keys; not a separate form value. */
+  name: string;
+  label: string;
+  description?: string;
+  /** Dotted path to the mode field (e.g. `source.mode`). */
+  discriminator: string;
+  default?: string;
+  branches: OneOfBranch[];
+}
+
+/** A section item: a leaf field or a one-of group container. */
+export type SectionField = PluginField | OneOfGroup;
+
 // ── Form structure ──────────────────────────────────────────────────────
 
 export interface FormSection {
   title: string;
   description?: string;
-  fields: PluginField[];
+  fields: SectionField[];
   /** Whether the section is wrapped in an expandable/collapsible shell. */
   collapsible?: boolean;
   /** Initial expansion state when collapsible is enabled. */

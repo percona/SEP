@@ -28,4 +28,9 @@ export type { CardinalityViolation } from './hooks/useCardinalityRules';
 export { useFailRules } from './hooks/useFailRules';
 export type { FailViolation } from './hooks/useFailRules';
 export { buildValidationRules, coerceFormValues } from './utils/validationMapper';
+export {
+  flattenSectionFields,
+  flattenSectionItem,
+  isOneOfGroup,
+} from './utils/flattenSectionFields';
 export { evaluatePredicate } from './utils/predicateEvaluator';
