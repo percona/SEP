@@ -3,6 +3,8 @@ packages:
   - 'packages/plugins/*'
 minimumReleaseAge: 10080
 minimumReleaseAgeIgnoreMissingTime: false
+minimumReleaseAgeExclude:
+  - '@napi-rs/wasm-runtime'
 allowBuilds:
   esbuild: true
   msw: true

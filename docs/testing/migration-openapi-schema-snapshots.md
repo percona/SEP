@@ -128,3 +128,50 @@ existing suite, confirming the standard contract paths are exercised:
 Back-fill **only genuine gaps** surfaced by that check. Do not re-characterize
 behavior the existing suite already covers — that adds churn without adding
 proof, and it is explicitly out of scope for a migration.
+
+## Conformance suite (framework invariants)
+
+Where the snapshot harness pins each plugin's *byte-for-byte* contract, the
+conformance suite enforces the app-framework's *structural* invariants
+mechanically, so they are caught in `make test`/CI instead of by reviewer memory.
+
+- `app/sep/plugins/framework/conformance.py` — pure detector functions, each
+  taking one registry input plane and returning a list of violation strings
+  (empty when the invariant holds).
+- `tests/app/sep/plugins/framework/test_conformance.py` — per-detector unit
+  tests, a synthetic `TaskExecutionApp` exercising the migrated-only detectors
+  before any plugin is migrated, and a suite that iterates `get_app_registry()`.
+
+The checks:
+
+- **No duplicate capability control** (hard-fail, every schema-bearing app). A
+  capability the React `SchemaFormRenderer` already renders (today only
+  `alert_on_fail`, via `CAPABILITY_RENDERED_CONTROLS`) must not also appear as an
+  explicit form field — that is a duplicate control. Operates on the `GET …/schema`
+  wire payload, traversing both `forms[]` and `entities[].forms[]`.
+- **Migrated-only structural checks** (gated on `isinstance(app, TaskExecutionApp)`;
+  dormant until the first migration): capability/route consistency, list/detail
+  view fields resolve to real `response_model` fields, and create-model schema
+  derivation succeeds.
+- **Registry-level checks**: no two routes collide on `(path, method)`, the merged
+  plugin OpenAPI builds, and every operation carries a summary-or-description floor.
+- **Transitional drift** (warning-level): reuses
+  `form_dsl.check_form_conformance`, re-exported here so the suite imports every
+  check from one module. Dormant today (no registry app exposes both a create
+  model and a hand-written schema).
+
+### The duplicate `alert_on_fail` removal
+
+The suite's trigger was a systemic duplicate: five plugins (`alters`, `archives`,
+`backup_mongo`, `backup_pg`, `mysql_backups`) each declared both an explicit
+`alert_on_fail` `BoolField` **and** `capabilities.alert_on_fail=True`, while the
+renderer already draws the capability-driven control under the same wire key. The
+explicit field was removed from each schema (`archives` also drops its now-empty
+"Alert & Connectivity" section). This changes only the `GET …/schema` instance
+payload — the **rendered form is unchanged** (the control still renders from the
+capability), and the submitted payload, the response models, the `alert_on_fail`
+task field, and the OpenAPI request bodies are all retained. The schema goldens
+were regenerated in the same change; the OpenAPI goldens stay green without
+regeneration. `backup_pg` is not in the default config (see the scope note above),
+so its removal is validated by `tests/app/sep/plugins/backup_pg/test_schema.py`,
+not the registry suite.

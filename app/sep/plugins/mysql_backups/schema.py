@@ -167,9 +167,6 @@ mysql_backups_schema = PluginSchema(
                     required=True,
                     choices=_BACKUP_TYPE_CHOICES,
                 ),
-                BoolField(
-                    name="alert_on_fail", label="Alert on Failure", default=False
-                ),
                 StringField(name="alias", label="Server Alias"),
             ],
         ),
