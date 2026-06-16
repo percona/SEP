@@ -426,7 +426,7 @@ def derive_crud_routes(
     task_owner: TaskOwner,
     get_task: Callable[..., Awaitable[Task]],
     response_builder: TaskResponseBuilder[ListDetailResponseT],
-    create_payload: Callable[..., Awaitable[TaskWrite]],
+    create_payload: Callable[..., Awaitable[TaskWrite]] | None = None,
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None = None,
     connectivity_check: bool = False,
     detail_path_param: str = "task_name",
@@ -470,7 +470,11 @@ def derive_crud_routes(
     :param response_builder: Builds the list/detail response model from a task
         and optional status; its return annotation supplies the response model.
     :param create_payload: The raw create-payload builder dependency (declares
-        the request ``Body()`` model that drives the create ``422``).
+        the request ``Body()`` model that drives the create ``422``). When
+        ``None`` (the default), no ``POST /`` create route is registered — the
+        read-only shape used by an app that exposes schema + list + detail only.
+        ``connectivity_check`` and ``create_response_builder`` are create-route
+        options, so supplying either with ``create_payload=None`` is rejected.
     :param create_response_builder: Builds the create response from a task;
         its return annotation supplies the create response model. Defaults to
         reusing ``response_builder`` (and its model).
@@ -507,6 +511,9 @@ def derive_crud_routes(
         :class:`pydantic.BaseModel` subclass; or if ``connectivity_check`` is on
         and an explicit ``create_response_builder``'s model omits a
         ``connectivity_warning`` field.
+    :raises ValueError: If ``create_payload`` is ``None`` while
+        ``connectivity_check`` is on or a ``create_response_builder`` is supplied
+        — both are create-route options that need a create route to attach to.
     """
     _reject_async_builders(
         response_builder=response_builder,
@@ -578,15 +585,27 @@ def derive_crud_routes(
         dependencies=[IsApiAuthenticated],
     )
 
-    _register_create_route(
-        router,
-        plugin_schema=plugin_schema,
-        response_builder=response_builder,
-        create_payload=create_payload,
-        create_response_builder=create_response_builder,
-        list_detail_model=list_detail_model,
-        connectivity_check=connectivity_check,
-    )
+    if create_payload is None:
+        if connectivity_check:
+            raise ValueError(
+                "derive_crud_routes: connectivity_check=True needs a create route; "
+                "pass create_payload or drop connectivity_check"
+            )
+        if create_response_builder is not None:
+            raise ValueError(
+                "derive_crud_routes: create_response_builder needs a create route; "
+                "pass create_payload or drop create_response_builder"
+            )
+    else:
+        _register_create_route(
+            router,
+            plugin_schema=plugin_schema,
+            response_builder=response_builder,
+            create_payload=create_payload,
+            create_response_builder=create_response_builder,
+            list_detail_model=list_detail_model,
+            connectivity_check=connectivity_check,
+        )
 
     if update_handler is not None:
         router.add_api_route(
