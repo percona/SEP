@@ -10,3 +10,5 @@ allowBuilds:
   msw: true
 overrides:
   brace-expansion@5.0.5: 5.0.6
+  react-router@7.15.0: 7.15.1
+  react-router-dom@7.15.0: 7.15.1
