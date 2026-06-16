@@ -681,22 +681,6 @@
       ],
       "render_after_submit": false,
       "title": "Options"
-    },
-    {
-      "collapsed_by_default": false,
-      "collapsible": false,
-      "fields": [
-        {
-          "default": false,
-          "description": "Send a PMM alert if the task fails.",
-          "label": "Alert on Failure",
-          "name": "alert_on_fail",
-          "required": false,
-          "type": "bool"
-        }
-      ],
-      "render_after_submit": false,
-      "title": "Alert & Connectivity"
     }
   ],
   "list_view": {

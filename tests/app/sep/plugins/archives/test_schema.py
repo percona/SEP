@@ -66,7 +66,6 @@ class TestArchivesSchemaStructure:
             "dest_port",
             "dest_db_id",
             "dest_db_name",
-            "alert_on_fail",
         }
         assert expected.issubset(all_names), f"Missing fields: {expected - all_names}"
 

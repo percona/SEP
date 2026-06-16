@@ -385,17 +385,6 @@ archives_schema = PluginSchema(
                 ),
             ],
         ),
-        FormSection(
-            title="Alert & Connectivity",
-            fields=[
-                BoolField(
-                    name="alert_on_fail",
-                    label="Alert on Failure",
-                    description="Send a PMM alert if the task fails.",
-                    default=False,
-                ),
-            ],
-        ),
     ],
     # Validator 1a: same table IDs.
     fail_when=[

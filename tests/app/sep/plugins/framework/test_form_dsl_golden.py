@@ -305,14 +305,6 @@ class _AltersForm(AppFormModel):
             description="Additional pt-online-schema-change arguments",
         ),
     ] = None
-    alert_on_fail: Annotated[
-        bool,
-        Ui(
-            label="Alert on Fail",
-            section="advanced",
-            description="Send an alert if the task fails",
-        ),
-    ] = False
     continue_on_pre_check_failure: Annotated[
         bool,
         Ui(
