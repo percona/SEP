@@ -15,6 +15,12 @@
 
 """Provide shared building blocks for schema-driven plugins."""
 
+from app.sep.plugins.framework.apps import (
+    AppCapabilities,
+    Cascade,
+    TaskExecutionApp,
+    Views,
+)
 from app.sep.plugins.framework.base import BaseApp
 from app.sep.plugins.framework.cascade import (
     build_derived_payload,
@@ -34,9 +40,37 @@ from app.sep.plugins.framework.connectivity import (
     record_connectivity_warning,
 )
 from app.sep.plugins.framework.deps import make_task_dep
+from app.sep.plugins.framework.form_dsl import (
+    AppFormModel,
+    check_form_conformance,
+    Choices,
+    derive_form_sections,
+    derive_plugin_schema,
+    FieldWidget,
+    Forbidden,
+    FormLayout,
+    FormRules,
+    HostRef,
+    Requires,
+    SchemaRef,
+    SectionLayout,
+    SectionRules,
+    ServiceRef,
+    TableRef,
+    Ui,
+)
+from app.sep.plugins.framework.payload import (
+    assemble_envelope,
+    EnvelopeSpec,
+    resolve_refs,
+    ResolvedEntities,
+    RunCommandSpec,
+    RunPythonSpec,
+)
 from app.sep.plugins.framework.responses import (
     build_default_task_response,
     build_task_list_responses,
+    derive_create_response_model,
 )
 from app.sep.plugins.framework.rules import (
     absent,
@@ -72,17 +106,39 @@ from app.sep.plugins.framework.task_status import (
 )
 
 __all__ = [
+    "AppCapabilities",
+    "AppFormModel",
     "BaseApp",
     "CardinalityRule",
+    "Cascade",
     "CascadeFailure",
     "CascadeResult",
+    "Choices",
     "ConditionalRulesModel",
     "ConnectivityWarning",
+    "EnvelopeSpec",
     "F",
     "FailRule",
     "FieldExpr",
     "FieldGate",
+    "FieldWidget",
+    "Forbidden",
+    "FormLayout",
+    "FormRules",
+    "HostRef",
     "Predicate",
+    "Requires",
+    "ResolvedEntities",
+    "RunCommandSpec",
+    "RunPythonSpec",
+    "SchemaRef",
+    "SectionLayout",
+    "SectionRules",
+    "ServiceRef",
+    "TableRef",
+    "TaskExecutionApp",
+    "Ui",
+    "Views",
     "absent",
     "all_",
     "all_equal",
@@ -94,6 +150,7 @@ __all__ = [
     "any_present",
     "any_truthy",
     "apply_conditional_rules",
+    "assemble_envelope",
     "batch_get_latest_statuses",
     "build_default_task_response",
     "build_derived_payload",
@@ -105,6 +162,10 @@ __all__ = [
     "cascade_delete_tasks",
     "cascade_update_predecessors",
     "cascade_update_tasks",
+    "check_form_conformance",
+    "derive_create_response_model",
+    "derive_form_sections",
+    "derive_plugin_schema",
     "evaluate_conditional_rules",
     "extract_latest_task_status",
     "falsy",
@@ -115,6 +176,7 @@ __all__ = [
     "not_",
     "present",
     "record_connectivity_warning",
+    "resolve_refs",
     "truthy",
     "xor_",
 ]

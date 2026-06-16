@@ -424,11 +424,15 @@ class HostField(BaseField):
     :param field_type: The discriminator literal; always ``"host"`` for this
         class. Serialised as the JSON key ``"type"``.
     :type field_type: Literal["host"]
+    :param allow_custom: When ``True``, the selector also accepts a free-typed
+        value alongside the inventory options. ``None`` (the default) omits the
+        key from the wire so plugins that do not opt in stay byte-identical.
     """
 
     field_type: Literal["host"] = Field(
         "host", alias="type", serialization_alias="type"
     )
+    allow_custom: bool | None = None
 
 
 class SchemaField(BaseField):
