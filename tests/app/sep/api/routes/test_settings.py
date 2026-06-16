@@ -30,6 +30,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.requests import RemoteAPI
 from app.core.settings_override.api import routes as settings_routes
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
@@ -42,12 +43,29 @@ from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
     get_session,
+    get_tasks_api,
     require_bearer_for_unsafe_methods,
     validate_csrf,
 )
 from app.sep.main import sep_app, sep_overrides_lifespan
 from app.sep.middleware.messages.config import messages_settings
 from app.sep.snippets.config import snippets_settings
+
+
+def _mock_tasks_api() -> AsyncMock:
+    """Return an ``AsyncMock`` Tasks API client serving an empty TasksSettings group.
+
+    The SEP settings LIST proxies the ``TasksSettings`` group from the Tasks
+    sub-app, so every authenticated LIST needs ``get_tasks_api`` stubbed.
+    An empty group keeps the local-class assertions in this module
+    unaffected. Proxy dispatch / aggregation behaviour is covered in
+    ``test_settings_proxy.py``.
+    """
+    mock = AsyncMock(spec=RemoteAPI)
+    mock.get.return_value = {
+        "groups": [{"setting_class": "TasksSettings", "settings": []}]
+    }
+    return mock
 
 
 @pytest_asyncio.fixture(name="override_session")
@@ -76,6 +94,7 @@ def api_admin_client_fixture(
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[get_tasks_api] = lambda: _mock_tasks_api()
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -90,6 +109,7 @@ def api_non_admin_client_fixture(
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
     sep_app.dependency_overrides[require_bearer_for_unsafe_methods] = lambda: None
+    sep_app.dependency_overrides[get_tasks_api] = lambda: _mock_tasks_api()
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -107,6 +127,7 @@ def api_admin_cookie_client_fixture(
     sep_app.dependency_overrides[get_current_user] = lambda: admin_user
     sep_app.dependency_overrides[get_api_authenticated_user] = lambda: admin_user
     sep_app.dependency_overrides[get_session] = lambda: override_session
+    sep_app.dependency_overrides[get_tasks_api] = lambda: _mock_tasks_api()
     yield TestClient(sep_app, raise_server_exceptions=False)
     sep_app.dependency_overrides = {}
 
@@ -138,8 +159,14 @@ def _find_setting(
 class TestSepSettingsList:
     """Tests for ``GET /api/sep/admin/settings/``."""
 
-    async def test_returns_three_groups(self, api_admin_client: TestClient) -> None:
-        """Returns one group per wired settings class on the SEP sub-app."""
+    async def test_returns_local_and_proxied_groups(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Returns the three local groups plus the proxied TasksSettings group.
+
+        SEP serves its own classes locally and proxies ``TasksSettings`` from the
+        Tasks sub-app, so the LIST carries all four groups.
+        """
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -148,6 +175,7 @@ class TestSepSettingsList:
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.MESSAGES_SETTINGS.value,
+            SettingClassEnum.TASKS_SETTINGS.value,
         }
 
     async def test_lists_hot_and_not_overridable_entries(

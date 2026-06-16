@@ -36,6 +36,11 @@ from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
+from app.sep.connectivity import (
+    CONNECTIVITY_META_HOST_KEY,
+    CONNECTIVITY_META_PORT_KEY,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY,
+)
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
     get_api_authenticated_user,
@@ -44,6 +49,7 @@ from app.sep.deps import (
     IsApiAuthenticated,
     TaskAPI,
 )
+from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.api import (
     capabilities_endpoint,
     derive_crud_routes,
@@ -1426,6 +1432,39 @@ class TestDeriveCrudRoutesComposition:
             _crud_router(create_response_builder=_async_create_builder)
 
 
+class TestDeriveCrudRoutesCreateSkip:
+    """Cover the read-only path where ``create_payload`` is omitted."""
+
+    def test_no_create_route_when_create_payload_none(self) -> None:
+        """Assert ``create_payload=None`` registers no ``POST /`` route."""
+        router = _crud_router(create_payload=None)
+        methods = {(r.path, m) for r in _api_routes(router) for m in r.methods}
+
+        assert ("/", "POST") not in methods
+
+    def test_schema_list_detail_unaffected_when_create_payload_none(self) -> None:
+        """Assert schema / list / detail still register without a create route."""
+        router = _crud_router(create_payload=None)
+        registered = {(r.path, frozenset(r.methods)) for r in _api_routes(router)}
+
+        assert ("/schema", frozenset({"GET"})) in registered
+        assert ("/", frozenset({"GET"})) in registered
+        assert ("/{task_name}", frozenset({"GET"})) in registered
+
+    def test_connectivity_check_without_create_payload_raises(self) -> None:
+        """Assert ``connectivity_check=True`` with no create payload fails fast."""
+        with pytest.raises(ValueError, match="connectivity_check"):
+            _crud_router(create_payload=None, connectivity_check=True)
+
+    def test_create_response_builder_without_create_payload_raises(self) -> None:
+        """Assert a create response builder with no create payload fails fast."""
+        with pytest.raises(ValueError, match="create_response_builder"):
+            _crud_router(
+                create_payload=None,
+                create_response_builder=_build_synthetic_create_response,
+            )
+
+
 class TestDeriveCrudRoutesList:
     """Exercise the non-paginated ``GET /`` list route over HTTP."""
 
@@ -1619,6 +1658,247 @@ class TestDeriveCrudRoutesCreate:
         response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
 
         assert response.status_code == status.HTTP_409_CONFLICT
+
+
+_CONNECTIVITY_META = {
+    "target": "node-1",
+    CONNECTIVITY_META_HOST_KEY: "db-host",
+    CONNECTIVITY_META_PORT_KEY: 3306,
+    CONNECTIVITY_META_SERVICE_TYPE_KEY: "mysql",
+}
+
+
+def _task_dict_with_meta(name: str, meta: dict) -> dict:
+    """Return a created-task payload whose ``data.meta`` carries ``meta``."""
+    return TaskFactory.build(
+        name=name, owner=_SYNTHETIC_OWNER.value, data={"meta": meta}
+    ).model_dump(mode="json")
+
+
+def _patch_probe(mocker, result: ConnectivityWarning | None) -> AsyncMock:
+    """Patch the network probe boundary, leaving the real guard helper intact."""
+    return mocker.patch(
+        "app.sep.plugins.framework.connectivity.record_connectivity_warning",
+        new_callable=AsyncMock,
+        return_value=result,
+    )
+
+
+class _SyntheticConnectivityCreateResponse(BaseModel):
+    """Represent an explicit create response that already declares the warning."""
+
+    name: str
+    connectivity_warning: ConnectivityWarning | None = None
+
+
+def _build_synthetic_connectivity_create_response(
+    task: Task,
+) -> _SyntheticConnectivityCreateResponse:
+    """Build an explicit create response that declares ``connectivity_warning``."""
+    return _SyntheticConnectivityCreateResponse(name=task.name)
+
+
+class TestDeriveCrudRoutesConnectivity:
+    """Exercise the ``connectivity_check`` create-route option over HTTP."""
+
+    def test_probe_failure_populates_connectivity_warning(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Surface the probe warning on the create response when the probe fails."""
+        warning = ConnectivityWarning(
+            target="node-1", service_type="mysql", message="unreachable"
+        )
+        probe = _patch_probe(mocker, warning)
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] == {
+            "target": "node-1",
+            "service_type": "mysql",
+            "message": "unreachable",
+        }
+        probe.assert_awaited_once()
+
+    def test_probe_success_yields_null_connectivity_warning(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Return a ``null`` warning when the probe succeeds."""
+        probe = _patch_probe(mocker, None)
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] is None
+        probe.assert_awaited_once()
+
+    def test_opt_out_query_skips_probe(self, regular_user: CasdoorUser, mocker) -> None:
+        """Skip the probe and null the warning when ``?check_connectivity=false``."""
+        probe = _patch_probe(mocker, None)
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(
+            f"{_CRUD_BASE_URL}/?check_connectivity=false", json={"name": "new-task"}
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] is None
+        probe.assert_not_awaited()
+
+    def test_meta_without_connectivity_keys_skips_probe(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Short-circuit to ``null`` when the task meta lacks connectivity keys."""
+        probe = _patch_probe(mocker, None)
+        tasks_api = _make_tasks_api(created_task=_task_dict_with_meta("new-task", {}))
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] is None
+        probe.assert_not_awaited()
+
+    def test_invalid_body_422_before_probe_or_create(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Reject an invalid body with 422 before any upstream create or probe."""
+        probe = _patch_probe(mocker, None)
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={})
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        tasks_api.post.assert_not_awaited()
+        probe.assert_not_awaited()
+
+    def test_upstream_create_error_propagates(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Propagate an upstream create error instead of swallowing it."""
+        _patch_probe(mocker, None)
+        tasks_api = _make_tasks_api(create_error=HTTPConflictException())
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_off_path_create_route_keeps_unchanged_model(self) -> None:
+        """Keep the default (off) create route's response model unchanged."""
+        route = _route_for(_crud_router(), "/", "POST")
+
+        assert route.response_model is _SyntheticTaskResponse
+
+    def test_off_path_openapi_omits_check_connectivity_param(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Keep the default create route free of the ``check_connectivity`` param."""
+        client = _authed_crud_client(_crud_router(), _make_tasks_api(), regular_user)
+        spec = client.get("/openapi.json").json()
+
+        params = spec["paths"][f"{_CRUD_BASE_URL}/"]["post"].get("parameters", [])
+        assert all(param["name"] != "check_connectivity" for param in params)
+
+    def test_on_path_openapi_documents_check_connectivity_query_param(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Document one boolean ``check_connectivity`` query param defaulting true."""
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), _make_tasks_api(), regular_user
+        )
+        spec = client.get("/openapi.json").json()
+
+        params = spec["paths"][f"{_CRUD_BASE_URL}/"]["post"].get("parameters", [])
+        check_params = [p for p in params if p["name"] == "check_connectivity"]
+        assert len(check_params) == 1
+        [param] = check_params
+        assert param["in"] == "query"
+        assert param["required"] is False
+        assert param["schema"]["type"] == "boolean"
+        assert param["schema"]["default"] is True
+
+    def test_on_path_openapi_names_derived_create_component(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Name the auto-derived create component ``TestDeriveCrudCreateResponse``."""
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), _make_tasks_api(), regular_user
+        )
+        spec = client.get("/openapi.json").json()
+
+        component = spec["components"]["schemas"]["TestDeriveCrudCreateResponse"]
+        assert "connectivity_warning" in component["properties"]
+
+    def test_explicit_create_builder_model_wins_with_connectivity_check(self) -> None:
+        """Let an explicit create builder's model win even with ``connectivity_check``."""
+        router = _crud_router(
+            connectivity_check=True,
+            create_response_builder=_build_synthetic_connectivity_create_response,
+        )
+        route = _route_for(router, "/", "POST")
+
+        assert route.response_model is _SyntheticConnectivityCreateResponse
+
+    def test_explicit_builder_surfaces_warning_via_model_copy(
+        self, regular_user: CasdoorUser, mocker
+    ) -> None:
+        """Attach the probe warning to an explicit builder that declares the field."""
+        warning = ConnectivityWarning(
+            target="node-1", service_type="mysql", message="unreachable"
+        )
+        _patch_probe(mocker, warning)
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        router = _crud_router(
+            connectivity_check=True,
+            create_response_builder=_build_synthetic_connectivity_create_response,
+        )
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["connectivity_warning"] == {
+            "target": "node-1",
+            "service_type": "mysql",
+            "message": "unreachable",
+        }
+
+    def test_explicit_builder_without_warning_field_rejected(self) -> None:
+        """Reject an explicit builder whose model omits ``connectivity_warning``."""
+        with pytest.raises(TypeError, match="connectivity_warning"):
+            _crud_router(
+                connectivity_check=True,
+                create_response_builder=_build_synthetic_create_response,
+            )
 
 
 class TestDeriveCrudRoutesUpdate:
