@@ -32,5 +32,9 @@ export {
   flattenSectionFields,
   flattenSectionItem,
   isOneOfGroup,
+  collectOneOfGroups,
 } from './utils/flattenSectionFields';
+export { getAtPath, setAtPath } from './utils/fieldPath';
+export { OneOfGroupSlot } from './OneOfGroupSlot';
+export { ConditionalFieldSlot } from './ConditionalFieldSlot';
 export { evaluatePredicate } from './utils/predicateEvaluator';
