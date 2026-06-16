@@ -30,7 +30,9 @@ Two strategies:
 
 from datetime import datetime
 from enum import auto, StrEnum
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, Literal
+
+from pydantic import BaseModel, Field
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.form_dsl import (
@@ -568,3 +570,49 @@ def test_synthetic_fixture_attributes_rules_by_scope():
     assert schema.fail_when is not None
     assert len(schema.fail_when) == 1
     assert schema.cardinality_rules is None
+
+
+class _GoldenSourceBySchema(BaseModel):
+    mode: Literal["schema"] = "schema"
+    source_db_id: Annotated[str, Ui(label="Source Schema", section="source")] = ""
+
+
+class _GoldenSourceByQuery(BaseModel):
+    mode: Literal["query"] = "query"
+    source_query: Annotated[str, Ui(label="Source Query", section="source")] = ""
+
+
+class _OneOfForm(AppFormModel):
+    """Exercise discriminated-union derivation into a one-of group."""
+
+    source: Annotated[
+        _GoldenSourceBySchema | _GoldenSourceByQuery,
+        Field(discriminator="mode"),
+        Ui(
+            label="Source",
+            section="source",
+            description="Choose how to specify source rows.",
+        ),
+    ] = Field(default_factory=_GoldenSourceBySchema)
+
+
+_ONE_OF_LAYOUT = FormLayout(
+    sections=[SectionLayout(key="source", title="Source")],
+)
+
+
+def _build_one_of_schema():
+    """Assemble the one-of DSL fixture ``PluginSchema``."""
+    return derive_plugin_schema(
+        _OneOfForm,
+        _ONE_OF_LAYOUT,
+        name="one_of_fixture",
+        display_name="One Of Fixture",
+        list_view=ListView(columns=[Column(key="name", label="Name")]),
+    )
+
+
+def test_one_of_fixture_matches_golden():
+    """Snapshot the one-of fixture wire format under ``snapshots/form_dsl``."""
+    golden = su.SNAPSHOTS_DIR / "form_dsl" / "one_of.json"
+    su.assert_or_update(golden, _dump(_build_one_of_schema()))
