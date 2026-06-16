@@ -15,6 +15,12 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+const FORBIDDEN_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype', '__class__']);
+
+function pathHasForbiddenSegment(path: string): boolean {
+  return path.split('.').some((segment) => segment === '' || FORBIDDEN_SEGMENTS.has(segment));
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
@@ -25,6 +31,9 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 /** Read a value at ``path``, supporting dotted nested keys on plain objects. */
 export function getAtPath(values: Record<string, unknown>, path: string): unknown {
+  if (pathHasForbiddenSegment(path)) {
+    return undefined;
+  }
   if (Object.prototype.hasOwnProperty.call(values, path)) {
     return values[path];
   }
@@ -44,6 +53,9 @@ export function getAtPath(values: Record<string, unknown>, path: string): unknow
 
 /** Write ``value`` at ``path``, creating intermediate plain objects as needed. */
 export function setAtPath(target: Record<string, unknown>, path: string, value: unknown): void {
+  if (pathHasForbiddenSegment(path)) {
+    return;
+  }
   const segments = path.split('.');
   let current = target;
   for (let index = 0; index < segments.length - 1; index += 1) {

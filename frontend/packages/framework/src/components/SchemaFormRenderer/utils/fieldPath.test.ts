@@ -30,4 +30,22 @@ describe('fieldPath', () => {
     };
     expect(getAtPath(values, 'source.source_query')).toBe('SELECT 1');
   });
+
+  it('refuses prototype-pollution path segments on read', () => {
+    const polluted = Object.create(null) as Record<string, unknown>;
+    polluted.source = { mode: 'schema' };
+    expect(getAtPath(polluted, '__proto__')).toBeUndefined();
+    expect(getAtPath(polluted, 'constructor')).toBeUndefined();
+    expect(getAtPath(polluted, 'source.__proto__.polluted')).toBeUndefined();
+    expect(getAtPath(polluted, 'source.prototype.toString')).toBeUndefined();
+  });
+
+  it('refuses prototype-pollution path segments on write', () => {
+    const values: Record<string, unknown> = {};
+    setAtPath(values, '__proto__.polluted', true);
+    setAtPath(values, 'source.constructor', 'bad');
+    setAtPath(values, 'source.prototype.x', 1);
+    expect(values).toEqual({});
+    expect((Object.prototype as { polluted?: boolean }).polluted).toBeUndefined();
+  });
 });
