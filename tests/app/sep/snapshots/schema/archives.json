@@ -588,6 +588,15 @@
       "fields": [
         {
           "description": "Date suffix appended to the swap table name (required for SWAP_ARCHIVE_DROP).",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "swap_drop": 2
+                }
+              }
+            }
+          ],
           "label": "Swap Table Suffix (Date)",
           "name": "swp_table_suffix",
           "required": false,
@@ -626,7 +635,15 @@
             }
           ],
           "type": "string"
-        },
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Options"
+    },
+    {
+      "collapsed_by_default": true,
+      "collapsible": true,
+      "fields": [
         {
           "description": "Index hint to optimise the query.",
           "label": "Use Index",
@@ -680,7 +697,7 @@
         }
       ],
       "render_after_submit": false,
-      "title": "Options"
+      "title": "Advanced"
     }
   ],
   "list_view": {

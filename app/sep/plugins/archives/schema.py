@@ -332,6 +332,12 @@ archives_schema = PluginSchema(
                             when=F("swap_drop") == SwapDropEnum.SWAP_ARCHIVE_DROP
                         ),
                     ],
+                    # Hidden now because only Purge Only is selectable in scope.
+                    forbidden=[
+                        FieldGate(
+                            when=F("swap_drop") != SwapDropEnum.SWAP_ARCHIVE_DROP
+                        ),
+                    ],
                 ),
                 StringField(
                     name="where",
@@ -346,6 +352,13 @@ archives_schema = PluginSchema(
                         FieldGate(when=F("swap_drop") == SwapDropEnum.SWAP_DROP),
                     ],
                 ),
+            ],
+        ),
+        FormSection(
+            title="Advanced",
+            collapsible=True,
+            collapsed_by_default=True,
+            fields=[
                 StringField(
                     name="use_index",
                     label="Use Index",
