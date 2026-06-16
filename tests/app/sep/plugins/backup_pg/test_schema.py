@@ -22,7 +22,6 @@ EXPECTED_FIELDS = {
     "task_name",
     "hostname",
     "service_id",
-    "alert_on_fail",
     "logging_dir",
     "backup_dir",
     "pgbackrest_bin",

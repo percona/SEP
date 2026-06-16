@@ -52,3 +52,4 @@ export type {
 } from './useSettings';
 export { useEnabledApps, ENABLED_APPS_QUERY_KEY } from './useEnabledApps';
 export type { EnabledApp } from './useEnabledApps';
+export { useConfigExport } from './useConfigExport';

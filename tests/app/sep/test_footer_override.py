@@ -39,7 +39,8 @@ async def test_default_context_footer_reflects_template_override(
     )
     mocker.patch("app.sep.deps.get_username_mapping", new=AsyncMock(return_value={}))
     mocker.patch(
-        "app.sep.deps.AppStateManager.all_states", new=AsyncMock(return_value={})
+        "app.sep.deps.AppStateManager.all_lifecycle_states",
+        new=AsyncMock(return_value={}),
     )
     request = SimpleNamespace(state=SimpleNamespace(csrf_token="token"))
 
