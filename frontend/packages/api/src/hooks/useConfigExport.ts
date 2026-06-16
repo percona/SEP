@@ -18,7 +18,7 @@
 /**
  * React Query hook for the admin config YAML export (SEP-984).
  *
- * Fetches ``GET /api/sep/admin/config/export`` through ``apiClient`` so the
+ * Fetches ``GET /api/sep/admin/settings/export`` through ``apiClient`` so the
  * Bearer interceptor attaches the in-memory access token, then triggers a
  * browser download from the response blob and server-provided filename.
  */
@@ -27,7 +27,7 @@ import { useMutation } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import type { ApiError } from '../errors';
 
-const CONFIG_EXPORT_PATH = '/sep/admin/config/export';
+const CONFIG_EXPORT_PATH = '/sep/admin/settings/export';
 const DEFAULT_FILENAME = 'sep-config.yaml';
 
 function filenameFromContentDisposition(header: string | undefined): string | null {

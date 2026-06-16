@@ -31,7 +31,7 @@ vi.mock('../../../contexts/auth', () => ({
 import SettingsPage from '../../../pages/SettingsPage';
 
 const SEP_URL = 'http://localhost/api/sep/admin/settings/';
-const EXPORT_URL = 'http://localhost/api/sep/admin/config/export';
+const EXPORT_URL = 'http://localhost/api/sep/admin/settings/export';
 
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP config export YAML API route at ``/api/sep/admin/config/export``."""
+"""Tests for the SEP settings YAML export route at ``/api/sep/admin/settings/export``."""
 
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
@@ -44,7 +44,7 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app
 
-EXPORT_URL = "/api/sep/admin/config/export"
+EXPORT_URL = "/api/sep/admin/settings/export"
 SETTINGS_LIST_URL = "/api/sep/admin/settings/"
 REDACTED_SECRET = "**********"
 SAMPLE_STALENESS_THRESHOLD_SECONDS = 3600
@@ -202,7 +202,7 @@ class TestSepConfigExportAuth:
 
 @pytest.mark.asyncio
 class TestSepConfigExportYaml:
-    """Tests for ``GET /api/sep/admin/config/export`` happy-path YAML rendering."""
+    """Tests for ``GET /api/sep/admin/settings/export`` happy-path YAML rendering."""
 
     async def test_returns_yaml_attachment(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
