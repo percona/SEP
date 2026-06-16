@@ -26,10 +26,9 @@ from typing import Annotated, get_args
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import APIRouter, FastAPI, status
+from fastapi import APIRouter, status
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
 
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
@@ -40,23 +39,10 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_PORT_KEY,
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
-from app.sep.deps import (
-    get_api_authenticated_user,
-    get_inventory_api,
-    get_tasks_api,
-    InventoryAPI,
-    IsApiAuthenticated,
-)
+from app.sep.deps import InventoryAPI, IsApiAuthenticated
 from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp, Views
-from app.sep.plugins.framework.form_dsl import (
-    AppFormModel,
-    FormLayout,
-    SectionLayout,
-    ServiceRef,
-    Ui,
-)
-from app.sep.plugins.framework.payload import ResolvedEntities, RunCommandSpec
+from app.sep.plugins.framework.form_dsl import AppFormModel, Ui
 from app.sep.plugins.framework.schema import (
     BoolField,
     Column,
@@ -64,65 +50,42 @@ from app.sep.plugins.framework.schema import (
     ListView,
     PluginSchema,
 )
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskWrite
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedServiceFactory,
     TaskFactory,
 )
+from tests.app.sep.plugins.framework.contract_suite import build_contract_client
+from tests.app.sep.plugins.framework.contract_suite import (
+    routes_of as _routes,
+)
+from tests.app.sep.plugins.framework.kit import synth_app
+from tests.app.sep.plugins.framework.kit import (
+    SYNTH_OWNER as _OWNER,
+)
+from tests.app.sep.plugins.framework.kit import (
+    SYNTH_PREFIX as _PREFIX,
+)
+from tests.app.sep.plugins.framework.kit import (
+    SYNTH_SERVICE_HOST as _SERVICE_HOST,
+)
+from tests.app.sep.plugins.framework.kit import (
+    SYNTH_SERVICE_PORT as _SERVICE_PORT,
+)
+from tests.app.sep.plugins.framework.kit import (
+    SynthResponse as _SynthResponse,
+)
 
-_OWNER = TaskOwner.ARCHIVER
-_PREFIX = "/synthetic-app"
 _BASE = f"/api/plugins{_PREFIX}"
-_SERVICE_HOST = "db-host"
-_SERVICE_PORT = 3306
 
-_LAYOUT = FormLayout(sections=(SectionLayout(key="main", title="Main"),))
 _LIST_VIEW = ListView(columns=[Column(key="name", label="Name")])
-
-
-class _SynthForm(AppFormModel):
-    """Represent a synthetic create form with one service ref and a manual flag."""
-
-    task_name: Annotated[str, Ui(label="Name", section="main")]
-    service_id: Annotated[
-        int,
-        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
-        Ui(label="Service", section="main"),
-    ]
-    alert_on_fail: Annotated[bool, Ui(label="Alert", section="main")] = False
-
-
-class _SynthResponse(BaseModel):
-    """Represent the list/detail response built from the task dump plus status."""
-
-    name: str
-    status: TaskHistoryStatusEnum | None = None
-
-
-class _SynthExecuteWrite(BaseModel):
-    """Represent the execute request body for the synthetic app."""
-
-    note: str | None = None
-
-
-class _SynthExecuteResponse(BaseModel):
-    """Represent the execute response carrying the dispatched task name and id."""
-
-    task_name: str
-    task_id: int
 
 
 class _NoTaskNameForm(AppFormModel):
     """Represent a synthetic create form that omits the mandatory ``task_name`` field."""
 
     label: Annotated[str, Ui(label="Label", section="main")] = ""
-
-
-class _SynthCapabilities(BaseModel):
-    """Represent the runtime capability flags returned by ``GET /capabilities``."""
-
-    manual_sync_enabled: bool = True
 
 
 async def _delete_handler(task_name: str) -> None:
@@ -132,24 +95,6 @@ async def _delete_handler(task_name: str) -> None:
 async def _passthrough_payload_builder(inventory_api: InventoryAPI) -> TaskWrite:
     """Stand in as the create payload for a transitional ``schema=`` app."""
     return TaskWrite(name="passthrough", owner=_OWNER, data={})
-
-
-def _capabilities_provider() -> _SynthCapabilities:
-    """Return the synthetic runtime capability flags."""
-    return _SynthCapabilities()
-
-
-def _spec_builder(form: AppFormModel, resolved: ResolvedEntities) -> RunCommandSpec:
-    """Build a synthetic run-command spec from the form and resolved service."""
-    service = resolved.service
-    return RunCommandSpec(
-        command="synth-cmd",
-        args=f"--task={form.task_name}",
-        extra_meta={
-            "_service_host": service.node.address,
-            "_service_port": service.port,
-        },
-    )
 
 
 def _extra_router() -> APIRouter:
@@ -172,22 +117,9 @@ _PASSTHROUGH_SCHEMA = PluginSchema(
 
 
 def _synth_app(**overrides: object) -> TaskExecutionApp:
-    """Build a ``TaskExecutionApp`` with sane synthetic defaults."""
-    kwargs = {
-        "name": "synthetic-app",
-        "uri_path": _PREFIX,
-        "owner": _OWNER,
-        "create_model": _SynthForm,
-        "response_model": _SynthResponse,
-        "views": Views(layout=_LAYOUT, list_view=_LIST_VIEW),
-        "task_spec_builder": _spec_builder,
-        "execute_write_model": _SynthExecuteWrite,
-        "execute_response_model": _SynthExecuteResponse,
-        "capabilities_provider": _capabilities_provider,
-        "extra_routes": (_extra_router(),),
-    }
-    kwargs.update(overrides)
-    return TaskExecutionApp(**kwargs)
+    """Build the synthetic app with the extra ``/ping`` router by default."""
+    overrides.setdefault("extra_routes", (_extra_router(),))
+    return synth_app(**overrides)
 
 
 def _task_dict(name: str, *, meta: dict | None = None) -> dict:
@@ -259,22 +191,6 @@ def _make_inventory_api() -> AsyncMock:
     return api
 
 
-def _mount(app_def: TaskExecutionApp) -> FastAPI:
-    """Mount the app's derived router under the production-shape router tree."""
-    plugins_router = APIRouter(prefix="/plugins")
-    plugins_router.include_router(app_def.api_router, prefix=_PREFIX)
-    api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
-    api_router.include_router(plugins_router)
-    app = FastAPI()
-    app.include_router(api_router)
-
-    @app.get("/login", name="login")
-    async def _login() -> dict[str, bool]:
-        return {"ok": True}
-
-    return app
-
-
 def _client(
     app_def: TaskExecutionApp,
     tasks_api: AsyncMock,
@@ -282,22 +198,9 @@ def _client(
     inventory_api: AsyncMock | None = None,
 ) -> TestClient:
     """Mount ``app_def`` with auth, Tasks-API, and Inventory-API overrides."""
-    app = _mount(app_def)
-    app.dependency_overrides[get_api_authenticated_user] = lambda: user
-    app.dependency_overrides[get_tasks_api] = lambda: tasks_api
-    if inventory_api is not None:
-        app.dependency_overrides[get_inventory_api] = lambda: inventory_api
-    return TestClient(app, raise_server_exceptions=False)
-
-
-def _routes(app_def: TaskExecutionApp) -> set[tuple[str, str]]:
-    """Return the ``(path, method)`` pairs registered on the app's router."""
-    return {
-        (route.path, method)
-        for route in app_def.api_router.routes
-        if isinstance(route, APIRoute)
-        for method in route.methods
-    }
+    return build_contract_client(
+        app_def, user=user, tasks_api=tasks_api, inventory_api=inventory_api
+    )
 
 
 class TestRouterComposition:
@@ -685,7 +588,7 @@ class TestRegistryBinding:
         )
         client = _client(bound, _make_tasks_api(), regular_user)
 
-        response = client.get(f"{_BASE}/schema")
+        response = client.get(f"/api/plugins{bound.uri_path}/schema")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["name"] == "synthetic-app"
