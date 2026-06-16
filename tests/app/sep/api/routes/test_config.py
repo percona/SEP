@@ -253,7 +253,14 @@ class TestSepConfigExportYaml:
         """Scalar and nested ``SecretStr`` values render as ``**********``."""
         from pydantic import SecretStr
 
-        from app.sep.config import HealthReportSettings, sep_settings
+        from app.core.config import PMMSettings
+        from app.core.utils.fields import UniqueList
+        from app.sep.config import (
+            HealthReportSettings,
+            sep_settings,
+            SyncerExtraKwargs,
+            SyncOptions,
+        )
 
         mocker.patch.object(
             sep_settings,
@@ -265,15 +272,37 @@ class TestSepConfigExportYaml:
                 client_id="client-1",
             ),
         )
-        export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
-        assert (
-            export[SettingClassEnum.SEP_SETTINGS.value]["HEALTH_REPORT"]["api_key"]
-            == REDACTED_SECRET
+        mocker.patch.object(
+            sep_settings,
+            "SYNCER_EXTRA_KWARGS",
+            SyncerExtraKwargs(
+                pmm=PMMSettings(api_key=SecretStr("syncer-extra-secret"))
+            ),
         )
+        mocker.patch.object(
+            sep_settings,
+            "SYNCERS",
+            UniqueList(
+                [
+                    SyncOptions(
+                        syncer="PMMSyncer",
+                        pmm=PMMSettings(api_key=SecretStr("syncer-inline-secret")),
+                    )
+                ]
+            ),
+        )
+        yaml_text = api_admin_client.get(EXPORT_URL).text
+        export = yaml.safe_load(yaml_text)
+        sep_block = export[SettingClassEnum.SEP_SETTINGS.value]
+        assert sep_block["HEALTH_REPORT"]["api_key"] == REDACTED_SECRET
         assert (
             export[SettingClassEnum.TASKS_SETTINGS.value]["API_SECRET"]
             == REDACTED_SECRET
         )
+        assert sep_block["SYNCER_EXTRA_KWARGS"]["pmm"]["api_key"] == REDACTED_SECRET
+        assert sep_block["SYNCERS"][0]["pmm"]["api_key"] == REDACTED_SECRET
+        assert "syncer-extra-secret" not in yaml_text
+        assert "syncer-inline-secret" not in yaml_text
 
     async def test_complex_field_renders_as_mapping(
         self, api_admin_client: TestClient
