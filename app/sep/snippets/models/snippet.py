@@ -791,7 +791,10 @@ class BaseSnippet(BaseModel):
             executor_hosts_fieldset.disabled = disabled
             fieldsets.append(executor_hosts_fieldset)
         parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
-        logger.debug("Snippet params: %s", parameters)
+        logger.debug(
+            "Snippet params: %s",
+            [param.name for param in parameters if not param.hidden],
+        )
         groups = {}
         for param in parameters:
             if param.hidden:
@@ -864,7 +867,10 @@ class BaseSnippet(BaseModel):
         :rtype: type[BaseSnippetArgs]
         """
         parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
-        logger.debug("Snippet params: %s", parameters)
+        logger.debug(
+            "Snippet params: %s",
+            [param.name for param in parameters if not param.hidden],
+        )
         unique_identifiers = generate_unique_identifiers()
         fields = {}
         positional_fields = {}
@@ -872,7 +878,7 @@ class BaseSnippet(BaseModel):
             field_name = next(unique_identifiers)
             field = (param.validation_type, param.to_validation_field())
             logger.debug(
-                "Generated snippet model field from param %s: %s", param, field
+                "Generated snippet model field from param %s: %s", param.name, field
             )
             if param.positional:
                 positional_fields[field_name] = field
