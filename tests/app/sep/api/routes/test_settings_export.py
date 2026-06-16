@@ -407,3 +407,43 @@ class TestSepConfigExportTasksFanOut:
         response = api_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert "value" in response.json()["detail"]
+
+    async def test_tasks_malformed_group_returns_502(
+        self,
+        api_admin_client: TestClient,
+        mock_tasks_api: AsyncMock,
+    ) -> None:
+        """Return ``502`` when a Tasks LIST group is not an object."""
+        mock_tasks_api.get.return_value = {"groups": ["not-a-group"]}
+        response = api_admin_client.get(EXPORT_URL)
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert (
+            response.json()["detail"] == "Tasks settings LIST group is not an object."
+        )
+
+    async def test_tasks_group_missing_setting_class_returns_502(
+        self,
+        api_admin_client: TestClient,
+        mock_tasks_api: AsyncMock,
+    ) -> None:
+        """Return ``502`` when a Tasks LIST group omits ``setting_class``."""
+        mock_tasks_api.get.return_value = {"groups": [{"settings": []}]}
+        response = api_admin_client.get(EXPORT_URL)
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert (
+            response.json()["detail"]
+            == "Tasks settings LIST group missing 'setting_class'."
+        )
+
+    async def test_tasks_group_missing_settings_returns_502(
+        self,
+        api_admin_client: TestClient,
+        mock_tasks_api: AsyncMock,
+    ) -> None:
+        """Return ``502`` when a Tasks LIST group omits ``settings``."""
+        mock_tasks_api.get.return_value = {
+            "groups": [{"setting_class": SettingClassEnum.TASKS_SETTINGS.value}]
+        }
+        response = api_admin_client.get(EXPORT_URL)
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert "missing 'settings'" in response.json()["detail"]
