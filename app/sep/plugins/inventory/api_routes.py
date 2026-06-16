@@ -205,18 +205,15 @@ async def inventory_node_system_observation(
 ) -> Any:
     """Proxy the host-level system observation for a node (read-only).
 
-    Forwards to the inventory sub-app's ``/{node_id}/system-observation``
-    endpoint (SEP-1301) via ``InventoryAPI``. This three-segment literal path
-    cannot collide with the two-segment ``/{entity}/{item_id:int}`` detail
-    matcher. An upstream HTTP 404 — the "not collected yet" signal —
-    propagates unchanged for the React panel to render as an empty state.
+    Forwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``
+    endpoint via ``InventoryAPI``. This three-segment literal path cannot
+    collide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An
+    upstream HTTP 404 — the "not collected yet" signal — propagates unchanged
+    for the React panel to render as an empty state.
 
     :param node_id: Primary key of the node.
-    :type node_id: int
     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
-    :type inventory_api: InventoryAPI
     :return: The host-level system observation payload.
-    :rtype: Any
     """
     return await inventory_api.get(inventory_system_observation_path("nodes", node_id))
 
@@ -229,16 +226,13 @@ async def inventory_service_system_observation(
     """Proxy the service-level system observation for a service (read-only).
 
     Forwards to the inventory sub-app's
-    ``/services/{service_id}/system-observation`` endpoint (SEP-1301) via
-    ``InventoryAPI``. An upstream HTTP 404 propagates unchanged so the React
-    panel renders its "not collected yet" empty state.
+    ``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.
+    An upstream HTTP 404 propagates unchanged so the React panel renders its
+    "not collected yet" empty state.
 
     :param service_id: Primary key of the service.
-    :type service_id: int
     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
-    :type inventory_api: InventoryAPI
     :return: The service-level system observation payload.
-    :rtype: Any
     """
     return await inventory_api.get(
         inventory_system_observation_path("services", service_id)

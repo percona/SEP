@@ -352,16 +352,13 @@ def inventory_system_observation_path(entity: str, item_id: int) -> str:
     Built by appending ``/system-observation`` to the detail path from
     ``inventory_service_detail_path`` so the sub-resource always tracks the
     canonical detail mapping and the two cannot drift. Targets the read-only
-    system-observation endpoint exposed by the inventory sub-app (SEP-1301).
-    Only ``nodes`` and ``services`` carry an observation; callers reach this
-    helper through the explicit per-entity proxy routes.
+    system-observation endpoint exposed by the inventory sub-app. Only
+    ``nodes`` and ``services`` carry an observation; callers reach this helper
+    through the explicit per-entity proxy routes.
 
     :param entity: ``nodes`` or ``services``.
-    :type entity: str
     :param item_id: Primary key of the node or service.
-    :type item_id: int
     :return: Path relative to the inventory API root.
-    :rtype: str
     """
     return (
         f"{inventory_service_detail_path(entity, item_id)}/{SYSTEM_OBSERVATION_SEGMENT}"

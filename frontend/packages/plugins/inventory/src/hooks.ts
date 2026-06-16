@@ -30,7 +30,7 @@ export interface SyncStatus {
 }
 
 /**
- * Host- or service-level system facts collected by the syncer (SEP-1299 model).
+ * Host- or service-level system facts collected by the syncer.
  * ``installed_packages`` and ``config`` are arbitrary JSON blobs whose exact
  * shape is owned upstream, so they stay loosely typed and are rendered
  * defensively by the panel.

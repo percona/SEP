@@ -182,7 +182,7 @@ function renderBody({
 
   const observedAt = formatObservedAt(data.observed_at);
 
-  // Host and service observations carry disjoint field sets (SEP-1299/1301):
+  // Host and service observations carry disjoint field sets:
   // a node has os_version / installed_packages / config, a service has
   // db_engine_version. Render only the fields the entity actually owns so a
   // page never shows a field that can never be populated.

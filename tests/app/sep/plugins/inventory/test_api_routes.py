@@ -651,8 +651,8 @@ class TestInventorySystemObservation:
                 "/api/plugins/inventory/nodes/3/system-observation",
                 "/nodes/3/system-observation",
                 {
-                    # Host observation shape (SEP-1299/1301): os_version,
-                    # installed_packages, config; no db_engine_version.
+                    # Host observation shape: os_version, installed_packages,
+                    # config; no db_engine_version.
                     "os_version": "Ubuntu 22.04",
                     "installed_packages": {"openssl": "3.0.2"},
                     "config": {"max_connections": 100},

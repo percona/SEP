@@ -35,8 +35,8 @@ describe('SystemFactsPanel', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('renders the host facts when a node observation is present', async () => {
-    // Host observation shape (SEP-1299/1301): os_version / installed_packages
-    // / config, no db_engine_version.
+    // Host observation shape: os_version / installed_packages / config, no
+    // db_engine_version.
     vi.spyOn(apiClient, 'get').mockResolvedValue({
       data: {
         os_version: 'Ubuntu 22.04',
@@ -60,7 +60,7 @@ describe('SystemFactsPanel', () => {
   });
 
   it('renders the service facts when a service observation is present', async () => {
-    // Service observation shape (SEP-1299/1301): db_engine_version only.
+    // Service observation shape: db_engine_version only.
     vi.spyOn(apiClient, 'get').mockResolvedValue({
       data: {
         db_engine_version: '8.0.36',
