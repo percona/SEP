@@ -31,6 +31,10 @@ vi.mock('../../../contexts/auth', () => ({
 import SettingsPage from '../../../pages/SettingsPage';
 
 const SEP_URL = 'http://localhost/api/sep/admin/settings/';
+const EXPORT_URL = 'http://localhost/api/sep/admin/settings/export';
+
+const originalCreateObjectURL = URL.createObjectURL;
+const originalRevokeObjectURL = URL.revokeObjectURL;
 
 /** SEP aggregates its local classes and the proxied TasksSettings into one list. */
 const combinedListResponse = {
@@ -43,7 +47,17 @@ function renderPage() {
 
 beforeEach(() => {
   authState.isAdmin = true;
-  server.use(http.get(SEP_URL, () => HttpResponse.json(combinedListResponse)));
+  server.use(
+    http.get(SEP_URL, () => HttpResponse.json(combinedListResponse)),
+    http.get(EXPORT_URL, () =>
+      HttpResponse.text('SEPSettings: {}\n', {
+        headers: {
+          'Content-Type': 'application/x-yaml',
+          'Content-Disposition': 'attachment; filename="sep-config-2026-06-14.yaml"',
+        },
+      }),
+    ),
+  );
 });
 
 afterEach(() => {
@@ -56,6 +70,64 @@ describe('SettingsPage', () => {
     renderPage();
     expect(screen.getByTestId('settings-admins-only')).toBeInTheDocument();
     expect(screen.getByText('Admins only')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /download yaml/i })).not.toBeInTheDocument();
+  });
+
+  it('shows Download YAML for admins', async () => {
+    renderPage();
+    expect(await screen.findByRole('button', { name: /download yaml/i })).toBeInTheDocument();
+  });
+
+  it('requests config export when Download YAML is clicked', async () => {
+    let exportCalls = 0;
+    server.use(
+      http.get(EXPORT_URL, () => {
+        exportCalls += 1;
+        return HttpResponse.text('SEPSettings: {}\n', {
+          headers: {
+            'Content-Type': 'application/x-yaml',
+            'Content-Disposition': 'attachment; filename="sep-config-2026-06-14.yaml"',
+          },
+        });
+      }),
+    );
+
+    const createObjectSpy = vi.fn(() => 'blob:mock-export-url');
+    const revokeObjectSpy = vi.fn();
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: createObjectSpy,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: revokeObjectSpy,
+      writable: true,
+      configurable: true,
+    });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    try {
+      renderPage();
+      await userEvent.click(await screen.findByRole('button', { name: /download yaml/i }));
+
+      await waitFor(() => {
+        expect(exportCalls).toBe(1);
+      });
+      expect(createObjectSpy).toHaveBeenCalledTimes(1);
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(URL, 'createObjectURL', {
+        value: originalCreateObjectURL,
+        writable: true,
+        configurable: true,
+      });
+      Object.defineProperty(URL, 'revokeObjectURL', {
+        value: originalRevokeObjectURL,
+        writable: true,
+        configurable: true,
+      });
+      clickSpy.mockRestore();
+    }
   });
 
   it('renders one group per class with their settings', async () => {
