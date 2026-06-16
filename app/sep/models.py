@@ -316,3 +316,34 @@ class AppStateWrite(SQLModel):
     """
 
     enabled: bool
+
+
+class SEPPluginPeriodicTaskBase(SQLModel):
+    """Define the shared fields for :class:`SEPPluginPeriodicTask`.
+
+    :param periodic_task_name: The library ``PeriodicTask.name`` of the gated
+        schedule. Unique and indexed for write-through lookups.
+    :param app_key: The owning app's key, joined against
+        :class:`AppState.app_key`.
+    :param user_enabled: The per-schedule operator override. ``effective_enabled``
+        is ``AppState.enabled AND user_enabled``; defaults to ``True``.
+    """
+
+    periodic_task_name: NonEmptyStr = SQLField(unique=True, index=True)
+    app_key: NonEmptyStr = SQLField(index=True)
+    user_enabled: bool = True
+
+
+class SEPPluginPeriodicTask(BaseSQLModel, SEPPluginPeriodicTaskBase, table=True):
+    """Map a plugin-owned Celery periodic task to its owning app + user override.
+
+    One row per plugin-owned schedule in ``SEP.PLUGINS``. Seeded on startup via
+    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating` and consulted at
+    every :class:`AppState` transition to recompute ``effective_enabled`` and
+    write it through to the library ``PeriodicTask.enabled`` column.
+
+    :param id: The auto-incremented primary key.
+    :param periodic_task_name: The library ``PeriodicTask.name``. Unique and indexed.
+    :param app_key: The owning app's key.
+    :param user_enabled: The per-schedule operator override.
+    """
