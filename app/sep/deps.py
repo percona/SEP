@@ -72,7 +72,7 @@ from app.sep.middleware.csrf import (
     CSRF_FORM_FIELD,
     request_has_bearer_authorization,
 )
-from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.models import AppLifecycleEnum, SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
     Task,
@@ -518,10 +518,10 @@ async def get_default_context(
     """Return the default context for templates.
 
     The sidebar ``plugins`` list is filtered by runtime app state: protected
-    apps always pass through; non-protected apps are shown unless an explicit
-    ``enabled=False`` :class:`app.sep.models.AppState` row hides them (a missing
-    row is treated as enabled). This is the single source of truth that drives
-    sidebar visibility.
+    apps always pass through; non-protected apps are shown unless their
+    :class:`app.sep.models.AppState` row has ``lifecycle_state != ENABLED`` (a
+    missing row is treated as enabled). This is the single source of truth that
+    drives sidebar visibility.
 
     :param request: The HTTP request object.
     :type request: Request
@@ -535,7 +535,7 @@ async def get_default_context(
     :rtype: dict[str, Any]
     """
     try:
-        states = await AppStateManager.all_states(session)
+        states = await AppStateManager.all_lifecycle_states(session)
     except SQLAlchemyError:
         # Error pages rebuild this context from a fresh session; keep them
         # renderable when the DB is down.
@@ -551,7 +551,8 @@ async def get_default_context(
     plugins = [
         app
         for app in get_app_registry()
-        if app.key in PROTECTED_APP_KEYS or states.get(app.key, True)
+        if app.key in PROTECTED_APP_KEYS
+        or states.get(app.key, AppLifecycleEnum.ENABLED) == AppLifecycleEnum.ENABLED
     ]
     return {
         "user": user,

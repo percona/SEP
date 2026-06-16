@@ -15,7 +15,8 @@
 
 """Gate plugin-owned Celery periodic tasks by app state.
 
-A schedule's ``effective_enabled`` is ``AppState.enabled AND user_enabled``. This
+A schedule's ``effective_enabled`` is
+``(AppState.lifecycle_state == ENABLED) AND user_enabled``. This
 module recomputes it for plugin-owned tasks and writes it through to the library
 ``sqlalchemy_celery_beat.PeriodicTask.enabled`` column, the single field the beat
 scheduler filters on. The write is an ORM-instance mutation, so the library's
@@ -25,7 +26,7 @@ running scheduler reloads without a restart.
 The work spans two databases — ``AppState`` and the wrapper rows live in the SEP
 database, while ``PeriodicTask`` lives in the celery-beat database — so it cannot
 ride on a single manager ``save()``. It is instead invoked from the two
-enumerated writers of ``AppState.enabled``: startup seeding
+enumerated writers of ``AppState.lifecycle_state``: startup seeding
 (:func:`app.sep.db.seed.init_sep_db`) and the runtime toggle endpoint.
 """
 
@@ -40,7 +41,11 @@ from app.core.celery.db import get_async_session_maker as get_celery_beat_sessio
 from app.core.celery.utils import SystemPeriodicTaskSchedule
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import get_async_session_maker as get_sep_session_maker
-from app.sep.models import SEPPluginPeriodicTask, SEPPluginPeriodicTaskBase
+from app.sep.models import (
+    AppLifecycleEnum,
+    SEPPluginPeriodicTask,
+    SEPPluginPeriodicTaskBase,
+)
 
 
 async def seed_app_periodic_task_rows(
@@ -83,7 +88,8 @@ async def apply_effective_enabled(
 ) -> None:
     """Recompute ``effective_enabled`` and write it to ``PeriodicTask.enabled``.
 
-    ``effective_enabled`` is ``AppState.enabled AND user_enabled``. A missing
+    ``effective_enabled`` is
+    ``(AppState.lifecycle_state == ENABLED) AND user_enabled``. A missing
     ``AppState`` row is treated as enabled, mirroring
     :meth:`app.sep.crud.AppStateManager.is_enabled`. The write is an ORM-instance
     mutation guarded by an equality check, so the library reload signal only
@@ -96,7 +102,7 @@ async def apply_effective_enabled(
     rows = await SEPPluginPeriodicTaskManager.for_app_keys(sep_session, app_keys)
     if not rows:
         return
-    app_state = await AppStateManager.all_states(sep_session)
+    lifecycle_state = await AppStateManager.all_lifecycle_states(sep_session)
     tasks = await BasePeriodicTaskManager.list(
         celery_beat_session,
         PeriodicTask.name.in_([row.periodic_task_name for row in rows]),
@@ -107,7 +113,10 @@ async def apply_effective_enabled(
         task = tasks_by_name.get(row.periodic_task_name)
         if task is None:
             continue
-        effective = app_state.get(row.app_key, True) and row.user_enabled
+        effective = (
+            lifecycle_state.get(row.app_key, AppLifecycleEnum.ENABLED)
+            == AppLifecycleEnum.ENABLED
+        ) and row.user_enabled
         if task.enabled != effective:
             task.enabled = effective
             celery_beat_session.add(task)
