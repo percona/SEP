@@ -1494,7 +1494,7 @@ class TestGetDefaultContextPluginFiltering:
             patch("app.sep.deps.settings"),
             patch.object(
                 AppStateManager,
-                "all_states",
+                "all_lifecycle_states",
                 side_effect=SQLAlchemyError("db down"),
             ),
         ):
