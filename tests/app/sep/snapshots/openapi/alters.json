@@ -1448,8 +1448,19 @@
       },
       "HostField": {
         "additionalProperties": false,
-        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). Host selection is not cascaded\nfrom another field — every dispatch form lists every available executor\ntarget.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]",
+        "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). Host selection is not cascaded\nfrom another field — every dispatch form lists every available executor\ntarget.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
           "default": {
             "anyOf": [
               {},
@@ -2022,8 +2033,19 @@
       },
       "SchemaField": {
         "additionalProperties": false,
-        "description": "Represent an inventory database-schema selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``ServiceField``); the React renderer\ncascades schema options from the selected service. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"schema\"]\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:type depends_on: NonEmptyStr",
+        "description": "Represent an inventory database-schema selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``ServiceField``); the React renderer\ncascades schema options from the selected service. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"schema\"]\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:type depends_on: NonEmptyStr\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
           "default": {
             "anyOf": [
               {},
@@ -2226,8 +2248,19 @@
       },
       "ServiceField": {
         "additionalProperties": false,
-        "description": "Represent an inventory service selector field.\n\n:param field_type: The discriminator literal; always ``\"service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"service\"]\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:type service_types: list[ServiceTypeEnum]",
+        "description": "Represent an inventory service selector field.\n\n:param field_type: The discriminator literal; always ``\"service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"service\"]\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:type service_types: list[ServiceTypeEnum]\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
           "default": {
             "anyOf": [
               {},
@@ -2467,8 +2500,19 @@
       },
       "TableField": {
         "additionalProperties": false,
-        "description": "Represent an inventory table selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``SchemaField``); the React renderer\ncascades table options from the selected schema. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"table\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"table\"]\n:param depends_on: The name of the field whose value drives the list of\n    available tables.\n:type depends_on: NonEmptyStr",
+        "description": "Represent an inventory table selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``SchemaField``); the React renderer\ncascades table options from the selected schema. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"table\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"table\"]\n:param depends_on: The name of the field whose value drives the list of\n    available tables.\n:type depends_on: NonEmptyStr\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
         "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
           "default": {
             "anyOf": [
               {},
@@ -2984,7 +3028,7 @@
     },
     "/api/plugins/alters/schema": {
       "get": {
-        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.\n:rtype: PluginSchema",
+        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
         "operationId": "alters_get_schema_api_plugins_alters_schema_get",
         "responses": {
           "200": {
