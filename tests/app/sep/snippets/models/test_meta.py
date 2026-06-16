@@ -310,6 +310,16 @@ class TestCoerceToType:
         assert param.lt == EXPECTED_INT_LT
         assert isinstance(param.lt, int)
 
+    def test_string_default_coerced_to_datetime(self):
+        """Verify string default is coerced to datetime for DATETIME type."""
+        param = SnippetMetaParameter(
+            name="start",
+            type=SnippetMetaParameterType.DATETIME,
+            default="2024-06-10T14:30:00",
+        )
+        assert isinstance(param.default, datetime)
+        assert param.default.tzinfo == UTC
+
 
 class TestIsFlag:
     """Test the is_flag computed field."""

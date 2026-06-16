@@ -238,7 +238,7 @@ async def test_per_snippet_schema_maps_choices_to_choice_field(create_snippet):
 
 
 def test_field_for_maps_datetime_parameter_to_datetime_field():
-    """DATETIME parameters map directly to DateTimeField via field_for."""
+    """Verify DATETIME parameters map directly to DateTimeField via field_for."""
     param = SnippetMetaParameter(
         name="start",
         type="datetime",
@@ -256,7 +256,7 @@ def test_field_for_maps_datetime_parameter_to_datetime_field():
 async def test_per_snippet_schema_maps_datetime_parameter_to_datetime_field(
     create_snippet,
 ):
-    """DATETIME parameters surface as DateTimeField in the per-snippet schema."""
+    """Verify DATETIME parameters surface as DateTimeField in the per-snippet schema."""
     snippet = await create_snippet("hello.sh", approved=True)
     snippet.__dict__.pop("validated_parameters", None)
     snippet.meta = {
@@ -283,7 +283,7 @@ async def test_per_snippet_schema_maps_datetime_parameter_to_datetime_field(
 
 @pytest.mark.asyncio
 async def test_pmm_mysql_payload_start_end_map_to_datetime_field():
-    """PMM MySQL collector start/end params declare datetime and map to DateTimeField."""
+    """Verify PMM MySQL collector start/end params declare datetime and map to DateTimeField."""
     script = await DipperScript.from_path("pcs-collect-pmm-mysql.py", update_meta=True)
 
     assert script.validated_parameters.errors == []

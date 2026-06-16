@@ -73,7 +73,7 @@ from app.sep.snippets.forms import (
     TextInputHTMLElement,
 )
 
-ParameterType = str | int | float | bool | None
+ParameterType = str | int | float | bool | datetime | None
 
 logger = logging.getLogger(__name__)
 
@@ -168,7 +168,7 @@ class SnippetMetaParameter(BaseModel):
     :type group: NonEmptyStr | None
     :param default: The default value for the parameter. Defaults to None, meaning no
         default.
-    :type default: str | int | float | bool | None
+    :type default: str | int | float | bool | datetime | None
     :param choices: A list of choices for the parameter. Each choice can be a string or
         a dictionary with "label" and "value" keys. Defaults to None, meaning it won't
         be used for validation. This parameter is validated as "options" or "choices"
