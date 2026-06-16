@@ -56,13 +56,19 @@ __all__ = [
 
 CAPABILITY_RENDERED_CONTROLS: dict[str, str] = {"alert_on_fail": "alert_on_fail"}
 """Map a schema-side capability flag to the reserved form-field name the FE renders for it."""
-_UNKNOWN_CAPABILITY_RENDERED_CONTROL_KEYS = set(CAPABILITY_RENDERED_CONTROLS).difference(
-    Capabilities.model_fields
-)
-assert not _UNKNOWN_CAPABILITY_RENDERED_CONTROL_KEYS, (
-    "CAPABILITY_RENDERED_CONTROLS contains unknown capability keys: "
-    f"{sorted(_UNKNOWN_CAPABILITY_RENDERED_CONTROL_KEYS)}"
-)
+
+
+def _validate_capability_controls() -> None:
+    """Fail fast when a rendered-control key is not a real ``Capabilities`` field."""
+    unknown = set(CAPABILITY_RENDERED_CONTROLS) - set(Capabilities.model_fields)
+    if unknown:
+        raise RuntimeError(
+            f"CAPABILITY_RENDERED_CONTROLS contains unknown capability keys: {sorted(unknown)}"
+        )
+
+
+_validate_capability_controls()
+
 
 _HTTP_METHODS = frozenset(
     {"get", "post", "put", "delete", "patch", "options", "head", "trace"}
