@@ -37,6 +37,7 @@ from app.sep.plugins.framework.form_dsl import (
     check_form_conformance,
     derive_form_sections,
 )
+from app.sep.plugins.framework.schema import Capabilities
 
 if TYPE_CHECKING:
     from app.sep.plugins.framework.apps import TaskExecutionApp
@@ -55,6 +56,13 @@ __all__ = [
 
 CAPABILITY_RENDERED_CONTROLS: dict[str, str] = {"alert_on_fail": "alert_on_fail"}
 """Map a schema-side capability flag to the reserved form-field name the FE renders for it."""
+_UNKNOWN_CAPABILITY_RENDERED_CONTROL_KEYS = set(CAPABILITY_RENDERED_CONTROLS).difference(
+    Capabilities.model_fields
+)
+assert not _UNKNOWN_CAPABILITY_RENDERED_CONTROL_KEYS, (
+    "CAPABILITY_RENDERED_CONTROLS contains unknown capability keys: "
+    f"{sorted(_UNKNOWN_CAPABILITY_RENDERED_CONTROL_KEYS)}"
+)
 
 _HTTP_METHODS = frozenset(
     {"get", "post", "put", "delete", "patch", "options", "head", "trace"}

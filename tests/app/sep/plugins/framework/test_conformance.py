@@ -217,6 +217,7 @@ def test_no_duplicate_control_silent_on_real_derived_schema_without_capability()
 def test_capability_rendered_controls_maps_alert_on_fail():
     """Assert the registry only reserves the ``alert_on_fail`` control today."""
     assert CAPABILITY_RENDERED_CONTROLS == {"alert_on_fail": "alert_on_fail"}
+    assert set(CAPABILITY_RENDERED_CONTROLS) <= set(Capabilities.model_fields)
 
 
 class _ExecuteWrite(BaseModel):
