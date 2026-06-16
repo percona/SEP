@@ -164,8 +164,10 @@ def _parse_export_selectors(
     requested: dict[str, _ClassRequest] = {}
     for selector in keys:
         stripped = selector.strip()
-        class_name, dot, key = stripped.partition(".")
-        if not class_name or (dot and not key.strip()):
+        class_part, dot, key_part = stripped.partition(".")
+        class_name = class_part.strip()
+        key = key_part.strip()
+        if not class_name or (dot and not key):
             raise HTTPBadRequestException(detail=f"Invalid selector: {selector!r}")
         if class_name not in allowed_classes:
             raise HTTPBadRequestException(detail=f"Unknown selector: {stripped}")

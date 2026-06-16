@@ -494,6 +494,20 @@ class TestSepConfigExportFilter:
         assert set(payload[SEP_CLASS]) == {key}
         mock_tasks_api.get.assert_not_called()
 
+    async def test_key_selector_tolerates_incidental_whitespace(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Strip whitespace around the key segment so ``Class. KEY`` still resolves."""
+        key = _one_sep_key(api_admin_client)
+        mock_tasks_api.get.reset_mock()
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": f"{SEP_CLASS}. {key} "}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {SEP_CLASS}
+        assert set(payload[SEP_CLASS]) == {key}
+
     async def test_whole_class_selector_keeps_all_keys(
         self, api_admin_client: TestClient
     ) -> None:
