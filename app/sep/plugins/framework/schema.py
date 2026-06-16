@@ -38,6 +38,8 @@ __all__ = [
     "IntegerField",
     "ListView",
     "MultiChoiceField",
+    "OneOfBranch",
+    "OneOfGroup",
     "PluginDeploymentCapabilities",
     "PluginEntitySchema",
     "PluginSchema",
@@ -52,6 +54,7 @@ __all__ = [
 ]
 
 from collections import Counter
+from collections.abc import Iterator
 from enum import auto, StrEnum
 from typing import Annotated, Any, Literal, Self
 
@@ -72,7 +75,9 @@ from app.sep.plugins.framework.rules import (
     FieldGate,
 )
 
-_FIELD_NAME_PATTERN = r"^[A-Za-z_](?:[\w-]*\w)?$"
+# Dots are permitted so nested one-of branch fields can use paths such as
+# ``source.source_db_id`` (see :class:`OneOfGroup`).
+_FIELD_NAME_PATTERN = r"^[A-Za-z_](?:[\w.-]*\w)?$"
 
 
 class SchemaBaseModel(BaseModel):
@@ -512,7 +517,7 @@ class ScriptPreviewField(BaseField):
     language: NonEmptyStr | None = None
 
 
-AnyField = Annotated[
+LeafField = Annotated[
     BoolField
     | ChoiceField
     | DateTimeField
@@ -530,6 +535,85 @@ AnyField = Annotated[
     | YamlField,
     Field(discriminator="field_type"),
 ]
+"""Discriminated union of every leaf field class (excludes :class:`OneOfGroup`)."""
+
+
+class OneOfBranch(SchemaBaseModel):
+    """Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.
+
+    :param value: The discriminator value that selects this branch.
+    :type value: NonEmptyStr
+    :param label: The human-readable label for the segmented-control option.
+    :type label: NonEmptyStr
+    :param fields: The leaf fields revealed when this branch is active.
+    :type fields: list[LeafField]
+    """
+
+    value: NonEmptyStr
+    label: NonEmptyStr
+    fields: list[LeafField] = Field(..., min_length=1)
+
+
+class OneOfGroup(SchemaBaseModel):
+    """Represent a labelled either/or field group with a segmented mode switch.
+
+    The React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,
+    shows :attr:`description` as helper text, and renders only the active
+    branch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden
+    at validation time via rules synthesised from the group's branch contract.
+
+    :param field_type: The discriminator literal; always ``"one_of"`` for this
+        class. Serialised as the JSON key ``"type"``.
+    :type field_type: Literal["one_of"]
+    :param name: Stable group identifier used as the React list key. Not a
+        separate form value — :attr:`discriminator` names the mode field.
+    :type name: NonEmptyStr
+    :param label: The human-readable group heading above the segmented control.
+    :type label: NonEmptyStr
+    :param description: Optional helper text rendered beneath the group label.
+        Defaults to ``None``.
+    :type description: NonEmptyStr | None
+    :param discriminator: Dotted path to the mode field (for example,
+        ``"source.mode"``) whose value selects the active branch.
+    :type discriminator: NonEmptyStr
+    :param default: Optional default branch :attr:`~OneOfBranch.value`. Must
+        match one of the declared branches when set. Defaults to ``None``.
+    :type default: NonEmptyStr | None
+    :param branches: Two or more named branches, each owning its own field list.
+    :type branches: list[OneOfBranch]
+    """
+
+    field_type: Literal["one_of"] = Field(
+        "one_of", alias="type", serialization_alias="type"
+    )
+    name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
+    label: NonEmptyStr
+    description: NonEmptyStr | None = None
+    discriminator: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
+    default: NonEmptyStr | None = None
+    branches: list[OneOfBranch] = Field(..., min_length=2)
+
+    @model_validator(mode="after")
+    def _validate_branch_values(self) -> Self:
+        """Ensure branch values are unique and ``default`` matches one branch."""
+        values = [branch.value for branch in self.branches]
+        duplicates = sorted(
+            value for value, count in Counter(values).items() if count > 1
+        )
+        if duplicates:
+            raise ValueError(f"duplicate one_of branch value(s): {duplicates}")
+        if self.default is not None and self.default not in values:
+            raise ValueError(
+                f"one_of default {self.default!r} is not a declared branch value; "
+                f"known: {sorted(values)}"
+            )
+        return self
+
+
+AnyField = Annotated[
+    LeafField | OneOfGroup,
+    Field(discriminator="field_type"),
+]
 """Discriminated union of every concrete field class in the plugin schema DSL."""
 
 
@@ -541,7 +625,8 @@ class FormSection(SchemaBaseModel):
     :param description: Optional helper text rendered beneath the section
         heading. Defaults to ``None``.
     :type description: NonEmptyStr | None
-    :param fields: The list of fields belonging to this section.
+    :param fields: The list of fields belonging to this section. May include
+        :class:`OneOfGroup` containers alongside leaf fields.
     :type fields: list[AnyField]
     :param cardinality_rules: Optional cross-field cardinality constraints
         scoped to the fields in this section. Defaults to ``None``.
@@ -850,6 +935,81 @@ class Capabilities(SchemaBaseModel):
     pii_anonymization: bool = False
 
 
+def _iter_form_item_leaves(field: AnyField) -> Iterator[BaseField]:
+    """Yield leaf fields for one section item (a leaf field or a one-of group)."""
+    if isinstance(field, OneOfGroup):
+        for branch in field.branches:
+            yield from branch.fields
+        return
+    yield field
+
+
+def _iter_section_fields(section: FormSection) -> Iterator[BaseField]:
+    """Yield every leaf :class:`BaseField` in ``section``, expanding one-of groups."""
+    for field in section.fields:
+        yield from _iter_form_item_leaves(field)
+
+
+def _declared_field_names_from_forms(forms: list[FormSection]) -> set[str]:
+    """Return every field name conditional rules may reference across ``forms``."""
+    names: set[str] = set()
+    for section in forms:
+        for field in section.fields:
+            if isinstance(field, OneOfGroup):
+                names.add(field.discriminator)
+        for leaf in _iter_section_fields(section):
+            names.add(leaf.name)
+    return names
+
+
+def _register_field_name(
+    name: str, global_seen: set[str], duplicates: list[str]
+) -> None:
+    """Record ``name`` in ``global_seen`` or append to ``duplicates``."""
+    if name in global_seen:
+        duplicates.append(name)
+    else:
+        global_seen.add(name)
+
+
+def _validate_one_of_group_names(
+    group: OneOfGroup, global_seen: set[str], duplicates: list[str]
+) -> None:
+    """Apply uniqueness rules for one :class:`OneOfGroup` and its branch leaves."""
+    _register_field_name(group.name, global_seen, duplicates)
+    _register_field_name(group.discriminator, global_seen, duplicates)
+
+    branch_counts: Counter[str] = Counter(
+        leaf.name for branch in group.branches for leaf in branch.fields
+    )
+    structural_names = {group.name, group.discriminator}
+    for branch in group.branches:
+        for leaf in branch.fields:
+            if branch_counts[leaf.name] > 1:
+                if leaf.name in global_seen and leaf.name not in structural_names:
+                    duplicates.append(leaf.name)
+            else:
+                _register_field_name(leaf.name, global_seen, duplicates)
+
+
+def _validate_unique_field_names_in_forms(forms: list[FormSection]) -> None:
+    """Raise when form field names collide outside allowed one-of branch reuse."""
+    global_seen: set[str] = set()
+    duplicates: list[str] = []
+
+    for section in forms:
+        for field in section.fields:
+            if isinstance(field, OneOfGroup):
+                _validate_one_of_group_names(field, global_seen, duplicates)
+            else:
+                _register_field_name(field.name, global_seen, duplicates)
+
+    if duplicates:
+        raise ValueError(
+            f"duplicate field name(s) across form sections: {sorted(set(duplicates))}"
+        )
+
+
 def _collect_reference_errors(
     scope_path: str,
     names: set[str],
@@ -900,7 +1060,12 @@ def _collect_basefield_gate_errors(
     declared_field_names: set[str],
     errors: list[str],
 ) -> None:
-    """Walk a BaseField's ``requires`` / ``forbidden`` gates."""
+    """Walk a leaf field's ``requires`` / ``forbidden`` gates (expands one-of branches)."""
+    if isinstance(field, OneOfGroup):
+        for branch in field.branches:
+            for leaf in branch.fields:
+                _collect_basefield_gate_errors(leaf, declared_field_names, errors)
+        return
     for primitive in ("requires", "forbidden"):
         for rule_index, gate in enumerate(getattr(field, primitive) or []):
             references = gate.when.referenced_fields() | {field.name}
@@ -1010,19 +1175,7 @@ class PluginEntitySchema(SchemaBaseModel):
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
         """Ensure field ``name`` values are unique within this entity's forms."""
-        seen = set()
-        duplicates = []
-        for section in self.forms:
-            for field in section.fields:
-                if field.name in seen:
-                    duplicates.append(field.name)
-                else:
-                    seen.add(field.name)
-        if duplicates:
-            raise ValueError(
-                f"duplicate field name(s) across form sections: "
-                f"{sorted(set(duplicates))}"
-            )
+        _validate_unique_field_names_in_forms(self.forms)
         return self
 
 
@@ -1233,19 +1386,7 @@ class PluginSchema(SchemaBaseModel):
             raise ValueError(
                 "list_view is required when entities is not set (task-style plugins)"
             )
-        seen = set()
-        duplicates = []
-        for section in self.forms:
-            for field in section.fields:
-                if field.name in seen:
-                    duplicates.append(field.name)
-                else:
-                    seen.add(field.name)
-        if duplicates:
-            raise ValueError(
-                f"duplicate field name(s) across form sections: "
-                f"{sorted(set(duplicates))}"
-            )
+        _validate_unique_field_names_in_forms(self.forms)
         return self
 
     @model_validator(mode="after")
@@ -1270,9 +1411,7 @@ class PluginSchema(SchemaBaseModel):
         errors = []
         if self.entities:
             for entity_index, entity in enumerate(self.entities):
-                declared_field_names = {
-                    field.name for section in entity.forms for field in section.fields
-                }
+                declared_field_names = _declared_field_names_from_forms(entity.forms)
                 entity_label = f"PluginEntitySchema[{entity_index}] {entity.name!r}"
                 for section_index, section in enumerate(entity.forms):
                     section_label = (
@@ -1304,9 +1443,7 @@ class PluginSchema(SchemaBaseModel):
                     entity.fail_when, entity_label, declared_field_names, errors
                 )
         else:
-            declared_field_names = {
-                field.name for section in self.forms for field in section.fields
-            }
+            declared_field_names = _declared_field_names_from_forms(self.forms)
             for section_index, section in enumerate(self.forms):
                 section_label = f"FormSection[{section_index}] {section.title!r}"
                 for field in section.fields:
