@@ -51,7 +51,12 @@ export function getAtPath(values: Record<string, unknown>, path: string): unknow
   return current;
 }
 
-/** Write ``value`` at ``path``, creating intermediate plain objects as needed. */
+/** Write ``value`` at ``path``, creating intermediate plain objects as needed.
+
+Shallow-clones existing plain-object intermediates along the path so callers
+that shallow-copy the root (for example ``coerceFormValues``) do not mutate
+nested objects still referenced from the input.
+*/
 export function setAtPath(target: Record<string, unknown>, path: string, value: unknown): void {
   if (pathHasForbiddenSegment(path)) {
     return;
@@ -61,10 +66,15 @@ export function setAtPath(target: Record<string, unknown>, path: string, value: 
   for (let index = 0; index < segments.length - 1; index += 1) {
     const segment = segments[index];
     const next = current[segment];
-    if (!isPlainObject(next)) {
-      current[segment] = {};
+    if (isPlainObject(next)) {
+      const cloned: Record<string, unknown> = { ...next };
+      current[segment] = cloned;
+      current = cloned;
+    } else {
+      const created: Record<string, unknown> = {};
+      current[segment] = created;
+      current = created;
     }
-    current = current[segment] as Record<string, unknown>;
   }
   const leaf = segments[segments.length - 1];
   if (value === undefined) {
