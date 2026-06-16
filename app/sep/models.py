@@ -19,6 +19,7 @@ from enum import auto, IntEnum, StrEnum
 from typing import Self
 
 from pydantic import (
+    computed_field,
     model_validator,
     UUID4,
 )
@@ -269,53 +270,81 @@ class SyncItemWrite(SyncItemBase):
     """
 
 
+class AppLifecycleEnum(StrEnum):
+    """Enumerate the runtime lifecycle states of an app.
+
+    Member names equal their values, so the DB column, its CHECK constraint, the
+    API wire value, and any operator SQL all share one uppercase token. The
+    transitional states ``ENABLING`` and ``DISABLING`` expose an observable
+    window for future machinery to finish in-flight work before an app goes
+    fully offline; the request guard treats every state other than ``ENABLED``
+    as unreachable.
+    """
+
+    ENABLED = "ENABLED"
+    DISABLED = "DISABLED"
+    ENABLING = "ENABLING"
+    DISABLING = "DISABLING"
+
+
 class AppStateBase(SQLModel):
     """Define the shared fields for :class:`AppState`.
 
     :param app_key: The plugin's module key (the last dotted segment of its
         ``module_name``). Unique and indexed for per-request lookups.
-    :type app_key: NonEmptyStr
-    :param enabled: Whether the app is currently enabled. The column default is
-        ``False``; the startup seed sets explicit values from ``settings.yaml``.
-    :type enabled: bool
+    :param lifecycle_state: The app's runtime lifecycle state. Defaults to
+        ``ENABLED``; the startup seed maps each ``settings.yaml`` flag to
+        ``ENABLED`` or ``DISABLED``.
     """
 
     app_key: NonEmptyStr = SQLField(unique=True, index=True)
-    enabled: bool = False
+    lifecycle_state: AppLifecycleEnum = SQLField(
+        default=AppLifecycleEnum.ENABLED,
+        sa_column=Column(
+            EnumField(AppLifecycleEnum, native_enum=False, create_constraint=True),
+            nullable=False,
+        ),
+    )
 
 
 class AppState(BaseSQLModel, AppStateBase, table=True):
-    """Represent the per-app runtime enable/disable state.
+    """Represent the per-app runtime lifecycle state.
 
     One row per non-protected plugin in ``settings.yaml SEP.PLUGINS``. Seeded on
-    startup via :func:`app.sep.db.seed.init_sep_db` with ``enabled=plugin.enabled``
-    from each YAML entry, and toggled via the admin REST endpoint at
-    ``PUT /api/admin/apps/{app_key}/state``.
+    startup via :func:`app.sep.db.seed.init_sep_db`, mapping each YAML entry's
+    ``enabled`` flag to ``ENABLED`` / ``DISABLED``, and transitioned via the
+    admin REST endpoint at ``PUT /api/admin/apps/{app_key}/state``.
 
     Protected apps (currently ``inventory``) are never seeded and have no row;
     the request guard skips injection for them and the toggle endpoint rejects
-    them. A missing row for a configured app is treated as ``enabled=True`` by
-    the guard (a configured plugin is active until explicitly disabled); rows
-    for apps no longer in ``SEP.PLUGINS`` are cleaned up on the next startup
-    seed.
+    them. A missing row for a configured app is treated as ``ENABLED`` by the
+    guard (a configured plugin is active until explicitly disabled); rows for
+    apps no longer in ``SEP.PLUGINS`` are cleaned up on the next startup seed.
 
     :param id: The auto-incremented primary key.
-    :type id: int | None
     :param app_key: The plugin's module key. Unique and indexed.
-    :type app_key: NonEmptyStr
-    :param enabled: Whether the app is currently enabled.
-    :type enabled: bool
+    :param lifecycle_state: The app's runtime lifecycle state.
     """
+
+    @computed_field
+    @property
+    def enabled(self) -> bool:
+        """Return whether the app is fully enabled (DEPRECATED).
+
+        Derived from ``lifecycle_state`` for one deprecation cycle; ``True`` only
+        when the state is ``ENABLED``. New read sites read ``lifecycle_state``
+        directly so the eventual shim removal is a one-shot delete.
+        """
+        return self.lifecycle_state == AppLifecycleEnum.ENABLED
 
 
 class AppStateWrite(SQLModel):
     """Define the write payload for the app-state toggle endpoint.
 
-    :param enabled: The desired enabled state.
-    :type enabled: bool
+    :param lifecycle_state: The requested target lifecycle state.
     """
 
-    enabled: bool
+    lifecycle_state: AppLifecycleEnum
 
 
 class SEPPluginPeriodicTaskBase(SQLModel):
@@ -326,7 +355,8 @@ class SEPPluginPeriodicTaskBase(SQLModel):
     :param app_key: The owning app's key, joined against
         :class:`AppState.app_key`.
     :param user_enabled: The per-schedule operator override. ``effective_enabled``
-        is ``AppState.enabled AND user_enabled``; defaults to ``True``.
+        is true when the owning app is ``ENABLED`` and ``user_enabled`` is set;
+        defaults to ``True``.
     """
 
     periodic_task_name: NonEmptyStr = SQLField(unique=True, index=True)

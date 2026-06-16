@@ -35,7 +35,7 @@ from app.sep.deps import (
     SessionDep,
     ToggleableAppKeyDep,
 )
-from app.sep.models import AppState, AppStateBase, AppStateWrite
+from app.sep.models import AppLifecycleEnum, AppState, AppStateBase, AppStateWrite
 from app.sep.periodic_tasks import apply_effective_enabled
 from app.sep.plugins.framework.registry import get_app_registry
 
@@ -49,8 +49,9 @@ class AppInfoResponse(BaseModel):
     :type app_key: str
     :param name: The human-readable plugin name.
     :type name: str
-    :param enabled: Whether the app is currently enabled.
+    :param enabled: Whether the app is fully enabled (derived; deprecated).
     :type enabled: bool
+    :param lifecycle_state: The app's runtime lifecycle state.
     :param toggleable: Whether the app may be toggled (``False`` for protected).
     :type toggleable: bool
     :param uri_path: The plugin's mount URI path.
@@ -66,6 +67,7 @@ class AppInfoResponse(BaseModel):
     app_key: str
     name: str
     enabled: bool
+    lifecycle_state: AppLifecycleEnum
     toggleable: bool
     uri_path: str
     css_class: str
@@ -78,12 +80,14 @@ class AppStateResponse(BaseModel):
 
     :param app_key: The toggled app's key.
     :type app_key: str
-    :param enabled: The resulting enabled state.
+    :param enabled: The resulting enabled flag (derived; deprecated).
     :type enabled: bool
+    :param lifecycle_state: The resulting lifecycle state.
     """
 
     app_key: str
     enabled: bool
+    lifecycle_state: AppLifecycleEnum
 
 
 @router.get("/")
@@ -91,20 +95,22 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
     """List every configured app with its current enabled state.
 
     Returns one entry per ``SEP.PLUGINS`` entry, in declaration order. Protected
-    apps (``inventory``) appear with ``enabled=True, toggleable=False``. The list
-    is non-paginated: app cardinality is bounded (<20).
+    apps (``inventory``) and apps with no row appear as ``ENABLED`` /
+    ``enabled=True, toggleable=False``. The list is non-paginated: app
+    cardinality is bounded (<20).
 
     :param session: The database session.
     :type session: SessionDep
     :return: The per-app info list.
     :rtype: list[AppInfoResponse]
     """
-    states = await AppStateManager.all_states(session)
+    states = await AppStateManager.all_lifecycle_states(session)
     return [
         AppInfoResponse(
             app_key=app.key,
             name=app.name,
-            enabled=app.key in PROTECTED_APP_KEYS or states.get(app.key, True),
+            lifecycle_state=lifecycle,
+            enabled=lifecycle == AppLifecycleEnum.ENABLED,
             toggleable=app.key not in PROTECTED_APP_KEYS,
             uri_path=app.uri_path,
             css_class=app.css_class,
@@ -112,6 +118,11 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
             has_api_router=app.api_router is not None,
         )
         for app in get_app_registry()
+        for lifecycle in (
+            AppLifecycleEnum.ENABLED
+            if app.key in PROTECTED_APP_KEYS
+            else states.get(app.key, AppLifecycleEnum.ENABLED),
+        )
     ]
 
 
@@ -122,33 +133,39 @@ async def update_app_state(
     session: SessionDep,
     celery_beat_session: CeleryBeatSessionDep,
 ) -> AppState:
-    """Toggle an app's enabled state.
+    """Transition an app to a new lifecycle state.
 
-    Returns 409 for protected apps (``inventory``). Returns 404 if the key does
-    not match any configured plugin. A configured app with no row yet (e.g. one
-    added to ``settings.yaml`` before the next startup seed) gets its row
-    created with the requested state, so the toggle stays consistent with the
-    read guard, which treats a missing row as enabled. Returns the updated row,
-    projected through :class:`AppStateResponse` by FastAPI's ``response_model``.
+    Validates the requested edge against the allowed transitions
+    (``ENABLED`` -> ``DISABLING``, ``DISABLED`` -> ``ENABLING``,
+    ``DISABLING`` -> ``DISABLED``, ``ENABLING`` -> ``ENABLED``); an illegal edge
+    returns 409. Returns 409 for protected apps (``inventory``) and 404 if the
+    key does not match any configured plugin. A configured app with no row yet is
+    treated as ``ENABLED`` for the gate and gets its row created with the
+    requested state. Returns the updated row, projected through
+    :class:`AppStateResponse` by FastAPI's ``response_model``.
 
     After the ``AppState`` write commits, the app's owned periodic schedules are
     re-gated via :func:`app.sep.periodic_tasks.apply_effective_enabled` so a
-    disabled app also stops its Celery beat tasks (and re-enabling resumes them,
-    subject to each schedule's ``user_enabled`` override).
+    non-``ENABLED`` app also stops its Celery beat tasks (and a return to
+    ``ENABLED`` resumes them, subject to each schedule's ``user_enabled``
+    override).
 
-    :param app_key: The app key to toggle.
+    :param app_key: The app key to transition.
     :type app_key: str
-    :param body: The desired enabled state.
+    :param body: The requested target lifecycle state.
     :type body: AppStateWrite
     :param session: The SEP database session.
     :type session: SessionDep
     :param celery_beat_session: The celery-beat database session.
     :return: The updated app-state row.
     :rtype: AppState
+    :raises HTTPConflictException: When the requested transition edge is illegal.
     """
+    current = await AppStateManager.current_lifecycle(session, app_key)
+    AppStateManager.assert_transition_allowed(current, body.lifecycle_state)
     state, created = await AppStateManager.get_or_create(
         session,
-        AppStateBase(app_key=app_key, enabled=body.enabled),
+        AppStateBase(app_key=app_key, lifecycle_state=body.lifecycle_state),
         filter_include={"app_key"},
     )
     if not created:

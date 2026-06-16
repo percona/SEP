@@ -36,7 +36,7 @@ from app.sep.deps import (
     validate_csrf,
 )
 from app.sep.main import sep_app
-from app.sep.models import AppState
+from app.sep.models import AppLifecycleEnum, AppState
 
 
 @pytest_asyncio.fixture(name="override_session")
@@ -117,16 +117,32 @@ class TestListAppsForNavigation:
         inventory = next(e for e in response.json() if e["app_key"] == "inventory")
         assert inventory["enabled"] is True
 
-    async def test_disabled_plugin_reflected(
-        self, api_user_client: TestClient, override_session: AsyncSession
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    async def test_non_enabled_plugin_reported_disabled(
+        self,
+        api_user_client: TestClient,
+        override_session: AsyncSession,
+        state: AppLifecycleEnum,
     ) -> None:
-        """A disabled non-protected plugin reports ``enabled=False``."""
-        override_session.add(AppState(app_key="snippets", enabled=False))
+        """A non-protected plugin in any non-ENABLED state reports ``enabled=False``.
+
+        The public navigation listing keeps its ``enabled``-only shape — it does
+        not surface ``lifecycle_state``.
+        """
+        override_session.add(AppState(app_key="snippets", lifecycle_state=state))
         await override_session.commit()
 
         response = api_user_client.get("/api/apps/")
         snippets = next(e for e in response.json() if e["app_key"] == "snippets")
         assert snippets["enabled"] is False
+        assert "lifecycle_state" not in snippets
 
     async def test_unauthenticated_returns_json_401(
         self, api_unauthenticated_client: TestClient

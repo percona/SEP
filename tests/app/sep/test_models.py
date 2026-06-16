@@ -18,7 +18,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.sep.models import AppState, AppStateBase, AppStateWrite
+from app.sep.models import AppLifecycleEnum, AppState, AppStateBase, AppStateWrite
 from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.models import ArchivesCreate
 
@@ -26,9 +26,11 @@ from app.sep.plugins.archives.models import ArchivesCreate
 class TestAppStateModel:
     """Test suite for the AppState model and its companions."""
 
-    def test_base_enabled_defaults_to_false(self):
-        """The shared base column-default for ``enabled`` is ``False``."""
-        assert AppStateBase(app_key="snippets").enabled is False
+    def test_base_lifecycle_state_defaults_to_enabled(self):
+        """The shared base column-default for ``lifecycle_state`` is ``ENABLED``."""
+        assert (
+            AppStateBase(app_key="snippets").lifecycle_state is AppLifecycleEnum.ENABLED
+        )
 
     def test_base_requires_app_key(self):
         """``app_key`` has no default — omitting it fails validation."""
@@ -40,14 +42,33 @@ class TestAppStateModel:
         with pytest.raises(ValidationError):
             AppStateBase(app_key="")
 
-    def test_table_model_enabled_defaults_to_false(self):
-        """The table model inherits the ``enabled=False`` column default."""
-        assert AppState(app_key="snippets").enabled is False
+    def test_table_model_lifecycle_state_defaults_to_enabled(self):
+        """The table model inherits the ``lifecycle_state=ENABLED`` column default."""
+        assert AppState(app_key="snippets").lifecycle_state is AppLifecycleEnum.ENABLED
 
-    def test_write_model_requires_enabled(self):
-        """The write payload requires ``enabled`` — it has no default."""
+    @pytest.mark.parametrize("state", list(AppLifecycleEnum))
+    def test_enabled_computed_field_parity(self, state: AppLifecycleEnum) -> None:
+        """``enabled`` is ``True`` only for the ``ENABLED`` lifecycle state."""
+        row = AppState(app_key="snippets", lifecycle_state=state)
+        assert row.enabled is (state == AppLifecycleEnum.ENABLED)
+
+    def test_enabled_appears_in_model_dump(self):
+        """The derived ``enabled`` flag is serialized alongside ``lifecycle_state``."""
+        dumped = AppState(
+            app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLING
+        ).model_dump()
+        assert dumped["lifecycle_state"] is AppLifecycleEnum.DISABLING
+        assert dumped["enabled"] is False
+
+    def test_write_model_requires_lifecycle_state(self):
+        """The write payload requires ``lifecycle_state`` — it has no default."""
         with pytest.raises(ValidationError):
             AppStateWrite()
+
+    def test_write_model_rejects_unknown_lifecycle_state(self):
+        """The write payload rejects a value outside ``AppLifecycleEnum``."""
+        with pytest.raises(ValidationError):
+            AppStateWrite(lifecycle_state="BOGUS")
 
 
 class TestArchivesCreateModel:

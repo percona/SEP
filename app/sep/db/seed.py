@@ -28,7 +28,7 @@ from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
 from app.sep.deps import PROTECTED_APP_KEYS
-from app.sep.models import AppState, AppStateBase
+from app.sep.models import AppLifecycleEnum, AppState, AppStateBase
 from app.sep.periodic_tasks import sync_app_periodic_task_gating
 from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings
@@ -107,10 +107,10 @@ async def init_sep_db() -> None:
     """Initialize the SEP database with app state and periodic tasks.
 
     Seeds one :class:`app.sep.models.AppState` row per non-protected plugin in
-    ``SEP.PLUGINS`` using get-or-create (the YAML ``enabled`` value is read only
-    on insert; existing rows are never overwritten), removes rows for apps no
-    longer configured, then seeds the SEP periodic tasks and gates each
-    plugin-owned schedule by its app state via
+    ``SEP.PLUGINS`` using get-or-create (the YAML ``enabled`` flag is mapped to
+    ``ENABLED`` / ``DISABLED`` only on insert; existing rows are never
+    overwritten), removes rows for apps no longer configured, then seeds the SEP
+    periodic tasks and gates each plugin-owned schedule by its app state via
     :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating`.
     """
     async_session_maker = get_async_session_maker()
@@ -121,12 +121,15 @@ async def init_sep_db() -> None:
             if app.key not in PROTECTED_APP_KEYS
         ]
         configured_keys = {key for key, _ in configured}
-        existing_keys = set(await AppStateManager.all_states(session))
+        existing_keys = set(await AppStateManager.all_lifecycle_states(session))
         for key, enabled in configured:
             if key in existing_keys:
                 continue
+            lifecycle_state = (
+                AppLifecycleEnum.ENABLED if enabled else AppLifecycleEnum.DISABLED
+            )
             await AppStateManager.create(
-                session, AppStateBase(app_key=key, enabled=enabled)
+                session, AppStateBase(app_key=key, lifecycle_state=lifecycle_state)
             )
         orphan_keys = existing_keys - configured_keys
         if orphan_keys:

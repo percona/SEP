@@ -68,7 +68,7 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
-from app.sep.models import AppState, SyncInventoryEntityTypeEnum
+from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
 from app.sep.plugins.framework.registry import build_app_registry
 from app.tasks.models import (
     Task,
@@ -1315,16 +1315,26 @@ class TestRequireAppEnabled:
 
     @pytest.mark.asyncio
     async def test_gate_passes_when_enabled(self, session) -> None:
-        """The gate returns ``None`` when the app row is enabled."""
-        session.add(AppState(app_key="snippets", enabled=True))
+        """The gate returns ``None`` when the app is ``ENABLED``."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
         await session.commit()
         gate = require_app_enabled("snippets")
         assert await gate(session) is None
 
     @pytest.mark.asyncio
-    async def test_gate_raises_503_when_disabled(self, session) -> None:
-        """The gate raises 503 when the app row is disabled."""
-        session.add(AppState(app_key="snippets", enabled=False))
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    async def test_gate_raises_503_for_non_enabled_states(self, session, state) -> None:
+        """The gate raises 503 whenever the app is not ``ENABLED``."""
+        session.add(AppState(app_key="snippets", lifecycle_state=state))
         await session.commit()
         gate = require_app_enabled("snippets")
         with pytest.raises(HTTPServiceUnavailableException) as exc_info:
@@ -1393,12 +1403,22 @@ class TestGetDefaultContextPluginFiltering:
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("mock_get_username_mapping")
-    async def test_enabled_plugin_included_disabled_excluded(
-        self, session, dummy_request, regular_user
+    @pytest.mark.parametrize(
+        "excluded_state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    async def test_enabled_plugin_included_non_enabled_excluded(
+        self, session, dummy_request, regular_user, excluded_state
     ) -> None:
-        """Only protected apps plus enabled non-protected apps reach the sidebar."""
-        session.add(AppState(app_key="snippets", enabled=True))
-        session.add(AppState(app_key="checksums", enabled=False))
+        """Only protected apps plus ``ENABLED`` non-protected apps reach the sidebar."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        session.add(AppState(app_key="checksums", lifecycle_state=excluded_state))
         await session.commit()
 
         with (
@@ -1421,7 +1441,9 @@ class TestGetDefaultContextPluginFiltering:
         self, session, dummy_request, regular_user
     ) -> None:
         """A protected app stays in the sidebar regardless of any DB row."""
-        session.add(AppState(app_key="inventory", enabled=False))
+        session.add(
+            AppState(app_key="inventory", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
         await session.commit()
 
         with (

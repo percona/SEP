@@ -20,8 +20,10 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.exceptions import HTTPConflictException
 from app.sep.crud import AppStateManager, SyncInstanceManager, SyncItemManager
 from app.sep.models import (
+    AppLifecycleEnum,
     AppState,
     SyncInstance,
     SyncInventoryEntityTypeEnum,
@@ -384,18 +386,13 @@ class TestAppStateManager:
     """Test suite for AppStateManager against a real session."""
 
     @pytest.mark.asyncio
-    async def test_is_enabled_true_for_enabled_row(self, session) -> None:
-        """``is_enabled`` returns ``True`` when the row is enabled."""
-        session.add(AppState(app_key="snippets", enabled=True))
+    @pytest.mark.parametrize("state", list(AppLifecycleEnum))
+    async def test_is_enabled_only_for_enabled_state(self, session, state) -> None:
+        """``is_enabled`` is ``True`` only when the row's state is ``ENABLED``."""
+        session.add(AppState(app_key="snippets", lifecycle_state=state))
         await session.commit()
-        assert await AppStateManager.is_enabled(session, "snippets") is True
-
-    @pytest.mark.asyncio
-    async def test_is_enabled_false_for_disabled_row(self, session) -> None:
-        """``is_enabled`` returns ``False`` when the row is disabled."""
-        session.add(AppState(app_key="snippets", enabled=False))
-        await session.commit()
-        assert await AppStateManager.is_enabled(session, "snippets") is False
+        expected = state == AppLifecycleEnum.ENABLED
+        assert await AppStateManager.is_enabled(session, "snippets") is expected
 
     @pytest.mark.asyncio
     async def test_is_enabled_true_for_missing_row(self, session) -> None:
@@ -403,10 +400,14 @@ class TestAppStateManager:
         assert await AppStateManager.is_enabled(session, "snippets") is True
 
     @pytest.mark.asyncio
-    async def test_all_states_returns_full_mapping(self, session) -> None:
-        """``all_states`` returns the full ``app_key`` -> ``enabled`` mapping."""
-        session.add(AppState(app_key="snippets", enabled=True))
-        session.add(AppState(app_key="checksums", enabled=False))
+    async def test_all_states_returns_derived_enabled_mapping(self, session) -> None:
+        """``all_states`` derives the ``app_key`` -> ``enabled`` bool mapping."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        session.add(
+            AppState(app_key="checksums", lifecycle_state=AppLifecycleEnum.DISABLING)
+        )
         await session.commit()
         assert await AppStateManager.all_states(session) == {
             "snippets": True,
@@ -417,3 +418,67 @@ class TestAppStateManager:
     async def test_all_states_empty_table(self, session) -> None:
         """``all_states`` returns an empty mapping when no rows exist."""
         assert await AppStateManager.all_states(session) == {}
+
+    @pytest.mark.asyncio
+    async def test_all_lifecycle_states_returns_full_mapping(self, session) -> None:
+        """``all_lifecycle_states`` returns the ``app_key`` -> state mapping."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        session.add(
+            AppState(app_key="checksums", lifecycle_state=AppLifecycleEnum.DISABLING)
+        )
+        await session.commit()
+        assert await AppStateManager.all_lifecycle_states(session) == {
+            "snippets": AppLifecycleEnum.ENABLED,
+            "checksums": AppLifecycleEnum.DISABLING,
+        }
+
+    @pytest.mark.asyncio
+    async def test_current_lifecycle_reads_row_state(self, session) -> None:
+        """``current_lifecycle`` returns the persisted state for an existing row."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLING)
+        )
+        await session.commit()
+        current = await AppStateManager.current_lifecycle(session, "snippets")
+        assert current is AppLifecycleEnum.DISABLING
+
+    @pytest.mark.asyncio
+    async def test_current_lifecycle_missing_row_is_enabled(self, session) -> None:
+        """A missing row reports ``ENABLED`` for the transition gate."""
+        current = await AppStateManager.current_lifecycle(session, "snippets")
+        assert current is AppLifecycleEnum.ENABLED
+
+    @pytest.mark.parametrize(
+        ("current", "target"),
+        [
+            (AppLifecycleEnum.ENABLED, AppLifecycleEnum.DISABLING),
+            (AppLifecycleEnum.DISABLED, AppLifecycleEnum.ENABLING),
+            (AppLifecycleEnum.DISABLING, AppLifecycleEnum.DISABLED),
+            (AppLifecycleEnum.ENABLING, AppLifecycleEnum.ENABLED),
+        ],
+    )
+    def test_assert_transition_allowed_accepts_valid_edges(
+        self, current, target
+    ) -> None:
+        """Each reachable edge passes the transition gate without raising."""
+        AppStateManager.assert_transition_allowed(current, target)
+
+    @pytest.mark.parametrize(
+        ("current", "target"),
+        [
+            (AppLifecycleEnum.ENABLED, AppLifecycleEnum.ENABLED),
+            (AppLifecycleEnum.ENABLED, AppLifecycleEnum.DISABLED),
+            (AppLifecycleEnum.DISABLED, AppLifecycleEnum.ENABLED),
+            (AppLifecycleEnum.DISABLING, AppLifecycleEnum.ENABLED),
+            (AppLifecycleEnum.DISABLING, AppLifecycleEnum.DISABLING),
+            (AppLifecycleEnum.ENABLING, AppLifecycleEnum.DISABLED),
+        ],
+    )
+    def test_assert_transition_allowed_rejects_illegal_edges(
+        self, current, target
+    ) -> None:
+        """Every illegal edge raises ``HTTPConflictException`` (HTTP 409)."""
+        with pytest.raises(HTTPConflictException):
+            AppStateManager.assert_transition_allowed(current, target)
