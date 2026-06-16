@@ -1976,6 +1976,53 @@ class TestOneOfGroup:
                 list_view=_minimal_list_view(),
             )
 
+    def test_rejects_shared_branch_leaf_reused_outside_one_of(self) -> None:
+        """Reject a branch-shared leaf name when reused by another form field."""
+        group = OneOfGroup(
+            name="target",
+            label="Target",
+            discriminator="target.mode",
+            branches=[
+                OneOfBranch(
+                    value="service",
+                    label="Service",
+                    fields=[
+                        ServiceField(
+                            name="target",
+                            label="Target",
+                            service_types=[ServiceTypeEnum.MYSQL],
+                        ),
+                    ],
+                ),
+                OneOfBranch(
+                    value="schema",
+                    label="Schema",
+                    fields=[
+                        SchemaField(
+                            name="target",
+                            label="Target",
+                            depends_on="service_id",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        with pytest.raises(ValueError, match="duplicate field name"):
+            PluginEntitySchema(
+                name="e",
+                display_name="E",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[
+                            group,
+                            StringField(name="target", label="Collision"),
+                        ],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
     def test_rejects_duplicate_branch_values(self) -> None:
         """Reject two branches that share the same ``value``."""
         with pytest.raises(ValidationError, match="duplicate one_of branch value"):

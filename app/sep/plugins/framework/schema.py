@@ -983,13 +983,18 @@ def _validate_one_of_group_names(
         leaf.name for branch in group.branches for leaf in branch.fields
     )
     structural_names = {group.name, group.discriminator}
+    branch_shared_registered: set[str] = set()
     for branch in group.branches:
         for leaf in branch.fields:
             if branch_counts[leaf.name] > 1:
-                if leaf.name in global_seen and leaf.name not in structural_names:
+                if leaf.name in branch_shared_registered:
+                    continue
+                branch_shared_registered.add(leaf.name)
+            if leaf.name in global_seen:
+                if leaf.name not in structural_names:
                     duplicates.append(leaf.name)
             else:
-                _register_field_name(leaf.name, global_seen, duplicates)
+                global_seen.add(leaf.name)
 
 
 def _validate_unique_field_names_in_forms(forms: list[FormSection]) -> None:
