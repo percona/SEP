@@ -16,13 +16,14 @@
 """Unit tests for the conditional-rule primitive DSL, evaluator, and wiring."""
 
 from enum import IntEnum
-from typing import Self
+from typing import Annotated, Literal, Self
 
 import pytest
-from pydantic import BaseModel, model_validator, ValidationError
+from pydantic import BaseModel, Field, model_validator, ValidationError
 
 from app.sep.plugins.framework.rules import (
     _extract_rule_plan,
+    _resolve_field,
     absent,
     all_,
     all_equal,
@@ -47,6 +48,7 @@ from app.sep.plugins.framework.rules import (
     Contains,
     contains,
     Equals,
+    evaluate_conditional_rules,
     F,
     FailRule,
     Falsy,
@@ -71,8 +73,11 @@ from app.sep.plugins.framework.rules import (
 )
 from app.sep.plugins.framework.schema import (
     Column,
+    DetailView,
     FormSection,
     ListView,
+    OneOfBranch,
+    OneOfGroup,
     PluginEntitySchema,
     PluginSchema,
     StringField,
@@ -1404,3 +1409,149 @@ class TestMultiEntityRulePlan:
 
         with pytest.raises(ValidationError, match="x"):
             Body(x="", y="y")
+
+
+class TestResolveField:
+    """Tests for dotted-path field resolution in the rules evaluator."""
+
+    def test_resolve_top_level_attribute(self) -> None:
+        """Resolve a plain top-level field name."""
+        assert _resolve_field(_Instance(a="x"), "a") == "x"
+
+    def test_resolve_dotted_nested_attribute(self) -> None:
+        """Resolve a nested attribute via a dotted path."""
+
+        class Source(BaseModel):
+            mode: str = "schema"
+            source_db_id: str = ""
+
+        class Root(BaseModel):
+            source: Source = Source()
+
+        root = Root(source=Source(mode="query", source_db_id="42"))
+        assert _resolve_field(root, "source.mode") == "query"
+        assert _resolve_field(root, "source.source_db_id") == "42"
+
+    def test_resolve_missing_intermediate_returns_none(self) -> None:
+        """Return ``None`` when an intermediate segment is absent."""
+
+        class Root(BaseModel):
+            source: None = None
+
+        assert _resolve_field(Root(), "source.mode") is None
+
+
+class TestOneOfGroupRules:
+    """Branch-selection enforcement synthesised from :class:`OneOfGroup`."""
+
+    @staticmethod
+    def _source_one_of_schema() -> PluginSchema:
+        return PluginSchema(
+            name="p",
+            display_name="P",
+            task_type="t",
+            forms=[
+                FormSection(
+                    title="Source",
+                    fields=[
+                        OneOfGroup(
+                            name="source",
+                            label="Source",
+                            discriminator="source.mode",
+                            default="schema",
+                            branches=[
+                                OneOfBranch(
+                                    value="schema",
+                                    label="Schema",
+                                    fields=[
+                                        StringField(
+                                            name="source.source_db_id",
+                                            label="Schema",
+                                        ),
+                                    ],
+                                ),
+                                OneOfBranch(
+                                    value="query",
+                                    label="Query",
+                                    fields=[
+                                        StringField(
+                                            name="source.source_query",
+                                            label="Query",
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+            list_view=ListView(columns=[Column(key="id", label="ID")]),
+            detail_view=DetailView(sections=[]),
+        )
+
+    def test_rule_plan_includes_synthesised_branch_forbidden_gates(self) -> None:
+        """Emit one ``field_gate_forbidden`` rule per branch leaf."""
+        plan = _extract_rule_plan(self._source_one_of_schema())
+        forbidden = [
+            rule
+            for rule in plan.rules
+            if isinstance(rule.predicate, NotEquals)
+            and rule.predicate.field == "source.mode"
+        ]
+        targets = {rule.fields[0] for rule in forbidden}
+        assert targets == {"source.source_db_id", "source.source_query"}
+
+    def test_active_branch_leaf_allowed_inactive_branch_leaf_forbidden(self) -> None:
+        """Forbid leaves that belong to an unselected one-of branch."""
+        plan = _extract_rule_plan(self._source_one_of_schema())
+
+        class _Source:
+            def __init__(self, mode: str, **attrs: str) -> None:
+                self.mode = mode
+                for key, value in attrs.items():
+                    setattr(self, key, value)
+
+        schema_body = type("Body", (), {"source": _Source("schema", source_db_id="x")})
+        assert evaluate_conditional_rules(schema_body(), plan) == []
+
+        stale_query = type(
+            "Body",
+            (),
+            {"source": _Source("schema", source_db_id="x", source_query="SELECT 1")},
+        )
+        failures = evaluate_conditional_rules(stale_query(), plan)
+        assert any("source.source_query" in message for message in failures)
+
+        query_body = type(
+            "Body", (), {"source": _Source("query", source_query="SELECT 1")}
+        )
+        assert evaluate_conditional_rules(query_body(), plan) == []
+
+        stale_schema = type(
+            "Body",
+            (),
+            {"source": _Source("query", source_query="SELECT 1", source_db_id="x")},
+        )
+        failures = evaluate_conditional_rules(stale_schema(), plan)
+        assert any("source.source_db_id" in message for message in failures)
+
+    def test_apply_conditional_rules_accepts_nested_union_write_model(self) -> None:
+        """Decorate a write model whose nested union backs a one-of schema."""
+        schema = self._source_one_of_schema()
+
+        class SourceBySchema(BaseModel):
+            mode: Literal["schema"] = "schema"
+            source_db_id: str = ""
+
+        class SourceByQuery(BaseModel):
+            mode: Literal["query"] = "query"
+            source_query: str = ""
+
+        @apply_conditional_rules(schema)
+        class Body(ConditionalRulesModel):
+            source: Annotated[
+                SourceBySchema | SourceByQuery, Field(discriminator="mode")
+            ]
+
+        Body(source=SourceBySchema(source_db_id="inventory"))
+        Body(source=SourceByQuery(source_query="SELECT 1"))
