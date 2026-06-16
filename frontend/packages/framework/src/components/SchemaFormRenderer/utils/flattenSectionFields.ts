@@ -22,6 +22,11 @@ export function isOneOfGroup(field: SectionField): field is OneOfGroup {
   return field.type === 'one_of';
 }
 
+/** Collect every {@link OneOfGroup} container across ``sections``. */
+export function collectOneOfGroups(sections: FormSection[]): OneOfGroup[] {
+  return sections.flatMap((section) => section.fields.filter(isOneOfGroup));
+}
+
 /** Expand one section item to its leaf fields (pass-through or branch flatten). */
 export function flattenSectionItem(field: SectionField): PluginField[] {
   if (isOneOfGroup(field)) {

@@ -17,6 +17,7 @@
 
 import type { RegisterOptions } from 'react-hook-form';
 import type { PluginField } from '../types';
+import { getAtPath, setAtPath } from './fieldPath';
 
 export function buildValidationRules(field: PluginField): RegisterOptions {
   const rules: RegisterOptions = {};
@@ -108,14 +109,14 @@ export function coerceFormValues(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...values };
   for (const field of fields) {
-    const raw = out[field.name];
+    const raw = getAtPath(out, field.name);
     if (field.type === 'integer' || field.type === 'float') {
       if (raw === '' || raw === undefined || raw === null) {
-        out[field.name] = undefined;
+        setAtPath(out, field.name, undefined);
         continue;
       }
       const num = field.type === 'integer' ? parseInt(String(raw), 10) : parseFloat(String(raw));
-      out[field.name] = Number.isNaN(num) ? raw : num;
+      setAtPath(out, field.name, Number.isNaN(num) ? raw : num);
       continue;
     }
     if (
@@ -124,14 +125,11 @@ export function coerceFormValues(
       field.type === 'table' ||
       field.type === 'host'
     ) {
-      // ServiceSelector et al. store the full `{id, name, …}` option object
-      // in form state so the autocomplete can render the selected value.
-      // Backend payloads expect the scalar id, so unwrap on submit.
       if (raw && typeof raw === 'object' && 'id' in (raw as Record<string, unknown>)) {
         const id = (raw as { id: unknown }).id;
-        out[field.name] = id ?? undefined;
+        setAtPath(out, field.name, id ?? undefined);
       } else if (raw === '' || raw === null) {
-        out[field.name] = undefined;
+        setAtPath(out, field.name, undefined);
       }
     }
   }

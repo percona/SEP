@@ -1,0 +1,63 @@
+/**
+ * Copyright (C) 2026 Percona LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(value) as unknown;
+  return proto === Object.prototype || proto === null;
+}
+
+/** Read a value at ``path``, supporting dotted nested keys on plain objects. */
+export function getAtPath(values: Record<string, unknown>, path: string): unknown {
+  if (Object.prototype.hasOwnProperty.call(values, path)) {
+    return values[path];
+  }
+  if (!path.includes('.')) {
+    return undefined;
+  }
+  const segments = path.split('.');
+  let current: unknown = values;
+  for (const segment of segments) {
+    if (!isPlainObject(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
+}
+
+/** Write ``value`` at ``path``, creating intermediate plain objects as needed. */
+export function setAtPath(target: Record<string, unknown>, path: string, value: unknown): void {
+  const segments = path.split('.');
+  let current = target;
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const segment = segments[index];
+    const next = current[segment];
+    if (!isPlainObject(next)) {
+      current[segment] = {};
+    }
+    current = current[segment] as Record<string, unknown>;
+  }
+  const leaf = segments[segments.length - 1];
+  if (value === undefined) {
+    delete current[leaf];
+    return;
+  }
+  current[leaf] = value;
+}

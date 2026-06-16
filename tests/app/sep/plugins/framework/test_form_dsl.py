@@ -20,7 +20,7 @@ from enum import auto, StrEnum
 from typing import Annotated, ClassVar, Literal
 
 import pytest
-from pydantic import Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.core.utils.fields import EmptyStrToNone
 from app.inventory.models import ServiceTypeEnum
@@ -59,6 +59,7 @@ from app.sep.plugins.framework.schema import (
     IntegerField,
     ListView,
     MultiChoiceField,
+    OneOfGroup,
     SchemaField,
     ServiceField,
     StringField,
@@ -251,6 +252,10 @@ class _RefModel(AppFormModel):
 
 
 class _MultiRefModel(AppFormModel):
+    target_mode: Annotated[
+        Literal["service", "schema"],
+        Ui(label="Target mode", section="s"),
+    ] = "service"
     target: Annotated[
         int,
         ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
@@ -287,15 +292,91 @@ class TestReferenceFields:
         assert fields["plain"].allow_custom is None
         assert fields["free"].allow_custom is True
 
-    def test_multiple_ref_markers_deferred_to_fe4(self) -> None:
-        """Reject a one-of reference group as deferred to FE-4."""
-        with pytest.raises(ValueError, match="FE-4"):
-            derive_form_sections(_MultiRefModel, _SINGLE_SECTION)
+    def test_multiple_ref_markers_derive_one_of_group(self) -> None:
+        """Derive a one-of group when a field declares multiple reference markers."""
+        sections = derive_form_sections(_MultiRefModel, _SINGLE_SECTION)
+        groups = [
+            field for field in sections[0].fields if isinstance(field, OneOfGroup)
+        ]
+        assert len(groups) == 1
+        group = groups[0]
+        assert group.name == "target"
+        assert group.discriminator == "target_mode"
+        branches = {branch.value: branch for branch in group.branches}
+        assert set(branches) == {"service", "schema"}
+        assert isinstance(branches["service"].fields[0], ServiceField)
+        assert isinstance(branches["schema"].fields[0], SchemaField)
+        assert branches["service"].fields[0].name == "target"
+        assert branches["schema"].fields[0].name == "target"
+        assert branches["schema"].fields[0].depends_on == "other"
+        assert [field.name for field in sections[0].fields] == ["target"]
 
     def test_allow_custom_requires_str_in_annotation(self) -> None:
         """Reject allow_custom on a field whose annotation cannot accept str."""
         with pytest.raises(ValueError, match="allow_custom"):
             derive_form_sections(_BadAllowCustomModel, _SINGLE_SECTION)
+
+
+class _SourceBySchema(BaseModel):
+    mode: Literal["schema"] = "schema"
+    source_db_id: Annotated[str, Ui(label="Source Schema", section="s")] = ""
+
+
+class _SourceByQuery(BaseModel):
+    mode: Literal["query"] = "query"
+    source_query: Annotated[str, Ui(label="Source Query", section="s")] = ""
+
+
+class _SourceUnionModel(AppFormModel):
+    source: Annotated[
+        _SourceBySchema | _SourceByQuery,
+        Field(discriminator="mode"),
+        Ui(
+            label="Source",
+            section="s",
+            description="Choose how to specify source rows.",
+        ),
+    ] = Field(default_factory=_SourceBySchema)
+
+
+class TestOneOfDerivation:
+    """Cover discriminated-union and multi-ref one-of derivation."""
+
+    def test_discriminated_union_derives_one_of_group(self) -> None:
+        """Map a nested discriminated union to a dotted-path one-of group."""
+        sections = derive_form_sections(_SourceUnionModel, _SINGLE_SECTION)
+        group = sections[0].fields[0]
+        assert isinstance(group, OneOfGroup)
+        assert group.name == "source"
+        assert group.label == "Source"
+        assert group.description == "Choose how to specify source rows."
+        assert group.discriminator == "source.mode"
+        assert group.default == "schema"
+        branches = {branch.value: branch for branch in group.branches}
+        assert branches["schema"].fields[0].name == "source.source_db_id"
+        assert branches["query"].fields[0].name == "source.source_query"
+
+    def test_runtime_schema_surfaces_one_of_for_union(self) -> None:
+        """Include a one-of group in the runtime schema for branch rule synthesis."""
+        from app.sep.plugins.framework.form_dsl.derivation import build_runtime_schema
+
+        schema = build_runtime_schema(_SourceUnionModel)
+        assert len(schema.forms[0].fields) == 1
+        group = schema.forms[0].fields[0]
+        assert isinstance(group, OneOfGroup)
+        assert group.discriminator == "source.mode"
+
+    def test_nested_union_runtime_validation_enforces_branch_exclusivity(self) -> None:
+        """Reject inactive-branch values on a nested union write model."""
+        stale = _SourceUnionModel.model_construct(
+            source=_SourceBySchema(source_db_id="inventory")
+        )
+        object.__setattr__(stale.source, "source_query", "SELECT 1")
+        with pytest.raises(ValidationError):
+            _SourceUnionModel.model_validate(stale)
+
+        _SourceUnionModel(source=_SourceBySchema(source_db_id="inventory"))
+        _SourceUnionModel(source=_SourceByQuery(source_query="SELECT 1"))
 
 
 class _ReqDefModel(AppFormModel):
