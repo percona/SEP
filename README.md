@@ -241,7 +241,7 @@
 | app/sep/sync/models.py                                                                                          |      367 |       45 |     88% |80-89, 124, 272-274, 335, 395-396, 543, 575, 591, 611-617, 715, 729, 749-750, 830, 844, 866-867, 948, 961, 985-987, 1092-1093, 1168, 1312-1313, 1412, 1415, 1423, 1434, 1438 |
 | app/sep/sync/syncers/mysql/payload.py                                                                           |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                            |      222 |        9 |     96% |112, 579, 601, 619, 708-717 |
-| app/sep/sync/syncers/pmm.py                                                                                     |       93 |       21 |     77% |83-87, 107-110, 121, 176-184, 232, 236-252, 291-294, 344 |
+| app/sep/sync/syncers/pmm.py                                                                                     |       93 |       20 |     78% |83-87, 107-110, 121, 176-184, 236-252, 291-294, 344 |
 | app/sep/sync/syncers/system\_facts/payload.py                                                                   |      235 |       19 |     92% |147-148, 176, 222-224, 231, 244-251, 282-284, 290-292, 316, 522, 533 |
 | app/sep/sync/syncers/system\_facts/syncer.py                                                                    |      118 |        7 |     94% |104, 169-170, 245, 310-311, 350 |
 | app/sep/tasks.py                                                                                                |       31 |        0 |    100% |           |
@@ -267,7 +267,7 @@
 | app/tasks/execution/executors/celery/models.py                                                                  |       82 |        0 |    100% |           |
 | app/tasks/execution/executors/nomad/exceptions.py                                                               |        4 |        0 |    100% |           |
 | app/tasks/execution/executors/nomad/models.py                                                                   |      660 |      151 |     77% |104-106, 113, 153, 171-174, 194, 237, 425, 709, 715, 848, 850, 979, 1021-1051, 1072-1086, 1112-1122, 1143-1146, 1225-1227, 1253-1254, 1291-1292, 1326-1327, 1494-1543, 1551-1552, 1556, 1580-1624, 1681-1682, 1754-1755, 1773-1825 |
-| app/tasks/execution/models.py                                                                                   |       65 |        1 |     98% |       229 |
+| app/tasks/execution/models.py                                                                                   |       65 |        0 |    100% |           |
 | app/tasks/execution/nomad\_lifecycle.py                                                                         |       52 |        0 |    100% |           |
 | app/tasks/execution/utils.py                                                                                    |       26 |        0 |    100% |           |
 | app/tasks/logs/log\_reader.py                                                                                   |      140 |        8 |     94% |106, 131, 134, 181-194, 284 |
@@ -305,7 +305,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                             |      227 |       38 |     83% |139-143, 200, 221-228, 260, 316-317, 323, 367-368, 393-394, 434-435, 454, 594, 618, 631-645, 666-679, 695-696 |
 | app/tasks/settings/routes.py                                                                                    |       10 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **20334** | **2434** | **88%** |           |
+| **TOTAL**                                                                                                       | **20334** | **2432** | **88%** |           |
 
 
 ## Setup coverage badge
