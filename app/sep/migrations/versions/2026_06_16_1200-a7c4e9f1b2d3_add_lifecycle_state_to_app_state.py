@@ -40,8 +40,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 _LIFECYCLE_MEMBERS = ("ENABLED", "DISABLED", "ENABLING", "DISABLING")
 _LIFECYCLE_CHECK_NAME = "applifecycleenum"
-_LIFECYCLE_CHECK_SQL = (
-    "lifecycle_state IN ('ENABLED', 'DISABLED', 'ENABLING', 'DISABLING')"
+_LIFECYCLE_CHECK_SQL = "lifecycle_state IN ({})".format(
+    ", ".join(f"'{member}'" for member in _LIFECYCLE_MEMBERS)
 )
 
 

@@ -94,10 +94,11 @@ class AppStateResponse(BaseModel):
 async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
     """List every configured app with its current enabled state.
 
-    Returns one entry per ``SEP.PLUGINS`` entry, in declaration order. Protected
-    apps (``inventory``) and apps with no row appear as ``ENABLED`` /
-    ``enabled=True, toggleable=False``. The list is non-paginated: app
-    cardinality is bounded (<20).
+    Returns one entry per ``SEP.PLUGINS`` entry, in declaration order. Apps with
+    no row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);
+    protected apps (``inventory``) are forced to ``ENABLED`` and reported with
+    ``toggleable=False``. The list is non-paginated: app cardinality is bounded
+    (<20).
 
     :param session: The database session.
     :type session: SessionDep
