@@ -126,6 +126,50 @@ class TestSyncItemManagerCreate:
 
 
 # ---------------------------------------------------------------------------
+# SyncItemManager.get_or_create (overridden-create() guard, real session)
+# ---------------------------------------------------------------------------
+
+
+class TestSyncItemManagerGetOrCreate:
+    """Test that get_or_create respects SyncItemManager's overridden create()."""
+
+    @pytest.mark.asyncio
+    async def test_respects_overridden_create_guard(self, session) -> None:
+        """Assert the in-progress guard fires and no duplicate row is written.
+
+        ``get_or_create``'s default existence filter includes ``status`` (PENDING),
+        so it misses an already-``RUNNING`` item and falls into the create branch.
+        That branch must route through ``SyncItemManager.create`` (not the
+        conflict-tolerant fast path), whose guard raises
+        ``SyncItemAlreadyInProgressError`` instead of silently inserting a second row.
+        """
+        instance = SyncInstance(syncer="test-syncer")
+        session.add(instance)
+        await session.commit()
+        await session.refresh(instance)
+
+        running_item = SyncItem(
+            entity_id=1,
+            entity_type=SyncInventoryEntityTypeEnum.NODE,
+            status=SyncStatusEnum.RUNNING,
+            sync_instance_id=instance.id,
+        )
+        session.add(running_item)
+        await session.commit()
+
+        item_write = SyncItemWrite(
+            entity_id=1,
+            entity_type=SyncInventoryEntityTypeEnum.NODE,
+            sync_instance_id=instance.id,
+        )
+
+        with pytest.raises(SyncItemAlreadyInProgressError):
+            await SyncItemManager.get_or_create(session, item_write)
+
+        assert len(await SyncItemManager.list(session)) == 1
+
+
+# ---------------------------------------------------------------------------
 # SyncItemManager.sync_is_running
 # ---------------------------------------------------------------------------
 

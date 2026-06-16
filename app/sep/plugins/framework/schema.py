@@ -393,11 +393,15 @@ class HostField(BaseField):
     :param field_type: The discriminator literal; always ``"host"`` for this
         class. Serialised as the JSON key ``"type"``.
     :type field_type: Literal["host"]
+    :param allow_custom: When ``True``, the selector also accepts a free-typed
+        value alongside the inventory options. ``None`` (the default) omits the
+        key from the wire so plugins that do not opt in stay byte-identical.
     """
 
     field_type: Literal["host"] = Field(
         "host", alias="type", serialization_alias="type"
     )
+    allow_custom: bool | None = None
 
 
 class SchemaField(BaseField):
@@ -414,12 +418,16 @@ class SchemaField(BaseField):
     :param depends_on: The name of the field whose value drives the list of
         available schemas.
     :type depends_on: NonEmptyStr
+    :param allow_custom: When ``True``, the selector also accepts a free-typed
+        value alongside the inventory options. ``None`` (the default) omits the
+        key from the wire so plugins that do not opt in stay byte-identical.
     """
 
     field_type: Literal["schema"] = Field(
         "schema", alias="type", serialization_alias="type"
     )
     depends_on: NonEmptyStr
+    allow_custom: bool | None = None
 
 
 class ServiceField(BaseField):
@@ -431,12 +439,16 @@ class ServiceField(BaseField):
     :param service_types: The list of service types the selector should offer
         (for example, ``[ServiceTypeEnum.MYSQL]``).
     :type service_types: list[ServiceTypeEnum]
+    :param allow_custom: When ``True``, the selector also accepts a free-typed
+        value alongside the inventory options. ``None`` (the default) omits the
+        key from the wire so plugins that do not opt in stay byte-identical.
     """
 
     field_type: Literal["service"] = Field(
         "service", alias="type", serialization_alias="type"
     )
     service_types: list[ServiceTypeEnum]
+    allow_custom: bool | None = None
 
 
 class TableField(BaseField):
@@ -453,12 +465,16 @@ class TableField(BaseField):
     :param depends_on: The name of the field whose value drives the list of
         available tables.
     :type depends_on: NonEmptyStr
+    :param allow_custom: When ``True``, the selector also accepts a free-typed
+        value alongside the inventory options. ``None`` (the default) omits the
+        key from the wire so plugins that do not opt in stay byte-identical.
     """
 
     field_type: Literal["table"] = Field(
         "table", alias="type", serialization_alias="type"
     )
     depends_on: NonEmptyStr
+    allow_custom: bool | None = None
 
 
 class ScriptPreviewField(BaseField):
