@@ -794,6 +794,8 @@ class BaseSnippet(BaseModel):
         logger.debug("Snippet params: %s", parameters)
         groups = {}
         for param in parameters:
+            if param.hidden:
+                continue
             try:
                 field = param.to_form_field()
             except ValidationError:

@@ -228,6 +228,24 @@ class TestDipperFormSchemaEndpoint:
         assert by_name["node"]["default"] == "test-node"
         assert by_name["service"]["default"] == "test-service"
 
+    def test_pmm_schema_omits_hidden_apikey_field(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """The hidden apikey param must not surface in the React form schema."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "pmm"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        by_name = self._fields_by_name(response)
+        assert "apikey" not in by_name
+
     def _fields_by_name(self, response) -> dict:
         fields = [
             field for section in response.json()["forms"] for field in section["fields"]

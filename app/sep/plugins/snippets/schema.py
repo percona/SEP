@@ -198,6 +198,8 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
     """
     parameter_sections: dict[str, list[AnyField]] = {}
     for parameter in snippet.validated_parameters.parameters:
+        if parameter.hidden:
+            continue
         section_title = parameter.group or "Parameters"
         parameter_sections.setdefault(section_title, []).append(field_for(parameter))
 

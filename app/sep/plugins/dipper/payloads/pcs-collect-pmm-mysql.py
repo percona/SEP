@@ -29,6 +29,7 @@
 #   - name: apikey
 #     label: API key
 #     description: API key for PMM server. Leave empty to use configured default (PMM.API_KEY).
+#     hidden: true
 #   - name: node
 #     label: Node name
 #     description: Node name of audit target (required unless using --list).

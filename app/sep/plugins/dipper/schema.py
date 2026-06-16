@@ -185,6 +185,8 @@ def build_dipper_form_schema(
     options_by_field = {"node": node_options, "service": service_options}
     parameter_sections: dict[str, list[AnyField]] = {}
     for parameter in script.validated_parameters.parameters:
+        if parameter.hidden:
+            continue
         section_title = parameter.group or "Parameters"
         field = field_for(parameter)
         resolved_default = defaults.get(field.name) if defaults else None
