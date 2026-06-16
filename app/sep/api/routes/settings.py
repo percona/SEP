@@ -17,13 +17,14 @@
 
 __all__ = ["SEP_ADMIN_SETTINGS_CLASSES", "router"]
 
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Annotated, Any
 
 import yaml
-from fastapi import HTTPException
+from fastapi import HTTPException, Query
 from fastapi.responses import Response
 
-from app.core.exceptions import HTTPBadGatewayException
+from app.core.exceptions import HTTPBadGatewayException, HTTPBadRequestException
 from app.core.settings_override.api import (
     build_settings_class_values,
     build_settings_router,
@@ -37,13 +38,9 @@ from app.sep.deps import IsApiAdmin, RequireBearerForUnsafeMethods, SessionDep, 
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
-# TasksSettings is owned by the Tasks sub-app (its own database and override
-# layer), so SEP cannot register it as a local class. It is proxied server-side
-# through ``tasks_api`` -- the same pattern as ``dashboard``/``hosts``/``task_stats``
-# -- so the React Settings page reaches every group through ``/api/sep`` only and
-# never calls ``/api/tasks/admin/settings/*`` directly (API-First Rule 1). The
-# Tasks router mounts its settings at ``/admin/settings`` (see
-# ``app/tasks/settings/routes.py``).
+# TasksSettings is owned by the Tasks sub-app, so SEP proxies it server-side
+# through ``tasks_api`` (mounted at ``/admin/settings``) rather than registering
+# it as a local class -- the React Settings page reaches it via ``/api/sep`` only.
 SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
     (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
     (SettingClassEnum.SNIPPETS_SETTINGS, SnippetsSettings, snippets_settings),
@@ -112,6 +109,110 @@ def _tasks_settings_groups(payload: dict[str, Any]) -> dict[str, dict[str, Any]]
     return export
 
 
+@dataclass
+class _ClassRequest:
+    """Hold the parsed export selectors targeting a single settings class.
+
+    ``whole`` records that a bare ``Class`` selector was seen (keep every key in
+    the output). ``keys`` collects every ``Class.KEY`` selector seen for the
+    class. Both are tracked independently so a whole-class selector can dominate
+    *output* (emit all keys) while each named key is *still validated* for
+    existence -- a typo'd sibling key must fail even when its class is also
+    requested whole (AC 6).
+
+    :ivar whole: Whether a whole-class selector was requested.
+    :vartype whole: bool
+    :ivar keys: The set of explicitly named keys requested for the class.
+    :vartype keys: set[str]
+    """
+
+    whole: bool = False
+    keys: set[str] = field(default_factory=set)
+
+
+def _parse_export_selectors(
+    keys: list[str],
+    allowed_classes: set[str],
+) -> dict[str, _ClassRequest]:
+    """Parse and validate export ``keys`` selectors into a per-class request map.
+
+    Each selector is either ``Class.KEY`` (a single key within a settings class)
+    or a bare ``Class`` (the whole class). Splitting on the first ``.`` is safe
+    because nested leaves use the ``__`` delimiter, never ``.`` (so
+    ``SEPSettings.PMM__endpoint`` resolves to class ``SEPSettings`` and key
+    ``PMM__endpoint``). Class names are validated here against ``allowed_classes``
+    so a typo fails before any value is collected or any upstream call is made;
+    per-key existence is validated later against each class's built key set.
+
+    A whole-class selector dominates the *output* for its class (every key is
+    emitted) but does not suppress validation of any named sibling selector: a
+    ``Class.KEY`` is always recorded so its existence is checked later, even when
+    a bare ``Class`` selector is also present (AC 6). Overlapping or duplicate
+    selectors are otherwise benign and never error.
+
+    :param keys: The raw, repeatable ``keys`` query values.
+    :type keys: list[str]
+    :param allowed_classes: The set of wired settings-class names a selector may
+        reference (the SEP-wired classes plus ``TasksSettings``).
+    :type allowed_classes: set[str]
+    :return: A mapping from class name to its parsed :class:`_ClassRequest`.
+    :rtype: dict[str, _ClassRequest]
+    :raises HTTPBadRequestException: If a selector is blank, malformed (empty
+        class or empty key), or names a class that is not wired -- the detail
+        names the offending selector.
+    """
+    requested: dict[str, _ClassRequest] = {}
+    for selector in keys:
+        stripped = selector.strip()
+        class_name, dot, key = stripped.partition(".")
+        if not class_name or (dot and not key.strip()):
+            raise HTTPBadRequestException(detail=f"Invalid selector: {selector!r}")
+        if class_name not in allowed_classes:
+            raise HTTPBadRequestException(detail=f"Unknown selector: {stripped}")
+        req = requested.setdefault(class_name, _ClassRequest())
+        if not dot:
+            req.whole = True
+        else:
+            req.keys.add(key)
+    return requested
+
+
+def _filter_class_block(
+    class_name: str,
+    block: dict[str, Any],
+    requested: dict[str, _ClassRequest],
+) -> dict[str, Any]:
+    """Narrow one class block to the requested keys, validating each named key.
+
+    Every named key in the request is validated against the block's keys --
+    raising on the first miss so a typo cannot silently drop a key from an
+    otherwise complete-looking export -- *regardless of* whether a whole-class
+    selector is also present. A whole-class request then returns ``block``
+    unchanged; a key-only request keeps just the named keys in the block's own
+    emitted order.
+
+    :param class_name: The settings-class name this block belongs to.
+    :type class_name: str
+    :param block: The full ``{key: value}`` map built for the class.
+    :type block: dict[str, Any]
+    :param requested: The parsed selector map.
+    :type requested: dict[str, _ClassRequest]
+    :return: The block narrowed to the requested keys.
+    :rtype: dict[str, Any]
+    :raises HTTPBadRequestException: If a named key does not exist on the class
+        -- the detail names the offending ``Class.KEY`` selector.
+    """
+    req = requested[class_name]
+    for key in req.keys:
+        if key not in block:
+            raise HTTPBadRequestException(
+                detail=f"Unknown selector: {class_name}.{key}"
+            )
+    if req.whole:
+        return block
+    return {key: value for key, value in block.items() if key in req.keys}
+
+
 @router.get(
     "/export",
     responses=UPSTREAM_TASKS_502_RESPONSE,
@@ -119,6 +220,7 @@ def _tasks_settings_groups(payload: dict[str, Any]) -> dict[str, dict[str, Any]]
 async def export_settings(
     session: SessionDep,
     tasks_api: TaskAPI,
+    keys: Annotated[list[str] | None, Query()] = None,
 ) -> Response:
     """Return the merged effective configuration as a YAML attachment.
 
@@ -128,45 +230,76 @@ async def export_settings(
     re-raise as :class:`~app.core.exceptions.HTTPBadGatewayException` — no
     partial export.
 
+    When ``keys`` is omitted the full merged export is returned exactly as
+    before. When provided, each entry is a fully-qualified selector
+    (``Class.KEY`` or a bare ``Class``); the response is narrowed to only the
+    requested classes/keys. Class names and SEP keys are validated with no
+    upstream call; the Tasks fan-out is skipped entirely unless a selector
+    targets ``TasksSettings``, and Tasks keys are validated against the fetched
+    block. Output blocks always follow the canonical declaration order
+    (``SEP_ADMIN_SETTINGS_CLASSES`` then ``TasksSettings``), independent of
+    selector order.
+
     :param session: The active database session for SEP override queries.
     :type session: AsyncSession
     :param tasks_api: The Tasks API client used to fetch ``TasksSettings``.
     :type tasks_api: TaskAPI
+    :param keys: Optional, repeatable selectors restricting the export to a
+        subset of classes/keys. ``None`` (omitted) means the full export.
+    :type keys: list[str] | None
     :return: YAML bytes with ``Content-Disposition`` set for download.
     :rtype: Response
+    :raises HTTPBadRequestException: If a selector is blank, malformed, names an
+        unwired class, or names a key that does not exist on its class.
     :raises HTTPBadGatewayException: If the Tasks settings LIST call fails
         with an ``HTTPException`` (e.g. an upstream non-2xx response), an
         ``OSError`` (e.g. a connection failure), an unexpected payload shape,
         or a missing ``TasksSettings`` group.
     """
+    tasks_key = SettingClassEnum.TASKS_SETTINGS.value
+    requested: dict[str, _ClassRequest] | None = None
+    if keys is not None:
+        allowed_classes = {member.value for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES}
+        allowed_classes.add(tasks_key)
+        requested = _parse_export_selectors(keys, allowed_classes)
+
     payload: dict[str, dict[str, Any]] = {}
 
     for setting_class, settings_cls, proxy in SEP_ADMIN_SETTINGS_CLASSES:
-        payload[setting_class.value] = await build_settings_class_values(
+        class_name = setting_class.value
+        if requested is not None and class_name not in requested:
+            continue
+        block = await build_settings_class_values(
             session=session,
             setting_class=setting_class,
             settings_cls=settings_cls,
             proxy=proxy,
         )
+        if requested is not None:
+            block = _filter_class_block(class_name, block, requested)
+        payload[class_name] = block
 
-    try:
-        tasks_payload = await tasks_api.get("/admin/settings/")
-    except (HTTPException, OSError) as exc:
-        detail = getattr(exc, "detail", str(exc))
-        raise HTTPBadGatewayException(detail=str(detail)) from exc
+    if requested is None or tasks_key in requested:
+        try:
+            tasks_payload = await tasks_api.get("/admin/settings/")
+        except (HTTPException, OSError) as exc:
+            detail = getattr(exc, "detail", str(exc))
+            raise HTTPBadGatewayException(detail=str(detail)) from exc
 
-    if not isinstance(tasks_payload, dict):
-        raise HTTPBadGatewayException(
-            detail="Tasks settings LIST returned an unexpected payload.",
-        )
+        if not isinstance(tasks_payload, dict):
+            raise HTTPBadGatewayException(
+                detail="Tasks settings LIST returned an unexpected payload.",
+            )
 
-    tasks_groups = _tasks_settings_groups(tasks_payload)
-    tasks_key = SettingClassEnum.TASKS_SETTINGS.value
-    if tasks_key not in tasks_groups:
-        raise HTTPBadGatewayException(
-            detail=f"Tasks settings LIST response missing {tasks_key!r} group.",
-        )
-    payload[tasks_key] = tasks_groups[tasks_key]
+        tasks_groups = _tasks_settings_groups(tasks_payload)
+        if tasks_key not in tasks_groups:
+            raise HTTPBadGatewayException(
+                detail=f"Tasks settings LIST response missing {tasks_key!r} group.",
+            )
+        tasks_block = tasks_groups[tasks_key]
+        if requested is not None:
+            tasks_block = _filter_class_block(tasks_key, tasks_block, requested)
+        payload[tasks_key] = tasks_block
 
     yaml_body = yaml.safe_dump(
         payload,
