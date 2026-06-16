@@ -18,7 +18,6 @@
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.backup_pg.models import PgBackRestBackupType
 from app.sep.plugins.framework.schema import (
-    BoolField,
     Capabilities,
     Choice,
     ChoiceField,
@@ -62,11 +61,6 @@ backup_pg_schema = PluginSchema(
                     label="Database Service",
                     required=True,
                     service_types=[ServiceTypeEnum.POSTGRESQL],
-                ),
-                BoolField(
-                    name="alert_on_fail",
-                    label="Alert on Failure",
-                    default=False,
                 ),
             ],
         ),

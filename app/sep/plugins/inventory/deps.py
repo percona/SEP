@@ -30,7 +30,7 @@ from app.core.exceptions import (
 )
 from app.core.utils import import_var
 from app.inventory.config import inventory_settings
-from app.sep.config import sep_settings
+from app.sep.config import sep_settings, SyncOptions
 from app.sep.deps import InventoryClient, TasksClient
 from app.sep.sync.models import BaseSyncer
 from app.tasks.config import tasks_settings
@@ -194,6 +194,21 @@ def filter_syncers_by_name(
     return matched
 
 
+def _syncer_init_kwargs(sync_option: SyncOptions) -> dict[str, Any]:
+    """Build constructor kwargs from a configured ``SyncOptions`` entry.
+
+    Drops ``None`` leaves so optional nested models (notably ``pmm`` on
+    ``PMMSyncer``) are not passed as explicit ``None``, which would override
+    the syncer's default factory and fail validation.
+
+    :param sync_option: One element from ``sep_settings.SYNCERS``.
+    :type sync_option: SyncOptions
+    :return: Keyword arguments for the syncer class constructor.
+    :rtype: dict[str, Any]
+    """
+    return sync_option.model_dump(exclude={"syncer"}, exclude_none=True)
+
+
 def get_syncers(
     inventory_api: InventoryClient, tasks_api: TasksClient
 ) -> list[BaseSyncer]:
@@ -216,7 +231,7 @@ def get_syncers(
             syncer_class(
                 inventory_api=inventory_api,
                 tasks_api=tasks_api,
-                **sync_option.model_dump(exclude={"syncer"}),
+                **_syncer_init_kwargs(sync_option),
             ),
         )
     return syncers
@@ -273,7 +288,7 @@ async def get_syncers_standalone() -> list[BaseSyncer]:
             syncer_class(
                 inventory_api=inventory_api,
                 tasks_api=tasks_api,
-                **sync_option.model_dump(exclude={"syncer"}),
+                **_syncer_init_kwargs(sync_option),
             ),
         )
     return syncers
