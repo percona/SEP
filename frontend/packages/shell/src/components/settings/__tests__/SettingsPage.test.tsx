@@ -50,7 +50,7 @@ beforeEach(() => {
   server.use(
     http.get(SEP_URL, () => HttpResponse.json(combinedListResponse)),
     http.get(EXPORT_URL, () =>
-      HttpResponse.arrayBuffer(new TextEncoder().encode('SEPSettings: {}\n'), {
+      HttpResponse.text('SEPSettings: {}\n', {
         headers: {
           'Content-Type': 'application/x-yaml',
           'Content-Disposition': 'attachment; filename="sep-config-2026-06-14.yaml"',
@@ -83,7 +83,7 @@ describe('SettingsPage', () => {
     server.use(
       http.get(EXPORT_URL, () => {
         exportCalls += 1;
-        return HttpResponse.arrayBuffer(new TextEncoder().encode('SEPSettings: {}\n'), {
+        return HttpResponse.text('SEPSettings: {}\n', {
           headers: {
             'Content-Type': 'application/x-yaml',
             'Content-Disposition': 'attachment; filename="sep-config-2026-06-14.yaml"',
