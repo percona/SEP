@@ -2612,6 +2612,49 @@
         ]
       }
     },
+    "/api/plugins/inventory/nodes/{node_id}/system-observation": {
+      "get": {
+        "description": "Proxy the host-level system observation for a node (read-only).\n\nForwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``\nendpoint via ``InventoryAPI``. This three-segment literal path cannot\ncollide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An\nupstream HTTP 404 — the \"not collected yet\" signal — propagates unchanged\nfor the React panel to render as an empty state.\n\n:param node_id: Primary key of the node.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The host-level system observation payload.",
+        "operationId": "inventory_inventory_node_system_observation_api_plugins_inventory_nodes__node_id__system_observation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "title": "Node Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Inventory Inventory Node System Observation Api Plugins Inventory Nodes  Node Id  System Observation Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inventory Node System Observation",
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
     "/api/plugins/inventory/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
@@ -2629,6 +2672,49 @@
           }
         },
         "summary": "Get Schema",
+        "tags": [
+          "inventory"
+        ]
+      }
+    },
+    "/api/plugins/inventory/services/{service_id}/system-observation": {
+      "get": {
+        "description": "Proxy the service-level system observation for a service (read-only).\n\nForwards to the inventory sub-app's\n``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.\nAn upstream HTTP 404 propagates unchanged so the React panel renders its\n\"not collected yet\" empty state.\n\n:param service_id: Primary key of the service.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The service-level system observation payload.",
+        "operationId": "inventory_inventory_service_system_observation_api_plugins_inventory_services__service_id__system_observation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "service_id",
+            "required": true,
+            "schema": {
+              "title": "Service Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Inventory Inventory Service System Observation Api Plugins Inventory Services  Service Id  System Observation Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inventory Service System Observation",
         "tags": [
           "inventory"
         ]
