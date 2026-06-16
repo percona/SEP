@@ -31,6 +31,18 @@ function Harness({ field }: { field: ChoiceFieldType }) {
   );
 }
 
+function SubmitHarness({ field }: { field: ChoiceFieldType }) {
+  const methods = useForm();
+  return (
+    <FormProvider {...methods}>
+      <form onSubmit={methods.handleSubmit(() => {})}>
+        <ChoiceField field={field} />
+        <button type="submit">Submit</button>
+      </form>
+    </FormProvider>
+  );
+}
+
 function renderField(choices: ChoiceOption[], overrides: Partial<ChoiceFieldType> = {}) {
   const field: ChoiceFieldType = {
     type: 'choice',
@@ -89,6 +101,24 @@ describe('ChoiceField — radio branch', () => {
     // Give any (unexpected) tooltip a chance to appear before asserting absence.
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
+  it('surfaces the required-validation error on submit', async () => {
+    const user = userEvent.setup();
+    const field: ChoiceFieldType = {
+      type: 'choice',
+      name: 'archive_type',
+      label: 'Archive Type',
+      choices: RADIO_CHOICES,
+      required: true,
+    };
+    render(<SubmitHarness field={field} />);
+
+    await user.click(screen.getByRole('button', { name: 'Submit' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Archive Type is required')).toBeInTheDocument();
+    });
   });
 });
 

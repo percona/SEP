@@ -17,7 +17,9 @@
 
 import { Controller, useFormContext } from 'react-hook-form';
 import Box from '@mui/material/Box';
+import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import FormHelperText from '@mui/material/FormHelperText';
 import MenuItem from '@mui/material/MenuItem';
 import MuiRadioGroup from '@mui/material/RadioGroup';
 import Radio from '@mui/material/Radio';
@@ -53,18 +55,21 @@ export function ChoiceField({ field }: ChoiceFieldProps) {
             name={field.name}
             control={control}
             rules={rules}
-            render={({ field: rhfField }) => (
-              <MuiRadioGroup row aria-label={field.label} {...rhfField}>
-                {field.choices.map((choice) => (
-                  <FormControlLabel
-                    key={choice.value}
-                    value={choice.value}
-                    disabled={choice.disabled}
-                    control={<Radio />}
-                    label={renderChoiceLabel(choice)}
-                  />
-                ))}
-              </MuiRadioGroup>
+            render={({ field: rhfField, fieldState: { error } }) => (
+              <FormControl error={!!error} component="fieldset">
+                <MuiRadioGroup row aria-label={field.label} {...rhfField}>
+                  {field.choices.map((choice) => (
+                    <FormControlLabel
+                      key={choice.value}
+                      value={choice.value}
+                      disabled={choice.disabled}
+                      control={<Radio />}
+                      label={renderChoiceLabel(choice)}
+                    />
+                  ))}
+                </MuiRadioGroup>
+                {error?.message && <FormHelperText>{error.message}</FormHelperText>}
+              </FormControl>
             )}
           />
         </LabeledContent>
