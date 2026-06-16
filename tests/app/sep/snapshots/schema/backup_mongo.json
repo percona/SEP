@@ -74,13 +74,6 @@
           "name": "credentials_path",
           "required": false,
           "type": "string"
-        },
-        {
-          "default": false,
-          "label": "Alert on Failure",
-          "name": "alert_on_fail",
-          "required": false,
-          "type": "bool"
         }
       ],
       "render_after_submit": false,
