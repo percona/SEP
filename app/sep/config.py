@@ -41,6 +41,7 @@ from pydantic import (
 from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import (
     BaseYamlAppSettings,
+    PMMSettings,
     settings,
 )
 from app.core.db.config import DatabaseOptions
@@ -268,6 +269,17 @@ class _DeprecatedPMMConfig(BaseLowercaseModel):
     alert_folder_name: str = "SEP Alerts"
 
 
+class SyncerExtraKwargs(BaseLowercaseModel):
+    """Global keyword arguments merged into every configured synchronizer.
+
+    :param pmm: PMM connection overrides applied to each synchronizer entry.
+    :type pmm: PMMSettings | None
+    """
+
+    model_config = ConfigDict(extra="allow")
+    pmm: PMMSettings | None = None
+
+
 class SyncOptions(BaseLowercaseModel):
     """Represent a synchronizer for the SEP app.
 
@@ -278,10 +290,13 @@ class SyncOptions(BaseLowercaseModel):
     :param syncer: The importable attribute name for the synchronizer. This field is
         automatically prefixed with "app.sep.sync.syncers." during validation.
     :type syncer: StrImportableAttribute
+    :param pmm: Optional PMM connection overrides for synchronizers that accept them.
+    :type pmm: PMMSettings | None
     """
 
     model_config = ConfigDict(extra="allow")
     syncer: StrImportableAttribute
+    pmm: PMMSettings | None = None
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, SyncOptions):
@@ -454,8 +469,8 @@ class SEPSettings(BaseYamlAppSettings):
         duplicates removed.
     :type SYNCERS: UniqueList[SyncOptions]
     :param SYNCER_EXTRA_KWARGS: Additional keyword arguments for synchronizers. Defaults
-        to an empty dictionary.
-    :type SYNCER_EXTRA_KWARGS: dict[str, Any]
+        to an empty mapping.
+    :type SYNCER_EXTRA_KWARGS: SyncerExtraKwargs
     :param SYNC_REFRESH_TIME: The time interval (in seconds) for browser refresh during
         synchronization. Defaults to 5 seconds.
     :type SYNC_REFRESH_TIME: int
@@ -499,7 +514,7 @@ class SEPSettings(BaseYamlAppSettings):
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
-    SYNCER_EXTRA_KWARGS: dict[str, Any] = {}
+    SYNCER_EXTRA_KWARGS: SyncerExtraKwargs = SyncerExtraKwargs()
     SYNC_REFRESH_TIME: int = hot_field(5)
     PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
@@ -593,9 +608,10 @@ class SEPSettings(BaseYamlAppSettings):
         :rtype: Self
         """
         syncers = UniqueList()
+        extra_kwargs = self.SYNCER_EXTRA_KWARGS.model_dump(exclude_none=True)
         for syncer in self.SYNCERS:
             syncer_data = syncer.model_dump()
-            deep_dict_update(syncer_data, self.SYNCER_EXTRA_KWARGS)
+            deep_dict_update(syncer_data, extra_kwargs)
             syncers.append(SyncOptions.model_validate(syncer_data))
         self.SYNCERS = syncers
         return self
