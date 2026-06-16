@@ -107,10 +107,12 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
     """Return violations where derived routes disagree with the capability flags.
 
     Assert each verb toggle on ``app.capabilities`` matches the presence of its
-    route: ``create`` ↔ ``POST /``, ``execute`` ↔ ``POST /{param}/execute``,
+    route: ``create`` ↔ ``POST /``, ``execute`` ↔ ``POST /{task_name}/execute``,
     ``update`` ↔ ``PUT /{param}``, ``delete`` ↔ ``DELETE /{param}`` (``param`` is
-    ``app.detail_path_param``). Catches an ``extra_routes`` override that
-    reintroduces a route a disabled flag forbids.
+    ``app.detail_path_param``). The execute route always uses the literal
+    ``task_name`` path parameter, independent of ``detail_path_param`` — only the
+    CRUD detail/update/delete routes adopt ``param``. Catches an ``extra_routes``
+    override that reintroduces a route a disabled flag forbids.
 
     :param app: The migrated app whose derived router is inspected.
     :return: One message per flag/route disagreement; empty when consistent.
@@ -118,7 +120,7 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
     detail = f"/{{{app.detail_path_param}}}"
     expected = {
         "create": ("POST", "/"),
-        "execute": ("POST", f"{detail}/execute"),
+        "execute": ("POST", "/{task_name}/execute"),
         "update": ("PUT", detail),
         "delete": ("DELETE", detail),
     }

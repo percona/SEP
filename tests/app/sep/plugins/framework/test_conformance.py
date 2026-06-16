@@ -219,6 +219,22 @@ def test_capability_rendered_controls_maps_alert_on_fail():
     assert CAPABILITY_RENDERED_CONTROLS == {"alert_on_fail": "alert_on_fail"}
 
 
+class _ExecuteWrite(BaseModel):
+    """Represent a synthetic execute request body."""
+
+
+class _ExecuteResponse(BaseModel):
+    """Represent a synthetic execute response keyed by task name and id."""
+
+    task_name: str
+    task_id: int
+
+
+async def _get_by_cluster(cluster_name: str) -> object:
+    """Resolve a task by a non-default ``cluster_name`` detail path parameter."""
+    raise NotImplementedError
+
+
 # --- check_capability_route_consistency ---------------------------------------
 
 
@@ -234,6 +250,23 @@ def test_capability_route_consistency_flags_forbidden_route():
         extra_routes=(_post_root_router(),),
     )
     assert any("create" in w for w in check_capability_route_consistency(app))
+
+
+def test_capability_route_consistency_execute_ignores_custom_detail_path_param():
+    """Assert execute matches /{task_name}/execute under a custom detail path param.
+
+    The CRUD detail/update/delete routes adopt ``detail_path_param``, but the
+    derived execute route is always ``POST /{task_name}/execute``; the detector
+    must not report a false absence when the two path parameters diverge.
+    """
+    app = _build_app(
+        detail_path_param="cluster_name",
+        get_task=_get_by_cluster,
+        capabilities=AppCapabilities(execute=True),
+        execute_write_model=_ExecuteWrite,
+        execute_response_model=_ExecuteResponse,
+    )
+    assert check_capability_route_consistency(app) == []
 
 
 # --- check_view_fields_reference_real_fields ----------------------------------
