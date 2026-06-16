@@ -19,7 +19,6 @@ from enum import auto, IntEnum, StrEnum
 from typing import Self
 
 from pydantic import (
-    computed_field,
     model_validator,
     UUID4,
 )
@@ -325,17 +324,6 @@ class AppState(BaseSQLModel, AppStateBase, table=True):
     :param app_key: The plugin's module key. Unique and indexed.
     :param lifecycle_state: The app's runtime lifecycle state.
     """
-
-    @computed_field
-    @property
-    def enabled(self) -> bool:
-        """Return whether the app is fully enabled (DEPRECATED).
-
-        Derived from ``lifecycle_state`` for one deprecation cycle; ``True`` only
-        when the state is ``ENABLED``. New read sites read ``lifecycle_state``
-        directly so the eventual shim removal is a one-shot delete.
-        """
-        return self.lifecycle_state == AppLifecycleEnum.ENABLED
 
 
 class AppStateWrite(SQLModel):

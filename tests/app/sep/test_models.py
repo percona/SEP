@@ -46,20 +46,6 @@ class TestAppStateModel:
         """The table model inherits the ``lifecycle_state=ENABLED`` column default."""
         assert AppState(app_key="snippets").lifecycle_state is AppLifecycleEnum.ENABLED
 
-    @pytest.mark.parametrize("state", list(AppLifecycleEnum))
-    def test_enabled_computed_field_parity(self, state: AppLifecycleEnum) -> None:
-        """``enabled`` is ``True`` only for the ``ENABLED`` lifecycle state."""
-        row = AppState(app_key="snippets", lifecycle_state=state)
-        assert row.enabled is (state == AppLifecycleEnum.ENABLED)
-
-    def test_enabled_appears_in_model_dump(self):
-        """The derived ``enabled`` flag is serialized alongside ``lifecycle_state``."""
-        dumped = AppState(
-            app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLING
-        ).model_dump()
-        assert dumped["lifecycle_state"] is AppLifecycleEnum.DISABLING
-        assert dumped["enabled"] is False
-
     def test_write_model_requires_lifecycle_state(self):
         """The write payload requires ``lifecycle_state`` — it has no default."""
         with pytest.raises(ValidationError):

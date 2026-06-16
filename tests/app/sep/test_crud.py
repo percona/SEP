@@ -400,8 +400,8 @@ class TestAppStateManager:
         assert await AppStateManager.is_enabled(session, "snippets") is True
 
     @pytest.mark.asyncio
-    async def test_all_states_returns_derived_enabled_mapping(self, session) -> None:
-        """``all_states`` derives the ``app_key`` -> ``enabled`` bool mapping."""
+    async def test_all_lifecycle_states_returns_mapping(self, session) -> None:
+        """``all_lifecycle_states`` returns the ``app_key`` -> state mapping."""
         session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
         )
@@ -409,15 +409,15 @@ class TestAppStateManager:
             AppState(app_key="checksums", lifecycle_state=AppLifecycleEnum.DISABLING)
         )
         await session.commit()
-        assert await AppStateManager.all_states(session) == {
-            "snippets": True,
-            "checksums": False,
+        assert await AppStateManager.all_lifecycle_states(session) == {
+            "snippets": AppLifecycleEnum.ENABLED,
+            "checksums": AppLifecycleEnum.DISABLING,
         }
 
     @pytest.mark.asyncio
-    async def test_all_states_empty_table(self, session) -> None:
-        """``all_states`` returns an empty mapping when no rows exist."""
-        assert await AppStateManager.all_states(session) == {}
+    async def test_all_lifecycle_states_empty_table(self, session) -> None:
+        """``all_lifecycle_states`` returns an empty mapping when no rows exist."""
+        assert await AppStateManager.all_lifecycle_states(session) == {}
 
     @pytest.mark.asyncio
     async def test_all_lifecycle_states_returns_full_mapping(self, session) -> None:

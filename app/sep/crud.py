@@ -302,21 +302,6 @@ class AppStateManager(BaseSQLModelManager):
         return dict(rows)
 
     @classmethod
-    async def all_states(cls, session: AsyncSession) -> dict[str, bool]:
-        """Return the derived ``app_key`` -> ``enabled`` map (DEPRECATED shim).
-
-        Prefer :meth:`all_lifecycle_states`; this derives a bool map for callers
-        that only need to know which apps are fully enabled.
-
-        :param session: The SQLAlchemy asynchronous session to use for the query.
-        :return: A dictionary mapping each app key to its derived enabled state.
-        """
-        return {
-            key: state == AppLifecycleEnum.ENABLED
-            for key, state in (await cls.all_lifecycle_states(session)).items()
-        }
-
-    @classmethod
     async def current_lifecycle(
         cls, session: AsyncSession, app_key: str
     ) -> AppLifecycleEnum:

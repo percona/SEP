@@ -119,7 +119,7 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
+            states = await AppStateManager.all_lifecycle_states(session)
         assert "inventory" not in states
 
     async def test_idempotent_second_run(
@@ -134,8 +134,8 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
-        assert states == {"snippets": True}
+            states = await AppStateManager.all_lifecycle_states(session)
+        assert states == {"snippets": AppLifecycleEnum.ENABLED}
 
     async def test_existing_row_not_overwritten(
         self, mocker, patched_seed, seed_maker
@@ -172,8 +172,8 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
-        assert states == {"snippets": True}
+            states = await AppStateManager.all_lifecycle_states(session)
+        assert states == {"snippets": AppLifecycleEnum.ENABLED}
 
     async def test_periodic_task_seeding_still_runs(
         self, mocker, patched_seed, seed_maker

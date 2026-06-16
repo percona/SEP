@@ -35,7 +35,7 @@ from app.sep.deps import (
     SessionDep,
     ToggleableAppKeyDep,
 )
-from app.sep.models import AppLifecycleEnum, AppState, AppStateBase, AppStateWrite
+from app.sep.models import AppLifecycleEnum, AppStateBase, AppStateWrite
 from app.sep.periodic_tasks import apply_effective_enabled
 from app.sep.plugins.framework.registry import get_app_registry
 
@@ -133,7 +133,7 @@ async def update_app_state(
     body: AppStateWrite,
     session: SessionDep,
     celery_beat_session: CeleryBeatSessionDep,
-) -> AppState:
+) -> AppStateResponse:
     """Transition an app to a new lifecycle state.
 
     Validates the requested edge against the allowed transitions
@@ -158,8 +158,8 @@ async def update_app_state(
     :param session: The SEP database session.
     :type session: SessionDep
     :param celery_beat_session: The celery-beat database session.
-    :return: The updated app-state row.
-    :rtype: AppState
+    :return: The updated app-state response payload.
+    :rtype: AppStateResponse
     :raises HTTPConflictException: When the requested transition edge is illegal.
     """
     current = await AppStateManager.current_lifecycle(session, app_key)
@@ -172,4 +172,8 @@ async def update_app_state(
     if not created:
         state = await AppStateManager.update(session, state, body)
     await apply_effective_enabled(session, celery_beat_session, app_keys={app_key})
-    return state
+    return AppStateResponse(
+        app_key=state.app_key,
+        lifecycle_state=state.lifecycle_state,
+        enabled=state.lifecycle_state == AppLifecycleEnum.ENABLED,
+    )
