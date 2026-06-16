@@ -115,6 +115,7 @@ export {
   REDACTED_SECRET,
   useEnabledApps,
   ENABLED_APPS_QUERY_KEY,
+  useConfigExport,
 } from './hooks';
 export type { AlertConfig, DashboardStats, EnabledApp } from './hooks';
 export type {

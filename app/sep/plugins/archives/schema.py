@@ -332,6 +332,12 @@ archives_schema = PluginSchema(
                             when=F("swap_drop") == SwapDropEnum.SWAP_ARCHIVE_DROP
                         ),
                     ],
+                    # Hidden now because only Purge Only is selectable in scope.
+                    forbidden=[
+                        FieldGate(
+                            when=F("swap_drop") != SwapDropEnum.SWAP_ARCHIVE_DROP
+                        ),
+                    ],
                 ),
                 StringField(
                     name="where",
@@ -346,6 +352,13 @@ archives_schema = PluginSchema(
                         FieldGate(when=F("swap_drop") == SwapDropEnum.SWAP_DROP),
                     ],
                 ),
+            ],
+        ),
+        FormSection(
+            title="Advanced",
+            collapsible=True,
+            collapsed_by_default=True,
+            fields=[
                 StringField(
                     name="use_index",
                     label="Use Index",
@@ -382,17 +395,6 @@ archives_schema = PluginSchema(
                     name="delete_data",
                     label="Delete Without Archiving",
                     description="Source rows are deleted without being written to any destination; the Destination Table/File fields are disabled.",
-                ),
-            ],
-        ),
-        FormSection(
-            title="Alert & Connectivity",
-            fields=[
-                BoolField(
-                    name="alert_on_fail",
-                    label="Alert on Failure",
-                    description="Send a PMM alert if the task fails.",
-                    default=False,
                 ),
             ],
         ),
