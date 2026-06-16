@@ -292,12 +292,6 @@ alters_schema = PluginSchema(
                     description="Additional pt-online-schema-change arguments",
                 ),
                 BoolField(
-                    name="alert_on_fail",
-                    label="Alert on Fail",
-                    description="Send an alert if the task fails",
-                    default=False,
-                ),
-                BoolField(
                     name="continue_on_pre_check_failure",
                     label="Continue on Pre-Check Failure",
                     description=(

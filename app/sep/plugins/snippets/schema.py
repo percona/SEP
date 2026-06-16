@@ -36,6 +36,7 @@ from app.sep.plugins.framework.schema import (
     ChoiceField,
     Column,
     ColumnFormat,
+    DateTimeField,
     FloatField,
     FormSection,
     HostField,
@@ -159,11 +160,23 @@ def _bool_field_for(parameter: SnippetMetaParameter) -> BoolField:
     )
 
 
+def _datetime_field_for(parameter: SnippetMetaParameter) -> DateTimeField:
+    """Build a :class:`DateTimeField` from a DATETIME-typed parameter."""
+    return DateTimeField(
+        name=parameter.name,
+        label=parameter.label or parameter.name,
+        required=parameter.required,
+        description=parameter.description,
+        default=parameter.default,
+    )
+
+
 _FIELD_BUILDERS = {
     SnippetMetaParameterType.STR: _string_field_for,
     SnippetMetaParameterType.INT: _int_field_for,
     SnippetMetaParameterType.FLOAT: _float_field_for,
     SnippetMetaParameterType.BOOL: _bool_field_for,
+    SnippetMetaParameterType.DATETIME: _datetime_field_for,
 }
 
 

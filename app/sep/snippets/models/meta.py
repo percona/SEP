@@ -21,9 +21,12 @@ __all__ = [
     "SnippetMetaParameterType",
     "SnippetMetaParametersValidationResult",
     "SnippetVisibilityCondition",
+    "serialize_cli_value",
 ]
 
 import logging
+from collections.abc import Callable
+from datetime import datetime
 from enum import Enum, StrEnum
 from functools import cached_property
 from string import Template
@@ -49,13 +52,20 @@ from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandl
 from typing_extensions import TypedDict
 
 from app.core.utils import run_pydantic_type_validator, shorten_text
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.core.utils.date_time import make_datetime_utc
+from app.core.utils.fields import (
+    EmptyStrToNone,
+    EnumFieldMixin,
+    NonEmptyStr,
+    UTCDatetime,
+)
 from app.core.utils.pydantic import (
     field_with_metadata,
     loc_to_dot_sep,
 )
 from app.sep.snippets.forms import (
     CheckboxInputElement,
+    DateTimeInputElement,
     FormFieldElement,
     NumberInputElement,
     SelectElement,
@@ -64,7 +74,7 @@ from app.sep.snippets.forms import (
     TextInputHTMLElement,
 )
 
-ParameterType = str | int | float | bool | None
+ParameterType = str | int | float | bool | datetime | None
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +86,28 @@ class SnippetMetaParameterType(EnumFieldMixin, Enum):
     INT = int
     FLOAT = float
     BOOL = bool
+    DATETIME = UTCDatetime
+
+
+_CLI_VALUE_SERIALIZERS: dict[type, Callable[[Any], str]] = {
+    datetime: lambda value: make_datetime_utc(value).strftime("%Y-%m-%dT%H:%M:%S"),
+}
+
+
+def serialize_cli_value(value: Any) -> str:
+    """Serialize a validated parameter value for command-line argument substitution.
+
+    Datetime values are normalized to UTC before formatting as an ISO-8601
+    ``T``-separated form without microseconds.
+    All other types fall back to ``str(value)``.
+
+    :param value: The validated parameter value to serialize.
+    :type value: Any
+    :return: The command-line string representation of ``value``.
+    :rtype: str
+    """
+    serializer = _CLI_VALUE_SERIALIZERS.get(type(value))
+    return serializer(value) if serializer else str(value)
 
 
 class SnippetMetaParametersValidationResult(NamedTuple):
@@ -162,7 +194,7 @@ class SnippetMetaParameter(BaseModel):
     :type group: NonEmptyStr | None
     :param default: The default value for the parameter. Defaults to None, meaning no
         default.
-    :type default: str | int | float | bool | None
+    :type default: str | int | float | bool | datetime | None
     :param choices: A list of choices for the parameter. Each choice can be a string or
         a dictionary with "label" and "value" keys. Defaults to None, meaning it won't
         be used for validation. This parameter is validated as "options" or "choices"
@@ -407,6 +439,8 @@ class SnippetMetaParameter(BaseModel):
             SnippetMetaParameterType.FLOAT,
         ]:
             return NumberInputElement
+        if self.py_type == SnippetMetaParameterType.DATETIME:
+            return DateTimeInputElement
         if self.html_elem == TextInputHTMLElement.TEXTAREA:
             return TextareaElement
         return TextInputElement

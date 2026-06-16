@@ -82,6 +82,7 @@ from app.sep.snippets.forms import (
     TextInputElement,
 )
 from app.sep.snippets.models.meta import (
+    serialize_cli_value,
     SnippetMetaParameter,
     SnippetMetaParametersValidationResult,
 )
@@ -372,8 +373,8 @@ class BaseSnippetArgs(BaseModel):
         """
         field_name, metadata = cls.get_field_metadata(field_identifier)
         if metadata.get("positional"):
-            return [value]
-        arg_template_mapping = {"value": shlex.quote(str(value))}
+            return [serialize_cli_value(value)]
+        arg_template_mapping = {"value": shlex.quote(serialize_cli_value(value))}
         if (is_flag := metadata.get("is_flag")) and not value:
             return []
         if not (arg_format := metadata.get("arg_format")):
