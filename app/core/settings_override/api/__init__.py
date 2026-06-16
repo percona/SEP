@@ -22,6 +22,7 @@ __all__ = [
     "SettingsPatch",
     "build_settings_class_values",
     "build_settings_router",
+    "collect_class_setting_responses",
 ]
 
 from app.core.settings_override.api.export import build_settings_class_values
@@ -31,4 +32,7 @@ from app.core.settings_override.api.models import (
     SettingsListResponse,
     SettingsPatch,
 )
-from app.core.settings_override.api.routes import build_settings_router
+from app.core.settings_override.api.routes import (
+    build_settings_router,
+    collect_class_setting_responses,
+)

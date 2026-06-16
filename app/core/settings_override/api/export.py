@@ -22,7 +22,7 @@ from typing import Any
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import BaseYamlSettings
-from app.core.settings_override.api.routes import _collect_class_setting_responses
+from app.core.settings_override.api.routes import collect_class_setting_responses
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 
@@ -51,7 +51,7 @@ async def build_settings_class_values(
     :return: Dumped values keyed by the canonical LIST field name.
     :rtype: dict[str, Any]
     """
-    responses = await _collect_class_setting_responses(
+    responses = await collect_class_setting_responses(
         session=session,
         setting_class=setting_class,
         settings_cls=settings_cls,

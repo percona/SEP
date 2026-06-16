@@ -15,7 +15,7 @@
 
 """Build a settings REST API router parameterised by sub-app wiring."""
 
-__all__ = ["build_settings_router"]
+__all__ = ["build_settings_router", "collect_class_setting_responses"]
 
 from collections.abc import Mapping
 from typing import Annotated, Any
@@ -246,7 +246,7 @@ async def _remote_patch(
     return [SettingResponse.model_validate(item) for item in payload]
 
 
-async def _collect_class_setting_responses(
+async def collect_class_setting_responses(
     *,
     session: AsyncSession,
     setting_class: SettingClassEnum,
@@ -698,7 +698,7 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
         """
         groups = []
         for setting_class, settings_cls, proxy in classes:
-            settings_list = await _collect_class_setting_responses(
+            settings_list = await collect_class_setting_responses(
                 session=session,
                 setting_class=setting_class,
                 settings_cls=settings_cls,
