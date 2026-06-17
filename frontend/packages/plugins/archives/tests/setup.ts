@@ -15,8 +15,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { ArchivesPlugin } from './ArchivesPlugin';
-export { ArchiveForm } from './ArchiveForm';
-export { ArchiveSchemaCombo } from './ArchiveSchemaCombo';
-export type { ArchiveSchemaComboProps, ArchiveComboOption } from './ArchiveSchemaCombo';
-export { archivesRoute, PLUGIN_NAME, PLUGIN_BASE_PATH } from './routes';
+import '@testing-library/jest-dom/vitest';
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
+
+afterEach(() => {
+  cleanup();
+});
