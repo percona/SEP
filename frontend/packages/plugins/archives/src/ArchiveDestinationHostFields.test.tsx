@@ -83,7 +83,9 @@ describe('ArchiveDestinationHostFields', () => {
     render(<Harness defaults={EMPTY} />);
     expect(screen.getByLabelText('Use a different host?')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pick from inventory' })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Destination Service')).not.toBeInTheDocument();
+    // The mocked ServiceSelector renders a <button>, so match it by role to
+    // avoid a query that can never find it (a false-negative absence assertion).
+    expect(screen.queryByRole('button', { name: 'Destination Service' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Destination Host')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Destination Port')).not.toBeInTheDocument();
   });
