@@ -179,6 +179,7 @@ archives_schema = PluginSchema(
         ),
         FormSection(
             title="Destination",
+            forbidden=[FieldGate(when=truthy("delete_data"))],
             fields=[
                 IntegerField(
                     name="dest_table_id",
@@ -246,6 +247,7 @@ archives_schema = PluginSchema(
         ),
         FormSection(
             title="Destination Host",
+            forbidden=[FieldGate(when=truthy("delete_data"))],
             fields=[
                 ServiceField(
                     name="dest_service_id",
