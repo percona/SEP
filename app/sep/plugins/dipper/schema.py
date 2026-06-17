@@ -160,6 +160,8 @@ def build_dipper_form_schema(
 ) -> PluginSchema:
     """Build the Dipper execution form schema for a selected service/script.
 
+    Parameters marked ``hidden`` are omitted from the schema.
+
     When ``node_options`` / ``service_options`` are non-empty, the corresponding
     free-text ``node`` / ``service`` fields are rendered as single-select
     :class:`~app.sep.plugins.framework.schema.ChoiceField` dropdowns sourced from
@@ -184,7 +186,7 @@ def build_dipper_form_schema(
     """
     options_by_field = {"node": node_options, "service": service_options}
     parameter_sections: dict[str, list[AnyField]] = {}
-    for parameter in script.validated_parameters.parameters:
+    for parameter in script.validated_parameters.visible_parameters:
         section_title = parameter.group or "Parameters"
         field = field_for(parameter)
         resolved_default = defaults.get(field.name) if defaults else None

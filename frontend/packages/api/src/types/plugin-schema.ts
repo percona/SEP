@@ -86,6 +86,22 @@ interface BaseField {
   forbidden?: FieldGate[];
 }
 
+// ── Choice option ─────────────────────────────────────────────────────────
+
+/**
+ * One option in a choice / multi-choice field. `disabled` (and its optional
+ * `disabled_reason` tooltip text) are opt-in UI hints; the backend omits both
+ * from the wire while unset, so they arrive only for options that opt in.
+ */
+export interface ChoiceOption {
+  label: string;
+  value: string;
+  /** Render the option non-selectable. Omitted from the wire while unset. */
+  disabled?: boolean;
+  /** Explanatory text shown (e.g. in a tooltip) when the option is disabled. */
+  disabled_reason?: string;
+}
+
 // ── Concrete field types ────────────────────────────────────────────────
 
 export interface StringField extends BaseField {
@@ -116,12 +132,12 @@ export interface BoolField extends BaseField {
 
 export interface ChoiceField extends BaseField {
   type: 'choice';
-  choices: Array<{ label: string; value: string }>;
+  choices: ChoiceOption[];
 }
 
 export interface MultiChoiceField extends BaseField {
   type: 'multi_choice';
-  choices: Array<{ label: string; value: string }>;
+  choices: ChoiceOption[];
   min_items?: number;
   max_items?: number;
 }
@@ -152,16 +168,22 @@ export interface YamlField extends BaseField {
 export interface ServiceField extends BaseField {
   type: 'service';
   service_types: string[];
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allow_custom?: boolean;
 }
 
 export interface SchemaField extends BaseField {
   type: 'schema';
   depends_on: string;
+  /** Offer free-text (free-solo) entry alongside the cascaded options. */
+  allow_custom?: boolean;
 }
 
 export interface TableField extends BaseField {
   type: 'table';
   depends_on: string;
+  /** Offer free-text (free-solo) entry alongside the cascaded options. */
+  allow_custom?: boolean;
 }
 
 export interface HostField extends BaseField {

@@ -49,6 +49,7 @@ from sqlmodel import col
 
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.utils import utc_now
+from app.sep.app_drain import track_app_task
 from app.sep.celery import update_snippets
 from app.sep.deps import ApiAdminUser, IsApiAuthenticated, SessionDep, TaskAPI
 from app.sep.plugins.framework.api import capabilities_endpoint, schema_endpoint
@@ -104,7 +105,9 @@ capabilities_endpoint(
 
 
 @router.post("/refresh", dependencies=[IsApiAuthenticated, IsManualSyncEnabled])
-async def snippets_api_refresh(user: ApiAdminUser) -> RefreshResponse:
+async def snippets_api_refresh(
+    user: ApiAdminUser, session: SessionDep
+) -> RefreshResponse:
     """Refresh the snippets cache from disk.
 
     Admin-only and additionally gated by manual sync being enabled.
@@ -112,10 +115,12 @@ async def snippets_api_refresh(user: ApiAdminUser) -> RefreshResponse:
 
     :param user: The authenticated admin performing the refresh.
     :type user: User
+    :param session: The SEP database session.
     :return: A response carrying the UTC timestamp of the refresh.
     :rtype: RefreshResponse
     """
-    await update_snippets()
+    async with track_app_task(session, "snippets"):
+        await update_snippets()
     logger.info("Snippets refreshed via JSON API by %s", user.username)
     return RefreshResponse(refreshed_at=utc_now())
 
@@ -156,7 +161,6 @@ async def snippets_api_list(session: SessionDep) -> list[SnippetResponse]:
 
 @router.get(
     "/snippet/schema",
-    response_model=PluginSchema,
     response_model_by_alias=True,
     response_model_exclude_none=True,
     dependencies=[IsApiAuthenticated],
