@@ -23,7 +23,8 @@
  * ``SchemaDrivenAppRoute`` instead — no per-app FE package required.
  */
 
-import { lazy, type ComponentType } from 'react';
+import { createElement, lazy, type ComponentType, type ReactElement } from 'react';
+import { SchemaDrivenAppRoute } from './components/SchemaDrivenAppRoute';
 import { APP_ROUTE_BY_KEY, getAppRouteMeta } from './appNavConfig';
 import { useAuth } from './contexts/auth';
 
@@ -131,4 +132,43 @@ export function getSchemaDrivenFallbackRoutes(): SchemaDrivenFallbackRoute[] {
         routeBase: meta.routeBase,
       };
     });
+}
+
+export interface PluginRouteDefinition {
+  path: string;
+  element: ReactElement;
+}
+
+/** Shell plugin routes: bespoke registry entries, schema-driven fallbacks, legacy aliases. */
+export function buildPluginRoutes(): PluginRouteDefinition[] {
+  const routes: PluginRouteDefinition[] = Object.values(CUSTOM_APP_REGISTRY).map(
+    ({ routePattern, Component }) => ({
+      path: routePattern,
+      element: createElement(Component),
+    }),
+  );
+
+  for (const { routePattern, appKey } of getSchemaDrivenFallbackRoutes()) {
+    routes.push({
+      path: routePattern,
+      element: createElement(SchemaDrivenAppRoute, { appKey }),
+    });
+  }
+
+  for (const { path, appKey, useCustom } of LEGACY_ROUTE_ALIASES) {
+    if (useCustom) {
+      const entry = CUSTOM_APP_REGISTRY[appKey];
+      routes.push({
+        path,
+        element: createElement(entry.Component),
+      });
+    } else {
+      routes.push({
+        path,
+        element: createElement(SchemaDrivenAppRoute, { appKey }),
+      });
+    }
+  }
+
+  return routes;
 }
