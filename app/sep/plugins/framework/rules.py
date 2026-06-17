@@ -1377,14 +1377,15 @@ def _append_one_of_group_rules(
                 predicate = NotEquals(group.discriminator, next(iter(allowed)))
             else:
                 predicate = all_(
-                    *[NotEquals(group.discriminator, value) for value in sorted(allowed)]
+                    *[
+                        NotEquals(group.discriminator, value)
+                        for value in sorted(allowed)
+                    ]
                 )
             prepared.append(
                 _PreparedRule(
                     kind=_RuleKind.FIELD_GATE_FORBIDDEN,
-                    scope_path=(
-                        f"{group_scope} forbidden[{leaf_name!r}]"
-                    ),
+                    scope_path=(f"{group_scope} forbidden[{leaf_name!r}]"),
                     predicate=predicate,
                     fields=(leaf_name,),
                     min=None,

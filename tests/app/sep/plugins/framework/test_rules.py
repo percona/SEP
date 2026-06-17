@@ -1591,7 +1591,9 @@ class TestOneOfGroupRules:
         Body(source=SourceBySchema(source_db_id="inventory"))
         Body(source=SourceByQuery(source_query="SELECT 1"))
 
-    def test_shared_leaf_across_branches_does_not_emit_contradictory_gates(self) -> None:
+    def test_shared_leaf_across_branches_does_not_emit_contradictory_gates(
+        self,
+    ) -> None:
         """Avoid per-branch forbidden gates for a leaf shared by all branches."""
         plan = _extract_rule_plan(self._shared_leaf_one_of_schema())
         shared_leaf_gates = [
