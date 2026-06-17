@@ -173,10 +173,10 @@ test.describe('shell sanity smoke', () => {
 
     // Sidebar navigation items must be present (permanent drawer on desktop).
     // "Schema Change" only appears in the nav (not duplicated on the dashboard),
-    // so it uniquely identifies the sidebar.  "Snippets" appears both in the
-    // nav and as a stat card; use getByRole('button') to target the nav entry.
+    // so it uniquely identifies the sidebar.  "Snippet Manager" is the registry
+    // display_name for snippets; use getByRole('button') to target the nav entry.
     await expect(page.getByText('Schema Change')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Snippets' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Snippet Manager' })).toBeVisible();
   });
 
   test('checksums plugin route mounts without console errors', async ({ page }) => {
