@@ -400,16 +400,20 @@ def test_archives_update_rejects_non_purge_only_swap_drop(
         "swap_drop": SwapDropEnum.SWAP_DROP.value,
     }
 
+    # HTML form routes surface validation failures as a flash + redirect back to
+    # the submitting page (the Referer), so set one and assert we return to it
+    # rather than to the detail page.
+    referer = "http://testserver/archives/legacy_swap_drop/edit"
     response = test_client.post(
         "/archives/legacy_swap_drop/update",
         data=payload,
+        headers={"referer": referer},
         follow_redirects=False,
     )
 
-    # HTML form routes surface validation failures as a flash + redirect back to
-    # the referer rather than persisting; the task is never updated.
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert not response.headers["location"].endswith("/archives/legacy_swap_drop")
+    assert response.headers["location"] == referer
+    # The task is never updated when validation rejects the payload.
     mock_task_api_dep.put.assert_not_awaited()
 
 
