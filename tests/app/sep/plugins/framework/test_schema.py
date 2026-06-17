@@ -892,6 +892,132 @@ class TestScriptPreviewField:
         assert section.fields[0].endpoint_url == "/api/plugins/x/y"
 
 
+class TestChoiceDisabled:
+    """Cover the opt-in ``disabled`` / ``disabled_reason`` flags on ``Choice``."""
+
+    def test_defaults_are_absent_from_the_wire(self) -> None:
+        """A plain choice keeps its pre-feature wire shape under ``exclude_none``.
+
+        The discovery endpoint serialises with ``exclude_none=True``; typing the
+        flags ``bool | None`` (default ``None``) keeps them out of the payload so
+        existing schema snapshots stay byte-identical.
+        """
+        choice = Choice(label="Purge Only", value="0")
+
+        assert choice.disabled is None
+        assert choice.disabled_reason is None
+        assert choice.model_dump(exclude_none=True) == {
+            "label": "Purge Only",
+            "value": "0",
+        }
+
+    def test_disabled_choice_serialises_flag_and_reason(self) -> None:
+        """An opted-in disabled choice carries both flags on the wire."""
+        choice = Choice(
+            label="Swap & Drop",
+            value="1",
+            disabled=True,
+            disabled_reason="Not available in the current scope.",
+        )
+
+        dumped = choice.model_dump(exclude_none=True)
+        assert dumped == {
+            "label": "Swap & Drop",
+            "value": "1",
+            "disabled": True,
+            "disabled_reason": "Not available in the current scope.",
+        }
+
+    def test_disabled_reason_must_be_non_empty(self) -> None:
+        """Reject an empty ``disabled_reason`` string."""
+        with pytest.raises(ValidationError):
+            Choice(label="A", value="a", disabled=True, disabled_reason="")
+
+    def test_disabled_reason_requires_disabled(self) -> None:
+        """Reject a ``disabled_reason`` on a still-selectable option.
+
+        A reason without ``disabled=True`` is an inconsistent wire shape (the
+        UI helpers only surface the reason for disabled options), so the model
+        rejects it rather than emitting a misleading payload.
+        """
+        with pytest.raises(ValidationError):
+            Choice(label="A", value="a", disabled_reason="Coming soon.")
+
+        with pytest.raises(ValidationError):
+            Choice(
+                label="A",
+                value="a",
+                disabled=False,
+                disabled_reason="Coming soon.",
+            )
+
+    def test_choice_field_round_trips_disabled_choice(self) -> None:
+        """A disabled choice survives validation through the ChoiceField union."""
+        section = FormSection.model_validate(
+            {
+                "title": "Options",
+                "fields": [
+                    {
+                        "type": "choice",
+                        "name": "swap_drop",
+                        "label": "Archive Type",
+                        "choices": [
+                            {"label": "Purge Only", "value": "0"},
+                            {
+                                "label": "Swap & Drop",
+                                "value": "1",
+                                "disabled": True,
+                                "disabled_reason": "Coming soon.",
+                            },
+                        ],
+                    },
+                ],
+            },
+        )
+
+        field = section.fields[0]
+        assert isinstance(field, ChoiceField)
+        assert field.choices[0].disabled is None
+        assert field.choices[1].disabled is True
+        assert field.choices[1].disabled_reason == "Coming soon."
+
+
+class TestReferenceFieldAllowCustom:
+    """Cover the opt-in ``allow_custom`` flag on the inventory reference fields."""
+
+    @pytest.mark.parametrize(
+        ("field_cls", "extra"),
+        [
+            (SchemaField, {"depends_on": "serviceId"}),
+            (TableField, {"depends_on": "schema"}),
+            (ServiceField, {"service_types": [ServiceTypeEnum.MYSQL]}),
+        ],
+    )
+    def test_allow_custom_defaults_absent_from_the_wire(self, field_cls, extra) -> None:
+        """The flag defaults to ``None`` and is dropped under ``exclude_none``."""
+        field = field_cls(name="ref", label="Ref", **extra)
+
+        assert field.allow_custom is None
+        assert "allow_custom" not in field.model_dump(exclude_none=True)
+
+    @pytest.mark.parametrize(
+        ("field_cls", "extra"),
+        [
+            (SchemaField, {"depends_on": "serviceId"}),
+            (TableField, {"depends_on": "schema"}),
+            (ServiceField, {"service_types": [ServiceTypeEnum.MYSQL]}),
+        ],
+    )
+    def test_allow_custom_surfaces_when_enabled(self, field_cls, extra) -> None:
+        """An opted-in field carries ``allow_custom: true`` on the wire."""
+        field = field_cls(name="ref", label="Ref", allow_custom=True, **extra)
+
+        assert field.allow_custom is True
+        assert (
+            field.model_dump(exclude_none=True, by_alias=True)["allow_custom"] is True
+        )
+
+
 # ── Conditional-rule primitives (SEP-1071) ──────────────────────────────
 
 

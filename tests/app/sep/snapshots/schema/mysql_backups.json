@@ -273,13 +273,6 @@
           "type": "choice"
         },
         {
-          "default": false,
-          "label": "Alert on Failure",
-          "name": "alert_on_fail",
-          "required": false,
-          "type": "bool"
-        },
-        {
           "label": "Server Alias",
           "name": "alias",
           "required": false,

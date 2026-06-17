@@ -30,12 +30,17 @@ from app.core.exceptions import (
 )
 from app.core.utils import import_var
 from app.inventory.config import inventory_settings
-from app.sep.config import sep_settings
+from app.sep.config import sep_settings, SyncOptions
 from app.sep.deps import InventoryClient, TasksClient
 from app.sep.sync.models import BaseSyncer
 from app.tasks.config import tasks_settings
 
 INVENTORY_PLUGIN_ENTITY_NAMES = frozenset({"nodes", "services", "schemas", "tables"})
+
+# Single source of truth for the read-only system-observation sub-resource
+# segment, shared by the proxy route decorators and the forwarded-path helper
+# so the inbound and forwarded paths cannot drift apart.
+SYSTEM_OBSERVATION_SEGMENT = "system-observation"
 
 
 class InventorySyncTriggerWrite(BaseModel):
@@ -194,6 +199,21 @@ def filter_syncers_by_name(
     return matched
 
 
+def _syncer_init_kwargs(sync_option: SyncOptions) -> dict[str, Any]:
+    """Build constructor kwargs from a configured ``SyncOptions`` entry.
+
+    Drops ``None`` leaves so optional nested models (notably ``pmm`` on
+    ``PMMSyncer``) are not passed as explicit ``None``, which would override
+    the syncer's default factory and fail validation.
+
+    :param sync_option: One element from ``sep_settings.SYNCERS``.
+    :type sync_option: SyncOptions
+    :return: Keyword arguments for the syncer class constructor.
+    :rtype: dict[str, Any]
+    """
+    return sync_option.model_dump(exclude={"syncer"}, exclude_none=True)
+
+
 def get_syncers(
     inventory_api: InventoryClient, tasks_api: TasksClient
 ) -> list[BaseSyncer]:
@@ -216,7 +236,7 @@ def get_syncers(
             syncer_class(
                 inventory_api=inventory_api,
                 tasks_api=tasks_api,
-                **sync_option.model_dump(exclude={"syncer"}),
+                **_syncer_init_kwargs(sync_option),
             ),
         )
     return syncers
@@ -273,7 +293,7 @@ async def get_syncers_standalone() -> list[BaseSyncer]:
             syncer_class(
                 inventory_api=inventory_api,
                 tasks_api=tasks_api,
-                **sync_option.model_dump(exclude={"syncer"}),
+                **_syncer_init_kwargs(sync_option),
             ),
         )
     return syncers
@@ -339,6 +359,25 @@ def inventory_service_detail_path(entity: str, item_id: int) -> str:
     if entity == "nodes":
         return f"/nodes/{item_id}"
     return f"/{entity}/{item_id}"
+
+
+def inventory_system_observation_path(entity: str, item_id: int) -> str:
+    """Map a plugin entity and id to the inventory system-observation sub-resource.
+
+    Built by appending ``/system-observation`` to the detail path from
+    ``inventory_service_detail_path`` so the sub-resource always tracks the
+    canonical detail mapping and the two cannot drift. Targets the read-only
+    system-observation endpoint exposed by the inventory sub-app. Only
+    ``nodes`` and ``services`` carry an observation; callers reach this helper
+    through the explicit per-entity proxy routes.
+
+    :param entity: ``nodes`` or ``services``.
+    :param item_id: Primary key of the node or service.
+    :return: Path relative to the inventory API root.
+    """
+    return (
+        f"{inventory_service_detail_path(entity, item_id)}/{SYSTEM_OBSERVATION_SEGMENT}"
+    )
 
 
 def _parse_positive_int_parent_id(value: Any, *, field_name: str) -> int:

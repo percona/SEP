@@ -435,14 +435,6 @@
         },
         {
           "default": false,
-          "description": "Send an alert if the task fails",
-          "label": "Alert on Fail",
-          "name": "alert_on_fail",
-          "required": false,
-          "type": "bool"
-        },
-        {
-          "default": false,
           "description": "When enabled, continue to the run task even if pre-checks fail (overrides the default halt policy)",
           "label": "Continue on Pre-Check Failure",
           "name": "continue_on_pre_check_failure",

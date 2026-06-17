@@ -69,6 +69,7 @@ export type {
   FloatField,
   BoolField,
   ChoiceField,
+  ChoiceOption,
   MultiChoiceField,
   TextAreaField,
   DateTimeField,

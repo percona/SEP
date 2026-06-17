@@ -33,7 +33,7 @@ from app.sep import periodic_tasks as periodic_tasks_module
 from app.sep.config import Plugin
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
-from app.sep.models import AppState
+from app.sep.models import AppLifecycleEnum, AppState
 from app.sep.plugins.framework.registry import get_app_registry
 
 SNIPPETS_TASK = "sep__sync_snippets"
@@ -104,8 +104,11 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
-        assert states == {"snippets": True, "checksums": False}
+            lifecycle_states = await AppStateManager.all_lifecycle_states(session)
+        assert lifecycle_states == {
+            "snippets": AppLifecycleEnum.ENABLED,
+            "checksums": AppLifecycleEnum.DISABLED,
+        }
 
     async def test_inventory_is_never_seeded(
         self, mocker, patched_seed, seed_maker
@@ -116,7 +119,7 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
+            states = await AppStateManager.all_lifecycle_states(session)
         assert "inventory" not in states
 
     async def test_idempotent_second_run(
@@ -131,15 +134,17 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
-        assert states == {"snippets": True}
+            states = await AppStateManager.all_lifecycle_states(session)
+        assert states == {"snippets": AppLifecycleEnum.ENABLED}
 
     async def test_existing_row_not_overwritten(
         self, mocker, patched_seed, seed_maker
     ) -> None:
         """An existing row keeps its value even when the YAML flips ``enabled``."""
         async with seed_maker() as session:
-            session.add(AppState(app_key="snippets", enabled=False))
+            session.add(
+                AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+            )
             await session.commit()
 
         mocker.patch.object(
@@ -153,8 +158,12 @@ class TestInitSepDbAppStateSeeding:
     async def test_orphan_rows_deleted(self, mocker, patched_seed, seed_maker) -> None:
         """Rows for apps no longer configured (incl. now-protected) are removed."""
         async with seed_maker() as session:
-            session.add(AppState(app_key="ghost", enabled=True))
-            session.add(AppState(app_key="inventory", enabled=True))
+            session.add(
+                AppState(app_key="ghost", lifecycle_state=AppLifecycleEnum.ENABLED)
+            )
+            session.add(
+                AppState(app_key="inventory", lifecycle_state=AppLifecycleEnum.ENABLED)
+            )
             await session.commit()
 
         mocker.patch.object(
@@ -163,8 +172,8 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
-        assert states == {"snippets": True}
+            states = await AppStateManager.all_lifecycle_states(session)
+        assert states == {"snippets": AppLifecycleEnum.ENABLED}
 
     async def test_periodic_task_seeding_still_runs(
         self, mocker, patched_seed, seed_maker

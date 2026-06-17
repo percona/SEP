@@ -23,7 +23,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
 from app.sep.crud import SEPPluginPeriodicTaskManager
-from app.sep.models import AppState, SEPPluginPeriodicTask
+from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
 from app.sep.periodic_tasks import apply_effective_enabled, seed_app_periodic_task_rows
 
 SNIPPETS_TASK = "sep__sync_snippets"
@@ -146,11 +146,19 @@ class TestSeedAppPeriodicTaskRows:
 class TestApplyEffectiveEnabled:
     """Tests for :func:`app.sep.periodic_tasks.apply_effective_enabled`."""
 
-    async def test_disabled_app_disables_owned_task(
-        self, session: AsyncSession, celery_beat_session: AsyncSession
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    async def test_non_enabled_app_disables_owned_task(
+        self, session: AsyncSession, celery_beat_session: AsyncSession, state
     ) -> None:
-        """A disabled app flips its owned ``PeriodicTask.enabled`` to ``False``."""
-        session.add(AppState(app_key="snippets", enabled=False))
+        """Any non-``ENABLED`` app flips its owned ``PeriodicTask.enabled`` off."""
+        session.add(AppState(app_key="snippets", lifecycle_state=state))
         session.add(
             SEPPluginPeriodicTask(
                 periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=True
@@ -170,7 +178,9 @@ class TestApplyEffectiveEnabled:
         self, session: AsyncSession, celery_beat_session: AsyncSession
     ) -> None:
         """``user_enabled=False`` keeps a schedule off even when the app is on."""
-        session.add(AppState(app_key="snippets", enabled=True))
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
         session.add(
             SEPPluginPeriodicTask(
                 periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=False
@@ -190,7 +200,9 @@ class TestApplyEffectiveEnabled:
         self, session: AsyncSession, celery_beat_session: AsyncSession
     ) -> None:
         """An enabled app + ``user_enabled`` re-enables a previously-off schedule."""
-        session.add(AppState(app_key="snippets", enabled=True))
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
         session.add(
             SEPPluginPeriodicTask(
                 periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=True
@@ -229,7 +241,9 @@ class TestApplyEffectiveEnabled:
         self, session: AsyncSession, celery_beat_session: AsyncSession
     ) -> None:
         """A wrapper row with no matching ``PeriodicTask`` is skipped without error."""
-        session.add(AppState(app_key="snippets", enabled=False))
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
         session.add(
             SEPPluginPeriodicTask(
                 periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=True
@@ -254,7 +268,9 @@ class TestApplyEffectiveEnabled:
         self, session: AsyncSession, celery_beat_session: AsyncSession, mocker
     ) -> None:
         """Skip the write (and beat reload) when the effective value is unchanged."""
-        session.add(AppState(app_key="snippets", enabled=True))
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
         session.add(
             SEPPluginPeriodicTask(
                 periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=True
@@ -273,8 +289,12 @@ class TestApplyEffectiveEnabled:
         self, session: AsyncSession, celery_beat_session: AsyncSession
     ) -> None:
         """``app_keys`` restricts the sweep to the named apps' owned tasks."""
-        session.add(AppState(app_key="snippets", enabled=False))
-        session.add(AppState(app_key="alerts", enabled=False))
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        session.add(
+            AppState(app_key="alerts", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
         session.add(
             SEPPluginPeriodicTask(
                 periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=True
@@ -308,8 +328,12 @@ class TestApplyEffectiveEnabled:
         self, session: AsyncSession, celery_beat_session: AsyncSession
     ) -> None:
         """An unfiltered sweep recomputes every owned task's enabled bit."""
-        session.add(AppState(app_key="snippets", enabled=False))
-        session.add(AppState(app_key="alerts", enabled=True))
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        session.add(
+            AppState(app_key="alerts", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
         session.add(
             SEPPluginPeriodicTask(
                 periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=True
@@ -347,7 +371,9 @@ class TestApplyEffectiveEnabled:
         startup sweep (or a re-toggle) reconciles — the caller sees the error and
         does not assume the gate took effect.
         """
-        session.add(AppState(app_key="snippets", enabled=False))
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
         session.add(
             SEPPluginPeriodicTask(
                 periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=True

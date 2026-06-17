@@ -18,10 +18,12 @@
 import { useMemo, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import DownloadIcon from '@mui/icons-material/Download';
 import LockIcon from '@mui/icons-material/Lock';
 import { LoadableChildren } from '@percona/percona-ui';
-import { useSettingsList } from '@sep/api';
+import { useConfigExport, useSettingsList } from '@sep/api';
 
 import { useAuth } from '../contexts/auth';
 import SettingsGroup from '../components/settings/SettingsGroup';
@@ -32,6 +34,7 @@ export default function SettingsPage() {
   const { isAdmin } = useAuth();
   // Skip fetching for non-admins — the API would 403 and we render a guard state.
   const settingsQuery = useSettingsList({ enabled: isAdmin });
+  const configExport = useConfigExport();
   const [filters, setFilters] = useState(DEFAULT_SETTINGS_FILTERS);
 
   const allGroups = useMemo(() => settingsQuery.data ?? [], [settingsQuery.data]);
@@ -67,15 +70,41 @@ export default function SettingsPage() {
 
   return (
     <>
-      <Typography
-        variant="h5"
-        sx={{ fontFamily: '"Poppins", sans-serif', fontWeight: 500, mb: 0.5 }}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 2,
+          mb: 3,
+        }}
       >
-        Settings
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        View and edit application configuration at runtime.
-      </Typography>
+        <Box>
+          <Typography
+            variant="h5"
+            sx={{ fontFamily: '"Poppins", sans-serif', fontWeight: 500, mb: 0.5 }}
+          >
+            Settings
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            View and edit application configuration at runtime.
+          </Typography>
+        </Box>
+        <Button
+          variant="outlined"
+          startIcon={<DownloadIcon />}
+          onClick={() => configExport.mutate()}
+          disabled={configExport.isPending}
+        >
+          {configExport.isPending ? 'Downloading…' : 'Download YAML'}
+        </Button>
+      </Box>
+
+      {configExport.isError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Failed to export configuration: {configExport.error?.message}
+        </Alert>
+      )}
 
       {settingsQuery.isError && (
         <Alert severity="error" sx={{ mb: 2 }}>
