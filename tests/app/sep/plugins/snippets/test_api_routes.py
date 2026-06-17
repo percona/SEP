@@ -800,7 +800,7 @@ class TestSnippetsApiPatchApprovals:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     async def test_missing_filenames_returns_422(self, api_admin_client):
-        """Missing ``filenames`` field is a 422 (regression for SEP-1007 quirk)."""
+        """Missing ``filenames`` field is a 422 (regression for the body-parsing quirk)."""
         response = api_admin_client.patch(self.URL, json={})
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -957,6 +957,22 @@ class TestSnippetsApiRefresh:
         # Validate body fits the declared model contract.
         RefreshResponse.model_validate(body)
         update_mock.assert_awaited_once()
+
+    async def test_refresh_registers_drain_counter(
+        self, api_admin_client, enable_manual_sync, mocker
+    ):
+        """The refresh wraps the sync in ``track_app_task`` for the snippets app."""
+        enable_manual_sync(value=True)
+        mocker.patch.object(
+            snippets_api_routes, "update_snippets", new=AsyncMock(return_value=None)
+        )
+        spy = mocker.spy(snippets_api_routes, "track_app_task")
+
+        response = api_admin_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        spy.assert_called_once()
+        assert spy.call_args.args[1] == "snippets"
 
     async def test_admin_with_manual_sync_disabled_returns_403(
         self, api_admin_client, enable_manual_sync, mocker

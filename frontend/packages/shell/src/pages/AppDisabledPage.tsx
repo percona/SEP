@@ -15,19 +15,22 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import Typography from '@mui/material/Typography';
+import BlockIcon from '@mui/icons-material/Block';
 import CenteredSplash from '../components/CenteredSplash';
 
-export default function NotFoundPage() {
+/**
+ * Splash shown by `AppDisabledGuard` in place of a disabled app's route.
+ *
+ * Generic by design: it surfaces neither the disable reason nor the admin
+ * contact (deferred to a future ticket once the backend exposes that
+ * metadata). Built on the shared `CenteredSplash` layout, like `NotFoundPage`.
+ */
+export default function AppDisabledPage() {
   return (
     <CenteredSplash
-      icon={
-        <Typography variant="h1" sx={{ fontWeight: 700, color: 'text.secondary', mb: 1 }}>
-          404
-        </Typography>
-      }
-      title="Page not found"
-      body="The page you're looking for doesn't exist or has been moved."
+      icon={<BlockIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />}
+      title="This feature is currently disabled."
+      body="Contact an administrator to re-enable it."
     />
   );
 }

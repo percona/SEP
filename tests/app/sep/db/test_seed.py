@@ -186,6 +186,18 @@ class TestInitSepDbAppStateSeeding:
         patched_seed.assert_awaited_once()
 
 
+def test_reconciler_seeded_as_ungated_system_task() -> None:
+    """The drain reconciler is seeded with no owner, so it is never gated off."""
+    reconcilers = [
+        task
+        for schedule in seed_module.SYSTEM_PERIODIC_TASKS
+        for task in schedule.tasks
+        if task.task_name == "app.sep.app_drain.reconcile_disabling_apps"
+    ]
+    assert len(reconcilers) == 1
+    assert reconcilers[0].owner_app_key is None
+
+
 @pytest_asyncio.fixture(name="beat_maker")
 async def beat_maker_fixture() -> AsyncIterator:
     """Provide a session maker bound to an in-memory celery-beat DB."""

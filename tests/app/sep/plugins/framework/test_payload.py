@@ -268,6 +268,50 @@ class TestAssembleEnvelopeGuards:
             )
 
 
+class TestAssembleEnvelopeExecutorHost:
+    """Cover the executor-host / service-host split on the assembled envelope."""
+
+    def test_executor_host_drives_meta_target(self) -> None:
+        """Set ``meta.target`` to the executor host, keeping connectivity on the service."""
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        spec = RunCommandSpec(command="cmd", args="")
+
+        write = assemble_envelope(
+            spec,
+            ResolvedEntities(service=service, entities={}, executor_host="exec-node"),
+            name="task-1",
+            owner=TaskOwner.CHECKSUMS,
+        )
+
+        assert write.data["meta"]["target"] == "exec-node"
+        assert write.data["meta"][CONNECTIVITY_META_HOST_KEY] == "db-host"
+
+    def test_no_executor_host_falls_back_to_service_address(self) -> None:
+        """Fall back to the service address for ``meta.target`` when no host resolved."""
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        spec = RunCommandSpec(command="cmd", args="")
+
+        write = assemble_envelope(
+            spec,
+            ResolvedEntities(service=service, entities={}),
+            name="task-1",
+            owner=TaskOwner.CHECKSUMS,
+        )
+
+        assert write.data["meta"]["target"] == "db-host"
+        assert write.data["meta"][CONNECTIVITY_META_HOST_KEY] == "db-host"
+
+
 class _ResolveForm(AppFormModel):
     """Carry one of each resolvable ref plus a manual host for resolve tests."""
 
@@ -300,6 +344,22 @@ class _MultiTypeForm(AppFormModel):
         int | None,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL, ServiceTypeEnum.MONGODB)),
         Ui(label="Service", section="main"),
+    ] = None
+
+
+class _TwoHostForm(AppFormModel):
+    """Carry two ``HostRef`` fields to exercise the single-executor-host guard."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    host_a: Annotated[str | None, HostRef(), Ui(label="A", section="main")] = None
+    host_b: Annotated[str | None, HostRef(), Ui(label="B", section="main")] = None
+
+
+class _IntHostForm(AppFormModel):
+    """Carry an ``int | str`` HostRef to exercise executor-host str coercion."""
+
+    host: Annotated[
+        int | str | None, HostRef(allow_custom=True), Ui(label="Host", section="main")
     ] = None
 
 
@@ -352,6 +412,43 @@ class TestResolveRefs:
         resolved = await resolve_refs(_ResolveForm(host="some-host"), inventory)
 
         assert "host" not in resolved.entities
+
+    @pytest.mark.asyncio
+    async def test_host_ref_captured_as_executor_host(self) -> None:
+        """Capture a ``HostRef`` field's free-typed value as the executor host."""
+        inventory = _fake_inventory({})
+
+        resolved = await resolve_refs(_ResolveForm(host="exec-node"), inventory)
+
+        assert resolved.executor_host == "exec-node"
+        inventory.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_host_ref_value_coerced_to_str(self) -> None:
+        """Coerce a non-``str`` ``HostRef`` value to ``str`` for ``executor_host``."""
+        inventory = _fake_inventory({})
+
+        resolved = await resolve_refs(_IntHostForm(host=8080), inventory)
+
+        assert resolved.executor_host == "8080"
+        inventory.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_host_ref_leaves_executor_host_none(self) -> None:
+        """Leave ``executor_host`` as ``None`` when the model declares no ``HostRef``."""
+        inventory = _fake_inventory({})
+
+        resolved = await resolve_refs(_MultiTypeForm(service_id=None), inventory)
+
+        assert resolved.executor_host is None
+
+    @pytest.mark.asyncio
+    async def test_multiple_host_refs_raise(self) -> None:
+        """Reject a model declaring more than one ``HostRef`` field."""
+        inventory = _fake_inventory({})
+
+        with pytest.raises(ValueError, match="HostRef"):
+            await resolve_refs(_TwoHostForm(host_a="a", host_b="b"), inventory)
 
     @pytest.mark.asyncio
     async def test_multi_type_service_in_tuple_resolves(self) -> None:

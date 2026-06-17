@@ -20,6 +20,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import RootLayout from './layouts/RootLayout';
 import MainLayout from './layouts/MainLayout';
 import AuthGuard from './components/AuthGuard';
+import AppDisabledGuard from './components/AppDisabledGuard';
 import { useAuth } from './contexts/auth';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
@@ -93,26 +94,130 @@ export const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <DashboardPage /> },
+          // The Inventory app is not gated by plugin enablement (protected app)
+          // — it stays unwrapped. Every other plugin route is wrapped in an
+          // AppDisabledGuard tagged with the backend plugin key, so navigating
+          // to a disabled app's route lands on the splash instead of mounting a
+          // plugin that would emit a 503 toast cascade. Each `appKey` here must
+          // match the matching `appKey` in navigation.tsx's defaultNavItems.
           { path: 'inventory/*', element: <InventoryPlugin /> },
-          { path: 'tasks/*', element: <TasksPlugin /> },
-          { path: 'snippets/*', element: <SnippetsPlugin /> },
-          { path: 'atw/*', element: <AtwPlugin /> },
-          { path: 'dipper/*', element: <DipperPlugin /> },
-          { path: 'alerts/templates/*', element: <AlertsPlugin /> },
-          { path: 'alerts/troubleshooting/*', element: <AlertTroubleshootingPlugin /> },
-          { path: 'schema-change/alters/*', element: <AltersPlugin /> },
+          {
+            path: 'tasks/*',
+            element: (
+              <AppDisabledGuard appKey="tasks">
+                <TasksPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'snippets/*',
+            element: (
+              <AppDisabledGuard appKey="snippets">
+                <SnippetsPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'atw/*',
+            element: (
+              <AppDisabledGuard appKey="atw">
+                <AtwPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'dipper/*',
+            element: (
+              <AppDisabledGuard appKey="dipper">
+                <DipperPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'alerts/templates/*',
+            element: (
+              <AppDisabledGuard appKey="alerts">
+                <AlertsPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'alerts/troubleshooting/*',
+            element: (
+              <AppDisabledGuard appKey="alert_troubleshooting">
+                <AlertTroubleshootingPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'schema-change/alters/*',
+            element: (
+              <AppDisabledGuard appKey="alters">
+                <AltersPlugin />
+              </AppDisabledGuard>
+            ),
+          },
           // Checksums — schema-driven plugin (handles its own sub-routes)
-          { path: 'plugins/checksums/*', element: <ChecksumsPlugin /> },
-          { path: 'schema-change/checksums/*', element: <ChecksumsPlugin /> },
-          { path: 'plugins/mysql_backups/*', element: <MysqlBackupsPlugin /> },
+          {
+            path: 'plugins/checksums/*',
+            element: (
+              <AppDisabledGuard appKey="checksums">
+                <ChecksumsPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'schema-change/checksums/*',
+            element: (
+              <AppDisabledGuard appKey="checksums">
+                <ChecksumsPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'plugins/mysql_backups/*',
+            element: (
+              <AppDisabledGuard appKey="mysql_backups">
+                <MysqlBackupsPlugin />
+              </AppDisabledGuard>
+            ),
+          },
           { path: 'schema-change/inventory/*', element: <InventoryPlugin /> },
           // NOTE: MySQL Backups lives at /plugins/mysql_backups (above), matching
           // its PLUGIN_BASE_PATH. The old /backups/mysql placeholder route was
           // removed in SEP-1270 — the sidebar now points at the real plugin.
-          { path: 'backups/mongodb/*', element: <BackupMongoPlugin /> },
-          { path: 'backups/postgresql/*', element: <BackupPgPlugin /> },
-          { path: 'plugins/archives/*', element: <ArchivesPlugin /> },
-          { path: 'reports/*', element: <ReportPlugin /> },
+          {
+            path: 'backups/mongodb/*',
+            element: (
+              <AppDisabledGuard appKey="backup_mongo">
+                <BackupMongoPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'backups/postgresql/*',
+            element: (
+              <AppDisabledGuard appKey="backup_pg">
+                <BackupPgPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'plugins/archives/*',
+            element: (
+              <AppDisabledGuard appKey="archives">
+                <ArchivesPlugin />
+              </AppDisabledGuard>
+            ),
+          },
+          {
+            path: 'reports/*',
+            element: (
+              <AppDisabledGuard appKey="report">
+                <ReportPlugin />
+              </AppDisabledGuard>
+            ),
+          },
           { path: 'settings', element: <SettingsPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],

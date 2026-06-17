@@ -1,38 +1,6 @@
 {
   "components": {
     "schemas": {
-      "BatchApprovalResponse": {
-        "description": "Successful response for the batch-approve endpoint.\n\n:param approved: Filenames whose approval state was toggled by this\n    request (newly approved as a result of the call).\n:type approved: list[str]\n:param skipped_already_approved: Filenames that were already approved\n    when the call started; the request is treated as a soft-skip\n    (idempotent).\n:type skipped_already_approved: list[str]",
-        "properties": {
-          "approved": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Approved",
-            "type": "array"
-          },
-          "count": {
-            "description": "Return the number of newly approved snippets.\n\n:return: Length of ``approved``.\n:rtype: int",
-            "readOnly": true,
-            "title": "Count",
-            "type": "integer"
-          },
-          "skipped_already_approved": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Skipped Already Approved",
-            "type": "array"
-          }
-        },
-        "required": [
-          "approved",
-          "skipped_already_approved",
-          "count"
-        ],
-        "title": "BatchApprovalResponse",
-        "type": "object"
-      },
       "BoolField": {
         "additionalProperties": false,
         "description": "Represent a boolean toggle field.\n\n:param field_type: The discriminator literal; always ``\"bool\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"bool\"]",
@@ -1452,6 +1420,15 @@
         "title": "MultiChoiceField",
         "type": "object"
       },
+      "PgBackRestBackupType": {
+        "description": "PgBackRest backup types.",
+        "enum": [
+          "incr",
+          "diff"
+        ],
+        "title": "PgBackRestBackupType",
+        "type": "string"
+      },
       "PluginEntitySchema": {
         "additionalProperties": false,
         "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:type name: NonEmptyStr\n:param display_name: Human-readable title for this entity's screens.\n:type display_name: NonEmptyStr\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:type description: NonEmptyStr | None\n:param forms: Form sections for create (and edit when the UI supports it).\n:type forms: list[FormSection]\n:param list_view: Column configuration for this entity's list table.\n:type list_view: ListView\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.\n:type fail_when: list[FailRule] | None",
@@ -1688,21 +1665,6 @@
         "title": "PluginSchema",
         "type": "object"
       },
-      "RefreshResponse": {
-        "description": "Represent the successful result of a manual snippets-refresh operation.\n\n:param refreshed_at: UTC timestamp at which the refresh completed.\n:type refreshed_at: datetime",
-        "properties": {
-          "refreshed_at": {
-            "format": "date-time",
-            "title": "Refreshed At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "refreshed_at"
-        ],
-        "title": "RefreshResponse",
-        "type": "object"
-      },
       "SchemaField": {
         "additionalProperties": false,
         "description": "Represent an inventory database-schema selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``ServiceField``); the React renderer\ncascades schema options from the selected service. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"schema\"]\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:type depends_on: NonEmptyStr\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    cascaded inventory options. Optional, defaulting to ``None`` (options\n    only). Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas. The\n    built-in SchemaFormRenderer does not yet consume the flag; the\n    free-solo widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
@@ -1918,30 +1880,6 @@
         "title": "ScriptPreviewField",
         "type": "object"
       },
-      "ScriptPreviewResponse": {
-        "description": "Represent the backend response for the preview endpoint.\n\n:param content: The full text content of the snippet file (preamble,\n    frontmatter, and body concatenated).\n:type content: str\n:param language: A JS syntax-highlighter language identifier derived\n    from the snippet's MIME type (for example, ``\"bash\"`` or\n    ``\"plaintext\"``).\n:type language: str\n:param is_truncated: Whether the preview was truncated to fit\n    within the configured per-file character or line limit.\n:type is_truncated: bool",
-        "properties": {
-          "content": {
-            "title": "Content",
-            "type": "string"
-          },
-          "is_truncated": {
-            "title": "Is Truncated",
-            "type": "boolean"
-          },
-          "language": {
-            "title": "Language",
-            "type": "string"
-          }
-        },
-        "required": [
-          "content",
-          "language",
-          "is_truncated"
-        ],
-        "title": "ScriptPreviewResponse",
-        "type": "object"
-      },
       "ServiceField": {
         "additionalProperties": false,
         "description": "Represent an inventory service selector field.\n\n:param field_type: The discriminator literal; always ``\"service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"service\"]\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:type service_types: list[ServiceTypeEnum]\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    inventory options. Optional, defaulting to ``None`` (options only).\n    Typed ``bool | None`` so the discovery endpoint's ``exclude_none``\n    posture drops it from the wire until a plugin opts in, keeping the\n    addition byte-compatible with existing schemas. The built-in\n    SchemaFormRenderer does not yet consume the flag; the free-solo\n    widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
@@ -2059,209 +1997,6 @@
         ],
         "title": "ServiceTypeEnum",
         "type": "string"
-      },
-      "SnippetBatchApproveRequest": {
-        "description": "Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.\n\nUnlike the Form-bound :class:`~app.sep.plugins.snippets.deps.SnippetBatchApproveForm`\ntwin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI\nparses it as JSON.\n\n:param filenames: Unique, non-empty list of snippet filenames to approve in a\n    single atomic operation. Duplicates are silently deduplicated by\n    ``UniqueList``.\n:type filenames: UniqueList[NonEmptyStr]",
-        "properties": {
-          "filenames": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Filenames",
-            "type": "array"
-          }
-        },
-        "required": [
-          "filenames"
-        ],
-        "title": "SnippetBatchApproveRequest",
-        "type": "object"
-      },
-      "SnippetExecutionRequest": {
-        "description": "Define the JSON body for ``POST /api/plugins/snippets/{filename}/execute``.\n\nPer-parameter values defined in the snippet's YAML frontmatter go into\n``args`` and are validated server-side via the snippet's dynamic\nexecution model.\n\n:param executor_host: The hostname of the executor that will run the\n    snippet.\n:type executor_host: NonEmptyStr\n:param sudo: Whether to invoke the snippet with sudo. Ignored unless\n    the snippet's sudo option is configured as optional.\n:type sudo: bool\n:param args: Per-parameter arguments keyed by parameter name. Validated\n    against the snippet's dynamic execution model.\n:type args: dict[str, Any]",
-        "properties": {
-          "args": {
-            "default": {},
-            "title": "Args",
-            "type": "object"
-          },
-          "executor_host": {
-            "minLength": 1,
-            "title": "Executor Host",
-            "type": "string"
-          },
-          "sudo": {
-            "default": false,
-            "title": "Sudo",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "executor_host"
-        ],
-        "title": "SnippetExecutionRequest",
-        "type": "object"
-      },
-      "SnippetExecutionResponse": {
-        "description": "Represent the response returned from the execute endpoint.\n\n:param task_name: The task name the snippet was executed under (varies\n    based on the snippet's interpreter and pip requirements).\n:type task_name: NonEmptyStr\n:param task_id: The id of the task-history row created by the tasks\n    API, when the upstream response includes one.\n:type task_id: int | None\n:param snippet_filename: The filename of the snippet that was\n    executed.\n:type snippet_filename: NonEmptyStr",
-        "properties": {
-          "snippet_filename": {
-            "minLength": 1,
-            "title": "Snippet Filename",
-            "type": "string"
-          },
-          "task_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Id"
-          },
-          "task_name": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name",
-          "snippet_filename"
-        ],
-        "title": "SnippetExecutionResponse",
-        "type": "object"
-      },
-      "SnippetResponse": {
-        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
-        "properties": {
-          "approved_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Approved At"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "description": {
-            "title": "Description",
-            "type": "string"
-          },
-          "filename": {
-            "minLength": 1,
-            "title": "Filename",
-            "type": "string"
-          },
-          "interpreter": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Interpreter"
-          },
-          "is_approved": {
-            "title": "Is Approved",
-            "type": "boolean"
-          },
-          "md5_digest": {
-            "title": "Md5 Digest",
-            "type": "string"
-          },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "requires_sudo": {
-            "title": "Requires Sudo",
-            "type": "boolean"
-          },
-          "size": {
-            "title": "Size",
-            "type": "integer"
-          },
-          "sudo_default": {
-            "title": "Sudo Default",
-            "type": "boolean"
-          },
-          "sudo_optional": {
-            "title": "Sudo Optional",
-            "type": "boolean"
-          },
-          "title": {
-            "minLength": 1,
-            "title": "Title",
-            "type": "string"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          },
-          "updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated By"
-          }
-        },
-        "required": [
-          "filename",
-          "title",
-          "description",
-          "size",
-          "md5_digest",
-          "is_approved",
-          "reason",
-          "requires_sudo",
-          "sudo_optional",
-          "sudo_default",
-          "created_at"
-        ],
-        "title": "SnippetResponse",
-        "type": "object"
-      },
-      "SnippetsCapabilitiesResponse": {
-        "description": "Represent per-deployment capability flags for the Snippets plugin.\n\nExposes flags that gate the visibility of admin-only UI affordances\n(currently the manual refresh button) so the React shell can decide\nwhether to render those controls without probing the gated endpoints.\n\nDistinct from :class:`~app.sep.plugins.framework.schema.Capabilities`,\nwhich describes static UI feature flags on\n:attr:`~app.sep.plugins.framework.schema.PluginSchema.capabilities`\n(chaining, scheduling, alert_on_fail). This model is the per-\ndeployment runtime counterpart returned by ``GET /capabilities``.\n\n:param manual_sync_enabled: Whether manual snippet refresh is enabled\n    in this deployment (mirrors ``snippets_settings.ENABLE_MANUAL_SYNC``).\n:type manual_sync_enabled: bool",
-        "properties": {
-          "manual_sync_enabled": {
-            "title": "Manual Sync Enabled",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "manual_sync_enabled"
-        ],
-        "title": "SnippetsCapabilitiesResponse",
-        "type": "object"
       },
       "StringField": {
         "additionalProperties": false,
@@ -2499,6 +2234,46 @@
         ],
         "title": "TableField",
         "type": "object"
+      },
+      "TaskBackendEnum": {
+        "description": "Control the choice of backends.\n\n:cvar NOMAD: Enum value for Nomad backend.\n:vartype NOMAD: str\n:cvar PROXY: Enum value for Proxy backend.\n:vartype PROXY: str\n:cvar CELERY: Enum value for Celery backend.\n:vartype CELERY: str",
+        "enum": [
+          "nomad",
+          "proxy",
+          "celery"
+        ],
+        "title": "TaskBackendEnum",
+        "type": "string"
+      },
+      "TaskHistoryStatusEnum": {
+        "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:vartype FAILED: str\n:cvar PENDING: Enum value for pending tasks.\n:vartype PENDING: str\n:cvar RUNNING: Enum value for running tasks.\n:vartype RUNNING: str\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:vartype SUCCESS: str\n:cvar STOPPED: Enum value for stopped tasks.\n:vartype STOPPED: str\n:cvar LOST: Enum value for tasks that are lost.\n:vartype LOST: str\n:cvar STALE: Enum value for tasks skipped because Nomad placement\n    exceeded the configured staleness threshold.\n:vartype STALE: str",
+        "enum": [
+          "failed",
+          "pending",
+          "running",
+          "success",
+          "stopped",
+          "lost",
+          "stale"
+        ],
+        "title": "TaskHistoryStatusEnum",
+        "type": "string"
+      },
+      "TaskOwner": {
+        "description": "Control the choice of task owners.\n\n:cvar ANY: Value for tasks without owner restrictions.\n:vartype ANY: str\n:cvar ALTERS: Value for schema change tasks.\n:vartype ALTERS: str\n:cvar ARCHIVER: Value for data archiver tasks.\n:vartype ARCHIVER: str\n:cvar BACKUPS: Value for backup tasks.\n:vartype BACKUPS: str\n:cvar RESTORES: Value for restore tasks.\n:vartype RESTORES: str\n:cvar CHECKSUMS: Value for checksum tasks.\n:vartype CHECKSUMS: str",
+        "enum": [
+          "ANY",
+          "ALTERS",
+          "ARCHIVER",
+          "BACKUPS",
+          "RESTORES",
+          "CHECKSUMS",
+          "BACKUP_MONGO",
+          "RESTORE_MONGO",
+          "BACKUP_PG"
+        ],
+        "title": "TaskOwner",
+        "type": "string"
       },
       "TextAreaField": {
         "additionalProperties": false,
@@ -2759,56 +2534,558 @@
         ],
         "title": "YamlField",
         "type": "object"
+      },
+      "app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/app__sep__plugins__backup_pg__models__BackupTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[BackupTaskResponse]",
+        "type": "object"
+      },
+      "app__sep__plugins__backup_pg__models__BackupExecuteWrite": {
+        "description": "Represent a JSON request body for executing a backup task.\n\n:param eta: Optional datetime to schedule execution. Must be in the future;\n    a past value is rejected with a 422 validation error.\n:param chain_task_names: Optional list of task names to chain after.\n:type chain_task_names: list[str] | None\n:param chain_on_failure: Whether to run chained tasks even on failure.\n:type chain_on_failure: bool | None",
+        "properties": {
+          "chain_on_failure": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain On Failure"
+          },
+          "chain_task_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain Task Names"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          }
+        },
+        "title": "BackupExecuteWrite",
+        "type": "object"
+      },
+      "app__sep__plugins__backup_pg__models__BackupExecutionResponse": {
+        "description": "Represent the response from the execute API endpoint.\n\n:param task_name: The name of the task that was executed.\n:type task_name: str\n:param task_id: The id of the task-history row created by the tasks API.\n:type task_id: int | None",
+        "properties": {
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_name": {
+            "title": "Task Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_name"
+        ],
+        "title": "BackupExecutionResponse",
+        "type": "object"
+      },
+      "app__sep__plugins__backup_pg__models__BackupTaskDetailResponse": {
+        "description": "Represent a single pgBackRest backup task detail response.\n\nAdds the executor host and port resolved from the task's YAML config so\nthe FE detail view can render them alongside the parity Overview block;\nlist rows omit these to keep the table response compact.\n\n:param host: The PostgreSQL host the task connects to.\n:type host: str | None\n:param port: The PostgreSQL port the task connects to.\n:type port: int | None",
+        "properties": {
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "backup_type": {
+            "title": "Backup Type",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated By"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/TaskOwner"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backend",
+          "backup_type",
+          "data",
+          "protected",
+          "alert_on_fail"
+        ],
+        "title": "BackupTaskDetailResponse",
+        "type": "object"
+      },
+      "app__sep__plugins__backup_pg__models__BackupTaskResponse": {
+        "description": "Represent a pgBackRest backup task API response.\n\n:param id: The task identifier from the Tasks service, if assigned.\n:type id: int | None\n:param backend: The backend executing the task.\n:type backend: TaskBackendEnum\n:param backup_type: The ``backup_type`` discriminator stored on the task.\n:type backup_type: str\n:param data: The raw task ``data`` payload.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion.\n:type protected: bool\n:param alert_on_fail: Whether PMM alerts fire when the task fails.\n:type alert_on_fail: bool\n:param created_at: Creation timestamp.\n:type created_at: datetime | None\n:param updated_at: Last-modification timestamp.\n:type updated_at: datetime | None\n:param created_by: User that created the task.\n:type created_by: str | None\n:param last_updated_by: User that last modified the task record.\n:type last_updated_by: str | None",
+        "properties": {
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "backup_type": {
+            "title": "Backup Type",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated By"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/TaskOwner"
+          },
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backend",
+          "backup_type",
+          "data",
+          "protected",
+          "alert_on_fail"
+        ],
+        "title": "BackupTaskResponse",
+        "type": "object"
+      },
+      "app__sep__plugins__backup_pg__models__BackupTaskWrite": {
+        "additionalProperties": false,
+        "description": "Represent a JSON request body for creating a pgBackRest backup task.\n\nMirrors :class:`BackupCreate` minus ``backup_type``, which the API handler\nalways sets to :attr:`BackupType.PGBACKREST` on create.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target Nomad executor host.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the PostgreSQL service.\n:type service_id: int\n:param stanza: pgBackRest stanza name from pgbackrest.conf on the host (for example, ``sep-test``). Passed as ``--stanza`` to pgbackrest commands.\n:type stanza: SafeStanza\n:param alert_on_fail: If True, fire a PMM alert on task failure.\n:type alert_on_fail: bool\n:param logging_dir: Optional directory used by the payload for logs.\n:type logging_dir: str | None\n:param backup_dir: Required pgBackRest backup directory.\n:type backup_dir: NonEmptyStr\n:param pgbackrest_bin: Absolute path to the ``pgbackrest`` binary.\n:type pgbackrest_bin: str | None\n:param pgbackrest_config_file: Path to ``pgbackrest.conf`` on the host.\n:type pgbackrest_config_file: str | None\n:param pgbackrest_backup_type: ``incr`` or ``diff``.\n:type pgbackrest_backup_type: PgBackRestBackupType | None\n:param pgbackrest_datadir: Postgres data directory.\n:type pgbackrest_datadir: str | None\n:param pgbackrest_retention_full: Number of full backups to retain.\n:type pgbackrest_retention_full: int | None\n:param pgbackrest_retention_archive: Number of WAL archives to retain.\n:type pgbackrest_retention_archive: int | None\n:param pgbackrest_incremental_cycle: Cadence value for the INCR/FULL cycle.\n:type pgbackrest_incremental_cycle: int | str | None",
+        "properties": {
+          "alert_on_fail": {
+            "default": false,
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backup_dir": {
+            "minLength": 1,
+            "title": "Backup Dir",
+            "type": "string"
+          },
+          "hostname": {
+            "minLength": 1,
+            "title": "Hostname",
+            "type": "string"
+          },
+          "logging_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logging Dir"
+          },
+          "pgbackrest_backup_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PgBackRestBackupType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pgbackrest_bin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Bin"
+          },
+          "pgbackrest_config_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Config File"
+          },
+          "pgbackrest_datadir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Datadir"
+          },
+          "pgbackrest_incremental_cycle": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Incremental Cycle"
+          },
+          "pgbackrest_retention_archive": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Retention Archive"
+          },
+          "pgbackrest_retention_full": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Retention Full"
+          },
+          "service_id": {
+            "title": "Service Id",
+            "type": "integer"
+          },
+          "stanza": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+            "title": "Stanza",
+            "type": "string"
+          },
+          "task_name": {
+            "minLength": 1,
+            "title": "Task Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_name",
+          "hostname",
+          "service_id",
+          "stanza",
+          "backup_dir"
+        ],
+        "title": "BackupTaskWrite",
+        "type": "object"
       }
     }
   },
   "paths": {
-    "/api/plugins/snippets/": {
+    "/api/plugins/backup_pg/": {
       "get": {
-        "description": "List every currently-discovered snippet entity.\n\n:return: One :class:`SnippetResponse` per snippet row in the database.\n:rtype: list[SnippetResponse]",
-        "operationId": "snippets_snippets_api_list_api_plugins_snippets__get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SnippetResponse"
-                  },
-                  "title": "Response Snippets Snippets Api List Api Plugins Snippets  Get",
-                  "type": "array"
+        "description": "List pgBackRest backup tasks.\n\n``limit`` is capped to keep the page size bounded; latest statuses for the\npage are resolved in a single batched round-trip to the Tasks API.",
+        "operationId": "backup_pg_backup_pg_api_list_api_plugins_backup_pg__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                },
+                {
+                  "type": "null"
                 }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Snippets Api List",
-        "tags": [
-          "snippets"
-        ]
-      }
-    },
-    "/api/plugins/snippets/approvals": {
-      "patch": {
-        "description": "Approve a set of snippets atomically (idempotent partial-update).\n\nReject the whole batch with ``400`` and a\n:class:`BatchApprovalErrorResponse` payload when any filename has no\nDB row or its file is missing on disk. Filenames that are already\napproved when the call starts are reported in\n``skipped_already_approved`` — not as errors. The atomic write uses\n``approved_at IS NULL`` as a CAS filter so two concurrent admins\ncannot double-approve.\n\n:param existence: Pre-validated batch existence result from the dependency.\n:type existence: SnippetBatchExistenceResult\n:param user: The authenticated admin performing the action.\n:type user: User\n:param session: The active database session.\n:type session: AsyncSession\n:return: The success payload listing approved + skipped filenames.\n:rtype: BatchApprovalResponse\n:raises HTTPBadRequestException: On hard-error precheck failures with\n    a :class:`BatchApprovalErrorResponse` body.",
-        "operationId": "snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SnippetBatchApproveRequest"
-              }
+              ],
+              "title": "Status"
             }
           },
-          "required": true
-        },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BatchApprovalResponse"
+                  "$ref": "#/components/schemas/app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2"
                 }
               }
             },
@@ -2825,60 +3102,56 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Snippets Api Batch Approve",
+        "summary": "Backup Pg Api List",
         "tags": [
-          "snippets"
+          "backup_pg"
         ]
-      }
-    },
-    "/api/plugins/snippets/capabilities": {
-      "get": {
-        "description": "Return per-deployment capability flags for the snippets plugin.\n\nRead live from ``snippets_settings`` so a deployment-config hot\nreload between two requests is reflected on the next response.\n\n:return: Capability flags reflecting the current deployment config.\n:rtype: SnippetsCapabilitiesResponse",
-        "operationId": "snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SnippetsCapabilitiesResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": " Snippets Capabilities Provider",
-        "tags": [
-          "snippets"
-        ]
-      }
-    },
-    "/api/plugins/snippets/refresh": {
+      },
       "post": {
-        "description": "Refresh the snippets cache from disk.\n\nAdmin-only and additionally gated by manual sync being enabled.\nMirrors the legacy Jinja2 ``POST /snippets/refresh`` route.\n\n:param user: The authenticated admin performing the refresh.\n:type user: User\n:param session: The SEP database session.\n:return: A response carrying the UTC timestamp of the refresh.\n:rtype: RefreshResponse",
-        "operationId": "snippets_snippets_api_refresh_api_plugins_snippets_refresh_post",
+        "description": "Create a pgBackRest backup task from a JSON payload request body.\n\nPOSTs the task via :func:`~app.sep.plugins.framework.cascade.cascade_create_tasks`\nwith an empty derived list so any future derived-task wiring lands without\na route signature change.",
+        "operationId": "backup_pg_backup_pg_api_create_api_plugins_backup_pg__post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__sep__plugins__backup_pg__models__BackupTaskWrite"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RefreshResponse"
+                  "$ref": "#/components/schemas/app__sep__plugins__backup_pg__models__BackupTaskDetailResponse"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
-        "summary": "Snippets Api Refresh",
+        "summary": "Backup Pg Api Create",
         "tags": [
-          "snippets"
+          "backup_pg"
         ]
       }
     },
-    "/api/plugins/snippets/schema": {
+    "/api/plugins/backup_pg/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "snippets_get_schema_api_plugins_snippets_schema_get",
+        "operationId": "backup_pg_get_schema_api_plugins_backup_pg_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -2893,23 +3166,21 @@
         },
         "summary": "Get Schema",
         "tags": [
-          "snippets"
+          "backup_pg"
         ]
       }
     },
-    "/api/plugins/snippets/snippet/approval": {
+    "/api/plugins/backup_pg/{task_name}": {
       "delete": {
-        "description": "Remove approval from a single snippet (idempotent).\n\nRemoving an approval that doesn't exist is a no-op ``204``. The\nsnippet missing → ``404`` (handled by ``SnippetDep``); approval\nmissing → ``204``.\n\n:param snippet: The snippet whose approval is being cleared.\n:type snippet: Snippet\n:param user: The authenticated admin performing the action.\n:type user: User\n:param session: The active database session.\n:type session: AsyncSession\n:return: An empty 204 response.\n:rtype: Response",
-        "operationId": "snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete",
+        "description": "Delete a pgBackRest backup task.",
+        "operationId": "backup_pg_backup_pg_api_delete_api_plugins_backup_pg__task_name__delete",
         "parameters": [
           {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
+            "in": "path",
+            "name": "task_name",
             "required": true,
             "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
+              "title": "Task Name",
               "type": "string"
             }
           }
@@ -2929,68 +3200,21 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Snippets Api Remove Approval",
+        "summary": "Backup Pg Api Delete",
         "tags": [
-          "snippets"
+          "backup_pg"
         ]
       },
-      "put": {
-        "description": "Approve a single snippet (idempotent).\n\nRe-approving an already-approved snippet returns ``200`` with the\ncurrent state — ``approved_at`` is *not* overwritten so the audit\ntrail is preserved.\n\n:param snippet: The snippet whose approval is being set.\n:type snippet: Snippet\n:param user: The authenticated admin performing the action.\n:type user: User\n:param session: The active database session.\n:type session: AsyncSession\n:return: The snippet entity after the call, including approval state.\n:rtype: SnippetResponse",
-        "operationId": "snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put",
-        "parameters": [
-          {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
-            "required": true,
-            "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SnippetResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Snippets Api Approve",
-        "tags": [
-          "snippets"
-        ]
-      }
-    },
-    "/api/plugins/snippets/snippet/download": {
       "get": {
-        "description": "Stream the raw snippet file as a download attachment.\n\nReturns the on-disk source verbatim — full bash/Python body plus its\nYAML frontmatter — so end users can save the file locally without\nbeing capped by the preview truncation limits. The\n``SnippetDep`` dependency already validates both the DB row and the\non-disk file, so a missing snippet or missing file surfaces as 404.\n\n:param snippet: The snippet whose raw file is requested.\n:type snippet: Snippet\n:return: The snippet file streamed as ``attachment; filename=...``\n    with a MIME type guessed from the on-disk path.\n:rtype: FileResponse",
-        "operationId": "snippets_snippets_api_download_api_plugins_snippets_snippet_download_get",
+        "description": "Retrieve a single pgBackRest backup task by name.",
+        "operationId": "backup_pg_backup_pg_api_detail_api_plugins_backup_pg__task_name__get",
         "parameters": [
           {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
+            "in": "path",
+            "name": "task_name",
             "required": true,
             "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
+              "title": "Task Name",
               "type": "string"
             }
           }
@@ -2999,7 +3223,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/app__sep__plugins__backup_pg__models__BackupTaskDetailResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -3015,25 +3241,23 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Snippets Api Download",
+        "summary": "Backup Pg Api Detail",
         "tags": [
-          "snippets"
+          "backup_pg"
         ]
       }
     },
-    "/api/plugins/snippets/snippet/execute": {
+    "/api/plugins/backup_pg/{task_name}/execute": {
       "post": {
-        "description": "Execute a snippet against the tasks API.\n\nMirrors the legacy Jinja2 ``POST /snippets/execute?snippet_filename=...``\nroute, but accepts a JSON body and returns a structured response pointing at\nthe created task.\n\n:param snippet: The snippet being executed.\n:type snippet: Snippet\n:param body: The validated JSON request body.\n:type body: SnippetExecutionRequest\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: RemoteAPI\n:param snippet_source: Signed URL the executor uses to download the\n    snippet artifact.\n:type snippet_source: str\n:return: The structured response describing the created task.\n:rtype: SnippetExecutionResponse\n:raises HTTPUnprocessableEntityException: When the per-snippet args\n    fail dynamic validation.",
-        "operationId": "snippets_snippets_api_execute_api_plugins_snippets_snippet_execute_post",
+        "description": "Execute a pgBackRest backup task.",
+        "operationId": "backup_pg_backup_pg_api_execute_api_plugins_backup_pg__task_name__execute_post",
         "parameters": [
           {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
+            "in": "path",
+            "name": "task_name",
             "required": true,
             "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
+              "title": "Task Name",
               "type": "string"
             }
           }
@@ -3042,7 +3266,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SnippetExecutionRequest"
+                "$ref": "#/components/schemas/app__sep__plugins__backup_pg__models__BackupExecuteWrite"
               }
             }
           },
@@ -3053,7 +3277,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SnippetExecutionResponse"
+                  "$ref": "#/components/schemas/app__sep__plugins__backup_pg__models__BackupExecutionResponse"
                 }
               }
             },
@@ -3070,145 +3294,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Snippets Api Execute",
+        "summary": "Backup Pg Api Execute",
         "tags": [
-          "snippets"
-        ]
-      }
-    },
-    "/api/plugins/snippets/snippet/history": {
-      "get": {
-        "description": "Return the paginated execution history rows for a single snippet.\n\nFilters the canonical task-history endpoint by ``snippet_filename`` so\nthe React detail page can pass the result straight into the shared\n``TaskHistoryTable`` component without re-projecting fields.\n\n:param snippet: The snippet whose history is requested.\n:type snippet: Snippet\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: RemoteAPI\n:return: The upstream paginated task-history response (``items``,\n    ``total``, ``offset``, ``limit``).\n:rtype: dict[str, Any]",
-        "operationId": "snippets_snippets_api_history_api_plugins_snippets_snippet_history_get",
-        "parameters": [
-          {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
-            "required": true,
-            "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Response Snippets Snippets Api History Api Plugins Snippets Snippet History Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Snippets Api History",
-        "tags": [
-          "snippets"
-        ]
-      }
-    },
-    "/api/plugins/snippets/snippet/preview": {
-      "get": {
-        "description": "Return the snippet's preview content with a highlighter language hint.\n\n:param snippet: The snippet whose preview is requested.\n:type snippet: Snippet\n:return: The preview content alongside metadata about it.\n:rtype: ScriptPreviewResponse\n:raises HTTPUnprocessableEntityException: When the snippet contains\n    bytes that cannot be decoded as UTF-8.",
-        "operationId": "snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get",
-        "parameters": [
-          {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
-            "required": true,
-            "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScriptPreviewResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Snippets Api Script Preview",
-        "tags": [
-          "snippets"
-        ]
-      }
-    },
-    "/api/plugins/snippets/snippet/schema": {
-      "get": {
-        "description": "Return the per-snippet form schema synthesised from snippet metadata.\n\n:param snippet: The snippet whose schema is requested.\n:type snippet: Snippet\n:return: The validated per-snippet plugin schema.\n:rtype: PluginSchema",
-        "operationId": "snippets_snippets_api_per_snippet_schema_api_plugins_snippets_snippet_schema_get",
-        "parameters": [
-          {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
-            "required": true,
-            "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PluginSchema"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Snippets Api Per Snippet Schema",
-        "tags": [
-          "snippets"
+          "backup_pg"
         ]
       }
     }
