@@ -189,7 +189,7 @@ def record_task_end(task_id: str, task: Any, **_: Any) -> None:
 
 @celery.task
 def reconcile_disabling_apps() -> None:
-    """Periodic safety net: prune orphaned rows and finalize drained apps."""
+    """Prune orphaned running-task rows and finalize drained apps (safety net)."""
     celery.loop.run_until_complete(_reconcile_disabling_apps())
 
 

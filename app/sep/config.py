@@ -444,6 +444,26 @@ class AppDrainSettings(BaseLowercaseModel):
     )
     stale_task_ttl: TimedeltaSeconds = timedelta(hours=1)
 
+    @field_validator("stale_task_ttl")
+    @classmethod
+    def _stale_task_ttl_positive(cls, value: timedelta) -> timedelta:
+        """Reject a zero or negative stale-task TTL.
+
+        The reconciler prunes rows whose ``created_at`` predates
+        ``utc_now() - stale_task_ttl``. A non-positive TTL puts that cutoff at or
+        after the present, so every in-flight ``AppRunningTask`` row is pruned and
+        a ``DISABLING`` app finalizes to ``DISABLED`` while its tasks still run.
+
+        :param value: The configured stale-task TTL.
+        :type value: timedelta
+        :return: The validated TTL.
+        :rtype: timedelta
+        :raises ValueError: If ``value`` is not strictly positive.
+        """
+        if value.total_seconds() <= 0:
+            raise ValueError("APP_DRAIN.stale_task_ttl must be a positive duration")
+        return value
+
 
 class SEPSettings(BaseYamlAppSettings):
     """Define settings for SEP.
