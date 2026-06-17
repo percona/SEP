@@ -176,9 +176,9 @@
 | app/sep/plugins/dipper/constants.py                                                                             |       10 |        0 |    100% |           |
 | app/sep/plugins/dipper/deps.py                                                                                  |      185 |       41 |     78% |104, 128-130, 151-152, 175-180, 194-195, 246-275, 338-341, 372, 483, 485, 487, 575, 614 |
 | app/sep/plugins/dipper/models.py                                                                                |       14 |        0 |    100% |           |
-| app/sep/plugins/dipper/payloads/pcs-collect-pmm-mysql.py                                                        |      303 |      259 |     15% |   260-874 |
+| app/sep/plugins/dipper/payloads/pcs-collect-pmm-mysql.py                                                        |      303 |      259 |     15% |   261-875 |
 | app/sep/plugins/dipper/routes.py                                                                                |       67 |       41 |     39% |94-199, 216-221 |
-| app/sep/plugins/dipper/schema.py                                                                                |       38 |        1 |     97% |       233 |
+| app/sep/plugins/dipper/schema.py                                                                                |       38 |        1 |     97% |       235 |
 | app/sep/plugins/framework/api.py                                                                                |      130 |        2 |     98% |   152-157 |
 | app/sep/plugins/framework/apps.py                                                                               |      135 |        7 |     95% |300, 305, 314, 451-458 |
 | app/sep/plugins/framework/base.py                                                                               |       25 |        2 |     92% |    79, 86 |
@@ -221,7 +221,7 @@
 | app/sep/plugins/snippets/deps.py                                                                                |      139 |       26 |     81% |68, 139-141, 177-180, 208, 239, 268-270, 320-336, 490, 522-529 |
 | app/sep/plugins/snippets/models.py                                                                              |       29 |        0 |    100% |           |
 | app/sep/plugins/snippets/routes.py                                                                              |       98 |       46 |     53% |80-82, 111, 121, 168-178, 182-218, 229-244, 263-303 |
-| app/sep/plugins/snippets/schema.py                                                                              |       56 |        4 |     93% |137-139, 245 |
+| app/sep/plugins/snippets/schema.py                                                                              |       56 |        4 |     93% |137-139, 246 |
 | app/sep/plugins/tasks/api\_routes.py                                                                            |       25 |        0 |    100% |           |
 | app/sep/plugins/tasks/deps.py                                                                                   |        5 |        0 |    100% |           |
 | app/sep/plugins/tasks/models.py                                                                                 |       30 |        1 |     97% |       138 |
@@ -237,8 +237,8 @@
 | app/sep/snippets/config.py                                                                                      |      130 |       20 |     85% |124, 196-205, 217, 267, 349-354, 435, 446, 462-465 |
 | app/sep/snippets/crud.py                                                                                        |       15 |        0 |    100% |           |
 | app/sep/snippets/forms.py                                                                                       |      248 |       10 |     96% |181, 672-675, 867, 869, 880, 988, 995 |
-| app/sep/snippets/models/meta.py                                                                                 |      149 |        1 |     99% |       282 |
-| app/sep/snippets/models/snippet.py                                                                              |      365 |       18 |     95% |274, 277-278, 379, 382, 631-643, 724-726, 800-802, 882 |
+| app/sep/snippets/models/meta.py                                                                                 |      153 |        1 |     99% |       303 |
+| app/sep/snippets/models/snippet.py                                                                              |      365 |       18 |     95% |274, 277-278, 379, 382, 631-643, 724-726, 802-804, 887 |
 | app/sep/snippets/utils.py                                                                                       |       32 |        0 |    100% |           |
 | app/sep/sync/exceptions.py                                                                                      |       25 |        0 |    100% |           |
 | app/sep/sync/models.py                                                                                          |      367 |       50 |     86% |80-89, 124, 272-274, 335, 395-396, 543, 575, 591, 611-617, 715, 729, 749-750, 830, 844, 866-867, 961, 985-987, 1092-1093, 1168, 1312-1314, 1323, 1411-1412, 1415, 1421-1423, 1428-1434, 1438 |
@@ -308,7 +308,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                             |      227 |       38 |     83% |139-143, 200, 221-228, 260, 316-317, 323, 367-368, 393-394, 434-435, 454, 594, 618, 631-645, 666-679, 695-696 |
 | app/tasks/settings/routes.py                                                                                    |       10 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **20562** | **2460** | **88%** |           |
+| **TOTAL**                                                                                                       | **20566** | **2460** | **88%** |           |
 
 
 ## Setup coverage badge
