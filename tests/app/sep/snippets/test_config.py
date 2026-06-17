@@ -231,6 +231,44 @@ class TestToFormParameterGrouping:
         assert "Parameters" not in legends
 
 
+class TestToFormHiddenParameters:
+    """Test that _to_form omits parameters marked ``hidden``."""
+
+    def test_hidden_param_omitted_from_html(self):
+        """A hidden param is not rendered while a sibling still renders."""
+        params = _make_params_json(
+            {"name": "pmmserver"},
+            {"name": "apikey", "hidden": True},
+        )
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        assert 'name="pmmserver"' in html
+        assert 'name="apikey"' not in html
+
+    def test_hidden_secret_value_never_in_html(self):
+        """A hidden param's default value never leaks into the page source."""
+        secret = "super-secret-api-key"
+        params = _make_params_json(
+            {"name": "apikey", "hidden": True, "default": secret},
+        )
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        assert secret not in html
+        assert 'name="apikey"' not in html
+
+    def test_hidden_param_creates_no_fieldset(self):
+        """A solely-hidden parameter produces no extra 'Parameters' fieldset."""
+        params = _make_params_json({"name": "apikey", "hidden": True})
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        legends = _extract_fieldset_legends(html)
+        assert "Parameters" not in legends
+
+    def test_non_hidden_params_render_unchanged(self):
+        """Params without ``hidden`` render exactly as before."""
+        params = _make_params_json({"name": "host"}, {"name": "port"})
+        html = BaseSnippet._to_form(params, EXECUTOR_HOSTS)
+        assert 'name="host"' in html
+        assert 'name="port"' in html
+
+
 class TestToFormOptionalExecutorHosts:
     """Test ``_to_form`` with optional executor hosts and custom form ID."""
 

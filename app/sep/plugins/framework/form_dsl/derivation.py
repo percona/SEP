@@ -77,6 +77,7 @@ __all__ = [
     "build_runtime_schema",
     "derive_form_sections",
     "derive_plugin_schema",
+    "find_ref_marker",
     "resolve_base",
 ]
 
@@ -156,6 +157,22 @@ def _field_default(field_info: FieldInfo) -> Any:
     """Return the field's default value, or ``None`` when it has none."""
     default = field_info.get_default(call_default_factory=False)
     return None if default is PydanticUndefined else default
+
+
+def find_ref_marker(
+    metadata: list[Any],
+) -> ServiceRef | SchemaRef | TableRef | HostRef | None:
+    """Return the single reference marker in ``metadata``, or ``None``.
+
+    Shared with the task-payload resolver so it consumes the same marker
+    introspection (``_REF_TYPES`` / :func:`_find_marker`) the schema derivation
+    uses, rather than re-scanning ``FieldInfo.metadata`` independently.
+
+    :param metadata: A field's ``FieldInfo.metadata`` list.
+    :return: The field's reference marker, or ``None`` when it declares none.
+    :raises ValueError: When the field declares more than one reference marker.
+    """
+    return _find_marker(metadata, _REF_TYPES)
 
 
 def _find_marker(metadata: list[Any], marker_types: tuple[type, ...]) -> Any:

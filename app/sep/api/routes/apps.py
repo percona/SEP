@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from app.sep.crud import AppStateManager
 from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
+from app.sep.models import AppLifecycleEnum
 from app.sep.plugins.framework.registry import get_app_registry
 
 router = APIRouter(tags=["apps"])
@@ -71,11 +72,13 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
     :return: The per-app navigation list.
     :rtype: list[AppKeyResponse]
     """
-    states = await AppStateManager.all_states(session)
+    states = await AppStateManager.all_lifecycle_states(session)
     return [
         AppKeyResponse(
             app_key=app.key,
-            enabled=app.key in PROTECTED_APP_KEYS or states.get(app.key, True),
+            enabled=app.key in PROTECTED_APP_KEYS
+            or states.get(app.key, AppLifecycleEnum.ENABLED)
+            == AppLifecycleEnum.ENABLED,
             sidebar=app.sidebar,
             uri_path=app.uri_path,
             display_name=app.display_name,
