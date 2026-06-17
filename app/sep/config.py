@@ -455,9 +455,7 @@ class AppDrainSettings(BaseLowercaseModel):
         a ``DISABLING`` app finalizes to ``DISABLED`` while its tasks still run.
 
         :param value: The configured stale-task TTL.
-        :type value: timedelta
         :return: The validated TTL.
-        :rtype: timedelta
         :raises ValueError: If ``value`` is not strictly positive.
         """
         if value.total_seconds() <= 0:
