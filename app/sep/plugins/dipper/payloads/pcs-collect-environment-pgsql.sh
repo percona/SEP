@@ -447,7 +447,7 @@ fi
 ## Database Information
 
 echo -n "Executing pt-pg-summary..."
-"${PT_DIRECTORY}/pt-pg-summary" -U postgres "${DB_CLI_OPTIONS[@]}" > "${OUT_DIR}/pt-pg-summary"
+"${PT_DIRECTORY}/pt-pg-summary" "${DB_CLI_OPTIONS[@]}" > "${OUT_DIR}/pt-pg-summary"
 echo "Done"
 
 echo -n "Collecting PGSQL info... "
