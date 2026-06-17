@@ -33,7 +33,7 @@ from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
 from app.sep.config import sep_settings
-from app.sep.crud import AppStateManager
+from app.sep.crud import AppRunningTaskManager, AppStateManager
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -42,7 +42,12 @@ from app.sep.deps import (
     validate_csrf,
 )
 from app.sep.main import sep_app
-from app.sep.models import AppLifecycleEnum, AppState, SEPPluginPeriodicTask
+from app.sep.models import (
+    AppLifecycleEnum,
+    AppRunningTask,
+    AppState,
+    SEPPluginPeriodicTask,
+)
 
 SNIPPETS_TASK = "sep__sync_snippets"
 
@@ -240,6 +245,9 @@ class TestUpdateAppState:
     ) -> None:
         """Each reachable edge updates the row and echoes the resulting state."""
         override_session.add(AppState(app_key="snippets", lifecycle_state=current))
+        override_session.add(
+            AppRunningTask(app_key="snippets", celery_task_id="running")
+        )
         await override_session.commit()
 
         response = api_admin_client.put(
@@ -283,6 +291,11 @@ class TestUpdateAppState:
         self, api_admin_client: TestClient, override_session: AsyncSession
     ) -> None:
         """A configured app with no row (current=ENABLED) advances to DISABLING."""
+        override_session.add(
+            AppRunningTask(app_key="snippets", celery_task_id="running")
+        )
+        await override_session.commit()
+
         response = api_admin_client.put(
             "/api/admin/apps/snippets/state",
             json={"lifecycle_state": AppLifecycleEnum.DISABLING},
@@ -326,6 +339,9 @@ class TestUpdateAppState:
         """
         override_session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        override_session.add(
+            AppRunningTask(app_key="snippets", celery_task_id="running")
         )
         await override_session.commit()
 
@@ -449,6 +465,9 @@ class TestUpdateAppState:
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
         )
         override_session.add(
+            AppRunningTask(app_key="snippets", celery_task_id="running")
+        )
+        override_session.add(
             SEPPluginPeriodicTask(
                 periodic_task_name=SNIPPETS_TASK, app_key="snippets", user_enabled=True
             )
@@ -504,3 +523,129 @@ class TestUpdateAppState:
             celery_beat_session, name=SNIPPETS_TASK
         )
         assert task.enabled is False
+
+
+@pytest.mark.asyncio
+class TestDisableDrainFinalize:
+    """Toggle-time cooperative-drain finalization on ``PUT .../state``."""
+
+    async def test_disabling_idle_app_finalizes_to_disabled(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Disabling an app with no running tasks drains it to DISABLED at once."""
+        override_session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        await override_session.commit()
+
+        response = api_admin_client.put(
+            "/api/admin/apps/snippets/state",
+            json={"lifecycle_state": AppLifecycleEnum.DISABLING},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["lifecycle_state"] == AppLifecycleEnum.DISABLED
+        assert (
+            await AppStateManager.current_lifecycle(override_session, "snippets")
+            is AppLifecycleEnum.DISABLED
+        )
+
+    async def test_disabling_busy_app_stays_disabling(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """An app with a running task stays DISABLING until its tasks drain."""
+        override_session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        override_session.add(AppRunningTask(app_key="snippets", celery_task_id="t1"))
+        await override_session.commit()
+
+        response = api_admin_client.put(
+            "/api/admin/apps/snippets/state",
+            json={"lifecycle_state": AppLifecycleEnum.DISABLING},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["lifecycle_state"] == AppLifecycleEnum.DISABLING
+        assert (
+            await AppStateManager.current_lifecycle(override_session, "snippets")
+            is AppLifecycleEnum.DISABLING
+        )
+
+
+@pytest.mark.asyncio
+class TestForceDisableApp:
+    """Tests for ``POST /api/admin/apps/{app_key}/force-disable``."""
+
+    async def test_revokes_running_tasks_and_finalizes(
+        self, api_admin_client: TestClient, override_session: AsyncSession, mocker
+    ) -> None:
+        """Each in-flight task is terminated, its row deleted, app left DISABLED."""
+        control = mocker.patch("app.sep.api.routes.app_state.celery.control")
+        override_session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLING)
+        )
+        override_session.add(AppRunningTask(app_key="snippets", celery_task_id="t1"))
+        override_session.add(AppRunningTask(app_key="snippets", celery_task_id="t2"))
+        await override_session.commit()
+
+        response = api_admin_client.post("/api/admin/apps/snippets/force-disable")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["lifecycle_state"] == AppLifecycleEnum.DISABLED
+        revoked = {call.args[0] for call in control.revoke.call_args_list}
+        assert revoked == {"t1", "t2"}
+        assert all(
+            call.kwargs["terminate"] is True for call in control.revoke.call_args_list
+        )
+        assert (
+            await AppRunningTaskManager.count(override_session, app_key="snippets") == 0
+        )
+        assert (
+            await AppStateManager.current_lifecycle(override_session, "snippets")
+            is AppLifecycleEnum.DISABLED
+        )
+
+    async def test_non_disabling_app_returns_409(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Force-disable only applies mid-drain; an ENABLED app is rejected."""
+        override_session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        await override_session.commit()
+
+        response = api_admin_client.post("/api/admin/apps/snippets/force-disable")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    async def test_no_running_rows_skips_revoke(
+        self, api_admin_client: TestClient, override_session: AsyncSession, mocker
+    ) -> None:
+        """A DISABLING app with no running tasks finalizes without any revoke."""
+        control = mocker.patch("app.sep.api.routes.app_state.celery.control")
+        override_session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLING)
+        )
+        await override_session.commit()
+
+        response = api_admin_client.post("/api/admin/apps/snippets/force-disable")
+
+        assert response.status_code == status.HTTP_200_OK
+        control.revoke.assert_not_called()
+        assert (
+            await AppStateManager.current_lifecycle(override_session, "snippets")
+            is AppLifecycleEnum.DISABLED
+        )
+
+    async def test_protected_app_returns_409(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """A protected app cannot be force-disabled (409 via the key dep)."""
+        response = api_admin_client.post("/api/admin/apps/inventory/force-disable")
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    async def test_unknown_key_returns_404(self, api_admin_client: TestClient) -> None:
+        """An unknown app key is rejected with 404 via the key dep."""
+        response = api_admin_client.post("/api/admin/apps/nonexistent/force-disable")
+        assert response.status_code == status.HTTP_404_NOT_FOUND

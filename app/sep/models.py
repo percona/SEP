@@ -335,6 +335,29 @@ class AppStateWrite(SQLModel):
     lifecycle_state: AppLifecycleEnum
 
 
+class AppRunningTask(BaseSQLModel, table=True):
+    """Track one in-flight SEP-app-owned Celery task for cooperative drain.
+
+    One row per running task whose name appears in
+    :data:`app.sep.app_drain.SEP_TASK_OWNER_APP_KEY`, inserted by the
+    ``task_prerun`` receiver and removed by ``task_postrun``. The per-app row
+    count drives the terminal ``DISABLING`` -> ``DISABLED`` transition once an
+    app's running tasks reach zero. ``created_at`` (inherited) is the task start
+    time, used by the reconciler to prune rows orphaned by a worker crash or a
+    force-disable ``revoke(terminate=True)`` (where ``task_postrun`` never runs).
+
+    :param id: The auto-incremented primary key.
+    :param app_key: The owning app's key. Indexed for per-app count and prune
+        queries.
+    :param celery_task_id: The in-flight task's execution id -- a Celery task id,
+        or a synthetic ``manual-<uuid>`` id for non-Celery in-request work tracked
+        via :func:`app.sep.app_drain.track_app_task`. Unique and indexed.
+    """
+
+    app_key: NonEmptyStr = SQLField(index=True)
+    celery_task_id: NonEmptyStr = SQLField(unique=True, index=True)
+
+
 class SEPPluginPeriodicTaskBase(SQLModel):
     """Define the shared fields for :class:`SEPPluginPeriodicTask`.
 

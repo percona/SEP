@@ -38,6 +38,7 @@ from sqlmodel import col
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.utils import utc_now
+from app.sep.app_drain import track_app_task
 from app.sep.celery import update_snippets
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -124,11 +125,14 @@ async def snippets_remove_approval(
 
 
 @router.post("/refresh")
-async def snippets_refresh(request: Request, user: AdminUser) -> RedirectResponse:
+async def snippets_refresh(
+    request: Request, user: AdminUser, session: SessionDep
+) -> RedirectResponse:
     """Refresh the snippets."""
     if not snippets_settings.ENABLE_MANUAL_SYNC:
         raise HTTPForbiddenException
-    await update_snippets()
+    async with track_app_task(session, "snippets"):
+        await update_snippets()
     messages.success(request, "Snippets refreshed")
     logger.info("Snippets refreshed by %s", user.username)
     return RedirectResponse(
