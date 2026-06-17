@@ -88,7 +88,9 @@ export function ArchiveSchemaCombo({
   if (idValue && typeof idValue === 'object' && 'id' in idValue) {
     value = idValue;
   } else if (typeof idValue === 'number') {
-    value = options.find((o) => o.id === idValue) ?? { id: idValue, name: String(idValue) };
+    // Edit prefill stores a raw id. Show it only once its option has loaded —
+    // never surface the bare numeric id (which would also mismatch `options`).
+    value = options.find((o) => o.id === idValue) ?? null;
   } else if (typeof nameValue === 'string' && nameValue !== '') {
     value = nameValue;
   }

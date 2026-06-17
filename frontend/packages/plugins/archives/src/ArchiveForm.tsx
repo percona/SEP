@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
@@ -318,10 +318,9 @@ export function ArchiveForm({
 }: ArchiveFormProps) {
   const [mode, setMode] = useState<SourceMode>(defaultValues?.[SOURCE_QUERY] ? 'query' : 'schema');
 
-  const renderField = useCallback(
-    (args: RenderFieldArgs) => makeRenderField(mode, setMode)(args),
-    [mode],
-  );
+  // The override only depends on `mode` (setMode is stable), so memoize the
+  // function itself rather than rebuilding it on every per-field render.
+  const renderField = useMemo(() => makeRenderField(mode, setMode), [mode]);
 
   return (
     <SchemaFormRenderer
