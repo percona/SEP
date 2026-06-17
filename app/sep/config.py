@@ -537,18 +537,19 @@ class SEPSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
     UVICORN_PORT: int = 8000
-    SESSION: SessionOptions = nested_overridable_field(SessionOptions())
+    SESSION: SessionOptions = nested_overridable_field(SessionOptions(), advanced=True)
     SESSION_REFRESH: SessionOptions = nested_overridable_field(
         SessionOptions(
             COOKIE_NAME="refreshToken",
             PATH="/api/oauth",
-        )
+        ),
+        advanced=True,
     )
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
-    INVENTORY_ENDPOINT: HttpUrl = hot_field(...)
-    TASKS_ENDPOINT: HttpUrl = hot_field(...)
+    INVENTORY_ENDPOINT: HttpUrl = hot_field(..., advanced=True)
+    TASKS_ENDPOINT: HttpUrl = hot_field(..., advanced=True)
     PLUGINS: UniqueList[Plugin] = UniqueList()
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
@@ -561,7 +562,9 @@ class SEPSettings(BaseYamlAppSettings):
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
     FOOTER_TEMPLATE: Template = hot_field(
-        Template("$summary $version"), materializer=materialize_template
+        Template("$summary $version"),
+        materializer=materialize_template,
+        advanced=True,
     )
 
     @model_validator(mode="before")

@@ -64,6 +64,11 @@ class SettingResponse(BaseModel):
     :param has_override: Whether a row exists in the ``settingoverride`` table
         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
     :type has_override: bool
+    :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
+        present it separately from everyday settings. Defaults to ``False`` so
+        the addition is purely additive and backward-compatible. Display-only:
+        it does not affect PATCH/DELETE eligibility.
+    :type is_advanced: bool
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -79,6 +84,7 @@ class SettingResponse(BaseModel):
     is_secret: bool
     is_complex: bool
     has_override: bool
+    is_advanced: bool = False
 
 
 class SettingsPatch(RootModel[dict[str, JsonValue]]):
