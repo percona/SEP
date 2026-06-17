@@ -41,6 +41,7 @@ from fastapi.testclient import TestClient
 from polyfactory.factories.pydantic_factory import ModelFactory
 
 from app.models import CasdoorUser
+from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY
 from app.sep.deps import (
     get_api_authenticated_user,
     get_inventory_api,
@@ -49,8 +50,10 @@ from app.sep.deps import (
 )
 from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.apps import TaskExecutionApp
+from app.sep.plugins.framework.conformance import CAPABILITY_RENDERED_CONTROLS
 from app.sep.plugins.framework.form_dsl import (
     find_ref_marker,
+    HostRef,
     SchemaRef,
     ServiceRef,
     TableRef,
@@ -60,7 +63,7 @@ from tests.app.factories import (
     MOCK_CREATED_SERVICE_ID,
     MOCK_CREATED_TABLE_ID,
 )
-from tests.app.sep.plugins.framework.kit import SEEDED_TASK_NAME
+from tests.app.sep.plugins.framework.kit import SEEDED_TASK_NAME, SYNTH_EXECUTOR_HOST
 
 _NEW_TASK_NAME = "contract-new-task"
 _UNKNOWN_TASK_NAME = "contract-unknown-task"
@@ -164,8 +167,9 @@ def build_valid_create_body(
     """Build a valid create form body for a model-first ``app_def``.
 
     Generates a body over ``app_def.create_model`` via polyfactory, then overrides
-    each reference field with its seeded ``MOCK_*_ID`` and ``task_name`` with a
-    known value. Returns ``None`` for a transitional ``schema=`` app, which has no
+    each inventory reference field with its seeded ``MOCK_*_ID``, each ``HostRef``
+    field with ``SYNTH_EXECUTOR_HOST``, and ``task_name`` with a known value.
+    Returns ``None`` for a transitional ``schema=`` app, which has no
     ``create_model`` to introspect.
 
     :param app_def: The app definition whose create model drives the body.
@@ -178,10 +182,45 @@ def build_valid_create_body(
     overrides = {"task_name": task_name}
     for name, field in model.model_fields.items():
         ref = find_ref_marker(list(field.metadata))
-        if (mock_id := _REF_MOCK_IDS.get(type(ref))) is not None:
+        if isinstance(ref, HostRef):
+            overrides[name] = SYNTH_EXECUTOR_HOST
+        elif (mock_id := _REF_MOCK_IDS.get(type(ref))) is not None:
             overrides[name] = mock_id
     instance = ModelFactory.create_factory(model).build(**overrides)
     return instance.model_dump(mode="json")
+
+
+def post_create_body(
+    client: TestClient, url: str, app_def: TaskExecutionApp, body: dict[str, Any]
+) -> Any:
+    """POST a create ``body`` using the encoding the definition declares.
+
+    :param client: The contract client.
+    :param url: The create route URL.
+    :param app_def: The app definition whose ``create_form_encoded`` selects the
+        encoding (form-urlencoded when set, JSON otherwise).
+    :param body: The create form body to post.
+    :return: The HTTP response.
+    """
+    if app_def.create_form_encoded:
+        return client.post(url, data=body)
+    return client.post(url, json=body)
+
+
+def host_ref_field_name(app_def: TaskExecutionApp) -> str | None:
+    """Return the create model's single ``HostRef`` field name, or ``None``.
+
+    :param app_def: The app definition whose create model is scanned.
+    :return: The ``HostRef`` field name, or ``None`` when the model declares none
+        (or is a ``schema=`` passthrough).
+    """
+    model = app_def.create_model
+    if model is None:
+        return None
+    for name, field in model.model_fields.items():
+        if isinstance(find_ref_marker(list(field.metadata)), HostRef):
+            return name
+    return None
 
 
 def build_invalid_create_body(app_def: TaskExecutionApp) -> dict[str, Any] | None:
@@ -288,7 +327,7 @@ class DerivedRouterContractTests:
             pytest.skip("no derivable create body (schema= passthrough)")
         base = app_base_url(self.app_def)
 
-        response = contract_client.post(f"{base}/", data=body)
+        response = post_create_body(contract_client, f"{base}/", self.app_def, body)
 
         assert response.status_code == status.HTTP_201_CREATED
         assert mock_task_api.create_count == 1
@@ -309,7 +348,7 @@ class DerivedRouterContractTests:
             pytest.skip("no derivable invalid create body")
         base = app_base_url(self.app_def)
 
-        response = contract_client.post(f"{base}/", data=body)
+        response = post_create_body(contract_client, f"{base}/", self.app_def, body)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         assert mock_task_api.create_count == 0
@@ -332,10 +371,74 @@ class DerivedRouterContractTests:
         )
         base = app_base_url(self.app_def)
 
-        response = contract_client.post(f"{base}/", data=body)
+        response = post_create_body(contract_client, f"{base}/", self.app_def, body)
 
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["connectivity_warning"] is not None
+
+    def test_create_requestbody_content_type(self) -> None:
+        """Assert the create route's requestBody encoding matches the definition."""
+        if not self.app_def.capabilities.create:
+            pytest.skip("create capability disabled")
+        if self.app_def.create_model is None:
+            pytest.skip("no derivable create body (schema= passthrough)")
+        request_body = mount_app(self.app_def).openapi()["paths"][
+            f"{app_base_url(self.app_def)}/"
+        ]["post"]["requestBody"]
+        expected = (
+            "application/x-www-form-urlencoded"
+            if self.app_def.create_form_encoded
+            else "application/json"
+        )
+
+        assert set(request_body["content"]) == {expected}
+
+    def test_excluded_capability_control_absent_from_schema(
+        self, contract_client: TestClient
+    ) -> None:
+        """Assert each enabled capability-rendered control is absent from the schema."""
+        capabilities = self.app_def.views.capabilities
+        enabled = {
+            field
+            for cap, field in CAPABILITY_RENDERED_CONTROLS.items()
+            if capabilities is not None and getattr(capabilities, cap, False)
+        }
+        if not enabled:
+            pytest.skip("no capability-rendered control enabled")
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/schema")
+
+        assert response.status_code == status.HTTP_200_OK
+        field_names = {
+            field["name"]
+            for section in response.json().get("forms") or ()
+            for field in section.get("fields") or ()
+        }
+        assert enabled.isdisjoint(field_names)
+
+    def test_create_threads_executor_host_to_meta_target(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert a ``HostRef`` threads the submitted host to ``meta.target``.
+
+        The executor target must equal the submitted host and stay distinct from
+        the service address carried on the connectivity host key.
+        """
+        if not self.app_def.capabilities.create:
+            pytest.skip("create capability disabled")
+        host_field = host_ref_field_name(self.app_def)
+        if host_field is None:
+            pytest.skip("no HostRef field")
+        body = build_valid_create_body(self.app_def)
+        base = app_base_url(self.app_def)
+
+        response = post_create_body(contract_client, f"{base}/", self.app_def, body)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        meta = mock_task_api.last_create_payload["data"]["meta"]
+        assert meta["target"] == body[host_field]
+        assert meta["target"] != meta[CONNECTIVITY_META_HOST_KEY]
 
     def test_execute_201(self, contract_client: TestClient) -> None:
         """Assert ``POST /{task_name}/execute`` dispatches and returns 201."""

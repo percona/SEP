@@ -43,6 +43,15 @@ _report_plugin_enabled = any(
 
 SYSTEM_PERIODIC_TASKS = [
     SystemPeriodicTaskSchedule(
+        schedule=sep_settings.APP_DRAIN.reconcile_interval,
+        tasks=[
+            SystemPeriodicTaskData(
+                name="sep__reconcile_disabling_apps",
+                task_name="app.sep.app_drain.reconcile_disabling_apps",
+            ),
+        ],
+    ),
+    SystemPeriodicTaskSchedule(
         schedule=snippets_settings.SYNC_INTERVAL,
         tasks=[
             SystemPeriodicTaskData(

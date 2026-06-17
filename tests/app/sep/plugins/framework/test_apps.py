@@ -62,6 +62,9 @@ from tests.app.sep.plugins.framework.contract_suite import (
 )
 from tests.app.sep.plugins.framework.kit import synth_app
 from tests.app.sep.plugins.framework.kit import (
+    SYNTH_EXECUTOR_HOST as _EXECUTOR_HOST,
+)
+from tests.app.sep.plugins.framework.kit import (
     SYNTH_OWNER as _OWNER,
 )
 from tests.app.sep.plugins.framework.kit import (
@@ -353,7 +356,12 @@ class TestCreateRoute:
 
         response = client.post(
             f"{_BASE}/",
-            data={"task_name": "new-task", "service_id": 1, "alert_on_fail": "true"},
+            json={
+                "task_name": "new-task",
+                "service_id": 1,
+                "host": _EXECUTOR_HOST,
+                "alert_on_fail": True,
+            },
         )
 
         assert response.status_code == status.HTTP_201_CREATED
@@ -363,6 +371,7 @@ class TestCreateRoute:
         posted = create_call.kwargs["json"]
         assert posted["data"]["task"] == "run-command"
         assert posted["data"]["meta"]["command"] == "synth-cmd"
+        assert posted["data"]["meta"]["target"] == _EXECUTOR_HOST
         assert posted["data"]["meta"][CONNECTIVITY_META_HOST_KEY] == _SERVICE_HOST
         assert posted["data"]["meta"][CONNECTIVITY_META_PORT_KEY] == _SERVICE_PORT
         assert (
@@ -378,7 +387,7 @@ class TestCreateRoute:
             _synth_app(), tasks_api, regular_user, inventory_api=_make_inventory_api()
         )
 
-        response = client.post(f"{_BASE}/", data={"task_name": "new-task"})
+        response = client.post(f"{_BASE}/", json={"task_name": "new-task"})
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         tasks_api.post.assert_not_awaited()
@@ -413,7 +422,8 @@ class TestCreateRoute:
         )
 
         response = client.post(
-            f"{_BASE}/", data={"task_name": "new-task", "service_id": 1}
+            f"{_BASE}/",
+            json={"task_name": "new-task", "service_id": 1, "host": _EXECUTOR_HOST},
         )
 
         assert response.status_code == status.HTTP_201_CREATED
@@ -422,6 +432,35 @@ class TestCreateRoute:
             "service_type": "mysql",
             "message": "unreachable",
         }
+
+
+class TestCreateBodyEncoding:
+    """Cover the JSON-default / Form-encoded create body encoding knob."""
+
+    def _create_body_content_types(
+        self, app_def: TaskExecutionApp, user: CasdoorUser
+    ) -> set[str]:
+        """Return the ``POST /`` requestBody content-type keys from the OpenAPI."""
+        client = _client(
+            app_def, _make_tasks_api(), user, inventory_api=_make_inventory_api()
+        )
+        request_body = client.app.openapi()["paths"][f"{_BASE}/"]["post"]["requestBody"]
+        return set(request_body["content"])
+
+    def test_default_create_uses_json_body(self, regular_user: CasdoorUser) -> None:
+        """Assert the derived create route defaults to an ``application/json`` body."""
+        assert self._create_body_content_types(_synth_app(), regular_user) == {
+            "application/json"
+        }
+
+    def test_form_encoded_create_uses_form_body(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``create_form_encoded=True`` opts the body into form-urlencoded."""
+        content = self._create_body_content_types(
+            _synth_app(create_form_encoded=True), regular_user
+        )
+        assert content == {"application/x-www-form-urlencoded"}
 
 
 class TestExecuteRoute:
@@ -546,6 +585,23 @@ class TestDefinitionValidation:
             _synth_app(
                 capabilities=AppCapabilities(create=False),
                 create_response_model=_SynthResponse,
+            )
+
+    def test_create_disabled_with_form_encoded_raises(self) -> None:
+        """Assert a create-disabled app with create_form_encoded is rejected."""
+        with pytest.raises(ValueError, match="create_form_encoded"):
+            _synth_app(
+                capabilities=AppCapabilities(create=False),
+                create_form_encoded=True,
+            )
+
+    def test_payload_builder_with_form_encoded_raises(self) -> None:
+        """Assert create_form_encoded with a payload_builder is rejected (no-op knob)."""
+        with pytest.raises(ValueError, match="create_form_encoded"):
+            _synth_app(
+                task_spec_builder=None,
+                payload_builder=_passthrough_payload_builder,
+                create_form_encoded=True,
             )
 
 

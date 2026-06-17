@@ -121,6 +121,19 @@ class SnippetMetaParametersValidationResult(NamedTuple):
     parameters: list["SnippetMetaParameter"]
     errors: list[str]
 
+    @property
+    def visible_parameters(self) -> list["SnippetMetaParameter"]:
+        """Return the parameters that are rendered in execution forms.
+
+        Parameters marked ``hidden`` are excluded. They remain in
+        :attr:`parameters` and are still validated normally; only their form
+        rendering is suppressed.
+
+        :return: The non-hidden parameters, in declaration order.
+        :rtype: list[SnippetMetaParameter]
+        """
+        return [param for param in self.parameters if not param.hidden]
+
 
 class SnippetMetaParameterChoice(TypedDict):
     """Represent a choice for a snippet parameter.
@@ -201,6 +214,13 @@ class SnippetMetaParameter(BaseModel):
         TextInputHTMLElement.TEXT or TextInputHTMLElement.TEXTAREA. Defaults to None,
         which uses TextInputHTMLElement.TEXT.
     :type html_elem: TextInputHTMLElement | None
+    :param hidden: Unconditionally omit this parameter from every rendered
+        execution form -- it is never emitted into the form HTML or form schema
+        at all. It is still validated normally (it stays in
+        ``to_validation_field``), so a value injected server-side -- e.g. the PMM
+        ``apikey`` from ``settings.PMM.api_key`` -- continues to validate without
+        a visible field. Defaults to False.
+    :type hidden: bool
     """
 
     name: NonEmptyStr = Field(
@@ -229,6 +249,7 @@ class SnippetMetaParameter(BaseModel):
     le: ParameterType = None
     step: float | None = None
     html_elem: TextInputHTMLElement | None = None
+    hidden: bool = False
 
     @model_validator(mode="after")
     def set_default_step(self) -> Self:

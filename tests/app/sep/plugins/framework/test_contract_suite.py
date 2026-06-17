@@ -28,7 +28,7 @@ trusts.
 from typing import Annotated
 
 import pytest
-from fastapi import APIRouter, Form, status
+from fastapi import APIRouter, Body, status
 
 from app.core.pagination.deps import make_pagination_dep
 from app.models import CasdoorUser
@@ -37,6 +37,7 @@ from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp
 from app.sep.plugins.framework.task_status import batch_get_latest_statuses
 from app.tasks.models import LATEST_HISTORY_STATUS_NAMES_MAX, TaskHistoryStatusEnum
 from tests.app.sep.plugins.framework.contract_suite import (
+    app_base_url,
     build_contract_client,
     DerivedRouterContractTests,
 )
@@ -50,6 +51,7 @@ from tests.app.sep.plugins.framework.kit import (
     SYNTH_OWNER,
     synth_update_handler,
     SynthExecuteResponse,
+    SynthForm,
     SynthResponse,
 )
 
@@ -88,12 +90,18 @@ class TestSyntheticFullCrudContract(DerivedRouterContractTests):
     )
 
 
+class TestSyntheticFormEncodedContract(DerivedRouterContractTests):
+    """Cover the create cases against a Form-encoded (escape-hatch) definition."""
+
+    app_def = synth_app(create_form_encoded=True)
+
+
 class _WrongStatusCreateApp(TaskExecutionApp):
     """Build a router whose ``POST /`` returns 200 instead of 201."""
 
     def build_router(self) -> APIRouter:
         router = APIRouter()
-        form_param = Annotated[self.create_model, Form()]
+        form_param = Annotated[self.create_model, Body()]
 
         async def _create(form: form_param) -> SynthResponse:
             return SynthResponse(name=form.task_name)
@@ -216,3 +224,28 @@ async def test_batch_get_latest_statuses_chunks_over_the_limit() -> None:
 
     assert len(result) == len(names)
     assert set(result.values()) == {TaskHistoryStatusEnum.SUCCESS}
+
+
+def test_synth_ui_default_distinct_from_model_default(
+    regular_user: CasdoorUser,
+) -> None:
+    """Assert ``Ui(default=...)`` sets the schema default apart from the model default."""
+    app_def = synth_app()
+    client = build_contract_client(
+        app_def,
+        user=regular_user,
+        tasks_api=MockTaskAPI(),
+        inventory_api=MockInventoryAPI(),
+    )
+
+    response = client.get(f"{app_base_url(app_def)}/schema")
+
+    assert response.status_code == status.HTTP_200_OK
+    mode_field = next(
+        field
+        for section in response.json()["forms"]
+        for field in section["fields"]
+        if field["name"] == "mode"
+    )
+    assert mode_field["default"] == "display-default"
+    assert SynthForm.model_fields["mode"].default == "body-default"
