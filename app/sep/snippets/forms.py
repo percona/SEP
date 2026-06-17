@@ -17,6 +17,7 @@
 
 __all__ = [
     "CheckboxInputElement",
+    "DateTimeInputElement",
     "FieldsetElement",
     "FormElement",
     "FormFieldElement",
@@ -72,6 +73,7 @@ class InputType(StrEnum):
     TEXT = "text"
     NUMBER = "number"
     CHECKBOX = "checkbox"
+    DATETIME_LOCAL = "datetime-local"
 
 
 class FormMethod(StrEnum):
@@ -768,6 +770,42 @@ class TextInputElement(TextFieldMixin, BaseInputElement):
         :rtype: InputType
         """
         return InputType.TEXT
+
+
+class DateTimeInputElement(TextFieldMixin, BaseInputElement):
+    """Define a datetime-local input HTML element.
+
+    :cvar: TAG_NAME: The name of the HTML tag ('input').
+    :vartype: TAG_NAME: ClassVar[str]
+    :param: name: The name attribute of the form field.
+    :type: name: NonEmptyStr
+    :param: required: Whether the field is required. Defaults to False
+    :type: required: bool
+    :param: label: The label for the form field, if any. Defaults to None
+    :type: label: NonEmptyStr | None
+    :param: placeholder: The placeholder text for the form field, if any. Defaults to
+        None.
+    :type: placeholder: NonEmptyStr | None
+    :param: value: The default value of the form field, if any. Defaults to None.
+    :type: value: str | None
+    :param: classes: A set of CSS class names associated with the element.
+    :type: classes: set[HTMLClassName]
+    :param: id: The ID attribute of the element.
+    :type: id: NonEmptyStr | None
+    :param: description: The tooltip description rendered as an info icon next to the
+        field. Defaults to None.
+    :type: description: NonEmptyStr | None
+    """
+
+    @computed_field
+    @property
+    def type(self) -> InputType:
+        """Return the type of the input element.
+
+        :return: The type of the input element (`InputType.DATETIME_LOCAL`).
+        :rtype: InputType
+        """
+        return InputType.DATETIME_LOCAL
 
 
 class NumberInputElement(TypeableFieldMixin, BaseInputElement):

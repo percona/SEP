@@ -74,6 +74,7 @@ export type {
   FloatField,
   BoolField,
   ChoiceField,
+  ChoiceOption,
   MultiChoiceField,
   TextAreaField,
   DateTimeField,
@@ -114,6 +115,7 @@ export {
   REDACTED_SECRET,
   useEnabledApps,
   ENABLED_APPS_QUERY_KEY,
+  useConfigExport,
 } from './hooks';
 export type { AlertConfig, DashboardStats, EnabledApp } from './hooks';
 export type {

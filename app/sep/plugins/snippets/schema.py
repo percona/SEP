@@ -36,6 +36,7 @@ from app.sep.plugins.framework.schema import (
     ChoiceField,
     Column,
     ColumnFormat,
+    DateTimeField,
     FloatField,
     FormSection,
     HostField,
@@ -159,11 +160,23 @@ def _bool_field_for(parameter: SnippetMetaParameter) -> BoolField:
     )
 
 
+def _datetime_field_for(parameter: SnippetMetaParameter) -> DateTimeField:
+    """Build a :class:`DateTimeField` from a DATETIME-typed parameter."""
+    return DateTimeField(
+        name=parameter.name,
+        label=parameter.label or parameter.name,
+        required=parameter.required,
+        description=parameter.description,
+        default=parameter.default,
+    )
+
+
 _FIELD_BUILDERS = {
     SnippetMetaParameterType.STR: _string_field_for,
     SnippetMetaParameterType.INT: _int_field_for,
     SnippetMetaParameterType.FLOAT: _float_field_for,
     SnippetMetaParameterType.BOOL: _bool_field_for,
+    SnippetMetaParameterType.DATETIME: _datetime_field_for,
 }
 
 
@@ -231,7 +244,8 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
     the snippet metadata (or a single ``"Parameters"`` section if no
     groups are declared), plus a trailing ``"Execution"`` section for
     dispatch controls and a separate collapsible ``"Script preview"``
-    section rendered after submit.
+    section rendered after submit. Parameters marked ``hidden`` are excluded
+    from the parameter sections.
 
     :param snippet: The snippet whose schema to synthesise.
     :type snippet: Snippet
@@ -239,7 +253,7 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
     :rtype: PluginSchema
     """
     parameter_sections: dict[str, list[AnyField]] = {}
-    for parameter in snippet.validated_parameters.parameters:
+    for parameter in snippet.validated_parameters.visible_parameters:
         section_title = parameter.group or "Parameters"
         parameter_sections.setdefault(section_title, []).append(field_for(parameter))
 

@@ -29,6 +29,7 @@
 #   - name: apikey
 #     label: API key
 #     description: API key for PMM server. Leave empty to use configured default (PMM.API_KEY).
+#     hidden: true
 #   - name: node
 #     label: Node name
 #     description: Node name of audit target (required unless using --list).
@@ -58,10 +59,12 @@
 #   - name: start
 #     label: Start time (UTC)
 #     description: Starting timestamp for graph data (YYYY-MM-DDTHH:MM:SS). Defaults to 24h ago.
+#     type: datetime
 #     visible_when_not: list
 #   - name: end
 #     label: End time (UTC)
 #     description: Ending timestamp for graph data (YYYY-MM-DDTHH:MM:SS). Defaults to 24h after start.
+#     type: datetime
 #     visible_when_not: list
 #   - name: width
 #     label: Image width

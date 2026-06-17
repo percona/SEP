@@ -36,7 +36,7 @@ from app.sep.config import Plugin, sep_settings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
 from app.sep.main import lifespan as sep_module_lifespan
-from app.sep.models import AppState
+from app.sep.models import AppLifecycleEnum, AppState
 from app.sep.plugins.framework.registry import get_app_registry
 from tests.app.factories import OAuthTokenFactory
 
@@ -649,12 +649,20 @@ class TestAppStateGuards:
         ("plugin_key", "plugin_route"),
         [("snippets", "/snippets/"), ("checksums", "/checksums/")],
     )
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_ui_guard_returns_503_when_disabled(
-        self, guarded_client: TestClient, session, plugin_key, plugin_route
+    async def test_ui_guard_returns_503_for_non_enabled_states(
+        self, guarded_client: TestClient, session, plugin_key, plugin_route, state
     ) -> None:
-        """A disabled non-protected plugin's UI route returns a 503."""
-        session.add(AppState(app_key=plugin_key, enabled=False))
+        """A non-protected plugin's UI route 503s whenever it is not ``ENABLED``."""
+        session.add(AppState(app_key=plugin_key, lifecycle_state=state))
         await session.commit()
 
         response = guarded_client.get(plugin_route)
@@ -667,7 +675,9 @@ class TestAppStateGuards:
         self, guarded_client: TestClient, session
     ) -> None:
         """Inventory has no guard, so a disabled row never gates ``/inventory/``."""
-        session.add(AppState(app_key="inventory", enabled=False))
+        session.add(
+            AppState(app_key="inventory", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
         await session.commit()
 
         response = guarded_client.get("/inventory/")

@@ -82,6 +82,7 @@ from app.sep.snippets.forms import (
     TextInputElement,
 )
 from app.sep.snippets.models.meta import (
+    serialize_cli_value,
     SnippetMetaParameter,
     SnippetMetaParametersValidationResult,
 )
@@ -372,8 +373,8 @@ class BaseSnippetArgs(BaseModel):
         """
         field_name, metadata = cls.get_field_metadata(field_identifier)
         if metadata.get("positional"):
-            return [value]
-        arg_template_mapping = {"value": shlex.quote(str(value))}
+            return [serialize_cli_value(value)]
+        arg_template_mapping = {"value": shlex.quote(serialize_cli_value(value))}
         if (is_flag := metadata.get("is_flag")) and not value:
             return []
         if not (arg_format := metadata.get("arg_format")):
@@ -801,8 +802,8 @@ class BaseSnippet(BaseModel):
 
         This internal method creates a form with fields based on the snippet's
         parameters and the provided executor hosts. It includes a select element for
-        choosing the executor host and fields for snippet parameters. It is cached for
-        performance.
+        choosing the executor host and fields for snippet parameters. Parameters
+        marked ``hidden`` are omitted from the form. It is cached for performance.
 
         :param parameters_json: A JSON string representing a list of snippet parameters.
         :type parameters_json: str
@@ -834,8 +835,10 @@ class BaseSnippet(BaseModel):
             executor_hosts_fieldset = get_executor_hosts_fieldset(executor_hosts)
             executor_hosts_fieldset.disabled = disabled
             fieldsets.append(executor_hosts_fieldset)
-        parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
-        logger.debug("Snippet params: %s", parameters)
+        parameters = BaseSnippet._get_parameters_from_json(
+            parameters_json
+        ).visible_parameters
+        logger.debug("Snippet params: %s", [param.name for param in parameters])
         groups = {}
         for param in parameters:
             try:
@@ -906,7 +909,10 @@ class BaseSnippet(BaseModel):
         :rtype: type[BaseSnippetArgs]
         """
         parameters = BaseSnippet._get_parameters_from_json(parameters_json).parameters
-        logger.debug("Snippet params: %s", parameters)
+        logger.debug(
+            "Snippet params: %s",
+            [param.name for param in parameters if not param.hidden],
+        )
         unique_identifiers = generate_unique_identifiers()
         fields = {}
         positional_fields = {}
@@ -914,7 +920,7 @@ class BaseSnippet(BaseModel):
             field_name = next(unique_identifiers)
             field = (param.validation_type, param.to_validation_field())
             logger.debug(
-                "Generated snippet model field from param %s: %s", param, field
+                "Generated snippet model field from param %s: %s", param.name, field
             )
             if param.positional:
                 positional_fields[field_name] = field

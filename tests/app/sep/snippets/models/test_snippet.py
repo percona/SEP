@@ -26,7 +26,12 @@ from app.sep.snippets.config import (
     snippets_settings,
     SnippetSudoOption,
 )
-from app.sep.snippets.models.snippet import BaseSnippet, BaseSnippetArgs, Snippet
+from app.sep.snippets.models.snippet import (
+    BaseSnippet,
+    BaseSnippetArgs,
+    EXECUTOR_HOSTS_INPUT_NAME,
+    Snippet,
+)
 
 EXPECTED_PARAM_COUNT = 2
 UPDATED_SIZE = 200
@@ -299,6 +304,102 @@ class TestGetExecutionModel:
         model = snippet.get_execution_model()
         instance = model(**{"-hostname-": "server1", "host": "db-host"})
         assert instance.executor_host == "server1"
+
+
+class TestToArgsString:
+    """Test datetime CLI argument serialization via to_args_string."""
+
+    @staticmethod
+    def _snippet_with_parameters(parameters):
+        return BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"parameters": parameters},
+        )
+
+    def test_datetime_serializes_with_t_separator(self):
+        """Verify datetime values render as YYYY-MM-DDTHH:MM:SS in CLI args."""
+        snippet = self._snippet_with_parameters(
+            [{"name": "start", "type": "datetime", "required": False}]
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "start": "2024-06-10T14:30:00",
+            }
+        )
+
+        args = instance.to_args_string()
+
+        assert "--start" in args.split()
+        assert "2024-06-10T14:30:00" in args
+        assert "2024-06-10 14:30:00" not in args
+
+    def test_empty_start_and_end_omitted_from_args(self):
+        """Verify blank optional datetime params are excluded from CLI args."""
+        snippet = self._snippet_with_parameters(
+            [
+                {"name": "start", "type": "datetime", "required": False},
+                {"name": "end", "type": "datetime", "required": False},
+            ]
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "start": "",
+                "end": "",
+            }
+        )
+
+        args = instance.to_args_string()
+
+        assert "--start" not in args
+        assert "--end" not in args
+
+    def test_datetime_without_seconds_serializes_with_zero_seconds(self):
+        """Verify datetime-local input without seconds normalises to :00 in CLI args."""
+        snippet = self._snippet_with_parameters(
+            [{"name": "start", "type": "datetime", "required": False}]
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "start": "2024-06-10T14:30",
+            }
+        )
+
+        args = instance.to_args_string()
+
+        assert "2024-06-10T14:30:00" in args
+
+    def test_positional_datetime_serializes_as_string(self):
+        """Verify positional datetime params use serialize_cli_value, not raw objects."""
+        snippet = self._snippet_with_parameters(
+            [
+                {
+                    "name": "timestamp",
+                    "type": "datetime",
+                    "positional": True,
+                    "required": True,
+                }
+            ]
+        )
+        model = snippet.get_execution_model()
+        instance = model.model_validate(
+            {
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "timestamp": "2024-06-10T14:30:00",
+            }
+        )
+
+        args = instance.to_args_string()
+
+        assert args == "2024-06-10T14:30:00"
+        assert "2024-06-10 14:30:00" not in args
 
 
 class TestValidatedParameters:
