@@ -232,8 +232,8 @@ async def resolve_refs(
     a free-typed (``allow_custom``) value that arrives as a string resolves to
     ``None`` so the spec builder can fall back to the raw form value. A ``HostRef``
     field's submitted value (free-typed or selected) is captured as the executor
-    host without an inventory call; a model declaring more than one ``HostRef`` is
-    rejected.
+    host without an inventory call, coerced to ``str``; a model declaring more than
+    one ``HostRef`` is rejected.
 
     :param form: The validated create form instance.
     :param inventory_api: The inventory API client.
@@ -259,7 +259,8 @@ async def resolve_refs(
                     "executor host"
                 )
             host_field = name
-            executor_host = getattr(form, name, None)
+            host_value = getattr(form, name, None)
+            executor_host = None if host_value is None else str(host_value)
             continue
         if not isinstance(ref, ServiceRef | SchemaRef | TableRef):
             continue

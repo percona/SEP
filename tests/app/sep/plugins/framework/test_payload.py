@@ -355,6 +355,14 @@ class _TwoHostForm(AppFormModel):
     host_b: Annotated[str | None, HostRef(), Ui(label="B", section="main")] = None
 
 
+class _IntHostForm(AppFormModel):
+    """Carry an ``int | str`` HostRef to exercise executor-host str coercion."""
+
+    host: Annotated[
+        int | str | None, HostRef(allow_custom=True), Ui(label="Host", section="main")
+    ] = None
+
+
 class TestResolveRefs:
     """Cover ref-marker resolution against a fake inventory backend."""
 
@@ -413,6 +421,16 @@ class TestResolveRefs:
         resolved = await resolve_refs(_ResolveForm(host="exec-node"), inventory)
 
         assert resolved.executor_host == "exec-node"
+        inventory.get.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_host_ref_value_coerced_to_str(self) -> None:
+        """Coerce a non-``str`` ``HostRef`` value to ``str`` for ``executor_host``."""
+        inventory = _fake_inventory({})
+
+        resolved = await resolve_refs(_IntHostForm(host=8080), inventory)
+
+        assert resolved.executor_host == "8080"
         inventory.get.assert_not_awaited()
 
     @pytest.mark.asyncio
