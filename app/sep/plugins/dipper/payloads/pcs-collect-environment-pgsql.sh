@@ -1218,8 +1218,8 @@ COPY ( SELECT * FROM pg_stat_database ) TO stdout WITH (FORMAT csv);
 sql_to_file 'pg_stat_database' "${sql}" statDatabase.csv "global"
 
 ## Stat Statements
-check=$(echo "SELECT COUNT(1) FROM pg_available_extensions WHERE name = 'pg_stat_statements'" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null)
-if [[ ${check} -eq 1 ]]; then
+check=$(echo "SELECT COUNT(1) FROM pg_available_extensions WHERE name = 'pg_stat_statements'" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null || echo 0)
+if [[ ${check} == "1" ]]; then
     sql="COPY (SELECT * FROM pg_stat_statements
   WHERE dbid = (SELECT datid FROM pg_stat_database where datname = current_database())
   AND query != '<insufficient privilege>') TO stdout WITH (FORMAT csv);
