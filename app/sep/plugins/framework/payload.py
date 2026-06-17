@@ -43,6 +43,7 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     find_ref_marker,
+    HostRef,
     SchemaRef,
     ServiceRef,
     TableRef,
@@ -168,15 +169,18 @@ class ResolvedEntities:
     """Hold the inventory entities resolved from a create form's reference fields.
 
     :param service: The entity resolved from the form's ``ServiceRef`` field, used
-        for the envelope's connectivity meta and target; ``None`` when no service
-        ref resolved (an empty or free-typed selection).
+        for the envelope's connectivity meta and as the executor-target fallback;
+        ``None`` when no service ref resolved (an empty or free-typed selection).
     :param entities: The resolved entity per reference-field name, ``None`` for an
         empty or free-typed (manual-name) selection. Excludes ``HostRef`` fields,
         which name an executor host rather than an inventory entity.
+    :param executor_host: The host captured from the form's ``HostRef`` field (the
+        executor target), or ``None`` when the model declares no ``HostRef``.
     """
 
     service: CreatedService | None
     entities: Mapping[str, CreatedEntity | None]
+    executor_host: str | None = None
 
 
 async def _resolve_ref(
@@ -226,21 +230,38 @@ async def resolve_refs(
     Walk the model's fields, fetch the inventory entity selected by each
     reference field, and collect them keyed by field name. An empty selection or
     a free-typed (``allow_custom``) value that arrives as a string resolves to
-    ``None`` so the spec builder can fall back to the raw form value. ``HostRef``
-    fields are skipped — they name an executor host, not an inventory entity.
+    ``None`` so the spec builder can fall back to the raw form value. A ``HostRef``
+    field's submitted value (free-typed or selected) is captured as the executor
+    host without an inventory call, coerced to ``str``; a model declaring more than
+    one ``HostRef`` is rejected.
 
     :param form: The validated create form instance.
     :param inventory_api: The inventory API client.
-    :return: The resolved entities and the resolved service (if any).
-    :raises ValueError: Propagated from :func:`get_created_entity` on a
-        single-type ``ServiceRef`` type mismatch.
+    :return: The resolved entities, the resolved service (if any), and the
+        captured executor host (``None`` when no ``HostRef`` is declared).
+    :raises ValueError: When the model declares more than one ``HostRef`` field, or
+        propagated from :func:`get_created_entity` on a single-type ``ServiceRef``
+        type mismatch.
     :raises HTTPBadRequestException: When a multi-type ``ServiceRef`` resolves to a
         service outside its allowed types.
     """
     entities = {}
     service = None
+    executor_host = None
+    host_field = None
     for name, field_info in type(form).model_fields.items():
         ref = find_ref_marker(list(field_info.metadata))
+        if isinstance(ref, HostRef):
+            if host_field is not None:
+                raise ValueError(
+                    "resolve_refs found more than one HostRef field "
+                    f"({host_field!r} and {name!r}); a model names at most one "
+                    "executor host"
+                )
+            host_field = name
+            host_value = getattr(form, name, None)
+            executor_host = None if host_value is None else str(host_value)
+            continue
         if not isinstance(ref, ServiceRef | SchemaRef | TableRef):
             continue
 
@@ -255,7 +276,9 @@ async def resolve_refs(
         entities[name] = entity
         if isinstance(ref, ServiceRef):
             service = cast(CreatedService, entity)
-    return ResolvedEntities(service=service, entities=entities)
+    return ResolvedEntities(
+        service=service, entities=entities, executor_host=executor_host
+    )
 
 
 def assemble_envelope(
@@ -266,20 +289,22 @@ def assemble_envelope(
     owner: TaskOwner,
     alert_on_fail: bool = False,
 ) -> TaskWrite:
-    """Assemble a ``TaskWrite`` from a spec and the resolved service.
+    """Assemble a ``TaskWrite`` from a spec and the resolved entities.
 
     Map the uniform meta (``target``, ``_service_name``, and the connectivity
-    keys) from the resolved service exactly as the canonical envelopes do —
-    ``target`` and the connectivity host from the service node's address, the
-    connectivity port from ``service.port`` falling back to the per-type default,
-    and the connectivity service type from the service's type. The spec supplies
-    the verb-specific keys (``command`` / ``args`` and any ``extra_meta`` for
-    run-command; ``config`` / ``requirements`` / ``payload`` for run-python).
+    keys) as the canonical envelopes do — ``target`` from the resolved executor
+    host falling back to the service node's address, the connectivity host always
+    from the service node's address, the connectivity port from ``service.port``
+    falling back to the per-type default, and the connectivity service type from
+    the service's type. The spec supplies the verb-specific keys (``command`` /
+    ``args`` and any ``extra_meta`` for run-command; ``config`` / ``requirements``
+    / ``payload`` for run-python).
 
     :param spec: The verb-specific envelope contract produced by the app's spec
         builder.
-    :param resolved: The resolved inventory entities, whose service drives the
-        connectivity meta and target.
+    :param resolved: The resolved inventory entities; the service drives the
+        connectivity meta and the executor host drives ``target`` (falling back to
+        the service address when no ``HostRef`` resolved).
     :param name: The task name.
     :param owner: The task owner.
     :param alert_on_fail: Whether to alert on task failure. Defaults to ``False``.
@@ -296,6 +321,7 @@ def assemble_envelope(
         )
 
     host = service.node.address
+    target_host = resolved.executor_host or host
     port = service.port or _DEFAULT_PORTS.get(service.type)
     if port is None:
         raise ValueError(
@@ -310,7 +336,7 @@ def assemble_envelope(
     }
 
     data = spec.to_envelope_data(
-        host=host, service_name=service.name, connectivity=connectivity
+        host=target_host, service_name=service.name, connectivity=connectivity
     )
 
     return TaskWrite(

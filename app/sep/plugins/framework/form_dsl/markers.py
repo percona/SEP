@@ -16,8 +16,8 @@
 """Declare the annotation markers and layout objects of the model-first form DSL.
 
 The markers (:class:`Ui`, the four reference types, :class:`Requires`,
-:class:`Forbidden`, :class:`Choices`) are small frozen dataclasses placed in a
-field's ``Annotated[...]`` and read back from
+:class:`Forbidden`, :class:`Choices`, :class:`Hidden`) are small frozen
+dataclasses placed in a field's ``Annotated[...]`` and read back from
 :attr:`pydantic.fields.FieldInfo.metadata`. Pydantic preserves objects it does
 not recognise as constraints in that list and ignores them during validation,
 so they ride along on the create model without affecting what the server
@@ -35,6 +35,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import auto, StrEnum
 from types import MappingProxyType
+from typing import Any
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.rules import (
@@ -50,6 +51,7 @@ __all__ = [
     "Forbidden",
     "FormLayout",
     "FormRules",
+    "Hidden",
     "HostRef",
     "Requires",
     "SchemaRef",
@@ -73,6 +75,15 @@ class FieldWidget(StrEnum):
     YAML = auto()
     CHOICE = auto()
     MULTI_CHOICE = auto()
+
+
+_UNSET = object()
+"""Sentinel marking :attr:`Ui.default` as unset.
+
+``None`` is a legitimate form default, so it cannot double as "unset"; a distinct
+module-level object lets the derivation tell "use the Pydantic default" apart from
+"the form default is ``None``".
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +110,12 @@ class Ui:
     :param widget: Optional widget override for cases the base type cannot
         express (multi-line text, YAML, an int/str choice). Defaults to
         ``None`` (infer from the annotation).
+    :param default: Tri-state form-display default for the derived schema field,
+        distinct from the model/runtime default. Unset (the :data:`_UNSET`
+        sentinel, the default) derives the schema default from the Pydantic field
+        default; ``None`` sets the form default to ``None``; any other value sets
+        the form default to that value. The model's own default — what the JSON
+        body validates against — is never affected.
     """
 
     label: str
@@ -108,6 +125,25 @@ class Ui:
     order: int = 0
     required: bool | None = None
     widget: FieldWidget | None = None
+    default: Any = _UNSET
+
+    @property
+    def has_default(self) -> bool:
+        """Return whether a tri-state form default was set (a value or ``None``)."""
+        return self.default is not _UNSET
+
+
+@dataclass(frozen=True, slots=True)
+class Hidden:
+    """Mark a field as omitted from the derived schema, kept on the create model.
+
+    A field marked ``Hidden`` is dropped from the derived form sections, so it never
+    renders as a form field and needs no :class:`Ui` marker, yet it stays on the
+    create model and is validated in the JSON request body. Use it for a
+    capability-control field the framework renders from a capability flag (the
+    ``alert_on_fail`` pattern), where an explicit form field would duplicate the
+    rendered control.
+    """
 
 
 @dataclass(frozen=True, slots=True)
