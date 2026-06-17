@@ -1362,28 +1362,42 @@ def _append_one_of_group_rules(
         if field_scope_prefix
         else f"OneOfGroup {group.name!r}"
     )
+    all_branch_values = {branch.value for branch in group.branches}
+    leaves_by_name: dict[str, Any] = {}
+    allowed_branch_values: dict[str, set[str]] = {}
     for branch in group.branches:
         for leaf in branch.fields:
+            leaves_by_name.setdefault(leaf.name, leaf)
+            allowed_branch_values.setdefault(leaf.name, set()).add(branch.value)
+    for leaf_name, leaf in leaves_by_name.items():
+        allowed = allowed_branch_values.get(leaf_name, set())
+        if allowed and allowed != all_branch_values:
+            predicate: Predicate
+            if len(allowed) == 1:
+                predicate = NotEquals(group.discriminator, next(iter(allowed)))
+            else:
+                predicate = all_(
+                    *[NotEquals(group.discriminator, value) for value in sorted(allowed)]
+                )
             prepared.append(
                 _PreparedRule(
                     kind=_RuleKind.FIELD_GATE_FORBIDDEN,
                     scope_path=(
-                        f"{group_scope} branch {branch.value!r} "
-                        f"forbidden[{leaf.name!r}]"
+                        f"{group_scope} forbidden[{leaf_name!r}]"
                     ),
-                    predicate=NotEquals(group.discriminator, branch.value),
-                    fields=(leaf.name,),
+                    predicate=predicate,
+                    fields=(leaf_name,),
                     min=None,
                     max=None,
                     message=None,
                 )
             )
-            _append_leaf_field_gates(
-                prepared,
-                leaf,
-                field_scope_prefix=field_scope_prefix,
-                scope_path=f"{group_scope} BaseField {leaf.name!r}",
-            )
+        _append_leaf_field_gates(
+            prepared,
+            leaf,
+            field_scope_prefix=field_scope_prefix,
+            scope_path=f"{group_scope} BaseField {leaf_name!r}",
+        )
 
 
 def _append_rules_for_form_sections(
@@ -1403,10 +1417,12 @@ def _append_rules_for_form_sections(
     :param section_label_for_index: Returns the scope label for a section's
         cardinality / fail rules.
     """
+    from app.sep.plugins.framework.schema import OneOfGroup
+
     for section_index, section in enumerate(forms):
         section_scope = section_label_for_index(section_index, section)
         for field in section.fields:
-            if getattr(field, "field_type", None) == "one_of":
+            if isinstance(field, OneOfGroup):
                 _append_one_of_group_rules(
                     prepared, field, field_scope_prefix=field_scope_prefix
                 )

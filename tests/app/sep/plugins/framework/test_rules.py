@@ -1489,6 +1489,41 @@ class TestOneOfGroupRules:
             detail_view=DetailView(sections=[]),
         )
 
+    @staticmethod
+    def _shared_leaf_one_of_schema() -> PluginSchema:
+        return PluginSchema(
+            name="p",
+            display_name="P",
+            task_type="t",
+            forms=[
+                FormSection(
+                    title="Target",
+                    fields=[
+                        OneOfGroup(
+                            name="target",
+                            label="Target",
+                            discriminator="target_mode",
+                            default="service",
+                            branches=[
+                                OneOfBranch(
+                                    value="service",
+                                    label="Service",
+                                    fields=[StringField(name="target", label="Target")],
+                                ),
+                                OneOfBranch(
+                                    value="schema",
+                                    label="Schema",
+                                    fields=[StringField(name="target", label="Target")],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+            list_view=ListView(columns=[Column(key="id", label="ID")]),
+            detail_view=DetailView(sections=[]),
+        )
+
     def test_rule_plan_includes_synthesised_branch_forbidden_gates(self) -> None:
         """Emit one ``field_gate_forbidden`` rule per branch leaf."""
         plan = _extract_rule_plan(self._source_one_of_schema())
@@ -1555,3 +1590,23 @@ class TestOneOfGroupRules:
 
         Body(source=SourceBySchema(source_db_id="inventory"))
         Body(source=SourceByQuery(source_query="SELECT 1"))
+
+    def test_shared_leaf_across_branches_does_not_emit_contradictory_gates(self) -> None:
+        """Avoid per-branch forbidden gates for a leaf shared by all branches."""
+        plan = _extract_rule_plan(self._shared_leaf_one_of_schema())
+        shared_leaf_gates = [
+            rule
+            for rule in plan.rules
+            if isinstance(rule.predicate, NotEquals)
+            and rule.predicate.field == "target_mode"
+            and rule.fields == ("target",)
+        ]
+        assert shared_leaf_gates == []
+
+    def test_shared_leaf_allows_values_for_each_mode(self) -> None:
+        """Allow a shared one-of leaf when either mode is selected."""
+        plan = _extract_rule_plan(self._shared_leaf_one_of_schema())
+        service_body = type("Body", (), {"target_mode": "service", "target": "42"})
+        assert evaluate_conditional_rules(service_body(), plan) == []
+        schema_body = type("Body", (), {"target_mode": "schema", "target": "42"})
+        assert evaluate_conditional_rules(schema_body(), plan) == []

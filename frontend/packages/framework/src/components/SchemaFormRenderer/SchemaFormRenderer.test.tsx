@@ -2144,4 +2144,57 @@ describe('SchemaFormRenderer — one_of groups', () => {
       source: { mode: 'query', source_query: 'SELECT 1' },
     });
   });
+
+  it('unregisters one_of discriminator and leaf values when a section becomes hidden', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const gatedSections: FormSection[] = [
+      {
+        title: 'Options',
+        fields: [{ type: 'bool', name: 'include_target', label: 'Include Target', default: true }],
+      },
+      {
+        title: 'Target',
+        forbidden: [{ when: { not_equals: { include_target: true } } }],
+        fields: [
+          {
+            type: 'one_of',
+            name: 'target',
+            label: 'Target',
+            discriminator: 'target_mode',
+            default: 'service',
+            branches: [
+              {
+                value: 'service',
+                label: 'Service',
+                fields: [{ type: 'string', name: 'target', label: 'Service Target' }],
+              },
+              {
+                value: 'schema',
+                label: 'Schema',
+                fields: [{ type: 'string', name: 'target', label: 'Schema Target' }],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={gatedSections}
+        onSubmit={onSubmit}
+        defaultValues={{ include_target: true, target_mode: 'schema', target: 'inventory' }}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Include Target'));
+    await waitFor(() => expect(screen.queryByText('Target')).toBeNull());
+
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ include_target: false });
+    expect(payload).not.toHaveProperty('target');
+    expect(payload).not.toHaveProperty('target_mode');
+  });
 });

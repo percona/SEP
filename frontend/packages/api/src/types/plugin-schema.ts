@@ -228,7 +228,7 @@ export type PluginField =
   | HostField
   | ScriptPreviewField;
 
-// ── One-of group (SEP-1366) ─────────────────────────────────────────────
+// ── One-of group ─────────────────────────────────────────────────────────
 
 /** One mutually-exclusive branch inside a {@link OneOfGroup}. */
 export interface OneOfBranch {

@@ -451,7 +451,7 @@ export const ArchivesSourceXor: Story = {
   },
 };
 
-/** Segmented one-of group with nested dotted branch fields (SEP-1366). */
+/** Segmented one-of group with nested dotted branch fields. */
 export const OneOfSourceGroup: Story = {
   args: {
     sections: [

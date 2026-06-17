@@ -3027,7 +3027,7 @@
     },
     "/api/plugins/snippets/refresh": {
       "post": {
-        "description": "Refresh the snippets cache from disk.\n\nAdmin-only and additionally gated by manual sync being enabled.\nMirrors the legacy Jinja2 ``POST /snippets/refresh`` route.\n\n:param user: The authenticated admin performing the refresh.\n:type user: User\n:return: A response carrying the UTC timestamp of the refresh.\n:rtype: RefreshResponse",
+        "description": "Refresh the snippets cache from disk.\n\nAdmin-only and additionally gated by manual sync being enabled.\nMirrors the legacy Jinja2 ``POST /snippets/refresh`` route.\n\n:param user: The authenticated admin performing the refresh.\n:type user: User\n:param session: The SEP database session.\n:return: A response carrying the UTC timestamp of the refresh.\n:rtype: RefreshResponse",
         "operationId": "snippets_snippets_api_refresh_api_plugins_snippets_refresh_post",
         "responses": {
           "200": {
