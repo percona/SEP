@@ -42,8 +42,8 @@ from tests.app.factories import CreatedServiceFactory
 
 @pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
 def test_backups_index(test_client):
-    """Test GET /backup-pg/ route."""
-    response = test_client.get("/backup-pg/")
+    """Test GET /backup_pg/ route."""
+    response = test_client.get("/backup_pg/")
 
     assert response.status_code == status.HTTP_200_OK
     assert response.headers["content-type"] == "text/html; charset=utf-8"
@@ -56,15 +56,15 @@ def test_backups_index(test_client):
 def test_backups_create(
     test_client, mock_task_api_dep, backup_create, mock_build_backup_task_payload_dep
 ):
-    """Test POST /backup-pg/ route."""
+    """Test POST /backup_pg/ route."""
     response = test_client.post(
-        "/backup-pg/", data=backup_create.model_dump(), follow_redirects=False
+        "/backup_pg/", data=backup_create.model_dump(), follow_redirects=False
     )
 
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
         response.headers["location"]
-        == f"{test_client.base_url}/backup-pg/{backup_create.task_name}"
+        == f"{test_client.base_url}/backup_pg/{backup_create.task_name}"
     )
 
     mock_task_api_dep.post.assert_called_once()
@@ -81,7 +81,7 @@ def test_pg_backups_create_full_form_dependency_chain_without_payload_override(
     backup_create,
     created_node,
 ):
-    """Test POST /backup-pg/ route without overriding build_backup_task_payload."""
+    """Test POST /backup_pg/ route without overriding build_backup_task_payload."""
     pg_service = CreatedServiceFactory.build(
         node=created_node, type=ServiceTypeEnum.POSTGRESQL
     )
@@ -90,13 +90,13 @@ def test_pg_backups_create_full_form_dependency_chain_without_payload_override(
     mock_task_api_dep.post.return_value = AsyncMock()
 
     response = test_client.post(
-        "/backup-pg/",
+        "/backup_pg/",
         data=backup_create.model_dump(),
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"].endswith(
-        f"/backup-pg/{backup_create.task_name}"
+        f"/backup_pg/{backup_create.task_name}"
     )
     mock_task_api_dep.post.assert_awaited_once()
     assert mock_task_api_dep.post.await_args.args[0] == "/"
@@ -109,7 +109,7 @@ def test_pg_backups_create_full_form_dependency_chain_without_payload_override(
 def test_pg_backups_create_skips_connectivity_check_when_opted_out(
     test_client, mock_task_api_dep, backup_create
 ):
-    """POST /backup-pg/ skips the connectivity check when the checkbox is unchecked."""
+    """POST /backup_pg/ skips the connectivity check when the checkbox is unchecked."""
     clear_connectivity_caches()
 
     fake_task_write = TaskWrite(
@@ -133,12 +133,12 @@ def test_pg_backups_create_skips_connectivity_check_when_opted_out(
     )
 
     response = test_client.post(
-        "/backup-pg/", data=backup_create.model_dump(), follow_redirects=False
+        "/backup_pg/", data=backup_create.model_dump(), follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
         response.headers["location"]
-        == f"{test_client.base_url}/backup-pg/{backup_create.task_name}"
+        == f"{test_client.base_url}/backup_pg/{backup_create.task_name}"
     )
 
     assert mock_task_api_dep.post.call_count == 1
@@ -155,7 +155,7 @@ def test_pg_backups_create_skips_connectivity_check_when_opted_out(
 def test_backups_detail(
     test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
 ):
-    """Test GET /backup-pg/{task_name} route."""
+    """Test GET /backup_pg/{task_name} route."""
     mock_task_api_dep.get = AsyncMock(
         side_effect=[
             {},
@@ -169,7 +169,7 @@ def test_backups_detail(
         return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
     )
 
-    response = test_client.get(f"/backup-pg/{created_task.name}")
+    response = test_client.get(f"/backup_pg/{created_task.name}")
 
     assert response.status_code == status.HTTP_200_OK
     assert (
@@ -203,7 +203,7 @@ def test_backups_detail_handles_inventory_error(
         side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     )
 
-    response = test_client.get(f"/backup-pg/{created_task.name}")
+    response = test_client.get(f"/backup_pg/{created_task.name}")
 
     assert response.status_code == status.HTTP_200_OK
     mock_inventory_api_dep.get.assert_any_call(
@@ -220,15 +220,15 @@ def test_backups_detail_handles_inventory_error(
     "_mock_get_backups_task_dep", "_mock_check_for_conflicted_running_tasks"
 )
 def test_backups_execute(test_client, mock_task_api_dep, created_task):
-    """Test POST /backup-pg/{task_name} route with no chain_task_names."""
+    """Test POST /backup_pg/{task_name} route with no chain_task_names."""
     response = test_client.post(
-        f"/backup-pg/{created_task.name}", follow_redirects=False
+        f"/backup_pg/{created_task.name}", follow_redirects=False
     )
 
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
         response.headers["location"]
-        == f"{test_client.base_url}/backup-pg/{created_task.name}"
+        == f"{test_client.base_url}/backup_pg/{created_task.name}"
     )
 
     mock_task_api_dep.post.assert_called_once()
@@ -247,9 +247,9 @@ def test_backups_execute(test_client, mock_task_api_dep, created_task):
 def test_backups_execute_with_chain_task_names(
     test_client, mock_task_api_dep, created_task
 ):
-    """Test POST /backup-pg/{task_name} passes chain_task_names to the tasks API."""
+    """Test POST /backup_pg/{task_name} passes chain_task_names to the tasks API."""
     response = test_client.post(
-        f"/backup-pg/{created_task.name}",
+        f"/backup_pg/{created_task.name}",
         data={"chain_task_names": ["task-a", "task-b"]},
         follow_redirects=False,
     )
@@ -263,9 +263,9 @@ def test_backups_execute_with_chain_task_names(
 
 @pytest.mark.usefixtures("_mock_get_backups_task_dep")
 def test_pg_backups_delete(test_client, mock_task_api_dep, created_task):
-    """Test POST /backup-pg/{task_name}/delete route."""
+    """Test POST /backup_pg/{task_name}/delete route."""
     response = test_client.post(
-        f"/backup-pg/{created_task.name}/delete", follow_redirects=False
+        f"/backup_pg/{created_task.name}/delete", follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["Location"] == "/backup_pg"
@@ -298,10 +298,10 @@ def test_pg_backups_detail_uses_own_delete_route(
         return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
     )
 
-    response = test_client.get(f"/backup-pg/{created_task.name}")
+    response = test_client.get(f"/backup_pg/{created_task.name}")
 
     assert response.status_code == status.HTTP_200_OK
-    assert f"/backup-pg/{created_task.name}/delete" in response.text
+    assert f"/backup_pg/{created_task.name}/delete" in response.text
     # No cross-plugin URLs that include the task name (delete/update/detail).
     # The page may still contain `/mysql_backups/` from the global plugin nav
     # sidebar when mysql_backups is mounted; we only guard the task-specific
@@ -354,10 +354,10 @@ def test_pg_backups_index_links_periodic_tasks_to_own_detail_route(test_client):
         "connectivity_check_default": True,
     }
 
-    response = test_client.get("/backup-pg/")
+    response = test_client.get("/backup_pg/")
 
     assert response.status_code == status.HTTP_200_OK
-    assert "/backup-pg/pg_periodic_task" in response.text
+    assert "/backup_pg/pg_periodic_task" in response.text
     assert "/mysql_backups/pg_periodic_task" not in response.text
 
     sep_app.dependency_overrides = {}
@@ -373,11 +373,11 @@ def test_jinja_routes_marked_deprecated_in_openapi(test_client):
     spec = test_client.get("/openapi.json").json()
 
     expected = [
-        ("/backup-pg/", "get"),
-        ("/backup-pg/", "post"),
-        ("/backup-pg/{task_name}", "get"),
-        ("/backup-pg/{task_name}", "post"),
-        ("/backup-pg/{task_name}/delete", "post"),
+        ("/backup_pg/", "get"),
+        ("/backup_pg/", "post"),
+        ("/backup_pg/{task_name}", "get"),
+        ("/backup_pg/{task_name}", "post"),
+        ("/backup_pg/{task_name}/delete", "post"),
     ]
     for path, method in expected:
         operation = spec["paths"][path][method]
