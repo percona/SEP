@@ -338,9 +338,9 @@ class AppStateWrite(SQLModel):
 class AppRunningTask(BaseSQLModel, table=True):
     """Track one in-flight SEP-app-owned Celery task for cooperative drain.
 
-    One row per running task whose name appears in
-    :data:`app.sep.app_drain.SEP_TASK_OWNER_APP_KEY`, inserted by the
-    ``task_prerun`` receiver and removed by ``task_postrun``. The per-app row
+    One row per running task tagged with its owning app key via
+    :func:`app.sep.app_drain.owned_by`, inserted by the ``task_prerun`` receiver
+    and removed by ``task_postrun``. The per-app row
     count drives the terminal ``DISABLING`` -> ``DISABLED`` transition once an
     app's running tasks reach zero. ``created_at`` (inherited) is the task start
     time, used by the reconciler to prune rows orphaned by a worker crash or a

@@ -32,7 +32,7 @@ than autodiscovery.
 """
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 from uuid import uuid4
@@ -51,17 +51,34 @@ from app.sep.models import AppLifecycleEnum, AppRunningTask
 
 logger = logging.getLogger(__name__)
 
-SEP_TASK_OWNER_APP_KEY: dict[str, str] = {
-    "app.sep.celery.sync_snippets": "snippets",
-    "app.sep.celery.generate_health_report": "report",
-    "app.sep.celery.backup_alert_config": "alerts",
-}
-"""Map a migrated task's fully-qualified name to the app key that owns it.
+_OWNER_APP_KEY_ATTR = "owner_app_key"
 
-The signal receivers and safe-point checks key off this map, so a task absent
-from it (every ``app.tasks.*`` task and the reconciler itself) is never counted,
-cancelled, or used to drive a lifecycle transition.
-"""
+
+def owned_by(app_key: str) -> Callable[[Any], Any]:
+    """Tag a migrated Celery task with the app key that owns it.
+
+    Apply *above* ``@celery.task`` so it stamps the registered task object::
+
+        @owned_by("snippets")
+        @celery.task
+        def sync_snippets() -> None: ...
+
+    The ``task_prerun`` / ``task_postrun`` receivers read the tag off the running
+    task to count it toward its app's drain. A task without the tag (every
+    ``app.tasks.*`` task and the reconciler itself) is never counted, cancelled,
+    or used to drive a lifecycle transition. Carrying the key on the task -- not
+    in a name-indexed map -- means renaming or moving the task function can't
+    silently desync it from its owner.
+
+    :param app_key: The owning app's key.
+    :return: A decorator that stamps the owner on the task and returns it.
+    """
+
+    def tag(task: Any) -> Any:
+        setattr(task, _OWNER_APP_KEY_ATTR, app_key)
+        return task
+
+    return tag
 
 
 async def should_cancel(app_key: str, session: AsyncSession | None = None) -> bool:
@@ -172,7 +189,7 @@ async def track_app_task(session: AsyncSession, app_key: str) -> AsyncIterator[N
 @task_prerun.connect
 def record_task_start(task_id: str, task: Any, **_: Any) -> None:
     """Count a migrated SEP-app task as it starts (``task_prerun`` receiver)."""
-    app_key = SEP_TASK_OWNER_APP_KEY.get(task.name)
+    app_key = getattr(task, _OWNER_APP_KEY_ATTR, None)
     if app_key is None:
         return
     celery.loop.run_until_complete(_record_start(app_key, task_id))
@@ -181,7 +198,7 @@ def record_task_start(task_id: str, task: Any, **_: Any) -> None:
 @task_postrun.connect
 def record_task_end(task_id: str, task: Any, **_: Any) -> None:
     """Uncount a migrated task and finalize its app (``task_postrun`` receiver)."""
-    app_key = SEP_TASK_OWNER_APP_KEY.get(task.name)
+    app_key = getattr(task, _OWNER_APP_KEY_ATTR, None)
     if app_key is None:
         return
     celery.loop.run_until_complete(_record_end(app_key, task_id))

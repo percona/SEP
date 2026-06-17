@@ -23,7 +23,7 @@ from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.celery import celery
-from app.sep.app_drain import should_cancel
+from app.sep.app_drain import owned_by, should_cancel
 from app.sep.db import get_async_session_maker
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.snippets.config import SnippetFilterType, snippets_settings
@@ -34,6 +34,7 @@ from app.sep.snippets.utils import guess_mime_type
 logger = logging.getLogger(__name__)
 
 
+@owned_by("snippets")
 @celery.task
 def sync_snippets() -> None:
     """Define Celery task to sync snippets from `sep_setting.SNIPPETS.SNIPPETS_DIR`."""
@@ -145,6 +146,7 @@ def should_skip_snippet(snippet_path: Path) -> bool:
     return False
 
 
+@owned_by("report")
 @celery.task
 def generate_health_report(
     since: str = "now-7d",
@@ -243,6 +245,7 @@ async def _generate_health_report(
         logger.exception("Failed to upload health report to ServiceNow")
 
 
+@owned_by("alerts")
 @celery.task
 def backup_alert_config() -> None:
     """Define Celery task to back up PMM alert configuration."""

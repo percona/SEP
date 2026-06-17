@@ -197,24 +197,36 @@ class TestRecordTaskSignals:
             is AppLifecycleEnum.DISABLED
         )
 
-    def test_receiver_ignores_unmapped_task(self, mocker) -> None:
-        """An unmapped task name triggers no session work."""
+    def test_receiver_ignores_untagged_task(self, mocker) -> None:
+        """An untagged task triggers no session work."""
         run = mocker.patch.object(app_drain.celery.loop, "run_until_complete")
         task = MagicMock()
-        task.name = "app.tasks.celery.execute_task_queue"
+        task.owner_app_key = None
         record_task_start("task-1", task)
         record_task_end("task-1", task)
         run.assert_not_called()
 
-    def test_receiver_dispatches_mapped_task(self, mocker) -> None:
-        """A mapped task name drives the counter coroutine for its app."""
+    def test_receiver_dispatches_tagged_task(self, mocker) -> None:
+        """A tagged task drives the counter coroutine for its owning app."""
         record = mocker.patch("app.sep.app_drain._record_start")
         run = mocker.patch.object(app_drain.celery.loop, "run_until_complete")
         task = MagicMock()
-        task.name = "app.sep.celery.sync_snippets"
+        task.owner_app_key = "snippets"
         record_task_start("task-1", task)
         record.assert_called_once_with("snippets", "task-1")
         run.assert_called_once()
+
+    def test_drainable_tasks_carry_their_owner(self) -> None:
+        """Each drainable Celery task is tagged with its owning app key."""
+        from app.sep.celery import (
+            backup_alert_config,
+            generate_health_report,
+            sync_snippets,
+        )
+
+        assert getattr(sync_snippets, "owner_app_key", None) == "snippets"
+        assert getattr(generate_health_report, "owner_app_key", None) == "report"
+        assert getattr(backup_alert_config, "owner_app_key", None) == "alerts"
 
 
 class TestReconciler:
