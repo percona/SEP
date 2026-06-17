@@ -31,12 +31,14 @@ import functools
 import inspect
 import typing
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from typing import Annotated, Any, cast, TypeVar
 
 from fastapi import APIRouter, Depends, params, Query, status
 from pydantic import BaseModel
 
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
+from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
 from app.sep.plugins.framework.connectivity import maybe_record_connectivity_warning
 from app.sep.plugins.framework.responses import (
@@ -46,12 +48,20 @@ from app.sep.plugins.framework.responses import (
 )
 from app.sep.plugins.framework.schema import PluginSchema
 from app.sep.plugins.framework.task_status import get_task_latest_status
-from app.tasks.models import Task, TaskHistoryResponse, TaskOwner, TaskWrite
+from app.tasks.models import (
+    Task,
+    TaskHistoryResponse,
+    TaskHistoryStatusEnum,
+    TaskOwner,
+    TaskWrite,
+)
 
 __all__ = [
+    "ListFilters",
     "capabilities_endpoint",
     "derive_crud_routes",
     "derive_execute_route",
+    "make_list_filter_dep",
     "schema_endpoint",
 ]
 
@@ -317,6 +327,88 @@ def capabilities_endpoint(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ListFilters:
+    """Carry the optional list-route filter selections in canonical order.
+
+    :param status: The latest-history status filter, populated when the ``status``
+        query parameter is declared. Defaults to ``None``.
+    :param service_type: The service-type filter, populated when the
+        ``service_type`` query parameter is declared. Defaults to ``None``.
+    """
+
+    status: TaskHistoryStatusEnum | None = None
+    service_type: ServiceTypeEnum | None = None
+
+
+def make_list_filter_dep(
+    *, status: bool, service_type: bool
+) -> Callable[..., ListFilters]:
+    """Return a dependency declaring exactly the requested list-filter query params.
+
+    The returned callable declares plain ``service_type`` / ``status`` query
+    parameters — in that canonical order, and identical in name, type, and default
+    to the hand-written task-plugin list routes — so the derived route's OpenAPI
+    parameters match a route that declares them directly. Only the requested params
+    are declared; an unrequested filter contributes no query parameter at all.
+
+    :param status: Whether to declare the ``status`` query parameter.
+    :param service_type: Whether to declare the ``service_type`` query parameter.
+    :return: A dependency returning a :class:`ListFilters` over the declared params.
+    """
+    if service_type and status:
+
+        def _list_filters(
+            service_type: ServiceTypeEnum | None = None,
+            status: TaskHistoryStatusEnum | None = None,
+        ) -> ListFilters:
+            return ListFilters(status=status, service_type=service_type)
+
+    elif status:
+
+        def _list_filters(
+            status: TaskHistoryStatusEnum | None = None,
+        ) -> ListFilters:
+            return ListFilters(status=status)
+
+    elif service_type:
+
+        def _list_filters(
+            service_type: ServiceTypeEnum | None = None,
+        ) -> ListFilters:
+            return ListFilters(service_type=service_type)
+
+    else:
+
+        def _list_filters() -> ListFilters:
+            return ListFilters()
+
+    return _list_filters
+
+
+async def _bind_context(
+    builder: Callable[..., BaseModel],
+    context_provider: Callable[..., Awaitable[Any]] | None,
+) -> Callable[..., BaseModel]:
+    """Await the context provider once and bind its result onto ``builder``.
+
+    Mirrors :func:`build_task_list_responses`'s once-per-request binding for the
+    single-shot detail and create handlers: when ``context_provider`` is set it is
+    awaited once and its result is bound as the builder's ``context`` keyword
+    argument via :func:`functools.partial`, so a sync builder receives async
+    side-data without becoming async. When ``None`` the builder is returned
+    unchanged.
+
+    :param builder: The sync response builder to bind the context onto.
+    :param context_provider: The zero-arg async provider, or ``None`` to no-op.
+    :return: The original builder, or a partial binding ``context`` into it.
+    """
+    if context_provider is None:
+        return builder
+    context = await context_provider()
+    return functools.partial(builder, context=context)
+
+
 def _register_create_route(
     router: APIRouter,
     *,
@@ -326,6 +418,8 @@ def _register_create_route(
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None,
     list_detail_model: type[ListDetailResponseT],
     connectivity_check: bool,
+    context_provider: Callable[..., Awaitable[Any]] | None = None,
+    extra_deps: Sequence[params.Depends] = (),
 ) -> None:
     """Register the standard ``POST /`` create route (``201``) on ``router``.
 
@@ -349,6 +443,11 @@ def _register_create_route(
         auto-derive base.
     :param connectivity_check: Whether to add the connectivity probe and the
         ``check_connectivity`` query parameter.
+    :param context_provider: A zero-arg async provider whose once-awaited result
+        is bound as the active builder's ``context`` keyword argument before the
+        single create build. ``None`` (the default) leaves the builder unbound.
+    :param extra_deps: Extra route dependencies appended after
+        ``IsApiAuthenticated``, never replacing it.
     :raises TypeError: If ``connectivity_check`` is on and an explicit
         ``create_response_builder`` is given whose model omits a
         ``connectivity_warning`` field.
@@ -385,8 +484,10 @@ def _register_create_route(
             created = await tasks_api.post("/", json=task_write.model_dump())
             task = Task.model_validate(created)
             if create_response_builder is not None:
-                return create_response_builder(task)
-            return response_builder(task, status=None)
+                builder = await _bind_context(create_response_builder, context_provider)
+                return builder(task)
+            builder = await _bind_context(response_builder, context_provider)
+            return builder(task, status=None)
     else:
 
         async def _create(
@@ -403,10 +504,12 @@ def _register_create_route(
                 check_connectivity=check_connectivity,
             )
             if create_response_builder is not None:
-                return create_response_builder(task).model_copy(
+                builder = await _bind_context(create_response_builder, context_provider)
+                return builder(task).model_copy(
                     update={"connectivity_warning": warning}
                 )
-            base = response_builder(task, status=None)
+            builder = await _bind_context(response_builder, context_provider)
+            base = builder(task, status=None)
             return create_model(**base.model_dump(), connectivity_warning=warning)
 
     router.add_api_route(
@@ -416,8 +519,104 @@ def _register_create_route(
         status_code=status.HTTP_201_CREATED,
         response_model=create_model,
         response_model_by_alias=True,
-        dependencies=[IsApiAuthenticated],
+        dependencies=[IsApiAuthenticated, *extra_deps],
     )
+
+
+def _register_list_route(
+    router: APIRouter,
+    *,
+    task_owner: TaskOwner,
+    response_builder: TaskResponseBuilder[ListDetailResponseT],
+    list_detail_model: type[ListDetailResponseT],
+    pagination_dep: PaginationDependency | None,
+    list_status_filter: bool,
+    list_service_type: ServiceTypeEnum | None,
+    context_provider: Callable[..., Awaitable[Any]] | None,
+) -> None:
+    """Register the owner-filtered ``GET /`` list route on ``router``.
+
+    The route declares the requested ``status`` / ``service_type`` filter query
+    params via :func:`make_list_filter_dep`, short-circuits to an empty result
+    when a mismatched ``service_type`` is requested, and threads the active
+    ``status_filter`` and ``context_provider`` into the shared list pipeline. A
+    ``pagination_dep`` switches the route to a ``PaginatedResponse`` envelope.
+
+    :param router: The plugin router to register the list route on.
+    :param task_owner: The task owner the list route filters by.
+    :param response_builder: The list builder; supplies the row response model.
+    :param list_detail_model: The list/detail response model used in the envelope.
+    :param pagination_dep: A pagination dependency, or ``None`` for a plain list.
+    :param list_status_filter: Whether to declare the ``status`` query param.
+    :param list_service_type: The fixed service type to filter against, or ``None``
+        to declare no ``service_type`` param.
+    :param context_provider: The once-per-request async context provider, or ``None``.
+    """
+    filters_param = Annotated[
+        ListFilters,
+        Depends(
+            make_list_filter_dep(
+                status=list_status_filter,
+                service_type=list_service_type is not None,
+            )
+        ),
+    ]
+
+    def _service_type_excluded(filters: ListFilters) -> bool:
+        return (
+            list_service_type is not None
+            and filters.service_type is not None
+            and filters.service_type != list_service_type
+        )
+
+    if pagination_dep is None:
+
+        async def _list(tasks_api: TaskAPI, filters: filters_param) -> list[BaseModel]:
+            if _service_type_excluded(filters):
+                return []
+            responses = await build_task_list_responses(
+                tasks_api,
+                owner=task_owner.value,
+                response_builder=response_builder,
+                status_filter=filters.status,
+                context_provider=context_provider,
+            )
+            return cast(list[BaseModel], responses)
+
+        router.add_api_route(
+            "/",
+            _list,
+            methods=["GET"],
+            response_model=list[list_detail_model],
+            response_model_by_alias=True,
+            dependencies=[IsApiAuthenticated],
+        )
+    else:
+        paginated_param = Annotated[Pagination, Depends(pagination_dep)]
+
+        async def _list_paginated(
+            tasks_api: TaskAPI, pagination: paginated_param, filters: filters_param
+        ) -> PaginatedResponse:
+            if _service_type_excluded(filters):
+                return PaginatedResponse.from_pagination([], 0, pagination)
+            responses = await build_task_list_responses(
+                tasks_api,
+                owner=task_owner.value,
+                response_builder=response_builder,
+                pagination=pagination,
+                status_filter=filters.status,
+                context_provider=context_provider,
+            )
+            return cast(PaginatedResponse, responses)
+
+        router.add_api_route(
+            "/",
+            _list_paginated,
+            methods=["GET"],
+            response_model=PaginatedResponse[list_detail_model],
+            response_model_by_alias=True,
+            dependencies=[IsApiAuthenticated],
+        )
 
 
 def derive_crud_routes(
@@ -426,11 +625,16 @@ def derive_crud_routes(
     task_owner: TaskOwner,
     get_task: Callable[..., Awaitable[Task]],
     response_builder: TaskResponseBuilder[ListDetailResponseT],
+    detail_response_builder: TaskResponseBuilder[Any] | None = None,
     create_payload: Callable[..., Awaitable[TaskWrite]] | None = None,
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None = None,
     connectivity_check: bool = False,
     detail_path_param: str = "task_name",
     pagination_dep: PaginationDependency | None = None,
+    list_status_filter: bool = False,
+    list_service_type: ServiceTypeEnum | None = None,
+    context_provider: Callable[..., Awaitable[Any]] | None = None,
+    create_extra_deps: Sequence[params.Depends] = (),
     update_handler: Callable[..., Awaitable[Any]] | None = None,
     delete_handler: Callable[..., Awaitable[Any]] | None = None,
 ) -> APIRouter:
@@ -469,6 +673,10 @@ def derive_crud_routes(
         by name; its inner path parameter must equal ``detail_path_param``.
     :param response_builder: Builds the list/detail response model from a task
         and optional status; its return annotation supplies the response model.
+    :param detail_response_builder: Builds the detail response; its return
+        annotation supplies the detail route's response model. When ``None`` (the
+        default) the detail route falls back to ``response_builder`` and the list
+        model, byte-identical to a list/detail-shared model.
     :param create_payload: The raw create-payload builder dependency (declares
         the request ``Body()`` model that drives the create ``422``). When
         ``None`` (the default), no ``POST /`` create route is registered — the
@@ -492,6 +700,18 @@ def derive_crud_routes(
         When given, the list route takes that dependency (wrapped in
         ``Annotated[Pagination, Depends(...)]``) and returns a
         ``PaginatedResponse``; when ``None`` the list returns a plain list.
+    :param list_status_filter: When ``True``, the list route gains a ``status``
+        query parameter wired to the pipeline's ``status_filter``. When ``False``
+        (default) the list route declares no ``status`` param.
+    :param list_service_type: When set, the list route gains a ``service_type``
+        query parameter and short-circuits to an empty result before the upstream
+        fetch when the requested service type differs from this one. When ``None``
+        (default) the list route declares no ``service_type`` param.
+    :param context_provider: A zero-arg async provider whose once-awaited result
+        is bound as the active builder's ``context`` keyword argument across the
+        list, detail, and create builds. ``None`` (default) leaves builders unbound.
+    :param create_extra_deps: Extra route dependencies appended to the create
+        route after ``IsApiAuthenticated``, never replacing it.
     :param update_handler: A fully-formed update handler; when given, a
         ``PUT /{detail_path_param}`` route is registered using it. The helper
         applies only ``IsApiAuthenticated`` and ``response_model_by_alias`` — any
@@ -505,82 +725,64 @@ def derive_crud_routes(
         ``status_code=204``. As with ``update_handler``, any extra route guard
         must be declared as one of the handler's own signature dependencies.
     :return: A plugin ``APIRouter`` carrying the schema + CRUD routes.
-    :raises TypeError: If ``response_builder`` or ``create_response_builder``
-        is an ``async def`` callable (the derived handlers invoke it
-        synchronously), or does not declare a return-type annotation that is a
-        :class:`pydantic.BaseModel` subclass; or if ``connectivity_check`` is on
-        and an explicit ``create_response_builder``'s model omits a
-        ``connectivity_warning`` field.
+    :raises TypeError: If ``response_builder``, ``detail_response_builder``, or
+        ``create_response_builder`` is an ``async def`` callable (the derived
+        handlers invoke it synchronously), or does not declare a return-type
+        annotation that is a :class:`pydantic.BaseModel` subclass; or if
+        ``connectivity_check`` is on and an explicit ``create_response_builder``'s
+        model omits a ``connectivity_warning`` field.
     :raises ValueError: If ``create_payload`` is ``None`` while
         ``connectivity_check`` is on or a ``create_response_builder`` is supplied
         — both are create-route options that need a create route to attach to.
     """
     _reject_async_builders(
         response_builder=response_builder,
+        detail_response_builder=detail_response_builder,
         create_response_builder=create_response_builder,
     )
 
     list_detail_model = _resolve_response_model(
         response_builder, helper="derive_crud_routes", param="response_builder"
     )
+    detail_model = (
+        _resolve_response_model(
+            detail_response_builder,
+            helper="derive_crud_routes",
+            param="detail_response_builder",
+        )
+        if detail_response_builder is not None
+        else list_detail_model
+    )
+    detail_builder = detail_response_builder or response_builder
 
     router = APIRouter()
     schema_endpoint(router, plugin_schema)
 
     detail_path = f"/{{{detail_path_param}}}"
 
-    if pagination_dep is None:
-
-        async def _list(tasks_api: TaskAPI) -> list[BaseModel]:
-            responses = await build_task_list_responses(
-                tasks_api,
-                owner=task_owner.value,
-                response_builder=response_builder,
-            )
-            return cast(list[BaseModel], responses)
-
-        router.add_api_route(
-            "/",
-            _list,
-            methods=["GET"],
-            response_model=list[list_detail_model],
-            response_model_by_alias=True,
-            dependencies=[IsApiAuthenticated],
-        )
-    else:
-        paginated_param = Annotated[Pagination, Depends(pagination_dep)]
-
-        async def _list_paginated(
-            tasks_api: TaskAPI, pagination: paginated_param
-        ) -> PaginatedResponse:
-            responses = await build_task_list_responses(
-                tasks_api,
-                owner=task_owner.value,
-                response_builder=response_builder,
-                pagination=pagination,
-            )
-            return cast(PaginatedResponse, responses)
-
-        router.add_api_route(
-            "/",
-            _list_paginated,
-            methods=["GET"],
-            response_model=PaginatedResponse[list_detail_model],
-            response_model_by_alias=True,
-            dependencies=[IsApiAuthenticated],
-        )
+    _register_list_route(
+        router,
+        task_owner=task_owner,
+        response_builder=response_builder,
+        list_detail_model=list_detail_model,
+        pagination_dep=pagination_dep,
+        list_status_filter=list_status_filter,
+        list_service_type=list_service_type,
+        context_provider=context_provider,
+    )
 
     async def _detail(
         tasks_api: TaskAPI, task: Annotated[Task, Depends(get_task)]
     ) -> BaseModel:
         task_status = await get_task_latest_status(tasks_api, task.name)
-        return response_builder(task, status=task_status)
+        builder = await _bind_context(detail_builder, context_provider)
+        return builder(task, status=task_status)
 
     router.add_api_route(
         detail_path,
         _detail,
         methods=["GET"],
-        response_model=list_detail_model,
+        response_model=detail_model,
         response_model_by_alias=True,
         dependencies=[IsApiAuthenticated],
     )
@@ -605,6 +807,8 @@ def derive_crud_routes(
             create_response_builder=create_response_builder,
             list_detail_model=list_detail_model,
             connectivity_check=connectivity_check,
+            context_provider=context_provider,
+            extra_deps=create_extra_deps,
         )
 
     if update_handler is not None:

@@ -33,7 +33,7 @@ from typing import Annotated, Any
 from fastapi import Depends
 from pydantic import BaseModel
 
-from app.core.exceptions import HTTPNotFoundException
+from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import TaskAPI
 from app.sep.plugins.framework.apps import TaskExecutionApp, Views
@@ -48,7 +48,9 @@ from app.sep.plugins.framework.form_dsl import (
     Ui,
 )
 from app.sep.plugins.framework.payload import ResolvedEntities, RunCommandSpec
+from app.sep.plugins.framework.responses import build_default_task_response
 from app.sep.plugins.framework.schema import Capabilities, Column, ListView
+from app.sep.plugins.framework.task_status import batch_get_latest_statuses
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner
 from tests.app.factories import (
     CreatedNodeFactory,
@@ -70,6 +72,8 @@ SYNTH_SERVICE_PORT = 3306
 SYNTH_EXECUTOR_HOST = "exec-node"
 
 SEEDED_TASK_NAME = "contract-seeded-task"
+SYNTH_CREATED_BY = "synth-user-id"
+SYNTH_CREATED_BY_NAME = "synth-username"
 
 _SYNTH_LAYOUT = FormLayout(sections=(SectionLayout(key="main", title="Main"),))
 _SYNTH_LIST_VIEW = ListView(columns=[Column(key="name", label="Name")])
@@ -100,15 +104,21 @@ class MockTaskAPI:
         *,
         owner: TaskOwner,
         statuses: Sequence[TaskHistoryStatusEnum] = (),
+        created_by: str = SYNTH_CREATED_BY,
     ) -> None:
         """Store a task owned by ``owner`` with a newest-first ``statuses`` history.
 
         :param name: The task name to seed.
         :param owner: The task owner the list/detail routes filter by.
         :param statuses: Execution statuses, newest first, seeded as history rows.
+        :param created_by: The user id stamped as the task creator, so the
+            response builder's context-driven username remap is exercisable.
         """
         task = TaskFactory.build(
-            name=name, owner=owner.value, data={"task": "noop", "meta": {}}
+            name=name,
+            owner=owner.value,
+            data={"task": "noop", "meta": {}},
+            created_by=created_by,
         )
         self._tasks[name] = task.model_dump(mode="json")
         self._history[name] = [
@@ -212,6 +222,7 @@ class MockTaskAPI:
             data=payload["data"],
             backend=payload.get("backend", TaskFactory.backend),
             alert_on_fail=payload.get("alert_on_fail", False),
+            created_by=SYNTH_CREATED_BY,
         )
         stored = created.model_dump(mode="json")
         self._tasks[created.name] = stored
@@ -312,10 +323,17 @@ class SynthForm(AppFormModel):
 
 
 class SynthResponse(BaseModel):
-    """Represent the list/detail response built from the task dump plus status."""
+    """Represent the list/detail response built from the task dump plus status.
+
+    Carries the injected ``service_type`` extra and a ``created_by`` the response
+    builder remaps from the bound context's username map, mirroring the audited
+    plugins' response shape.
+    """
 
     name: str
     status: TaskHistoryStatusEnum | None = None
+    service_type: ServiceTypeEnum | None = None
+    created_by: str | None = None
 
 
 class SynthExecuteWrite(BaseModel):
@@ -360,6 +378,60 @@ def synth_spec_builder(
     )
 
 
+def synth_response_builder(
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum | None = None,
+    context: dict[str, str] | None = None,
+) -> SynthResponse:
+    """Build the synth response, injecting extras and remapping ``created_by``.
+
+    Mirrors the audited plugins' builders: a fixed ``service_type`` extra plus a
+    ``created_by`` resolved through the bound context's username map with the
+    ``.get(id, id)`` raw-id fallback, so a missing map entry surfaces the raw id.
+
+    :param task: The task to build a response for.
+    :param status: The latest known execution status.
+    :param context: The bound username map, or ``None`` when no provider is wired.
+    :return: The synth response carrying the injected extras.
+    """
+    mapping = context or {}
+    return build_default_task_response(
+        SynthResponse,
+        task,
+        status,
+        extras={
+            "service_type": ServiceTypeEnum.MYSQL,
+            "created_by": mapping.get(task.created_by, task.created_by),
+        },
+    )
+
+
+async def synth_context_provider() -> dict[str, str]:
+    """Return the synthetic username map resolved once per request."""
+    return {SYNTH_CREATED_BY: SYNTH_CREATED_BY_NAME}
+
+
+async def synth_reject_running_task(tasks_api: TaskAPI) -> None:
+    """Reject create when the synth owner already has a RUNNING task.
+
+    Mirrors backup_pg's ``HasNoConflictedRunningTasksOnCreate`` guard shape — a
+    pre-create dependency that queries the Tasks API and raises a conflict — so
+    ``create_extra_deps`` enforcement is exercised through the body graph.
+
+    :param tasks_api: The Tasks API client used to look up the owner's tasks.
+    :raises HTTPConflictException: When any owned task's latest status is RUNNING.
+    """
+    listing = await tasks_api.get("/", params={"owner": SYNTH_OWNER.value})
+    names = [item["name"] for item in listing["items"]]
+    statuses = await batch_get_latest_statuses(tasks_api, names)
+    if any(value == TaskHistoryStatusEnum.RUNNING for value in statuses.values()):
+        raise HTTPConflictException("A synthetic task is already running.")
+
+
+synth_create_guard = Depends(synth_reject_running_task)
+
+
 async def synth_delete_handler(
     task: Annotated[Task, _synth_task_dep], tasks_api: TaskAPI
 ) -> None:
@@ -395,6 +467,12 @@ def synth_app_kwargs() -> dict[str, Any]:
         "execute_write_model": SynthExecuteWrite,
         "execute_response_model": SynthExecuteResponse,
         "capabilities_provider": synth_capabilities_provider,
+        "service_type": ServiceTypeEnum.MYSQL,
+        "list_status_filter": True,
+        "list_service_type_filter": True,
+        "response_builder": synth_response_builder,
+        "response_context_provider": synth_context_provider,
+        "create_extra_deps": (synth_create_guard,),
     }
 
 

@@ -65,7 +65,10 @@ class TestSyntheticContract(DerivedRouterContractTests):
 class TestSyntheticReadOnlyContract(DerivedRouterContractTests):
     """Cover the absence cases against a create- and execute-disabled definition."""
 
-    app_def = synth_app(capabilities=AppCapabilities(create=False, execute=False))
+    app_def = synth_app(
+        capabilities=AppCapabilities(create=False, execute=False),
+        create_extra_deps=(),
+    )
 
 
 class TestSyntheticPaginatedContract(DerivedRouterContractTests):

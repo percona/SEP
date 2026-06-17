@@ -15,7 +15,8 @@
 
 """Provide the shared JSON-API list pipeline and default task response builder."""
 
-from collections.abc import Callable, Mapping
+import functools
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, cast, overload, Protocol, TypeVar
 
 from pydantic import BaseModel, create_model
@@ -124,6 +125,7 @@ async def build_task_list_responses(
     pagination: None = None,
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
+    context_provider: Callable[..., Awaitable[Any]] | None = None,
 ) -> list[R]: ...
 
 
@@ -136,6 +138,7 @@ async def build_task_list_responses(
     pagination: Pagination,
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
+    context_provider: Callable[..., Awaitable[Any]] | None = None,
 ) -> PaginatedResponse[R]: ...
 
 
@@ -147,6 +150,7 @@ async def build_task_list_responses(
     pagination: Pagination | None = None,
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
+    context_provider: Callable[..., Awaitable[Any]] | None = None,
 ) -> list[R] | PaginatedResponse[R]:
     """Assemble JSON-API task responses for an owner through one shared pipeline.
 
@@ -157,6 +161,14 @@ async def build_task_list_responses(
     returns a ``PaginatedResponse`` whose ``total`` is the filtered current-page
     count when a client-side filter (``status_filter`` or ``task_filter``) is
     active and the upstream total otherwise.
+
+    When ``context_provider`` is given it is awaited exactly once per page —
+    before the per-row build, including the empty page — and its result is bound
+    into every per-row build as ``builder(task, status=..., context=...)`` via
+    :func:`functools.partial`. This lets a sync builder receive async side-data
+    (for example a username map) without the builder itself becoming async, which
+    the framework rejects. When ``None`` (the default) the builder is invoked
+    unchanged as ``builder(task, status=...)``.
 
     :param tasks_api: The Tasks API client used for the list and status lookups.
     :type tasks_api: TaskAPI
@@ -170,6 +182,8 @@ async def build_task_list_responses(
     :type status_filter: TaskHistoryStatusEnum | None
     :param task_filter: Predicate applied before status enrichment.
     :type task_filter: Callable[[Task], bool] | None
+    :param context_provider: Zero-arg async provider whose once-awaited result is
+        bound into every per-row build as a ``context`` keyword argument.
     :return: The built responses, paginated when ``pagination`` is supplied.
     :rtype: list[R] | PaginatedResponse[R]
     """
@@ -178,9 +192,14 @@ async def build_task_list_responses(
     if task_filter is not None:
         tasks = [task for task in tasks if task_filter(task)]
 
+    builder = response_builder
+    if context_provider is not None:
+        context = await context_provider()
+        builder = functools.partial(response_builder, context=context)
+
     statuses = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
     items = [
-        response_builder(task, status=statuses.get(task.name))
+        builder(task, status=statuses.get(task.name))
         for task in tasks
         if status_filter is None or statuses.get(task.name) == status_filter
     ]

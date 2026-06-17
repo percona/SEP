@@ -40,6 +40,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from polyfactory.factories.pydantic_factory import ModelFactory
 
+from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY
 from app.sep.deps import (
@@ -58,12 +59,17 @@ from app.sep.plugins.framework.form_dsl import (
     ServiceRef,
     TableRef,
 )
+from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.factories import (
     MOCK_CREATED_SCHEMA_ID,
     MOCK_CREATED_SERVICE_ID,
     MOCK_CREATED_TABLE_ID,
 )
-from tests.app.sep.plugins.framework.kit import SEEDED_TASK_NAME, SYNTH_EXECUTOR_HOST
+from tests.app.sep.plugins.framework.kit import (
+    SEEDED_TASK_NAME,
+    SYNTH_CREATED_BY_NAME,
+    SYNTH_EXECUTOR_HOST,
+)
 
 _NEW_TASK_NAME = "contract-new-task"
 _UNKNOWN_TASK_NAME = "contract-unknown-task"
@@ -242,6 +248,16 @@ def build_invalid_create_body(app_def: TaskExecutionApp) -> dict[str, Any] | Non
         return None
     body.pop(required[0], None)
     return body
+
+
+def _list_rows(body: Any) -> list[dict[str, Any]]:
+    """Return the row list from a plain-list or paginated-envelope list body.
+
+    :param body: The decoded ``GET /`` body, either a plain list or a
+        ``PaginatedResponse`` envelope.
+    :return: The contained rows, regardless of pagination shape.
+    """
+    return body["items"] if isinstance(body, dict) else body
 
 
 class DerivedRouterContractTests:
@@ -439,6 +455,119 @@ class DerivedRouterContractTests:
         meta = mock_task_api.last_create_payload["data"]["meta"]
         assert meta["target"] == body[host_field]
         assert meta["target"] != meta[CONNECTIVITY_META_HOST_KEY]
+
+    def test_list_status_filter(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert ``GET /?status=`` returns only rows whose latest status matches."""
+        if not self.app_def.list_status_filter:
+            pytest.skip("status filter not declared")
+        mock_task_api.seed_task(
+            "contract-status-success",
+            owner=self.app_def.owner,
+            statuses=(TaskHistoryStatusEnum.SUCCESS,),
+        )
+        mock_task_api.seed_task(
+            "contract-status-failed",
+            owner=self.app_def.owner,
+            statuses=(TaskHistoryStatusEnum.FAILED,),
+        )
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(
+            f"{base}/", params={"status": TaskHistoryStatusEnum.SUCCESS.value}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        names = {row["name"] for row in _list_rows(response.json())}
+        assert "contract-status-success" in names
+        assert "contract-status-failed" not in names
+
+    def test_list_service_type_filter_short_circuits(
+        self, contract_client: TestClient
+    ) -> None:
+        """Assert a mismatched ``?service_type=`` empties the list; a match lists rows."""
+        if not self.app_def.list_service_type_filter:
+            pytest.skip("service_type filter not declared")
+        other = next(
+            kind for kind in ServiceTypeEnum if kind != self.app_def.service_type
+        )
+        base = app_base_url(self.app_def)
+
+        mismatch = contract_client.get(f"{base}/", params={"service_type": other.value})
+        match = contract_client.get(
+            f"{base}/", params={"service_type": self.app_def.service_type.value}
+        )
+
+        assert mismatch.status_code == status.HTTP_200_OK
+        assert _list_rows(mismatch.json()) == []
+        assert any(row["name"] == SEEDED_TASK_NAME for row in _list_rows(match.json()))
+
+    def test_list_injects_extras_and_resolves_username(
+        self, contract_client: TestClient
+    ) -> None:
+        """Assert list rows carry the injected extras and the resolved username."""
+        if self.app_def.response_context_provider is None:
+            pytest.skip("no response context provider")
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        row = next(
+            row
+            for row in _list_rows(response.json())
+            if row["name"] == SEEDED_TASK_NAME
+        )
+        assert row["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert row["created_by"] == SYNTH_CREATED_BY_NAME
+
+    def test_detail_injects_extras(self, contract_client: TestClient) -> None:
+        """Assert ``GET /{name}`` carries the injected extras and resolved username."""
+        if self.app_def.response_context_provider is None:
+            pytest.skip("no response context provider")
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/{SEEDED_TASK_NAME}")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert body["created_by"] == SYNTH_CREATED_BY_NAME
+
+    def test_create_injects_extras(self, contract_client: TestClient) -> None:
+        """Assert the create response binds context: injected extras + resolved name."""
+        if not self.app_def.capabilities.create:
+            pytest.skip("create capability disabled")
+        if self.app_def.response_context_provider is None:
+            pytest.skip("no response context provider")
+        body = build_valid_create_body(self.app_def)
+        if body is None:
+            pytest.skip("no derivable create body (schema= passthrough)")
+        base = app_base_url(self.app_def)
+
+        response = post_create_body(contract_client, f"{base}/", self.app_def, body)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        payload = response.json()
+        assert payload["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
+
+    def test_create_extra_dep_enforced(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert a ``create_extra_deps`` guard rejects create with a 409."""
+        if not self.app_def.create_extra_deps:
+            pytest.skip("no create extra deps")
+        body = build_valid_create_body(self.app_def)
+        if body is None:
+            pytest.skip("no derivable create body (schema= passthrough)")
+        mock_task_api.seed_running(_CONFLICT_TASK_NAME, owner=self.app_def.owner)
+        base = app_base_url(self.app_def)
+
+        response = post_create_body(contract_client, f"{base}/", self.app_def, body)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
 
     def test_execute_201(self, contract_client: TestClient) -> None:
         """Assert ``POST /{task_name}/execute`` dispatches and returns 201."""
