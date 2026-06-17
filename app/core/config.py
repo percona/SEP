@@ -15,6 +15,8 @@
 
 """Define the application settings."""
 
+import hashlib
+import hmac
 import logging.config
 import re
 import secrets
@@ -316,8 +318,11 @@ class PMMSettings(BaseLowercaseModel):
         return None
 
 
+_INTERNAL_TOKEN_LABEL = b"sep-internal-token"
+
+
 class Settings(BaseYamlSettings):
-    """Main application settings class.
+    """Define the main application settings.
 
     :param CASDOOR: Casdoor configuration options.
     :type CASDOOR: CasdoorSDK
@@ -332,11 +337,12 @@ class Settings(BaseYamlSettings):
     :type ALLOW_CONCURRENT_SESSIONS: bool
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
         ``secrets.token_urlsafe(32)``.
-    :type SECRET_KEY: str
     :param SEP_INTERNAL_TOKEN: A long random secret used for SEP-internal
         service-to-service authentication (e.g. scheduled inventory sync). When
-        unset, features that depend on it are disabled. Generate with
-        ``openssl rand -hex 32``.
+        unset, it is derived from ``SECRET_KEY`` by ``derive_internal_token`` so
+        every process sharing ``SECRET_KEY`` resolves the identical token.
+        Generate an explicit value with ``openssl rand -hex 32`` to rotate it
+        independently of ``SECRET_KEY``.
     :type SEP_INTERNAL_TOKEN: SecretStr | None
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :type LOGGING: LogLevel
@@ -443,6 +449,39 @@ class Settings(BaseYamlSettings):
         """
         self.LOGGING_CONFIG["loggers"][""]["level"] = self.LOGGING
         self.LOGGING_CONFIG["loggers"]["app"]["level"] = self.LOGGING
+        return self
+
+    @model_validator(mode="after")
+    def derive_internal_token(self) -> Self:
+        """Derive ``SEP_INTERNAL_TOKEN`` from ``SECRET_KEY`` when it is unset.
+
+        Every process sharing ``SECRET_KEY`` derives the identical token via
+        HMAC-SHA256, so SEP-internal service-to-service authentication works
+        across the web apps and the lifespan-less Celery worker without
+        persisting or distributing a separate secret. An explicitly configured
+        ``SEP_INTERNAL_TOKEN`` takes precedence so it can be rotated
+        independently.
+
+        :return: Validated settings with ``SEP_INTERNAL_TOKEN`` guaranteed set.
+        :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is unset and ``SECRET_KEY``
+            is empty, so no token can be derived.
+        """
+        if (
+            self.SEP_INTERNAL_TOKEN is not None
+            and self.SEP_INTERNAL_TOKEN.get_secret_value()
+        ):
+            return self
+        secret_key = self.SECRET_KEY.get_secret_value()
+        if not secret_key:
+            raise ValueError(
+                "SECRET_KEY must be set to a non-empty value so SEP_INTERNAL_TOKEN "
+                "can be derived for service-to-service authentication "
+                "(e.g. `openssl rand -hex 32`)."
+            )
+        derived = hmac.new(
+            secret_key.encode(), _INTERNAL_TOKEN_LABEL, hashlib.sha256
+        ).hexdigest()
+        self.SEP_INTERNAL_TOKEN = SecretStr(derived)
         return self
 
     @validate_call

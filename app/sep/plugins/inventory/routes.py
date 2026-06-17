@@ -29,7 +29,6 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.core.config import settings
 from app.core.exceptions import HTTPBadRequestException
 from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
@@ -42,7 +41,6 @@ from app.sep.deps import (
     CreatedSchemaDep,
     CreatedServiceDep,
     CreatedTableDep,
-    CurrentUser,
     DefaultContext,
     InventoryAPI,
     IsAuthenticated,
@@ -56,10 +54,12 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.inventory.deps import (
     build_available_syncers,
     filter_syncers_by_name,
+    InternalTokenDep,
     SyncersDep,
 )
 from app.sep.plugins.inventory.models import InventorySyncScheduleCreateForm
 from app.sep.plugins.inventory.sync import (
+    get_internal_token,
     run_inventory_sync,
     run_node_sync,
     run_schema_sync,
@@ -83,16 +83,14 @@ CONNECTABLE_SERVICE_TYPES = frozenset(
 def _is_scheduled_sync_enabled() -> bool:
     """Return whether scheduled inventory sync is enabled.
 
-    The feature requires ``settings.SEP_INTERNAL_TOKEN`` to be set to a
-    non-empty value; ``SecretStr("")`` is truthy regardless of contents, so
-    the inner ``get_secret_value()`` check is required to reject empty
-    deployments.
+    The feature requires a non-empty internal service token; ``Settings``
+    derives one from ``SECRET_KEY`` when it is unset, so this is effectively
+    always enabled in a booted deployment.
 
     :return: True if scheduled sync is enabled.
     :rtype: bool
     """
-    token = settings.SEP_INTERNAL_TOKEN
-    return token is not None and bool(token.get_secret_value())
+    return get_internal_token() is not None
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -134,9 +132,9 @@ async def node_list(
     deprecated=True,
 )
 async def sync_inventory(
-    user: CurrentUser,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start inventory sync as a background task.
@@ -152,7 +150,7 @@ async def sync_inventory(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(run_inventory_sync, user.access_token, *selected)
+    background_tasks.add_task(run_inventory_sync, internal_token, *selected)
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -167,7 +165,7 @@ async def schedule_create(
 ) -> RedirectResponse:
     """Attach a periodic schedule to the inventory-sync task.
 
-    Deprecated in favour of the React schedule UI (SEP-1058); functional until
+    Deprecated in favour of the React schedule UI; functional until
     Wave 3 when the Jinja2 path is retired.
 
     Validate the optional ``syncer`` field and the interval/crontab shape at
@@ -246,10 +244,10 @@ async def node_detail(
 
 @router.post("/{node_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated])
 async def sync_node(
-    user: CurrentUser,
     node: CreatedNodeDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start node sync as a background task."""
@@ -261,7 +259,7 @@ async def sync_node(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(run_node_sync, node, user.access_token, *selected)
+    background_tasks.add_task(run_node_sync, node, internal_token, *selected)
     return RedirectResponse(
         f"/inventory/{node.id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -323,10 +321,10 @@ async def service_detail(
     "/services/{service_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def sync_service(
-    user: CurrentUser,
     service: CreatedServiceDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start service sync as a background task."""
@@ -338,7 +336,7 @@ async def sync_service(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(run_service_sync, service, user.access_token, *selected)
+    background_tasks.add_task(run_service_sync, service, internal_token, *selected)
     return RedirectResponse(
         f"/inventory/services/{service.id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -519,10 +517,10 @@ async def schema_detail(
     "/schemas/{schema_id}/sync/", dependencies=[IsAuthenticated, IsCsrfValidated]
 )
 async def sync_schema(
-    user: CurrentUser,
     schema: CreatedSchemaDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start schema sync as a background task."""
@@ -534,7 +532,7 @@ async def sync_schema(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(run_schema_sync, schema, user.access_token, *selected)
+    background_tasks.add_task(run_schema_sync, schema, internal_token, *selected)
     return RedirectResponse(
         f"/inventory/schemas/{schema.id}",
         status_code=status.HTTP_303_SEE_OTHER,
