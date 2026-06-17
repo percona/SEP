@@ -337,7 +337,7 @@ class Settings(BaseYamlSettings):
     :type ALLOW_CONCURRENT_SESSIONS: bool
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
         ``secrets.token_urlsafe(32)``.
-    :type SECRET_KEY: str
+    :type SECRET_KEY: SecretStr
     :param SEP_INTERNAL_TOKEN: A long random secret used for SEP-internal
         service-to-service authentication (e.g. scheduled inventory sync). When
         unset, it is derived from ``SECRET_KEY`` by ``derive_internal_token`` so
