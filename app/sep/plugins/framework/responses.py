@@ -125,7 +125,7 @@ async def build_task_list_responses(
     pagination: None = None,
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
-    context_provider: Callable[..., Awaitable[Any]] | None = None,
+    context_provider: Callable[[], Awaitable[Any]] | None = None,
 ) -> list[R]: ...
 
 
@@ -138,7 +138,7 @@ async def build_task_list_responses(
     pagination: Pagination,
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
-    context_provider: Callable[..., Awaitable[Any]] | None = None,
+    context_provider: Callable[[], Awaitable[Any]] | None = None,
 ) -> PaginatedResponse[R]: ...
 
 
@@ -150,7 +150,7 @@ async def build_task_list_responses(
     pagination: Pagination | None = None,
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
-    context_provider: Callable[..., Awaitable[Any]] | None = None,
+    context_provider: Callable[[], Awaitable[Any]] | None = None,
 ) -> list[R] | PaginatedResponse[R]:
     """Assemble JSON-API task responses for an owner through one shared pipeline.
 

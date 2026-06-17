@@ -264,7 +264,7 @@ class TaskExecutionApp(BaseApp):
     response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_model: type[BaseModel] | None = None
-    response_context_provider: SkipValidation[Callable[..., Awaitable[Any]] | None] = (
+    response_context_provider: SkipValidation[Callable[[], Awaitable[Any]] | None] = (
         None
     )
     create_extra_deps: tuple[params.Depends, ...] = ()

@@ -210,7 +210,7 @@ def _reject_async_builders(**builders: Callable[..., BaseModel] | None) -> None:
 
 
 def _reject_contextless_builders(
-    context_provider: Callable[..., Awaitable[Any]] | None,
+    context_provider: Callable[[], Awaitable[Any]] | None,
     **builders: Callable[..., BaseModel] | None,
 ) -> None:
     """Raise ``TypeError`` if a context provider cannot bind into a named builder.
@@ -431,7 +431,7 @@ def make_list_filter_dep(
 
 async def _bind_context(
     builder: Callable[..., BaseModel],
-    context_provider: Callable[..., Awaitable[Any]] | None,
+    context_provider: Callable[[], Awaitable[Any]] | None,
 ) -> Callable[..., BaseModel]:
     """Await the context provider once and bind its result onto ``builder``.
 
@@ -461,7 +461,7 @@ def _register_create_route(
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None,
     base_model: type[ListDetailResponseT],
     connectivity_check: bool,
-    context_provider: Callable[..., Awaitable[Any]] | None = None,
+    context_provider: Callable[[], Awaitable[Any]] | None = None,
     extra_deps: Sequence[params.Depends] = (),
 ) -> None:
     """Register the standard ``POST /`` create route (``201``) on ``router``.
@@ -611,7 +611,7 @@ def _register_list_route(
     pagination_dep: PaginationDependency | None,
     list_status_filter: bool,
     list_service_type: ServiceTypeEnum | None,
-    context_provider: Callable[..., Awaitable[Any]] | None,
+    context_provider: Callable[[], Awaitable[Any]] | None,
 ) -> None:
     """Register the owner-filtered ``GET /`` list route on ``router``.
 
@@ -713,7 +713,7 @@ def derive_crud_routes(
     pagination_dep: PaginationDependency | None = None,
     list_status_filter: bool = False,
     list_service_type: ServiceTypeEnum | None = None,
-    context_provider: Callable[..., Awaitable[Any]] | None = None,
+    context_provider: Callable[[], Awaitable[Any]] | None = None,
     create_extra_deps: Sequence[params.Depends] = (),
     update_handler: Callable[..., Awaitable[Any]] | None = None,
     delete_handler: Callable[..., Awaitable[Any]] | None = None,
