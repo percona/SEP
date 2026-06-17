@@ -120,10 +120,8 @@ class _ClassRequest:
     existence -- a typo'd sibling key must fail even when its class is also
     requested whole (AC 6).
 
-    :ivar whole: Whether a whole-class selector was requested.
-    :vartype whole: bool
-    :ivar keys: The set of explicitly named keys requested for the class.
-    :vartype keys: set[str]
+    :param whole: Whether a whole-class selector was requested.
+    :param keys: The set of explicitly named keys requested for the class.
     """
 
     whole: bool = False
