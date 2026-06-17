@@ -32,6 +32,8 @@ const app = (app_key: string, enabled: boolean): EnabledApp => ({
   enabled,
   sidebar: true,
   uri_path: `/${app_key}`,
+  display_name: app_key.charAt(0).toUpperCase() + app_key.slice(1),
+  custom_ui: false,
 });
 
 /** Flatten leaf titles (parents + children) for assertion convenience. */
