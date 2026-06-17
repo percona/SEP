@@ -758,9 +758,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             .limit(TAIL_SCAN_MAX_CHUNKS)
         )
         result = await session.exec(query)
-        # Collect chunks newest-first into a list and join once at the end, rather
-        # than re-concatenating and re-encoding a growing buffer per iteration
-        # (which is O(n^2) in both string building and byte counting).
         parts: list[str] = []
         total_bytes = 0
         marker_seen = False
@@ -768,9 +765,8 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         for chunk in result.all():
             content = chunk.content
             if not marker_seen:
-                # Pair the new (older) chunk with a short prefix of the
-                # chronologically-earliest chunk gathered so far so a marker
-                # straddling the boundary between them is still detected.
+                # Bridge the boundary with a prefix of the newer chunk so a marker
+                # split across the two is still detected.
                 boundary_prefix = parts[-1][:marker_overlap] if parts else ""
                 marker_seen = STDERR_ERROR_MARKER in content + boundary_prefix
             parts.append(content)
@@ -779,7 +775,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
                 break
         if not parts:
             return None
-        # ``parts`` is newest-first; reverse to restore chronological stream order.
         return "".join(reversed(parts))
 
     @classmethod

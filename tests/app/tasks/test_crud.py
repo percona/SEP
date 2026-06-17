@@ -1251,6 +1251,45 @@ class TestTaskHistoryLogManagerLastErrorLog:
         assert "DBD::mysql failed at line 1929." in content
 
     @pytest.mark.asyncio
+    async def test_detects_marker_split_across_chunk_boundary(
+        self, session: AsyncSession
+    ) -> None:
+        """Detect an ERROR marker split across the chunk boundary.
+
+        Regression for SEP-1340: the ``ERROR`` token itself can land half in one
+        chunk and half in the next (``"...ER" | "ROR: ..."``). The reverse scan
+        bridges adjacent chunks with a short prefix so the split marker is still
+        recognized and the full block is returned (not a placeholder downstream).
+        """
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await self._append_stderr(session, history.id, b"prelude ER", 10)
+        await self._append_stderr(session, history.id, b"ROR: boom\n", 20)
+
+        content = await TaskHistoryLogManager.get_last_error_log(session, history.id)
+        assert content == "prelude ERROR: boom\n"
+
+    @pytest.mark.asyncio
+    async def test_stops_scanning_once_marker_and_min_bytes_reached(
+        self, session: AsyncSession
+    ) -> None:
+        """Stop the reverse scan after the marker plus the trailing byte budget.
+
+        When the newest chunk already holds the marker and exceeds
+        ``_STDERR_TAIL_MIN_BYTES``, older chunks are not pulled into the result.
+        """
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await self._append_stderr(session, history.id, b"OLD CONTEXT\n", 12)
+        big = b"ERROR: " + b"x" * (4 * 1024)
+        await self._append_stderr(session, history.id, big, 12 + len(big))
+
+        content = await TaskHistoryLogManager.get_last_error_log(session, history.id)
+        assert content is not None
+        assert content.startswith("ERROR: ")
+        assert "OLD CONTEXT" not in content
+
+    @pytest.mark.asyncio
     async def test_ignores_stdout_chunks(self, session: AsyncSession) -> None:
         """Only STDERR chunks are considered; STDOUT is ignored."""
         task = await _create_task(session)

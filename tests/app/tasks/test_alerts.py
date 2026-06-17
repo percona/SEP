@@ -15,16 +15,23 @@
 
 """Define tests for the app.tasks.alerts module."""
 
+from types import SimpleNamespace
+
+import pytest
 import yaml
 
 from app.tasks.alerts import (
+    _effective_entities,
     ARCHIVER_FIELD_PLACEHOLDER,
     ARCHIVER_TRACE_PLACEHOLDER,
     build_archiver_description,
+    build_owner_alert_details,
     extract_last_error_trace,
     MAX_TRACE_BYTES,
     parse_archiver_purge_config,
+    redact_secrets,
 )
+from app.tasks.anonymizer.entities import PIIEntity
 
 
 def _config_yaml(**overrides) -> str:
@@ -206,3 +213,149 @@ class TestBuildArchiverDescription:
         assert "=== ERROR DETAILS ===" in called_text
         assert called_entities == entities
         assert desc == "SCRUBBED"
+
+    def test_redacts_credentials_with_empty_entities(self):
+        """Credentials are stripped even when no PII mask is configured.
+
+        Regression for SEP-1340: redaction is mask-independent, so a DSN/password
+        echoed in the trace never reaches the provider despite the default-off
+        PII mask (empty entity set).
+        """
+        trace = "DBI connect('h=db1,P=3306,u=root,p=s3cr3t') failed"
+        desc = build_archiver_description(None, trace, set())
+        assert "s3cr3t" not in desc
+        assert "p=***" in desc
+        # The non-secret DSN parts (and the port) survive.
+        assert "h=db1" in desc
+        assert "P=3306" in desc
+
+
+class TestRedactSecrets:
+    """Test ``redact_secrets``."""
+
+    def test_masks_uri_userinfo(self):
+        """A ``scheme://user:pass@host`` URI has its userinfo masked."""
+        assert redact_secrets("mysql://admin:hunter2@db:3306/x") == (
+            "mysql://***@db:3306/x"
+        )
+
+    def test_masks_password_key_value(self):
+        """``password=``/``passwd=``/``pwd=`` values are masked (case-insensitive)."""
+        assert "hunter2" not in redact_secrets("password=hunter2")
+        assert "hunter2" not in redact_secrets("PASSWD: hunter2")
+        assert "hunter2" not in redact_secrets("pwd=hunter2&x=1")
+
+    def test_masks_dsn_lowercase_p_only(self):
+        """The DBI DSN ``p=`` (password) is masked; ``P=`` (port) is preserved."""
+        out = redact_secrets("h=db1,P=3306,u=root,p=s3cr3t")
+        assert "s3cr3t" not in out
+        assert "p=***" in out
+        assert "P=3306" in out
+
+    def test_masks_cli_password_flags(self):
+        """``--password=``, ``--password `` and ``-p`` CLI flags are masked."""
+        assert "topsecret" not in redact_secrets("pt-archiver --password=topsecret")
+        assert "topsecret" not in redact_secrets("pt-archiver --password topsecret")
+        assert "topsecret" not in redact_secrets("mysql -ptopsecret")
+
+    def test_leaves_clean_text_unchanged(self):
+        """Text with no credentials is returned verbatim."""
+        clean = "ERROR: Purge Failed on sbtest.sbtest2 where k <= 2000"
+        assert redact_secrets(clean) == clean
+
+
+class TestEffectiveEntities:
+    """Test ``_effective_entities`` mask precedence."""
+
+    @staticmethod
+    def _history(history_mask, task_mask):
+        """Return a stub history exposing the two anonymize masks."""
+        return SimpleNamespace(
+            anonymize_mask=history_mask,
+            task=SimpleNamespace(anonymize_mask=task_mask),
+        )
+
+    def test_history_mask_wins(self):
+        """The history-level mask is used when present."""
+        history = self._history(int(PIIEntity.EMAIL_ADDRESS), int(PIIEntity.IP_ADDRESS))
+        assert _effective_entities(history) == {PIIEntity.EMAIL_ADDRESS}
+
+    def test_falls_back_to_task_mask(self):
+        """The owning task's mask is used when the history has none."""
+        history = self._history(None, int(PIIEntity.IP_ADDRESS))
+        assert _effective_entities(history) == {PIIEntity.IP_ADDRESS}
+
+    def test_both_none_yields_empty_set(self):
+        """No mask anywhere yields an empty set (no PII scrubbing)."""
+        assert _effective_entities(self._history(None, None)) == set()
+
+
+class TestBuildOwnerAlertDetails:
+    """Test ``build_owner_alert_details`` orchestration edge cases."""
+
+    @staticmethod
+    def _archiver_history(*, exec_meta, task_data, target="executor-host"):
+        """Return a stub ARCHIVER history for the detail builder."""
+        from app.tasks.models import TaskOwner
+
+        return SimpleNamespace(
+            id=42,
+            task=SimpleNamespace(
+                owner=TaskOwner.ARCHIVER, data=task_data, anonymize_mask=None
+            ),
+            execution_request=SimpleNamespace(meta=exec_meta, target=target),
+            anonymize_mask=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_non_archiver(self, mocker):
+        """A non-archiver task yields ``None`` (generic path unchanged)."""
+        from app.tasks.models import TaskOwner
+
+        history = SimpleNamespace(
+            task=SimpleNamespace(owner=TaskOwner.ANY, data={}, anonymize_mask=None),
+            execution_request=SimpleNamespace(meta={}, target="t"),
+            anonymize_mask=None,
+            id=1,
+        )
+        assert await build_owner_alert_details(history) is None
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_task_data_meta_when_snapshot_empty(self, mocker):
+        """When the execution snapshot meta is empty, fall back to task.data meta.
+
+        Covers legacy histories whose ``execution_request.meta`` is empty: the
+        builder reads ``task.data["meta"]`` so source node + config still render.
+        """
+        mocker.patch(
+            "app.tasks.alerts._read_last_stderr",
+            return_value="ERROR: boom",
+        )
+        meta = {
+            "config": _config_yaml(SOURCE_DB="legacy_db", SOURCE_TABLE="legacy_tbl"),
+            "_pmm_node_name": "legacy-node",
+        }
+        history = self._archiver_history(exec_meta={}, task_data={"meta": meta})
+
+        details = await build_owner_alert_details(history)
+        assert details is not None
+        assert details.source_node == "legacy-node"
+        assert "Source: legacy_db.legacy_tbl" in details.custom_details["description"]
+
+    @pytest.mark.asyncio
+    async def test_stderr_read_failure_yields_placeholder_not_crash(self, mocker):
+        """A STDERR-read failure must not abort the alert; use the placeholder.
+
+        ``_read_last_stderr`` swallows any read error and returns ``None`` so the
+        failure alert still fires with the trace placeholder.
+        """
+        mocker.patch(
+            "app.tasks.db.get_async_session_maker",
+            side_effect=RuntimeError("db down"),
+        )
+        meta = {"config": _config_yaml(), "_pmm_node_name": "node-x"}
+        history = self._archiver_history(exec_meta=meta, task_data={})
+
+        details = await build_owner_alert_details(history)
+        assert details is not None
+        assert ARCHIVER_TRACE_PLACEHOLDER in details.custom_details["description"]

@@ -748,8 +748,7 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         incident from a plain failure while still being scoped to the same
         task/target pair.
         """
-        # Imported lazily: app.tasks.alerts -> app.tasks.crud -> app.tasks.models,
-        # so a top-level import here would form a cycle.
+        # Lazy import: app.tasks.alerts -> crud -> models would cycle at module load.
         from app.tasks.alerts import build_owner_alert_details
 
         base_dedup_key = (
@@ -781,9 +780,9 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         else:
             return
 
-        # AC #1: archiver failures name the source database node in the summary,
-        # while ``source`` and ``dedup_key`` stay keyed on the executor target so
-        # incidents keep deduplicating and resolving on success (display-only).
+        # Archiver failures show the source database node in the summary, while
+        # ``source``/``dedup_key`` stay keyed on the executor target so incidents
+        # keep deduplicating and resolving (display-only).
         summary_node = (
             owner_details.source_node
             if owner_details
@@ -799,9 +798,8 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
             "class": alert_class,
             "dedup_key": dedup_key,
         }
-        # AC #2/#3: carry the combined detail provider-agnostically as an extra
-        # field on the base Alert (extra="allow"); PagerDutyAlert.custom_details
-        # consumes it. Only archiver failures populate it.
+        # Carried as an extra on the base Alert (extra="allow"); consumed by
+        # PagerDutyAlert.custom_details. Only archiver failures populate it.
         if owner_details:
             alert_data["custom_details"] = owner_details.custom_details
         await alert_service.trigger(alert_data)

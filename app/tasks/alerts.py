@@ -24,6 +24,7 @@ plugin imports it rather than duplicating the field-extraction logic.
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
@@ -47,6 +48,47 @@ ARCHIVER_FIELD_PLACEHOLDER = "unavailable"
 
 #: Hard cap on the emitted error trace, protecting the downstream alert payload.
 MAX_TRACE_BYTES = 4096
+
+#: Replacement token substituted for any redacted credential.
+_SECRET_MASK = "***"  # noqa: S105 - mask token, not a credential
+
+#: ``scheme://user[:password]@`` userinfo prefix of a connection URI.
+_URI_USERINFO_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)[^/\s@]+@")
+
+#: Sensitive ``key=value`` / ``key: value`` credential pairs. Covers query-string
+#: and config forms (``password``/``passwd``/``pwd``).
+_KV_SECRET_RE = re.compile(
+    r"(?i)(?P<key>password|passwd|pwd)\s*[=:]\s*(?P<val>[^&\s,;\"']+)"
+)
+
+#: pt-archiver / Perl-DBI DSN password component ``p=<val>``. Case-sensitive: in a
+#: DBI DSN lowercase ``p`` is the password while uppercase ``P`` is the port, so
+#: only lowercase ``p`` is masked. The look-behind avoids matching the tail of a
+#: longer token (e.g. ``...,p=`` matches, ``help=`` does not).
+_DSN_PASSWORD_RE = re.compile(r"(?<![A-Za-z0-9_])(?P<key>p)=(?P<val>[^,\s\"']+)")
+
+#: CLI password flags: ``--password=val``, ``--password val``, ``-pVAL``.
+_CLI_PASSWORD_RE = re.compile(r"(?i)(?P<flag>--password(?:[=\s])|-p)(?P<val>[^\s\"']+)")
+
+
+def redact_secrets(text: str) -> str:
+    """Mask credentials embedded in a free-text error trace.
+
+    Runs unconditionally (independent of the opt-in PII mask) so a connection
+    string or password echoed by pt-archiver/MySQL into STDERR cannot leave the
+    platform in a failure alert. Masks: URI userinfo (``scheme://user:pass@``),
+    ``password``/``passwd``/``pwd`` key/value pairs, the Perl-DBI DSN ``p=``
+    component, and the ``--password``/``-p`` CLI flags.
+
+    :param text: The text that may contain credentials.
+    :type text: str
+    :return: The text with any detected credential replaced by ``***``.
+    :rtype: str
+    """
+    text = _URI_USERINFO_RE.sub(rf"\g<scheme>{_SECRET_MASK}@", text)
+    text = _KV_SECRET_RE.sub(rf"\g<key>={_SECRET_MASK}", text)
+    text = _DSN_PASSWORD_RE.sub(rf"\g<key>={_SECRET_MASK}", text)
+    return _CLI_PASSWORD_RE.sub(rf"\g<flag>{_SECRET_MASK}", text)
 
 
 @dataclass(frozen=True)
@@ -213,10 +255,12 @@ def build_archiver_description(
 
     The block always carries the four labeled lines (Error Details, Source,
     Condition, Target); unresolved config fields render
-    :data:`ARCHIVER_FIELD_PLACEHOLDER`. The fully assembled text is passed
-    through :func:`anonymize_text` so the configured PII entities are scrubbed
-    before the detail leaves for the external alerting provider. An empty
-    ``entities`` set leaves the text unchanged.
+    :data:`ARCHIVER_FIELD_PLACEHOLDER`. The assembled text is first passed
+    through :func:`redact_secrets` (always-on credential masking, independent of
+    the PII mask) and then :func:`anonymize_text` so the configured PII entities
+    are scrubbed before the detail leaves for the external alerting provider. An
+    empty ``entities`` set skips only the PII pass; credential redaction still
+    runs.
 
     :param fields: The parsed archiver fields, or ``None`` when unavailable.
     :type fields: ArchiverPurgeFields | None
@@ -240,7 +284,7 @@ def build_archiver_description(
         f"Condition: {condition}\n"
         f"Target: {target}"
     )
-    return anonymize_text(block, entities)
+    return anonymize_text(redact_secrets(block), entities)
 
 
 @dataclass(frozen=True)
@@ -264,7 +308,10 @@ def _effective_entities(history: "TaskHistory") -> set[PIIEntity]:
 
     Falls back to the owning task's mask when the history has none, matching
     the documented :attr:`TaskHistory.anonymize_mask` semantics. A missing mask
-    on both yields an empty set (no scrubbing).
+    on both yields an empty set: PII scrubbing is opt-in (auto-masking the
+    archiver DB/table/WHERE by default would gut the alert's usefulness). Note
+    this only disables the *PII* pass — credential redaction in
+    :func:`build_archiver_description` runs unconditionally regardless of mask.
 
     :param history: The task execution history.
     :type history: TaskHistory
@@ -315,9 +362,16 @@ async def build_owner_alert_details(
 
     Returns ``None`` for any non-archiver task, leaving the generic alert path
     unchanged. For :attr:`TaskOwner.ARCHIVER` failures, resolve the source
-    database node (``meta["_pmm_node_name"]``, falling back to
-    ``execution_request.target``) and assemble the combined ``custom_details``
-    description block (error trace plus Source/Condition/Target).
+    database node and assemble the combined ``custom_details`` description block
+    (error trace plus Source/Condition/Target).
+
+    The config is taken from the dispatch-time snapshot
+    (``execution_request.meta``) so the alert describes what actually ran rather
+    than a later edit to the mutable ``task.data["meta"]``; the task data is used
+    only when the snapshot is empty (legacy histories). The source node
+    (``meta["_pmm_node_name"]``, falling back to ``execution_request.target``) is
+    the actionable identifier the summary exists to surface and is deliberately
+    not PII-scrubbed; sensitive content lives in the redacted detail block.
 
     :param history: The failed task execution history.
     :type history: TaskHistory
@@ -330,10 +384,6 @@ async def build_owner_alert_details(
     if history.task.owner != TaskOwner.ARCHIVER:
         return None
 
-    # Prefer the dispatch-time snapshot (``execution_request.meta``) so the alert
-    # describes the config that actually ran, not a later edit to the mutable
-    # ``task.data["meta"]``; fall back to the task data only when the snapshot is
-    # empty (e.g. legacy histories).
     meta = history.execution_request.meta or (history.task.data or {}).get("meta") or {}
     source_node = meta.get("_pmm_node_name") or history.execution_request.target
 
