@@ -13,3 +13,4 @@ allowBuilds:
 overrides:
   esbuild: 0.28.1
   brace-expansion@5.0.5: 5.0.6
+  '@babel/core': 7.29.6
