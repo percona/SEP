@@ -256,6 +256,72 @@ class TestBuildTaskListResponses:
             "/", params={"owner": TaskOwner.ARCHIVER.value, "offset": 20, "limit": 5}
         )
 
+    @pytest.mark.asyncio
+    async def test_context_provider_awaited_once_and_bound_into_every_builder_call(
+        self,
+    ) -> None:
+        """Await the context provider once per page and bind it into each row build."""
+        tasks_api = _mock_tasks_api(
+            items=_items("task-a", "task-b"),
+            statuses={"task-a": "success", "task-b": "failed"},
+        )
+        provider = AsyncMock(return_value={"u1": "Alice"})
+        seen_contexts = []
+
+        def _spy_builder(
+            task: Task,
+            *,
+            status: TaskHistoryStatusEnum | None = None,
+            context: dict | None = None,
+        ) -> _TaskResponse:
+            seen_contexts.append(context)
+            return _TaskResponse(name=task.name, status=status)
+
+        await build_task_list_responses(
+            tasks_api,
+            owner=TaskOwner.ARCHIVER.value,
+            response_builder=_spy_builder,
+            context_provider=provider,
+        )
+
+        provider.assert_awaited_once()
+        assert seen_contexts == [{"u1": "Alice"}, {"u1": "Alice"}]
+
+    @pytest.mark.asyncio
+    async def test_context_provider_awaited_once_even_when_page_empty(self) -> None:
+        """Await the provider exactly once even when the page yields no rows."""
+        tasks_api = _mock_tasks_api(items=[], statuses={})
+        provider = AsyncMock(return_value={})
+
+        result = await build_task_list_responses(
+            tasks_api,
+            owner=TaskOwner.ARCHIVER.value,
+            response_builder=_build_response,
+            context_provider=provider,
+        )
+
+        assert result == []
+        provider.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_context_provider_builds_without_context_kwarg(self) -> None:
+        """Build through a context-free builder unchanged when no provider is given."""
+        tasks_api = _mock_tasks_api(
+            items=_items("task-a"),
+            statuses={"task-a": "success"},
+        )
+
+        result = await build_task_list_responses(
+            tasks_api,
+            owner=TaskOwner.ARCHIVER.value,
+            response_builder=_build_response,
+            context_provider=None,
+        )
+
+        assert [(r.name, r.status) for r in result] == [
+            ("task-a", TaskHistoryStatusEnum.SUCCESS)
+        ]
+
 
 class TestBuildDefaultTaskResponse:
     """Test suite for ``build_default_task_response``."""
