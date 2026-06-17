@@ -20,6 +20,7 @@ from datetime import datetime, UTC
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
@@ -653,6 +654,223 @@ class TestTaskHistory:
             trigger_dedup = mock_trigger.call_args[0][0]["dedup_key"]
             resolved_keys = [call.args[0] for call in mock_resolve.call_args_list]
             assert trigger_dedup in resolved_keys
+
+    @staticmethod
+    def _archiver_task(*, with_node: bool = True) -> Task:
+        """Return an ARCHIVER task with archiver config in its payload meta."""
+        meta = {
+            "config": yaml.dump(
+                {
+                    "PURGE_LIST": [
+                        {
+                            "SOURCE_DB": "sbtest",
+                            "SOURCE_TABLE": "sbtest2",
+                            "WHERE": "k <= 2000",
+                            "DEST_DB": "sbtest_archived",
+                            "DEST_TABLE": "sbtest2",
+                            "SWAP_DROP": 0,
+                        }
+                    ],
+                }
+            ),
+            "target": "executor-host",
+        }
+        if with_node:
+            meta["_pmm_node_name"] = "mvc-lab2-db1"
+        return TaskFactory.build(
+            id=1,
+            name="test-task",
+            owner=TaskOwner.ARCHIVER,
+            anonymize_mask=None,
+            data={"task": "run-python", "meta": meta},
+        )
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_failed_archiver(
+        self, execution_request: TaskExecutionRequest, mocker
+    ) -> None:
+        """Archiver failure: summary uses source node, custom_details attached."""
+        history = TaskHistory(
+            id=1075,
+            task_id=1,
+            task=self._archiver_task(),
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        mocker.patch(
+            "app.tasks.alerts._read_last_stderr",
+            new=AsyncMock(return_value="2026 ERROR: pt-archiver Purge Failed"),
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            alert_data = mock_trigger.call_args[0][0]
+            # AC #1: source node in the summary, not the executor target.
+            assert "mvc-lab2-db1" in alert_data["summary"]
+            assert "failed" in alert_data["summary"]
+            # AC #1: dedup_key and source stay keyed on the executor target.
+            assert alert_data["dedup_key"] == "task:test-task:node-1"
+            assert alert_data["source"] == "test-task:1075:node-1"
+            # AC #2: combined detail block carried in custom_details.
+            desc = alert_data["custom_details"]["description"]
+            assert "=== ERROR DETAILS ===" in desc
+            assert "Purge Failed" in desc
+            assert "Source: sbtest.sbtest2" in desc
+            assert "Condition: k <= 2000" in desc
+            assert "Target: sbtest_archived.sbtest2" in desc
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_failed_archiver_pmm_node_name_fallback(
+        self, execution_request: TaskExecutionRequest, mocker
+    ) -> None:
+        """Without ``_pmm_node_name`` the summary falls back to the target."""
+        history = TaskHistory(
+            id=1075,
+            task_id=1,
+            task=self._archiver_task(with_node=False),
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        mocker.patch(
+            "app.tasks.alerts._read_last_stderr",
+            new=AsyncMock(return_value="ERROR: boom"),
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            alert_data = mock_trigger.call_args[0][0]
+            assert "node-1" in alert_data["summary"]
+            assert "custom_details" in alert_data
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_failed_archiver_empty_trace_placeholder(
+        self, execution_request: TaskExecutionRequest, mocker
+    ) -> None:
+        """A missing STDERR trace yields the placeholder, never an empty block."""
+        from app.tasks.alerts import ARCHIVER_TRACE_PLACEHOLDER
+
+        history = TaskHistory(
+            id=1075,
+            task_id=1,
+            task=self._archiver_task(),
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        mocker.patch(
+            "app.tasks.alerts._read_last_stderr",
+            new=AsyncMock(return_value=None),
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            desc = mock_trigger.call_args[0][0]["custom_details"]["description"]
+            assert ARCHIVER_TRACE_PLACEHOLDER in desc
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_failed_non_archiver_unchanged(
+        self, task_instance: Task, execution_request: TaskExecutionRequest, mocker
+    ) -> None:
+        """Non-archiver failures get no custom_details and keep the target summary."""
+        read_spy = mocker.patch(
+            "app.tasks.alerts._read_last_stderr", new=AsyncMock(return_value="x")
+        )
+        history = TaskHistory(
+            id=1,
+            task_id=task_instance.id,
+            task=task_instance,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            alert_data = mock_trigger.call_args[0][0]
+            assert "custom_details" not in alert_data
+            assert "node-1" in alert_data["summary"]
+        read_spy.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_lost_archiver_unchanged(
+        self, execution_request: TaskExecutionRequest, mocker
+    ) -> None:
+        """Archiver LOST is unchanged: no custom_details, no source-node summary."""
+        read_spy = mocker.patch(
+            "app.tasks.alerts._read_last_stderr", new=AsyncMock(return_value="x")
+        )
+        history = TaskHistory(
+            id=1,
+            task_id=1,
+            task=self._archiver_task(),
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.LOST,
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            alert_data = mock_trigger.call_args[0][0]
+            assert "custom_details" not in alert_data
+            assert alert_data["class"] == "task_lost"
+            assert "node-1" in alert_data["summary"]
+            assert "mvc-lab2-db1" not in alert_data["summary"]
+        read_spy.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_alert_for_status_archiver_uses_execution_snapshot_meta(
+        self, mocker
+    ) -> None:
+        """Describe the failed execution's config, not a later-edited task.
+
+        Regression for SEP-1340: ``task.data["meta"]`` is mutable after dispatch,
+        while ``execution_request.meta`` is the snapshot captured at dispatch. The
+        failure alert must reflect the snapshot (source node + config).
+        """
+        snapshot_request = TaskExecutionRequest(
+            task="test-task",
+            target="node-1",
+            meta={
+                "config": yaml.dump(
+                    {
+                        "PURGE_LIST": [
+                            {
+                                "SOURCE_DB": "snap_db",
+                                "SOURCE_TABLE": "snap_table",
+                                "WHERE": "id < 10",
+                                "DEST_DB": "snap_archived",
+                                "DEST_TABLE": "snap_table",
+                                "SWAP_DROP": 0,
+                            }
+                        ],
+                    }
+                ),
+                "_pmm_node_name": "snapshot-node",
+            },
+            tracking={"allocation_id": None, "evaluation_id": None},
+        )
+        # ``_archiver_task`` carries the (now edited) live config/node.
+        history = TaskHistory(
+            id=1075,
+            task_id=1,
+            task=self._archiver_task(),
+            execution_request=snapshot_request,
+            status=TaskHistoryStatusEnum.FAILED,
+        )
+        mocker.patch(
+            "app.tasks.alerts._read_last_stderr",
+            new=AsyncMock(return_value="ERROR: boom"),
+        )
+        mock_trigger = AsyncMock()
+        with patch.object(AlertService, "trigger", mock_trigger):
+            await history.alert_for_status()
+            alert_data = mock_trigger.call_args[0][0]
+            desc = alert_data["custom_details"]["description"]
+            # Snapshot config wins.
+            assert "snapshot-node" in alert_data["summary"]
+            assert "Source: snap_db.snap_table" in desc
+            assert "Condition: id < 10" in desc
+            assert "Target: snap_archived.snap_table" in desc
+            # Edited live task config must not leak in.
+            assert "mvc-lab2-db1" not in alert_data["summary"]
+            assert "sbtest" not in desc
 
 
 class TestTaskHistoryResponse:

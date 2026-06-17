@@ -1186,3 +1186,85 @@ class TestTaskHistoryLogManagerStreamKeysAndReverse:
             ("run-script", TaskLogType.STDERR, "stderr"),
             ("run-script", TaskLogType.STDOUT, "stdout"),
         ]
+
+
+class TestTaskHistoryLogManagerLastErrorLog:
+    """Test ``TaskHistoryLogManager.get_last_error_log``."""
+
+    async def _append_stderr(
+        self,
+        session: AsyncSession,
+        task_history_id: int,
+        payload: bytes,
+        producer_offset_after: int,
+    ) -> None:
+        """Append a STDERR chunk via the writer."""
+        await TaskHistoryLogWriter.append(
+            session,
+            task_history_id,
+            source="run-script",
+            stream=TaskLogType.STDERR,
+            new_bytes=payload,
+            force_flush=True,
+            producer_offset_after=producer_offset_after,
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_joined_stderr_tail(self, session: AsyncSession) -> None:
+        """Return the trailing STDERR joined in chronological stream order.
+
+        A short multi-chunk stream below the byte budget is returned whole, so
+        the downstream extractor always sees the complete tail rather than just
+        the final chunk.
+        """
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await self._append_stderr(session, history.id, b"first error", 11)
+        await self._append_stderr(session, history.id, b"last error", 21)
+
+        content = await TaskHistoryLogManager.get_last_error_log(session, history.id)
+        assert content == "first errorlast error"
+
+    @pytest.mark.asyncio
+    async def test_returns_tail_when_error_marker_in_earlier_chunk(
+        self, session: AsyncSession
+    ) -> None:
+        """Scan back past the final chunk so a straddling ERROR block survives.
+
+        Regression for SEP-1340: the last error block can straddle a chunk
+        boundary, with the ``ERROR`` marker in an earlier chunk and only the
+        trailing continuation lines in the newest chunk. Reading just the newest
+        chunk would drop the marker and yield a placeholder downstream.
+        """
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await self._append_stderr(
+            session, history.id, b"prelude\nERROR: pt-archiver Purge Failed\n", 39
+        )
+        await self._append_stderr(
+            session, history.id, b"DBD::mysql failed at line 1929.\n", 71
+        )
+
+        content = await TaskHistoryLogManager.get_last_error_log(session, history.id)
+        assert content is not None
+        assert "ERROR: pt-archiver Purge Failed" in content
+        assert "DBD::mysql failed at line 1929." in content
+
+    @pytest.mark.asyncio
+    async def test_ignores_stdout_chunks(self, session: AsyncSession) -> None:
+        """Only STDERR chunks are considered; STDOUT is ignored."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_chunk(session, history.id, payload=b"stdout only")
+
+        content = await TaskHistoryLogManager.get_last_error_log(session, history.id)
+        assert content is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_chunks(self, session: AsyncSession) -> None:
+        """Return None when the task history has no chunks at all."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+
+        content = await TaskHistoryLogManager.get_last_error_log(session, history.id)
+        assert content is None

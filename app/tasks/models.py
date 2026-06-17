@@ -748,6 +748,10 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         incident from a plain failure while still being scoped to the same
         task/target pair.
         """
+        # Imported lazily: app.tasks.alerts -> app.tasks.crud -> app.tasks.models,
+        # so a top-level import here would form a cycle.
+        from app.tasks.alerts import build_owner_alert_details
+
         base_dedup_key = (
             f"task:{self.execution_request.task}:{self.execution_request.target}"
         )
@@ -757,11 +761,13 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
             await alert_service.resolve(f"{base_dedup_key}:stale")
             return
 
+        owner_details = None
         if self.status == TaskHistoryStatusEnum.FAILED:
             dedup_key = base_dedup_key
             summary_action = "failed"
             severity = AlertSeverity.ERROR
             alert_class = "task_failure"
+            owner_details = await build_owner_alert_details(self)
         elif self.status == TaskHistoryStatusEnum.LOST:
             dedup_key = base_dedup_key
             summary_action = "execution tracking lost"
@@ -775,16 +781,29 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
         else:
             return
 
+        # AC #1: archiver failures name the source database node in the summary,
+        # while ``source`` and ``dedup_key`` stay keyed on the executor target so
+        # incidents keep deduplicating and resolving on success (display-only).
+        summary_node = (
+            owner_details.source_node
+            if owner_details
+            else self.execution_request.target
+        )
         alert_data = {
             "summary": (
                 f"Task {self.execution_request.task!r} ({self.id}) "
-                f"{summary_action} on node {self.execution_request.target!r}."
+                f"{summary_action} on node {summary_node!r}."
             ),
             "source": f"{self.execution_request.task}:{self.id}:{self.execution_request.target}",
             "severity": severity,
             "class": alert_class,
             "dedup_key": dedup_key,
         }
+        # AC #2/#3: carry the combined detail provider-agnostically as an extra
+        # field on the base Alert (extra="allow"); PagerDutyAlert.custom_details
+        # consumes it. Only archiver failures populate it.
+        if owner_details:
+            alert_data["custom_details"] = owner_details.custom_details
         await alert_service.trigger(alert_data)
 
 

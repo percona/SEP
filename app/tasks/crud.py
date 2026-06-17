@@ -45,6 +45,23 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 
+#: Substring marking an error line in a task's STDERR stream. Mirrors the marker
+#: the archiver alert formatter (``app.tasks.alerts``) recognizes.
+_STDERR_ERROR_MARKER = "ERROR"
+
+#: Minimum trailing STDERR bytes to accumulate before stopping the reverse scan
+#: once an error marker has been seen. Covers the downstream trace cap
+#: (``app.tasks.alerts.MAX_TRACE_BYTES``) so an error block that straddles a
+#: chunk boundary is fully present in the returned tail.
+_STDERR_TAIL_MIN_BYTES = 4 * 1024
+
+#: Hard cap on chunks scanned for the error-log tail, mirroring
+#: ``app.tasks.logs.log_reader.TAIL_SCAN_MAX_CHUNKS``. Bounds a pathological
+#: marker-free STDERR stream (imported as a constant here rather than from
+#: ``log_reader`` to avoid an import cycle, since ``log_reader`` imports this
+#: module).
+_STDERR_TAIL_MAX_CHUNKS = 512
+
 
 class TaskManager(BaseSQLModelManager):
     """Manage task operations, including retrieval, listing, and deletion.
@@ -714,6 +731,51 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         result = await session.stream(query)
         async for row in result.scalars():
             yield row
+
+    @classmethod
+    async def get_last_error_log(
+        cls, session: AsyncSession, task_history_id: int
+    ) -> str | None:
+        """Return the trailing ``STDERR`` of a task history for alerting.
+
+        Reads ``STDERR`` chunks newest-first (by insertion id, the true
+        cross-source chronological order) and prepends them into a buffer,
+        reconstructing chronological stream order. The scan stops as soon as the
+        buffer holds an error marker plus at least :data:`_STDERR_TAIL_MIN_BYTES`
+        of trailing content — enough that an error block straddling a chunk
+        boundary is fully captured — or after :data:`_STDERR_TAIL_MAX_CHUNKS`
+        chunks. STDOUT chunks are ignored.
+
+        A single-chunk read is insufficient: the last error block can straddle a
+        chunk boundary, leaving the newest chunk without the ``ERROR`` marker and
+        yielding a placeholder downstream (SEP-1340 AC #2).
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :type session: AsyncSession
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :type task_history_id: int
+        :return: The trailing STDERR content guaranteed to contain the last error
+            block (when one exists), or ``None`` when no STDERR chunk exists.
+        :rtype: str | None
+        """
+        query = (
+            select(TaskHistoryLog)
+            .where(col(TaskHistoryLog.task_history_id) == task_history_id)
+            .where(col(TaskHistoryLog.stream) == TaskLogType.STDERR)
+            .order_by(col(TaskHistoryLog.id).desc())
+            .limit(_STDERR_TAIL_MAX_CHUNKS)
+        )
+        result = await session.exec(query)
+        buffer: str | None = None
+        for chunk in result.all():
+            buffer = chunk.content if buffer is None else chunk.content + buffer
+            if (
+                _STDERR_ERROR_MARKER in buffer
+                and len(buffer.encode("utf-8")) >= _STDERR_TAIL_MIN_BYTES
+            ):
+                break
+        return buffer
 
     @classmethod
     async def insert_chunk_idempotent(

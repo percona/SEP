@@ -50,6 +50,7 @@ from app.sep.plugins.framework import (
     build_task_list_responses,
     make_task_dep,
 )
+from app.tasks.alerts import parse_archiver_purge_config
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -402,15 +403,9 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
     """
     data = task["data"]
     meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    purge_item = task_config["PURGE_LIST"][0]
-
-    source_db = purge_item.get("SOURCE_DB")
-    source_table = purge_item.get("SOURCE_TABLE")
-    dest_table = purge_item.get("DEST_TABLE")
-    source_query = purge_item.get("SOURCE_QUERY")
-    dest_file = purge_item.get("DEST_FILE")
-    dest_db = purge_item.get("DEST_DB")
+    # Shared parser (single source of truth for the PURGE_LIST field mapping);
+    # the tasks-service failure-alert builder uses the same function.
+    fields = parse_archiver_purge_config(meta["config"])
 
     result = {
         "hostname": meta["target"],
@@ -418,18 +413,15 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "last_updated_by": task.get("last_updated_by"),
     }
 
-    if source_db and source_table:
-        result["source_table"] = f"{source_db}.{source_table}"
-    if dest_table:
-        display_db = dest_db if dest_db else source_db
-        if display_db:
-            result["dest_table"] = f"{display_db}.{dest_table}"
-        else:
-            result["dest_table"] = dest_table
-    if source_query:
-        result["source_query"] = source_query
-    if dest_file:
-        result["dest_file"] = dest_file
+    if fields:
+        if fields.source:
+            result["source_table"] = fields.source
+        if fields.dest_table_display:
+            result["dest_table"] = fields.dest_table_display
+        if fields.source_query:
+            result["source_query"] = fields.source_query
+        if fields.dest_file:
+            result["dest_file"] = fields.dest_file
 
     return result
 
