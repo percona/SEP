@@ -220,7 +220,7 @@ function check_pgsql_connection {
     local result
     # Run as the invoking (percona) user; no su escalation. Relies on percona being
     # able to authenticate to PostgreSQL (peer/ident/trust or a configured role).
-    result=$(echo "SELECT 1" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null)
+    result=$(echo "SELECT 1" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null || true)
     if [[ ${result} != "1" ]]; then
         echo "Can't connect to psql using '${PSQLBIN} ${DB_CLI_OPTIONS[*]}'"
         echo "Please confirm connectivity."
@@ -297,7 +297,7 @@ check_pgsql_connection
 # to discover any global variables/settings from the DB which will be used later in the script.
 
 # get some PSQL variables we'll need
-variables_datadir=$(echo "SHOW data_directory" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null)
+variables_datadir=$(echo "SHOW data_directory" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null || true)
 
 ## Main
 
