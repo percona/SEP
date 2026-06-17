@@ -22,13 +22,15 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    // Pin react / react-hook-form to a single instance so the test's
-    // FormProvider and the component under test share one form context.
-    dedupe: ['react', 'react-dom', 'react-hook-form'],
+    // Pin react / react-hook-form / react-query to a single instance so the
+    // test's FormProvider (and any future real query hook) and the component
+    // under test share one context. Mirrors the framework vitest config.
+    dedupe: ['react', 'react-dom', 'react-hook-form', '@tanstack/react-query'],
     alias: {
       react: path.resolve(__dirname, 'node_modules/react'),
       'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
       'react-hook-form': path.resolve(__dirname, 'node_modules/react-hook-form'),
+      '@tanstack/react-query': path.resolve(__dirname, 'node_modules/@tanstack/react-query'),
     },
   },
   test: {
