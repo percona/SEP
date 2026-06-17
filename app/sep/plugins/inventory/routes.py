@@ -54,12 +54,12 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.inventory.deps import (
     build_available_syncers,
     filter_syncers_by_name,
+    InternalTokenDep,
     SyncersDep,
 )
 from app.sep.plugins.inventory.models import InventorySyncScheduleCreateForm
 from app.sep.plugins.inventory.sync import (
     get_internal_token,
-    require_internal_token,
     run_inventory_sync,
     run_node_sync,
     run_schema_sync,
@@ -134,6 +134,7 @@ async def node_list(
 async def sync_inventory(
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start inventory sync as a background task.
@@ -149,7 +150,7 @@ async def sync_inventory(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(run_inventory_sync, require_internal_token(), *selected)
+    background_tasks.add_task(run_inventory_sync, internal_token, *selected)
     return RedirectResponse("/inventory/", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -246,6 +247,7 @@ async def sync_node(
     node: CreatedNodeDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start node sync as a background task."""
@@ -257,7 +259,7 @@ async def sync_node(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(run_node_sync, node, require_internal_token(), *selected)
+    background_tasks.add_task(run_node_sync, node, internal_token, *selected)
     return RedirectResponse(
         f"/inventory/{node.id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -322,6 +324,7 @@ async def sync_service(
     service: CreatedServiceDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start service sync as a background task."""
@@ -333,9 +336,7 @@ async def sync_service(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(
-        run_service_sync, service, require_internal_token(), *selected
-    )
+    background_tasks.add_task(run_service_sync, service, internal_token, *selected)
     return RedirectResponse(
         f"/inventory/services/{service.id}",
         status_code=status.HTTP_303_SEE_OTHER,
@@ -519,6 +520,7 @@ async def sync_schema(
     schema: CreatedSchemaDep,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     syncer_name: Annotated[str | None, Form(alias="syncer")] = None,
 ) -> RedirectResponse:
     """Start schema sync as a background task."""
@@ -530,9 +532,7 @@ async def sync_schema(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(
-        run_schema_sync, schema, require_internal_token(), *selected
-    )
+    background_tasks.add_task(run_schema_sync, schema, internal_token, *selected)
     return RedirectResponse(
         f"/inventory/schemas/{schema.id}",
         status_code=status.HTTP_303_SEE_OTHER,

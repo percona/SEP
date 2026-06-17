@@ -54,6 +54,7 @@ from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory.deps import (
     AvailableSyncer,
     filter_syncers_by_name,
+    InternalTokenDep,
     inventory_plugin_query_params,
     inventory_service_create_path,
     inventory_service_detail_path,
@@ -73,7 +74,7 @@ from app.sep.plugins.inventory.models import (
     PluginTaskResponse,
 )
 from app.sep.plugins.inventory.schema import inventory_schema
-from app.sep.plugins.inventory.sync import require_internal_token, run_inventory_sync
+from app.sep.plugins.inventory.sync import run_inventory_sync
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=inventory_schema)
@@ -87,6 +88,7 @@ _OPTIONAL_TRIGGER_BODY = Body(default=None)
 async def inventory_sync_trigger(
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     body: InventorySyncTriggerWrite | None = _OPTIONAL_TRIGGER_BODY,
 ) -> Response:
     """Schedule an ad-hoc inventory sync as a background task.
@@ -104,6 +106,8 @@ async def inventory_sync_trigger(
     :type syncers: SyncersDep
     :param background_tasks: FastAPI's background task scheduler.
     :type background_tasks: BackgroundTasks
+    :param internal_token: SEP-internal service token injected by
+        ``InternalTokenDep`` and forwarded to the background sync task.
     :param body: Optional trigger body.
     :type body: InventorySyncTriggerWrite | None
     :return: Empty 202 Accepted response.
@@ -120,7 +124,7 @@ async def inventory_sync_trigger(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(run_inventory_sync, require_internal_token(), *selected)
+    background_tasks.add_task(run_inventory_sync, internal_token, *selected)
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 
