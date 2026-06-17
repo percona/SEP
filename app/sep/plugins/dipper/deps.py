@@ -264,7 +264,7 @@ async def get_dipper_execution_args(
     try:
         return execution_model.model_validate(remove_falsy_values_from_dict(form_data))
     except ValidationError as exc:
-        logger.debug("Invalid execution args: %s", exc_info=True)
+        logger.debug("Invalid execution args", exc_info=True)
         messages.from_validation_error(
             request,
             exc,
