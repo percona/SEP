@@ -878,7 +878,7 @@ def _clear_cached_properties(instance: BaseModel) -> None:
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class FieldMetadata:
-    """Introspected metadata for a single settings field.
+    """Represent introspected metadata for a single settings field.
 
     :param key: The field name on the owning settings class.
     :type key: str
