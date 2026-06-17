@@ -164,24 +164,6 @@ class TestPcsCollectPmmMysqlHaDbaasConsolidation:
         assert "ha-name" in result.stderr
 
 
-class TestPcsCollectPmmMysqlListVisibility:
-    """Tests for hiding date/HA/DBaaS fields in list-services mode (SEP-1319)."""
-
-    _GATED_PARAMETERS = ("start", "end", "ha", "ha_name", "dbaas")
-
-    def test_frontmatter_marks_fields_hidden_when_list(self):
-        """start, end, ha, ha_name, and dbaas declare visible_when_not: list."""
-        frontmatter = _frontmatter()
-        for name in self._GATED_PARAMETERS:
-            block = _parameter_block(frontmatter, name)
-            assert "visible_when_not: list" in block
-
-    @pytest.mark.asyncio
-    async def test_schema_forbids_gated_fields_when_list(self):
-        """The synthesised schema hides the gated fields when ``list`` is truthy."""
-        from app.sep.plugins.snippets.schema import field_for
-
-
 class TestPcsCollectPmmMysqlApikeyHidden:
     """Tests for hiding the apikey field from the PMM form."""
 
@@ -216,7 +198,7 @@ class TestPcsCollectPmmMysqlApikeyHidden:
 
 
 class TestPcsCollectPmmMysqlListVisibility:
-    """Tests for hiding date/HA/DBaaS fields in list-services mode (SEP-1319)."""
+    """Hide date/HA/DBaaS fields in list-services mode (SEP-1319)."""
 
     _GATED_PARAMETERS = ("start", "end", "ha", "ha_name", "dbaas")
 

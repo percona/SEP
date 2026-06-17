@@ -301,7 +301,6 @@ async def test_build_snippet_schema_with_gated_field_validates(create_snippet):
     request time.
     """
     snippet = await create_snippet("hello.sh", approved=True)
-    snippet.__dict__.pop("validated_parameters", None)
     snippet.meta = {
         **snippet.meta,
         "parameters": [
