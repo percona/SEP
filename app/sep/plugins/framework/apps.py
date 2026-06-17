@@ -30,7 +30,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Self
 
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, Body, Depends, Form
 from pydantic import BaseModel, model_validator, PrivateAttr, SkipValidation
 
 from app.core.pagination import PaginationDependency
@@ -183,6 +183,10 @@ class TaskExecutionApp(BaseApp):
         route paginates. Defaults to ``None``.
     :param connectivity_check: Whether the create route runs the post-creation
         connectivity probe. Defaults to ``False``.
+    :param create_form_encoded: Whether the derived create route accepts a
+        form-urlencoded body (``Form()``) instead of the default JSON body
+        (``Body()``). A create-route option, so it is rejected unless
+        ``capabilities.create`` is enabled. Defaults to ``False``.
     :param cascade: The derived-task / predecessor specs. Defaults to ``None``.
     :param extra_routes: Extra routers included after the derived routes, so a
         derived route always wins a path collision. A fixed collection-root
@@ -217,6 +221,7 @@ class TaskExecutionApp(BaseApp):
     capabilities: AppCapabilities = AppCapabilities()
     pagination: PaginationDependency | None = None
     connectivity_check: bool = False
+    create_form_encoded: bool = False
     cascade: SkipValidation[Cascade | None] = None
     extra_routes: tuple[APIRouter, ...] = ()
     detail_path_param: str = "task_name"
@@ -287,9 +292,11 @@ class TaskExecutionApp(BaseApp):
 
         :raises ValueError: When a ``schema=`` app supplies a ``task_spec_builder``;
             when ``task_spec_builder`` collides with ``script_source`` or
-            ``payload_builder``; when a create-enabled app has no payload source; or
-            when a create-disabled app sets a create-route option
-            (``connectivity_check`` or ``create_response_model``).
+            ``payload_builder``; when a ``payload_builder`` app also sets
+            ``create_form_encoded`` (which governs only the derived three-phase
+            body); when a create-enabled app has no payload source; or when a
+            create-disabled app sets a create-route option (``connectivity_check``,
+            ``create_response_model``, or ``create_form_encoded``).
         """
         if self.app_schema is not None and self.task_spec_builder is not None:
             raise ValueError(
@@ -306,6 +313,12 @@ class TaskExecutionApp(BaseApp):
                 "TaskExecutionApp: set either payload_builder or task_spec_builder "
                 "for the create path, not both"
             )
+        if self.payload_builder is not None and self.create_form_encoded:
+            raise ValueError(
+                "TaskExecutionApp: create_form_encoded governs the derived "
+                "three-phase create body; a payload_builder defines its own body "
+                "encoding — drop create_form_encoded or the payload_builder"
+            )
         if (
             self.capabilities.create
             and self.payload_builder is None
@@ -316,11 +329,14 @@ class TaskExecutionApp(BaseApp):
                 "task_spec_builder or a payload_builder"
             )
         if not self.capabilities.create and (
-            self.connectivity_check or self.create_response_model is not None
+            self.connectivity_check
+            or self.create_response_model is not None
+            or self.create_form_encoded
         ):
             raise ValueError(
-                "TaskExecutionApp: connectivity_check and create_response_model are "
-                "create-route options; enable capabilities.create or drop them"
+                "TaskExecutionApp: connectivity_check, create_response_model, and "
+                "create_form_encoded are create-route options; enable "
+                "capabilities.create or drop them"
             )
 
     def _validate_route_knobs(self) -> None:
@@ -463,7 +479,9 @@ class TaskExecutionApp(BaseApp):
         Use the ``payload_builder`` escape hatch verbatim when supplied;
         otherwise build the three-phase (Resolve → Assemble → Envelope)
         dependency over the ``create_model``, reading the envelope's ``name`` and
-        ``alert_on_fail`` from the parsed form.
+        ``alert_on_fail`` from the parsed form. The body parameter is encoded as
+        JSON (``Body()``) by default, or form-urlencoded (``Form()``) when
+        ``create_form_encoded`` is set.
 
         :return: The create-payload dependency declaring the request body.
         """
@@ -472,7 +490,8 @@ class TaskExecutionApp(BaseApp):
 
         spec_builder = self.task_spec_builder
         owner = self.owner
-        form_param = Annotated[self.create_model, Form()]
+        body_marker = Form() if self.create_form_encoded else Body()
+        form_param = Annotated[self.create_model, body_marker]
 
         async def _create_payload(
             form: form_param, inventory_api: InventoryAPI

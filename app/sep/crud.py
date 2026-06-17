@@ -25,6 +25,7 @@ from app.core.db.crud import BaseSQLModelManager
 from app.core.exceptions import HTTPConflictException
 from app.sep.models import (
     AppLifecycleEnum,
+    AppRunningTask,
     AppState,
     SEPPluginPeriodicTask,
     SyncInstance,
@@ -333,6 +334,26 @@ class AppStateManager(BaseSQLModelManager):
         return True if row is None else row.lifecycle_state == AppLifecycleEnum.ENABLED
 
     @classmethod
+    async def should_cancel(cls, session: AsyncSession, app_key: str) -> bool:
+        """Return whether a running task for ``app_key`` should cooperatively exit.
+
+        ``True`` iff the app is mid- or post-disable (``DISABLING`` /
+        ``DISABLED``) so a straggler that starts after ``DISABLED`` still
+        self-cancels. A missing row reports ``ENABLED`` (-> ``False``), mirroring
+        :meth:`is_enabled`. This is a pure predicate; the fail-soft on a transient
+        DB error lives in :func:`app.sep.app_drain.should_cancel`, not here.
+
+        :param session: The SQLAlchemy asynchronous session to use for the query.
+        :param app_key: The app key to look up.
+        :return: ``True`` when the app is ``DISABLING`` or ``DISABLED``.
+        """
+        row = await cls.first(session, app_key=app_key)
+        return row is not None and row.lifecycle_state in {
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.DISABLED,
+        }
+
+    @classmethod
     def assert_transition_allowed(
         cls, current: AppLifecycleEnum, target: AppLifecycleEnum
     ) -> None:
@@ -351,6 +372,16 @@ class AppStateManager(BaseSQLModelManager):
             raise HTTPConflictException(
                 detail=f"Illegal app-state transition {current} -> {target}.",
             )
+
+
+class AppRunningTaskManager(BaseSQLModelManager):
+    """Manage in-flight SEP-app-owned Celery task rows.
+
+    :ivar Model: The SQLModel class this manager is responsible for
+        (``AppRunningTask``).
+    """
+
+    Model = AppRunningTask
 
 
 class SEPPluginPeriodicTaskManager(BaseSQLModelManager):

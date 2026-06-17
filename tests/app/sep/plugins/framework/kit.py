@@ -41,12 +41,14 @@ from app.sep.plugins.framework.deps import make_task_dep
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     FormLayout,
+    Hidden,
+    HostRef,
     SectionLayout,
     ServiceRef,
     Ui,
 )
 from app.sep.plugins.framework.payload import ResolvedEntities, RunCommandSpec
-from app.sep.plugins.framework.schema import Column, ListView
+from app.sep.plugins.framework.schema import Capabilities, Column, ListView
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner
 from tests.app.factories import (
     CreatedNodeFactory,
@@ -65,6 +67,7 @@ SYNTH_OWNER = TaskOwner.ARCHIVER
 SYNTH_PREFIX = "/synthetic-app"
 SYNTH_SERVICE_HOST = "db-host"
 SYNTH_SERVICE_PORT = 3306
+SYNTH_EXECUTOR_HOST = "exec-node"
 
 SEEDED_TASK_NAME = "contract-seeded-task"
 
@@ -89,6 +92,7 @@ class MockTaskAPI:
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._ids = count(1)
         self.create_count = 0
+        self.last_create_payload: dict[str, Any] | None = None
 
     def seed_task(
         self,
@@ -201,6 +205,7 @@ class MockTaskAPI:
 
     def _create(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.create_count += 1
+        self.last_create_payload = payload
         created = TaskFactory.build(
             name=payload["name"],
             owner=payload["owner"],
@@ -285,7 +290,13 @@ class MockInventoryAPI:
 
 
 class SynthForm(AppFormModel):
-    """Represent a synthetic create form with one service ref and a manual flag."""
+    """Represent a realistic synthetic create form covering the framework seams.
+
+    Mirrors the shape every audited real task plugin hits: an executor ``HostRef``
+    distinct from the service ``ServiceRef``, a form-display default differing from
+    the model default (``mode``), and a capability-control field excluded from the
+    schema (``alert_on_fail``, rendered by ``Capabilities(alert_on_fail=True)``).
+    """
 
     task_name: Annotated[str, Ui(label="Name", section="main")]
     service_id: Annotated[
@@ -293,7 +304,11 @@ class SynthForm(AppFormModel):
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
         Ui(label="Service", section="main"),
     ]
-    alert_on_fail: Annotated[bool, Ui(label="Alert", section="main")] = False
+    host: Annotated[str, HostRef(), Ui(label="Host", section="main")]
+    mode: Annotated[
+        str, Ui(label="Mode", section="main", default="display-default")
+    ] = "body-default"
+    alert_on_fail: Annotated[bool, Hidden()] = False
 
 
 class SynthResponse(BaseModel):
@@ -371,7 +386,11 @@ def synth_app_kwargs() -> dict[str, Any]:
         "owner": SYNTH_OWNER,
         "create_model": SynthForm,
         "response_model": SynthResponse,
-        "views": Views(layout=_SYNTH_LAYOUT, list_view=_SYNTH_LIST_VIEW),
+        "views": Views(
+            layout=_SYNTH_LAYOUT,
+            list_view=_SYNTH_LIST_VIEW,
+            capabilities=Capabilities(alert_on_fail=True),
+        ),
         "task_spec_builder": synth_spec_builder,
         "execute_write_model": SynthExecuteWrite,
         "execute_response_model": SynthExecuteResponse,
