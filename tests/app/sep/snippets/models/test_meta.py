@@ -33,6 +33,7 @@ from app.sep.snippets.forms import (
 from app.sep.snippets.models.meta import (
     serialize_cli_value,
     SnippetMetaParameter,
+    SnippetMetaParametersValidationResult,
     SnippetMetaParameterType,
 )
 
@@ -617,3 +618,14 @@ class TestHiddenParameter:
         """``hidden`` participates in serialization (so it joins the form cache key)."""
         param = SnippetMetaParameter(name="apikey", hidden=True)
         assert param.model_dump()["hidden"] is True
+
+    def test_visible_parameters_excludes_hidden_and_keeps_order(self):
+        """``visible_parameters`` drops hidden params while preserving order."""
+        first = SnippetMetaParameter(name="pmmserver")
+        hidden = SnippetMetaParameter(name="apikey", hidden=True)
+        last = SnippetMetaParameter(name="node")
+        result = SnippetMetaParametersValidationResult(
+            parameters=[first, hidden, last], errors=[]
+        )
+        assert result.visible_parameters == [first, last]
+        assert result.parameters == [first, hidden, last]

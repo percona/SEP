@@ -121,6 +121,19 @@ class SnippetMetaParametersValidationResult(NamedTuple):
     parameters: list["SnippetMetaParameter"]
     errors: list[str]
 
+    @property
+    def visible_parameters(self) -> list["SnippetMetaParameter"]:
+        """Return the parameters that are rendered in execution forms.
+
+        Parameters marked ``hidden`` are excluded. They remain in
+        :attr:`parameters` and are still validated normally; only their form
+        rendering is suppressed.
+
+        :return: The non-hidden parameters, in declaration order.
+        :rtype: list[SnippetMetaParameter]
+        """
+        return [param for param in self.parameters if not param.hidden]
+
 
 class SnippetMetaParameterChoice(TypedDict):
     """Represent a choice for a snippet parameter.

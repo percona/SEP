@@ -202,7 +202,8 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
     the snippet metadata (or a single ``"Parameters"`` section if no
     groups are declared), plus a trailing ``"Execution"`` section for
     dispatch controls and a separate collapsible ``"Script preview"``
-    section rendered after submit.
+    section rendered after submit. Parameters marked ``hidden`` are excluded
+    from the parameter sections.
 
     :param snippet: The snippet whose schema to synthesise.
     :type snippet: Snippet
@@ -210,9 +211,7 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
     :rtype: PluginSchema
     """
     parameter_sections: dict[str, list[AnyField]] = {}
-    for parameter in snippet.validated_parameters.parameters:
-        if parameter.hidden:
-            continue
+    for parameter in snippet.validated_parameters.visible_parameters:
         section_title = parameter.group or "Parameters"
         parameter_sections.setdefault(section_title, []).append(field_for(parameter))
 
