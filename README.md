@@ -181,8 +181,8 @@
 | app/sep/plugins/dipper/payloads/pcs-collect-pmm-mysql.py                                                        |      303 |      259 |     15% |   261-875 |
 | app/sep/plugins/dipper/routes.py                                                                                |       67 |       41 |     39% |94-199, 216-221 |
 | app/sep/plugins/dipper/schema.py                                                                                |       38 |        1 |     97% |       235 |
-| app/sep/plugins/framework/api.py                                                                                |      130 |        2 |     98% |   152-157 |
-| app/sep/plugins/framework/apps.py                                                                               |      139 |        7 |     95% |307, 312, 327, 467-474 |
+| app/sep/plugins/framework/api.py                                                                                |      190 |        2 |     99% |   168-173 |
+| app/sep/plugins/framework/apps.py                                                                               |      158 |        4 |     97% |347, 352, 367, 532 |
 | app/sep/plugins/framework/base.py                                                                               |       25 |        2 |     92% |    79, 86 |
 | app/sep/plugins/framework/cascade.py                                                                            |      183 |        0 |    100% |           |
 | app/sep/plugins/framework/conformance.py                                                                        |       74 |        5 |     93% |65, 151, 222, 235, 239 |
@@ -195,7 +195,7 @@
 | app/sep/plugins/framework/form\_dsl/model.py                                                                    |       13 |        1 |     92% |        62 |
 | app/sep/plugins/framework/payload.py                                                                            |       76 |        0 |    100% |           |
 | app/sep/plugins/framework/registry.py                                                                           |       47 |        1 |     98% |       139 |
-| app/sep/plugins/framework/responses.py                                                                          |       38 |        0 |    100% |           |
+| app/sep/plugins/framework/responses.py                                                                          |       43 |        0 |    100% |           |
 | app/sep/plugins/framework/rules.py                                                                              |      496 |        5 |     99% |312, 317, 322, 534, 850 |
 | app/sep/plugins/framework/schema.py                                                                             |      282 |        1 |     99% |      1282 |
 | app/sep/plugins/framework/task\_status.py                                                                       |       29 |        0 |    100% |           |
@@ -246,7 +246,7 @@
 | app/sep/sync/models.py                                                                                          |      367 |       50 |     86% |80-89, 124, 272-274, 335, 395-396, 543, 575, 591, 611-617, 715, 729, 749-750, 830, 844, 866-867, 961, 985-987, 1092-1093, 1168, 1312-1314, 1323, 1411-1412, 1415, 1421-1423, 1428-1434, 1438 |
 | app/sep/sync/syncers/mysql/payload.py                                                                           |      175 |       47 |     73% |240-244, 249-254, 267-273, 277-300, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                            |      222 |        9 |     96% |112, 579, 601, 619, 708-717 |
-| app/sep/sync/syncers/pmm.py                                                                                     |       93 |       22 |     76% |83-87, 107-110, 121, 176-184, 232, 234, 236-252, 291-294, 344 |
+| app/sep/sync/syncers/pmm.py                                                                                     |       93 |       18 |     81% |83-87, 107-110, 121, 176-184, 236-252, 344 |
 | app/sep/sync/syncers/system\_facts/payload.py                                                                   |      235 |       19 |     92% |147-148, 176, 222-224, 231, 244-251, 282-284, 290-292, 316, 522, 533 |
 | app/sep/sync/syncers/system\_facts/syncer.py                                                                    |      118 |        7 |     94% |104, 169-170, 245, 310-311, 350 |
 | app/sep/tasks.py                                                                                                |       31 |        0 |    100% |           |
@@ -310,7 +310,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                             |      227 |       38 |     83% |139-143, 200, 221-228, 260, 316-317, 323, 367-368, 393-394, 434-435, 454, 594, 618, 631-645, 666-679, 695-696 |
 | app/tasks/settings/routes.py                                                                                    |       10 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **20802** | **2465** | **88%** |           |
+| **TOTAL**                                                                                                       | **20886** | **2458** | **88%** |           |
 
 
 ## Setup coverage badge
