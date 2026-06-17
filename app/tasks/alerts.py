@@ -31,6 +31,7 @@ import yaml
 
 from app.tasks.anonymizer import anonymize_text
 from app.tasks.anonymizer.entities import PIIEntity
+from app.tasks.logs.constants import STDERR_ERROR_MARKER as _ERROR_MARKER
 
 if TYPE_CHECKING:
     from app.tasks.models import TaskHistory
@@ -46,9 +47,6 @@ ARCHIVER_FIELD_PLACEHOLDER = "unavailable"
 
 #: Hard cap on the emitted error trace, protecting the downstream alert payload.
 MAX_TRACE_BYTES = 4096
-
-#: Substring marking an error line in the archiver STDERR log.
-_ERROR_MARKER = "ERROR"
 
 
 @dataclass(frozen=True)
@@ -133,8 +131,8 @@ def parse_archiver_purge_config(config_yaml: str | None) -> ArchiverPurgeFields 
     """Parse an archiver config YAML into its first-entry purge fields.
 
     Only the first ``PURGE_LIST`` entry is represented. The function never
-    raises: a missing, scalar, or unparseable config returns ``None`` so the
-    failure-alert path can fall back to placeholders.
+    raises: a missing, non-string, scalar, or unparseable config returns
+    ``None`` so the failure-alert path can fall back to placeholders.
 
     :param config_yaml: The serialized archiver config (``meta["config"]``).
     :type config_yaml: str | None
@@ -145,7 +143,7 @@ def parse_archiver_purge_config(config_yaml: str | None) -> ArchiverPurgeFields 
         return None
     try:
         config = yaml.safe_load(config_yaml)
-    except yaml.YAMLError:
+    except (yaml.YAMLError, TypeError):
         return None
     if not isinstance(config, dict):
         return None
@@ -280,15 +278,17 @@ def _effective_entities(history: "TaskHistory") -> set[PIIEntity]:
 
 
 async def _read_last_stderr(task_history_id: int) -> str | None:
-    """Read the failed execution's last STDERR chunk in an isolated session.
+    """Read the failed execution's trailing STDERR in an isolated session.
 
-    Opens its own session so the read works identically in the Celery worker
-    and the tasks API, and swallows any error: a log-read failure must never
-    prevent the failure alert itself from firing.
+    Delegates to :meth:`TaskHistoryLogManager.get_last_error_log`, which may
+    span multiple chunks so an error block straddling a chunk boundary is fully
+    captured. Opens its own session so the read works identically in the Celery
+    worker and the tasks API, and swallows any error: a log-read failure must
+    never prevent the failure alert itself from firing.
 
     :param task_history_id: The ``TaskHistory`` identifier.
     :type task_history_id: int
-    :return: The latest STDERR chunk content, or ``None`` when unavailable.
+    :return: The trailing STDERR content, or ``None`` when unavailable.
     :rtype: str | None
     """
     from app.tasks.crud import TaskHistoryLogManager

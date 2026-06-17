@@ -31,6 +31,7 @@ from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
+from app.tasks.logs.constants import STDERR_ERROR_MARKER, TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     DispatchLock,
     Task,
@@ -45,22 +46,11 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 
-#: Substring marking an error line in a task's STDERR stream. Mirrors the marker
-#: the archiver alert formatter (``app.tasks.alerts``) recognizes.
-_STDERR_ERROR_MARKER = "ERROR"
-
 #: Minimum trailing STDERR bytes to accumulate before stopping the reverse scan
 #: once an error marker has been seen. Covers the downstream trace cap
 #: (``app.tasks.alerts.MAX_TRACE_BYTES``) so an error block that straddles a
 #: chunk boundary is fully present in the returned tail.
 _STDERR_TAIL_MIN_BYTES = 4 * 1024
-
-#: Hard cap on chunks scanned for the error-log tail, mirroring
-#: ``app.tasks.logs.log_reader.TAIL_SCAN_MAX_CHUNKS``. Bounds a pathological
-#: marker-free STDERR stream (imported as a constant here rather than from
-#: ``log_reader`` to avoid an import cycle, since ``log_reader`` imports this
-#: module).
-_STDERR_TAIL_MAX_CHUNKS = 512
 
 
 class TaskManager(BaseSQLModelManager):
@@ -743,8 +733,9 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         reconstructing chronological stream order. The scan stops as soon as the
         buffer holds an error marker plus at least :data:`_STDERR_TAIL_MIN_BYTES`
         of trailing content — enough that an error block straddling a chunk
-        boundary is fully captured — or after :data:`_STDERR_TAIL_MAX_CHUNKS`
-        chunks. STDOUT chunks are ignored.
+        boundary is fully captured — or after
+        :data:`~app.tasks.logs.constants.TAIL_SCAN_MAX_CHUNKS` chunks. STDOUT
+        chunks are ignored.
 
         A single-chunk read is insufficient: the last error block can straddle a
         chunk boundary, leaving the newest chunk without the ``ERROR`` marker and
@@ -764,18 +755,32 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             .where(col(TaskHistoryLog.task_history_id) == task_history_id)
             .where(col(TaskHistoryLog.stream) == TaskLogType.STDERR)
             .order_by(col(TaskHistoryLog.id).desc())
-            .limit(_STDERR_TAIL_MAX_CHUNKS)
+            .limit(TAIL_SCAN_MAX_CHUNKS)
         )
         result = await session.exec(query)
-        buffer: str | None = None
+        # Collect chunks newest-first into a list and join once at the end, rather
+        # than re-concatenating and re-encoding a growing buffer per iteration
+        # (which is O(n^2) in both string building and byte counting).
+        parts: list[str] = []
+        total_bytes = 0
+        marker_seen = False
+        marker_overlap = len(STDERR_ERROR_MARKER) - 1
         for chunk in result.all():
-            buffer = chunk.content if buffer is None else chunk.content + buffer
-            if (
-                _STDERR_ERROR_MARKER in buffer
-                and len(buffer.encode("utf-8")) >= _STDERR_TAIL_MIN_BYTES
-            ):
+            content = chunk.content
+            if not marker_seen:
+                # Pair the new (older) chunk with a short prefix of the
+                # chronologically-earliest chunk gathered so far so a marker
+                # straddling the boundary between them is still detected.
+                boundary_prefix = parts[-1][:marker_overlap] if parts else ""
+                marker_seen = STDERR_ERROR_MARKER in content + boundary_prefix
+            parts.append(content)
+            total_bytes += len(content.encode("utf-8"))
+            if marker_seen and total_bytes >= _STDERR_TAIL_MIN_BYTES:
                 break
-        return buffer
+        if not parts:
+            return None
+        # ``parts`` is newest-first; reverse to restore chronological stream order.
+        return "".join(reversed(parts))
 
     @classmethod
     async def insert_chunk_idempotent(
