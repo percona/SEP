@@ -50,6 +50,7 @@ from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     derive_plugin_schema,
     FormLayout,
+    Hidden,
     SectionLayout,
     Ui,
 )
@@ -211,6 +212,28 @@ def test_no_duplicate_control_fires_on_real_derived_schema():
 def test_no_duplicate_control_silent_on_real_derived_schema_without_capability():
     """Assert the same form is clean when the capability is off."""
     payload = _derived_payload(capabilities=Capabilities(alert_on_fail=False))
+    assert check_no_duplicate_capability_control(payload) == []
+
+
+class _HiddenControlForm(AppFormModel):
+    """Represent a create model that excludes the capability-rendered control."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")]
+    alert_on_fail: Annotated[bool, Hidden()] = False
+
+
+def test_no_duplicate_control_silent_when_control_excluded_from_schema():
+    """Assert excluding the capability-rendered field clears the duplicate violation."""
+    schema = derive_plugin_schema(
+        _HiddenControlForm,
+        _LAYOUT,
+        name="synthetic",
+        display_name="Synthetic",
+        capabilities=Capabilities(alert_on_fail=True),
+        list_view=_LIST_VIEW,
+    )
+    payload = schema.model_dump(mode="json", by_alias=True, exclude_none=True)
+
     assert check_no_duplicate_capability_control(payload) == []
 
 

@@ -24,6 +24,7 @@
  */
 
 import { createElement, lazy, type ComponentType, type ReactElement } from 'react';
+import AppDisabledGuard from './components/AppDisabledGuard';
 import { SchemaDrivenAppRoute } from './components/SchemaDrivenAppRoute';
 import { APP_ROUTE_BY_KEY, getAppRouteMeta } from './appNavConfig';
 import { useAuth } from './contexts/auth';
@@ -139,19 +140,29 @@ export interface PluginRouteDefinition {
   element: ReactElement;
 }
 
+/** Protected apps are never gated — toggle returns 409 on the backend. */
+const UNGUARDED_APP_KEYS = new Set(['inventory']);
+
+function wrapPluginRoute(appKey: string, element: ReactElement): ReactElement {
+  if (UNGUARDED_APP_KEYS.has(appKey)) {
+    return element;
+  }
+  return createElement(AppDisabledGuard, { appKey, children: element });
+}
+
 /** Shell plugin routes: bespoke registry entries, schema-driven fallbacks, legacy aliases. */
 export function buildPluginRoutes(): PluginRouteDefinition[] {
   const routes: PluginRouteDefinition[] = Object.values(CUSTOM_APP_REGISTRY).map(
-    ({ routePattern, Component }) => ({
+    ({ appKey, routePattern, Component }) => ({
       path: routePattern,
-      element: createElement(Component),
+      element: wrapPluginRoute(appKey, createElement(Component)),
     }),
   );
 
   for (const { routePattern, appKey } of getSchemaDrivenFallbackRoutes()) {
     routes.push({
       path: routePattern,
-      element: createElement(SchemaDrivenAppRoute, { appKey }),
+      element: wrapPluginRoute(appKey, createElement(SchemaDrivenAppRoute, { appKey })),
     });
   }
 
@@ -160,12 +171,12 @@ export function buildPluginRoutes(): PluginRouteDefinition[] {
       const entry = CUSTOM_APP_REGISTRY[appKey];
       routes.push({
         path,
-        element: createElement(entry.Component),
+        element: wrapPluginRoute(appKey, createElement(entry.Component)),
       });
     } else {
       routes.push({
         path,
-        element: createElement(SchemaDrivenAppRoute, { appKey }),
+        element: wrapPluginRoute(appKey, createElement(SchemaDrivenAppRoute, { appKey })),
       });
     }
   }
