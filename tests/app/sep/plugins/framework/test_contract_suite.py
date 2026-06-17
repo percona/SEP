@@ -25,6 +25,7 @@ semantics against the ``batch_get_latest_statuses`` contract every migration
 trusts.
 """
 
+import functools
 from typing import Annotated
 
 import pytest
@@ -48,8 +49,11 @@ from tests.app.sep.plugins.framework.kit import (
     synth_app,
     synth_app_kwargs,
     synth_delete_handler,
+    synth_detail_builder,
     SYNTH_OWNER,
+    synth_response_builder,
     synth_update_handler,
+    SynthDetailResponse,
     SynthExecuteResponse,
     SynthForm,
     SynthResponse,
@@ -97,6 +101,21 @@ class TestSyntheticFormEncodedContract(DerivedRouterContractTests):
     """Cover the create cases against a Form-encoded (escape-hatch) definition."""
 
     app_def = synth_app(create_form_encoded=True)
+
+
+class TestSyntheticDetailBuilderContract(DerivedRouterContractTests):
+    """Cover the detail/create cases against a richer-detail definition."""
+
+    app_def = synth_app(
+        detail_response_builder=synth_detail_builder,
+        detail_response_model=SynthDetailResponse,
+    )
+
+
+class TestSyntheticPartialBuilderContract(DerivedRouterContractTests):
+    """Cover every contract case against a ``functools.partial``-wrapped builder."""
+
+    app_def = synth_app(response_builder=functools.partial(synth_response_builder))
 
 
 class _WrongStatusCreateApp(TaskExecutionApp):

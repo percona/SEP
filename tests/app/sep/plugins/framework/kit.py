@@ -336,6 +336,16 @@ class SynthResponse(BaseModel):
     created_by: str | None = None
 
 
+class SynthDetailResponse(SynthResponse):
+    """Represent a detail response richer than the list response.
+
+    Carries a ``detail_only`` field absent from the list model, so a detail (and
+    the create-renders-like-detail) route is distinguishable from the list route.
+    """
+
+    detail_only: bool = True
+
+
 class SynthExecuteWrite(BaseModel):
     """Represent the execute request body for the synthetic app."""
 
@@ -398,6 +408,34 @@ def synth_response_builder(
     mapping = context or {}
     return build_default_task_response(
         SynthResponse,
+        task,
+        status,
+        extras={
+            "service_type": ServiceTypeEnum.MYSQL,
+            "created_by": mapping.get(task.created_by, task.created_by),
+        },
+    )
+
+
+def synth_detail_builder(
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum | None = None,
+    context: dict[str, str] | None = None,
+) -> SynthDetailResponse:
+    """Build the richer synth detail response, injecting extras and the username.
+
+    A sync builder receiving the framework-injected ``status`` — the shape a real
+    plugin's detail builder takes once it stops re-fetching the status itself.
+
+    :param task: The task to build a response for.
+    :param status: The latest known execution status, injected by the framework.
+    :param context: The bound username map, or ``None`` when no provider is wired.
+    :return: The richer synth detail response.
+    """
+    mapping = context or {}
+    return build_default_task_response(
+        SynthDetailResponse,
         task,
         status,
         extras={

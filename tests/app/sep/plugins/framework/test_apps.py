@@ -383,6 +383,30 @@ class TestCreateRoute:
         )
         assert posted["alert_on_fail"] is True
 
+    def test_create_response_model_with_context_provider_succeeds(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a synthesized create builder tolerates an active context provider.
+
+        ``create_response_model`` synthesizes a no-extras create builder; with the
+        inherited context provider active the framework binds context into it, so it
+        must accept (and ignore) the context kwarg rather than crash on the request.
+        """
+        tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
+        client = _client(
+            _synth_app(create_response_model=_SynthResponse),
+            tasks_api,
+            regular_user,
+            inventory_api=_make_inventory_api(),
+        )
+
+        response = client.post(
+            f"{_BASE}/",
+            json={"task_name": "new-task", "service_id": 1, "host": _EXECUTOR_HOST},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
     def test_create_422_on_invalid_body(self, regular_user: CasdoorUser) -> None:
         """Assert a body missing required fields 422s before any upstream POST."""
         tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
@@ -650,8 +674,13 @@ def _alt_list_builder(
     return _AltListResponse(name=task.name)
 
 
-def _alt_detail_builder(task: Task, status: object = None) -> _AltDetailResponse:
-    """Build the alternate detail response for the detail-builder override test."""
+def _alt_detail_builder(
+    task: Task,
+    *,
+    status: object = None,
+    context: dict | None = None,
+) -> _AltDetailResponse:
+    """Build the alternate detail response, accepting a bound context."""
     return _AltDetailResponse(name=task.name)
 
 

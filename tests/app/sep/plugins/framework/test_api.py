@@ -20,6 +20,7 @@ Covers the ``/schema`` and ``/capabilities`` discovery endpoints, the
 execute-route factory.
 """
 
+import functools
 import inspect
 from dataclasses import dataclass
 from typing import Annotated
@@ -2312,6 +2313,25 @@ class TestDeriveCrudRoutesDetailBuilder:
 
         assert detail_route.response_model is _SyntheticTaskResponse
 
+    def test_detail_response_model_overrides_inference(self) -> None:
+        """Assert an explicit ``detail_response_model`` wins over builder inference."""
+        router = _crud_router(
+            detail_response_builder=_build_synthetic_detail_response,
+            detail_response_model=_SyntheticCreateResponse,
+        )
+        detail_route = _route_for(router, "/{task_name}", "GET")
+
+        assert detail_route.response_model is _SyntheticCreateResponse
+
+    def test_create_uses_detail_model_when_detail_builder_set(self) -> None:
+        """Assert create renders like detail when a detail builder is set, no create builder."""
+        router = _crud_router(detail_response_builder=_build_synthetic_detail_response)
+        create_route = _route_for(router, "/", "POST")
+        list_route = _route_for(router, "/", "GET")
+
+        assert create_route.response_model is _SyntheticDetailResponse
+        assert list_route.response_model == list[_SyntheticTaskResponse]
+
     def test_detail_binds_context_provider_result(
         self, regular_user: CasdoorUser
     ) -> None:
@@ -2330,6 +2350,28 @@ class TestDeriveCrudRoutesDetailBuilder:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["resolved_by"] == "Alice"
+
+
+class TestDeriveCrudRoutesPartialBuilder:
+    """Cover builders wrapped in :func:`functools.partial`."""
+
+    def test_partial_response_builder_resolves_model(self) -> None:
+        """Assert a partial-wrapped builder constructs and resolves its model."""
+        router = _crud_router(
+            response_builder=functools.partial(_build_synthetic_response)
+        )
+        list_route = _route_for(router, "/", "GET")
+
+        assert list_route.response_model == list[_SyntheticTaskResponse]
+
+    def test_partial_detail_builder_resolves_model(self) -> None:
+        """Assert a partial-wrapped detail builder constructs and resolves its model."""
+        router = _crud_router(
+            detail_response_builder=functools.partial(_build_synthetic_detail_response)
+        )
+        detail_route = _route_for(router, "/{task_name}", "GET")
+
+        assert detail_route.response_model is _SyntheticDetailResponse
 
 
 class TestDeriveCrudRoutesCreateExtraDeps:
@@ -2368,6 +2410,7 @@ class TestDeriveCrudRoutesCreateContext:
             created_task=_task_dict_created_by("new-task", _CONTEXT_USER_ID)
         )
         router = _crud_router(
+            response_builder=_build_context_response,
             create_response_builder=_build_context_create_response,
             context_provider=_context_provider,
         )
@@ -2377,6 +2420,11 @@ class TestDeriveCrudRoutesCreateContext:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert response.json()["resolved_by"] == "Alice"
+
+    def test_contextless_builder_with_provider_rejected_at_registration(self) -> None:
+        """Assert a context-less builder with a provider fails fast at registration."""
+        with pytest.raises(TypeError, match="context"):
+            _crud_router(context_provider=_context_provider)
 
 
 # ── derive_execute_route() helper ───────────────────────────────────────

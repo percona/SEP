@@ -141,22 +141,28 @@ def _resolve_response_model(
 ) -> type[BaseModel]:
     """Return the ``BaseModel`` subclass declared as ``provider``'s return type.
 
-    Uses :func:`typing.get_type_hints` so deferred-evaluation annotations
-    (``from __future__ import annotations``) resolve to the real class
-    rather than a string. Falls back to the function's ``__annotations__``
-    dict only when :func:`typing.get_type_hints` raises :class:`NameError`
-    — i.e. a forward-ref that resolves against a module the caller hasn't
-    imported. Other failures propagate unchanged.
+    Unwraps a :class:`functools.partial` to its underlying function first, since
+    :func:`typing.get_type_hints` rejects a partial — binding a builder with
+    ``partial(...)`` is an established plugin pattern and resolves the same return
+    annotation as the wrapped function. Then uses :func:`typing.get_type_hints` so
+    deferred-evaluation annotations (``from __future__ import annotations``) resolve
+    to the real class rather than a string. Falls back to the function's
+    ``__annotations__`` dict only when :func:`typing.get_type_hints` raises
+    :class:`NameError` — i.e. a forward-ref that resolves against a module the
+    caller hasn't imported. Other failures propagate unchanged.
 
     :param provider: A callable annotated with its return type. The
         callable may declare arbitrary parameters (typically resolved by
-        FastAPI's dependency injection via ``Depends(...)``).
+        FastAPI's dependency injection via ``Depends(...)``), and may be a
+        :class:`functools.partial` over such a callable.
     :param helper: The public helper name, used to frame error messages.
     :param param: The offending parameter name, used to frame error messages.
     :return: The class declared as the provider's return annotation.
     :raises TypeError: If the annotation is missing, isn't a class, or
         isn't a :class:`pydantic.BaseModel` subclass.
     """
+    while isinstance(provider, functools.partial):
+        provider = provider.func
     try:
         hints = typing.get_type_hints(provider)
     except NameError:
@@ -200,6 +206,43 @@ def _reject_async_builders(**builders: Callable[..., BaseModel] | None) -> None:
                 "derived handlers invoke it synchronously, so an async builder "
                 "would yield an un-awaited coroutine that response_model "
                 "serialisation cannot handle."
+            )
+
+
+def _reject_contextless_builders(
+    context_provider: Callable[..., Awaitable[Any]] | None,
+    **builders: Callable[..., BaseModel] | None,
+) -> None:
+    """Raise ``TypeError`` if a context provider cannot bind into a named builder.
+
+    When a ``context_provider`` is set, :func:`_bind_context` binds its result as
+    each active builder's ``context`` keyword argument; a builder declaring neither
+    a ``context`` parameter nor ``**kwargs`` would raise an opaque ``TypeError`` on
+    the first request. Reject it at registration instead — mirroring
+    :func:`_reject_async_builders`.
+
+    :param context_provider: The configured context provider; ``None`` skips the
+        whole check (no binding happens).
+    :param builders: Builder callables keyed by their parameter name; ``None``
+        entries (an omitted optional builder) are skipped.
+    :raises TypeError: If a supplied builder cannot accept a ``context`` keyword.
+    """
+    if context_provider is None:
+        return
+    for label, builder in builders.items():
+        if builder is None:
+            continue
+        parameters = inspect.signature(builder).parameters.values()
+        accepts_context = any(
+            parameter.name == "context"
+            or parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        )
+        if not accepts_context:
+            raise TypeError(
+                f"derive_crud_routes: {label} must accept a 'context' keyword "
+                "argument when context_provider is set; the provider's result is "
+                "bound into the builder via functools.partial(context=...)."
             )
 
 
@@ -413,10 +456,10 @@ def _register_create_route(
     router: APIRouter,
     *,
     plugin_schema: PluginSchema,
-    response_builder: TaskResponseBuilder[ListDetailResponseT],
+    base_builder: TaskResponseBuilder[ListDetailResponseT],
     create_payload: Callable[..., Awaitable[TaskWrite]],
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None,
-    list_detail_model: type[ListDetailResponseT],
+    base_model: type[ListDetailResponseT],
     connectivity_check: bool,
     context_provider: Callable[..., Awaitable[Any]] | None = None,
     extra_deps: Sequence[params.Depends] = (),
@@ -434,13 +477,14 @@ def _register_create_route(
 
     :param router: The plugin router to register the create route on.
     :param plugin_schema: The plugin schema seeding the auto-derived model name.
-    :param response_builder: The list/detail builder, reused for the base create
-        response when no explicit create builder is given.
+    :param base_builder: The fallback create builder when no explicit create builder
+        is given — the detail builder when the app overrides detail, else the list
+        builder — so a created resource is rendered like its detail view.
     :param create_payload: The create-payload dependency declaring the body.
     :param create_response_builder: An explicit create-response builder whose
         model wins when supplied.
-    :param list_detail_model: The list/detail response model used as the
-        auto-derive base.
+    :param base_model: The fallback create response model (detail model when the app
+        overrides detail, else the list model) used as the auto-derive base.
     :param connectivity_check: Whether to add the connectivity probe and the
         ``check_connectivity`` query parameter.
     :param context_provider: A zero-arg async provider whose once-awaited result
@@ -470,10 +514,10 @@ def _register_create_route(
             )
     elif connectivity_check:
         create_model = derive_create_response_model(
-            list_detail_model, name=_create_response_name(plugin_schema)
+            base_model, name=_create_response_name(plugin_schema)
         )
     else:
-        create_model = list_detail_model
+        create_model = base_model
 
     if not connectivity_check:
 
@@ -486,7 +530,7 @@ def _register_create_route(
             if create_response_builder is not None:
                 builder = await _bind_context(create_response_builder, context_provider)
                 return builder(task)
-            builder = await _bind_context(response_builder, context_provider)
+            builder = await _bind_context(base_builder, context_provider)
             return builder(task, status=None)
     else:
 
@@ -508,7 +552,7 @@ def _register_create_route(
                 return builder(task).model_copy(
                     update={"connectivity_warning": warning}
                 )
-            builder = await _bind_context(response_builder, context_provider)
+            builder = await _bind_context(base_builder, context_provider)
             base = builder(task, status=None)
             return create_model(**base.model_dump(), connectivity_warning=warning)
 
@@ -521,6 +565,41 @@ def _register_create_route(
         response_model_by_alias=True,
         dependencies=[IsApiAuthenticated, *extra_deps],
     )
+
+
+def _resolve_detail_target(
+    response_builder: TaskResponseBuilder[Any],
+    detail_response_builder: TaskResponseBuilder[Any] | None,
+    detail_response_model: type[BaseModel] | None,
+    list_detail_model: type[BaseModel],
+) -> tuple[TaskResponseBuilder[Any], type[BaseModel]]:
+    """Return the ``(builder, model)`` the detail route and create fallback use.
+
+    The detail builder is ``detail_response_builder`` when set, else
+    ``response_builder``. The detail model is the explicit ``detail_response_model``
+    when set (bypassing return-annotation inference for an exotic builder), else the
+    builder's inferred model, else the shared list model — so a plugin whose detail
+    response is richer than its list response derives a distinct detail (and create)
+    model, while a plugin whose detail matches its list stays on the list model.
+
+    :param response_builder: The list builder, reused for detail when no override.
+    :param detail_response_builder: The detail builder override, or ``None``.
+    :param detail_response_model: The explicit detail response model, or ``None``.
+    :param list_detail_model: The shared list/detail model used as the fallback.
+    :return: The ``(builder, model)`` pair for the detail route and create fallback.
+    """
+    builder = detail_response_builder or response_builder
+    if detail_response_model is not None:
+        model = detail_response_model
+    elif detail_response_builder is not None:
+        model = _resolve_response_model(
+            detail_response_builder,
+            helper="derive_crud_routes",
+            param="detail_response_builder",
+        )
+    else:
+        model = list_detail_model
+    return builder, model
 
 
 def _register_list_route(
@@ -626,6 +705,7 @@ def derive_crud_routes(
     get_task: Callable[..., Awaitable[Task]],
     response_builder: TaskResponseBuilder[ListDetailResponseT],
     detail_response_builder: TaskResponseBuilder[Any] | None = None,
+    detail_response_model: type[BaseModel] | None = None,
     create_payload: Callable[..., Awaitable[TaskWrite]] | None = None,
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None = None,
     connectivity_check: bool = False,
@@ -676,7 +756,13 @@ def derive_crud_routes(
     :param detail_response_builder: Builds the detail response; its return
         annotation supplies the detail route's response model. When ``None`` (the
         default) the detail route falls back to ``response_builder`` and the list
-        model, byte-identical to a list/detail-shared model.
+        model, byte-identical to a list/detail-shared model. When set, the create
+        route also falls back to this builder/model (a created resource renders like
+        its detail view) unless an explicit ``create_response_builder`` is given.
+    :param detail_response_model: An explicit detail response model that overrides
+        return-annotation inference on ``detail_response_builder`` — supply it when
+        the detail builder is an exotic callable whose return type cannot be
+        introspected. Defaults to ``None`` (infer from the builder).
     :param create_payload: The raw create-payload builder dependency (declares
         the request ``Body()`` model that drives the create ``422``). When
         ``None`` (the default), no ``POST /`` create route is registered — the
@@ -727,8 +813,9 @@ def derive_crud_routes(
     :return: A plugin ``APIRouter`` carrying the schema + CRUD routes.
     :raises TypeError: If ``response_builder``, ``detail_response_builder``, or
         ``create_response_builder`` is an ``async def`` callable (the derived
-        handlers invoke it synchronously), or does not declare a return-type
-        annotation that is a :class:`pydantic.BaseModel` subclass; or if
+        handlers invoke it synchronously), does not declare a return-type
+        annotation that is a :class:`pydantic.BaseModel` subclass, or cannot accept
+        a ``context`` keyword while ``context_provider`` is set; or if
         ``connectivity_check`` is on and an explicit ``create_response_builder``'s
         model omits a ``connectivity_warning`` field.
     :raises ValueError: If ``create_payload`` is ``None`` while
@@ -740,20 +827,22 @@ def derive_crud_routes(
         detail_response_builder=detail_response_builder,
         create_response_builder=create_response_builder,
     )
+    _reject_contextless_builders(
+        context_provider,
+        response_builder=response_builder,
+        detail_response_builder=detail_response_builder,
+        create_response_builder=create_response_builder,
+    )
 
     list_detail_model = _resolve_response_model(
         response_builder, helper="derive_crud_routes", param="response_builder"
     )
-    detail_model = (
-        _resolve_response_model(
-            detail_response_builder,
-            helper="derive_crud_routes",
-            param="detail_response_builder",
-        )
-        if detail_response_builder is not None
-        else list_detail_model
+    detail_builder, detail_model = _resolve_detail_target(
+        response_builder,
+        detail_response_builder,
+        detail_response_model,
+        list_detail_model,
     )
-    detail_builder = detail_response_builder or response_builder
 
     router = APIRouter()
     schema_endpoint(router, plugin_schema)
@@ -802,10 +891,10 @@ def derive_crud_routes(
         _register_create_route(
             router,
             plugin_schema=plugin_schema,
-            response_builder=response_builder,
+            base_builder=detail_builder,
             create_payload=create_payload,
             create_response_builder=create_response_builder,
-            list_detail_model=list_detail_model,
+            base_model=detail_model,
             connectivity_check=connectivity_check,
             context_provider=context_provider,
             extra_deps=create_extra_deps,

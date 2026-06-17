@@ -535,6 +535,49 @@ class DerivedRouterContractTests:
         assert body["service_type"] == ServiceTypeEnum.MYSQL.value
         assert body["created_by"] == SYNTH_CREATED_BY_NAME
 
+    def test_detail_reflects_injected_status(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert the detail handler injects the latest status into the sync builder."""
+        mock_task_api.seed_task(
+            SEEDED_TASK_NAME,
+            owner=self.app_def.owner,
+            statuses=(TaskHistoryStatusEnum.RUNNING,),
+        )
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/{SEEDED_TASK_NAME}")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["status"] == TaskHistoryStatusEnum.RUNNING.value
+
+    def test_detail_returns_detail_model(self, contract_client: TestClient) -> None:
+        """Assert a detail builder makes ``GET /{name}`` carry the detail-only field."""
+        if self.app_def.detail_response_builder is None:
+            pytest.skip("no detail response builder")
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/{SEEDED_TASK_NAME}")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "detail_only" in response.json()
+
+    def test_create_returns_detail_model(self, contract_client: TestClient) -> None:
+        """Assert create renders like detail (carries the detail-only field)."""
+        if self.app_def.detail_response_builder is None:
+            pytest.skip("no detail response builder")
+        if not self.app_def.capabilities.create:
+            pytest.skip("create capability disabled")
+        body = build_valid_create_body(self.app_def)
+        if body is None:
+            pytest.skip("no derivable create body (schema= passthrough)")
+        base = app_base_url(self.app_def)
+
+        response = post_create_body(contract_client, f"{base}/", self.app_def, body)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert "detail_only" in response.json()
+
     def test_create_injects_extras(self, contract_client: TestClient) -> None:
         """Assert the create response binds context: injected extras + resolved name."""
         if not self.app_def.capabilities.create:

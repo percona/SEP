@@ -224,7 +224,11 @@ class TaskExecutionApp(BaseApp):
         Defaults to ``None``.
     :param detail_response_builder: A sync detail-only builder override; when
         ``None`` the detail route falls back to ``response_builder`` and the list
-        model. Defaults to ``None``.
+        model. When set, the create route renders like detail too unless an
+        explicit create model is configured. Defaults to ``None``.
+    :param detail_response_model: An explicit detail response model overriding
+        return-annotation inference on ``detail_response_builder`` (for an exotic
+        builder whose return type cannot be introspected). Defaults to ``None``.
     :param response_context_provider: A zero-arg async provider whose once-awaited
         result (for example a username map) is bound as the builders' ``context``
         across the list, detail, and create builds. Requires ``response_builder``.
@@ -259,6 +263,7 @@ class TaskExecutionApp(BaseApp):
     list_service_type_filter: bool = False
     response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_builder: SkipValidation[TaskResponseBuilder | None] = None
+    detail_response_model: type[BaseModel] | None = None
     response_context_provider: SkipValidation[Callable[..., Awaitable[Any]] | None] = (
         None
     )
@@ -452,6 +457,7 @@ class TaskExecutionApp(BaseApp):
             get_task=self._task_getter,
             response_builder=self._build_response_builder(),
             detail_response_builder=self.detail_response_builder,
+            detail_response_model=self.detail_response_model,
             create_payload=(
                 self._build_create_payload() if self.capabilities.create else None
             ),
@@ -530,6 +536,10 @@ class TaskExecutionApp(BaseApp):
     def _build_create_response_builder(self) -> TaskResponseBuilder | None:
         """Return a create response builder when ``create_response_model`` is set.
 
+        The builder accepts (and ignores) a ``context`` keyword so the create route
+        can bind a ``response_context_provider``'s result into it uniformly: this is
+        the no-extras create path, so the context feeds no remap here.
+
         :return: A sync builder over ``create_response_model``, or ``None`` when
             no explicit create response model is configured.
         """
@@ -539,7 +549,10 @@ class TaskExecutionApp(BaseApp):
         create_response_model = self.create_response_model
 
         def _builder(
-            task: Task, *, status: TaskHistoryStatusEnum | None = None
+            task: Task,
+            *,
+            status: TaskHistoryStatusEnum | None = None,
+            **_: Any,
         ) -> create_response_model:
             return build_default_task_response(create_response_model, task, status)
 
