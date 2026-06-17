@@ -162,3 +162,36 @@ class TestPcsCollectPmmMysqlHaDbaasConsolidation:
         )
         assert result.returncode == ARGPARSE_ERROR_EXIT_CODE
         assert "ha-name" in result.stderr
+
+
+class TestPcsCollectPmmMysqlApikeyHidden:
+    """Tests for hiding the apikey field from the PMM form."""
+
+    def test_frontmatter_marks_apikey_hidden(self):
+        """The apikey parameter declares ``hidden: true`` in the YAML frontmatter."""
+        block = _parameter_block(_frontmatter(), "apikey")
+        assert "hidden: true" in block
+
+    def test_other_parameters_are_not_hidden(self):
+        """Only apikey is hidden; sibling params do not declare ``hidden``."""
+        frontmatter = _frontmatter()
+        for name in ("pmmserver", "node", "service", "list"):
+            assert "hidden: true" not in _parameter_block(frontmatter, name)
+
+    @pytest.mark.asyncio
+    async def test_validated_apikey_parameter_is_hidden(self):
+        """The parsed snippet parameter for apikey carries ``hidden=True``."""
+        from app.sep.snippets.models.snippet import BaseSnippet
+
+        meta = await BaseSnippet.get_meta_by_path(SCRIPT)
+        snippet = BaseSnippet(
+            filename="pcs-collect-pmm-mysql.py",
+            size=1,
+            md5_digest="a" * 32,
+            meta=meta,
+        )
+        validated = snippet.validated_parameters
+        assert validated.errors == []
+        by_name = {p.name: p for p in validated.parameters}
+        assert by_name["apikey"].hidden is True
+        assert by_name["pmmserver"].hidden is False
