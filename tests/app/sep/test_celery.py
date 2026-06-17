@@ -504,6 +504,33 @@ class TestUpdateSnippetsCooperativeCancel:
         save_batch.assert_not_called()
         delete_where.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_stops_after_loop_skipping_post_loop_writes(
+        self, session, mocker, tmp_path
+    ):
+        """A cancel observed only after the loop skips the batch save and cleanup."""
+        _patch_session(mocker, session)
+        mocker.patch.object(snippets_settings, "SNIPPETS_DIR", tmp_path)
+        mocker.patch.object(Snippet, "BASE_DIR", tmp_path)
+        await SnippetManager.create(
+            session, Snippet(filename="present.sh", size=1, md5_digest="0" * 32)
+        )
+        await SnippetManager.create(
+            session, Snippet(filename="orphan.sh", size=10, md5_digest="a" * 32)
+        )
+        (tmp_path / "present.sh").write_bytes(b"#!/bin/bash\necho present\n")
+        mocker.patch(
+            f"{MODULE}.should_cancel", new=AsyncMock(side_effect=[False, True])
+        )
+        save_batch = mocker.spy(SnippetManager, "save_batch")
+        delete_where = mocker.spy(SnippetManager, "delete_where")
+
+        await sep_celery.update_snippets()
+
+        save_batch.assert_not_called()
+        delete_where.assert_not_called()
+        assert await SnippetManager.first(session, filename="orphan.sh") is not None
+
 
 class TestBackupAlertConfigCooperativeCancel:
     """``_backup_alert_config`` honours the cooperative-cancel safe points."""

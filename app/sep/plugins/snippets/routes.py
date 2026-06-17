@@ -124,7 +124,7 @@ async def snippets_remove_approval(
     )
 
 
-@router.post("/refresh")
+@router.post("/refresh", dependencies=[IsCsrfValidated])
 async def snippets_refresh(
     request: Request, user: AdminUser, session: SessionDep
 ) -> RedirectResponse:

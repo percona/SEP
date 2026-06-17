@@ -79,6 +79,9 @@ async def update_snippets() -> None:
                     )
                     await created_snippet.update_from_snippet(snippet)
                     updated_snippets.append(created_snippet)
+        if await should_cancel("snippets", session=session):
+            logger.info("Snippets app disabling; skipping post-sync snippet writes.")
+            return
         if created_count:
             logger.info("Added %s new snippets", created_count)
         if updated_snippets:
