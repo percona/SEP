@@ -461,7 +461,7 @@ echo -n "Executing pt-pg-summary..."
 PT_PG_SUMMARY_ARGS=("${PT_PG_SUMMARY_OPTIONS[@]}")
 HOST_SUPPLIED=0
 for opt in "${PT_PG_SUMMARY_OPTIONS[@]}"; do
-    if [[ ${opt} == "-h" || ${opt} == "--host" || ${opt} == --host=* ]]; then
+    if [[ ${opt} == -h* || ${opt} == "--host" || ${opt} == --host=* ]]; then
         HOST_SUPPLIED=1
         break
     fi
