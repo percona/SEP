@@ -37,6 +37,11 @@ from app.tasks.config import tasks_settings
 
 INVENTORY_PLUGIN_ENTITY_NAMES = frozenset({"nodes", "services", "schemas", "tables"})
 
+# Single source of truth for the read-only system-observation sub-resource
+# segment, shared by the proxy route decorators and the forwarded-path helper
+# so the inbound and forwarded paths cannot drift apart.
+SYSTEM_OBSERVATION_SEGMENT = "system-observation"
+
 
 class InventorySyncTriggerWrite(BaseModel):
     """Carry the optional JSON body for the ad-hoc inventory sync trigger.
@@ -354,6 +359,25 @@ def inventory_service_detail_path(entity: str, item_id: int) -> str:
     if entity == "nodes":
         return f"/nodes/{item_id}"
     return f"/{entity}/{item_id}"
+
+
+def inventory_system_observation_path(entity: str, item_id: int) -> str:
+    """Map a plugin entity and id to the inventory system-observation sub-resource.
+
+    Built by appending ``/system-observation`` to the detail path from
+    ``inventory_service_detail_path`` so the sub-resource always tracks the
+    canonical detail mapping and the two cannot drift. Targets the read-only
+    system-observation endpoint exposed by the inventory sub-app. Only
+    ``nodes`` and ``services`` carry an observation; callers reach this helper
+    through the explicit per-entity proxy routes.
+
+    :param entity: ``nodes`` or ``services``.
+    :param item_id: Primary key of the node or service.
+    :return: Path relative to the inventory API root.
+    """
+    return (
+        f"{inventory_service_detail_path(entity, item_id)}/{SYSTEM_OBSERVATION_SEGMENT}"
+    )
 
 
 def _parse_positive_int_parent_id(value: Any, *, field_name: str) -> int:
