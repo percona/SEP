@@ -186,7 +186,7 @@ class TestSepConfigExportAuth:
     async def test_unauthenticated_get_returns_401(
         self, api_unauthenticated_client: TestClient
     ) -> None:
-        """An unauthenticated GET responds with a JSON 401."""
+        """Respond with a JSON 401 to an unauthenticated GET."""
         response = api_unauthenticated_client.get(EXPORT_URL, follow_redirects=False)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
@@ -194,7 +194,7 @@ class TestSepConfigExportAuth:
     async def test_non_admin_get_returns_403(
         self, api_non_admin_client: TestClient, mock_tasks_api: AsyncMock
     ) -> None:
-        """A non-admin user is rejected with 403 before the Tasks fan-out runs."""
+        """Reject a non-admin user with 403 before the Tasks fan-out runs."""
         response = api_non_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_403_FORBIDDEN
         mock_tasks_api.get.assert_not_called()
@@ -207,7 +207,7 @@ class TestSepConfigExportYaml:
     async def test_returns_yaml_attachment(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
     ) -> None:
-        """Returns YAML with download headers and one top-level key per wired class."""
+        """Return YAML with download headers and one top-level key per wired class."""
         response = api_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"].startswith("application/x-yaml")
@@ -227,7 +227,7 @@ class TestSepConfigExportYaml:
     async def test_export_keys_match_list_for_sep_classes(
         self, api_admin_client: TestClient
     ) -> None:
-        """Each SEP-wired class block exposes the same keys as ``GET /settings/``."""
+        """Expose the same keys as ``GET /settings/`` for each SEP-wired class block."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
         list_keys = _list_keys_by_class(api_admin_client)
         for setting_class in (
@@ -240,7 +240,7 @@ class TestSepConfigExportYaml:
     async def test_secret_fields_match_list_projection(
         self, api_admin_client: TestClient
     ) -> None:
-        """Every ``is_secret`` LIST entry dumps to the same value in the export."""
+        """Dump every ``is_secret`` LIST entry to the same value in the export."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
         secrets = _secret_fields_from_list(api_admin_client)
         assert secrets, "expected at least one secret field on LIST for this assertion"
@@ -250,7 +250,7 @@ class TestSepConfigExportYaml:
     async def test_secretstr_literals_redacted_in_yaml(
         self, api_admin_client: TestClient, mocker
     ) -> None:
-        """Scalar and nested ``SecretStr`` values render as ``**********``."""
+        """Render scalar and nested ``SecretStr`` values as ``**********``."""
         from pydantic import SecretStr
 
         from app.core.config import PMMSettings
@@ -307,7 +307,7 @@ class TestSepConfigExportYaml:
     async def test_complex_field_renders_as_mapping(
         self, api_admin_client: TestClient
     ) -> None:
-        """``SEPSettings.PLUGINS`` is emitted as a structured value, not a repr blob."""
+        """Emit ``SEPSettings.PLUGINS`` as a structured value, not a repr blob."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
         plugins = export[SettingClassEnum.SEP_SETTINGS.value]["PLUGINS"]
         assert isinstance(plugins, list)
@@ -322,7 +322,7 @@ class TestSepConfigExportTasksFanOut:
     async def test_tasks_settings_merged_from_fan_out(
         self, api_admin_client: TestClient
     ) -> None:
-        """Tasks LIST values appear under the ``TasksSettings`` top-level key."""
+        """Place Tasks LIST values under the ``TasksSettings`` top-level key."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
         tasks_block = export[SettingClassEnum.TASKS_SETTINGS.value]
         assert (
@@ -447,3 +447,373 @@ class TestSepConfigExportTasksFanOut:
         response = api_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert "missing 'settings'" in response.json()["detail"]
+
+
+SEP_CLASS = SettingClassEnum.SEP_SETTINGS.value
+SNIPPETS_CLASS = SettingClassEnum.SNIPPETS_SETTINGS.value
+MESSAGES_CLASS = SettingClassEnum.MESSAGES_SETTINGS.value
+TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value
+TASKS_SAMPLE_KEY = "STALENESS_THRESHOLD_SECONDS"
+MIN_MULTI_KEYS = 2
+
+
+def _one_sep_key(client: TestClient) -> str:
+    """Return one real key on ``SEPSettings`` as seen by the LIST projection."""
+    keys = _list_keys_by_class(client)[SEP_CLASS]
+    assert keys, "expected SEPSettings to expose at least one LIST key"
+    return sorted(keys)[0]
+
+
+@pytest.mark.asyncio
+class TestSepConfigExportFilter:
+    """Tests for the ``keys`` selector filter on ``GET .../settings/export``."""
+
+    async def test_omitted_keys_returns_full_export(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Yield the full four-block export and fan out once when ``keys`` is omitted."""
+        response = api_admin_client.get(EXPORT_URL)
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {SEP_CLASS, SNIPPETS_CLASS, MESSAGES_CLASS, TASKS_CLASS}
+        mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
+
+    async def test_single_key_selector_returns_only_that_key(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Return only that class block with only that key for ``SEPSettings.<key>``."""
+        key = _one_sep_key(api_admin_client)
+        # _one_sep_key hit the LIST endpoint, which fans out to Tasks; reset so the
+        # assert_not_called below measures only the export request.
+        mock_tasks_api.get.reset_mock()
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": f"{SEP_CLASS}.{key}"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {SEP_CLASS}
+        assert set(payload[SEP_CLASS]) == {key}
+        mock_tasks_api.get.assert_not_called()
+
+    async def test_key_selector_tolerates_incidental_whitespace(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Strip whitespace around the key segment so ``Class. KEY`` still resolves."""
+        key = _one_sep_key(api_admin_client)
+        mock_tasks_api.get.reset_mock()
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": f"{SEP_CLASS}. {key} "}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {SEP_CLASS}
+        assert set(payload[SEP_CLASS]) == {key}
+
+    async def test_whole_class_selector_keeps_all_keys(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Keep every LIST key for the class on a bare ``SnippetsSettings`` selector."""
+        list_keys = _list_keys_by_class(api_admin_client)
+        response = api_admin_client.get(EXPORT_URL, params={"keys": SNIPPETS_CLASS})
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {SNIPPETS_CLASS}
+        assert set(payload[SNIPPETS_CLASS]) == list_keys[SNIPPETS_CLASS]
+
+    async def test_mixed_class_and_key_selectors(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Yield exactly two blocks for ``SEPSettings.<key>`` plus whole ``MessagesSettings``."""
+        key = _one_sep_key(api_admin_client)
+        list_keys = _list_keys_by_class(api_admin_client)
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": [f"{SEP_CLASS}.{key}", MESSAGES_CLASS]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {SEP_CLASS, MESSAGES_CLASS}
+        assert set(payload[SEP_CLASS]) == {key}
+        assert set(payload[MESSAGES_CLASS]) == list_keys[MESSAGES_CLASS]
+
+    async def test_block_order_is_canonical_not_selector_order(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Order blocks canonically (SEP before Tasks) regardless of input order."""
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": [TASKS_CLASS, SEP_CLASS]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert list(payload) == [SEP_CLASS, TASKS_CLASS]
+
+    async def test_whole_class_dominates_overlapping_key(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Keep all keys for ``SEPSettings`` + ``SEPSettings.<key>`` (whole class wins)."""
+        key = _one_sep_key(api_admin_client)
+        list_keys = _list_keys_by_class(api_admin_client)
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": [SEP_CLASS, f"{SEP_CLASS}.{key}"]}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload[SEP_CLASS]) == list_keys[SEP_CLASS]
+
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"keys": [SEP_CLASS, f"{SEP_CLASS}.NOT_A_KEY"]},
+            {"keys": [f"{SEP_CLASS}.NOT_A_KEY", SEP_CLASS]},
+        ],
+    )
+    async def test_whole_class_does_not_absorb_invalid_sibling_key(
+        self,
+        api_admin_client: TestClient,
+        mock_tasks_api: AsyncMock,
+        params: dict[str, Any],
+    ) -> None:
+        """Reject a bad ``Class.KEY`` even when the whole class is also requested.
+
+        Order-independent: a whole-class selector dominates output but must not
+        silently absorb a typo'd sibling key (AC 6).
+        """
+        response = api_admin_client.get(EXPORT_URL, params=params)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert f"{SEP_CLASS}.NOT_A_KEY" in response.json()["detail"]
+        mock_tasks_api.get.assert_not_called()
+
+    async def test_whole_tasks_class_does_not_absorb_invalid_sibling_key(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Reject a bad ``TasksSettings.KEY`` after the fan-out runs, despite whole class."""
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": [TASKS_CLASS, f"{TASKS_CLASS}.NOT_A_KEY"]}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert f"{TASKS_CLASS}.NOT_A_KEY" in response.json()["detail"]
+        mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
+
+    async def test_no_tasks_selector_skips_fan_out(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Make no upstream call and emit no Tasks block when the filter excludes Tasks."""
+        response = api_admin_client.get(EXPORT_URL, params={"keys": SNIPPETS_CLASS})
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert TASKS_CLASS not in payload
+        mock_tasks_api.get.assert_not_called()
+
+    async def test_tasks_selector_triggers_filtered_fan_out(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Fan out once and keep only the requested Tasks key for a Tasks key selector."""
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": f"{TASKS_CLASS}.{TASKS_SAMPLE_KEY}"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {TASKS_CLASS}
+        assert set(payload[TASKS_CLASS]) == {TASKS_SAMPLE_KEY}
+        mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
+
+    async def test_unknown_class_returns_400_no_fan_out(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Fail 400 naming the selector on an unknown class name, with no upstream call."""
+        response = api_admin_client.get(EXPORT_URL, params={"keys": "Nope.KEY"})
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Nope.KEY" in response.json()["detail"]
+        mock_tasks_api.get.assert_not_called()
+
+    async def test_unknown_sep_key_returns_400_no_fan_out(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Fail 400 naming the selector on an unknown SEP key, with no upstream call."""
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": f"{SEP_CLASS}.NOT_A_KEY"}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert f"{SEP_CLASS}.NOT_A_KEY" in response.json()["detail"]
+        mock_tasks_api.get.assert_not_called()
+
+    async def test_unknown_tasks_key_returns_400_after_fan_out(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Fail 400 naming the selector on an unknown Tasks key (fan-out did run)."""
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": f"{TASKS_CLASS}.NOT_A_KEY"}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert f"{TASKS_CLASS}.NOT_A_KEY" in response.json()["detail"]
+        mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
+
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"keys": ""},
+            {"keys": [SEP_CLASS, ""]},
+            {"keys": ".LOG_LEVEL"},
+            {"keys": f"{SEP_CLASS}."},
+        ],
+    )
+    async def test_blank_or_malformed_selector_returns_400(
+        self, api_admin_client: TestClient, params: dict[str, Any]
+    ) -> None:
+        """Reject blank, empty-class, and empty-key selectors with 400."""
+        response = api_admin_client.get(EXPORT_URL, params=params)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    async def test_static_invalid_precedes_fan_out(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Fail 400 before any fan-out when an unknown class sits beside a valid Tasks selector."""
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": ["Nope", TASKS_CLASS]}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Nope" in response.json()["detail"]
+        mock_tasks_api.get.assert_not_called()
+
+    async def test_unknown_tasks_key_with_upstream_down_returns_502(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Surface an unknown Tasks key as 502, not 400, when Tasks is unreachable."""
+        mock_tasks_api.get.side_effect = OSError("connection refused")
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": f"{TASKS_CLASS}.NOT_A_KEY"}
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+
+    async def test_filtered_secret_still_redacted(
+        self, api_admin_client: TestClient, mocker
+    ) -> None:
+        """Keep the value redacted in the YAML when filtering to a secret-bearing field."""
+        from pydantic import SecretStr
+
+        from app.sep.config import HealthReportSettings, sep_settings
+
+        mocker.patch.object(
+            sep_settings,
+            "HEALTH_REPORT",
+            HealthReportSettings(
+                upload=True,
+                endpoint="https://snow.example.com",
+                api_key=SecretStr("local-secret"),
+                client_id="client-1",
+            ),
+        )
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": f"{SEP_CLASS}.HEALTH_REPORT"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert "local-secret" not in response.text
+        payload = yaml.safe_load(response.text)
+        assert payload[SEP_CLASS]["HEALTH_REPORT"]["api_key"] == REDACTED_SECRET
+
+    async def test_class_segment_tolerates_incidental_whitespace(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Strip whitespace around the class segment for both whole-class and key selectors."""
+        key = _one_sep_key(api_admin_client)
+        mock_tasks_api.get.reset_mock()
+
+        whole = api_admin_client.get(EXPORT_URL, params={"keys": f" {SNIPPETS_CLASS} "})
+        assert whole.status_code == status.HTTP_200_OK
+        assert set(yaml.safe_load(whole.text)) == {SNIPPETS_CLASS}
+
+        keyed = api_admin_client.get(
+            EXPORT_URL, params={"keys": f" {SEP_CLASS} . {key} "}
+        )
+        assert keyed.status_code == status.HTTP_200_OK
+        keyed_payload = yaml.safe_load(keyed.text)
+        assert set(keyed_payload) == {SEP_CLASS}
+        assert set(keyed_payload[SEP_CLASS]) == {key}
+        mock_tasks_api.get.assert_not_called()
+
+    async def test_multiple_keys_same_class_kept_together(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Accumulate multiple ``Class.KEY`` selectors for one class into a single block."""
+        sep_keys = sorted(_list_keys_by_class(api_admin_client)[SEP_CLASS])
+        assert len(sep_keys) >= MIN_MULTI_KEYS, (
+            "expected SEPSettings to expose at least two LIST keys"
+        )
+        first, second = sep_keys[0], sep_keys[1]
+        response = api_admin_client.get(
+            EXPORT_URL,
+            params={"keys": [f"{SEP_CLASS}.{first}", f"{SEP_CLASS}.{second}"]},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {SEP_CLASS}
+        assert set(payload[SEP_CLASS]) == {first, second}
+
+    async def test_duplicate_selectors_are_benign(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Treat repeated whole-class and key selectors as the single-selector case."""
+        key = _one_sep_key(api_admin_client)
+        list_keys = _list_keys_by_class(api_admin_client)
+
+        dup_class = api_admin_client.get(
+            EXPORT_URL, params={"keys": [SNIPPETS_CLASS, SNIPPETS_CLASS]}
+        )
+        assert dup_class.status_code == status.HTTP_200_OK
+        dup_class_payload = yaml.safe_load(dup_class.text)
+        assert set(dup_class_payload) == {SNIPPETS_CLASS}
+        assert set(dup_class_payload[SNIPPETS_CLASS]) == list_keys[SNIPPETS_CLASS]
+
+        dup_key = api_admin_client.get(
+            EXPORT_URL,
+            params={"keys": [f"{SEP_CLASS}.{key}", f"{SEP_CLASS}.{key}"]},
+        )
+        assert dup_key.status_code == status.HTTP_200_OK
+        dup_key_payload = yaml.safe_load(dup_key.text)
+        assert set(dup_key_payload) == {SEP_CLASS}
+        assert set(dup_key_payload[SEP_CLASS]) == {key}
+
+    async def test_filtered_tasks_secret_still_redacted(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Keep the Tasks secret redacted when filtering to a single Tasks secret key."""
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": f"{TASKS_CLASS}.API_SECRET"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {TASKS_CLASS}
+        assert set(payload[TASKS_CLASS]) == {"API_SECRET"}
+        assert payload[TASKS_CLASS]["API_SECRET"] == REDACTED_SECRET
+        mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
+
+    async def test_bare_tasks_class_keeps_all_keys(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Keep every fetched Tasks key for a bare ``TasksSettings`` selector and fan out once."""
+        response = api_admin_client.get(EXPORT_URL, params={"keys": TASKS_CLASS})
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {TASKS_CLASS}
+        assert set(payload[TASKS_CLASS]) == {TASKS_SAMPLE_KEY, "API_SECRET"}
+        mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
+
+    async def test_class_name_match_is_case_sensitive(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Reject a lowercased class name as an unknown selector with no fan-out."""
+        response = api_admin_client.get(
+            EXPORT_URL, params={"keys": f"{SEP_CLASS.lower()}.LOG_LEVEL"}
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert SEP_CLASS.lower() in response.json()["detail"]
+        mock_tasks_api.get.assert_not_called()
+
+    async def test_filtered_block_equals_full_export_block(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Emit a whole-class block identical to its slice of the unfiltered export."""
+        full = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
+        filtered = yaml.safe_load(
+            api_admin_client.get(EXPORT_URL, params={"keys": SNIPPETS_CLASS}).text
+        )
+        assert filtered[SNIPPETS_CLASS] == full[SNIPPETS_CLASS]

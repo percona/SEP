@@ -20,6 +20,8 @@ Covers the ``/schema`` and ``/capabilities`` discovery endpoints, the
 execute-route factory.
 """
 
+import functools
+import inspect
 from dataclasses import dataclass
 from typing import Annotated
 from unittest.mock import AsyncMock
@@ -54,6 +56,8 @@ from app.sep.plugins.framework.api import (
     capabilities_endpoint,
     derive_crud_routes,
     derive_execute_route,
+    ListFilters,
+    make_list_filter_dep,
     schema_endpoint,
 )
 from app.sep.plugins.framework.deps import make_task_dep
@@ -2049,6 +2053,378 @@ class TestDeriveCrudRoutesOpenApi:
 
         assert "displayLabel" in component["properties"]
         assert "display_label" not in component["properties"]
+
+
+# ── derive_crud_routes() list filters, detail builder, extra deps ───────
+
+
+_CONTEXT_USER_ID = "uid-context-1"
+
+
+class _SyntheticDetailResponse(BaseModel):
+    """Represent a distinct detail response, proving detail may carry its own model."""
+
+    name: str
+    detail: bool = True
+
+
+def _build_synthetic_detail_response(
+    task: Task, status: TaskHistoryStatusEnum | None = None
+) -> _SyntheticDetailResponse:
+    """Build the distinct synthetic detail response for ``task``."""
+    return _SyntheticDetailResponse(name=task.name)
+
+
+class _ContextResponse(BaseModel):
+    """Represent a response whose ``resolved_by`` comes from the bound context."""
+
+    name: str
+    resolved_by: str | None = None
+    status: TaskHistoryStatusEnum | None = None
+
+
+async def _context_provider() -> dict[str, str]:
+    """Return a synthetic username map the framework binds once per request."""
+    return {_CONTEXT_USER_ID: "Alice"}
+
+
+def _build_context_response(
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum | None = None,
+    context: dict[str, str] | None = None,
+) -> _ContextResponse:
+    """Resolve ``created_by`` from the bound ``context`` map, falling back to the id."""
+    mapping = context or {}
+    return _ContextResponse(
+        name=task.name,
+        resolved_by=mapping.get(task.created_by, task.created_by),
+        status=status,
+    )
+
+
+class _ContextCreateResponse(BaseModel):
+    """Represent a distinct create response whose ``resolved_by`` comes from context."""
+
+    name: str
+    resolved_by: str | None = None
+
+
+def _build_context_create_response(
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum | None = None,
+    context: dict[str, str] | None = None,
+) -> _ContextCreateResponse:
+    """Resolve ``created_by`` from the bound ``context`` for a distinct create builder."""
+    mapping = context or {}
+    return _ContextCreateResponse(
+        name=task.name, resolved_by=mapping.get(task.created_by, task.created_by)
+    )
+
+
+def _task_dict_created_by(name: str, created_by: str) -> dict:
+    """Return a ``Task`` payload owned by the synthetic owner with a fixed creator."""
+    return TaskFactory.build(
+        name=name, owner=_SYNTHETIC_OWNER.value, data={}, created_by=created_by
+    ).model_dump(mode="json")
+
+
+def _list_query_param_names(router: APIRouter) -> set[str]:
+    """Return the query-parameter names the list route exposes in its OpenAPI."""
+    app = _mount_plugin_router(router, _CRUD_PREFIX)
+    operation = app.openapi()["paths"][f"{_CRUD_BASE_URL}/"]["get"]
+    return {param["name"] for param in operation.get("parameters", [])}
+
+
+class TestMakeListFilterDep:
+    """Cover the list-filter dependency factory's declared query params."""
+
+    def test_declares_both_params_in_canonical_order(self) -> None:
+        """Declare ``service_type`` before ``status`` when both filters are enabled."""
+        dep = make_list_filter_dep(status=True, service_type=True)
+
+        assert list(inspect.signature(dep).parameters) == ["service_type", "status"]
+
+    def test_declares_only_status_when_service_type_disabled(self) -> None:
+        """Declare only the ``status`` query param when ``service_type`` is disabled."""
+        dep = make_list_filter_dep(status=True, service_type=False)
+
+        assert list(inspect.signature(dep).parameters) == ["status"]
+
+    def test_declares_only_service_type_when_status_disabled(self) -> None:
+        """Declare only the ``service_type`` query param when ``status`` is disabled."""
+        dep = make_list_filter_dep(status=False, service_type=True)
+
+        assert list(inspect.signature(dep).parameters) == ["service_type"]
+
+    def test_declares_no_params_when_both_disabled(self) -> None:
+        """Declare no query params when neither filter is enabled."""
+        dep = make_list_filter_dep(status=False, service_type=False)
+
+        assert list(inspect.signature(dep).parameters) == []
+
+    def test_returns_listfilters_carrying_supplied_values(self) -> None:
+        """Return a ``ListFilters`` carrying the supplied status and service_type."""
+        dep = make_list_filter_dep(status=True, service_type=True)
+
+        result = dep(
+            service_type=ServiceTypeEnum.MYSQL,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+
+        assert result == ListFilters(
+            status=TaskHistoryStatusEnum.SUCCESS, service_type=ServiceTypeEnum.MYSQL
+        )
+
+
+class TestDeriveCrudRoutesListFilters:
+    """Exercise the declarative list-filter query params over the derived list route."""
+
+    def test_no_filters_exposes_no_filter_query_params(self) -> None:
+        """Assert the default list route exposes neither filter query param."""
+        names = _list_query_param_names(_crud_router())
+
+        assert "status" not in names
+        assert "service_type" not in names
+
+    def test_status_filter_exposes_status_query_param(self) -> None:
+        """Assert ``list_status_filter`` adds a ``status`` query param to the route."""
+        names = _list_query_param_names(_crud_router(list_status_filter=True))
+
+        assert "status" in names
+
+    def test_service_type_filter_exposes_service_type_query_param(self) -> None:
+        """Assert ``list_service_type`` adds a ``service_type`` query param."""
+        names = _list_query_param_names(
+            _crud_router(list_service_type=ServiceTypeEnum.MYSQL)
+        )
+
+        assert "service_type" in names
+
+    def test_status_filter_keeps_only_matching_rows(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``?status=`` returns only rows whose latest status matches."""
+        tasks_api = _make_tasks_api(
+            list_items=[_task_dict("t1"), _task_dict("t2")],
+            latest_statuses={
+                "t1": TaskHistoryStatusEnum.SUCCESS.value,
+                "t2": TaskHistoryStatusEnum.FAILED.value,
+            },
+        )
+        client = _authed_crud_client(
+            _crud_router(list_status_filter=True), tasks_api, regular_user
+        )
+
+        response = client.get(
+            f"{_CRUD_BASE_URL}/",
+            params={"status": TaskHistoryStatusEnum.SUCCESS.value},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["name"] for item in response.json()] == ["t1"]
+
+    def test_service_type_mismatch_short_circuits_before_fetch(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a mismatched ``?service_type=`` returns ``[]`` without fetching."""
+        tasks_api = _make_tasks_api(
+            list_items=[_task_dict("t1")],
+            latest_statuses={"t1": TaskHistoryStatusEnum.SUCCESS.value},
+        )
+        client = _authed_crud_client(
+            _crud_router(list_service_type=ServiceTypeEnum.MYSQL),
+            tasks_api,
+            regular_user,
+        )
+
+        response = client.get(
+            f"{_CRUD_BASE_URL}/",
+            params={"service_type": ServiceTypeEnum.POSTGRESQL.value},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+        tasks_api.get.assert_not_awaited()
+
+    def test_service_type_match_lists_rows(self, regular_user: CasdoorUser) -> None:
+        """Assert a matching ``?service_type=`` lists rows normally."""
+        tasks_api = _make_tasks_api(
+            list_items=[_task_dict("t1")],
+            latest_statuses={"t1": TaskHistoryStatusEnum.SUCCESS.value},
+        )
+        client = _authed_crud_client(
+            _crud_router(list_service_type=ServiceTypeEnum.MYSQL),
+            tasks_api,
+            regular_user,
+        )
+
+        response = client.get(
+            f"{_CRUD_BASE_URL}/",
+            params={"service_type": ServiceTypeEnum.MYSQL.value},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["name"] for item in response.json()] == ["t1"]
+
+    def test_paginated_service_type_mismatch_short_circuits_to_empty_envelope(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a paginated mismatch returns an empty ``PaginatedResponse``, not a list."""
+        tasks_api = _make_tasks_api(
+            list_items=[_task_dict("t1")],
+            list_total=5,
+            latest_statuses={"t1": TaskHistoryStatusEnum.SUCCESS.value},
+        )
+        router = _crud_router(
+            list_service_type=ServiceTypeEnum.MYSQL,
+            pagination_dep=make_pagination_dep(max_limit=50),
+        )
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.get(
+            f"{_CRUD_BASE_URL}/",
+            params={"service_type": ServiceTypeEnum.POSTGRESQL.value},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["items"] == []
+        assert body["total"] == 0
+        tasks_api.get.assert_not_awaited()
+
+
+class TestDeriveCrudRoutesDetailBuilder:
+    """Cover the ``detail_response_builder`` override and its fallback."""
+
+    def test_detail_uses_detail_builder_model(self) -> None:
+        """Assert a detail builder gives the detail route its own response model."""
+        router = _crud_router(detail_response_builder=_build_synthetic_detail_response)
+        detail_route = _route_for(router, "/{task_name}", "GET")
+        list_route = _route_for(router, "/", "GET")
+
+        assert detail_route.response_model is _SyntheticDetailResponse
+        assert list_route.response_model == list[_SyntheticTaskResponse]
+
+    def test_detail_model_falls_back_to_list_model(self) -> None:
+        """Assert the detail route reuses the list model when no detail builder is set."""
+        detail_route = _route_for(_crud_router(), "/{task_name}", "GET")
+
+        assert detail_route.response_model is _SyntheticTaskResponse
+
+    def test_detail_response_model_overrides_inference(self) -> None:
+        """Assert an explicit ``detail_response_model`` wins over builder inference."""
+        router = _crud_router(
+            detail_response_builder=_build_synthetic_detail_response,
+            detail_response_model=_SyntheticCreateResponse,
+        )
+        detail_route = _route_for(router, "/{task_name}", "GET")
+
+        assert detail_route.response_model is _SyntheticCreateResponse
+
+    def test_create_uses_detail_model_when_detail_builder_set(self) -> None:
+        """Assert create renders like detail when a detail builder is set, no create builder."""
+        router = _crud_router(detail_response_builder=_build_synthetic_detail_response)
+        create_route = _route_for(router, "/", "POST")
+        list_route = _route_for(router, "/", "GET")
+
+        assert create_route.response_model is _SyntheticDetailResponse
+        assert list_route.response_model == list[_SyntheticTaskResponse]
+
+    def test_detail_binds_context_provider_result(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the detail handler binds the once-awaited context into the builder."""
+        tasks_api = _make_tasks_api(
+            detail_task=_task_dict_created_by("t1", _CONTEXT_USER_ID),
+            history_items=[{"status": TaskHistoryStatusEnum.SUCCESS.value}],
+        )
+        router = _crud_router(
+            response_builder=_build_context_response,
+            context_provider=_context_provider,
+        )
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.get(f"{_CRUD_BASE_URL}/t1")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["resolved_by"] == "Alice"
+
+
+class TestDeriveCrudRoutesPartialBuilder:
+    """Cover builders wrapped in :func:`functools.partial`."""
+
+    def test_partial_response_builder_resolves_model(self) -> None:
+        """Assert a partial-wrapped builder constructs and resolves its model."""
+        router = _crud_router(
+            response_builder=functools.partial(_build_synthetic_response)
+        )
+        list_route = _route_for(router, "/", "GET")
+
+        assert list_route.response_model == list[_SyntheticTaskResponse]
+
+    def test_partial_detail_builder_resolves_model(self) -> None:
+        """Assert a partial-wrapped detail builder constructs and resolves its model."""
+        router = _crud_router(
+            detail_response_builder=functools.partial(_build_synthetic_detail_response)
+        )
+        detail_route = _route_for(router, "/{task_name}", "GET")
+
+        assert detail_route.response_model is _SyntheticDetailResponse
+
+
+class TestDeriveCrudRoutesCreateExtraDeps:
+    """Cover the per-route ``create_extra_deps`` splat on the create route."""
+
+    def test_create_route_carries_extra_dep(self) -> None:
+        """Assert a supplied ``create_extra_deps`` entry rides the create route."""
+        router = _crud_router(create_extra_deps=(Depends(_marker_dep),))
+        route = _route_for(router, "/", "POST")
+
+        assert _marker_dep in {dep.dependency for dep in route.dependencies}
+
+    def test_create_route_keeps_api_authenticated_with_extra_dep(self) -> None:
+        """Assert the standard auth guard is preserved alongside the extra dep."""
+        router = _crud_router(create_extra_deps=(Depends(_marker_dep),))
+        route = _route_for(router, "/", "POST")
+        callables = {dep.dependency for dep in route.dependencies}
+
+        assert get_api_authenticated_user in callables
+        assert _marker_dep in callables
+
+
+class TestDeriveCrudRoutesCreateContext:
+    """Cover the create handler's context binding into the active builder."""
+
+    def test_context_binds_into_distinct_create_builder(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the context binds into a distinct ``create_response_builder``.
+
+        Edge case: ``create_response_builder`` set **and** a context provider active
+        — the provider's result must reach the create-specific builder, not only the
+        list/detail builder.
+        """
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_created_by("new-task", _CONTEXT_USER_ID)
+        )
+        router = _crud_router(
+            response_builder=_build_context_response,
+            create_response_builder=_build_context_create_response,
+            context_provider=_context_provider,
+        )
+        client = _authed_crud_client(router, tasks_api, regular_user)
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["resolved_by"] == "Alice"
+
+    def test_contextless_builder_with_provider_rejected_at_registration(self) -> None:
+        """Assert a context-less builder with a provider fails fast at registration."""
+        with pytest.raises(TypeError, match="context"):
+            _crud_router(context_provider=_context_provider)
 
 
 # ── derive_execute_route() helper ───────────────────────────────────────

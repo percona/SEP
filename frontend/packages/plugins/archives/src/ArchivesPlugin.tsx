@@ -17,7 +17,14 @@
 
 import { SchemaDrivenPlugin } from '@sep/framework';
 import { PLUGIN_NAME } from './routes';
+import { ArchiveForm } from './ArchiveForm';
 
 export function ArchivesPlugin() {
-  return <SchemaDrivenPlugin pluginName={PLUGIN_NAME} />;
+  return (
+    <SchemaDrivenPlugin
+      pluginName={PLUGIN_NAME}
+      renderCreateForm={(props) => <ArchiveForm {...props} submitLabel="Create Archives" />}
+      renderEditForm={(props) => <ArchiveForm {...props} submitLabel="Save Archives" />}
+    />
+  );
 }
