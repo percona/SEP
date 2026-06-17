@@ -546,3 +546,34 @@ class TestSnippetsCsrfEnforcement:
         error.assert_called_once()
         message = str(error.call_args.args[1])
         assert "CSRF" in message or "csrf" in message.lower()
+
+    @pytest.mark.asyncio
+    async def test_refresh_without_csrf_token_redirects_with_error(
+        self,
+        admin_client_no_csrf: TestClient,
+        mocker: MockerFixture,
+    ):
+        """POST refresh with no form CSRF token → 303 redirect with CSRF error flash.
+
+        The CSRF dependency runs before the route body, so the snippet sync is
+        never triggered when the token is missing.
+        """
+        mocker.patch(
+            "app.sep.plugins.snippets.routes.snippets_settings.ENABLE_MANUAL_SYNC",
+            new=True,
+        )
+        update = mocker.patch(
+            "app.sep.plugins.snippets.routes.update_snippets",
+            new=AsyncMock(return_value=None),
+        )
+        error = mocker.patch("app.sep.main.messages.error")
+
+        response = admin_client_no_csrf.post(
+            "/snippets/refresh", follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        error.assert_called_once()
+        message = str(error.call_args.args[1])
+        assert "CSRF" in message or "csrf" in message.lower()
+        update.assert_not_awaited()
