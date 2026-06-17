@@ -20,8 +20,10 @@ import logging
 from pathlib import Path
 
 from sqlmodel import col
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.celery import celery
+from app.sep.app_drain import owned_by, should_cancel
 from app.sep.db import get_async_session_maker
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.snippets.config import SnippetFilterType, snippets_settings
@@ -32,6 +34,7 @@ from app.sep.snippets.utils import guess_mime_type
 logger = logging.getLogger(__name__)
 
 
+@owned_by("snippets")
 @celery.task
 def sync_snippets() -> None:
     """Define Celery task to sync snippets from `sep_setting.SNIPPETS.SNIPPETS_DIR`."""
@@ -47,6 +50,9 @@ async def update_snippets() -> None:
         skipped_filenames = []
         created_count = 0
         for snippet_path in snippets_settings.SNIPPETS_DIR.rglob("*"):
+            if await should_cancel("snippets", session=session):
+                logger.info("Snippets app disabling; stopping snippet sync early.")
+                return
             if snippet_path.is_file():
                 snippet_name = str(
                     snippet_path.relative_to(snippets_settings.SNIPPETS_DIR)
@@ -74,6 +80,9 @@ async def update_snippets() -> None:
                     )
                     await created_snippet.update_from_snippet(snippet)
                     updated_snippets.append(created_snippet)
+        if await should_cancel("snippets", session=session):
+            logger.info("Snippets app disabling; skipping post-sync snippet writes.")
+            return
         if created_count:
             logger.info("Added %s new snippets", created_count)
         if updated_snippets:
@@ -81,23 +90,32 @@ async def update_snippets() -> None:
             await SnippetManager.save_batch(
                 session, *updated_snippets, flag_modified_fields=["meta"]
             )
-        delete_result = await SnippetManager.delete_where(
-            session, col(Snippet.filename).not_in(processed_filenames)
+        await _delete_unsynced_snippets(session, processed_filenames, skipped_filenames)
+
+
+async def _delete_unsynced_snippets(
+    session: AsyncSession,
+    processed_filenames: list[str],
+    skipped_filenames: list[str],
+) -> None:
+    """Delete snippet rows whose files are gone from disk or now filtered out."""
+    delete_result = await SnippetManager.delete_where(
+        session, col(Snippet.filename).not_in(processed_filenames)
+    )
+    if delete_result.rowcount:
+        logger.info(
+            "Deleted %s snippets not found in filesystem", delete_result.rowcount
         )
-        if delete_result.rowcount:
-            logger.info(
-                "Deleted %s snippets not found in filesystem", delete_result.rowcount
-            )
-        delete_result = await SnippetManager.delete_where(
-            session,
-            col(Snippet.filename).in_(skipped_filenames),
-            col(Snippet.approved_at).is_(None),
+    delete_result = await SnippetManager.delete_where(
+        session,
+        col(Snippet.filename).in_(skipped_filenames),
+        col(Snippet.approved_at).is_(None),
+    )
+    if delete_result.rowcount:
+        logger.info(
+            "Deleted %s non-approved snippets that don't match the defined filters",
+            delete_result.rowcount,
         )
-        if delete_result.rowcount:
-            logger.info(
-                "Deleted %s non-approved snippets that don't match the defined filters",
-                delete_result.rowcount,
-            )
 
 
 def should_skip_snippet(snippet_path: Path) -> bool:
@@ -128,6 +146,7 @@ def should_skip_snippet(snippet_path: Path) -> bool:
     return False
 
 
+@owned_by("report")
 @celery.task
 def generate_health_report(
     since: str = "now-7d",
@@ -180,6 +199,10 @@ async def _generate_health_report(
         logger.warning("PMM not configured, skipping health report generation")
         return
 
+    if await should_cancel("report"):
+        logger.info("Report app disabling; skipping health report generation.")
+        return
+
     try:
         report = await generate_report(
             pmm_api,
@@ -202,6 +225,10 @@ async def _generate_health_report(
     if not upload:
         return
 
+    if await should_cancel("report"):
+        logger.info("Report app disabling; skipping health report upload.")
+        return
+
     if not sep_settings.HEALTH_REPORT.is_upload_configured:
         reasons = sep_settings.HEALTH_REPORT.upload_disabled_reasons
         logger.warning(
@@ -218,6 +245,7 @@ async def _generate_health_report(
         logger.exception("Failed to upload health report to ServiceNow")
 
 
+@owned_by("alerts")
 @celery.task
 def backup_alert_config() -> None:
     """Define Celery task to back up PMM alert configuration."""
@@ -232,6 +260,10 @@ async def _backup_alert_config() -> None:
     pmm_api = await get_pmm_api()
     if pmm_api is None:
         logger.warning("PMM not configured, skipping alert backup")
+        return
+
+    if await should_cancel("alerts"):
+        logger.info("Alerts app disabling; skipping alert backup fetch.")
         return
 
     try:
@@ -272,6 +304,9 @@ async def _backup_alert_config() -> None:
 
     async_session = get_async_session_maker()
     async with async_session() as session:
+        if await should_cancel("alerts", session=session):
+            logger.info("Alerts app disabling; skipping alert backup write.")
+            return
         recent = await AlertBackupManager.list(session, limit=1)
         if recent and recent[0].data == data:
             logger.debug("Alert config unchanged, skipping backup")

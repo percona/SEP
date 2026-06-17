@@ -33,6 +33,7 @@ from app.sep.plugins.framework.form_dsl import (
     Forbidden,
     FormLayout,
     FormRules,
+    Hidden,
     HostRef,
     Requires,
     SchemaRef,
@@ -328,6 +329,53 @@ class TestRequiredAndDefault:
     def test_bool_default_false_is_kept(self) -> None:
         """Keep a ``False`` default on a bool field (it is not ``None``)."""
         assert _fields_by_name(_ReqDefModel)["flag"].default is False
+
+
+class _DefaultModel(AppFormModel):
+    task_name: Annotated[str, Ui(label="N", section="s")] = ""
+    plain: Annotated[str, Ui(label="P", section="s")] = "body-default"
+    display: Annotated[str, Ui(label="D", section="s", default="display-default")] = (
+        "body-default"
+    )
+    none_display: Annotated[str, Ui(label="ND", section="s", default=None)] = (
+        "body-default"
+    )
+    excluded: Annotated[bool, Hidden()] = False
+    excluded_with_ui: Annotated[bool, Hidden(), Ui(label="X", section="s")] = False
+
+
+class TestUiDefaultTriState:
+    """Cover the tri-state ``Ui(default=...)`` form-display default."""
+
+    def test_unset_default_uses_pydantic_default(self) -> None:
+        """Derive the schema default from the model default when ``Ui.default`` is unset."""
+        assert _fields_by_name(_DefaultModel)["plain"].default == "body-default"
+
+    def test_value_default_overrides_model_default(self) -> None:
+        """Prefer ``Ui.default`` over the model default, leaving the model default intact."""
+        assert _fields_by_name(_DefaultModel)["display"].default == "display-default"
+        assert _DefaultModel.model_fields["display"].default == "body-default"
+
+    def test_explicit_none_default_sets_schema_default_to_none(self) -> None:
+        """Honor ``Ui(default=None)`` as a form default of ``None`` over a value default."""
+        assert _fields_by_name(_DefaultModel)["none_display"].default is None
+        assert _DefaultModel.model_fields["none_display"].default == "body-default"
+
+
+class TestHiddenExclusion:
+    """Cover the ``Hidden()`` field-exclusion marker."""
+
+    def test_hidden_field_absent_from_derived_schema(self) -> None:
+        """Drop a ``Hidden`` field from the derived form sections."""
+        assert "excluded" not in _fields_by_name(_DefaultModel)
+
+    def test_hidden_field_stays_on_create_model(self) -> None:
+        """Keep a ``Hidden`` field on the create model for JSON-body validation."""
+        assert "excluded" in _DefaultModel.model_fields
+
+    def test_hidden_field_skipped_before_ui_requirement(self) -> None:
+        """Skip a ``Hidden`` field before the ``Ui`` requirement, ignoring a paired ``Ui``."""
+        assert "excluded_with_ui" not in _fields_by_name(_DefaultModel)
 
 
 class _GateModel(AppFormModel):

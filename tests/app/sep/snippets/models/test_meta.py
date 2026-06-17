@@ -33,6 +33,7 @@ from app.sep.snippets.forms import (
 from app.sep.snippets.models.meta import (
     serialize_cli_value,
     SnippetMetaParameter,
+    SnippetMetaParametersValidationResult,
     SnippetMetaParameterType,
     SnippetVisibilityCondition,
 )
@@ -647,3 +648,56 @@ class TestVisibilityCondition:
         """A condition referencing a hyphenated sibling name is rejected."""
         with pytest.raises(ValidationError, match="valid Python identifier"):
             SnippetMetaParameter(name="start", visible_when_not="list-mode")
+
+
+class TestHiddenParameter:
+    """Test the generic, unconditional ``hidden`` flag.
+
+    A hidden parameter is omitted from every rendered form but is still
+    validated normally, so a value the server injects (e.g. the PMM
+    ``apikey``) continues to validate without a visible field.
+    """
+
+    def test_hidden_defaults_to_false(self):
+        """A parameter is not hidden unless explicitly marked."""
+        param = SnippetMetaParameter(name="pmmserver")
+        assert param.hidden is False
+
+    def test_hidden_can_be_set_true(self):
+        """``hidden: true`` is accepted and round-trips."""
+        param = SnippetMetaParameter(name="apikey", hidden=True)
+        assert param.hidden is True
+
+    def test_hidden_param_still_produces_validation_field(self):
+        """A hidden param still yields a validation field so it validates."""
+        param = SnippetMetaParameter(name="apikey", description="API key", hidden=True)
+        field = param.to_validation_field()
+        assert field.alias == "apikey"
+        # validation_type is unchanged by hiding (optional str without default)
+        assert param.validation_type is not None
+
+    def test_hidden_may_combine_with_required(self):
+        """A hidden parameter may also be required.
+
+        A hidden field whose value is injected server-side may legitimately be
+        required; hiding only suppresses rendering, never validation.
+        """
+        param = SnippetMetaParameter(name="apikey", required=True, hidden=True)
+        assert param.hidden is True
+        assert param.required is True
+
+    def test_hidden_serialized_in_model_dump(self):
+        """``hidden`` participates in serialization (so it joins the form cache key)."""
+        param = SnippetMetaParameter(name="apikey", hidden=True)
+        assert param.model_dump()["hidden"] is True
+
+    def test_visible_parameters_excludes_hidden_and_keeps_order(self):
+        """``visible_parameters`` drops hidden params while preserving order."""
+        first = SnippetMetaParameter(name="pmmserver")
+        hidden = SnippetMetaParameter(name="apikey", hidden=True)
+        last = SnippetMetaParameter(name="node")
+        result = SnippetMetaParametersValidationResult(
+            parameters=[first, hidden, last], errors=[]
+        )
+        assert result.visible_parameters == [first, last]
+        assert result.parameters == [first, hidden, last]

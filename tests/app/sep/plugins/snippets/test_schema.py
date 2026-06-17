@@ -323,6 +323,32 @@ async def test_build_snippet_schema_with_gated_field_validates(create_snippet):
     assert start_field.forbidden[0].when.to_dict() == {"truthy": "list"}
 
 
+@pytest.mark.asyncio
+async def test_per_snippet_schema_omits_hidden_parameter(create_snippet):
+    """A ``hidden`` parameter is excluded from the generic snippet schema.
+
+    ``hidden`` is a generic snippet primitive, so the schema-driven snippets form
+    must omit it just as ``_to_form`` and the Dipper schema builder do — while a
+    sibling non-hidden parameter still renders.
+    """
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.__dict__.pop("validated_parameters", None)
+    snippet.meta = {
+        **snippet.meta,
+        "parameters": [
+            {"name": "pmmserver", "type": "str", "label": "PMM server"},
+            {"name": "apikey", "type": "str", "label": "API key", "hidden": True},
+        ],
+    }
+    snippet.__dict__.pop("validated_parameters", None)
+
+    schema = build_snippet_schema(snippet)
+
+    field_names = {field.name for section in schema.forms for field in section.fields}
+    assert "pmmserver" in field_names
+    assert "apikey" not in field_names
+
+
 def test_field_for_maps_datetime_parameter_to_datetime_field():
     """Verify DATETIME parameters map directly to DateTimeField via field_for."""
     param = SnippetMetaParameter(

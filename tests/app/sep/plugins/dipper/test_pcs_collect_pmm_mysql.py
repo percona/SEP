@@ -180,6 +180,57 @@ class TestPcsCollectPmmMysqlListVisibility:
     async def test_schema_forbids_gated_fields_when_list(self):
         """The synthesised schema hides the gated fields when ``list`` is truthy."""
         from app.sep.plugins.snippets.schema import field_for
+
+
+class TestPcsCollectPmmMysqlApikeyHidden:
+    """Tests for hiding the apikey field from the PMM form."""
+
+    def test_frontmatter_marks_apikey_hidden(self):
+        """The apikey parameter declares ``hidden: true`` in the YAML frontmatter."""
+        block = _parameter_block(_frontmatter(), "apikey")
+        assert "hidden: true" in block
+
+    def test_other_parameters_are_not_hidden(self):
+        """Only apikey is hidden; sibling params do not declare ``hidden``."""
+        frontmatter = _frontmatter()
+        for name in ("pmmserver", "node", "service", "list"):
+            assert "hidden: true" not in _parameter_block(frontmatter, name)
+
+    @pytest.mark.asyncio
+    async def test_validated_apikey_parameter_is_hidden(self):
+        """The parsed snippet parameter for apikey carries ``hidden=True``."""
+        from app.sep.snippets.models.snippet import BaseSnippet
+
+        meta = await BaseSnippet.get_meta_by_path(SCRIPT)
+        snippet = BaseSnippet(
+            filename="pcs-collect-pmm-mysql.py",
+            size=1,
+            md5_digest="a" * 32,
+            meta=meta,
+        )
+        validated = snippet.validated_parameters
+        assert validated.errors == []
+        by_name = {p.name: p for p in validated.parameters}
+        assert by_name["apikey"].hidden is True
+        assert by_name["pmmserver"].hidden is False
+
+
+class TestPcsCollectPmmMysqlListVisibility:
+    """Tests for hiding date/HA/DBaaS fields in list-services mode (SEP-1319)."""
+
+    _GATED_PARAMETERS = ("start", "end", "ha", "ha_name", "dbaas")
+
+    def test_frontmatter_marks_fields_hidden_when_list(self):
+        """start, end, ha, ha_name, and dbaas declare visible_when_not: list."""
+        frontmatter = _frontmatter()
+        for name in self._GATED_PARAMETERS:
+            block = _parameter_block(frontmatter, name)
+            assert "visible_when_not: list" in block
+
+    @pytest.mark.asyncio
+    async def test_schema_forbids_gated_fields_when_list(self):
+        """The synthesised schema hides the gated fields when ``list`` is truthy."""
+        from app.sep.plugins.snippets.schema import field_for
         from app.sep.snippets.models.snippet import BaseSnippet
 
         meta = await BaseSnippet.get_meta_by_path(SCRIPT)
