@@ -41,6 +41,10 @@
 ## Globals
 PT_DIRECTORY=".percona-toolkit"
 DB_CLI_OPTIONS=()
+# Holds only the user-supplied -o connection options (e.g. -h/-U/-p), without the
+# psql-specific flags added below. pt-pg-summary is a separate Go binary with its
+# own flag set (no -tA / --dbname), so it can't be fed DB_CLI_OPTIONS directly.
+PT_PG_SUMMARY_OPTIONS=()
 OUT_DIR=$(hostname)_environment_$(date +%FT%H%M)
 if [[ -z ${ISRDS} ]]; then
     ISRDS=0
@@ -89,6 +93,7 @@ while getopts hrto:d:i:p:sw flag; do
             IFS=" " read -r -a OPTS <<< "${OPTARG}"
             for o in "${OPTS[@]}"; do
                 DB_CLI_OPTIONS+=("${o}")
+                PT_PG_SUMMARY_OPTIONS+=("${o}")
             done
             ;;
         d)
@@ -447,7 +452,28 @@ fi
 ## Database Information
 
 echo -n "Executing pt-pg-summary..."
-"${PT_DIRECTORY}/pt-pg-summary" "${DB_CLI_OPTIONS[@]}" > "${OUT_DIR}/pt-pg-summary"
+# pt-pg-summary is a separate Go binary (lib/pq driver), not psql: when no host is
+# given its driver defaults to a TCP localhost connection, whereas psql defaults to
+# the local Unix socket. So unless the operator passed an explicit -h/--host via -o,
+# point pt-pg-summary at the server's Unix socket directory so it authenticates the
+# same way the rest of the script's psql calls do (e.g. peer auth as the invoking
+# user) instead of failing on a password-protected TCP connection.
+PT_PG_SUMMARY_ARGS=("${PT_PG_SUMMARY_OPTIONS[@]}")
+HOST_SUPPLIED=0
+for opt in "${PT_PG_SUMMARY_OPTIONS[@]}"; do
+    if [[ ${opt} == "-h" || ${opt} == "--host" || ${opt} == --host=* ]]; then
+        HOST_SUPPLIED=1
+        break
+    fi
+done
+if [[ ${HOST_SUPPLIED} -eq 0 ]]; then
+    # SHOW returns the configured socket dirs (may be comma-separated); use the first.
+    socket_dir=$(echo "SHOW unix_socket_directories" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null | cut -d',' -f1 | tr -d '[:space:]' || true)
+    if [[ -n ${socket_dir} ]]; then
+        PT_PG_SUMMARY_ARGS=("--host=${socket_dir}" "${PT_PG_SUMMARY_OPTIONS[@]}")
+    fi
+fi
+"${PT_DIRECTORY}/pt-pg-summary" "${PT_PG_SUMMARY_ARGS[@]}" > "${OUT_DIR}/pt-pg-summary"
 echo "Done"
 
 echo -n "Collecting PGSQL info... "
