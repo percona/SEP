@@ -426,8 +426,45 @@ class HealthReportSettings(BaseLowercaseModel):
         return not self.upload_disabled_reasons
 
 
+class AppDrainSettings(BaseLowercaseModel):
+    """Configure the cooperative app-drain reconciler.
+
+    :param reconcile_interval: Cadence of the ``reconcile_disabling_apps`` safety
+        net that prunes orphaned running-task rows and finalizes idle
+        ``DISABLING`` apps. Defaults to every 5 minutes.
+    :param stale_task_ttl: Maximum age of an
+        :class:`app.sep.models.AppRunningTask` row before the reconciler treats it
+        as orphaned (its task was force-killed or its worker crashed, so
+        ``task_postrun`` never deleted it) and prunes it. Must exceed the longest
+        expected runtime of a drainable task. Defaults to 1 hour.
+    """
+
+    reconcile_interval: IntervalSchedule = IntervalSchedule(
+        every=5, period=Period.MINUTES
+    )
+    stale_task_ttl: TimedeltaSeconds = timedelta(hours=1)
+
+    @field_validator("stale_task_ttl")
+    @classmethod
+    def _stale_task_ttl_positive(cls, value: timedelta) -> timedelta:
+        """Reject a zero or negative stale-task TTL.
+
+        The reconciler prunes rows whose ``created_at`` predates
+        ``utc_now() - stale_task_ttl``. A non-positive TTL puts that cutoff at or
+        after the present, so every in-flight ``AppRunningTask`` row is pruned and
+        a ``DISABLING`` app finalizes to ``DISABLED`` while its tasks still run.
+
+        :param value: The configured stale-task TTL.
+        :return: The validated TTL.
+        :raises ValueError: If ``value`` is not strictly positive.
+        """
+        if value.total_seconds() <= 0:
+            raise ValueError("APP_DRAIN.stale_task_ttl must be a positive duration")
+        return value
+
+
 class SEPSettings(BaseYamlAppSettings):
-    """Settings for SEP.
+    """Define settings for SEP.
 
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
@@ -481,6 +518,8 @@ class SEPSettings(BaseYamlAppSettings):
     :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
         Upload is disabled by default.
     :type HEALTH_REPORT: HealthReportSettings
+    :param APP_DRAIN: Operator-tunable settings for the cooperative app-drain
+        reconciler (reconcile cadence and stale running-task TTL).
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
         ``$summary`` and ``$version`` placeholders. Defaults to ``"$summary $version"``.
     :type FOOTER_TEMPLATE: Template
@@ -518,6 +557,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNC_REFRESH_TIME: int = hot_field(5)
     PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
+    APP_DRAIN: AppDrainSettings = AppDrainSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
     FOOTER_TEMPLATE: Template = hot_field(
