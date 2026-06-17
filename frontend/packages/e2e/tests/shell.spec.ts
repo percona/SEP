@@ -191,7 +191,7 @@ test.describe('shell sanity smoke', () => {
     await page.goto('/plugins/checksums');
 
     // SchemaDrivenPlugin renders the schema displayName as an h4 heading.
-    // Allow extra time for the lazy-loaded @sep/plugin-checksums chunk to
+    // Allow extra time for the lazy-loaded SchemaDrivenPlugin / framework chunk to
     // load (Vite preview serves a cold network roundtrip on first nav).
     await expect(page.getByRole('heading', { name: 'Checksums' })).toBeVisible({
       timeout: 30_000,
