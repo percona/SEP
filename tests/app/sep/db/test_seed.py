@@ -16,27 +16,40 @@
 """Tests for AppState seeding in :func:`app.sep.db.seed.init_sep_db`."""
 
 from collections.abc import AsyncIterator
-from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
+from sqlalchemy_celery_beat import IntervalSchedule
+from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel import SQLModel
 
+from app.core.celery.crud import BasePeriodicTaskManager
+from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.sep.crud import AppStateManager
+from app.sep import periodic_tasks as periodic_tasks_module
+from app.sep.config import Plugin
+from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
-from app.sep.models import AppState
+from app.sep.models import AppLifecycleEnum, AppState
+from app.sep.plugins.framework.registry import get_app_registry
+
+SNIPPETS_TASK = "sep__sync_snippets"
 
 
-def _plugin(key: str, *, enabled: bool = True) -> MagicMock:
-    """Build a minimal Plugin stand-in carrying ``module_name`` and ``enabled``."""
-    plugin = MagicMock()
-    plugin.module_name = f"app.sep.plugins.{key}"
-    plugin.enabled = enabled
-    return plugin
+def _plugin(key: str, *, enabled: bool = True) -> Plugin:
+    """Build a ``Plugin`` activation entry for ``key``."""
+    return Plugin(module_name=key, enabled=enabled)
+
+
+@pytest.fixture(autouse=True)
+def _clear_registry_cache() -> None:
+    """Rebuild the registry from each test's patched ``PLUGINS``."""
+    get_app_registry.cache_clear()
+    yield
+    get_app_registry.cache_clear()
 
 
 @pytest_asyncio.fixture(name="seed_maker")
@@ -55,8 +68,16 @@ async def seed_maker_fixture() -> AsyncIterator:
 
 @pytest.fixture
 def patched_seed(mocker, seed_maker):
-    """Patch the seed module's session maker and stub the periodic-task seeding."""
+    """Patch the seed module's session maker and stub the periodic-task work.
+
+    Both the celery-beat task seeding (``init_periodic_tasks_db``) and the
+    cross-database gating (``sync_app_periodic_task_gating``) are stubbed so the
+    AppState-only tests never reach a real scheduler database.
+    """
     mocker.patch.object(seed_module, "get_async_session_maker", return_value=seed_maker)
+    mocker.patch.object(
+        seed_module, "sync_app_periodic_task_gating", new_callable=mocker.AsyncMock
+    )
     return mocker.patch.object(
         seed_module, "init_periodic_tasks_db", new_callable=mocker.AsyncMock
     )
@@ -83,8 +104,11 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
-        assert states == {"snippets": True, "checksums": False}
+            lifecycle_states = await AppStateManager.all_lifecycle_states(session)
+        assert lifecycle_states == {
+            "snippets": AppLifecycleEnum.ENABLED,
+            "checksums": AppLifecycleEnum.DISABLED,
+        }
 
     async def test_inventory_is_never_seeded(
         self, mocker, patched_seed, seed_maker
@@ -95,7 +119,7 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
+            states = await AppStateManager.all_lifecycle_states(session)
         assert "inventory" not in states
 
     async def test_idempotent_second_run(
@@ -110,15 +134,17 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
-        assert states == {"snippets": True}
+            states = await AppStateManager.all_lifecycle_states(session)
+        assert states == {"snippets": AppLifecycleEnum.ENABLED}
 
     async def test_existing_row_not_overwritten(
         self, mocker, patched_seed, seed_maker
     ) -> None:
         """An existing row keeps its value even when the YAML flips ``enabled``."""
         async with seed_maker() as session:
-            session.add(AppState(app_key="snippets", enabled=False))
+            session.add(
+                AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+            )
             await session.commit()
 
         mocker.patch.object(
@@ -132,8 +158,12 @@ class TestInitSepDbAppStateSeeding:
     async def test_orphan_rows_deleted(self, mocker, patched_seed, seed_maker) -> None:
         """Rows for apps no longer configured (incl. now-protected) are removed."""
         async with seed_maker() as session:
-            session.add(AppState(app_key="ghost", enabled=True))
-            session.add(AppState(app_key="inventory", enabled=True))
+            session.add(
+                AppState(app_key="ghost", lifecycle_state=AppLifecycleEnum.ENABLED)
+            )
+            session.add(
+                AppState(app_key="inventory", lifecycle_state=AppLifecycleEnum.ENABLED)
+            )
             await session.commit()
 
         mocker.patch.object(
@@ -142,8 +172,8 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         async with seed_maker() as session:
-            states = await AppStateManager.all_states(session)
-        assert states == {"snippets": True}
+            states = await AppStateManager.all_lifecycle_states(session)
+        assert states == {"snippets": AppLifecycleEnum.ENABLED}
 
     async def test_periodic_task_seeding_still_runs(
         self, mocker, patched_seed, seed_maker
@@ -154,3 +184,100 @@ class TestInitSepDbAppStateSeeding:
         await seed_module.init_sep_db()
 
         patched_seed.assert_awaited_once()
+
+
+def test_reconciler_seeded_as_ungated_system_task() -> None:
+    """The drain reconciler is seeded with no owner, so it is never gated off."""
+    reconcilers = [
+        task
+        for schedule in seed_module.SYSTEM_PERIODIC_TASKS
+        for task in schedule.tasks
+        if task.task_name == "app.sep.app_drain.reconcile_disabling_apps"
+    ]
+    assert len(reconcilers) == 1
+    assert reconcilers[0].owner_app_key is None
+
+
+@pytest_asyncio.fixture(name="beat_maker")
+async def beat_maker_fixture() -> AsyncIterator:
+    """Provide a session maker bound to an in-memory celery-beat DB."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
+    async with engine.begin() as conn:
+        await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
+    yield get_async_session_maker_from_engine(engine)
+
+
+@pytest.mark.asyncio
+class TestInitSepDbPeriodicTaskGating:
+    """Tests for the periodic-task gating wired into ``init_sep_db``."""
+
+    @pytest.mark.parametrize("app_enabled", [True, False])
+    async def test_gate_reflects_app_state(
+        self, mocker, seed_maker, beat_maker, app_enabled
+    ) -> None:
+        """``init_sep_db`` seeds wrapper rows and writes ``effective_enabled`` through."""
+        async with beat_maker() as session:
+            schedule = IntervalSchedule(every=10, period=Period.MINUTES)
+            session.add(schedule)
+            await session.flush()
+            session.add(
+                PeriodicTask(
+                    name=SNIPPETS_TASK,
+                    task="app.sep.celery.sync_snippets",
+                    enabled=True,
+                    schedule_model=schedule,
+                )
+            )
+            await session.commit()
+
+        mocker.patch.object(
+            seed_module, "get_async_session_maker", return_value=seed_maker
+        )
+        mocker.patch.object(
+            seed_module, "init_periodic_tasks_db", new_callable=mocker.AsyncMock
+        )
+        mocker.patch.object(
+            periodic_tasks_module, "get_sep_session_maker", return_value=seed_maker
+        )
+        mocker.patch.object(
+            periodic_tasks_module,
+            "get_celery_beat_session_maker",
+            return_value=beat_maker,
+        )
+        mocker.patch.object(
+            seed_module,
+            "SYSTEM_PERIODIC_TASKS",
+            [
+                SystemPeriodicTaskSchedule(
+                    schedule=IntervalSchedule(every=10, period=Period.MINUTES),
+                    tasks=[
+                        SystemPeriodicTaskData(
+                            name=SNIPPETS_TASK,
+                            task_name="app.sep.celery.sync_snippets",
+                            owner_app_key="snippets",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        mocker.patch.object(
+            seed_module.sep_settings,
+            "PLUGINS",
+            [_plugin("snippets", enabled=app_enabled)],
+        )
+
+        await seed_module.init_sep_db()
+
+        async with seed_maker() as session:
+            rows = await SEPPluginPeriodicTaskManager.list(session)
+        assert {r.periodic_task_name for r in rows} == {SNIPPETS_TASK}
+
+        async with beat_maker() as session:
+            task = await BasePeriodicTaskManager.first(session, name=SNIPPETS_TASK)
+        assert task.enabled is app_enabled

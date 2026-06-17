@@ -31,9 +31,7 @@ from app.core.exceptions import HTTPInternalServerErrorException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     get_username_mapping,
-    HasNoConflictedRunningTasks,
     InventoryAPI,
-    IsApiAuthenticated,
     TaskAPI,
 )
 from app.sep.plugins.alters.deps import (
@@ -49,7 +47,6 @@ from app.sep.plugins.alters.deps import (
     ensure_alters_group_update_preserves_names,
     get_alters_api_task_responses,
     get_alters_task,
-    get_alters_task_status,
     resolve_alters_parent_task,
 )
 from app.sep.plugins.alters.models import (
@@ -59,9 +56,12 @@ from app.sep.plugins.alters.models import (
     AltersTaskWrite,
 )
 from app.sep.plugins.alters.schema import alters_schema
-from app.sep.plugins.framework import maybe_record_connectivity_warning
-from app.sep.plugins.framework.api import schema_endpoint
-from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
+from app.sep.plugins.framework import (
+    get_task_latest_status,
+    maybe_record_connectivity_warning,
+)
+from app.sep.plugins.framework.api import derive_execute_route, schema_endpoint
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=alters_schema)
 
 
-@router.get("/", response_model=list[AltersTaskResponse])
+@router.get("/")
 async def alters_api_list(
     tasks_api: TaskAPI,
     service_type: ServiceTypeEnum | None = None,
@@ -85,14 +85,14 @@ async def alters_api_list(
     )
 
 
-@router.get("/{task_name}", response_model=AltersTaskResponse)
+@router.get("/{task_name}")
 async def alters_api_detail(
     task_name: str,
     tasks_api: TaskAPI,
 ) -> AltersTaskResponse:
     """Retrieve a single parent alters task."""
     parent_task = await resolve_alters_parent_task(task_name, tasks_api)
-    task_status = await get_alters_task_status(parent_task.name, tasks_api)
+    task_status = await get_task_latest_status(tasks_api, parent_task.name)
     username_mapping = await get_username_mapping()
     return build_alters_api_task_response(
         parent_task,
@@ -103,7 +103,6 @@ async def alters_api_detail(
 
 @router.post(
     "/",
-    response_model=AltersTaskResponse,
     status_code=http_status.HTTP_201_CREATED,
 )
 async def alters_api_create(
@@ -154,7 +153,7 @@ async def alters_api_create(
     )
 
 
-@router.put("/{task_name}", response_model=AltersTaskResponse)
+@router.put("/{task_name}")
 async def alters_api_update(
     parent_task: EditableAltersParent,
     body: AltersTaskWrite,
@@ -195,7 +194,7 @@ async def alters_api_update(
         )
 
     updated_task = await get_alters_task(updated_parent.name, tasks_api)
-    task_status = await get_alters_task_status(updated_task.name, tasks_api)
+    task_status = await get_task_latest_status(tasks_api, updated_task.name)
     username_mapping = await get_username_mapping()
     connectivity_warning = await maybe_record_connectivity_warning(
         tasks_api,
@@ -210,28 +209,14 @@ async def alters_api_update(
     )
 
 
-@router.post(
-    "/{task_name}/execute",
+derive_execute_route(
+    router,
+    name="alters_api_execute",
+    description="Execute an alters task (parent, dry-run, or pre-checks).",
+    task_dep=AltersTask,
+    write_model=AltersExecuteWrite,
     response_model=AltersExecutionResponse,
-    status_code=http_status.HTTP_201_CREATED,
-    dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
 )
-async def alters_api_execute(
-    task: AltersTask,
-    body: AltersExecuteWrite,
-    tasks_api: TaskAPI,
-) -> AltersExecutionResponse:
-    """Execute an alters task (parent, dry-run, or pre-checks)."""
-    logger.info("Executing alters task %r", task.name)
-    created = await tasks_api.post(
-        f"/execute/{task.name}",
-        json=body.model_dump(exclude_none=True),
-    )
-    task_history = TaskHistoryResponse.model_validate(created)
-    return AltersExecutionResponse(
-        task_name=task.name,
-        task_id=task_history.id,
-    )
 
 
 @router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)

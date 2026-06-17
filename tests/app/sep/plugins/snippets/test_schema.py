@@ -19,9 +19,11 @@ from urllib.parse import urlencode
 
 import pytest
 
+from app.sep.plugins.dipper.models import DipperScript
 from app.sep.plugins.framework.schema import (
     BoolField,
     ChoiceField,
+    DateTimeField,
     HostField,
     IntegerField,
     ScriptPreviewField,
@@ -29,7 +31,12 @@ from app.sep.plugins.framework.schema import (
 )
 from app.sep.plugins.snippets.schema import (
     build_snippet_schema,
+    field_for,
     SNIPPETS_PLUGIN_SCHEMA,
+)
+from app.sep.snippets.models.meta import (
+    SnippetMetaParameter,
+    SnippetMetaParameterType,
 )
 
 
@@ -228,3 +235,88 @@ async def test_per_snippet_schema_maps_choices_to_choice_field(create_snippet):
     assert values == ["info", "debug"]
     labels = [choice.label for choice in field.choices]
     assert labels == ["Info", "debug"]
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_omits_hidden_parameter(create_snippet):
+    """A ``hidden`` parameter is excluded from the generic snippet schema.
+
+    ``hidden`` is a generic snippet primitive, so the schema-driven snippets form
+    must omit it just as ``_to_form`` and the Dipper schema builder do — while a
+    sibling non-hidden parameter still renders.
+    """
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.__dict__.pop("validated_parameters", None)
+    snippet.meta = {
+        **snippet.meta,
+        "parameters": [
+            {"name": "pmmserver", "type": "str", "label": "PMM server"},
+            {"name": "apikey", "type": "str", "label": "API key", "hidden": True},
+        ],
+    }
+    snippet.__dict__.pop("validated_parameters", None)
+
+    schema = build_snippet_schema(snippet)
+
+    field_names = {field.name for section in schema.forms for field in section.fields}
+    assert "pmmserver" in field_names
+    assert "apikey" not in field_names
+
+
+def test_field_for_maps_datetime_parameter_to_datetime_field():
+    """Verify DATETIME parameters map directly to DateTimeField via field_for."""
+    param = SnippetMetaParameter(
+        name="start",
+        type="datetime",
+        label="Start time (UTC)",
+        description="Starting timestamp for graph data.",
+    )
+    field = field_for(param)
+    assert isinstance(field, DateTimeField)
+    assert field.name == "start"
+    assert field.label == "Start time (UTC)"
+    assert field.description == "Starting timestamp for graph data."
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_maps_datetime_parameter_to_datetime_field(
+    create_snippet,
+):
+    """Verify DATETIME parameters surface as DateTimeField in the per-snippet schema."""
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.__dict__.pop("validated_parameters", None)
+    snippet.meta = {
+        **snippet.meta,
+        "parameters": [
+            {
+                "name": "start",
+                "type": "datetime",
+                "label": "Start time (UTC)",
+                "description": "Starting timestamp for graph data.",
+            },
+        ],
+    }
+    snippet.__dict__.pop("validated_parameters", None)
+
+    schema = build_snippet_schema(snippet)
+
+    parameters_section = next(s for s in schema.forms if s.title == "Parameters")
+    field = parameters_section.fields[0]
+    assert isinstance(field, DateTimeField)
+    assert field.name == "start"
+    assert field.label == "Start time (UTC)"
+
+
+@pytest.mark.asyncio
+async def test_pmm_mysql_payload_start_end_map_to_datetime_field():
+    """Verify PMM MySQL collector start/end params declare datetime and map to DateTimeField."""
+    script = await DipperScript.from_path("pcs-collect-pmm-mysql.py", update_meta=True)
+
+    assert script.validated_parameters.errors == []
+
+    for name in ("start", "end"):
+        param = next(
+            p for p in script.validated_parameters.parameters if p.name == name
+        )
+        assert param.py_type is SnippetMetaParameterType.DATETIME
+        assert isinstance(field_for(param), DateTimeField)

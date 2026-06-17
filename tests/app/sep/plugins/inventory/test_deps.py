@@ -18,7 +18,7 @@
 import json
 import re
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import status
@@ -28,11 +28,15 @@ from app.core.exceptions import (
     HTTPNotFoundException,
     HTTPUnprocessableEntityException,
 )
+from app.core.requests import RemoteAPI
+from app.core.utils.fields import UniqueList
+from app.sep.config import sep_settings, SyncOptions
 from app.sep.plugins.inventory.deps import (
     _get_syncer_qualified_name,
     AvailableSyncer,
     build_available_syncers,
     filter_syncers_by_name,
+    get_syncers,
     INVENTORY_PLUGIN_ENTITY_NAMES,
     inventory_plugin_json_object_body,
     inventory_service_create_path,
@@ -42,6 +46,7 @@ from app.sep.plugins.inventory.deps import (
     unwrap_inventory_plugin_list_payload,
 )
 from app.sep.sync.models import BaseSyncer
+from app.sep.sync.syncers.pmm import PMMSyncer
 
 _EXPECTED_DISAMBIGUATED_DISPLAY_NAMES = 2
 
@@ -273,26 +278,26 @@ def test_unwrap_inventory_plugin_list_payload_raises_502_for_bad_shape():
 
 
 def test_inventory_service_list_path_nodes_vs_collections():
-    """Ensure node list uses ``/`` and collection entities use a trailing slash."""
-    assert inventory_service_list_path("nodes") == "/"
+    """Ensure node list uses ``/nodes/`` and collection entities use a trailing slash."""
+    assert inventory_service_list_path("nodes") == "/nodes/"
     assert inventory_service_list_path("services") == "/services/"
 
 
 def test_inventory_service_detail_path_nodes_vs_collections():
-    """Ensure node detail omits the ``nodes`` segment in the inventory path."""
-    assert inventory_service_detail_path("nodes", 5) == "/5"
+    """Ensure node detail uses the ``/nodes/{id}`` path."""
+    assert inventory_service_detail_path("nodes", 5) == "/nodes/5"
     assert inventory_service_detail_path("services", 5) == "/services/5"
 
 
 def test_inventory_service_create_path_nodes_and_nested_entities():
     """Ensure POST paths match the inventory service nesting rules."""
-    assert inventory_service_create_path("nodes", {}) == "/"
+    assert inventory_service_create_path("nodes", {}) == "/nodes/"
     assert (
         inventory_service_create_path(
             "services",
             {"node_id": 9, "name": "x", "type": "mysql"},
         )
-        == "/9/services/"
+        == "/nodes/9/services/"
     )
     assert (
         inventory_service_create_path(
@@ -391,3 +396,16 @@ async def test_inventory_plugin_json_object_body_returns_dict() -> None:
     payload = {"name": "n"}
     request.json = AsyncMock(return_value=payload)
     assert await inventory_plugin_json_object_body(request) is payload
+
+
+def test_get_syncers_omits_unset_pmm_none() -> None:
+    """Do not pass explicit ``pmm=None`` into ``PMMSyncer`` (breaks validation)."""
+    inventory_api = AsyncMock(spec=RemoteAPI)
+    tasks_api = AsyncMock(spec=RemoteAPI)
+    syncers_list = UniqueList(
+        [SyncOptions.model_validate({"syncer": "PMMSyncer"})],
+    )
+    with patch.object(sep_settings, "SYNCERS", syncers_list):
+        syncers = get_syncers(inventory_api, tasks_api)
+    assert len(syncers) == 1
+    assert isinstance(syncers[0], PMMSyncer)

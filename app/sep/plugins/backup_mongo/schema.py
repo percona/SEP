@@ -109,11 +109,6 @@ backup_mongo_schema = PluginSchema(
                         "Optional path to MongoDB URI credentials on the Nomad node"
                     ),
                 ),
-                BoolField(
-                    name="alert_on_fail",
-                    label="Alert on Failure",
-                    default=False,
-                ),
             ],
         ),
         FormSection(

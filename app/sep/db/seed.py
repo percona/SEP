@@ -28,7 +28,9 @@ from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
 from app.sep.deps import PROTECTED_APP_KEYS
-from app.sep.models import AppState, AppStateBase
+from app.sep.models import AppLifecycleEnum, AppState, AppStateBase
+from app.sep.periodic_tasks import sync_app_periodic_task_gating
+from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings
 
 _alerts_plugin_enabled = any(
@@ -41,11 +43,21 @@ _report_plugin_enabled = any(
 
 SYSTEM_PERIODIC_TASKS = [
     SystemPeriodicTaskSchedule(
+        schedule=sep_settings.APP_DRAIN.reconcile_interval,
+        tasks=[
+            SystemPeriodicTaskData(
+                name="sep__reconcile_disabling_apps",
+                task_name="app.sep.app_drain.reconcile_disabling_apps",
+            ),
+        ],
+    ),
+    SystemPeriodicTaskSchedule(
         schedule=snippets_settings.SYNC_INTERVAL,
         tasks=[
             SystemPeriodicTaskData(
                 name="sep__sync_snippets",
                 task_name="app.sep.celery.sync_snippets",
+                owner_app_key="snippets",
             ),
         ],
     ),
@@ -61,6 +73,7 @@ if _alerts_plugin_enabled:
                 SystemPeriodicTaskData(
                     name="sep__backup_alert_config",
                     task_name="app.sep.celery.backup_alert_config",
+                    owner_app_key="alerts",
                 ),
             ],
         ),
@@ -92,6 +105,7 @@ if _report_plugin_enabled:
                         extra_kwargs={"kwargs": json.dumps(_task_kwargs)}
                         if _task_kwargs
                         else None,
+                        owner_app_key="report",
                     ),
                 ],
             ),
@@ -102,24 +116,29 @@ async def init_sep_db() -> None:
     """Initialize the SEP database with app state and periodic tasks.
 
     Seeds one :class:`app.sep.models.AppState` row per non-protected plugin in
-    ``SEP.PLUGINS`` using get-or-create (the YAML ``enabled`` value is read only
-    on insert; existing rows are never overwritten), removes rows for apps no
-    longer configured, then seeds the SEP periodic tasks.
+    ``SEP.PLUGINS`` using get-or-create (the YAML ``enabled`` flag is mapped to
+    ``ENABLED`` / ``DISABLED`` only on insert; existing rows are never
+    overwritten), removes rows for apps no longer configured, then seeds the SEP
+    periodic tasks and gates each plugin-owned schedule by its app state via
+    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating`.
     """
     async_session_maker = get_async_session_maker()
     async with async_session_maker() as session:
         configured = [
-            (key, plugin.enabled)
-            for plugin in sep_settings.PLUGINS
-            if (key := plugin.module_name.split(".")[-1]) not in PROTECTED_APP_KEYS
+            (app.key, app.enabled)
+            for app in get_app_registry()
+            if app.key not in PROTECTED_APP_KEYS
         ]
         configured_keys = {key for key, _ in configured}
-        existing_keys = set(await AppStateManager.all_states(session))
+        existing_keys = set(await AppStateManager.all_lifecycle_states(session))
         for key, enabled in configured:
             if key in existing_keys:
                 continue
+            lifecycle_state = (
+                AppLifecycleEnum.ENABLED if enabled else AppLifecycleEnum.DISABLED
+            )
             await AppStateManager.create(
-                session, AppStateBase(app_key=key, enabled=enabled)
+                session, AppStateBase(app_key=key, lifecycle_state=lifecycle_state)
             )
         orphan_keys = existing_keys - configured_keys
         if orphan_keys:
@@ -127,3 +146,4 @@ async def init_sep_db() -> None:
                 session, col(AppState.app_key).in_(orphan_keys)
             )
     await init_periodic_tasks_db(SYSTEM_PERIODIC_TASKS, "sep__")
+    await sync_app_periodic_task_gating(SYSTEM_PERIODIC_TASKS)

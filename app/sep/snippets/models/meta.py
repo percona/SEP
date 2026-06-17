@@ -20,9 +20,12 @@ __all__ = [
     "SnippetMetaParameterChoice",
     "SnippetMetaParameterType",
     "SnippetMetaParametersValidationResult",
+    "serialize_cli_value",
 ]
 
 import logging
+from collections.abc import Callable
+from datetime import datetime
 from enum import Enum, StrEnum
 from functools import cached_property
 from string import Template
@@ -48,13 +51,20 @@ from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandl
 from typing_extensions import TypedDict
 
 from app.core.utils import run_pydantic_type_validator, shorten_text
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.core.utils.date_time import make_datetime_utc
+from app.core.utils.fields import (
+    EmptyStrToNone,
+    EnumFieldMixin,
+    NonEmptyStr,
+    UTCDatetime,
+)
 from app.core.utils.pydantic import (
     field_with_metadata,
     loc_to_dot_sep,
 )
 from app.sep.snippets.forms import (
     CheckboxInputElement,
+    DateTimeInputElement,
     FormFieldElement,
     NumberInputElement,
     SelectElement,
@@ -63,7 +73,7 @@ from app.sep.snippets.forms import (
     TextInputHTMLElement,
 )
 
-ParameterType = str | int | float | bool | None
+ParameterType = str | int | float | bool | datetime | None
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +85,28 @@ class SnippetMetaParameterType(EnumFieldMixin, Enum):
     INT = int
     FLOAT = float
     BOOL = bool
+    DATETIME = UTCDatetime
+
+
+_CLI_VALUE_SERIALIZERS: dict[type, Callable[[Any], str]] = {
+    datetime: lambda value: make_datetime_utc(value).strftime("%Y-%m-%dT%H:%M:%S"),
+}
+
+
+def serialize_cli_value(value: Any) -> str:
+    """Serialize a validated parameter value for command-line argument substitution.
+
+    Datetime values are normalized to UTC before formatting as an ISO-8601
+    ``T``-separated form without microseconds.
+    All other types fall back to ``str(value)``.
+
+    :param value: The validated parameter value to serialize.
+    :type value: Any
+    :return: The command-line string representation of ``value``.
+    :rtype: str
+    """
+    serializer = _CLI_VALUE_SERIALIZERS.get(type(value))
+    return serializer(value) if serializer else str(value)
 
 
 class SnippetMetaParametersValidationResult(NamedTuple):
@@ -88,6 +120,19 @@ class SnippetMetaParametersValidationResult(NamedTuple):
 
     parameters: list["SnippetMetaParameter"]
     errors: list[str]
+
+    @property
+    def visible_parameters(self) -> list["SnippetMetaParameter"]:
+        """Return the parameters that are rendered in execution forms.
+
+        Parameters marked ``hidden`` are excluded. They remain in
+        :attr:`parameters` and are still validated normally; only their form
+        rendering is suppressed.
+
+        :return: The non-hidden parameters, in declaration order.
+        :rtype: list[SnippetMetaParameter]
+        """
+        return [param for param in self.parameters if not param.hidden]
 
 
 class SnippetMetaParameterChoice(TypedDict):
@@ -136,7 +181,7 @@ class SnippetMetaParameter(BaseModel):
     :type group: NonEmptyStr | None
     :param default: The default value for the parameter. Defaults to None, meaning no
         default.
-    :type default: str | int | float | bool | None
+    :type default: str | int | float | bool | datetime | None
     :param choices: A list of choices for the parameter. Each choice can be a string or
         a dictionary with "label" and "value" keys. Defaults to None, meaning it won't
         be used for validation. This parameter is validated as "options" or "choices"
@@ -169,6 +214,13 @@ class SnippetMetaParameter(BaseModel):
         TextInputHTMLElement.TEXT or TextInputHTMLElement.TEXTAREA. Defaults to None,
         which uses TextInputHTMLElement.TEXT.
     :type html_elem: TextInputHTMLElement | None
+    :param hidden: Unconditionally omit this parameter from every rendered
+        execution form -- it is never emitted into the form HTML or form schema
+        at all. It is still validated normally (it stays in
+        ``to_validation_field``), so a value injected server-side -- e.g. the PMM
+        ``apikey`` from ``settings.PMM.api_key`` -- continues to validate without
+        a visible field. Defaults to False.
+    :type hidden: bool
     """
 
     name: NonEmptyStr = Field(
@@ -197,6 +249,7 @@ class SnippetMetaParameter(BaseModel):
     le: ParameterType = None
     step: float | None = None
     html_elem: TextInputHTMLElement | None = None
+    hidden: bool = False
 
     @model_validator(mode="after")
     def set_default_step(self) -> Self:
@@ -316,6 +369,8 @@ class SnippetMetaParameter(BaseModel):
             SnippetMetaParameterType.FLOAT,
         ]:
             return NumberInputElement
+        if self.py_type == SnippetMetaParameterType.DATETIME:
+            return DateTimeInputElement
         if self.html_elem == TextInputHTMLElement.TEXTAREA:
             return TextareaElement
         return TextInputElement

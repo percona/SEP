@@ -18,14 +18,18 @@
 import DownloadIcon from '@mui/icons-material/Download';
 import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
+import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
+import MenuItem from '@mui/material/MenuItem';
 import Paper from '@mui/material/Paper';
+import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useExecutionEvents } from '../../hooks/useExecutionEvents';
 import { useLogDownload } from '../../hooks/useLogDownload';
@@ -37,6 +41,39 @@ import { StatusBadge, type BadgeStatus } from './StatusBadge';
 import { StreamErrorBlock } from './StreamErrorBlock';
 
 type TopTab = 'stdout' | 'stderr' | 'events';
+
+export const DEFAULT_LOG_TAIL_LINES = 1000;
+
+export const LOG_TAIL_LINE_OPTIONS = [
+  { label: '100', value: '100' },
+  { label: '1000', value: '1000' },
+  { label: '5000', value: '5000' },
+  { label: 'All', value: 'all' },
+] as const;
+
+export type LogTailLineChoice = (typeof LOG_TAIL_LINE_OPTIONS)[number]['value'];
+
+const LOG_TAIL_STORAGE_KEY = 'sep.taskLogViewer.tail';
+
+const DEFAULT_LOG_TAIL_CHOICE = '1000' satisfies LogTailLineChoice;
+
+function readStoredLogTailChoice(): LogTailLineChoice {
+  if (globalThis.localStorage === undefined) {
+    return DEFAULT_LOG_TAIL_CHOICE;
+  }
+  const stored = globalThis.localStorage.getItem(LOG_TAIL_STORAGE_KEY);
+  if (stored === 'all') {
+    return 'all';
+  }
+  if (stored === '100' || stored === '1000' || stored === '5000') {
+    return stored;
+  }
+  return DEFAULT_LOG_TAIL_CHOICE;
+}
+
+function logTailChoiceToParam(choice: LogTailLineChoice): number | undefined {
+  return choice === 'all' ? undefined : Number(choice);
+}
 
 export interface TaskLogViewerProps {
   taskHistoryId: number | string;
@@ -60,7 +97,13 @@ function resolveBadgeStatus(
 
 export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskLogViewerProps) {
   const running = isRunningStatus(taskStatus);
-  const { textByStep, stepOrder, finishStatus, error } = useTaskLogs(taskHistoryId);
+  const [logTailChoice, setLogTailChoice] = useState<LogTailLineChoice>(readStoredLogTailChoice);
+  const tailLines = logTailChoiceToParam(logTailChoice);
+  const effectiveTailLines = running ? undefined : tailLines;
+  const { textByStep, stepOrder, finishStatus, error } = useTaskLogs(
+    taskHistoryId,
+    effectiveTailLines,
+  );
   const { eventsByStep, stepOrder: eventStepOrder } = useExecutionEvents(taskHistoryId, running);
 
   const [topTab, setTopTab] = useState<TopTab>('stdout');
@@ -190,6 +233,13 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
     download(filename, currentPaneText);
   };
 
+  const handleLogTailChange = (choice: LogTailLineChoice) => {
+    setLogTailChoice(choice);
+    if (globalThis.localStorage !== undefined) {
+      globalThis.localStorage.setItem(LOG_TAIL_STORAGE_KEY, choice);
+    }
+  };
+
   const badgeStatus = resolveBadgeStatus(finishStatus, error);
 
   return (
@@ -231,6 +281,36 @@ export function TaskLogViewer({ taskHistoryId, taskStatus, height = 480 }: TaskL
         </Tabs>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ pr: 1 }}>
           {badgeStatus && <StatusBadge status={badgeStatus} />}
+          <Tooltip
+            title={
+              running
+                ? 'Line cap applies to finished task logs only'
+                : 'Limit how many lines are loaded from the server'
+            }
+          >
+            <FormControl size="small" sx={{ minWidth: 96 }} disabled={running}>
+              <Select
+                value={logTailChoice}
+                onChange={(event) => handleLogTailChange(event.target.value as LogTailLineChoice)}
+                aria-label="Log lines to show"
+                disabled={running}
+                renderValue={(value) => (
+                  <Typography variant="body2" component="span">
+                    {value === 'all' ? 'All lines' : `Last ${value}`}
+                  </Typography>
+                )}
+                sx={{
+                  '& .MuiSelect-select': { py: 0.75, display: 'flex', alignItems: 'center' },
+                }}
+              >
+                {LOG_TAIL_LINE_OPTIONS.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label === 'All' ? 'All lines' : `Last ${option.label}`}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Tooltip>
           <FormControlLabel
             control={
               <Switch size="small" checked={wrap} onChange={(_, checked) => setWrap(checked)} />

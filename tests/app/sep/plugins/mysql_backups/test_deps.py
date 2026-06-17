@@ -16,7 +16,6 @@
 """Define tests for the app.sep.plugins.mysql_backups.deps module."""
 
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 import yaml
@@ -25,9 +24,7 @@ from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.mysql_backups.deps import (
     _extract_backup_type_from_task,
     build_backup_task_payload,
-    get_backups_task,
     get_backups_task_info,
-    get_backups_task_status,
     parse_backup_task_data,
 )
 from app.sep.plugins.mysql_backups.models import (
@@ -38,7 +35,6 @@ from app.sep.plugins.mysql_backups.models import (
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
-    TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
@@ -169,29 +165,6 @@ async def test_build_backup_task_payload_raises_for_invalid_backup_type(
 
     with pytest.raises(ValueError, match="Invalid Backup Type"):
         await build_backup_task_payload(backup_create, mock_remote_api)
-
-
-@pytest.mark.asyncio
-async def test_get_backups_task(mocker):
-    """Test get_backups_task calls get_task_by_name and returns the correct Task."""
-    fake_task = Task(
-        name="test_task",
-        owner=TaskOwner.BACKUPS,
-        data={"task": "fake-task"},
-    )
-    get_task_by_name = mocker.patch(
-        "app.sep.plugins.mysql_backups.deps.get_task_by_name",
-        return_value=fake_task,
-    )
-
-    tasks_api = AsyncMock()
-    result = await get_backups_task("test_task_name", tasks_api)
-
-    get_task_by_name.assert_called_once_with(
-        tasks_api, "test_task_name", TaskOwner.BACKUPS
-    )
-
-    assert result == fake_task
 
 
 def test_get_backups_task_info():
@@ -445,6 +418,46 @@ class TestParseBackupTaskDataUploadQuiet:
 
 
 @pytest.mark.parametrize(
+    ("all_servers", "expected"),
+    [
+        ({"UPLOAD_QUIET": True}, True),
+        ({"UPLOAD_QUIET": False}, False),
+        ({}, None),
+    ],
+)
+def test_parse_backup_task_data_upload_quiet(
+    all_servers: dict, expected: bool | None
+) -> None:
+    """Round-trip upload_quiet from persisted YAML on the edit form path."""
+    fake_task_dict = {
+        "name": "test_task",
+        "data": {
+            "meta": {
+                "target": "host.example.com",
+                "config": yaml.dump(
+                    {
+                        "SERVER_LIST": [
+                            {
+                                "ALIAS": "db1",
+                                "HOST": "10.0.0.1",
+                                "PORT": 3306,
+                                "BACKUP_TYPE": BackupType.XTRABACKUP.value,
+                                "UPLOAD": ["s3"],
+                            }
+                        ],
+                        "ALL_SERVERS": all_servers,
+                    }
+                ),
+            }
+        },
+    }
+
+    result = parse_backup_task_data(fake_task_dict)
+
+    assert result["upload_quiet"] == expected
+
+
+@pytest.mark.parametrize(
     ("upload_providers", "all_servers", "expected_result"),
     [
         (
@@ -632,33 +645,3 @@ def _task_with_raw_config(raw_config: str) -> Task:
 def test_extract_backup_type_handles_non_dict_yaml(raw_config: str):
     """Malformed/non-dict YAML must return ``None`` instead of raising."""
     assert _extract_backup_type_from_task(_task_with_raw_config(raw_config)) is None
-
-
-@pytest.mark.asyncio
-async def test_get_backups_task_status_returns_first_history_row():
-    """Pin reliance on ``BaseSQLModelManager._get_ordering`` default ``created_at DESC``.
-
-    The Tasks history endpoint has no ``order_by`` query param. If the
-    default ordering ever flips, this test breaks loudly so we notice
-    instead of silently returning a stale status.
-    """
-    tasks_api = AsyncMock()
-    tasks_api.get.return_value = {
-        "items": [
-            {
-                "status": TaskHistoryStatusEnum.SUCCESS.value,
-                "created_at": "2026-05-22T10:00:00Z",
-            },
-            {
-                "status": TaskHistoryStatusEnum.FAILED.value,
-                "created_at": "2026-05-21T10:00:00Z",
-            },
-        ]
-    }
-
-    result = await get_backups_task_status("t", tasks_api)
-
-    assert result == TaskHistoryStatusEnum.SUCCESS
-    tasks_api.get.assert_awaited_once_with(
-        "/t/history/", params={"limit": 1, "offset": 0}
-    )

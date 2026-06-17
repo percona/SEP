@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.main module."""
 
+import importlib
 from unittest.mock import Mock
 
 import pytest
@@ -23,6 +24,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 
+import app.sep.main as main_module
 from app.core.auth.exceptions import (
     BaseAuthProviderException,
     HTTPForbiddenException,
@@ -30,11 +32,12 @@ from app.core.auth.exceptions import (
 )
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.sep.api.router import plugins_router
-from app.sep.config import sep_settings
+from app.sep.config import Plugin, sep_settings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
 from app.sep.main import lifespan as sep_module_lifespan
-from app.sep.models import AppState
+from app.sep.models import AppLifecycleEnum, AppState
+from app.sep.plugins.framework.registry import get_app_registry
 from tests.app.factories import OAuthTokenFactory
 
 
@@ -290,18 +293,9 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     url_for('periodic_task_create') and url_for('stop_task_execution') resolve
     without raising NoMatchFound.
     """
-    import importlib
-
-    import app.sep.main as main_module
-
-    mock_plugin = mocker.MagicMock()
-    mock_plugin.router_path = "app.sep.plugins.backup_pg.router"
-    mock_plugin.uri_path = "/backup_pg"
-    mock_plugin.module_name = "app.sep.plugins.backup_pg"
-
     original_plugins = sep_settings.PLUGINS
-    mocker.patch.object(sep_settings, "PLUGINS", [mock_plugin])
-    mocker.patch("app.sep.main.import_var", return_value=mocker.MagicMock())
+    mocker.patch.object(sep_settings, "PLUGINS", [Plugin(module_name="backup_pg")])
+    get_app_registry.cache_clear()
 
     try:
         importlib.reload(main_module)
@@ -311,6 +305,7 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
         assert "stop_task_execution" in route_names
     finally:
         sep_settings.PLUGINS = original_plugins
+        get_app_registry.cache_clear()
         importlib.reload(main_module)
 
 
@@ -322,18 +317,9 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
     must be mounted whenever the inventory plugin is enabled even if no task-oriented
     plugin (tasks, backup, checksums, …) is configured.
     """
-    import importlib
-
-    import app.sep.main as main_module
-
-    mock_plugin = mocker.MagicMock()
-    mock_plugin.router_path = "app.sep.plugins.inventory.router"
-    mock_plugin.uri_path = "/inventory"
-    mock_plugin.module_name = "app.sep.plugins.inventory"
-
     original_plugins = sep_settings.PLUGINS
-    mocker.patch.object(sep_settings, "PLUGINS", [mock_plugin])
-    mocker.patch("app.sep.main.import_var", return_value=mocker.MagicMock())
+    mocker.patch.object(sep_settings, "PLUGINS", [Plugin(module_name="inventory")])
+    get_app_registry.cache_clear()
 
     try:
         importlib.reload(main_module)
@@ -344,6 +330,7 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
         assert "periodic_task_delete" in route_names
     finally:
         sep_settings.PLUGINS = original_plugins
+        get_app_registry.cache_clear()
         importlib.reload(main_module)
 
 
@@ -662,12 +649,20 @@ class TestAppStateGuards:
         ("plugin_key", "plugin_route"),
         [("snippets", "/snippets/"), ("checksums", "/checksums/")],
     )
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_ui_guard_returns_503_when_disabled(
-        self, guarded_client: TestClient, session, plugin_key, plugin_route
+    async def test_ui_guard_returns_503_for_non_enabled_states(
+        self, guarded_client: TestClient, session, plugin_key, plugin_route, state
     ) -> None:
-        """A disabled non-protected plugin's UI route returns a 503."""
-        session.add(AppState(app_key=plugin_key, enabled=False))
+        """A non-protected plugin's UI route 503s whenever it is not ``ENABLED``."""
+        session.add(AppState(app_key=plugin_key, lifecycle_state=state))
         await session.commit()
 
         response = guarded_client.get(plugin_route)
@@ -680,7 +675,9 @@ class TestAppStateGuards:
         self, guarded_client: TestClient, session
     ) -> None:
         """Inventory has no guard, so a disabled row never gates ``/inventory/``."""
-        session.add(AppState(app_key="inventory", enabled=False))
+        session.add(
+            AppState(app_key="inventory", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
         await session.commit()
 
         response = guarded_client.get("/inventory/")

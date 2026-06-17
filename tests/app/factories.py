@@ -17,6 +17,7 @@
 
 from datetime import datetime, UTC
 
+from polyfactory import Use
 from polyfactory.factories.pydantic_factory import ModelFactory
 from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
 from sqlalchemy_celery_beat import PeriodicTask
@@ -35,7 +36,14 @@ from app.models import CasdoorUser
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.plugins.alters.models import AltersCreate
 from app.sep.plugins.archives.models import ArchivesCreate
-from app.tasks.models import Task, TaskBackendEnum, TaskWrite
+from app.tasks.models import (
+    Task,
+    TaskBackendEnum,
+    TaskHistoryResponse,
+    TaskHistoryStatusEnum,
+    TaskResponse,
+    TaskWrite,
+)
 
 MOCK_CREATED_NODE_ID = 1
 MOCK_CREATED_SERVICE_ID = 1
@@ -74,6 +82,38 @@ class PeriodicTaskFactory(SQLAlchemyFactory[PeriodicTask]):
 
 class GeneratedTaskFactory(ModelFactory[TaskWrite]):
     """Define factory for GenerateTask instances."""
+
+
+class TaskResponseFactory(ModelFactory[TaskResponse]):
+    """Define factory for TaskResponse instances.
+
+    Pins ``backend`` to Nomad so the ``TaskBase`` proxy-backend validator (which
+    requires a ``data["task"]`` key) does not reject factory-generated data.
+    """
+
+    backend: TaskBackendEnum = TaskBackendEnum.NOMAD
+    is_template: bool = False
+    protected: bool = False
+    deleted_at = None
+    created_by = None
+    last_updated_by = None
+
+
+class TaskHistoryResponseFactory(ModelFactory[TaskHistoryResponse]):
+    """Define factory for TaskHistoryResponse instances.
+
+    Builds the wire shape the Tasks API returns from ``/{name}/history/`` and
+    ``/execute/{name}``. ``status`` defaults to ``SUCCESS`` and is overridable so
+    history fixtures can seed any execution state.
+    """
+
+    status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.SUCCESS
+    has_logs: bool = False
+    started_at = None
+    finished_at = None
+    anonymize_mask = None
+    executed_by = None
+    task = Use(TaskResponseFactory.build)
 
 
 class AltersCreateFactory(ModelFactory[AltersCreate]):

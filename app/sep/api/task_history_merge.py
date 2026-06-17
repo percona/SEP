@@ -21,8 +21,12 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.models import PaginatedResponse
+from app.core.pagination import (
+    DEFAULT_PAGINATION_OFFSET,
+    MAX_PAGINATION_LIMIT,
+    PaginatedResponse,
+    Pagination,
+)
 from app.core.requests.remote_api import RemoteAPI
 from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
@@ -58,35 +62,91 @@ def _history_sort_key(entry: dict[str, Any]) -> float | int:
         return entry.get("id") or 0
 
 
-def _upstream_history_fetch_limit(offset: int, limit: int) -> int:
-    """Return per-task upstream ``limit`` for a merged page window."""
-    if limit <= 0:
-        return 0
-    return offset + limit
+def _merged_upstream_window_size(pagination: Pagination) -> int:
+    """Return per-task upstream fetch size for a merged page window."""
+    return pagination.offset + pagination.limit
+
+
+async def _fetch_task_history_window(
+    tasks_api: RemoteAPI,
+    task_name: str,
+    *,
+    window_size: int,
+    status: TaskHistoryStatusEnum | None = None,
+) -> dict[str, Any]:
+    """Fetch the first ``window_size`` history rows for one task via the Tasks API.
+
+    Issues multiple ``GET /{task}/history/`` requests with ``limit`` capped at
+    :data:`~app.core.pagination.MAX_PAGINATION_LIMIT` so large client offsets
+    stay within upstream validation.
+
+    :param tasks_api: The Tasks API client.
+    :type tasks_api: RemoteAPI
+    :param task_name: Task whose history rows are fetched.
+    :type task_name: str
+    :param window_size: Number of leading rows required before global merge.
+    :type window_size: int
+    :param status: Optional exact status filter forwarded upstream.
+    :type status: TaskHistoryStatusEnum | None
+    :return: A paginated-response-shaped dict with accumulated items and
+        upstream total.
+    :rtype: dict[str, Any]
+    """
+    base_params: dict[str, Any] = {}
+    if status is not None:
+        base_params["status"] = status.value
+
+    all_items: list[dict[str, Any]] = []
+    upstream_offset = 0
+    total = 0
+    while len(all_items) < window_size:
+        page_limit = min(MAX_PAGINATION_LIMIT, window_size - len(all_items))
+        raw = await tasks_api.get(
+            f"/{task_name}/history/",
+            params={
+                **base_params,
+                "offset": upstream_offset,
+                "limit": page_limit,
+            },
+        )
+        if not isinstance(raw, dict):
+            raw = {}
+        page_items = raw.get("items", [])
+        if "total" in raw:
+            total = raw["total"]
+        if not page_items:
+            break
+        all_items.extend(page_items)
+        upstream_offset += len(page_items)
+        if upstream_offset >= total or len(page_items) < page_limit:
+            break
+
+    return {
+        "items": all_items,
+        "total": total,
+        "offset": DEFAULT_PAGINATION_OFFSET,
+        "limit": window_size,
+    }
 
 
 def merge_task_history_pages(
     pages: list[dict[str, Any]],
     *,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
+    pagination: Pagination,
 ) -> dict[str, Any]:
     """Merge upstream paginated history responses newest-first.
 
     Upstream callers should fetch each task from ``offset=0`` with a window
     large enough to cover the merged page (see
-    :func:`_upstream_history_fetch_limit`), then pass the client ``offset`` and
-    ``limit`` here so rows are sorted globally and sliced
+    :func:`_merged_upstream_window_size` and :func:`_fetch_task_history_window`),
+    then pass the client pagination here so rows are sorted globally and sliced
     ``[offset : offset + limit]``. ``total`` is the sum of upstream totals;
     envelope ``offset`` / ``limit`` echo the client request.
 
     :param pages: Raw paginated payloads from ``GET /{task}/history/``.
     :type pages: list[dict[str, Any]]
-    :param offset: Zero-based offset into the merged, sorted result.
-    :type offset: int
-    :param limit: Page size applied after the global offset (``0`` disables
-        the cap).
-    :type limit: int
+    :param pagination: Validated offset/limit window for the merged page.
+    :type pagination: Pagination
     :return: A paginated-response-shaped dict ready for validation.
     :rtype: dict[str, Any]
     """
@@ -95,14 +155,12 @@ def merge_task_history_pages(
         key=_history_sort_key,
         reverse=True,
     )
-    end = None if limit <= 0 else offset + limit
-    items = items[offset:end]
     total = sum(page.get("total", 0) for page in pages)
     return {
-        "items": items,
+        "items": pagination.slice(items),
         "total": total,
-        "offset": offset,
-        "limit": limit,
+        "offset": pagination.offset,
+        "limit": pagination.limit,
     }
 
 
@@ -110,9 +168,8 @@ async def fetch_merged_task_history(
     tasks_api: RemoteAPI,
     task_names: list[str],
     *,
+    pagination: Pagination,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
 ) -> PaginatedResponse[TaskHistoryResponse]:
     """Fetch and merge task history for multiple task names via the Tasks API.
 
@@ -122,27 +179,27 @@ async def fetch_merged_task_history(
     :type task_names: list[str]
     :param status: Optional exact status filter forwarded upstream.
     :type status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based offset into the merged, sorted result.
-    :type offset: int
-    :param limit: Page size applied after the global merge sort.
-    :type limit: int
+    :param pagination: Validated pagination window for merged results.
+    :type pagination: Pagination
     :return: Merged paginated task history, newest-first across all names.
     :rtype: PaginatedResponse[TaskHistoryResponse]
     """
     unique_names = normalize_task_history_names(task_names)
-    params: dict[str, Any] = {
-        "offset": DEFAULT_PAGINATION_OFFSET,
-        "limit": _upstream_history_fetch_limit(offset, limit),
-    }
-    if status is not None:
-        params["status"] = status.value
+    window_size = _merged_upstream_window_size(pagination)
     pages = await asyncio.gather(
-        *(tasks_api.get(f"/{name}/history/", params=params) for name in unique_names)
+        *(
+            _fetch_task_history_window(
+                tasks_api,
+                name,
+                window_size=window_size,
+                status=status,
+            )
+            for name in unique_names
+        )
     )
-    merged = merge_task_history_pages(pages, offset=offset, limit=limit)
-    return PaginatedResponse[TaskHistoryResponse](
-        items=[TaskHistoryResponse.model_validate(item) for item in merged["items"]],
-        total=merged["total"],
-        offset=merged["offset"],
-        limit=merged["limit"],
+    merged = merge_task_history_pages(pages, pagination=pagination)
+    return PaginatedResponse.from_pagination(
+        [TaskHistoryResponse.model_validate(item) for item in merged["items"]],
+        merged["total"],
+        pagination,
     )

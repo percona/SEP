@@ -28,6 +28,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app import __summary__, __version__
 from app.api.deps import get_current_user as get_current_user_api
 from app.api.deps import oauth2_scheme
 from app.core.alerts.config import alert_settings
@@ -42,6 +43,7 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.log import set_log_context
+from app.core.pagination import fetch_all_dict_items
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.utils.fields import URL
@@ -70,7 +72,7 @@ from app.sep.middleware.csrf import (
     CSRF_FORM_FIELD,
     request_has_bearer_authorization,
 )
-from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.models import AppLifecycleEnum, SyncInventoryEntityTypeEnum
 from app.tasks.config import tasks_settings
 from app.tasks.models import (
     Task,
@@ -495,10 +497,11 @@ def get_toggleable_app_key(app_key: str) -> str:
         raise HTTPConflictException(
             detail=f"App '{app_key}' is protected and cannot be disabled.",
         )
-    configured_keys = {
-        plugin.module_name.split(".")[-1] for plugin in sep_settings.PLUGINS
-    }
-    if app_key not in configured_keys:
+    # Deferred: the framework package __init__ imports back into this module,
+    # so a top-level import here would cycle.
+    from app.sep.plugins.framework.registry import get_app_registry
+
+    if get_app_registry().get(app_key) is None:
         raise HTTPNotFoundException(detail="App not found")
     return app_key
 
@@ -515,10 +518,10 @@ async def get_default_context(
     """Return the default context for templates.
 
     The sidebar ``plugins`` list is filtered by runtime app state: protected
-    apps always pass through; non-protected apps are shown unless an explicit
-    ``enabled=False`` :class:`app.sep.models.AppState` row hides them (a missing
-    row is treated as enabled). This is the single source of truth that drives
-    sidebar visibility.
+    apps always pass through; non-protected apps are shown unless their
+    :class:`app.sep.models.AppState` row has ``lifecycle_state != ENABLED`` (a
+    missing row is treated as enabled). This is the single source of truth that
+    drives sidebar visibility.
 
     :param request: The HTTP request object.
     :type request: Request
@@ -532,7 +535,7 @@ async def get_default_context(
     :rtype: dict[str, Any]
     """
     try:
-        states = await AppStateManager.all_states(session)
+        states = await AppStateManager.all_lifecycle_states(session)
     except SQLAlchemyError:
         # Error pages rebuild this context from a fresh session; keep them
         # renderable when the DB is down.
@@ -541,11 +544,15 @@ async def get_default_context(
             exc_info=True,
         )
         states = {}
+    # Deferred: the framework package __init__ imports back into this module,
+    # so a top-level import here would cycle.
+    from app.sep.plugins.framework.registry import get_app_registry
+
     plugins = [
-        plugin
-        for plugin in sep_settings.PLUGINS
-        if (key := plugin.module_name.split(".")[-1]) in PROTECTED_APP_KEYS
-        or states.get(key, True)
+        app
+        for app in get_app_registry()
+        if app.key in PROTECTED_APP_KEYS
+        or states.get(app.key, AppLifecycleEnum.ENABLED) == AppLifecycleEnum.ENABLED
     ]
     return {
         "user": user,
@@ -555,7 +562,9 @@ async def get_default_context(
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "pmm_url": settings.PMM.frontend,
-        "footer_text": sep_settings.FOOTER_TEXT,
+        "footer_text": sep_settings.FOOTER_TEMPLATE.safe_substitute(
+            version=__version__, summary=__summary__
+        ),
         "user_id_to_username": await get_username_mapping(),
     }
 
@@ -876,8 +885,12 @@ async def get_executor_hosts_context(
     :rtype: ExecutorHostsContext
     """
     try:
-        response = await inventory_api.get("/", params={"limit": 0})
-        display_names = {node["address"]: node["name"] for node in response["items"]}
+        nodes = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                "/nodes/", params=pagination.model_dump()
+            )
+        )
+        display_names = {node["address"]: node["name"] for node in nodes}
     except (HTTPException, TypeError, KeyError, OSError):
         logger.warning(
             "Failed to fetch inventory nodes for display names", exc_info=True
@@ -953,10 +966,12 @@ async def get_tasks_context(
         if owner in {TaskOwner.BACKUP_PG}
         else ServiceTypeEnum.MYSQL
     )
-    response = await inventory_api.get(
-        "/services/", params={"service_type": service_type, "limit": 0}
+    services = await fetch_all_dict_items(
+        lambda pagination: inventory_api.get(
+            "/services/",
+            params={"service_type": service_type, **pagination.model_dump()},
+        )
     )
-    services = response["items"]
 
     tasks = []
     history_tasks = []

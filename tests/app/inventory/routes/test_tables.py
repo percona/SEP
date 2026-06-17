@@ -18,8 +18,9 @@
 from starlette import status
 from starlette.testclient import TestClient
 
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT
-from app.inventory.models import Schema, Table
+from app.core.pagination import DEFAULT_PAGINATION_LIMIT
+from app.inventory.models import Schema, Service, Table
+from tests.app.factories import SchemaWriteFactory
 
 EXPECTED_TABLE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
@@ -137,6 +138,33 @@ class TestUpdateTable:
         }
         response = test_client.put(f"/tables/{table.id}", json=payload)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid schema_id: 99999"
+
+    def test_update_table_omitting_schema_id_preserves_parent(
+        self, test_client: TestClient, service: Service, schema: Schema, table: Table
+    ) -> None:
+        """Apply a partial update that omits schema_id, leaving the parent unchanged.
+
+        A second schema must exist so the previously-dropped ``None`` FK filter
+        would match more than one parent (HTTP 500) rather than silently pass.
+        """
+        second = test_client.post(
+            f"/services/{service.id}/schemas/",
+            json=SchemaWriteFactory.build().model_dump(mode="json"),
+        )
+        assert second.status_code == status.HTTP_201_CREATED
+        response = test_client.put(
+            f"/tables/{table.id}",
+            json={
+                "name": "renamed_table",
+                "create": table.create,
+                "keys": table.keys,
+            },
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == "renamed_table"
+        assert data["schema_id"] == schema.id
 
 
 class TestDeleteTable:

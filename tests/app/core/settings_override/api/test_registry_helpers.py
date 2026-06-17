@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Unit tests for the field-introspection helpers in ``registry.py``."""
+"""Unit tests for the field-introspection helpers in ``registry.py`` and the response builder ``_settings_response_from_field`` in ``api.routes``."""
 
 from datetime import timedelta
 from typing import ClassVar
@@ -22,12 +22,21 @@ import pytest
 from pydantic import BaseModel, Field, PositiveInt, SecretStr, ValidationError
 
 from app.core.config import BaseYamlSettings
+from app.core.settings_override.api.routes import (
+    _remote_wiring,
+    _settings_response_from_field,
+)
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     coerce_field_value,
     dump_field_value,
     hot_field,
     iter_class_fields,
+    iter_nested_leaf_keys,
+    nested_overridable_field,
     ReloadClassification,
+    resolve_nested_field_metadata,
 )
 
 
@@ -186,3 +195,55 @@ def test_dump_field_value_returns_none_for_unschemable_annotation() -> None:
     """Unschemable annotations dump to ``None`` rather than an unstable object repr."""
     field = _WithUnschemableAnnotation.model_fields["OPAQUE"]
     assert dump_field_value(field, _Unschemable()) is None
+
+
+class _SecretLeafModel(BaseModel):
+    """Submodel carrying a secret leaf under a nested-overridable parent."""
+
+    TOKEN: SecretStr = SecretStr("s3cr3t")
+    LABEL: str = "public"
+
+
+class _SecretLeafParent(BaseModel):
+    """Model declaring a nested-overridable parent over a secret submodel."""
+
+    GROUP: _SecretLeafModel = nested_overridable_field(_SecretLeafModel())
+
+
+def test_iter_nested_leaf_keys_enumerates_secret_leaf() -> None:
+    """A nested-overridable parent enumerates its secret leaf alongside siblings."""
+    leaves = dict(iter_nested_leaf_keys(_SecretLeafParent, "GROUP"))
+    assert set(leaves) == {"GROUP__TOKEN", "GROUP__LABEL"}
+
+
+def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
+    """A secret leaf response redacts the value and carries the canonical key_path."""
+    proxy = OverridableSettingsProxy(
+        _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
+    assert leaf_meta is not None
+    response = _settings_response_from_field(
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        settings_cls=_SecretLeafParent,
+        proxy=proxy,
+        field_meta=leaf_meta,
+        has_override=False,
+    )
+    assert response.value == "**********"
+    assert response.is_secret is True
+    assert response.key_path == ["GROUP", "TOKEN"]
+
+
+def test_remote_wiring_requires_dep_when_remote_classes_present() -> None:
+    """Configuring ``remote_classes`` without ``remote_api_dep`` fails fast."""
+    remote_classes = [(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")]
+    with pytest.raises(ValueError, match="remote_api_dep is required"):
+        _remote_wiring(remote_classes, None)
+
+
+def test_remote_wiring_allows_no_dep_when_no_remote_classes() -> None:
+    """An empty/absent ``remote_classes`` keeps the no-op dependency, no raise."""
+    remote_lookup, remote_dep = _remote_wiring(None, None)
+    assert remote_lookup == {}
+    assert remote_dep is not None

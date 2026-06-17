@@ -1,0 +1,737 @@
+{
+  "capabilities": {
+    "alert_on_fail": true,
+    "chaining": true,
+    "pii_anonymization": false,
+    "scheduling": true,
+    "stats": true
+  },
+  "description": "Run pt-archiver to purge or archive rows from a MySQL table.",
+  "detail_view": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "label": "Executor Host",
+            "path": "data.meta.target"
+          },
+          {
+            "label": "Config (YAML)",
+            "path": "data.meta.config"
+          }
+        ],
+        "title": "Archive Configuration"
+      }
+    ]
+  },
+  "display_name": "Archives",
+  "fail_when": [
+    {
+      "error_fields": [
+        "source_table_id",
+        "dest_table_id"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "any_present": [
+              "source_table_id"
+            ]
+          },
+          {
+            "any_present": [
+              "dest_table_id"
+            ]
+          },
+          {
+            "all_equal": [
+              "source_table_id",
+              "dest_table_id"
+            ]
+          }
+        ]
+      },
+      "message": "Source and Destination tables cannot be the same."
+    },
+    {
+      "error_fields": [
+        "source_table_name",
+        "dest_table_name"
+      ],
+      "fail_when": {
+        "all": [
+          {
+            "truthy": "source_db_name"
+          },
+          {
+            "truthy": "source_table_name"
+          },
+          {
+            "truthy": "dest_table_name"
+          },
+          {
+            "all_equal": [
+              "source_table_name",
+              "dest_table_name"
+            ]
+          },
+          {
+            "any": [
+              {
+                "all": [
+                  {
+                    "none_present": [
+                      "dest_service_id"
+                    ]
+                  },
+                  {
+                    "falsy": "dest_host"
+                  }
+                ]
+              },
+              {
+                "all_equal": [
+                  "dest_service_id",
+                  "service_id"
+                ]
+              }
+            ]
+          },
+          {
+            "any": [
+              {
+                "all": [
+                  {
+                    "none_present": [
+                      "dest_db_id"
+                    ]
+                  },
+                  {
+                    "falsy": "dest_db_name"
+                  }
+                ]
+              },
+              {
+                "all_equal": [
+                  "dest_db_name",
+                  "source_db_name"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "message": "Source and Destination tables cannot be the same."
+    }
+  ],
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Task Name",
+          "name": "alias",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "label": "Executor Host",
+          "name": "hostname",
+          "required": true,
+          "type": "host"
+        },
+        {
+          "label": "Source Service",
+          "name": "service_id",
+          "required": true,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Task"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "choices": [
+            {
+              "label": "Purge Only",
+              "value": "0"
+            },
+            {
+              "label": "Swap & Drop",
+              "value": "1"
+            },
+            {
+              "label": "Swap Archive & Drop",
+              "value": "2"
+            }
+          ],
+          "label": "Archive Type",
+          "name": "swap_drop",
+          "required": true,
+          "type": "choice"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Archive Type"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fail_when": [
+        {
+          "error_fields": [
+            "source_db_id",
+            "source_table_id",
+            "source_db_name",
+            "source_table_name"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "none_present": [
+                  "source_query"
+                ]
+              },
+              {
+                "not": {
+                  "all_present": [
+                    "source_db_id",
+                    "source_table_id"
+                  ]
+                }
+              },
+              {
+                "not": {
+                  "all": [
+                    {
+                      "truthy": "source_db_name"
+                    },
+                    {
+                      "truthy": "source_table_name"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "message": "When source_query is not set, either both source_db_id and source_table_id or both source_db_name and source_table_name must be provided."
+        },
+        {
+          "error_fields": [
+            "source_db_id",
+            "source_table_id",
+            "source_db_name",
+            "source_table_name"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "any_present": [
+                  "source_db_id"
+                ]
+              },
+              {
+                "any_present": [
+                  "source_table_id"
+                ]
+              },
+              {
+                "truthy": "source_db_name"
+              },
+              {
+                "truthy": "source_table_name"
+              }
+            ]
+          },
+          "message": "Cannot use both source_db_id/source_table_id and source_db_name/source_table_name at the same time."
+        }
+      ],
+      "fields": [
+        {
+          "depends_on": "service_id",
+          "forbidden": [
+            {
+              "when": {
+                "truthy": "source_query"
+              }
+            }
+          ],
+          "label": "Source Schema",
+          "name": "source_db_id",
+          "required": false,
+          "type": "schema"
+        },
+        {
+          "description": "Manual entry — used when Source Schema is not in inventory.",
+          "forbidden": [
+            {
+              "when": {
+                "truthy": "source_query"
+              }
+            }
+          ],
+          "label": "Source Schema Name",
+          "name": "source_db_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "depends_on": "source_db_id",
+          "forbidden": [
+            {
+              "when": {
+                "truthy": "source_query"
+              }
+            }
+          ],
+          "label": "Source Table",
+          "name": "source_table_id",
+          "required": false,
+          "type": "table"
+        },
+        {
+          "description": "Manual entry — used when Source Table is not in inventory.",
+          "forbidden": [
+            {
+              "when": {
+                "truthy": "source_query"
+              }
+            }
+          ],
+          "label": "Source Table Name",
+          "name": "source_table_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Custom query defining source rows; mutually exclusive with Source Schema/Table.",
+          "label": "Source Query",
+          "name": "source_query",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Source"
+    },
+    {
+      "cardinality_rules": [
+        {
+          "fields": [
+            "dest_file",
+            "dest_table_id",
+            "dest_table_name"
+          ],
+          "max": 1,
+          "message": "Cannot set more than one destination (dest_file, dest_table_id, dest_table_name)."
+        }
+      ],
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fail_when": [
+        {
+          "error_fields": [
+            "dest_file",
+            "dest_table_id",
+            "dest_table_name"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "not_equals": {
+                  "swap_drop": 1
+                }
+              },
+              {
+                "falsy": "delete_data"
+              },
+              {
+                "none_present": [
+                  "dest_file"
+                ]
+              },
+              {
+                "none_present": [
+                  "dest_table_id"
+                ]
+              },
+              {
+                "falsy": "dest_table_name"
+              }
+            ]
+          },
+          "message": "At least one of dest_file or dest_table_id/dest_table_name must be set."
+        }
+      ],
+      "fields": [
+        {
+          "description": "Inventory ID of the destination table.",
+          "forbidden": [
+            {
+              "when": {
+                "any": [
+                  {
+                    "equals": {
+                      "swap_drop": 1
+                    }
+                  },
+                  {
+                    "truthy": "delete_data"
+                  }
+                ]
+              }
+            }
+          ],
+          "label": "Destination Table ID",
+          "name": "dest_table_id",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "Manual entry — used when destination table is not in inventory.",
+          "forbidden": [
+            {
+              "when": {
+                "any": [
+                  {
+                    "equals": {
+                      "swap_drop": 1
+                    }
+                  },
+                  {
+                    "truthy": "delete_data"
+                  }
+                ]
+              }
+            }
+          ],
+          "label": "Destination Table Name",
+          "name": "dest_table_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "File path for archiving rows instead of a table.",
+          "forbidden": [
+            {
+              "when": {
+                "any": [
+                  {
+                    "equals": {
+                      "swap_drop": 1
+                    }
+                  },
+                  {
+                    "truthy": "delete_data"
+                  }
+                ]
+              }
+            }
+          ],
+          "label": "Destination File",
+          "name": "dest_file",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Destination"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fail_when": [
+        {
+          "error_fields": [
+            "dest_service_id",
+            "dest_host"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "any_present": [
+                  "dest_service_id"
+                ]
+              },
+              {
+                "truthy": "dest_host"
+              }
+            ]
+          },
+          "message": "Cannot use both dest_service_id (inventory) and dest_host (manual input) at the same time."
+        },
+        {
+          "error_fields": [
+            "dest_db_id",
+            "dest_db_name"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "any_present": [
+                  "dest_db_id"
+                ]
+              },
+              {
+                "truthy": "dest_db_name"
+              }
+            ]
+          },
+          "message": "Cannot use both dest_db_id (inventory) and dest_db_name (manual input) at the same time."
+        },
+        {
+          "error_fields": [
+            "dest_db_id"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "any_present": [
+                  "dest_db_id"
+                ]
+              },
+              {
+                "none_present": [
+                  "dest_service_id"
+                ]
+              }
+            ]
+          },
+          "message": "dest_db_id requires dest_service_id to be set (cannot pick inventory schema with manual host)."
+        },
+        {
+          "error_fields": [
+            "dest_service_id",
+            "dest_host"
+          ],
+          "fail_when": {
+            "all": [
+              {
+                "equals": {
+                  "swap_drop": 2
+                }
+              },
+              {
+                "any": [
+                  {
+                    "any_present": [
+                      "dest_service_id"
+                    ]
+                  },
+                  {
+                    "truthy": "dest_host"
+                  }
+                ]
+              }
+            ]
+          },
+          "message": "Cannot set destination host when swap_drop is SWAP_ARCHIVE_DROP (2) (cross-host table swapping is not supported)."
+        }
+      ],
+      "fields": [
+        {
+          "description": "Inventory lookup for the destination host; mutually exclusive with Destination Host.",
+          "label": "Destination Service",
+          "name": "dest_service_id",
+          "required": false,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "service"
+        },
+        {
+          "description": "Manual host address; mutually exclusive with Destination Service.",
+          "label": "Destination Host",
+          "name": "dest_host",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Port of the destination database (1-65535).",
+          "ge": 1,
+          "label": "Destination Port",
+          "le": 65535,
+          "name": "dest_port",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "depends_on": "dest_service_id",
+          "description": "Inventory lookup for the destination schema.",
+          "label": "Destination Schema",
+          "name": "dest_db_id",
+          "required": false,
+          "type": "schema"
+        },
+        {
+          "description": "Manual schema name; mutually exclusive with Destination Schema.",
+          "label": "Destination Schema Name",
+          "name": "dest_db_name",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Destination Host"
+    },
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "description": "Date suffix appended to the swap table name (required for SWAP_ARCHIVE_DROP).",
+          "forbidden": [
+            {
+              "when": {
+                "not_equals": {
+                  "swap_drop": 2
+                }
+              }
+            }
+          ],
+          "label": "Swap Table Suffix (Date)",
+          "name": "swp_table_suffix",
+          "required": false,
+          "requires": [
+            {
+              "when": {
+                "equals": {
+                  "swap_drop": 2
+                }
+              }
+            }
+          ],
+          "type": "datetime"
+        },
+        {
+          "description": "Condition filtering rows to archive (required unless SWAP_DROP).",
+          "forbidden": [
+            {
+              "when": {
+                "equals": {
+                  "swap_drop": 1
+                }
+              }
+            }
+          ],
+          "label": "WHERE Clause",
+          "name": "where",
+          "required": false,
+          "requires": [
+            {
+              "when": {
+                "not_equals": {
+                  "swap_drop": 1
+                }
+              }
+            }
+          ],
+          "type": "string"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Options"
+    },
+    {
+      "collapsed_by_default": true,
+      "collapsible": true,
+      "fields": [
+        {
+          "description": "Index hint to optimise the query.",
+          "label": "Use Index",
+          "name": "use_index",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Additional pt-archiver CLI arguments.",
+          "label": "Extra Args",
+          "name": "extra_args",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "description": "Maximum rows per archiver run.",
+          "ge": 1,
+          "label": "Limit",
+          "name": "limit",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "Sleep duration between chunk operations (seconds).",
+          "ge": 0,
+          "label": "Sleep (s)",
+          "name": "sleep",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "description": "Disable binary logging for this operation.",
+          "label": "Disable Binlog",
+          "name": "disable_binlog",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "description": "Disable bulk-insert optimisation.",
+          "label": "Disable Bulk Insert",
+          "name": "disable_bulk_insert",
+          "required": false,
+          "type": "bool"
+        },
+        {
+          "description": "Source rows are deleted without being written to any destination; the Destination Table/File fields are disabled.",
+          "label": "Delete Without Archiving",
+          "name": "delete_data",
+          "required": false,
+          "type": "bool"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Advanced"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": true
+      },
+      {
+        "format": "status",
+        "key": "status",
+        "label": "Status",
+        "sortable": false
+      },
+      {
+        "format": "chip",
+        "key": "service_type",
+        "label": "Service Type",
+        "sortable": false
+      },
+      {
+        "format": "relative",
+        "key": "created_at",
+        "label": "Created",
+        "sortable": false
+      },
+      {
+        "key": "created_by",
+        "label": "Created By",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "archives"
+}

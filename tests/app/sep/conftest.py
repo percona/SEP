@@ -27,6 +27,7 @@ from httpx import ASGITransport, AsyncClient
 from pytest_mock import MockerFixture
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
+from sqlalchemy_celery_beat.models import PeriodicTask
 from sqlmodel import SQLModel
 
 from app.core.db.utils import get_async_session_maker_from_engine
@@ -55,6 +56,24 @@ async def session_fixture() -> AsyncSession:
     )
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+    async_session_maker = get_async_session_maker_from_engine(engine)
+    async with async_session_maker() as session:
+        yield session
+
+
+@pytest_asyncio.fixture(name="celery_beat_session")
+async def celery_beat_session_fixture() -> AsyncSession:
+    """Create an async db session backed by the celery-beat tables."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
+    metadata = PeriodicTask.__table__.metadata
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
     async_session_maker = get_async_session_maker_from_engine(engine)
     async with async_session_maker() as session:
         yield session
@@ -152,6 +171,12 @@ def mock_task_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
 def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
     """Mock the InventoryAPI dependency."""
     mock = AsyncMock(spec=RemoteAPI)
+    mock.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
     sep_app.dependency_overrides[get_inventory_api] = lambda: mock
     yield mock
     sep_app.dependency_overrides = {}

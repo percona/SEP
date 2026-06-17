@@ -27,7 +27,7 @@ from app.core.requests import RemoteAPI
 from app.sep.deps import get_inventory_api, get_tasks_api
 from app.sep.main import sep_app
 from app.sep.plugins.archives.deps import build_archives_api_task_payload
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -125,12 +125,17 @@ class TestArchivesApiList:
     """Tests for GET /api/plugins/archives/."""
 
     def test_list_returns_ok(self, test_client, mock_tasks_api_dep):
-        """GET /api/plugins/archives/ returns 200 JSON array."""
+        """GET /api/plugins/archives/ returns 200 JSON array with batch statuses."""
         task = build_archive_task()
-        mock_tasks_api_dep.get.side_effect = [
-            {"items": [task], "total": 1, "offset": 0, "limit": 50},
-            {"items": []},
-        ]
+        mock_tasks_api_dep.get.return_value = {
+            "items": [task],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
+        mock_tasks_api_dep.post.return_value = {
+            task["name"]: TaskHistoryStatusEnum.SUCCESS.value
+        }
         response = test_client.get("/api/plugins/archives/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -138,7 +143,10 @@ class TestArchivesApiList:
         assert len(data) == 1
         assert data[0]["name"] == task["name"]
         assert data[0]["service_type"] == "mysql"
-        assert data[0]["status"] is None
+        assert data[0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        mock_tasks_api_dep.post.assert_awaited_once_with(
+            "/history/latest", json={"names": [task["name"]]}
+        )
 
     def test_list_empty(self, test_client, mock_tasks_api_dep):
         """GET /api/plugins/archives/ returns empty list when no tasks."""
@@ -151,6 +159,24 @@ class TestArchivesApiList:
         response = test_client.get("/api/plugins/archives/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
+
+    def test_list_degrades_to_null_status_when_batch_status_errors(
+        self, test_client, mock_tasks_api_dep
+    ):
+        """GET /api/plugins/archives/ stays 200 with null statuses on batch error."""
+        task = build_archive_task()
+        mock_tasks_api_dep.get.return_value = {
+            "items": [task],
+            "total": 1,
+            "offset": 0,
+            "limit": 50,
+        }
+        mock_tasks_api_dep.post.side_effect = RuntimeError("batch status upstream down")
+        response = test_client.get("/api/plugins/archives/")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["status"] is None
 
 
 # ── Detail ────────────────────────────────────────────────────────────────────

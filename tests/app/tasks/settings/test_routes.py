@@ -24,12 +24,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.models import CasdoorUser
-from app.tasks.config import tasks_settings
-from app.tasks.deps import get_executor, get_session
+from app.tasks.config import tasks_settings, TasksSettings
+from app.tasks.deps import get_request_executor, get_session
 from app.tasks.main import tasks_app
 
 
@@ -42,7 +43,7 @@ def admin_test_client_fixture(
     """Yield an admin-authenticated Tasks TestClient bound to the test session."""
     tasks_app.dependency_overrides[get_current_user] = lambda: admin_user
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+    tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app)
     tasks_app.dependency_overrides = {}
 
@@ -56,7 +57,7 @@ def non_admin_client_fixture(
     """Yield a non-admin Tasks TestClient bound to the test session."""
     tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+    tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app)
     tasks_app.dependency_overrides = {}
 
@@ -69,7 +70,7 @@ def unauthenticated_client_fixture(
     """Yield an unauthenticated Tasks TestClient bound to the test session."""
     tasks_app.dependency_overrides = {}
     tasks_app.dependency_overrides[get_session] = lambda: session
-    tasks_app.dependency_overrides[get_executor] = lambda: mock_executor
+    tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
     yield TestClient(tasks_app)
     tasks_app.dependency_overrides = {}
 
@@ -115,6 +116,34 @@ class TestTasksSettingsApi:
         )
         assert len(rows) == 1
         assert rows[0].value == new_value
+
+    async def test_patch_materializer_field_nomad_is_patchable(
+        self,
+        admin_test_client: TestClient,
+        session: AsyncSession,
+    ) -> None:
+        """A ``NOMAD`` override is accepted and stored as raw config JSON.
+
+        Regression: ``NOMAD`` declares a fingerprint materializer; the PATCH
+        validation must route through it and persist the raw config dict (not the
+        coerced ``NomadExecutor`` instance) so the snapshot loader materializes a
+        diff-stable fingerprint.
+        """
+        raw_config = {"endpoint": "https://nomad-override.example.org"}
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD": raw_config},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            session, setting_class=SettingClassEnum.TASKS_SETTINGS, key="NOMAD"
+        )
+        assert len(rows) == 1
+        assert rows[0].value == raw_config
+
+        snapshot = await build_snapshot(session, TasksSettings)
+        assert isinstance(snapshot["NOMAD"], dict)
+        assert snapshot["NOMAD"]["endpoint"].rstrip("/") == raw_config["endpoint"]
 
     async def test_patch_multiple_atomic(
         self,
@@ -259,13 +288,13 @@ class TestTasksSettingsNestedOverrides:
         assert sts is not None
         assert sts.max_age == max_age
 
-    async def test_patch_whole_parent_nomad_rejected(
+    async def test_patch_whole_parent_security_headers_rejected(
         self, admin_test_client: TestClient
     ) -> None:
-        """Replacing the whole NESTED_ONLY ``NOMAD`` parent is rejected."""
+        """Replacing the whole NESTED_ONLY ``SECURITY_HEADERS`` parent is rejected."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
-            json={"NOMAD": {"timeout": 30}},
+            json={"SECURITY_HEADERS": {"x_frame_options_deny": False}},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         types = {entry["type"] for entry in response.json()["detail"]}
@@ -290,27 +319,54 @@ class TestTasksSettingsNestedOverrides:
         )
         assert rows == []
 
-    async def test_delete_whole_parent_nomad_rejected(
+    async def test_delete_whole_parent_security_headers_rejected(
         self, admin_test_client: TestClient
     ) -> None:
-        """DELETE on the whole NESTED_ONLY ``NOMAD`` parent returns 422."""
-        response = admin_test_client.delete("/admin/settings/TasksSettings/NOMAD")
+        """DELETE on the whole NESTED_ONLY ``SECURITY_HEADERS`` parent returns 422."""
+        response = admin_test_client.delete(
+            "/admin/settings/TasksSettings/SECURITY_HEADERS"
+        )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         types = {entry["type"] for entry in response.json()["detail"]}
         assert "not_overridable" in types
 
-    async def test_list_marks_security_headers_overridden(
+    async def test_list_marks_overridden_security_header_leaf(
         self, admin_test_client: TestClient
     ) -> None:
-        """A nested-only override marks the parent ``has_override`` in LIST."""
+        """A nested override marks only its canonical leaf ``has_override`` in LIST."""
         admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"SECURITY_HEADERS__X_FRAME_OPTIONS_DENY": False},
         )
-        groups = admin_test_client.get("/admin/settings/").json()["groups"]
-        settings = groups[0]["settings"]
-        security_headers = next(s for s in settings if s["key"] == "SECURITY_HEADERS")
-        assert security_headers["has_override"] is True
+        settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
+            "settings"
+        ]
+        by_key = {s["key"]: s for s in settings}
+        assert "SECURITY_HEADERS" not in by_key
+        assert by_key["SECURITY_HEADERS__x_frame_options_deny"]["has_override"] is True
+        sibling = by_key["SECURITY_HEADERS__x_content_type_options_nosniff"]
+        assert sibling["has_override"] is False
+
+    async def test_list_expands_security_headers_two_level_leaf(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """LIST surfaces the two-level HSTS leaf with its canonical ``key_path``.
+
+        The intermediate ``strict_transport_security`` defaults to ``None``, so
+        the leaf's ``value`` resolves to ``None`` without raising.
+        """
+        settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
+            "settings"
+        ]
+        by_key = {s["key"]: s for s in settings}
+        leaf = by_key["SECURITY_HEADERS__strict_transport_security__max_age"]
+        assert leaf["key_path"] == [
+            "SECURITY_HEADERS",
+            "strict_transport_security",
+            "max_age",
+        ]
+        assert "__".join(leaf["key_path"]) == leaf["key"]
+        assert leaf["value"] is None
 
     async def test_get_multi_level_nested_before_override_returns_200(
         self, admin_test_client: TestClient
@@ -396,3 +452,126 @@ class TestTasksSettingsNestedOverrides:
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["has_override"] is True
+
+    async def test_detail_two_level_leaf_carries_key_path(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A two-level DETAIL response carries its canonical lowercase ``key_path``."""
+        response = admin_test_client.get(
+            "/admin/settings/TasksSettings"
+            "/SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["key_path"] == [
+            "SECURITY_HEADERS",
+            "strict_transport_security",
+            "max_age",
+        ]
+        assert "__".join(body["key_path"]) == body["key"]
+
+    async def test_patch_security_header_echoes_key_path(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A nested PATCH echoes the leaf's canonical lowercase ``key_path`` chain."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"SECURITY_HEADERS__X_FRAME_OPTIONS_DENY": False},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        echoed = response.json()[0]
+        assert echoed["key_path"] == ["SECURITY_HEADERS", "x_frame_options_deny"]
+        assert "__".join(echoed["key_path"]) == echoed["key"]
+
+    async def test_list_resolves_nomad_leaf_values_under_whole_override(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A whole-NOMAD override still yields real leaf values in LIST, not null.
+
+        ``NOMAD`` is a materializer field whose override snapshot is a JSON
+        fingerprint ``dict``; leaf-value resolution must descend the dict rather
+        than ``getattr`` returning ``None`` for every leaf.
+        """
+        try:
+            admin_test_client.patch(
+                "/admin/settings/TasksSettings",
+                json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
+            )
+            settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
+                "settings"
+            ]
+            by_key = {s["key"]: s for s in settings}
+            assert "nomad-override" in by_key["NOMAD__endpoint"]["value"]
+            assert by_key["NOMAD__timeout"]["value"] is not None
+            assert (
+                by_key["NOMAD__check_cert_expiry_interval__every"]["value"] is not None
+            )
+        finally:
+            tasks_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsInlineRebind:
+    """Fire the registered rebind callbacks on an inline PATCH/DELETE.
+
+    The background refresher only fires a rebind callback when *it* observes a
+    snapshot diff (the snapshot before its ``publish_snapshot`` vs the one after).
+    But the PATCH/DELETE handlers publish the new snapshot inline, so by the next
+    refresh cycle the proxy already holds the new value and the cycle's diff is
+    empty -- the rebind never fires, and the live ``NomadExecutor`` held by
+    ``NomadLifecycle`` keeps serving the old config until restart. The handler
+    must therefore fire the registered callbacks for the keys it just changed.
+    """
+
+    @pytest.fixture(name="nomad_callback_spy")
+    def nomad_callback_spy_fixture(self) -> Iterator[AsyncMock]:
+        """Register a spy as the ``(TASKS_SETTINGS, NOMAD)`` callback on app state.
+
+        Reaches the handler via ``request.app.state.override_callbacks`` (the same
+        registry the lifespan publishes), starting from a clean proxy snapshot and
+        restoring the prior registry on teardown.
+        """
+        spy = AsyncMock()
+        original = getattr(tasks_app.state, "override_callbacks", None)
+        tasks_app.state.override_callbacks = {
+            (SettingClassEnum.TASKS_SETTINGS, "NOMAD"): spy,
+        }
+        tasks_settings._set_snapshot({})
+        yield spy
+        tasks_app.state.override_callbacks = original
+        tasks_settings._set_snapshot({})
+
+    async def test_patch_nomad_fires_rebind_callback(
+        self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
+    ) -> None:
+        """PATCHing ``NOMAD`` fires its rebind callback inline, before any refresh cycle."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        nomad_callback_spy.assert_awaited_once()
+
+    async def test_patch_unrelated_key_does_not_fire_nomad_callback(
+        self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
+    ) -> None:
+        """PATCHing a non-``NOMAD`` key leaves the ``NOMAD`` rebind callback untouched."""
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"STALENESS_THRESHOLD_SECONDS": 4242},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        nomad_callback_spy.assert_not_awaited()
+
+    async def test_delete_nomad_override_fires_rebind_callback(
+        self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
+    ) -> None:
+        """Reverting a ``NOMAD`` override fires its rebind callback inline."""
+        admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
+        )
+        nomad_callback_spy.reset_mock()
+        response = admin_test_client.delete("/admin/settings/TasksSettings/NOMAD")
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        nomad_callback_spy.assert_awaited_once()

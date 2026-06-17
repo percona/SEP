@@ -26,15 +26,10 @@ from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
-from app.core.db.crud import (
-    BaseManager,
-    BaseSQLModelManager,
-    DEFAULT_PAGINATION_LIMIT,
-    DEFAULT_PAGINATION_OFFSET,
-)
+from app.core.db.crud import BaseManager, BaseSQLModelManager
 from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
 from app.tasks.models import (
     DispatchLock,
@@ -123,13 +118,12 @@ class TaskManager(BaseSQLModelManager):
     async def list_active_paginated(
         cls,
         session: AsyncSession,
+        pagination: Pagination,
         owner: TaskOwner | None = None,
         target: str | None = None,
         parent_is_null: bool | None = None,
         backup_type: str | None = None,
         self_parent: bool | None = None,
-        offset: int = DEFAULT_PAGINATION_OFFSET,
-        limit: int = DEFAULT_PAGINATION_LIMIT,
     ) -> PaginatedResponse[Task]:
         """Return a paginated response of active (non-deleted) tasks.
 
@@ -151,10 +145,8 @@ class TaskManager(BaseSQLModelManager):
         :param self_parent: When ``True``, only tasks whose ``data["parent"]`` equals
             ``Task.name`` are returned.
         :type self_parent: bool | None
-        :param offset: The zero-based starting offset for the query results.
-        :type offset: int
-        :param limit: The maximum number of records to return.
-        :type limit: int
+        :param pagination: Validated offset/limit window for this page.
+        :type pagination: Pagination
         :return: A paginated response containing active tasks and metadata.
         :rtype: PaginatedResponse[Task]
         """
@@ -171,7 +163,7 @@ class TaskManager(BaseSQLModelManager):
             self_parent=self_parent,
         )
         return await cls.list_paginated(
-            session, *where, offset=offset, limit=limit, **kwargs
+            session, *where, pagination=pagination, **kwargs
         )
 
     @classmethod
@@ -388,11 +380,10 @@ class TaskHistoryManager(BaseSQLModelManager):
         *,
         session: AsyncSession,
         task_name: str,
+        pagination: Pagination,
         status: TaskHistoryStatusEnum | None = None,
         snippet_filename: str | None = None,
         select_related_task: bool = False,
-        offset: int = DEFAULT_PAGINATION_OFFSET,
-        limit: int = DEFAULT_PAGINATION_LIMIT,
         query_options: Sequence = (),
     ) -> PaginatedResponse[TaskHistory]:
         """Return a paginated response of task histories by the task's name.
@@ -410,16 +401,13 @@ class TaskHistoryManager(BaseSQLModelManager):
         :param select_related_task: Whether to include the related task data in the
             result. Defaults to False.
         :type select_related_task: bool
-        :param offset: The zero-based starting offset for the query results.
-        :type offset: int
-        :param limit: The maximum number of records to return.
-        :type limit: int
+        :param pagination: Validated offset/limit window for this page.
+        :type pagination: Pagination
         :param query_options: Additional SQLAlchemy query options to apply.
         :type query_options: Sequence
         :return: A paginated response containing task histories and metadata.
         :rtype: PaginatedResponse[TaskHistory]
         """
-        cls._validate_pagination(offset, limit)
         count_query = select(func.count()).select_from(TaskHistory).join(Task)
         count_clauses = [col(Task.name) == task_name]
         if snippet_filename:
@@ -440,16 +428,11 @@ class TaskHistoryManager(BaseSQLModelManager):
             status=status,
             snippet_filename=snippet_filename,
             select_related_task=select_related_task,
-            offset=offset,
-            limit=limit,
+            offset=pagination.offset,
+            limit=pagination.limit,
             query_options=query_options,
         )
-        return PaginatedResponse(
-            items=items,
-            total=total,
-            offset=offset,
-            limit=limit,
-        )
+        return PaginatedResponse.from_pagination(items, total, pagination)
 
     @staticmethod
     def _latest_status_from_history_statuses(
@@ -637,8 +620,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         :param source: Optional step filter; when set, only chunks for the given
             source are yielded.
         :type source: str | None
-        :return: An async generator yielding matching ``TaskHistoryLog`` chunk
-            rows, oldest first.
+        :yield: Matching ``TaskHistoryLog`` chunk rows, oldest first.
         :rtype: AsyncGenerator[TaskHistoryLog, None]
         """
         query = select(TaskHistoryLog).where(
@@ -650,6 +632,84 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             col(TaskHistoryLog.source),
             col(TaskHistoryLog.stream),
             col(TaskHistoryLog.start_offset),
+        ).execution_options(yield_per=50)
+        result = await session.stream(query)
+        async for row in result.scalars():
+            yield row
+
+    @classmethod
+    async def list_stream_keys(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        *,
+        source: str | None = None,
+    ) -> list[tuple[str, TaskLogType]]:
+        """Return distinct ``(source, stream)`` pairs that have chunk rows.
+
+        Pairs are ordered by ``(source, stream)`` for deterministic tail scans.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :type session: AsyncSession
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :type task_history_id: int
+        :param source: Optional step filter; when set, only pairs for the given
+            source are returned.
+        :type source: str | None
+        :return: Distinct ``(source, stream)`` tuples present in the chunk store.
+        :rtype: list[tuple[str, TaskLogType]]
+        """
+        query = (
+            select(col(TaskHistoryLog.source), col(TaskHistoryLog.stream))
+            .where(col(TaskHistoryLog.task_history_id) == task_history_id)
+            .distinct()
+            .order_by(col(TaskHistoryLog.source), col(TaskHistoryLog.stream))
+        )
+        if source is not None:
+            query = query.where(col(TaskHistoryLog.source) == source)
+        result = await cls._exec(session, query)
+        return list(result.all())
+
+    @classmethod
+    async def iter_chunks_reverse(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        *,
+        source: str | None = None,
+        stream: TaskLogType | None = None,
+    ) -> AsyncGenerator[TaskHistoryLog, None]:
+        """Yield chunk rows newest-first within each ``(source, stream)`` group.
+
+        Ordering is ``(source, stream, start_offset DESC)`` so callers can scan
+        backward from the log tail without loading the full history forward.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :type session: AsyncSession
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :type task_history_id: int
+        :param source: Optional step filter; when set, only chunks for the given
+            source are yielded.
+        :type source: str | None
+        :param stream: Optional stream filter; when set, only chunks for the
+            given stream are yielded.
+        :type stream: TaskLogType | None
+        :yield: Matching ``TaskHistoryLog`` chunk rows, newest first per stream.
+        :rtype: AsyncGenerator[TaskHistoryLog, None]
+        """
+        query = select(TaskHistoryLog).where(
+            col(TaskHistoryLog.task_history_id) == task_history_id,
+        )
+        if source is not None:
+            query = query.where(col(TaskHistoryLog.source) == source)
+        if stream is not None:
+            query = query.where(col(TaskHistoryLog.stream) == stream)
+        query = query.order_by(
+            col(TaskHistoryLog.source),
+            col(TaskHistoryLog.stream),
+            col(TaskHistoryLog.start_offset).desc(),
         ).execution_options(yield_per=50)
         result = await session.stream(query)
         async for row in result.scalars():

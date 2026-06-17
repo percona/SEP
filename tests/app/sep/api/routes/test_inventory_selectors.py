@@ -21,6 +21,8 @@ from fastapi import HTTPException
 from starlette import status
 from starlette.testclient import TestClient
 
+from app.core.pagination import MAX_PAGINATION_LIMIT
+
 
 class TestSepServiceSchemasEndpoint:
     """Tests for ``GET /api/sep/services/{service_id}/schemas``."""
@@ -57,7 +59,8 @@ class TestSepServiceSchemasEndpoint:
         )
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.get.assert_called_once_with(
-            "/services/10/schemas/", params={"limit": 0, "search": "my"}
+            "/services/10/schemas/",
+            params={"offset": 0, "limit": MAX_PAGINATION_LIMIT, "search": "my"},
         )
 
     def test_list_schemas_empty_on_404(
@@ -82,10 +85,10 @@ class TestSepServiceSchemasEndpoint:
         response = test_client.get("/api/sep/services/10/schemas")
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
-    def test_list_schemas_empty_when_response_has_no_items(
+    def test_list_schemas_empty_when_upstream_returns_none(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
-        """Return empty list when inventory returns a non-dict or missing items."""
+        """Return empty list when inventory returns a non-paginated null payload."""
         mock_inventory_api_dep.get.return_value = None
         response = test_client.get("/api/sep/services/10/schemas")
         assert response.status_code == status.HTTP_200_OK
@@ -130,7 +133,8 @@ class TestSepSchemaTablesEndpoint:
         )
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.get.assert_called_once_with(
-            "/schemas/5/tables/", params={"limit": 0, "search": "user"}
+            "/schemas/5/tables/",
+            params={"offset": 0, "limit": MAX_PAGINATION_LIMIT, "search": "user"},
         )
 
     def test_list_tables_empty_on_404(
@@ -155,10 +159,10 @@ class TestSepSchemaTablesEndpoint:
         response = test_client.get("/api/sep/schemas/5/tables")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_list_tables_empty_when_response_has_no_items(
+    def test_list_tables_empty_when_upstream_returns_empty_object(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
-        """Return empty list when inventory returns a non-dict or missing items."""
+        """Return empty list when inventory returns a dict without items."""
         mock_inventory_api_dep.get.return_value = {}
         response = test_client.get("/api/sep/schemas/5/tables")
         assert response.status_code == status.HTTP_200_OK

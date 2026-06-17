@@ -23,7 +23,7 @@ implemented in ``app.sep.plugins.inventory.deps``; see
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import status
+from fastapi import HTTPException, status
 
 from app.sep.crud import SyncItemManager
 from app.sep.deps import BEARER_REQUIRED_DETAIL
@@ -107,7 +107,7 @@ class TestInventoryGateway:
         response = test_client.get("/api/plugins/inventory/nodes/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [{"id": 1, "name": "n"}]
-        mock_inventory_api_dep.get.assert_awaited_once_with("/", params={})
+        mock_inventory_api_dep.get.assert_awaited_once_with("/nodes/", params={})
 
     def test_list_forwards_query_params_to_inventory(
         self, test_client, mock_inventory_api_dep
@@ -120,7 +120,7 @@ class TestInventoryGateway:
         )
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.get.assert_awaited_once_with(
-            "/",
+            "/nodes/",
             params={"limit": "10"},
         )
 
@@ -132,7 +132,7 @@ class TestInventoryGateway:
     def test_create_service_forwards_to_node_services(
         self, test_client, mock_inventory_api_dep
     ):
-        """Ensure POST ``/api/plugins/inventory/services/`` maps to ``/{node_id}/services/`` on inventory."""
+        """Ensure POST ``/api/plugins/inventory/services/`` maps to ``/nodes/{node_id}/services/`` on inventory."""
         mock_inventory_api_dep.post.return_value = {"id": 2, "name": "svc"}
         response = test_client.post(
             "/api/plugins/inventory/services/",
@@ -145,7 +145,7 @@ class TestInventoryGateway:
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.post.assert_awaited_once()
         call_args = mock_inventory_api_dep.post.await_args
-        assert call_args[0][0] == f"/{_CREATE_SERVICE_TEST_NODE_ID}/services/"
+        assert call_args[0][0] == f"/nodes/{_CREATE_SERVICE_TEST_NODE_ID}/services/"
         assert call_args[1]["json"]["node_id"] == _CREATE_SERVICE_TEST_NODE_ID
 
     def test_create_service_invalid_node_id_returns_422(
@@ -204,12 +204,12 @@ class TestInventoryGateway:
         response = test_client.delete("/api/plugins/inventory/nodes/3")
         assert response.status_code == status.HTTP_204_NO_CONTENT
         assert response.content == b""
-        mock_inventory_api_dep.delete.assert_awaited_once_with("/3")
+        mock_inventory_api_dep.delete.assert_awaited_once_with("/nodes/3")
 
     @pytest.mark.parametrize(
         ("entity", "item_id", "inventory_path"),
         [
-            ("nodes", 3, "/3"),
+            ("nodes", 3, "/nodes/3"),
             ("services", 9, "/services/9"),
             ("schemas", 11, "/schemas/11"),
             ("tables", 42, "/tables/42"),
@@ -234,7 +234,7 @@ class TestInventoryGateway:
     @pytest.mark.parametrize(
         ("entity", "item_id", "inventory_path"),
         [
-            ("nodes", 3, "/3"),
+            ("nodes", 3, "/nodes/3"),
             ("services", 9, "/services/9"),
             ("schemas", 11, "/schemas/11"),
             ("tables", 42, "/tables/42"),
@@ -632,4 +632,92 @@ class TestInventorySyncStatus:
     def test_requires_authentication(self, unauthenticated_client):
         """Without API auth the status endpoint returns 401."""
         response = unauthenticated_client.get("/api/plugins/inventory/sync/status/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+class TestInventorySystemObservation:
+    """Tests for the read-only system-observation proxy routes.
+
+    Cover both the host (node) and service endpoints across the
+    facts-present (200) and not-collected (404) paths. The 404 originates in
+    the inventory sub-app and must propagate unchanged so the React panel can
+    render its empty state instead of an error toast.
+    """
+
+    @pytest.mark.parametrize(
+        ("url", "inventory_path", "payload"),
+        [
+            (
+                "/api/plugins/inventory/nodes/3/system-observation",
+                "/nodes/3/system-observation",
+                {
+                    # Host observation shape: os_version, installed_packages,
+                    # config; no db_engine_version.
+                    "os_version": "Ubuntu 22.04",
+                    "installed_packages": {"openssl": "3.0.2"},
+                    "config": {"max_connections": 100},
+                    "observed_at": "2026-06-01T12:00:00Z",
+                },
+            ),
+            (
+                "/api/plugins/inventory/services/9/system-observation",
+                "/services/9/system-observation",
+                {
+                    # Service observation shape: db_engine_version only.
+                    "db_engine_version": "8.0.36",
+                    "observed_at": "2026-06-01T12:00:00Z",
+                },
+            ),
+        ],
+    )
+    def test_system_observation_present_returns_200(
+        self,
+        test_client,
+        mock_inventory_api_dep,
+        url: str,
+        inventory_path: str,
+        payload: dict,
+    ):
+        """Ensure a present observation proxies through with HTTP 200 and forwards the sub-resource path."""
+        mock_inventory_api_dep.get.return_value = payload
+        response = test_client.get(url)
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == payload
+        mock_inventory_api_dep.get.assert_awaited_once_with(inventory_path)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/api/plugins/inventory/nodes/3/system-observation",
+            "/api/plugins/inventory/services/9/system-observation",
+        ],
+    )
+    def test_system_observation_not_collected_passes_through_404(
+        self,
+        test_client,
+        mock_inventory_api_dep,
+        url: str,
+    ):
+        """Ensure an upstream 404 (not collected yet) propagates as HTTP 404."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No system observation",
+        )
+        response = test_client.get(url)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/api/plugins/inventory/nodes/3/system-observation",
+            "/api/plugins/inventory/services/9/system-observation",
+        ],
+    )
+    def test_system_observation_requires_authentication(
+        self,
+        unauthenticated_client,
+        url: str,
+    ):
+        """Without API auth the system-observation endpoints return 401."""
+        response = unauthenticated_client.get(url)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

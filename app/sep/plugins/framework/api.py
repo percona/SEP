@@ -13,32 +13,52 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define shared discovery endpoint helpers for plugin routers.
+"""Define shared route helpers for schema-driven plugin routers.
 
-The helpers in this module — :func:`schema_endpoint` and
-:func:`capabilities_endpoint` — register the two well-known plugin
-discovery routes (``GET /schema`` and ``GET /capabilities``) with the
-same auth posture, response-model wiring, and duplicate-registration
-guard so plugins opt in with a single call and never re-implement the
-wiring.
+The helpers in this module register a plugin's well-known routes with a
+single call so plugins never re-implement the auth posture, response-model
+wiring, or status-code conventions:
+
+- :func:`schema_endpoint` and :func:`capabilities_endpoint` register the
+  ``GET /schema`` and ``GET /capabilities`` discovery routes.
+- :func:`derive_crud_routes` builds a plugin router carrying the schema
+  route plus the standard list / detail / create (and optional update /
+  delete) CRUD routes, composing the shared framework task helpers for the
+  handler bodies.
 """
 
 import functools
 import inspect
 import typing
-from collections.abc import Callable
-from typing import TypeVar
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Annotated, Any, cast, TypeVar
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, params, Query, status
 from pydantic import BaseModel
 
-from app.sep.deps import IsApiAuthenticated
+from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
+from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
+from app.sep.plugins.framework.connectivity import maybe_record_connectivity_warning
+from app.sep.plugins.framework.responses import (
+    build_task_list_responses,
+    derive_create_response_model,
+    TaskResponseBuilder,
+)
 from app.sep.plugins.framework.schema import PluginSchema
+from app.sep.plugins.framework.task_status import get_task_latest_status
+from app.tasks.models import Task, TaskHistoryResponse, TaskOwner, TaskWrite
 
-__all__ = ["capabilities_endpoint", "schema_endpoint"]
+__all__ = [
+    "capabilities_endpoint",
+    "derive_crud_routes",
+    "derive_execute_route",
+    "schema_endpoint",
+]
 
 
 CapabilitiesT = TypeVar("CapabilitiesT", bound=BaseModel)
+ListDetailResponseT = TypeVar("ListDetailResponseT", bound=BaseModel)
+CreateResponseT = TypeVar("CreateResponseT", bound=BaseModel)
 
 
 def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
@@ -73,9 +93,7 @@ def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
     FastAPI's dependency cache deduplicates it per request.
 
     :param router: The plugin's ``APIRouter``.
-    :type router: APIRouter
     :param plugin_schema: The plugin's fully-validated schema instance.
-    :type plugin_schema: PluginSchema
     :raises ValueError: If ``router`` already exposes a ``GET /schema`` route.
     """
     router_prefix = getattr(router, "prefix", "") or ""
@@ -93,7 +111,6 @@ def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
 
     @router.get(
         "/schema",
-        response_model=PluginSchema,
         response_model_by_alias=True,
         response_model_exclude_none=True,
         dependencies=[IsApiAuthenticated],
@@ -102,13 +119,15 @@ def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
         """Return the plugin schema captured at registration time.
 
         :return: The plugin schema instance.
-        :rtype: PluginSchema
         """
         return plugin_schema
 
 
-def _resolve_capabilities_response_model(
+def _resolve_response_model(
     provider: Callable[..., BaseModel],
+    *,
+    helper: str,
+    param: str,
 ) -> type[BaseModel]:
     """Return the ``BaseModel`` subclass declared as ``provider``'s return type.
 
@@ -122,9 +141,9 @@ def _resolve_capabilities_response_model(
     :param provider: A callable annotated with its return type. The
         callable may declare arbitrary parameters (typically resolved by
         FastAPI's dependency injection via ``Depends(...)``).
-    :type provider: Callable[..., BaseModel]
+    :param helper: The public helper name, used to frame error messages.
+    :param param: The offending parameter name, used to frame error messages.
     :return: The class declared as the provider's return annotation.
-    :rtype: type[BaseModel]
     :raises TypeError: If the annotation is missing, isn't a class, or
         isn't a :class:`pydantic.BaseModel` subclass.
     """
@@ -140,17 +159,53 @@ def _resolve_capabilities_response_model(
     annotation = hints.get("return")
     if annotation is None:
         raise TypeError(
-            "capabilities_endpoint: capabilities_provider must declare a "
-            "return type annotation that is a pydantic.BaseModel subclass "
-            "(e.g. `def provider() -> MyCapabilities: ...`)"
+            f"{helper}: {param} must declare a return type annotation that is "
+            f"a pydantic.BaseModel subclass (e.g. `def {param}() -> MyModel: ...`)"
         )
     if not inspect.isclass(annotation) or not issubclass(annotation, BaseModel):
         raise TypeError(
-            "capabilities_endpoint: capabilities_provider's return type "
-            f"annotation must be a pydantic.BaseModel subclass; got "
-            f"{annotation!r}"
+            f"{helper}: {param}'s return type annotation must be a "
+            f"pydantic.BaseModel subclass; got {annotation!r}"
         )
     return annotation
+
+
+def _reject_async_builders(**builders: Callable[..., BaseModel] | None) -> None:
+    """Raise ``TypeError`` if any named builder is an ``async def`` callable.
+
+    :func:`derive_crud_routes`'s handlers invoke the response builders
+    synchronously, so an ``async def`` builder would yield an un-awaited
+    coroutine that ``response_model`` serialisation cannot handle. Reject it at
+    registration — mirroring :func:`capabilities_endpoint`'s sync-only guard —
+    rather than letting it surface as an opaque failure on the first request.
+
+    :param builders: Builder callables keyed by their parameter name; ``None``
+        entries (an omitted optional builder) are skipped.
+    :raises TypeError: If any supplied builder is a coroutine function.
+    """
+    for label, builder in builders.items():
+        if builder is not None and inspect.iscoroutinefunction(builder):
+            raise TypeError(
+                f"derive_crud_routes: {label} must be a sync callable; the "
+                "derived handlers invoke it synchronously, so an async builder "
+                "would yield an un-awaited coroutine that response_model "
+                "serialisation cannot handle."
+            )
+
+
+def _create_response_name(plugin_schema: PluginSchema) -> str:
+    """Return the ``<App>CreateResponse`` OpenAPI component name for the schema.
+
+    Treat both ``-`` and ``_`` in ``plugin_schema.name`` as word boundaries
+    (``PluginSchema.name`` permits hyphens), capitalise each word, and append
+    ``CreateResponse`` — so ``"mysql_backups"`` yields
+    ``MysqlBackupsCreateResponse``.
+
+    :param plugin_schema: The plugin schema whose ``name`` seeds the title.
+    :return: The derived ``<App>CreateResponse`` component name.
+    """
+    parts = plugin_schema.name.replace("-", "_").split("_")
+    return "".join(part.capitalize() for part in parts) + "CreateResponse"
 
 
 def capabilities_endpoint(
@@ -210,13 +265,11 @@ def capabilities_endpoint(
       may toggle without a redeploy.
 
     :param router: The plugin's ``APIRouter``.
-    :type router: APIRouter
     :param capabilities_provider: A callable returning a
         :class:`pydantic.BaseModel` instance. The return-type annotation
         is used as the route's ``response_model``. The callable's
         parameters (if any) are passed through to FastAPI for dependency
         resolution.
-    :type capabilities_provider: Callable[..., BaseModel]
     :raises TypeError: If ``capabilities_provider``'s return annotation
         is missing, is not a class, or is not a
         :class:`pydantic.BaseModel` subclass. Raised at registration
@@ -231,7 +284,11 @@ def capabilities_endpoint(
             "Calling an async function from the sync handler would return a "
             "coroutine object that response_model serialisation cannot handle."
         )
-    response_model = _resolve_capabilities_response_model(capabilities_provider)
+    response_model = _resolve_response_model(
+        capabilities_provider,
+        helper="capabilities_endpoint",
+        param="capabilities_provider",
+    )
 
     router_prefix = getattr(router, "prefix", "") or ""
     expected_path = f"{router_prefix}/capabilities"
@@ -257,4 +314,431 @@ def capabilities_endpoint(
         response_model=response_model,
         response_model_exclude_none=True,
         dependencies=[IsApiAuthenticated],
+    )
+
+
+def _register_create_route(
+    router: APIRouter,
+    *,
+    plugin_schema: PluginSchema,
+    response_builder: TaskResponseBuilder[ListDetailResponseT],
+    create_payload: Callable[..., Awaitable[TaskWrite]],
+    create_response_builder: TaskResponseBuilder[CreateResponseT] | None,
+    list_detail_model: type[ListDetailResponseT],
+    connectivity_check: bool,
+) -> None:
+    """Register the standard ``POST /`` create route (``201``) on ``router``.
+
+    With ``connectivity_check`` off, the handler builds the create response
+    directly. With it on, the handler gains a ``check_connectivity`` query
+    parameter, runs the post-creation connectivity probe, and attaches the
+    resulting ``connectivity_warning`` — auto-deriving the create model via
+    :func:`derive_create_response_model` when no explicit
+    ``create_response_builder`` is given. An explicit builder's model wins, but
+    with ``connectivity_check`` on it must itself declare ``connectivity_warning``
+    so the probe result has somewhere to land.
+
+    :param router: The plugin router to register the create route on.
+    :param plugin_schema: The plugin schema seeding the auto-derived model name.
+    :param response_builder: The list/detail builder, reused for the base create
+        response when no explicit create builder is given.
+    :param create_payload: The create-payload dependency declaring the body.
+    :param create_response_builder: An explicit create-response builder whose
+        model wins when supplied.
+    :param list_detail_model: The list/detail response model used as the
+        auto-derive base.
+    :param connectivity_check: Whether to add the connectivity probe and the
+        ``check_connectivity`` query parameter.
+    :raises TypeError: If ``connectivity_check`` is on and an explicit
+        ``create_response_builder`` is given whose model omits a
+        ``connectivity_warning`` field.
+    """
+    if create_response_builder is not None:
+        create_model = _resolve_response_model(
+            create_response_builder,
+            helper="derive_crud_routes",
+            param="create_response_builder",
+        )
+        if (
+            connectivity_check
+            and "connectivity_warning" not in create_model.model_fields
+        ):
+            raise TypeError(
+                "derive_crud_routes: create_response_builder's model must declare a "
+                "connectivity_warning field when connectivity_check=True; build it "
+                "via derive_create_response_model so the probe result is attached "
+                "rather than silently dropped."
+            )
+    elif connectivity_check:
+        create_model = derive_create_response_model(
+            list_detail_model, name=_create_response_name(plugin_schema)
+        )
+    else:
+        create_model = list_detail_model
+
+    if not connectivity_check:
+
+        async def _create(
+            tasks_api: TaskAPI,
+            task_write: Annotated[TaskWrite, Depends(create_payload)],
+        ) -> BaseModel:
+            created = await tasks_api.post("/", json=task_write.model_dump())
+            task = Task.model_validate(created)
+            if create_response_builder is not None:
+                return create_response_builder(task)
+            return response_builder(task, status=None)
+    else:
+
+        async def _create(
+            tasks_api: TaskAPI,
+            task_write: Annotated[TaskWrite, Depends(create_payload)],
+            *,
+            check_connectivity: Annotated[bool, Query()] = True,
+        ) -> BaseModel:
+            created = await tasks_api.post("/", json=task_write.model_dump())
+            task = Task.model_validate(created)
+            warning = await maybe_record_connectivity_warning(
+                tasks_api,
+                task.data.get("meta", {}),
+                check_connectivity=check_connectivity,
+            )
+            if create_response_builder is not None:
+                return create_response_builder(task).model_copy(
+                    update={"connectivity_warning": warning}
+                )
+            base = response_builder(task, status=None)
+            return create_model(**base.model_dump(), connectivity_warning=warning)
+
+    router.add_api_route(
+        "/",
+        _create,
+        methods=["POST"],
+        status_code=status.HTTP_201_CREATED,
+        response_model=create_model,
+        response_model_by_alias=True,
+        dependencies=[IsApiAuthenticated],
+    )
+
+
+def derive_crud_routes(
+    plugin_schema: PluginSchema,
+    *,
+    task_owner: TaskOwner,
+    get_task: Callable[..., Awaitable[Task]],
+    response_builder: TaskResponseBuilder[ListDetailResponseT],
+    create_payload: Callable[..., Awaitable[TaskWrite]] | None = None,
+    create_response_builder: TaskResponseBuilder[CreateResponseT] | None = None,
+    connectivity_check: bool = False,
+    detail_path_param: str = "task_name",
+    pagination_dep: PaginationDependency | None = None,
+    update_handler: Callable[..., Awaitable[Any]] | None = None,
+    delete_handler: Callable[..., Awaitable[Any]] | None = None,
+) -> APIRouter:
+    """Build a plugin router with the standard schema + CRUD routes.
+
+    Register ``GET /schema`` plus standard task-plugin CRUD routes:
+    owner-filtered list (``GET /``), detail (``GET /{detail_path_param}``),
+    create (``POST /`` with ``201``), and optional update/delete overrides
+    (``PUT`` / ``DELETE`` on ``/{detail_path_param}``; delete uses ``204``).
+    All derived routes use ``IsApiAuthenticated`` and
+    ``response_model_by_alias=True``. Enabling ``connectivity_check`` extends
+    the create route with a post-creation connectivity probe and a
+    ``connectivity_warning`` on its response.
+
+    The derived detail route is greedy: ``GET /{detail_path_param}`` captures
+    any single collection-root path segment. If a plugin also needs a static
+    collection-root ``GET`` route (for example ``GET /capabilities``), prefer
+    a hand-written router (or mount that static route under a sub-prefix)
+    instead of this helper.
+
+    .. code-block:: python
+
+        from app.sep.plugins.framework.api import derive_crud_routes
+
+        router = derive_crud_routes(
+            archives_schema,
+            task_owner=TaskOwner.ARCHIVER,
+            get_task=get_archives_task,
+            response_builder=build_archives_api_task_response,
+            create_payload=build_archives_api_task_payload,
+        )
+
+    :param plugin_schema: The plugin's fully-validated schema instance.
+    :param task_owner: The task owner the list route filters by.
+    :param get_task: The raw ``make_task_dep(owner)`` callable resolving a task
+        by name; its inner path parameter must equal ``detail_path_param``.
+    :param response_builder: Builds the list/detail response model from a task
+        and optional status; its return annotation supplies the response model.
+    :param create_payload: The raw create-payload builder dependency (declares
+        the request ``Body()`` model that drives the create ``422``). When
+        ``None`` (the default), no ``POST /`` create route is registered — the
+        read-only shape used by an app that exposes schema + list + detail only.
+        ``connectivity_check`` and ``create_response_builder`` are create-route
+        options, so supplying either with ``create_payload=None`` is rejected.
+    :param create_response_builder: Builds the create response from a task;
+        its return annotation supplies the create response model. Defaults to
+        reusing ``response_builder`` (and its model).
+    :param connectivity_check: When ``True``, the create route gains a
+        ``check_connectivity`` boolean query parameter (default ``True``), runs
+        the post-creation connectivity probe, and returns a create response
+        whose ``connectivity_warning`` is populated on probe failure. The create
+        response model becomes ``create_response_builder``'s model when given,
+        else an auto-derived ``<App>CreateResponse``. When ``False`` (default)
+        the create route is unchanged.
+    :param detail_path_param: The detail/update/delete path-parameter name;
+        must equal ``get_task``'s inner path parameter (``make_task_dep`` uses
+        ``task_name``).
+    :param pagination_dep: A ``make_pagination_dep(...)`` dependency callable.
+        When given, the list route takes that dependency (wrapped in
+        ``Annotated[Pagination, Depends(...)]``) and returns a
+        ``PaginatedResponse``; when ``None`` the list returns a plain list.
+    :param update_handler: A fully-formed update handler; when given, a
+        ``PUT /{detail_path_param}`` route is registered using it. The helper
+        applies only ``IsApiAuthenticated`` and ``response_model_by_alias`` — any
+        additional route guard (e.g. ``HasNoConflictedRunningTasks``) must be
+        declared as one of the handler's own signature dependencies (e.g.
+        ``Annotated[None, Depends(HasNoConflictedRunningTasks)]``), since the
+        handler is passed as a bare callable and carries no decorator-level
+        dependencies into the helper.
+    :param delete_handler: A fully-formed delete handler; when given, a
+        ``DELETE /{detail_path_param}`` route is registered using it, with
+        ``status_code=204``. As with ``update_handler``, any extra route guard
+        must be declared as one of the handler's own signature dependencies.
+    :return: A plugin ``APIRouter`` carrying the schema + CRUD routes.
+    :raises TypeError: If ``response_builder`` or ``create_response_builder``
+        is an ``async def`` callable (the derived handlers invoke it
+        synchronously), or does not declare a return-type annotation that is a
+        :class:`pydantic.BaseModel` subclass; or if ``connectivity_check`` is on
+        and an explicit ``create_response_builder``'s model omits a
+        ``connectivity_warning`` field.
+    :raises ValueError: If ``create_payload`` is ``None`` while
+        ``connectivity_check`` is on or a ``create_response_builder`` is supplied
+        — both are create-route options that need a create route to attach to.
+    """
+    _reject_async_builders(
+        response_builder=response_builder,
+        create_response_builder=create_response_builder,
+    )
+
+    list_detail_model = _resolve_response_model(
+        response_builder, helper="derive_crud_routes", param="response_builder"
+    )
+
+    router = APIRouter()
+    schema_endpoint(router, plugin_schema)
+
+    detail_path = f"/{{{detail_path_param}}}"
+
+    if pagination_dep is None:
+
+        async def _list(tasks_api: TaskAPI) -> list[BaseModel]:
+            responses = await build_task_list_responses(
+                tasks_api,
+                owner=task_owner.value,
+                response_builder=response_builder,
+            )
+            return cast(list[BaseModel], responses)
+
+        router.add_api_route(
+            "/",
+            _list,
+            methods=["GET"],
+            response_model=list[list_detail_model],
+            response_model_by_alias=True,
+            dependencies=[IsApiAuthenticated],
+        )
+    else:
+        paginated_param = Annotated[Pagination, Depends(pagination_dep)]
+
+        async def _list_paginated(
+            tasks_api: TaskAPI, pagination: paginated_param
+        ) -> PaginatedResponse:
+            responses = await build_task_list_responses(
+                tasks_api,
+                owner=task_owner.value,
+                response_builder=response_builder,
+                pagination=pagination,
+            )
+            return cast(PaginatedResponse, responses)
+
+        router.add_api_route(
+            "/",
+            _list_paginated,
+            methods=["GET"],
+            response_model=PaginatedResponse[list_detail_model],
+            response_model_by_alias=True,
+            dependencies=[IsApiAuthenticated],
+        )
+
+    async def _detail(
+        tasks_api: TaskAPI, task: Annotated[Task, Depends(get_task)]
+    ) -> BaseModel:
+        task_status = await get_task_latest_status(tasks_api, task.name)
+        return response_builder(task, status=task_status)
+
+    router.add_api_route(
+        detail_path,
+        _detail,
+        methods=["GET"],
+        response_model=list_detail_model,
+        response_model_by_alias=True,
+        dependencies=[IsApiAuthenticated],
+    )
+
+    if create_payload is None:
+        if connectivity_check:
+            raise ValueError(
+                "derive_crud_routes: connectivity_check=True needs a create route; "
+                "pass create_payload or drop connectivity_check"
+            )
+        if create_response_builder is not None:
+            raise ValueError(
+                "derive_crud_routes: create_response_builder needs a create route; "
+                "pass create_payload or drop create_response_builder"
+            )
+    else:
+        _register_create_route(
+            router,
+            plugin_schema=plugin_schema,
+            response_builder=response_builder,
+            create_payload=create_payload,
+            create_response_builder=create_response_builder,
+            list_detail_model=list_detail_model,
+            connectivity_check=connectivity_check,
+        )
+
+    if update_handler is not None:
+        router.add_api_route(
+            detail_path,
+            update_handler,
+            methods=["PUT"],
+            response_model_by_alias=True,
+            dependencies=[IsApiAuthenticated],
+        )
+
+    if delete_handler is not None:
+        router.add_api_route(
+            detail_path,
+            delete_handler,
+            methods=["DELETE"],
+            status_code=status.HTTP_204_NO_CONTENT,
+            response_model_by_alias=True,
+            dependencies=[IsApiAuthenticated],
+        )
+
+    return router
+
+
+def derive_execute_route(
+    router: APIRouter,
+    *,
+    task_dep: Any,
+    write_model: type[BaseModel],
+    response_model: type[BaseModel],
+    name: str | None = None,
+    description: str = "",
+    extra_deps: Sequence[params.Depends] = (),
+) -> None:
+    """Register the standard ``POST /{task_name}/execute`` route on ``router``.
+
+    Consolidate the execute handler shared verbatim across the task plugins:
+    resolve the task, POST ``/execute/{task.name}`` to the Tasks API with the
+    request body's non-``None`` fields, validate the upstream reply as a
+    :class:`~app.tasks.models.TaskHistoryResponse`, and return
+    ``response_model(task_name=..., task_id=...)``. The route pins
+    ``status_code=201`` and the standard guard set
+    ``[IsApiAuthenticated, HasNoConflictedRunningTasks, *extra_deps]``.
+
+    The generated handler annotates its ``task`` parameter with ``task_dep``
+    (the plugin's ``Annotated[Task, Depends(get_*_task)]`` alias, whose inner
+    getter declares the ``task_name`` path parameter) and its ``body``
+    parameter with ``write_model`` (so FastAPI parses and documents the JSON
+    body from that annotation).
+
+    ``name`` and ``description`` default to the inner handler's own
+    ``__name__`` / docstring (FastAPI's own fallback), yielding a generic
+    ``execute`` operation for a new plugin. Pass them explicitly to reproduce
+    an existing route's ``operationId`` / ``summary`` (from ``name``) and
+    ``description`` (from the docstring) byte-for-byte when migrating a
+    hand-written handler onto this helper.
+
+    .. code-block:: python
+
+        from app.sep.plugins.framework.api import derive_execute_route
+
+        derive_execute_route(
+            router,
+            name="checksums_api_execute",
+            description="Execute a checksum task.",
+            task_dep=ChecksumsTask,
+            write_model=ChecksumExecuteWrite,
+            response_model=ChecksumExecutionResponse,
+        )
+
+    :param router: The plugin's ``APIRouter``.
+    :param task_dep: The plugin's ``Annotated[Task, Depends(get_*_task)]``
+        dependency alias; its inner getter resolves the task by name (and owns
+        the ``task_name`` path parameter and the 404-on-mismatch behaviour).
+    :param write_model: The execute request body model; its annotation drives
+        the requestBody schema and the body-validation ``422``.
+    :param response_model: The execute response model, constructed with
+        ``task_name`` and ``task_id`` keyword arguments.
+    :param name: The route name; drives the OpenAPI ``operationId`` and
+        ``summary``. ``None`` falls back to the inner handler's ``__name__``.
+    :param description: The OpenAPI operation ``description``; ``""`` falls back
+        to the inner handler's docstring.
+    :param extra_deps: Extra route dependencies appended to the standard guard
+        set, never replacing it.
+    :raises TypeError: If ``write_model`` or ``response_model`` is not a
+        :class:`pydantic.BaseModel` subclass. Raised at registration time.
+    :raises ValueError: If ``router`` already exposes a
+        ``POST /{task_name}/execute`` route.
+    """
+    for model, param in (
+        (write_model, "write_model"),
+        (response_model, "response_model"),
+    ):
+        if not (inspect.isclass(model) and issubclass(model, BaseModel)):
+            raise TypeError(
+                f"derive_execute_route: {param} must be a pydantic.BaseModel "
+                f"subclass; got {model!r}"
+            )
+
+    router_prefix = getattr(router, "prefix", "") or ""
+    expected_path = f"{router_prefix}/{{task_name}}/execute"
+    for existing in router.routes:
+        existing_methods = set(getattr(existing, "methods", None) or ())
+        if (
+            getattr(existing, "path", None) == expected_path
+            and "POST" in existing_methods
+        ):
+            raise ValueError(
+                "derive_execute_route: router already has a POST "
+                "/{task_name}/execute route; call this helper at most once per "
+                "plugin router"
+            )
+
+    async def execute(
+        task: task_dep,
+        body: write_model,
+        tasks_api: TaskAPI,
+    ) -> BaseModel:
+        """Resolve, dispatch, and wrap a standard task execution."""
+        created = await tasks_api.post(
+            f"/execute/{task.name}",
+            json=body.model_dump(exclude_none=True),
+        )
+        task_history = TaskHistoryResponse.model_validate(created)
+        return response_model(task_name=task.name, task_id=task_history.id)
+
+    router.add_api_route(
+        "/{task_name}/execute",
+        execute,
+        methods=["POST"],
+        name=name,
+        description=description,
+        status_code=status.HTTP_201_CREATED,
+        response_model=response_model,
+        response_model_by_alias=True,
+        dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks, *extra_deps],
     )

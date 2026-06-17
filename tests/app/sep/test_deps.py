@@ -34,6 +34,7 @@ from app.core.exceptions import (
     HTTPRedirectException,
     HTTPServiceUnavailableException,
 )
+from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.models import CasdoorUser
 from app.sep.config import Plugin, sep_settings
 from app.sep.crud import AppStateManager
@@ -67,7 +68,8 @@ from app.sep.deps import (
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
-from app.sep.models import AppState, SyncInventoryEntityTypeEnum
+from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
+from app.sep.plugins.framework.registry import build_app_registry
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
@@ -546,7 +548,7 @@ class TestGetCreatedNode:
 
         result = await get_created_node(mock_api, node.id)
         assert isinstance(result, CreatedNode)
-        mock_api.get.assert_called_once_with(f"/{node.id}")
+        mock_api.get.assert_called_once_with(f"/nodes/{node.id}")
 
 
 class TestGetCreatedSchema:
@@ -1047,7 +1049,9 @@ class TestGetExecutorHostsContext:
         ctx = await get_executor_hosts_context(executor_hosts, mock_inventory_api)
         assert ctx.display_name("nomad-1") == "db-primary"
         assert ctx.display_name("nomad-2") == "db-replica"
-        mock_inventory_api.get.assert_called_once_with("/", params={"limit": 0})
+        mock_inventory_api.get.assert_called_once_with(
+            "/nodes/", params={"offset": 0, "limit": MAX_PAGINATION_LIMIT}
+        )
 
     @pytest.mark.asyncio
     async def test_returns_fallback_when_inventory_raises(self) -> None:
@@ -1311,16 +1315,26 @@ class TestRequireAppEnabled:
 
     @pytest.mark.asyncio
     async def test_gate_passes_when_enabled(self, session) -> None:
-        """The gate returns ``None`` when the app row is enabled."""
-        session.add(AppState(app_key="snippets", enabled=True))
+        """The gate returns ``None`` when the app is ``ENABLED``."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
         await session.commit()
         gate = require_app_enabled("snippets")
         assert await gate(session) is None
 
     @pytest.mark.asyncio
-    async def test_gate_raises_503_when_disabled(self, session) -> None:
-        """The gate raises 503 when the app row is disabled."""
-        session.add(AppState(app_key="snippets", enabled=False))
+    @pytest.mark.parametrize(
+        "state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    async def test_gate_raises_503_for_non_enabled_states(self, session, state) -> None:
+        """The gate raises 503 whenever the app is not ``ENABLED``."""
+        session.add(AppState(app_key="snippets", lifecycle_state=state))
         await session.commit()
         gate = require_app_enabled("snippets")
         with pytest.raises(HTTPServiceUnavailableException) as exc_info:
@@ -1346,11 +1360,13 @@ class TestGetToggleableAppKey:
     ) -> None:
         """A configured, non-protected key resolves to itself."""
         monkeypatch.setattr(
-            "app.sep.deps.sep_settings.PLUGINS",
-            [
-                Plugin(name="Inventory", module_name="inventory"),
-                Plugin(name="Snippet Manager", module_name="snippets"),
-            ],
+            "app.sep.plugins.framework.registry.get_app_registry",
+            lambda: build_app_registry(
+                [
+                    Plugin(name="Inventory", module_name="inventory"),
+                    Plugin(name="Snippet Manager", module_name="snippets"),
+                ]
+            ),
         )
         assert get_toggleable_app_key("snippets") == "snippets"
 
@@ -1364,8 +1380,10 @@ class TestGetToggleableAppKey:
     ) -> None:
         """An unconfigured key raises 404."""
         monkeypatch.setattr(
-            "app.sep.deps.sep_settings.PLUGINS",
-            [Plugin(name="Snippet Manager", module_name="snippets")],
+            "app.sep.plugins.framework.registry.get_app_registry",
+            lambda: build_app_registry(
+                [Plugin(name="Snippet Manager", module_name="snippets")]
+            ),
         )
         with pytest.raises(HTTPNotFoundException):
             get_toggleable_app_key("unknown")
@@ -1385,24 +1403,36 @@ class TestGetDefaultContextPluginFiltering:
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("mock_get_username_mapping")
-    async def test_enabled_plugin_included_disabled_excluded(
-        self, session, dummy_request, regular_user
+    @pytest.mark.parametrize(
+        "excluded_state",
+        [
+            AppLifecycleEnum.DISABLED,
+            AppLifecycleEnum.DISABLING,
+            AppLifecycleEnum.ENABLING,
+        ],
+    )
+    async def test_enabled_plugin_included_non_enabled_excluded(
+        self, session, dummy_request, regular_user, excluded_state
     ) -> None:
-        """Only protected apps plus enabled non-protected apps reach the sidebar."""
-        session.add(AppState(app_key="snippets", enabled=True))
-        session.add(AppState(app_key="checksums", enabled=False))
+        """Only protected apps plus ``ENABLED`` non-protected apps reach the sidebar."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        session.add(AppState(app_key="checksums", lifecycle_state=excluded_state))
         await session.commit()
 
         with (
-            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch(
+                "app.sep.plugins.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
             patch("app.sep.deps.settings"),
         ):
-            mock_sep.PLUGINS = self._plugins()
             context = await get_default_context(
                 dummy_request, regular_user, None, session
             )
 
-        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        keys = {p.key for p in context["plugins"]}
         assert keys == {"inventory", "snippets"}
 
     @pytest.mark.asyncio
@@ -1411,19 +1441,23 @@ class TestGetDefaultContextPluginFiltering:
         self, session, dummy_request, regular_user
     ) -> None:
         """A protected app stays in the sidebar regardless of any DB row."""
-        session.add(AppState(app_key="inventory", enabled=False))
+        session.add(
+            AppState(app_key="inventory", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
         await session.commit()
 
         with (
-            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch(
+                "app.sep.plugins.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
             patch("app.sep.deps.settings"),
         ):
-            mock_sep.PLUGINS = self._plugins()
             context = await get_default_context(
                 dummy_request, regular_user, None, session
             )
 
-        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        keys = {p.key for p in context["plugins"]}
         assert "inventory" in keys
 
     @pytest.mark.asyncio
@@ -1433,15 +1467,17 @@ class TestGetDefaultContextPluginFiltering:
     ) -> None:
         """A configured plugin with no DB row is shown (missing -> enabled)."""
         with (
-            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch(
+                "app.sep.plugins.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
             patch("app.sep.deps.settings"),
         ):
-            mock_sep.PLUGINS = self._plugins()
             context = await get_default_context(
                 dummy_request, regular_user, None, session
             )
 
-        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        keys = {p.key for p in context["plugins"]}
         assert keys == {"inventory", "snippets", "checksums"}
 
     @pytest.mark.asyncio
@@ -1451,18 +1487,20 @@ class TestGetDefaultContextPluginFiltering:
     ) -> None:
         """A DB read failure shows every app so the page (and error pages) render."""
         with (
-            patch("app.sep.deps.sep_settings") as mock_sep,
+            patch(
+                "app.sep.plugins.framework.registry.get_app_registry",
+                return_value=build_app_registry(self._plugins()),
+            ),
             patch("app.sep.deps.settings"),
             patch.object(
                 AppStateManager,
-                "all_states",
+                "all_lifecycle_states",
                 side_effect=SQLAlchemyError("db down"),
             ),
         ):
-            mock_sep.PLUGINS = self._plugins()
             context = await get_default_context(
                 dummy_request, regular_user, None, session
             )
 
-        keys = {p.module_name.split(".")[-1] for p in context["plugins"]}
+        keys = {p.key for p in context["plugins"]}
         assert keys == {"inventory", "snippets", "checksums"}

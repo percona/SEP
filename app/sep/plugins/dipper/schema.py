@@ -108,19 +108,100 @@ dipper_schema = PluginSchema(
 )
 
 
+def _choice_field_from_options(
+    name: str,
+    label: str,
+    options: list[str],
+    *,
+    required: bool,
+    description: str | None,
+    default: str | None,
+) -> AnyField:
+    """Build a single-select ``ChoiceField`` from a list of option values.
+
+    The ``default`` is applied only when it is present among ``options`` — a
+    ``ChoiceField`` default that is not a valid option renders as no selection.
+
+    :param name: The form-state key for the field.
+    :type name: str
+    :param label: The human-readable field label.
+    :type label: str
+    :param options: The option values (also used as labels).
+    :type options: list[str]
+    :param required: Whether the field is required.
+    :type required: bool
+    :param description: Optional helper text.
+    :type description: str | None
+    :param default: The candidate default value, applied only if in ``options``.
+    :type default: str | None
+    :return: The constructed choice field.
+    :rtype: AnyField
+    """
+    return cast(
+        AnyField,
+        ChoiceField(
+            name=name,
+            label=label,
+            required=required,
+            description=description,
+            default=default if default in options else None,
+            choices=[Choice(value=option, label=option) for option in options],
+        ),
+    )
+
+
 def build_dipper_form_schema(
     script: BaseSnippet,
     service_id: int,
     collector_type: str,
     defaults: dict[str, str] | None = None,
+    node_options: list[str] | None = None,
+    service_options: list[str] | None = None,
 ) -> PluginSchema:
-    """Build the Dipper execution form schema for a selected service/script."""
+    """Build the Dipper execution form schema for a selected service/script.
+
+    Parameters marked ``hidden`` are omitted from the schema.
+
+    When ``node_options`` / ``service_options`` are non-empty, the corresponding
+    free-text ``node`` / ``service`` fields are rendered as single-select
+    :class:`~app.sep.plugins.framework.schema.ChoiceField` dropdowns sourced from
+    the configured PMM inventory. Empty option lists keep the original
+    ``StringField`` (a ``ChoiceField`` requires at least one option), so the form
+    stays usable when PMM is unconfigured or unreachable.
+
+    :param script: The selected snippet whose parameters drive the form fields.
+    :type script: BaseSnippet
+    :param service_id: The inventory service the form targets.
+    :type service_id: int
+    :param collector_type: The Dipper collector type for the selected script.
+    :type collector_type: str
+    :param defaults: Optional per-field default values keyed by field name.
+    :type defaults: dict[str, str] | None
+    :param node_options: Optional PMM node names rendered as a ``node`` dropdown.
+    :type node_options: list[str] | None
+    :param service_options: Optional PMM service names rendered as a ``service`` dropdown.
+    :type service_options: list[str] | None
+    :return: The assembled plugin form schema.
+    :rtype: PluginSchema
+    """
+    options_by_field = {"node": node_options, "service": service_options}
     parameter_sections: dict[str, list[AnyField]] = {}
-    for parameter in script.validated_parameters.parameters:
+    for parameter in script.validated_parameters.visible_parameters:
         section_title = parameter.group or "Parameters"
         field = field_for(parameter)
-        if defaults and field.name in defaults and field.default in (None, ""):
-            field.default = defaults[field.name]
+        resolved_default = defaults.get(field.name) if defaults else None
+        options = options_by_field.get(field.name)
+        if options:
+            field = _choice_field_from_options(
+                field.name,
+                field.label,
+                options,
+                required=field.required,
+                description=field.description,
+                default=resolved_default,
+            )
+        elif resolved_default is not None and field.default in (None, ""):
+            field.default = resolved_default
         parameter_sections.setdefault(section_title, []).append(field)
 
     forms = [

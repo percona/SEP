@@ -15,6 +15,7 @@
 
 """Tests for the dipper plugin JSON API routes under /api/plugins/dipper/."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -24,9 +25,16 @@ from pydantic import BaseModel
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import BEARER_REQUIRED_DETAIL
+from app.sep.main import sep_app
+from app.sep.plugins.dipper.deps import get_pmm_api
 
 API_BASE = "/api/plugins/dipper"
 FAKE_TASK_ID = 99
+
+
+def _named(*names: str) -> list[SimpleNamespace]:
+    """Build a list of objects exposing a ``name`` attribute (PMM node/service stand-ins)."""
+    return [SimpleNamespace(name=name) for name in names]
 
 
 def build_fake_service(
@@ -219,6 +227,176 @@ class TestDipperFormSchemaEndpoint:
         assert {"pmmserver", "node", "service"} <= set(by_name)
         assert by_name["node"]["default"] == "test-node"
         assert by_name["service"]["default"] == "test-service"
+
+    def test_pmm_schema_omits_hidden_apikey_field(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """The hidden apikey param must not surface in the React form schema."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "pmm"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        by_name = self._fields_by_name(response)
+        assert "apikey" not in by_name
+
+    def _fields_by_name(self, response) -> dict:
+        fields = [
+            field for section in response.json()["forms"] for field in section["fields"]
+        ]
+        return {field["name"]: field for field in fields}
+
+    def test_pmm_schema_renders_dropdowns_from_pmm_inventory(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_pmm_api_dep
+    ):
+        """node/service render as choice dropdowns sourced from PMM inventory."""
+        mock_inventory_api_dep.get = AsyncMock(return_value=build_fake_service())
+        mock_task_api_dep.get = AsyncMock(return_value={})
+        mock_pmm_api_dep.get_nodes.return_value = _named("test-node", "other-node")
+        mock_pmm_api_dep.get_services.return_value = _named("test-service", "svc-2")
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "pmm"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        by_name = self._fields_by_name(response)
+        assert by_name["node"]["type"] == "choice"
+        assert by_name["service"]["type"] == "choice"
+        assert {c["value"] for c in by_name["node"]["choices"]} == {
+            "test-node",
+            "other-node",
+        }
+        assert {c["value"] for c in by_name["service"]["choices"]} == {
+            "test-service",
+            "svc-2",
+        }
+
+    def test_pmm_dropdown_preselects_inventory_default_when_present(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_pmm_api_dep
+    ):
+        """The inventory-derived default is pre-selected when it is a valid option."""
+        mock_inventory_api_dep.get = AsyncMock(return_value=build_fake_service())
+        mock_task_api_dep.get = AsyncMock(return_value={})
+        mock_pmm_api_dep.get_nodes.return_value = _named("test-node", "other-node")
+        mock_pmm_api_dep.get_services.return_value = _named("test-service", "svc-2")
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "pmm"},
+        )
+
+        by_name = self._fields_by_name(response)
+        assert by_name["node"]["default"] == "test-node"
+        assert by_name["service"]["default"] == "test-service"
+
+    def test_pmm_dropdown_omits_default_when_not_in_options(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_pmm_api_dep
+    ):
+        """No default is set when the inventory value is absent from PMM options."""
+        mock_inventory_api_dep.get = AsyncMock(return_value=build_fake_service())
+        mock_task_api_dep.get = AsyncMock(return_value={})
+        mock_pmm_api_dep.get_nodes.return_value = _named("other-node")
+        mock_pmm_api_dep.get_services.return_value = _named("svc-2")
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "pmm"},
+        )
+
+        by_name = self._fields_by_name(response)
+        assert by_name["node"]["type"] == "choice"
+        assert by_name["node"].get("default") is None
+        assert by_name["service"].get("default") is None
+
+    def test_pmm_schema_falls_back_to_text_when_pmm_empty(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_pmm_api_dep
+    ):
+        """Empty PMM inventory keeps node/service as free-text StringFields."""
+        mock_inventory_api_dep.get = AsyncMock(return_value=build_fake_service())
+        mock_task_api_dep.get = AsyncMock(return_value={})
+        mock_pmm_api_dep.get_nodes.return_value = []
+        mock_pmm_api_dep.get_services.return_value = []
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "pmm"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        by_name = self._fields_by_name(response)
+        assert by_name["node"]["type"] == "string"
+        assert by_name["service"]["type"] == "string"
+        assert by_name["node"]["default"] == "test-node"
+
+    def test_pmm_schema_falls_back_to_text_when_pmm_unconfigured(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """Unconfigured PMM (client is ``None``) keeps free-text fields and returns 200."""
+        mock_inventory_api_dep.get = AsyncMock(return_value=build_fake_service())
+        mock_task_api_dep.get = AsyncMock(return_value={})
+        sentinel = object()
+        previous = sep_app.dependency_overrides.get(get_pmm_api, sentinel)
+        sep_app.dependency_overrides[get_pmm_api] = lambda: None
+        try:
+            response = test_client.get(
+                f"{API_BASE}/form-schema",
+                params={"service_id": 1, "collector_type": "pmm"},
+            )
+        finally:
+            if previous is sentinel:
+                sep_app.dependency_overrides.pop(get_pmm_api, None)
+            else:
+                sep_app.dependency_overrides[get_pmm_api] = previous
+
+        assert response.status_code == status.HTTP_200_OK
+        by_name = self._fields_by_name(response)
+        assert by_name["node"]["type"] == "string"
+        assert by_name["service"]["type"] == "string"
+
+    def test_pmm_schema_falls_back_to_text_when_pmm_unreachable(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_pmm_api_dep
+    ):
+        """A raising PMM client must not fail the form — return 200 with free-text."""
+        mock_inventory_api_dep.get = AsyncMock(return_value=build_fake_service())
+        mock_task_api_dep.get = AsyncMock(return_value={})
+        mock_pmm_api_dep.get_nodes.side_effect = RuntimeError("connection refused")
+        mock_pmm_api_dep.get_services.side_effect = RuntimeError("connection refused")
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "pmm"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        by_name = self._fields_by_name(response)
+        assert by_name["node"]["type"] == "string"
+        assert by_name["service"]["type"] == "string"
+
+    def test_environment_collector_does_not_query_pmm(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep, mock_pmm_api_dep
+    ):
+        """The environment collector must not trigger any PMM inventory fetch."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.MYSQL.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "environment"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_pmm_api_dep.get_nodes.assert_not_awaited()
+        mock_pmm_api_dep.get_services.assert_not_awaited()
 
 
 class TestDipperScriptPreviewEndpoint:
