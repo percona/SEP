@@ -18,9 +18,15 @@
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.sep.plugins.archives.constants import SwapDropEnum
+from app.sep.plugins.archives.models import ArchivesCreate
 from app.sep.plugins.archives.schema import archives_schema
+
+# The exact tooltip / error copy that the disabled choices and the FailRule
+# must surface. Pinned here so a copy change is a deliberate test update.
+_SWAP_DROP_UNSUPPORTED = "Not available yet. Only Purge Only is currently supported."
 
 
 class TestArchivesSchemaStructure:
@@ -398,3 +404,84 @@ class TestArchivesSchemaCardinality:
         assert found, (
             "Expected CardinalityRule(max=1) covering dest_file/dest_table_id/dest_table_name"
         )
+
+
+class TestArchivesSchemaArchiveTypeRestriction:
+    """Archive Type restriction: Purge Only default + only-selectable, others disabled."""
+
+    @staticmethod
+    def _swap_drop_field():
+        return next(
+            f
+            for section in archives_schema.forms
+            for f in section.fields
+            if f.name == "swap_drop"
+        )
+
+    def test_purge_only_is_default(self):
+        """Purge Only is the pre-selected default for the Archive Type field."""
+        field = self._swap_drop_field()
+        assert field.default == "0"
+
+    def test_purge_only_choice_is_selectable(self):
+        """The Purge Only choice is not disabled."""
+        field = self._swap_drop_field()
+        purge_only = next(c for c in field.choices if c.label == "Purge Only")
+        assert not purge_only.disabled
+        assert purge_only.disabled_reason is None
+
+    @pytest.mark.parametrize("label", ["Swap & Drop", "Swap Archive & Drop"])
+    def test_swap_choices_disabled_with_tooltip(self, label: str):
+        """Swap & Drop and Swap Archive & Drop are disabled with the tooltip copy."""
+        field = self._swap_drop_field()
+        choice = next(c for c in field.choices if c.label == label)
+        assert choice.disabled is True
+        assert choice.disabled_reason == _SWAP_DROP_UNSUPPORTED
+
+    def test_swap_drop_fail_rule_present(self):
+        """A FailRule rejects any swap_drop other than PURGE_ONLY (server-side)."""
+        all_fail_rules = []
+        for section in archives_schema.forms:
+            if section.fail_when:
+                all_fail_rules.extend(section.fail_when)
+        if archives_schema.fail_when:
+            all_fail_rules.extend(archives_schema.fail_when)
+
+        rule = next(
+            (r for r in all_fail_rules if r.error_fields == ["swap_drop"]), None
+        )
+        assert rule is not None, "Expected a FailRule guarding swap_drop"
+        assert rule.message == _SWAP_DROP_UNSUPPORTED
+        assert rule.fail_when.to_dict() == {
+            "not_equals": {"swap_drop": SwapDropEnum.PURGE_ONLY.value}
+        }
+
+    def test_purge_only_payload_is_accepted(self):
+        """A valid Purge Only payload passes validation."""
+        model = ArchivesCreate(
+            alias="test",
+            hostname="host",
+            service_id=1,
+            source_db_id=1,
+            source_table_id=1,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=2,
+        )
+        assert model.swap_drop == SwapDropEnum.PURGE_ONLY
+
+    @pytest.mark.parametrize(
+        "swap_drop", [SwapDropEnum.SWAP_DROP, SwapDropEnum.SWAP_ARCHIVE_DROP]
+    )
+    def test_non_purge_only_payload_is_rejected(self, swap_drop: SwapDropEnum):
+        """A crafted payload bypassing the disabled UI is rejected by validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            ArchivesCreate(
+                alias="test",
+                hostname="host",
+                service_id=1,
+                source_db_id=1,
+                source_table_id=1,
+                swap_drop=swap_drop,
+            )
+        assert _SWAP_DROP_UNSUPPORTED in str(exc_info.value)

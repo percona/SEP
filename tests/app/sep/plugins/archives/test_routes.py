@@ -59,14 +59,16 @@ def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
 
 @pytest.fixture
 def created_archives() -> ArchivesCreate:
-    """Return a fake created task."""
+    """Return a fake created task (Purge Only — the only supported type)."""
     return ArchivesCreate(
-        alias="drop_swap",
+        alias="purge_only",
         hostname="source_db",
         service_id=1,
         source_db_id=10,
         source_table_id=20,
-        swap_drop=SwapDropEnum.SWAP_DROP,
+        swap_drop=SwapDropEnum.PURGE_ONLY,
+        where="id > 1",
+        delete_data=1,
     )
 
 
@@ -158,7 +160,9 @@ def test_archives_create_full_form_dependency_chain_without_payload_override(
         service_id=created_service.id,
         source_db_id=created_schema.id,
         source_table_id=created_table.id,
-        swap_drop=SwapDropEnum.SWAP_DROP,
+        swap_drop=SwapDropEnum.PURGE_ONLY,
+        where="id > 1",
+        delete_data=1,
     )
     mock_inventory_api_dep.get = AsyncMock(
         side_effect=[
@@ -205,7 +209,9 @@ def test_archives_create_accepts_empty_dest_port(
         service_id=created_service.id,
         source_db_id=created_schema.id,
         source_table_id=created_table.id,
-        swap_drop=SwapDropEnum.SWAP_DROP,
+        swap_drop=SwapDropEnum.PURGE_ONLY,
+        where="id > 1",
+        delete_data=1,
     )
     mock_inventory_api_dep.get = AsyncMock(
         side_effect=[
@@ -245,7 +251,9 @@ def test_archives_update_accepts_empty_dest_port(
         service_id=created_service.id,
         source_db_id=created_schema.id,
         source_table_id=created_table.id,
-        swap_drop=SwapDropEnum.SWAP_DROP,
+        swap_drop=SwapDropEnum.PURGE_ONLY,
+        where="id > 1",
+        delete_data=1,
     )
     mock_inventory_api_dep.get = AsyncMock(
         side_effect=[
@@ -291,7 +299,9 @@ def test_archives_create_same_as_source_with_manual_dest_schema(
         service_id=created_service.id,
         source_db_id=created_schema.id,
         source_table_id=created_table.id,
-        swap_drop=SwapDropEnum.SWAP_DROP,
+        swap_drop=SwapDropEnum.PURGE_ONLY,
+        where="id > 1",
+        dest_table_name="archived_tbl",
         dest_db_name="archive_db",
     )
     mock_inventory_api_dep.get = AsyncMock(
@@ -338,7 +348,9 @@ def test_archives_update_same_as_source_with_manual_dest_schema(
         service_id=created_service.id,
         source_db_id=created_schema.id,
         source_table_id=created_table.id,
-        swap_drop=SwapDropEnum.SWAP_DROP,
+        swap_drop=SwapDropEnum.PURGE_ONLY,
+        where="id > 1",
+        dest_table_name="archived_tbl",
         dest_db_name="archive_db",
     )
     mock_inventory_api_dep.get = AsyncMock(
@@ -363,6 +375,42 @@ def test_archives_update_same_as_source_with_manual_dest_schema(
     purge_item = purge_config["PURGE_LIST"][0]
     assert purge_item["DEST_DB"] == "archive_db"
     assert "DEST_HOST" not in purge_item
+
+
+def test_archives_update_rejects_non_purge_only_swap_drop(
+    test_client,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+):
+    """Resubmitting a legacy SWAP_DROP task via the update route is rejected.
+
+    Existing SWAP_DROP / SWAP_ARCHIVE_DROP tasks load read-only, but saving an
+    edit re-validates through ``ArchivesCreate``; only Purge Only is accepted,
+    so a crafted ``swap_drop=1`` form fails validation (422) regardless of the
+    disabled UI.
+    """
+    # Posted as a raw form dict because ArchivesCreate refuses to construct a
+    # non-Purge-Only payload in the first place.
+    payload = {
+        "alias": "legacy_swap_drop",
+        "hostname": "source_db",
+        "service_id": 1,
+        "source_db_id": 10,
+        "source_table_id": 20,
+        "swap_drop": SwapDropEnum.SWAP_DROP.value,
+    }
+
+    response = test_client.post(
+        "/archives/legacy_swap_drop/update",
+        data=payload,
+        follow_redirects=False,
+    )
+
+    # HTML form routes surface validation failures as a flash + redirect back to
+    # the referer rather than persisting; the task is never updated.
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert not response.headers["location"].endswith("/archives/legacy_swap_drop")
+    mock_task_api_dep.put.assert_not_awaited()
 
 
 def test_archives_create_skips_connectivity_check_when_opted_out(
