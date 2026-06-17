@@ -24,7 +24,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException, status
+from pydantic import SecretStr
 
+from app.core.config import settings
 from app.sep.crud import SyncItemManager
 from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.main import sep_app
@@ -460,6 +462,19 @@ class TestInventorySyncTrigger:
         mock_run_sync_funcs["inventory"].assert_awaited_once()
         args = mock_run_sync_funcs["inventory"].await_args.args
         assert list(args[1:]) == mock_syncers
+
+    def test_sync_uses_internal_token(
+        self, test_client, mock_syncers, mock_run_sync_funcs, mocker
+    ):
+        """The API sync background task is scheduled with the internal token."""
+        mocker.patch.object(
+            settings, "SEP_INTERNAL_TOKEN", SecretStr("api-internal-token")
+        )
+        response = test_client.post("/api/plugins/inventory/sync/")
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        mock_run_sync_funcs["inventory"].assert_awaited_once()
+        args = mock_run_sync_funcs["inventory"].await_args.args
+        assert args[0] == "api-internal-token"
 
     def test_empty_object_body_schedules_sync_all(
         self, test_client, mock_syncers, mock_run_sync_funcs
