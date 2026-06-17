@@ -33,7 +33,7 @@ In addition to CRUD, this router mounts the ad-hoc inventory-sync trigger
 (``POST /sync/``) and the running-state polling endpoint
 (``GET /sync/status/``) consumed by the React inventory sync control. Schedule
 discovery (``GET /``) and available-syncers (``GET /available-syncers/``) are
-also mounted here so the React schedule UI (SEP-1058) can fetch its data
+also mounted here so the React schedule UI can fetch its data
 through the plugin API gateway. Periodic-task CRUD remains delegated to
 ``/api/tasks/periodic/*`` as the single source of truth; this router does not
 duplicate that surface. The inventory service remains the canonical CRUD
@@ -48,12 +48,13 @@ from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
 
 from app.core.exceptions import HTTPBadRequestException
 from app.sep.crud import SyncItemManager
-from app.sep.deps import ApiCurrentUser, InventoryAPI, SessionDep
+from app.sep.deps import InventoryAPI, SessionDep
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory.deps import (
     AvailableSyncer,
     filter_syncers_by_name,
+    InternalTokenDep,
     inventory_plugin_query_params,
     inventory_service_create_path,
     inventory_service_detail_path,
@@ -85,9 +86,9 @@ _OPTIONAL_TRIGGER_BODY = Body(default=None)
 
 @router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
 async def inventory_sync_trigger(
-    user: ApiCurrentUser,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     body: InventorySyncTriggerWrite | None = _OPTIONAL_TRIGGER_BODY,
 ) -> Response:
     """Schedule an ad-hoc inventory sync as a background task.
@@ -98,13 +99,15 @@ async def inventory_sync_trigger(
     declaration order; otherwise only the named syncer is forwarded. An
     unknown or inapplicable syncer raises HTTP 400 — never a silent no-op.
 
-    :param user: Current API-authenticated user; the access token is
-        forwarded to the background task.
-    :type user: ApiCurrentUser
+    Authentication is enforced by the parent ``api_router``'s
+    ``IsApiAuthenticated`` dependency, so this handler needs no auth parameter.
+
     :param syncers: Configured syncers from ``SyncersDep``.
     :type syncers: SyncersDep
     :param background_tasks: FastAPI's background task scheduler.
     :type background_tasks: BackgroundTasks
+    :param internal_token: SEP-internal service token injected by
+        ``InternalTokenDep`` and forwarded to the background sync task.
     :param body: Optional trigger body.
     :type body: InventorySyncTriggerWrite | None
     :return: Empty 202 Accepted response.
@@ -121,7 +124,7 @@ async def inventory_sync_trigger(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(run_inventory_sync, user.access_token, *selected)
+    background_tasks.add_task(run_inventory_sync, internal_token, *selected)
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 

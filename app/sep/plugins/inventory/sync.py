@@ -24,6 +24,35 @@ from app.sep.plugins.inventory.deps import (
 from app.sep.sync.models import BaseSyncer
 
 
+def get_internal_token() -> str | None:
+    """Return the configured or derived internal service token, or ``None``.
+
+    ``SecretStr("")`` is truthy, so the empty-string check is required to treat
+    an empty token as absent.
+
+    :return: The internal token's secret value, or ``None`` when unset or empty.
+    """
+    token = settings.SEP_INTERNAL_TOKEN
+    if token is None:
+        return None
+    return token.get_secret_value() or None
+
+
+def require_internal_token() -> str:
+    """Return the internal service token, raising when it is unset.
+
+    ``Settings.derive_internal_token`` guarantees a value process-wide, so a
+    ``None`` here means a deliberately misconfigured or patched environment.
+
+    :return: The internal token's secret value.
+    :raises RuntimeError: If no internal token is configured or derived.
+    """
+    token = get_internal_token()
+    if token is None:
+        raise RuntimeError("SEP_INTERNAL_TOKEN must be configured.")
+    return token
+
+
 async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
     """Execute scheduled inventory sync using configured internal token and syncers.
 
@@ -45,8 +74,7 @@ async def run_scheduled_inventory_sync(syncer: str | None = None) -> None:
         ``syncer`` is set but does not match any configured syncer that can
         sync inventory.
     """
-    token_setting = settings.SEP_INTERNAL_TOKEN
-    if token_setting is None or not (api_key := token_setting.get_secret_value()):
+    if (api_key := get_internal_token()) is None:
         raise ValueError(
             "SEP_INTERNAL_TOKEN must be configured for scheduled inventory "
             "sync. Set it in .env to a long random secret "
