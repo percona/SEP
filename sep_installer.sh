@@ -302,14 +302,21 @@ def strip_marker(content, marker, keep):
     lines = content.splitlines()
     if keep:
         return "\n".join(line for line in lines if line.strip() != marker)
+
     kept = []
     in_block = False
+    marker_count = 0
     for line in lines:
         if line.strip() == marker:
             in_block = not in_block
+            marker_count += 1
             continue
         if not in_block:
             kept.append(line)
+
+    if marker_count % 2 != 0:
+        raise SystemExit(f"Unbalanced marker block: {marker}")
+
     return "\n".join(kept)
 
 def cmd_render_templates(args):
