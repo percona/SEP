@@ -35,8 +35,10 @@ DIPPER_SCRIPT_BY_SERVICE_TYPE = {
     ServiceTypeEnum.MYSQL: "pcs-collect-environment-mysql.sh",
     ServiceTypeEnum.MONGODB: "pcs-collect-environment-mongo.sh",
     ServiceTypeEnum.POSTGRESQL: "pcs-collect-environment-pgsql.sh",
+    ServiceTypeEnum.VALKEY: "pcs-collect-environment-valkey.sh",
 }
 
 DIPPER_PMM_SCRIPT_BY_SERVICE_TYPE = {
     ServiceTypeEnum.MYSQL: "pcs-collect-pmm-mysql.py",
+    ServiceTypeEnum.VALKEY: "pcs-collect-pmm-valkey.py",
 }

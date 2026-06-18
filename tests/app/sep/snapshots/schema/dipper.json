@@ -41,7 +41,8 @@
           "service_types": [
             "mysql",
             "mongodb",
-            "postgresql"
+            "postgresql",
+            "valkey"
           ],
           "type": "service"
         },
