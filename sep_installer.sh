@@ -1447,10 +1447,19 @@ load_existing_secrets_and_certs() {
     local provided_pmm_pass="${SEP_PMM_URL_AUTH_ACCOUNT_PASS}"
     local provided_pmm_token="${SEP_PMM_URL_AUTH_TOKEN:-}"
 
-    set -a
-    # shellcheck disable=SC1090,SC1091
-    . "${INSTALL_DIR}/.secrets"
-    set +a
+    local line key value
+    while IFS= read -r line || [ -n "${line}" ]; do
+        case "${line}" in
+            ""|\#*) continue ;;
+        esac
+        key=${line%%=*}
+        value=${line#*=}
+        case "${key}" in
+            CASDOOR_DEFAULT_ORG_SALT|CASDOOR_SEP_ORG_SALT|CASDOOR_DEFAULT_CLIENT_ID|CASDOOR_DEFAULT_CLIENT_SECRET|CASDOOR_SEP_CLIENT_ID|CASDOOR_SEP_CLIENT_SECRET|CASDOOR_DEFAULT_ADMIN_PASSWD|CASDOOR_SEP_ADMIN_PASSWD|CASDOOR_SEP_SEP_PASSWD|SEP_BACKEND_DB_PASSWORD|SEP_REDIS_PASSWORD|SEP_INTERNAL_TOKEN|SEP_PMM_URL_AUTH_ACCOUNT|SEP_PMM_URL_AUTH_TOKEN|GF_SECURITY_ADMIN_PASSWORD|INSTALL_DIR)
+                declare -gx "${key}=${value}"
+                ;;
+        esac
+    done < "${INSTALL_DIR}/.secrets"
 
     INSTALL_DIR="${saved_install_dir}"
     FINAL_INSTALL_DIR="${saved_install_dir}"
