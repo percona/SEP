@@ -38,28 +38,6 @@ export interface NavItem {
   appKey?: string;
 }
 
-/**
- * Filter a navigation tree by the set of enabled app keys.
- *
- * An item is hidden when it carries an `appKey` that is not in `enabledKeys`.
- * Items without an `appKey` (the Dashboard root, the Inventory app, parent
- * groups) always render. A parent group is hidden once all of its children are
- * hidden. The input is not mutated.
- */
-export function filterNavByEnabledApps(items: NavItem[], enabledKeys: Set<string>): NavItem[] {
-  return items.reduce<NavItem[]>((acc, item) => {
-    if (item.children) {
-      const children = filterNavByEnabledApps(item.children, enabledKeys);
-      if (children.length > 0) {
-        acc.push({ ...item, children });
-      }
-    } else if (item.appKey === undefined || enabledKeys.has(item.appKey)) {
-      acc.push(item);
-    }
-    return acc;
-  }, []);
-}
-
 interface NavigationState {
   items: NavItem[];
   sidebarOpen: boolean;
