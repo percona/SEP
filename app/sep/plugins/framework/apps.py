@@ -417,10 +417,12 @@ class TaskExecutionApp(BaseApp):
         """Validate the detail-path, execute, and update route knobs.
 
         :raises ValueError: When a non-default ``detail_path_param`` has no custom
-            ``get_task``; when an execute-enabled app lacks its models; when
-            ``update_guard`` is set on a non-derived update (no update capability,
-            or a full ``update_handler``); or when the derived update lacks the
-            create capability whose payload it rebuilds the body through.
+            ``get_task``; when an execute-enabled app lacks its models; when an
+            ``update_handler`` or ``delete_handler`` is set without its capability
+            enabled (it would otherwise be silently dropped); when ``update_guard``
+            is set on a non-derived update (no update capability, or a full
+            ``update_handler``); or when the derived update lacks the create
+            capability whose payload it rebuilds the body through.
         """
         if self.detail_path_param != "task_name" and self.get_task is None:
             raise ValueError(
@@ -433,6 +435,16 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: the execute capability needs execute_write_model "
                 "and execute_response_model"
+            )
+        if self.update_handler is not None and not self.capabilities.update:
+            raise ValueError(
+                "TaskExecutionApp: update_handler overrides the derived PUT; enable "
+                "capabilities.update or drop update_handler"
+            )
+        if self.delete_handler is not None and not self.capabilities.delete:
+            raise ValueError(
+                "TaskExecutionApp: delete_handler overrides the derived DELETE; enable "
+                "capabilities.delete or drop delete_handler"
             )
         if self.update_guard and not self.capabilities.update:
             raise ValueError(
@@ -522,10 +534,10 @@ class TaskExecutionApp(BaseApp):
             context_provider=self.response_context_provider,
             create_extra_deps=self.create_extra_deps,
             update_enabled=self.capabilities.update,
-            update_handler=self.update_handler if self.capabilities.update else None,
+            update_handler=self.update_handler,
             update_extra_deps=self.update_guard,
             delete_enabled=self.capabilities.delete,
-            delete_handler=self.delete_handler if self.capabilities.delete else None,
+            delete_handler=self.delete_handler,
         )
         router.include_router(crud)
 
