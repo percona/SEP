@@ -266,9 +266,15 @@ class DerivedRouterContractTests:
     Subclass and set :attr:`app_def`; pytest collects one ``test_*`` per surface.
     Each capability-gated method either exercises the enabled route or asserts the
     disabled route's absence, reading the contract from the definition.
+
+    Set :attr:`remapped_username` to the username the bound app's response context
+    provider remaps the seeded ``created_by`` to; leave it ``None`` for an app whose
+    provider is not deterministic under test (for example a real Casdoor lookup), so
+    the injected-extras tests assert only the deterministic ``service_type`` extra.
     """
 
     app_def: ClassVar[TaskExecutionApp]
+    remapped_username: ClassVar[str | None] = SYNTH_CREATED_BY_NAME
 
     def test_schema_200(self, contract_client: TestClient) -> None:
         """Assert ``GET /schema`` serves the derived plugin schema."""
@@ -520,7 +526,8 @@ class DerivedRouterContractTests:
             if row["name"] == SEEDED_TASK_NAME
         )
         assert row["service_type"] == ServiceTypeEnum.MYSQL.value
-        assert row["created_by"] == SYNTH_CREATED_BY_NAME
+        if self.remapped_username is not None:
+            assert row["created_by"] == self.remapped_username
 
     def test_detail_injects_extras(self, contract_client: TestClient) -> None:
         """Assert ``GET /{name}`` carries the injected extras and resolved username."""
@@ -533,7 +540,8 @@ class DerivedRouterContractTests:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["service_type"] == ServiceTypeEnum.MYSQL.value
-        assert body["created_by"] == SYNTH_CREATED_BY_NAME
+        if self.remapped_username is not None:
+            assert body["created_by"] == self.remapped_username
 
     def test_detail_reflects_injected_status(
         self, contract_client: TestClient, mock_task_api: Any
@@ -594,7 +602,8 @@ class DerivedRouterContractTests:
         assert response.status_code == status.HTTP_201_CREATED
         payload = response.json()
         assert payload["service_type"] == ServiceTypeEnum.MYSQL.value
-        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
+        if self.remapped_username is not None:
+            assert payload["created_by"] == self.remapped_username
 
     def test_create_extra_dep_enforced(
         self, contract_client: TestClient, mock_task_api: Any
@@ -716,18 +725,23 @@ class DerivedRouterContractTests:
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
         assert payload["service_type"] == ServiceTypeEnum.MYSQL.value
-        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
+        if self.remapped_username is not None:
+            assert payload["created_by"] == self.remapped_username
 
     def test_update_guard_409(
         self, contract_client: TestClient, mock_task_api: Any
     ) -> None:
-        """Assert an ``update_guard`` dependency rejects the derived PUT with 409."""
+        """Assert an ``update_guard`` dependency rejects the derived PUT with 409.
+
+        Seed the *target* task RUNNING so the guard fires whether it checks the
+        single task (a per-task conflict guard) or any owned task.
+        """
         if not getattr(self.app_def, "update_guard", ()):
             pytest.skip("no update guard")
         body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
         if body is None:
             pytest.skip("no derivable update body (schema= passthrough)")
-        mock_task_api.seed_running(_CONFLICT_TASK_NAME, owner=self.app_def.owner)
+        mock_task_api.seed_running(SEEDED_TASK_NAME, owner=self.app_def.owner)
         base = app_base_url(self.app_def)
 
         response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)

@@ -106,6 +106,7 @@ class MockTaskAPI:
         owner: TaskOwner,
         statuses: Sequence[TaskHistoryStatusEnum] = (),
         created_by: str = SYNTH_CREATED_BY,
+        protected: bool = False,
     ) -> None:
         """Store a task owned by ``owner`` with a newest-first ``statuses`` history.
 
@@ -114,12 +115,15 @@ class MockTaskAPI:
         :param statuses: Execution statuses, newest first, seeded as history rows.
         :param created_by: The user id stamped as the task creator, so the
             response builder's context-driven username remap is exercisable.
+        :param protected: Whether to mark the task protected, so a plugin's
+            protected-task update guard is exercisable.
         """
         task = TaskFactory.build(
             name=name,
             owner=owner.value,
             data={"task": "noop", "meta": {}},
             created_by=created_by,
+            protected=protected,
         )
         self._tasks[name] = task.model_dump(mode="json")
         self._history[name] = [

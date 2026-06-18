@@ -85,10 +85,9 @@ def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
         from fastapi import APIRouter
 
         from app.sep.plugins.framework.api import schema_endpoint
-        from app.sep.plugins.checksums.schema import checksums_schema
 
         router = APIRouter()
-        schema_endpoint(router, checksums_schema)
+        schema_endpoint(router, plugin_schema)
 
     The route pins ``response_model_by_alias=True`` so the
     ``field_type → "type"`` discriminator alias on each field serialises
