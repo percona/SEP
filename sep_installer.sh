@@ -1409,6 +1409,11 @@ render_templates_cli() {
             -e "${remove_no_frontend_block_expr}" \
             "${outfile}.tmp" > "${outfile}"
 
+        if grep -qE '^[[:space:]]*#---(PMM|FRONTEND|NO-FRONTEND)---#[[:space:]]*$' "${outfile}"; then
+            log_err "Template rendering left unprocessed marker lines in ${outfile}"
+            exit 1
+        fi
+
         rm -f "${outfile}.tmp"
     done
 }
