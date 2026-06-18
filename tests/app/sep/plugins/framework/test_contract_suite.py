@@ -26,20 +26,25 @@ trusts.
 """
 
 import functools
-from typing import Annotated
+from typing import Annotated, Any
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import APIRouter, Body, status
+from fastapi.routing import APIRoute
 
 from app.core.pagination.deps import make_pagination_dep
+from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
 from app.sep.deps import IsApiAuthenticated, TaskAPI
+from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp
 from app.sep.plugins.framework.task_status import batch_get_latest_statuses
 from app.tasks.models import LATEST_HISTORY_STATUS_NAMES_MAX, TaskHistoryStatusEnum
 from tests.app.sep.plugins.framework.contract_suite import (
     app_base_url,
     build_contract_client,
+    build_valid_create_body,
     DerivedRouterContractTests,
 )
 from tests.app.sep.plugins.framework.kit import (
@@ -48,11 +53,15 @@ from tests.app.sep.plugins.framework.kit import (
     SEEDED_TASK_NAME,
     synth_app,
     synth_app_kwargs,
+    synth_create_response_builder,
+    SYNTH_CREATED_BY_NAME,
     synth_delete_handler,
     synth_detail_builder,
     SYNTH_OWNER,
     synth_response_builder,
+    synth_update_guard,
     synth_update_handler,
+    SynthCreateResponse,
     SynthDetailResponse,
     SynthExecuteResponse,
     SynthForm,
@@ -94,6 +103,24 @@ class TestSyntheticFullCrudContract(DerivedRouterContractTests):
         capabilities=AppCapabilities(update=True, delete=True),
         update_handler=synth_update_handler,
         delete_handler=synth_delete_handler,
+    )
+
+
+class TestSyntheticDerivedCrudContract(DerivedRouterContractTests):
+    """Cover the handler-less derived PUT/DELETE and the ``update_guard``."""
+
+    app_def = synth_app(
+        capabilities=AppCapabilities(update=True, delete=True),
+        update_guard=(synth_update_guard,),
+    )
+
+
+class TestSyntheticCreateResponseBuilderContract(DerivedRouterContractTests):
+    """Cover the create cases against an explicit stable ``create_response_builder``."""
+
+    app_def = synth_app(
+        connectivity_check=True,
+        create_response_builder=synth_create_response_builder,
     )
 
 
@@ -271,3 +298,49 @@ def test_synth_ui_default_distinct_from_model_default(
     )
     assert mode_field["default"] == "display-default"
     assert SynthForm.model_fields["mode"].default == "body-default"
+
+
+def test_create_response_builder_pins_stable_component(
+    regular_user: CasdoorUser, mocker: Any
+) -> None:
+    """Assert an explicit ``create_response_builder`` pins the stable create model.
+
+    The create route serves the hand-authored ``SynthCreateResponse`` (not the
+    framework's auto-derived create model), and the create response combines the
+    injected ``service_type`` / resolved username extras with the probe warning.
+    """
+    app_def = synth_app(
+        connectivity_check=True,
+        create_response_builder=synth_create_response_builder,
+    )
+    create_route = next(
+        route
+        for route in app_def.api_router.routes
+        if isinstance(route, APIRoute) and route.path == "/" and "POST" in route.methods
+    )
+    assert create_route.response_model is SynthCreateResponse
+
+    tasks_api = MockTaskAPI()
+    tasks_api.seed_task(SEEDED_TASK_NAME, owner=app_def.owner)
+    client = build_contract_client(
+        app_def,
+        user=regular_user,
+        tasks_api=tasks_api,
+        inventory_api=MockInventoryAPI(),
+    )
+    mocker.patch(
+        "app.sep.plugins.framework.connectivity.record_connectivity_warning",
+        new_callable=AsyncMock,
+        return_value=ConnectivityWarning(
+            target="db-host", service_type="mysql", message="unreachable"
+        ),
+    )
+    body = build_valid_create_body(app_def)
+
+    response = client.post(f"{app_base_url(app_def)}/", json=body)
+
+    assert response.status_code == status.HTTP_201_CREATED
+    payload = response.json()
+    assert payload["service_type"] == ServiceTypeEnum.MYSQL.value
+    assert payload["created_by"] == SYNTH_CREATED_BY_NAME
+    assert payload["connectivity_warning"] is not None
