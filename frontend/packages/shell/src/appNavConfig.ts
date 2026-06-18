@@ -16,17 +16,12 @@
  */
 
 /**
- * Registry-driven navigation layout for the React shell.
+ * Shell sidebar layout and React route metadata per ``app_key``.
  *
- * **Before (SEP-1367 baseline):** `navigation.tsx` held a static `defaultNavItems`
- * tree (hardcoded titles, icons, paths) filtered only by `enabled` from
- * `GET /api/apps/`. `router.tsx` mirrored the same apps via per-package lazy
- * imports and literal route paths.
- *
- * **After:** `GET /api/apps/` supplies per-app state and labels (`display_name`,
- * `enabled`, `sidebar`). This module holds what the API does not carry — nav
- * tree shape, icons, React route paths, and router patterns — and
- * `buildNavigationItems()` merges both into sidebar `NavItem`s.
+ * ``GET /api/apps/`` supplies per-app state and labels (``display_name``,
+ * ``enabled``, ``sidebar``). This module holds what the API does not carry —
+ * nav tree shape, icons, React route paths, and router patterns — and
+ * ``buildNavigationItems()`` merges both into sidebar ``NavItem``s.
  */
 
 import type { EnabledApp } from '@sep/api';
