@@ -48,6 +48,11 @@
 # Note: BSD syslog timestamps do not carry a year. date(1) assumes the current year,
 # so log windows that cross a year boundary may not match correctly.
 #
+# Note on time zones: --time is interpreted in the host's local time zone, while ISO 8601
+# log timestamps carry an explicit offset (e.g. +00:00). If the host is not in the same
+# zone as the logs, the window will be shifted. To compare in UTC, run with TZ=UTC and
+# pass --time as a UTC timestamp.
+#
 # Configuration:
 # Default HAProxy log path if --log-file is not specified.
 DEFAULT_HAPROXY_LOG="/var/log/haproxy.log"

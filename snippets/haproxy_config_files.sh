@@ -26,6 +26,13 @@ process_config_file() {
         echo "---- Found: $file ----"
         ls -l "$file"
         echo
+        # Degrade gracefully on unreadable files instead of aborting under `set -e`
+        # (e.g. when run without sudo). Skip contents and includes we cannot read.
+        if [ ! -r "$file" ]; then
+            echo "(not readable; skipping contents - try running with sudo)"
+            echo "----------------------"
+            return
+        fi
         cat "$file"
         echo "----------------------"
         # Parse for HAProxy native include directives (supported since 2.4)
