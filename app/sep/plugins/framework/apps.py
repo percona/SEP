@@ -30,10 +30,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Self
 
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, Body, Depends, Form, params
 from pydantic import BaseModel, model_validator, PrivateAttr, SkipValidation
 
 from app.core.pagination import PaginationDependency
+from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import InventoryAPI
 from app.sep.plugins.framework.api import (
     capabilities_endpoint,
@@ -183,6 +184,10 @@ class TaskExecutionApp(BaseApp):
         route paginates. Defaults to ``None``.
     :param connectivity_check: Whether the create route runs the post-creation
         connectivity probe. Defaults to ``False``.
+    :param create_form_encoded: Whether the derived create route accepts a
+        form-urlencoded body (``Form()``) instead of the default JSON body
+        (``Body()``). A create-route option, so it is rejected unless
+        ``capabilities.create`` is enabled. Defaults to ``False``.
     :param cascade: The derived-task / predecessor specs. Defaults to ``None``.
     :param extra_routes: Extra routers included after the derived routes, so a
         derived route always wins a path collision. A fixed collection-root
@@ -204,6 +209,32 @@ class TaskExecutionApp(BaseApp):
     :param capabilities_provider: A sync provider returning the runtime
         ``GET /capabilities`` response model. Defaults to ``None`` (no
         capabilities route).
+    :param service_type: The app's fixed service type, against which
+        ``list_service_type_filter`` short-circuits a mismatched query. Required
+        when ``list_service_type_filter`` is set. Defaults to ``None``.
+    :param list_status_filter: Whether the derived list route exposes a ``status``
+        query parameter wired to the pipeline's status filter. Defaults to
+        ``False``.
+    :param list_service_type_filter: Whether the derived list route exposes a
+        ``service_type`` query parameter that short-circuits to an empty result
+        when it differs from ``service_type``. Requires ``service_type``. Defaults
+        to ``False``.
+    :param response_builder: A sync list/detail builder override injecting the
+        per-plugin response extras; replaces the default no-extras builder.
+        Defaults to ``None``.
+    :param detail_response_builder: A sync detail-only builder override; when
+        ``None`` the detail route falls back to ``response_builder`` and the list
+        model. When set, the create route renders like detail too unless an
+        explicit create model is configured. Defaults to ``None``.
+    :param detail_response_model: An explicit detail response model overriding
+        return-annotation inference on ``detail_response_builder`` (for an exotic
+        builder whose return type cannot be introspected). Defaults to ``None``.
+    :param response_context_provider: A zero-arg async provider whose once-awaited
+        result (for example a username map) is bound as the builders' ``context``
+        across the list, detail, and create builds. Requires ``response_builder``.
+        Defaults to ``None``.
+    :param create_extra_deps: Extra create-route dependencies appended after the
+        standard auth guard; requires ``capabilities.create``. Defaults to ``()``.
     """
 
     owner: TaskOwner
@@ -217,6 +248,7 @@ class TaskExecutionApp(BaseApp):
     capabilities: AppCapabilities = AppCapabilities()
     pagination: PaginationDependency | None = None
     connectivity_check: bool = False
+    create_form_encoded: bool = False
     cascade: SkipValidation[Cascade | None] = None
     extra_routes: tuple[APIRouter, ...] = ()
     detail_path_param: str = "task_name"
@@ -226,6 +258,16 @@ class TaskExecutionApp(BaseApp):
     execute_write_model: type[BaseModel] | None = None
     execute_response_model: type[BaseModel] | None = None
     capabilities_provider: Callable[..., BaseModel] | None = None
+    service_type: ServiceTypeEnum | None = None
+    list_status_filter: bool = False
+    list_service_type_filter: bool = False
+    response_builder: SkipValidation[TaskResponseBuilder | None] = None
+    detail_response_builder: SkipValidation[TaskResponseBuilder | None] = None
+    detail_response_model: type[BaseModel] | None = None
+    response_context_provider: SkipValidation[Callable[[], Awaitable[Any]] | None] = (
+        None
+    )
+    create_extra_deps: tuple[params.Depends, ...] = ()
 
     _task_getter: Callable[..., Awaitable[Task]] | None = PrivateAttr(default=None)
 
@@ -245,12 +287,14 @@ class TaskExecutionApp(BaseApp):
     def _validate_definition(self) -> None:
         """Reject an internally-inconsistent definition at construction.
 
-        :raises ValueError: When the schema source, the create-payload path, or
-            the route knobs are inconsistent (see the per-aspect helpers).
+        :raises ValueError: When the schema source, the create-payload path, the
+            route knobs, or the response/filter knobs are inconsistent (see the
+            per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
         self._validate_route_knobs()
+        self._validate_response_knobs()
 
     def _validate_schema_source(self) -> None:
         """Validate the create_model / ``schema=`` source is unambiguous.
@@ -287,9 +331,12 @@ class TaskExecutionApp(BaseApp):
 
         :raises ValueError: When a ``schema=`` app supplies a ``task_spec_builder``;
             when ``task_spec_builder`` collides with ``script_source`` or
-            ``payload_builder``; when a create-enabled app has no payload source; or
-            when a create-disabled app sets a create-route option
-            (``connectivity_check`` or ``create_response_model``).
+            ``payload_builder``; when a ``payload_builder`` app also sets
+            ``create_form_encoded`` (which governs only the derived three-phase
+            body); when a create-enabled app has no payload source; or when a
+            create-disabled app sets a create-route option (``connectivity_check``,
+            ``create_response_model``, ``create_form_encoded``, or
+            ``create_extra_deps``).
         """
         if self.app_schema is not None and self.task_spec_builder is not None:
             raise ValueError(
@@ -306,6 +353,12 @@ class TaskExecutionApp(BaseApp):
                 "TaskExecutionApp: set either payload_builder or task_spec_builder "
                 "for the create path, not both"
             )
+        if self.payload_builder is not None and self.create_form_encoded:
+            raise ValueError(
+                "TaskExecutionApp: create_form_encoded governs the derived "
+                "three-phase create body; a payload_builder defines its own body "
+                "encoding — drop create_form_encoded or the payload_builder"
+            )
         if (
             self.capabilities.create
             and self.payload_builder is None
@@ -316,11 +369,19 @@ class TaskExecutionApp(BaseApp):
                 "task_spec_builder or a payload_builder"
             )
         if not self.capabilities.create and (
-            self.connectivity_check or self.create_response_model is not None
+            self.connectivity_check
+            or self.create_response_model is not None
+            or self.create_form_encoded
         ):
             raise ValueError(
-                "TaskExecutionApp: connectivity_check and create_response_model are "
-                "create-route options; enable capabilities.create or drop them"
+                "TaskExecutionApp: connectivity_check, create_response_model, and "
+                "create_form_encoded are create-route options; enable "
+                "capabilities.create or drop them"
+            )
+        if self.create_extra_deps and not self.capabilities.create:
+            raise ValueError(
+                "TaskExecutionApp: create_extra_deps are create-route dependencies; "
+                "enable capabilities.create or drop them"
             )
 
     def _validate_route_knobs(self) -> None:
@@ -340,6 +401,24 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: the execute capability needs execute_write_model "
                 "and execute_response_model"
+            )
+
+    def _validate_response_knobs(self) -> None:
+        """Validate the list-filter and response-context knobs are self-consistent.
+
+        :raises ValueError: When ``list_service_type_filter`` is set without a
+            ``service_type`` to filter against; or when ``response_context_provider``
+            is set without a ``response_builder`` to receive the resolved context.
+        """
+        if self.list_service_type_filter and self.service_type is None:
+            raise ValueError(
+                "TaskExecutionApp: list_service_type_filter needs a service_type to "
+                "filter against; set service_type or drop the filter"
+            )
+        if self.response_context_provider is not None and self.response_builder is None:
+            raise ValueError(
+                "TaskExecutionApp: response_context_provider feeds context into the "
+                "response_builder; set response_builder or drop the provider"
             )
 
     @property
@@ -377,6 +456,8 @@ class TaskExecutionApp(BaseApp):
             task_owner=self.owner,
             get_task=self._task_getter,
             response_builder=self._build_response_builder(),
+            detail_response_builder=self.detail_response_builder,
+            detail_response_model=self.detail_response_model,
             create_payload=(
                 self._build_create_payload() if self.capabilities.create else None
             ),
@@ -384,6 +465,12 @@ class TaskExecutionApp(BaseApp):
             connectivity_check=self.connectivity_check,
             detail_path_param=self.detail_path_param,
             pagination_dep=self.pagination,
+            list_status_filter=self.list_status_filter,
+            list_service_type=(
+                self.service_type if self.list_service_type_filter else None
+            ),
+            context_provider=self.response_context_provider,
+            create_extra_deps=self.create_extra_deps,
             update_handler=self.update_handler if self.capabilities.update else None,
             delete_handler=self.delete_handler if self.capabilities.delete else None,
         )
@@ -425,11 +512,18 @@ class TaskExecutionApp(BaseApp):
         )
 
     def _build_response_builder(self) -> TaskResponseBuilder:
-        """Return a sync list/detail response builder over ``response_model``.
+        """Return the plugin's ``response_builder`` override, or a default builder.
+
+        Use the supplied ``response_builder`` verbatim when set (it injects the
+        per-plugin response extras via ``build_default_task_response(extras=...)``);
+        otherwise build the default no-extras sync builder over ``response_model``.
 
         :return: A ``(task, *, status) -> response_model`` builder whose return
             annotation supplies the derived list/detail response model.
         """
+        if self.response_builder is not None:
+            return self.response_builder
+
         response_model = self.response_model
 
         def _builder(
@@ -442,6 +536,10 @@ class TaskExecutionApp(BaseApp):
     def _build_create_response_builder(self) -> TaskResponseBuilder | None:
         """Return a create response builder when ``create_response_model`` is set.
 
+        The builder accepts (and ignores) a ``context`` keyword so the create route
+        can bind a ``response_context_provider``'s result into it uniformly: this is
+        the no-extras create path, so the context feeds no remap here.
+
         :return: A sync builder over ``create_response_model``, or ``None`` when
             no explicit create response model is configured.
         """
@@ -451,7 +549,10 @@ class TaskExecutionApp(BaseApp):
         create_response_model = self.create_response_model
 
         def _builder(
-            task: Task, *, status: TaskHistoryStatusEnum | None = None
+            task: Task,
+            *,
+            status: TaskHistoryStatusEnum | None = None,
+            **_: Any,
         ) -> create_response_model:
             return build_default_task_response(create_response_model, task, status)
 
@@ -463,7 +564,9 @@ class TaskExecutionApp(BaseApp):
         Use the ``payload_builder`` escape hatch verbatim when supplied;
         otherwise build the three-phase (Resolve → Assemble → Envelope)
         dependency over the ``create_model``, reading the envelope's ``name`` and
-        ``alert_on_fail`` from the parsed form.
+        ``alert_on_fail`` from the parsed form. The body parameter is encoded as
+        JSON (``Body()``) by default, or form-urlencoded (``Form()``) when
+        ``create_form_encoded`` is set.
 
         :return: The create-payload dependency declaring the request body.
         """
@@ -472,7 +575,8 @@ class TaskExecutionApp(BaseApp):
 
         spec_builder = self.task_spec_builder
         owner = self.owner
-        form_param = Annotated[self.create_model, Form()]
+        body_marker = Form() if self.create_form_encoded else Body()
+        form_param = Annotated[self.create_model, body_marker]
 
         async def _create_payload(
             form: form_param, inventory_api: InventoryAPI

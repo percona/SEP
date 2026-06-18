@@ -16,4 +16,7 @@
  */
 
 export { ArchivesPlugin } from './ArchivesPlugin';
+export { ArchiveForm } from './ArchiveForm';
+export { ArchiveSchemaCombo } from './ArchiveSchemaCombo';
+export type { ArchiveSchemaComboProps, ArchiveComboOption } from './ArchiveSchemaCombo';
 export { archivesRoute, PLUGIN_NAME, PLUGIN_BASE_PATH } from './routes';

@@ -15,13 +15,21 @@
 
 """Define tests for the app.sep.config module."""
 
+from datetime import timedelta
 from string import Template
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.config import PMMSettings
-from app.sep.config import _DeprecatedPMMConfig, Plugin, SEPSettings, SessionOptions
+from app.sep.config import (
+    _DeprecatedPMMConfig,
+    AppDrainSettings,
+    Plugin,
+    SEPSettings,
+    SessionOptions,
+)
 
 PMM_ENDPOINT = "https://pmm.example.com"
 CORE_PMM_ENDPOINT = "https://core.example.com"
@@ -176,3 +184,17 @@ class TestPluginNameOptional:
         plugin = Plugin(name="Snippet Manager", module_name="snippets")
         assert plugin.uri_path == "/snippet-manager"
         assert plugin.css_class == "snippet-manager"
+
+
+class TestAppDrainSettings:
+    """The drain reconciler settings reject a non-positive stale-task TTL."""
+
+    def test_default_ttl_is_one_hour(self) -> None:
+        """The default TTL is a positive duration."""
+        assert AppDrainSettings().stale_task_ttl == timedelta(hours=1)
+
+    @pytest.mark.parametrize("seconds", [0, -1, -3600])
+    def test_non_positive_ttl_rejected(self, seconds: int) -> None:
+        """A zero or negative TTL fails validation rather than pruning live rows."""
+        with pytest.raises(ValidationError, match="positive duration"):
+            AppDrainSettings(stale_task_ttl=timedelta(seconds=seconds))

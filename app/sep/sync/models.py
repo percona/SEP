@@ -26,8 +26,9 @@ from types import TracebackType
 from typing import Any, ClassVar, NamedTuple, Self
 from uuid import uuid4
 
-from aiohttp import ClientResponseError
+from aiohttp import ClientError
 from async_lru import _LRUCacheWrapper, alru_cache
+from fastapi import HTTPException
 from pydantic import ConfigDict, Field, model_validator, UUID4, validate_call
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -1408,7 +1409,7 @@ class BaseTaskSyncer(BaseSyncer):
             try:
                 task_history = await self.tasks_api.get(f"/history/{task_history_id}")
                 status = task_history["status"]
-            except ClientResponseError:
+            except (HTTPException, ClientError):
                 logger.exception("Error getting task history")
 
         if status in [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]:

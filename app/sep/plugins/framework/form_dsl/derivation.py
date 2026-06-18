@@ -39,6 +39,7 @@ from app.sep.plugins.framework.form_dsl.markers import (
     Forbidden,
     FormLayout,
     FormRules,
+    Hidden,
     HostRef,
     Requires,
     SchemaRef,
@@ -153,8 +154,20 @@ def _is_literal(annotation: Any) -> bool:
     return get_origin(annotation) is Literal
 
 
-def _field_default(field_info: FieldInfo) -> Any:
-    """Return the field's default value, or ``None`` when it has none."""
+def _field_default(field_info: FieldInfo, ui: Ui) -> Any:
+    """Return the field's form-display default.
+
+    Prefer the tri-state :attr:`Ui.default` when it is set (including an explicit
+    ``None``); otherwise fall back to the Pydantic field default. Only the derived
+    schema field's default is affected — the model's own default, which the JSON
+    body validates against, is unchanged.
+
+    :param field_info: The field's Pydantic ``FieldInfo``.
+    :param ui: The field's ``Ui`` marker, source of the tri-state form default.
+    :return: The form-display default, or ``None`` when the field has none.
+    """
+    if ui.has_default:
+        return ui.default
     default = field_info.get_default(call_default_factory=False)
     return None if default is PydanticUndefined else default
 
@@ -331,7 +344,7 @@ def _build_base_field(
         if ui.required is not None
         else field_info.is_required(),
         "description": ui.description,
-        "default": _field_default(field_info),
+        "default": _field_default(field_info, ui),
         "requires": _gates(metadata, Requires) or None,
         "forbidden": _gates(metadata, Forbidden) or None,
     }
@@ -427,10 +440,17 @@ def _build_scalar_field(
 
 
 def _derive_field_specs(model: type["AppFormModel"]) -> list[_FieldSpec]:
-    """Return one :class:`_FieldSpec` per model field, in declaration order."""
+    """Return one :class:`_FieldSpec` per model field, in declaration order.
+
+    Skip a field carrying a :class:`Hidden` marker before the ``Ui`` requirement
+    applies: it is omitted from the derived schema (the framework renders it from a
+    capability instead) and so needs no ``Ui`` presentation metadata.
+    """
     specs = []
     for index, (name, field_info) in enumerate(model.model_fields.items()):
         metadata = list(field_info.metadata)
+        if _find_marker(metadata, (Hidden,)) is not None:
+            continue
         ui = _field_ui(name, metadata)
         specs.append(
             _FieldSpec(

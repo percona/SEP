@@ -496,6 +496,71 @@ async def test_sync_schema_with_unknown_syncer_param_skips_run(
     mock_run_sync_funcs["schema"].assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_sync_inventory_uses_internal_token(
+    async_test_client, mock_syncers, mock_run_sync_funcs, mocker
+):
+    """The inventory sync background task is scheduled with the internal token."""
+    mocker.patch.object(
+        settings, "SEP_INTERNAL_TOKEN", SecretStr("route-internal-token")
+    )
+    response = await async_test_client.post("/inventory/sync/", follow_redirects=False)
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_run_sync_funcs["inventory"].assert_awaited_once()
+    assert mock_run_sync_funcs["inventory"].await_args.args[0] == "route-internal-token"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_mock_created_node_dep")
+async def test_sync_node_uses_internal_token(
+    async_test_client, created_node, mock_syncers, mock_run_sync_funcs, mocker
+):
+    """The node sync background task is scheduled with the internal token."""
+    mocker.patch.object(
+        settings, "SEP_INTERNAL_TOKEN", SecretStr("route-internal-token")
+    )
+    response = await async_test_client.post(
+        f"/inventory/{created_node.id}/sync/", follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_run_sync_funcs["node"].assert_awaited_once()
+    assert mock_run_sync_funcs["node"].await_args.args[1] == "route-internal-token"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_mock_created_service_dep")
+async def test_sync_service_uses_internal_token(
+    async_test_client, created_service, mock_syncers, mock_run_sync_funcs, mocker
+):
+    """The service sync background task is scheduled with the internal token."""
+    mocker.patch.object(
+        settings, "SEP_INTERNAL_TOKEN", SecretStr("route-internal-token")
+    )
+    response = await async_test_client.post(
+        f"/inventory/services/{created_service.id}/sync/", follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_run_sync_funcs["service"].assert_awaited_once()
+    assert mock_run_sync_funcs["service"].await_args.args[1] == "route-internal-token"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("_mock_created_schema_dep")
+async def test_sync_schema_uses_internal_token(
+    async_test_client, created_schema, mock_syncers, mock_run_sync_funcs, mocker
+):
+    """The schema sync background task is scheduled with the internal token."""
+    mocker.patch.object(
+        settings, "SEP_INTERNAL_TOKEN", SecretStr("route-internal-token")
+    )
+    response = await async_test_client.post(
+        f"/inventory/schemas/{created_schema.id}/sync/", follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    mock_run_sync_funcs["schema"].assert_awaited_once()
+    assert mock_run_sync_funcs["schema"].await_args.args[1] == "route-internal-token"
+
+
 def test_schema_create_for_service(
     test_client, created_service, mock_inventory_api_dep
 ):
@@ -644,7 +709,7 @@ class TestCheckServiceConnectivity:
         created_node,
         mock_tasks_api_dep,
     ):
-        """Reproduce SEP-1108: inventory name and executor name differ.
+        """Reproduce the case where inventory name and executor name differ.
 
         When the inventory display name does not match the Nomad node name,
         the connectivity check must look the executor target up by address
