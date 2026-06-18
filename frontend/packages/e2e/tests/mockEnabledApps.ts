@@ -37,29 +37,28 @@ export interface MockEnabledApp {
 
 // Registry-driven nav app keys from shell/src/appNavConfig.ts — all enabled so
 // the full sidebar renders. ``display_name`` values mirror backend registry labels.
+// ``custom_ui`` is always false today (legacy apps; see test_apps.py).
 const NAV_APP_METADATA = {
-  tasks: { display_name: 'Task Manager', uri_path: '/tasks', custom_ui: true },
-  snippets: { display_name: 'Snippet Manager', uri_path: '/snippets', custom_ui: true },
-  atw: { display_name: 'Collect Diagnostic Data', uri_path: '/atw', custom_ui: false },
-  alerts: { display_name: 'Alert Templates', uri_path: '/alerts', custom_ui: true },
+  tasks: { display_name: 'Task Manager', uri_path: '/tasks' },
+  snippets: { display_name: 'Snippet Manager', uri_path: '/snippets' },
+  atw: { display_name: 'Collect Diagnostic Data', uri_path: '/atw' },
+  alerts: { display_name: 'Alert Templates', uri_path: '/alerts' },
   alert_troubleshooting: {
     display_name: 'Alert Troubleshooting',
     uri_path: '/alert-troubleshooting',
-    custom_ui: true,
   },
-  alters: { display_name: 'Alters', uri_path: '/alters', custom_ui: false },
-  checksums: { display_name: 'Checksums', uri_path: '/checksums', custom_ui: false },
-  mysql_backups: { display_name: 'MySQL Backups', uri_path: '/mysql_backups', custom_ui: false },
-  backup_mongo: { display_name: 'MongoDB Backups', uri_path: '/backup_mongo', custom_ui: true },
+  alters: { display_name: 'Alters', uri_path: '/alters' },
+  checksums: { display_name: 'Checksums', uri_path: '/checksums' },
+  mysql_backups: { display_name: 'MySQL Backups', uri_path: '/mysql_backups' },
+  backup_mongo: { display_name: 'MongoDB Backups', uri_path: '/backup_mongo' },
   backup_pg: {
     display_name: 'PostgreSQL Backups',
     uri_path: '/backups/postgresql',
-    custom_ui: false,
   },
-  archives: { display_name: 'Archives', uri_path: '/archives', custom_ui: false },
-  dipper: { display_name: 'Dipper Data Collection', uri_path: '/dipper', custom_ui: false },
-  report: { display_name: 'Health & Security Report', uri_path: '/report', custom_ui: true },
-} as const satisfies Record<string, { display_name: string; uri_path: string; custom_ui: boolean }>;
+  archives: { display_name: 'Archives', uri_path: '/archives' },
+  dipper: { display_name: 'Dipper Data Collection', uri_path: '/dipper' },
+  report: { display_name: 'Health & Security Report', uri_path: '/report' },
+} as const satisfies Record<string, { display_name: string; uri_path: string }>;
 
 export const NAV_APP_KEYS = Object.keys(NAV_APP_METADATA) as (keyof typeof NAV_APP_METADATA)[];
 
@@ -67,6 +66,7 @@ export const MOCK_ENABLED_APPS: MockEnabledApp[] = NAV_APP_KEYS.map((app_key) =>
   app_key,
   enabled: true,
   sidebar: true,
+  custom_ui: false,
   ...NAV_APP_METADATA[app_key],
 }));
 

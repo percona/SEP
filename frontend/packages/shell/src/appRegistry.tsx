@@ -38,7 +38,6 @@ export interface CustomAppRegistryEntry {
 export interface SchemaDrivenFallbackRoute {
   appKey: string;
   routePattern: string;
-  routeBase?: string;
 }
 
 /** Legacy router aliases with no sidebar consumer — kept for bookmark compatibility. */
@@ -130,7 +129,6 @@ export function getSchemaDrivenFallbackRoutes(): SchemaDrivenFallbackRoute[] {
       return {
         appKey,
         routePattern: meta.routePattern,
-        routeBase: meta.routeBase,
       };
     });
 }
