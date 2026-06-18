@@ -50,7 +50,7 @@ ARCHIVER_FIELD_PLACEHOLDER = "unavailable"
 MAX_TRACE_BYTES = 4096
 
 #: Replacement token substituted for any redacted credential.
-_SECRET_MASK = "***"  # noqa: S105 - mask token, not a credential
+_REDACTION_MASK = "***"
 
 #: ``scheme://user[:password]@`` userinfo prefix of a connection URI.
 _URI_USERINFO_RE = re.compile(r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.\-]*://)[^/\s@]+@")
@@ -85,10 +85,10 @@ def redact_secrets(text: str) -> str:
     :return: The text with any detected credential replaced by ``***``.
     :rtype: str
     """
-    text = _URI_USERINFO_RE.sub(rf"\g<scheme>{_SECRET_MASK}@", text)
-    text = _KV_SECRET_RE.sub(rf"\g<key>={_SECRET_MASK}", text)
-    text = _DSN_PASSWORD_RE.sub(rf"\g<key>={_SECRET_MASK}", text)
-    return _CLI_PASSWORD_RE.sub(rf"\g<flag>{_SECRET_MASK}", text)
+    text = _URI_USERINFO_RE.sub(rf"\g<scheme>{_REDACTION_MASK}@", text)
+    text = _KV_SECRET_RE.sub(rf"\g<key>={_REDACTION_MASK}", text)
+    text = _DSN_PASSWORD_RE.sub(rf"\g<key>={_REDACTION_MASK}", text)
+    return _CLI_PASSWORD_RE.sub(rf"\g<flag>{_REDACTION_MASK}", text)
 
 
 @dataclass(frozen=True)
