@@ -341,6 +341,26 @@ class TestPMMRemoteAPI:
         )
 
     @pytest.mark.asyncio
+    async def test_get_services_includes_valkey(
+        self, mock_request, mock_get_version, pmm_remote_api
+    ):
+        """Test Valkey services validate and sync instead of being skipped."""
+        mock_get_version.return_value = "3.0.0"
+        mock_request.return_value = {
+            "valkey": [
+                {"service_id": "valkey-1", "name": "Valkey 1", "node_id": "node-1"},
+            ],
+        }
+
+        services = await pmm_remote_api.get_services()
+
+        assert len(services) == 1
+        assert services[0].type is ServiceTypeEnum.VALKEY
+        assert services[0].type.value == "valkey"
+
+        pmm_remote_api.is_older_than_v3.cache_clear()
+
+    @pytest.mark.asyncio
     async def test_get_services_skip_failed_true_logs_and_filters(
         self, mock_request, mock_get_version, mock_logger, pmm_remote_api, mocker
     ):
