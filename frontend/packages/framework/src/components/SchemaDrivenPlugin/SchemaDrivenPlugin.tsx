@@ -31,7 +31,7 @@ import {
   type PluginEntitySchema,
   type PluginSchema,
 } from '@sep/api';
-import { SchemaFormRenderer, coerceFormValues } from '../SchemaFormRenderer';
+import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
 import { PluginListPage } from './PluginListPage';
 import { PluginCreatePage } from './PluginCreatePage';
@@ -145,10 +145,7 @@ function PluginEditPage({
       // payload. Idempotent for the default (already-coerced) path.
       {
         id,
-        values: coerceFormValues(
-          data,
-          sections.flatMap((s) => s.fields),
-        ),
+        values: coerceFormValues(data, flattenSectionFields(sections)),
       },
       {
         onSuccess: () => {
