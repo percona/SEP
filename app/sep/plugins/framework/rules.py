@@ -33,7 +33,7 @@ This module exposes three layers:
   mode.
 
 The JSON wire format produced by :meth:`Predicate.to_dict` is the contract
-consumed verbatim by the SEP-1077 frontend renderer; predicate authoring
+consumed verbatim by the frontend renderer; predicate authoring
 in production uses this DSL only.
 """
 
@@ -95,10 +95,12 @@ __all__ = [
     "apply_conditional_rules",
     "contains",
     "evaluate_conditional_rules",
+    "extract_rule_plan",
     "falsy",
     "none_present",
     "not_",
     "present",
+    "resolve_field",
     "truthy",
     "xor_",
 ]
@@ -223,19 +225,16 @@ def _wrap_rhs(value: object) -> object:
 # ── Field-presence / truthiness helpers ──────────────────────────────────
 
 
-def _resolve_field(instance: Any, path: str) -> Any:
+def resolve_field(instance: Any, path: str) -> Any:
     """Return the value at ``path``, walking dotted nested attribute paths.
 
     Each segment is resolved with ``getattr(segment, default=None)``. A
     missing intermediate value short-circuits to ``None``.
 
     :param instance: The model instance being evaluated.
-    :type instance: Any
     :param path: A top-level field name or dotted path (for example,
         ``"source.mode"``).
-    :type path: str
     :return: The resolved value, or ``None`` when any segment is absent.
-    :rtype: Any
     """
     current: Any = instance
     for segment in path.split("."):
@@ -261,7 +260,7 @@ def _field_is_present(instance: Any, name: str) -> bool:
     :return: Whether the field is considered present.
     :rtype: bool
     """
-    value = _resolve_field(instance, name)
+    value = resolve_field(instance, name)
     if value is None or value is False:
         return False
     return not (
@@ -280,7 +279,7 @@ def _field_is_truthy(instance: Any, name: str) -> bool:
     :return: The Python truthiness of the field's value.
     :rtype: bool
     """
-    return bool(_resolve_field(instance, name))
+    return bool(resolve_field(instance, name))
 
 
 # ── Predicate hierarchy ──────────────────────────────────────────────────
@@ -374,7 +373,7 @@ class Predicate(ABC):
 
         Predicate JSON is a discriminated union over operator keys (each
         producing a single-key object). Modelling that precisely as a
-        JSON-schema oneOf is overkill for the FE contract, since SEP-1077
+        JSON-schema oneOf is overkill for the FE contract, since the frontend
         consumes the wire format directly rather than auto-generating a
         TypeScript model from it. An open ``object`` shape lets FastAPI
         emit a valid OpenAPI document while keeping the wire contract
@@ -442,7 +441,7 @@ class Equals(Predicate):
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
-        return _resolve_field(instance, self.field) == self.value
+        return resolve_field(instance, self.field) == self.value
 
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON wire shape for this predicate."""
@@ -470,7 +469,7 @@ class NotEquals(Predicate):
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
-        return _resolve_field(instance, self.field) != self.value
+        return resolve_field(instance, self.field) != self.value
 
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON wire shape for this predicate."""
@@ -518,7 +517,7 @@ class Contains(Predicate):
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
-        container = _resolve_field(instance, self.field)
+        container = resolve_field(instance, self.field)
         if not isinstance(container, list | tuple | set | frozenset):
             return False
         target_keys = self._keys(self.value)
@@ -557,9 +556,9 @@ class _OrderedComparison(Predicate):
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
-        lhs = _resolve_field(instance, self.field)
+        lhs = resolve_field(instance, self.field)
         if isinstance(self.value, _FieldRef):
-            rhs = _resolve_field(instance, self.value.name)
+            rhs = resolve_field(instance, self.value.name)
         else:
             rhs = self.value
         if lhs is None or rhs is None:
@@ -786,8 +785,8 @@ class AllEqual(_MultiFieldPredicate):
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
-        first = _resolve_field(instance, self.fields[0])
-        return all(_resolve_field(instance, name) == first for name in self.fields[1:])
+        first = resolve_field(instance, self.fields[0])
+        return all(resolve_field(instance, name) == first for name in self.fields[1:])
 
 
 # ── Boolean composition ──────────────────────────────────────────────────
@@ -1437,7 +1436,7 @@ def _append_rules_for_form_sections(
         prepared.extend(_prepare_fail_rules(section.fail_when, section_scope))
 
 
-def _extract_rule_plan(
+def extract_rule_plan(
     schema: PluginSchema, *, entity_name: str | None = None
 ) -> RulePlan:
     """Walk a :class:`PluginSchema` and emit one :class:`_PreparedRule` per rule.
@@ -1470,7 +1469,7 @@ def _extract_rule_plan(
         if entity_name is None:
             raise ValueError(
                 "PluginSchema defines `entities`; pass entity_name=<segment> "
-                "to apply_conditional_rules / _extract_rule_plan so the rule plan "
+                "to apply_conditional_rules / extract_rule_plan so the rule plan "
                 "is scoped to one PluginEntitySchema (e.g. entity_name='nodes')."
             )
         entity_index = None
@@ -1775,7 +1774,7 @@ def apply_conditional_rules(
 
     When ``schema.entities`` is non-empty, pass ``entity_name`` matching one
     entity's ``name`` so the plan includes only that entity's declarative
-    rules (see :func:`_extract_rule_plan`).
+    rules (see :func:`extract_rule_plan`).
 
     :param schema: The plugin schema whose declarative rules drive runtime
         enforcement.
@@ -1789,9 +1788,9 @@ def apply_conditional_rules(
         :class:`ConditionalRulesModel`, or any rule references an attribute
         that is not declared on the class.
     :raises ValueError: When ``entity_name`` is incompatible with
-        ``schema.entities`` (see :func:`_extract_rule_plan`).
+        ``schema.entities`` (see :func:`extract_rule_plan`).
     """
-    plan = _extract_rule_plan(schema, entity_name=entity_name)
+    plan = extract_rule_plan(schema, entity_name=entity_name)
 
     def decorator(
         cls: type[ConditionalRulesModel],

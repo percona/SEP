@@ -20,8 +20,6 @@ from pydantic import ValidationError
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.schema import (
-    _declared_field_names_from_forms,
-    _iter_section_fields,
     BoolField,
     Capabilities,
     ChainedPredecessor,
@@ -30,6 +28,7 @@ from app.sep.plugins.framework.schema import (
     Column,
     ColumnFormat,
     DateTimeField,
+    declared_field_names_from_forms,
     DerivedTask,
     DetailField,
     DetailHighlightLanguage,
@@ -40,6 +39,7 @@ from app.sep.plugins.framework.schema import (
     FormSection,
     HostField,
     IntegerField,
+    iter_section_fields,
     ListView,
     MultiChoiceField,
     OneOfBranch,
@@ -2025,17 +2025,17 @@ class TestOneOfGroup:
         assert isinstance(field, OneOfGroup)
         assert field.branches[1].value == "query"
 
-    def test_iter_section_fields_expands_branches(self) -> None:
+    def testiter_section_fields_expands_branches(self) -> None:
         """Expand one-of branches when iterating section leaf fields."""
         section = FormSection(title="S", fields=[_sample_one_of_group()])
-        names = [field.name for field in _iter_section_fields(section)]
+        names = [field.name for field in iter_section_fields(section)]
 
         assert names == ["source.source_db_id", "source.source_query"]
 
     def test_declared_field_names_includes_discriminator(self) -> None:
         """Include the discriminator path in declared rule-reference names."""
         section = FormSection(title="S", fields=[_sample_one_of_group()])
-        names = _declared_field_names_from_forms([section])
+        names = declared_field_names_from_forms([section])
 
         assert "source.mode" in names
         assert "source.source_db_id" in names
