@@ -48,7 +48,12 @@ class TestServiceType:
     """Test the ServiceType enum."""
 
     def test_valid_values(self) -> None:
-        """Assert all four service type values are defined correctly."""
+        """Enum-stability test: literal wire-value strings are intentional.
+
+        These assertions lock ServiceType member values to their API/JSON
+        representation. Do not replace with ServiceType.MYSQL.value — that
+        would defeat the purpose of detecting accidental enum renames.
+        """
         assert ServiceType.GENERIC == "generic"
         assert ServiceType.MYSQL == "mysql"
         assert ServiceType.MONGODB == "mongodb"
