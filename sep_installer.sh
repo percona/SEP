@@ -376,6 +376,8 @@ def cmd_render_templates(args):
             content = strip_marker(content, "#---PMM---#", create_pmm)
             content = strip_marker(content, "#---FRONTEND---#", serve_frontend)
             content = strip_marker(content, "#---NO-FRONTEND---#", not serve_frontend)
+            if any(line.strip() in ("#---PMM---#", "#---FRONTEND---#", "#---NO-FRONTEND---#") for line in content.splitlines()):
+                raise SystemExit(f"Template rendering left unprocessed marker lines in {filename}")
             out_path = os.path.join(install_dir, filename)
             with open(out_path, "w") as f: f.write(content)
     console.print("[green]✓[/] Templates rendered.")
