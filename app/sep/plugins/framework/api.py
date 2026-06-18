@@ -40,7 +40,10 @@ from pydantic import BaseModel
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
-from app.sep.plugins.framework.connectivity import maybe_record_connectivity_warning
+from app.sep.plugins.framework.connectivity import (
+    CONNECTIVITY_WARNING_FIELD,
+    maybe_record_connectivity_warning,
+)
 from app.sep.plugins.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
@@ -482,7 +485,7 @@ def _resolve_create_response_model(
             helper="derive_crud_routes",
             param="create_response_builder",
         )
-        if connectivity_check and "connectivity_warning" not in model.model_fields:
+        if connectivity_check and CONNECTIVITY_WARNING_FIELD not in model.model_fields:
             raise TypeError(
                 "derive_crud_routes: create_response_builder's model must declare a "
                 "connectivity_warning field when connectivity_check=True; build it "

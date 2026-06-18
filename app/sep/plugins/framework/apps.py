@@ -424,46 +424,53 @@ class TaskExecutionApp(BaseApp):
             ``update_handler``); or when the derived update lacks the create
             capability whose payload it rebuilds the body through.
         """
-        if self.detail_path_param != "task_name" and self.get_task is None:
-            raise ValueError(
+        derives_update = self.capabilities.update and self.update_handler is None
+        checks = (
+            (
+                self.detail_path_param != "task_name" and self.get_task is None,
                 "TaskExecutionApp: detail_path_param other than 'task_name' requires "
-                "a custom get_task whose inner path parameter matches it"
-            )
-        if self.capabilities.execute and (
-            self.execute_write_model is None or self.execute_response_model is None
-        ):
-            raise ValueError(
+                "a custom get_task whose inner path parameter matches it",
+            ),
+            (
+                self.capabilities.execute
+                and (
+                    self.execute_write_model is None
+                    or self.execute_response_model is None
+                ),
                 "TaskExecutionApp: the execute capability needs execute_write_model "
-                "and execute_response_model"
-            )
-        if self.update_handler is not None and not self.capabilities.update:
-            raise ValueError(
+                "and execute_response_model",
+            ),
+            (
+                self.update_handler is not None and not self.capabilities.update,
                 "TaskExecutionApp: update_handler overrides the derived PUT; enable "
-                "capabilities.update or drop update_handler"
-            )
-        if self.delete_handler is not None and not self.capabilities.delete:
-            raise ValueError(
+                "capabilities.update or drop update_handler",
+            ),
+            (
+                self.delete_handler is not None and not self.capabilities.delete,
                 "TaskExecutionApp: delete_handler overrides the derived DELETE; enable "
-                "capabilities.delete or drop delete_handler"
-            )
-        if self.update_guard and not self.capabilities.update:
-            raise ValueError(
+                "capabilities.delete or drop delete_handler",
+            ),
+            (
+                bool(self.update_guard) and not self.capabilities.update,
                 "TaskExecutionApp: update_guard guards the derived PUT; enable "
-                "capabilities.update or drop update_guard"
-            )
-        if self.update_guard and self.update_handler is not None:
-            raise ValueError(
+                "capabilities.update or drop update_guard",
+            ),
+            (
+                bool(self.update_guard) and self.update_handler is not None,
                 "TaskExecutionApp: update_guard guards the derived PUT; a full "
                 "update_handler must declare its own dependencies — drop update_guard "
-                "or the update_handler"
-            )
-        derives_update = self.capabilities.update and self.update_handler is None
-        if derives_update and not self.capabilities.create:
-            raise ValueError(
+                "or the update_handler",
+            ),
+            (
+                derives_update and not self.capabilities.create,
                 "TaskExecutionApp: the derived PUT rebuilds the body through the "
                 "create payload; enable capabilities.create or supply an "
-                "update_handler"
-            )
+                "update_handler",
+            ),
+        )
+        for condition, message in checks:
+            if condition:
+                raise ValueError(message)
 
     def _validate_response_knobs(self) -> None:
         """Validate the list-filter and response-context knobs are self-consistent.

@@ -51,8 +51,6 @@ __all__ = [
     "TableField",
     "TextAreaField",
     "YamlField",
-    "declared_field_names_from_forms",
-    "iter_section_fields",
 ]
 
 from collections import Counter
@@ -985,20 +983,20 @@ def _iter_form_item_leaves(field: AnyField) -> Iterator[BaseField]:
     yield field
 
 
-def iter_section_fields(section: FormSection) -> Iterator[BaseField]:
+def _iter_section_fields(section: FormSection) -> Iterator[BaseField]:
     """Yield every leaf :class:`BaseField` in ``section``, expanding one-of groups."""
     for field in section.fields:
         yield from _iter_form_item_leaves(field)
 
 
-def declared_field_names_from_forms(forms: list[FormSection]) -> set[str]:
+def _declared_field_names_from_forms(forms: list[FormSection]) -> set[str]:
     """Return every field name conditional rules may reference across ``forms``."""
     names: set[str] = set()
     for section in forms:
         for field in section.fields:
             if isinstance(field, OneOfGroup):
                 names.add(field.discriminator)
-        for leaf in iter_section_fields(section):
+        for leaf in _iter_section_fields(section):
             names.add(leaf.name)
     return names
 
@@ -1457,7 +1455,7 @@ class PluginSchema(SchemaBaseModel):
         errors = []
         if self.entities:
             for entity_index, entity in enumerate(self.entities):
-                declared_field_names = declared_field_names_from_forms(entity.forms)
+                declared_field_names = _declared_field_names_from_forms(entity.forms)
                 entity_label = f"PluginEntitySchema[{entity_index}] {entity.name!r}"
                 for section_index, section in enumerate(entity.forms):
                     section_label = (
@@ -1489,7 +1487,7 @@ class PluginSchema(SchemaBaseModel):
                     entity.fail_when, entity_label, declared_field_names, errors
                 )
         else:
-            declared_field_names = declared_field_names_from_forms(self.forms)
+            declared_field_names = _declared_field_names_from_forms(self.forms)
             for section_index, section in enumerate(self.forms):
                 section_label = f"FormSection[{section_index}] {section.title!r}"
                 for field in section.fields:

@@ -22,6 +22,8 @@ import pytest
 from pydantic import BaseModel, Field, model_validator, ValidationError
 
 from app.sep.plugins.framework.rules import (
+    _extract_rule_plan,
+    _resolve_field,
     absent,
     all_,
     all_equal,
@@ -47,7 +49,6 @@ from app.sep.plugins.framework.rules import (
     contains,
     Equals,
     evaluate_conditional_rules,
-    extract_rule_plan,
     F,
     FailRule,
     Falsy,
@@ -65,7 +66,6 @@ from app.sep.plugins.framework.rules import (
     Or,
     Predicate,
     present,
-    resolve_field,
     Truthy,
     truthy,
     Xor,
@@ -1362,38 +1362,38 @@ def _multi_entity_two_alpha_beta_schema() -> PluginSchema:
 
 
 class TestMultiEntityRulePlan:
-    """``extract_rule_plan`` / ``apply_conditional_rules`` for ``entities`` schemas."""
+    """``_extract_rule_plan`` / ``apply_conditional_rules`` for ``entities`` schemas."""
 
     def test_extract_requires_entity_name(self) -> None:
         """Multi-entity schemas refuse a plan without ``entity_name``."""
         schema = _multi_entity_two_alpha_beta_schema()
         with pytest.raises(ValueError, match="entity_name"):
-            extract_rule_plan(schema)
+            _extract_rule_plan(schema)
 
     def test_extract_unknown_entity_name(self) -> None:
         """Unknown ``entity_name`` raises with known entity list."""
         schema = _multi_entity_two_alpha_beta_schema()
         with pytest.raises(ValueError, match="not a PluginEntitySchema.name"):
-            extract_rule_plan(schema, entity_name="gamma")
+            _extract_rule_plan(schema, entity_name="gamma")
 
     def test_extract_scopes_rules_to_named_entity(self) -> None:
         """Plans for ``alpha`` and ``beta`` differ; ``beta`` has no declarative rules."""
         schema = _multi_entity_two_alpha_beta_schema()
-        plan_alpha = extract_rule_plan(schema, entity_name="alpha")
+        plan_alpha = _extract_rule_plan(schema, entity_name="alpha")
         assert len(plan_alpha.rules) >= 1
         assert any(
             r.kind == "field_gate_requires" and "alpha" in r.scope_path
             for r in plan_alpha.rules
         )
 
-        plan_beta = extract_rule_plan(schema, entity_name="beta")
+        plan_beta = _extract_rule_plan(schema, entity_name="beta")
         assert plan_beta.rules == ()
 
     def test_single_entity_schema_rejects_entity_name(self) -> None:
         """Task-style schema rejects a stray ``entity_name``."""
         schema = _build_schema(StringField(name="x", label="X"))
         with pytest.raises(ValueError, match="no `entities`"):
-            extract_rule_plan(schema, entity_name="alpha")
+            _extract_rule_plan(schema, entity_name="alpha")
 
     def test_apply_conditional_rules_with_entity_name(self) -> None:
         """Decorator accepts ``entity_name`` for multi-entity schemas."""
@@ -1416,7 +1416,7 @@ class TestResolveField:
 
     def test_resolve_top_level_attribute(self) -> None:
         """Resolve a plain top-level field name."""
-        assert resolve_field(_Instance(a="x"), "a") == "x"
+        assert _resolve_field(_Instance(a="x"), "a") == "x"
 
     def test_resolve_dotted_nested_attribute(self) -> None:
         """Resolve a nested attribute via a dotted path."""
@@ -1429,8 +1429,8 @@ class TestResolveField:
             source: Source = Source()
 
         root = Root(source=Source(mode="query", source_db_id="42"))
-        assert resolve_field(root, "source.mode") == "query"
-        assert resolve_field(root, "source.source_db_id") == "42"
+        assert _resolve_field(root, "source.mode") == "query"
+        assert _resolve_field(root, "source.source_db_id") == "42"
 
     def test_resolve_missing_intermediate_returns_none(self) -> None:
         """Return ``None`` when an intermediate segment is absent."""
@@ -1438,7 +1438,7 @@ class TestResolveField:
         class Root(BaseModel):
             source: None = None
 
-        assert resolve_field(Root(), "source.mode") is None
+        assert _resolve_field(Root(), "source.mode") is None
 
 
 class TestOneOfGroupRules:
@@ -1526,7 +1526,7 @@ class TestOneOfGroupRules:
 
     def test_rule_plan_includes_synthesised_branch_forbidden_gates(self) -> None:
         """Emit one ``field_gate_forbidden`` rule per branch leaf."""
-        plan = extract_rule_plan(self._source_one_of_schema())
+        plan = _extract_rule_plan(self._source_one_of_schema())
         forbidden = [
             rule
             for rule in plan.rules
@@ -1538,7 +1538,7 @@ class TestOneOfGroupRules:
 
     def test_active_branch_leaf_allowed_inactive_branch_leaf_forbidden(self) -> None:
         """Forbid leaves that belong to an unselected one-of branch."""
-        plan = extract_rule_plan(self._source_one_of_schema())
+        plan = _extract_rule_plan(self._source_one_of_schema())
 
         class _Source:
             def __init__(self, mode: str, **attrs: str) -> None:
@@ -1595,7 +1595,7 @@ class TestOneOfGroupRules:
         self,
     ) -> None:
         """Avoid per-branch forbidden gates for a leaf shared by all branches."""
-        plan = extract_rule_plan(self._shared_leaf_one_of_schema())
+        plan = _extract_rule_plan(self._shared_leaf_one_of_schema())
         shared_leaf_gates = [
             rule
             for rule in plan.rules
@@ -1607,7 +1607,7 @@ class TestOneOfGroupRules:
 
     def test_shared_leaf_allows_values_for_each_mode(self) -> None:
         """Allow a shared one-of leaf when either mode is selected."""
-        plan = extract_rule_plan(self._shared_leaf_one_of_schema())
+        plan = _extract_rule_plan(self._shared_leaf_one_of_schema())
         service_body = type("Body", (), {"target_mode": "service", "target": "42"})
         assert evaluate_conditional_rules(service_body(), plan) == []
         schema_body = type("Body", (), {"target_mode": "schema", "target": "42"})
