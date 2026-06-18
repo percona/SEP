@@ -48,9 +48,7 @@ async def test_haproxy_snippet_metadata_parses(filename):
 @pytest.mark.asyncio
 async def test_haproxy_config_snippet_has_no_parameters():
     """The config-discovery snippet declares no parameters (``parameters: []``)."""
-    snippet = await BaseSnippet.from_path(
-        "haproxy_config_files.sh", update_meta=True
-    )
+    snippet = await BaseSnippet.from_path("haproxy_config_files.sh", update_meta=True)
 
     assert snippet.validated_parameters.parameters == []
 
@@ -58,9 +56,7 @@ async def test_haproxy_config_snippet_has_no_parameters():
 @pytest.mark.asyncio
 async def test_haproxy_logs_snippet_parameters():
     """The log-extractor declares the expected, well-typed parameters."""
-    snippet = await BaseSnippet.from_path(
-        "haproxy_logs_extractor.sh", update_meta=True
-    )
+    snippet = await BaseSnippet.from_path("haproxy_logs_extractor.sh", update_meta=True)
 
     params = {param.name: param for param in snippet.validated_parameters.parameters}
     assert set(params) == {"time", "minutes", "log-file", "output"}
@@ -84,9 +80,7 @@ async def test_haproxy_logs_snippet_parameters():
 @pytest.mark.asyncio
 async def test_haproxy_logs_snippet_builds_expected_command():
     """A valid submission produces the CLI args SEP would dispatch."""
-    snippet = await BaseSnippet.from_path(
-        "haproxy_logs_extractor.sh", update_meta=True
-    )
+    snippet = await BaseSnippet.from_path("haproxy_logs_extractor.sh", update_meta=True)
     model = snippet.get_execution_model()
 
     args = model.model_validate(
@@ -108,9 +102,7 @@ async def test_haproxy_logs_snippet_builds_expected_command():
 @pytest.mark.asyncio
 async def test_haproxy_logs_snippet_rejects_non_positive_minutes():
     """``minutes`` honours the ``ge: 1`` constraint declared in the frontmatter."""
-    snippet = await BaseSnippet.from_path(
-        "haproxy_logs_extractor.sh", update_meta=True
-    )
+    snippet = await BaseSnippet.from_path("haproxy_logs_extractor.sh", update_meta=True)
     model = snippet.get_execution_model()
 
     with pytest.raises(ValidationError):
