@@ -39,7 +39,7 @@ class SourceEnum(StrEnum):
 
 
 class ServiceTypeEnum(StrEnum):
-    """Enumeration of supported service types.
+    """Enumerate the supported service types.
 
     :cvar MYSQL: Represents the MySQL service type.
     :vartype MYSQL: str
@@ -53,6 +53,7 @@ class ServiceTypeEnum(StrEnum):
     :vartype HAPROXY: str
     :cvar EXTERNAL: Represents an external service type.
     :vartype EXTERNAL: str
+    :cvar VALKEY: Represents the Valkey service type.
     """
 
     MYSQL = auto()
@@ -61,6 +62,7 @@ class ServiceTypeEnum(StrEnum):
     PROXYSQL = auto()
     HAPROXY = auto()
     EXTERNAL = auto()
+    VALKEY = auto()
 
 
 class NodeBase(SQLModel):
@@ -98,7 +100,7 @@ class NodeBase(SQLModel):
         Raises
         ------
         ValueError
-            If `external_id` is provided without a corresponding `source`.
+            If ``external_id`` is provided without a corresponding ``source``.
 
         :return: The validated instance.
         :rtype: Self
@@ -666,12 +668,12 @@ class HostSystemObservationBase(SQLModel):
     def validate_at_least_one_observation_field(self) -> Self:
         """Ensure that at least one of os_version, installed_packages, or config is set.
 
-        Validates that at least one of `os_version`, `installed_packages`, or
-        `config` is provided.
+        Validates that at least one of ``os_version``, ``installed_packages``, or
+        ``config`` is provided.
 
         :return: The validated instance.
         :rtype: Self
-        :raises ValueError: If `os_version`, `installed_packages`, and `config`
+        :raises ValueError: If ``os_version``, ``installed_packages``, and ``config``
             are all unset.
         """
         if (
