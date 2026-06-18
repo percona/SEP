@@ -199,3 +199,34 @@ describe('getGateFieldNames – nested predicates', () => {
     expect(getGateFieldNames([{ when: { equals: { a: { $field: 'b' } } } }])).toEqual(['a', 'b']);
   });
 });
+
+describe('evaluatePredicate – dotted field paths', () => {
+  it('equals walks nested objects for dotted discriminator paths', () => {
+    const values = {
+      source: { mode: 'schema', source_db_id: 'inventory' },
+    };
+    expect(evaluatePredicate({ equals: { 'source.mode': 'schema' } }, values)).toBe(true);
+    expect(evaluatePredicate({ equals: { 'source.mode': 'query' } }, values)).toBe(false);
+  });
+
+  it('not_equals forbids inactive one-of branch leaves via dotted paths', () => {
+    const values = {
+      source: { mode: 'schema', source_db_id: 'x', source_query: 'SELECT 1' },
+    };
+    expect(evaluatePredicate({ not_equals: { 'source.mode': 'query' } }, values)).toBe(true);
+  });
+
+  it('truthy resolves nested segments without prototype-chain leakage', () => {
+    expect(evaluatePredicate({ truthy: 'source.mode' }, { source: { mode: 'schema' } })).toBe(true);
+    expect(evaluatePredicate({ truthy: 'source.mode' }, {})).toBe(false);
+  });
+
+  it('prefers an own-property key when the full dotted path is stored flat', () => {
+    expect(
+      evaluatePredicate(
+        { equals: { 'source.mode': 'flat' } },
+        { 'source.mode': 'flat', source: { mode: 'nested' } },
+      ),
+    ).toBe(true);
+  });
+});

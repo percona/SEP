@@ -451,6 +451,56 @@ export const ArchivesSourceXor: Story = {
   },
 };
 
+/** Segmented one-of group with nested dotted branch fields. */
+export const OneOfSourceGroup: Story = {
+  args: {
+    sections: [
+      {
+        title: 'Source',
+        fields: [
+          {
+            type: 'one_of',
+            name: 'source',
+            label: 'Source',
+            description: 'Choose how to specify source rows.',
+            discriminator: 'source.mode',
+            default: 'schema',
+            branches: [
+              {
+                value: 'schema',
+                label: 'Schema & Table',
+                fields: [
+                  {
+                    type: 'string',
+                    name: 'source.source_db_id',
+                    label: 'Source Schema',
+                  },
+                ],
+              },
+              {
+                value: 'query',
+                label: 'Custom Query',
+                fields: [
+                  {
+                    type: 'string',
+                    name: 'source.source_query',
+                    label: 'Source Query',
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    submitLabel: 'Run',
+    onSubmit: (v: Record<string, unknown>) => {
+      // eslint-disable-next-line no-console
+      console.log('submit', v);
+    },
+  },
+};
+
 /**
  * Empty-state placeholder for `multi_choice` and `choice` (select-mode).
  * Confirms the floating label sits above and a muted "Select…" affordance
