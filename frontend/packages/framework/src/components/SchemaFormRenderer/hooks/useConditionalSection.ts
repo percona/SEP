@@ -18,6 +18,7 @@
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import type { FormSection } from '../types';
+import { isOneOfGroup } from '../utils/flattenSectionFields';
 import { evaluatePredicate, getGateFieldNames } from '../utils/predicateEvaluator';
 import { watchValuesByName } from '../utils/watchValuesByName';
 
@@ -58,6 +59,24 @@ export function useConditionalSection(section: FormSection): ConditionalSectionS
     return section.forbidden.some((gate) => evaluatePredicate(gate.when, map));
   }, [rawValues, section, watchedNames]);
 
+  const sectionFieldNames = useMemo<string[]>(() => {
+    const names = new Set<string>();
+    for (const field of section.fields) {
+      if (isOneOfGroup(field)) {
+        names.add(field.name);
+        names.add(field.discriminator);
+        for (const branch of field.branches) {
+          for (const leaf of branch.fields) {
+            names.add(leaf.name);
+          }
+        }
+        continue;
+      }
+      names.add(field.name);
+    }
+    return [...names];
+  }, [section.fields]);
+
   // When the section becomes hidden every child field must drop out of
   // RHF state so its (possibly default) value does not ship. On re-show,
   // SectionRenderer re-mounts the children which re-call register() and
@@ -65,11 +84,11 @@ export function useConditionalSection(section: FormSection): ConditionalSectionS
   // would otherwise ship in the payload and fail backend cross-mode validation.
   useEffect(() => {
     if (isHidden) {
-      for (const field of section.fields) {
-        unregister(field.name);
+      for (const name of sectionFieldNames) {
+        unregister(name);
       }
     }
-  }, [isHidden, section.fields, unregister]);
+  }, [isHidden, sectionFieldNames, unregister]);
 
   return { isHidden };
 }
