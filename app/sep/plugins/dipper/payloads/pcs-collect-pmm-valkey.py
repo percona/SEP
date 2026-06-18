@@ -459,8 +459,8 @@ def main() -> None:
 
   # Strip literal service name and create hostname, this should match pcs-collect-environment
   hostname = SERVICE
-  if hostname[-6:] == "-valkey":
-    hostname = hostname[0:-6]
+  if hostname[-7:] == "-valkey":
+    hostname = hostname[0:-7]
 
   # Graph window / parse timestamp args
   (time_from, time_to) = get_graph_window(args.start, args.end)
@@ -545,6 +545,8 @@ def main() -> None:
         "Slowlog maxlength",
       ]
 
+      render_dashboard(graphs, dashboard_uid, path_to_graphs, time_from=time_from, time_to=time_to)
+
     # Valkey/Redis Cluster Summary graphs
     if args.cluster:
 
@@ -618,7 +620,7 @@ def main() -> None:
         "$node_name - known nodes",
       ]
 
-    render_dashboard(graphs, dashboard_uid, path_to_graphs, time_from=time_from, time_to=time_to)
+      render_dashboard(graphs, dashboard_uid, path_to_graphs, time_from=time_from, time_to=time_to)
 
 
   # OS Node Summary
