@@ -36,6 +36,7 @@ from pydantic import BaseModel
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import TaskAPI
+from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.apps import TaskExecutionApp, Views
 from app.sep.plugins.framework.deps import make_task_dep
 from app.sep.plugins.framework.form_dsl import (
@@ -346,6 +347,19 @@ class SynthDetailResponse(SynthResponse):
     detail_only: bool = True
 
 
+class SynthCreateResponse(SynthResponse):
+    """Represent a stable create response carrying the connectivity warning.
+
+    A hand-authored create model (not the framework's auto-derived
+    ``<App>CreateResponse``): it carries the same injected ``service_type`` /
+    ``created_by`` extras as the list/detail response *plus* a
+    ``connectivity_warning``, so the create-response surface that combines a
+    stable component, injected extras, and a non-null probe warning is covered.
+    """
+
+    connectivity_warning: ConnectivityWarning | None = None
+
+
 class SynthExecuteWrite(BaseModel):
     """Represent the execute request body for the synthetic app."""
 
@@ -445,6 +459,36 @@ def synth_detail_builder(
     )
 
 
+def synth_create_response_builder(
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum | None = None,
+    context: dict[str, str] | None = None,
+) -> SynthCreateResponse:
+    """Build the stable create response, injecting extras and the resolved name.
+
+    Mirrors :func:`synth_response_builder` but returns the stable
+    :class:`SynthCreateResponse` component, so an app can wire one
+    ``create_response_builder`` that keeps a ``connectivity_warning`` on a
+    hand-authored model rather than the framework's auto-derived one.
+
+    :param task: The task to build a response for.
+    :param status: The latest known execution status.
+    :param context: The bound username map, or ``None`` when no provider is wired.
+    :return: The stable create response carrying the injected extras.
+    """
+    mapping = context or {}
+    return build_default_task_response(
+        SynthCreateResponse,
+        task,
+        status,
+        extras={
+            "service_type": ServiceTypeEnum.MYSQL,
+            "created_by": mapping.get(task.created_by, task.created_by),
+        },
+    )
+
+
 async def synth_context_provider() -> dict[str, str]:
     """Return the synthetic username map resolved once per request."""
     return {SYNTH_CREATED_BY: SYNTH_CREATED_BY_NAME}
@@ -468,6 +512,7 @@ async def synth_reject_running_task(tasks_api: TaskAPI) -> None:
 
 
 synth_create_guard = Depends(synth_reject_running_task)
+synth_update_guard = Depends(synth_reject_running_task)
 
 
 async def synth_delete_handler(

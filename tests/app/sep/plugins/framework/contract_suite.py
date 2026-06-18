@@ -657,20 +657,82 @@ class DerivedRouterContractTests:
     def test_update_route_present(self) -> None:
         """Assert a ``PUT /{detail}`` route exists when update is enabled.
 
-        Update bodies are app-defined, so the suite asserts route derivation
-        rather than driving a generic update request.
+        Holds for both a full ``update_handler`` override and a handler-less
+        derived PUT, since update derivation now fires on the capability alone.
         """
-        if not (self.app_def.capabilities.update and self.app_def.update_handler):
+        if not self.app_def.capabilities.update:
             pytest.skip("update capability disabled")
 
         assert (detail_route_path(self.app_def), "PUT") in routes_of(self.app_def)
 
     def test_update_route_absent(self) -> None:
         """Assert no ``PUT /{detail}`` route exists when update is disabled."""
-        if self.app_def.capabilities.update and self.app_def.update_handler:
+        if self.app_def.capabilities.update:
             pytest.skip("update capability enabled")
 
         assert (detail_route_path(self.app_def), "PUT") not in routes_of(self.app_def)
+
+    def test_update_200(self, contract_client: TestClient) -> None:
+        """Assert a real ``PUT /{detail}`` updates the task and returns 200."""
+        if not self.app_def.capabilities.update:
+            pytest.skip("update capability disabled")
+        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        if body is None:
+            pytest.skip("no derivable update body (schema= passthrough)")
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_update_404(self, contract_client: TestClient) -> None:
+        """Assert ``PUT /{detail}`` 404s for an unknown task name."""
+        if not self.app_def.capabilities.update:
+            pytest.skip("update capability disabled")
+        body = build_valid_create_body(self.app_def, task_name=_UNKNOWN_TASK_NAME)
+        if body is None:
+            pytest.skip("no derivable update body (schema= passthrough)")
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{_UNKNOWN_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_update_derived_injects_extras(self, contract_client: TestClient) -> None:
+        """Assert a derived PUT renders through the create-path builder + context."""
+        if not (
+            self.app_def.capabilities.update and self.app_def.update_handler is None
+        ):
+            pytest.skip("no derived update route")
+        if self.app_def.response_context_provider is None:
+            pytest.skip("no response context provider")
+        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        if body is None:
+            pytest.skip("no derivable update body (schema= passthrough)")
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
+
+    def test_update_guard_409(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert an ``update_guard`` dependency rejects the derived PUT with 409."""
+        if not getattr(self.app_def, "update_guard", ()):
+            pytest.skip("no update guard")
+        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        if body is None:
+            pytest.skip("no derivable update body (schema= passthrough)")
+        mock_task_api.seed_running(_CONFLICT_TASK_NAME, owner=self.app_def.owner)
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
 
     def test_delete_204(self, contract_client: TestClient) -> None:
         """Assert ``DELETE /{detail}`` returns 204 and the task is gone afterward."""

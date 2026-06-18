@@ -85,10 +85,12 @@ class AppCapabilities(BaseModel):
         ``True``.
     :param execute: Whether to derive the ``POST /{task_name}/execute`` route.
         Defaults to ``True``.
-    :param update: Whether to derive a ``PUT /{task_name}`` route (requires an
-        ``update_handler``). Defaults to ``False``.
-    :param delete: Whether to derive a ``DELETE /{task_name}`` route (requires a
-        ``delete_handler``). Defaults to ``False``.
+    :param update: Whether to derive a ``PUT /{task_name}`` route. Derives a
+        standard create-mirroring default unless an ``update_handler`` overrides
+        it. Defaults to ``False``.
+    :param delete: Whether to derive a ``DELETE /{task_name}`` route. Derives a
+        plain fetch-then-delete default unless a ``delete_handler`` overrides it.
+        Defaults to ``False``.
     """
 
     create: bool = True
@@ -198,10 +200,14 @@ class TaskExecutionApp(BaseApp):
         ``get_task``.
     :param create_response_model: An explicit create response model override.
         Defaults to ``None``.
-    :param update_handler: A fully-formed ``PUT`` handler, derived only when
-        ``capabilities.update``. Defaults to ``None``.
-    :param delete_handler: A fully-formed ``DELETE`` handler, derived only when
-        ``capabilities.delete``. Defaults to ``None``.
+    :param update_handler: A fully-formed ``PUT`` handler overriding the derived
+        default; used only when ``capabilities.update``. When ``None`` (default)
+        and ``capabilities.update`` is on, the framework derives a standard
+        create-mirroring PUT (guarded by ``update_guard``).
+    :param delete_handler: A fully-formed ``DELETE`` handler overriding the
+        derived default; used only when ``capabilities.delete``. When ``None``
+        (default) and ``capabilities.delete`` is on, the framework derives a plain
+        fetch-then-delete DELETE.
     :param execute_write_model: The execute request body model; required when
         ``capabilities.execute``. Defaults to ``None``.
     :param execute_response_model: The execute response model; required when
@@ -235,6 +241,18 @@ class TaskExecutionApp(BaseApp):
         Defaults to ``None``.
     :param create_extra_deps: Extra create-route dependencies appended after the
         standard auth guard; requires ``capabilities.create``. Defaults to ``()``.
+    :param create_response_builder: A sync create-response builder override that
+        injects the per-plugin create-response extras and pins a stable
+        create-response component (in place of the framework's auto-derived one),
+        reused by the derived PUT. Mutually exclusive with ``create_response_model``
+        and requires ``capabilities.create``. Defaults to ``None``.
+    :param update_guard: Extra route dependencies (guards) appended after the auth
+        guard on the *derived* PUT — the handler-less escape hatch for a per-plugin
+        update guard (for example a protected-task check). Requires
+        ``capabilities.update`` and is rejected alongside a full ``update_handler``.
+        Defaults to ``()``.
+    :param description: The plugin description threaded into the derived
+        ``GET /schema`` (``PluginSchema.description``). Defaults to ``None``.
     """
 
     owner: TaskOwner
@@ -268,6 +286,9 @@ class TaskExecutionApp(BaseApp):
         None
     )
     create_extra_deps: tuple[params.Depends, ...] = ()
+    create_response_builder: SkipValidation[TaskResponseBuilder | None] = None
+    update_guard: tuple[params.Depends, ...] = ()
+    description: str | None = None
 
     _task_getter: Callable[..., Awaitable[Task]] | None = PrivateAttr(default=None)
 
@@ -371,12 +392,20 @@ class TaskExecutionApp(BaseApp):
         if not self.capabilities.create and (
             self.connectivity_check
             or self.create_response_model is not None
+            or self.create_response_builder is not None
             or self.create_form_encoded
         ):
             raise ValueError(
-                "TaskExecutionApp: connectivity_check, create_response_model, and "
-                "create_form_encoded are create-route options; enable "
-                "capabilities.create or drop them"
+                "TaskExecutionApp: connectivity_check, create_response_model, "
+                "create_response_builder, and create_form_encoded are create-route "
+                "options; enable capabilities.create or drop them"
+            )
+        if self.create_response_model is not None and (
+            self.create_response_builder is not None
+        ):
+            raise ValueError(
+                "TaskExecutionApp: set either create_response_model or "
+                "create_response_builder, not both — the builder pins its own model"
             )
         if self.create_extra_deps and not self.capabilities.create:
             raise ValueError(
@@ -385,10 +414,13 @@ class TaskExecutionApp(BaseApp):
             )
 
     def _validate_route_knobs(self) -> None:
-        """Validate the detail-path and execute route knobs.
+        """Validate the detail-path, execute, and update route knobs.
 
         :raises ValueError: When a non-default ``detail_path_param`` has no custom
-            ``get_task``; or when an execute-enabled app lacks its models.
+            ``get_task``; when an execute-enabled app lacks its models; when
+            ``update_guard`` is set on a non-derived update (no update capability,
+            or a full ``update_handler``); or when the derived update lacks the
+            create capability whose payload it rebuilds the body through.
         """
         if self.detail_path_param != "task_name" and self.get_task is None:
             raise ValueError(
@@ -401,6 +433,24 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: the execute capability needs execute_write_model "
                 "and execute_response_model"
+            )
+        if self.update_guard and not self.capabilities.update:
+            raise ValueError(
+                "TaskExecutionApp: update_guard guards the derived PUT; enable "
+                "capabilities.update or drop update_guard"
+            )
+        if self.update_guard and self.update_handler is not None:
+            raise ValueError(
+                "TaskExecutionApp: update_guard guards the derived PUT; a full "
+                "update_handler must declare its own dependencies — drop update_guard "
+                "or the update_handler"
+            )
+        derives_update = self.capabilities.update and self.update_handler is None
+        if derives_update and not self.capabilities.create:
+            raise ValueError(
+                "TaskExecutionApp: the derived PUT rebuilds the body through the "
+                "create payload; enable capabilities.create or supply an "
+                "update_handler"
             )
 
     def _validate_response_knobs(self) -> None:
@@ -471,7 +521,10 @@ class TaskExecutionApp(BaseApp):
             ),
             context_provider=self.response_context_provider,
             create_extra_deps=self.create_extra_deps,
+            update_enabled=self.capabilities.update,
             update_handler=self.update_handler if self.capabilities.update else None,
+            update_extra_deps=self.update_guard,
+            delete_enabled=self.capabilities.delete,
             delete_handler=self.delete_handler if self.capabilities.delete else None,
         )
         router.include_router(crud)
@@ -504,6 +557,7 @@ class TaskExecutionApp(BaseApp):
             self.views.layout,
             name=self.name,
             display_name=self.display_name,
+            description=self.description,
             capabilities=self.views.capabilities,
             list_view=self.views.list_view,
             detail_view=self.views.detail_view,
@@ -534,15 +588,22 @@ class TaskExecutionApp(BaseApp):
         return _builder
 
     def _build_create_response_builder(self) -> TaskResponseBuilder | None:
-        """Return a create response builder when ``create_response_model`` is set.
+        """Return the create response builder for the derived create/update routes.
 
-        The builder accepts (and ignores) a ``context`` keyword so the create route
-        can bind a ``response_context_provider``'s result into it uniformly: this is
-        the no-extras create path, so the context feeds no remap here.
+        Use the supplied ``create_response_builder`` verbatim when set (it injects
+        the per-plugin create-response extras and pins a stable create-response
+        component), mirroring ``_build_response_builder``. Otherwise, when a
+        ``create_response_model`` is set, build the default no-extras sync builder
+        over it — the builder accepts (and ignores) a ``context`` keyword so the
+        create route can bind a ``response_context_provider``'s result into it
+        uniformly.
 
-        :return: A sync builder over ``create_response_model``, or ``None`` when
-            no explicit create response model is configured.
+        :return: The explicit ``create_response_builder``; or a sync builder over
+            ``create_response_model``; or ``None`` when neither is configured.
         """
+        if self.create_response_builder is not None:
+            return self.create_response_builder
+
         if self.create_response_model is None:
             return None
 
