@@ -859,6 +859,7 @@ if [[ (-z ${SEP_PMM_URL_AUTH_ACCOUNT_USER} || -z ${SEP_PMM_URL_AUTH_ACCOUNT_PASS
 fi
 DOCKER_TOKEN="${DOCKER_TOKEN:-}"
 CERTLIST="${CERTLIST:-all-in-one}"
+RESET_DATA="${RESET_DATA:-0}"
 
 PLUGIN_DISP_SCHEMA="Schema Change"
 PLUGIN_DISP_ARCHIVE="Archive"
@@ -910,6 +911,9 @@ OPTIONS
   --docker-token TOKEN     Token for registry login if needed
   --autostart              Start the stack automatically after install
   --overwrite              Overwrite existing installation directory without prompting
+  --reset-data             Wipe existing SEP data volumes (sep_*) for a clean install.
+                           Without it, a re-install over an existing SEP database reuses the
+                           prior credentials when available, or stops with guidance otherwise.
   --no-interaction         Skip interactive wizard and use defaults/flags
   --help, -h               Show this help message
 
@@ -979,6 +983,10 @@ parse_args() {
                 ;;
             --overwrite)
                 OVERWRITE_INSTALL_DIR=1
+                shift
+                ;;
+            --reset-data)
+                RESET_DATA=1
                 shift
                 ;;
             --no-interaction | --headless | --yes | -y)
@@ -1405,35 +1413,120 @@ render_templates_cli() {
     done
 }
 
+data_volume_exists() {
+    "${CONTAINER_ENGINE}" volume ls -q 2> /dev/null | grep -qx "$1"
+}
+
+secrets_reusable() {
+    [ -f "${INSTALL_DIR}/.secrets" ] || return 1
+    [ -f "${INSTALL_DIR}/certs/sep_token_jwt_key.key" ] || return 1
+    [ -f "${INSTALL_DIR}/certs/sep_token_jwt_key.pem" ] || return 1
+    local pw=""
+    pw=$(grep -E '^SEP_BACKEND_DB_PASSWORD=' "${INSTALL_DIR}/.secrets" | cut -d= -f2-) || true
+    [ -n "${pw}" ]
+}
+
+load_existing_secrets_and_certs() {
+    local saved_install_dir="${INSTALL_DIR}"
+    set -a
+    # shellcheck disable=SC1090,SC1091
+    . "${INSTALL_DIR}/.secrets"
+    set +a
+    INSTALL_DIR="${saved_install_dir}"
+    FINAL_INSTALL_DIR="${saved_install_dir}"
+    export INSTALL_DIR FINAL_INSTALL_DIR
+    cp -rf "${saved_install_dir}/certs" "${ATOMIC_DIR}/certs"
+}
+
+wipe_data_volumes() {
+    local lbl
+    for lbl in "com.docker.compose.project=sep" "io.podman.compose.project=sep"; do
+        "${CONTAINER_ENGINE}" ps -aq --filter "label=${lbl}" 2> /dev/null |
+            xargs -r "${CONTAINER_ENGINE}" rm -f > /dev/null 2>&1 || true
+    done
+    "${CONTAINER_ENGINE}" volume ls -q 2> /dev/null | grep '^sep_' |
+        xargs -r "${CONTAINER_ENGINE}" volume rm > /dev/null 2>&1 || true
+}
+
+resolve_data_strategy() {
+    DATA_STRATEGY="fresh"
+    data_volume_exists "sep_sep-data" || return 0
+
+    if [ "${RESET_DATA}" -eq 1 ]; then
+        log_info "Wiping existing SEP data volumes for a clean install (--reset-data)..."
+        wipe_data_volumes
+        return 0
+    fi
+
+    if secrets_reusable; then
+        DATA_STRATEGY="reuse"
+        log_info "Existing SEP database found; reusing credentials from ${INSTALL_DIR}."
+        return 0
+    fi
+
+    local msg="Existing SEP data volumes were found (project 'sep'), but no matching credentials in '${INSTALL_DIR}'.
+A fresh install would generate new credentials that do not match the existing database, causing authentication failures.
+Re-run with --install-dir pointing at the original install to reuse its credentials, or pass --reset-data to wipe the existing data for a clean install."
+
+    if [ "${NO_INTERACTION}" -eq 1 ]; then
+        log_err "${msg}"
+        exit 1
+    fi
+
+    log_warn "${msg}"
+    if [ "${NO_UI}" -eq 0 ]; then
+        if run_ui confirm --default-val "n" "Wipe existing SEP data volumes and perform a clean install?"; then
+            wipe_data_volumes
+        else
+            log_err "Installation aborted to protect existing data."
+            exit 0
+        fi
+    else
+        read -r -p "Wipe existing SEP data volumes and perform a clean install? [y/N] " _yn
+        case "${_yn}" in
+            [Yy]*) wipe_data_volumes ;;
+            *)
+                log_err "Installation aborted to protect existing data."
+                exit 0
+                ;;
+        esac
+    fi
+}
+
 generate_secrets_and_render() {
     ATOMIC_DIR=$(mktemp -d)
 
-    set -a
-    CASDOOR_DEFAULT_ORG_SALT=$(openssl rand -hex 8)
-    CASDOOR_SEP_ORG_SALT=$(openssl rand -hex 8)
-    CASDOOR_DEFAULT_CLIENT_ID=$(openssl rand -hex 10)
-    CASDOOR_DEFAULT_CLIENT_SECRET=$(openssl rand -hex 20)
-    CASDOOR_SEP_CLIENT_ID=$(openssl rand -hex 10)
-    CASDOOR_SEP_CLIENT_SECRET=$(openssl rand -hex 20)
-    CASDOOR_DEFAULT_ADMIN_PASSWD=$(openssl rand -hex 20)
-    CASDOOR_SEP_ADMIN_PASSWD=$(openssl rand -hex 20)
-    CASDOOR_SEP_SEP_PASSWD=$(openssl rand -hex 20)
-    SEP_BACKEND_DB_PASSWORD=$(openssl rand -hex 20)
-    SEP_REDIS_PASSWORD=$(openssl rand -hex 20)
-    SEP_INTERNAL_TOKEN=$(openssl rand -hex 32)
-    SEP_PMM_URL_AUTH_ACCOUNT=${SEP_PMM_URL_AUTH_ACCOUNT:-admin:admin}
-    SEP_PMM_URL_AUTH_TOKEN=${SEP_PMM_URL_AUTH_TOKEN:-CHANGEME}
-    GF_SECURITY_ADMIN_PASSWORD=$(openssl rand -hex 20)
-    FINAL_INSTALL_DIR="${INSTALL_DIR}"
-    set +a
-
-    if [ "${NO_UI}" -eq 0 ]; then
-        run_ui generate_tls --install-dir "${ATOMIC_DIR}" --cert-list "${CERTLIST}"
+    if [ "${DATA_STRATEGY:-fresh}" = "reuse" ]; then
+        load_existing_secrets_and_certs
+        log_milestone "Reusing existing credentials and certificates"
     else
-        echo "Generating TLS (Text Mode)..."
-        generate_tls_cli "${ATOMIC_DIR}" "${CERTLIST}"
+        set -a
+        CASDOOR_DEFAULT_ORG_SALT=$(openssl rand -hex 8)
+        CASDOOR_SEP_ORG_SALT=$(openssl rand -hex 8)
+        CASDOOR_DEFAULT_CLIENT_ID=$(openssl rand -hex 10)
+        CASDOOR_DEFAULT_CLIENT_SECRET=$(openssl rand -hex 20)
+        CASDOOR_SEP_CLIENT_ID=$(openssl rand -hex 10)
+        CASDOOR_SEP_CLIENT_SECRET=$(openssl rand -hex 20)
+        CASDOOR_DEFAULT_ADMIN_PASSWD=$(openssl rand -hex 20)
+        CASDOOR_SEP_ADMIN_PASSWD=$(openssl rand -hex 20)
+        CASDOOR_SEP_SEP_PASSWD=$(openssl rand -hex 20)
+        SEP_BACKEND_DB_PASSWORD=$(openssl rand -hex 20)
+        SEP_REDIS_PASSWORD=$(openssl rand -hex 20)
+        SEP_INTERNAL_TOKEN=$(openssl rand -hex 32)
+        SEP_PMM_URL_AUTH_ACCOUNT=${SEP_PMM_URL_AUTH_ACCOUNT:-admin:admin}
+        SEP_PMM_URL_AUTH_TOKEN=${SEP_PMM_URL_AUTH_TOKEN:-CHANGEME}
+        GF_SECURITY_ADMIN_PASSWORD=$(openssl rand -hex 20)
+        FINAL_INSTALL_DIR="${INSTALL_DIR}"
+        set +a
+
+        if [ "${NO_UI}" -eq 0 ]; then
+            run_ui generate_tls --install-dir "${ATOMIC_DIR}" --cert-list "${CERTLIST}"
+        else
+            echo "Generating TLS (Text Mode)..."
+            generate_tls_cli "${ATOMIC_DIR}" "${CERTLIST}"
+        fi
+        log_milestone "Certificates generated"
     fi
-    log_milestone "Certificates generated"
 
     SEP_CASDOOR_PRIVATE_KEY_JSON=$(sed -z 's/\n/\\\\n/g' "${ATOMIC_DIR}/certs/sep_token_jwt_key.key")
     SEP_CASDOOR_CERTIFICATE_JSON=$(sed -z 's/\n/\\\\n/g' "${ATOMIC_DIR}/certs/sep_token_jwt_key.pem")
@@ -1701,7 +1794,9 @@ main() {
     check_install_dir_writable
     log_milestone "Install directory validated"
 
-    if [ -d "${INSTALL_DIR}" ] && [ "$(ls -A "${INSTALL_DIR}")" ]; then
+    resolve_data_strategy
+
+    if [ -d "${INSTALL_DIR}" ] && [ "$(ls -A "${INSTALL_DIR}")" ] && [ "${DATA_STRATEGY}" != "reuse" ]; then
         if [ "$NO_INTERACTION" -eq 0 ] && [ "$OVERWRITE_INSTALL_DIR" -eq 0 ]; then
             if [ "${NO_UI}" -eq 0 ]; then
                 log_warn "Installation directory '${INSTALL_DIR}' already exists and is not empty."
