@@ -35,6 +35,7 @@ import pytest
 from fastapi import APIRouter, status
 from pydantic import BaseModel
 
+from app.models import CasdoorUser
 from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp, Views
 from app.sep.plugins.framework.conformance import (
     CAPABILITY_RENDERED_CONTROLS,
@@ -69,6 +70,12 @@ from app.sep.plugins.framework.schema import (
 )
 from app.tasks.models import TaskHistoryStatusEnum, TaskOwner
 from tests.app.sep import snapshot_utils as su
+from tests.app.sep.plugins.framework.contract_suite import build_contract_client
+from tests.app.sep.plugins.framework.kit import (
+    MockInventoryAPI,
+    MockTaskAPI,
+    synth_app,
+)
 
 _OWNER = TaskOwner.ARCHIVER
 _LAYOUT = FormLayout(sections=(SectionLayout(key="main", title="Main"),))
@@ -241,6 +248,30 @@ def test_capability_rendered_controls_maps_alert_on_fail():
     """Assert the registry only reserves the ``alert_on_fail`` control today."""
     assert CAPABILITY_RENDERED_CONTROLS == {"alert_on_fail": "alert_on_fail"}
     assert set(CAPABILITY_RENDERED_CONTROLS) <= set(Capabilities.model_fields)
+
+
+def test_no_duplicate_control_silent_with_response_extras_builder(
+    regular_user: CasdoorUser,
+) -> None:
+    """Assert a response_builder injecting extras never reintroduces a form control.
+
+    The synth app's response_builder injects response-plane fields (``service_type``,
+    a remapped ``created_by``) — a plane independent of the schema's form fields.
+    With the ``alert_on_fail`` capability enabled and its control excluded from the
+    form, the served schema must still carry no duplicate control.
+    """
+    app_def = synth_app()
+    client = build_contract_client(
+        app_def,
+        user=regular_user,
+        tasks_api=MockTaskAPI(),
+        inventory_api=MockInventoryAPI(),
+    )
+
+    payload = client.get(f"/api/plugins{app_def.uri_path}/schema").json()
+
+    assert app_def.response_builder is not None
+    assert check_no_duplicate_capability_control(payload) == []
 
 
 class _ExecuteWrite(BaseModel):

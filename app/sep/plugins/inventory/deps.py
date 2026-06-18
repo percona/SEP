@@ -505,3 +505,22 @@ InventoryPluginJsonObjectBody = Annotated[
     dict[str, Any],
     Depends(inventory_plugin_json_object_body),
 ]
+
+
+def provide_internal_token() -> str:
+    """Resolve the internal service token for request-scoped injection.
+
+    Adapts ``require_internal_token`` for FastAPI dependency injection. The
+    import is local because ``sync`` imports syncer helpers from this module at
+    module load, so importing ``require_internal_token`` at module level would
+    create a circular import.
+
+    :return: The internal service token's secret value.
+    :raises RuntimeError: When no internal token is configured or derived.
+    """
+    from app.sep.plugins.inventory.sync import require_internal_token
+
+    return require_internal_token()
+
+
+InternalTokenDep = Annotated[str, Depends(provide_internal_token)]
