@@ -54,6 +54,7 @@ class ServiceTypeEnum(StrEnum):
     :cvar EXTERNAL: Represents an external service type.
     :vartype EXTERNAL: str
     :cvar VALKEY: Represents the Valkey service type.
+    :vartype VALKEY: str
     """
 
     MYSQL = auto()

@@ -362,8 +362,8 @@ class TestPMMRemoteAPI:
         services = await pmm_remote_api.get_services()
 
         assert len(services) == 1
-        assert services[0].type == ServiceTypeEnum.VALKEY
-        assert services[0].type == "valkey"
+        assert services[0].type is ServiceTypeEnum.VALKEY
+        assert services[0].type.value == "valkey"
 
         pmm_remote_api.is_older_than_v3.cache_clear()
 
