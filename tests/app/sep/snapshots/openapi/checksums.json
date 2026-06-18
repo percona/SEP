@@ -47,7 +47,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -628,7 +628,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -790,7 +790,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1099,7 +1099,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1207,7 +1207,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1260,7 +1260,7 @@
       },
       "FormSection": {
         "additionalProperties": false,
-        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:type title: NonEmptyStr\n:param description: Optional helper text rendered beneath the section\n    heading. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param fields: The list of fields belonging to this section.\n:type fields: list[AnyField]\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:type collapsible: bool\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:type collapsed_by_default: bool\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:type render_after_submit: bool\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.\n:type forbidden: list[FieldGate] | None",
+        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:type title: NonEmptyStr\n:param description: Optional helper text rendered beneath the section\n    heading. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param fields: The list of fields belonging to this section. May include\n    :class:`OneOfGroup` containers alongside leaf fields.\n:type fields: list[AnyField]\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:type collapsible: bool\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:type collapsed_by_default: bool\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:type render_after_submit: bool\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.\n:type forbidden: list[FieldGate] | None",
         "properties": {
           "cardinality_rules": {
             "anyOf": [
@@ -1359,6 +1359,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/YamlField"
+                },
+                {
+                  "$ref": "#/components/schemas/OneOfGroup"
                 }
               ]
             },
@@ -1467,7 +1470,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1575,7 +1578,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1718,7 +1721,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1757,6 +1760,175 @@
           "choices"
         ],
         "title": "MultiChoiceField",
+        "type": "object"
+      },
+      "OneOfBranch": {
+        "additionalProperties": false,
+        "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:type value: NonEmptyStr\n:param label: The human-readable label for the segmented-control option.\n:type label: NonEmptyStr\n:param fields: The leaf fields revealed when this branch is active.\n:type fields: list[LeafField]",
+        "properties": {
+          "fields": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "bool": "#/components/schemas/BoolField",
+                  "choice": "#/components/schemas/ChoiceField",
+                  "datetime": "#/components/schemas/DateTimeField",
+                  "file": "#/components/schemas/FileField",
+                  "float": "#/components/schemas/FloatField",
+                  "host": "#/components/schemas/HostField",
+                  "integer": "#/components/schemas/IntegerField",
+                  "multi_choice": "#/components/schemas/MultiChoiceField",
+                  "schema": "#/components/schemas/SchemaField",
+                  "script_preview": "#/components/schemas/ScriptPreviewField",
+                  "service": "#/components/schemas/ServiceField",
+                  "string": "#/components/schemas/StringField",
+                  "table": "#/components/schemas/TableField",
+                  "textarea": "#/components/schemas/TextAreaField",
+                  "yaml": "#/components/schemas/YamlField"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/BoolField"
+                },
+                {
+                  "$ref": "#/components/schemas/ChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/DateTimeField"
+                },
+                {
+                  "$ref": "#/components/schemas/FileField"
+                },
+                {
+                  "$ref": "#/components/schemas/FloatField"
+                },
+                {
+                  "$ref": "#/components/schemas/HostField"
+                },
+                {
+                  "$ref": "#/components/schemas/IntegerField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/SchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/ScriptPreviewField"
+                },
+                {
+                  "$ref": "#/components/schemas/ServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/StringField"
+                },
+                {
+                  "$ref": "#/components/schemas/TableField"
+                },
+                {
+                  "$ref": "#/components/schemas/TextAreaField"
+                },
+                {
+                  "$ref": "#/components/schemas/YamlField"
+                }
+              ]
+            },
+            "minItems": 1,
+            "title": "Fields",
+            "type": "array"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "fields"
+        ],
+        "title": "OneOfBranch",
+        "type": "object"
+      },
+      "OneOfGroup": {
+        "additionalProperties": false,
+        "description": "Represent a labelled either/or field group with a segmented mode switch.\n\nThe React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,\nshows :attr:`description` as helper text, and renders only the active\nbranch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden\nat validation time via rules synthesised from the group's branch contract.\n\n:param field_type: The discriminator literal; always ``\"one_of\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"one_of\"]\n:param name: Stable group identifier used as the React list key. Not a\n    separate form value — :attr:`discriminator` names the mode field.\n:type name: NonEmptyStr\n:param label: The human-readable group heading above the segmented control.\n:type label: NonEmptyStr\n:param description: Optional helper text rendered beneath the group label.\n    Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param discriminator: Dotted path to the mode field (for example,\n    ``\"source.mode\"``) whose value selects the active branch.\n:type discriminator: NonEmptyStr\n:param default: Optional default branch :attr:`~OneOfBranch.value`. Must\n    match one of the declared branches when set. Defaults to ``None``.\n:type default: NonEmptyStr | None\n:param branches: Two or more named branches, each owning its own field list.\n:type branches: list[OneOfBranch]",
+        "properties": {
+          "branches": {
+            "items": {
+              "$ref": "#/components/schemas/OneOfBranch"
+            },
+            "minItems": 2,
+            "title": "Branches",
+            "type": "array"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "discriminator": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Discriminator",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "one_of",
+            "default": "one_of",
+            "enum": [
+              "one_of"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "discriminator",
+          "branches"
+        ],
+        "title": "OneOfGroup",
         "type": "object"
       },
       "PluginEntitySchema": {
@@ -1827,7 +1999,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           }
@@ -1957,7 +2129,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2057,7 +2229,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2169,7 +2341,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2267,7 +2439,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2398,7 +2570,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2524,7 +2696,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2651,7 +2823,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2801,7 +2973,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
