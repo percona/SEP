@@ -545,8 +545,6 @@ def main() -> None:
         "Slowlog maxlength",
       ]
 
-      render_dashboard(graphs, dashboard_uid, path_to_graphs, time_from=time_from, time_to=time_to)
-
     # Valkey/Redis Cluster Summary graphs
     if args.cluster:
 
@@ -620,7 +618,7 @@ def main() -> None:
         "$node_name - known nodes",
       ]
 
-      render_dashboard(graphs, dashboard_uid, path_to_graphs, time_from=time_from, time_to=time_to)
+    render_dashboard(graphs, dashboard_uid, path_to_graphs, time_from=time_from, time_to=time_to)
 
 
   # OS Node Summary
