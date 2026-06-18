@@ -22,14 +22,30 @@ type FormValues = Record<string, unknown>;
 /**
  * Read a field by name from form values, ignoring inherited members.
  *
- * Field names come from JSON schema and are not fully trusted: a schema that
- * names a field ``constructor`` / ``toString`` / ``__proto__`` would otherwise
- * resolve via the prototype chain to truthy built-ins (e.g. the ``Object``
- * function), making gate predicates evaluate against engine internals instead
- * of user-supplied state. Always go through this helper.
+ * Supports dotted paths (for example ``source.mode``) by walking nested plain
+ * objects when no own-property exists for the full path string. Field names
+ * come from JSON schema and are not fully trusted: a schema that names a field
+ * ``constructor`` / ``toString`` / ``__proto__`` would otherwise resolve via
+ * the prototype chain to truthy built-ins (e.g. the ``Object`` function),
+ * making gate predicates evaluate against engine internals instead of
+ * user-supplied state. Always go through this helper.
  */
 function readField(values: FormValues, name: string): unknown {
-  return Object.prototype.hasOwnProperty.call(values, name) ? values[name] : undefined;
+  if (Object.prototype.hasOwnProperty.call(values, name)) {
+    return values[name];
+  }
+  if (!name.includes('.')) {
+    return undefined;
+  }
+  const segments = name.split('.');
+  let current: unknown = values;
+  for (const segment of segments) {
+    if (!isPlainObject(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

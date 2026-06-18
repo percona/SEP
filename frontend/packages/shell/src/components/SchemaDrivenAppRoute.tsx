@@ -17,6 +17,7 @@
 
 import { SchemaDrivenPlugin } from '@sep/framework';
 import { getAppRouteMeta } from '../appNavConfig';
+import { ArchiveForm } from './ArchiveForm';
 
 interface SchemaDrivenAppRouteProps {
   /** Backend plugin module key (``GET /api/apps/`` ``app_key``). */
@@ -27,9 +28,21 @@ interface SchemaDrivenAppRouteProps {
  * Generic shell route for schema-driven apps without a bespoke React package.
  *
  * ``routeBase`` comes from ``appNavConfig`` when the plugin is not mounted
- * under the default ``/plugins/{appKey}`` prefix.
+ * under the default ``/plugins/{appKey}`` prefix. Archives keeps its custom
+ * create/edit form slots here instead of a separate ``@sep/plugin-archives``
+ * package.
  */
 export function SchemaDrivenAppRoute({ appKey }: SchemaDrivenAppRouteProps) {
   const meta = getAppRouteMeta(appKey);
-  return <SchemaDrivenPlugin pluginName={appKey} routeBase={meta?.routeBase} />;
+  const archiveFormSlots =
+    appKey === 'archives'
+      ? {
+          renderCreateForm: (props) => <ArchiveForm {...props} submitLabel="Create Archives" />,
+          renderEditForm: (props) => <ArchiveForm {...props} submitLabel="Save Archives" />,
+        }
+      : {};
+
+  return (
+    <SchemaDrivenPlugin pluginName={appKey} routeBase={meta?.routeBase} {...archiveFormSlots} />
+  );
 }

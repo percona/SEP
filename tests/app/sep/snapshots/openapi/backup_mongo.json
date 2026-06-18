@@ -30,464 +30,6 @@
         "title": "BackupDerivedTaskSummary",
         "type": "object"
       },
-      "BackupTaskDetailResponse": {
-        "description": "Represent a backup task detail API response.\n\n:param derived_tasks: Latest status for each derived logical, physical, and\n    status sibling.\n:type derived_tasks: list[BackupDerivedTaskSummary]\n:param latest_pbm_status: Tail of the latest PBM status task stdout, if\n    available.\n:type latest_pbm_status: str | None",
-        "properties": {
-          "alert_on_fail": {
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum"
-          },
-          "backup_type": {
-            "title": "Backup Type",
-            "type": "string"
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "data": {
-            "title": "Data",
-            "type": "object"
-          },
-          "derived_tasks": {
-            "items": {
-              "$ref": "#/components/schemas/BackupDerivedTaskSummary"
-            },
-            "title": "Derived Tasks",
-            "type": "array"
-          },
-          "hostname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hostname"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Updated By"
-          },
-          "latest_pbm_status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Latest Pbm Status"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
-          },
-          "protected": {
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "owner",
-          "backend",
-          "backup_type",
-          "data",
-          "protected",
-          "alert_on_fail"
-        ],
-        "title": "BackupTaskDetailResponse",
-        "type": "object"
-      },
-      "BackupTaskResponse": {
-        "description": "Represent a backup task API response.\n\n:param id: The unique identifier for the backup task.\n:type id: int | None\n:param backend: The backend worker/engine executing the task.\n:type backend: TaskBackendEnum\n:param backup_type: The PBM backup type stored on the task.\n:type backup_type: str\n:param data: The raw configuration and parameters for the backup execution.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:type alert_on_fail: bool\n:param created_at: The timestamp when the task was first created.\n:type created_at: datetime | None\n:param updated_at: The timestamp of the last modification to the task.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None",
-        "properties": {
-          "alert_on_fail": {
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum"
-          },
-          "backup_type": {
-            "title": "Backup Type",
-            "type": "string"
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "data": {
-            "title": "Data",
-            "type": "object"
-          },
-          "hostname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hostname"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Updated By"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
-          },
-          "protected": {
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "owner",
-          "backend",
-          "backup_type",
-          "data",
-          "protected",
-          "alert_on_fail"
-        ],
-        "title": "BackupTaskResponse",
-        "type": "object"
-      },
-      "BackupTaskWrite": {
-        "description": "Represent a JSON request body for creating a backup task group.\n\nMirrors :class:`BackupCreate` except ``backup_type``, which is always\n``pbm_config`` on create. POST creates the parent config task plus derived\nlogical, physical, and status siblings.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the MongoDB service to connect to.\n:type service_id: int\n:param alert_on_fail: If True, send an alert if the task fails.\n:type alert_on_fail: bool\n:param pitr_oplog_span_min: PITR oplog span in minutes.\n:type pitr_oplog_span_min: int | None\n:param pitr_enabled: Whether PITR is enabled.\n:type pitr_enabled: bool\n:param pitr_compression: PITR compression algorithm.\n:type pitr_compression: str | None\n:param storage_type: Storage backend type (``s3`` or ``filesystem``).\n:type storage_type: str | None\n:param storage_s3_region: S3 region when ``storage_type`` is ``s3``.\n:type storage_s3_region: str | None\n:param storage_s3_bucket: S3 bucket when ``storage_type`` is ``s3``.\n:type storage_s3_bucket: str | None\n:param storage_s3_prefix: S3 key prefix when ``storage_type`` is ``s3``.\n:type storage_s3_prefix: str | None\n:param storage_s3_endpoint_url: S3 endpoint URL when ``storage_type`` is ``s3``.\n:type storage_s3_endpoint_url: str | None\n:param storage_filesystem_path: Filesystem path when ``storage_type`` is\n    ``filesystem``.\n:type storage_filesystem_path: str | None\n:param backup_priority: Node priority mapping as YAML.\n:type backup_priority: str | None\n:param backup_compression: Backup snapshot compression algorithm.\n:type backup_compression: CompressionAlgorithm | None\n:param backup_compression_level: Backup compression level.\n:type backup_compression_level: int | None\n:param backup_timeouts_starting_status: PBM starting-status timeout in seconds.\n:type backup_timeouts_starting_status: int | None\n:param backup_oplog_span_min: Logical backup oplog span in minutes.\n:type backup_oplog_span_min: float | None\n:param backup_num_parallel_collections: Parallel collections for logical backup.\n:type backup_num_parallel_collections: int | None\n:param credentials_path: Path to MongoDB URI credentials on the Nomad node.\n:type credentials_path: str | None",
-        "properties": {
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "backup_compression": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__models__CompressionAlgorithm"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "backup_compression_level": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Compression Level"
-          },
-          "backup_num_parallel_collections": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Num Parallel Collections"
-          },
-          "backup_oplog_span_min": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Oplog Span Min"
-          },
-          "backup_priority": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Priority"
-          },
-          "backup_timeouts_starting_status": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Timeouts Starting Status"
-          },
-          "credentials_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Credentials Path"
-          },
-          "hostname": {
-            "minLength": 1,
-            "title": "Hostname",
-            "type": "string"
-          },
-          "pitr_compression": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pitr Compression"
-          },
-          "pitr_enabled": {
-            "default": false,
-            "title": "Pitr Enabled",
-            "type": "boolean"
-          },
-          "pitr_oplog_span_min": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pitr Oplog Span Min"
-          },
-          "service_id": {
-            "title": "Service Id",
-            "type": "integer"
-          },
-          "storage_filesystem_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage Filesystem Path"
-          },
-          "storage_s3_bucket": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage S3 Bucket"
-          },
-          "storage_s3_endpoint_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage S3 Endpoint Url"
-          },
-          "storage_s3_prefix": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage S3 Prefix"
-          },
-          "storage_s3_region": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage S3 Region"
-          },
-          "storage_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage Type"
-          },
-          "task_name": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name",
-          "hostname",
-          "service_id"
-        ],
-        "title": "BackupTaskWrite",
-        "type": "object"
-      },
       "BoolField": {
         "additionalProperties": false,
         "description": "Represent a boolean toggle field.\n\n:param field_type: The discriminator literal; always ``\"bool\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"bool\"]",
@@ -534,7 +76,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -800,7 +342,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -938,7 +480,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1247,7 +789,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1355,7 +897,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1408,7 +950,7 @@
       },
       "FormSection": {
         "additionalProperties": false,
-        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:type title: NonEmptyStr\n:param description: Optional helper text rendered beneath the section\n    heading. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param fields: The list of fields belonging to this section.\n:type fields: list[AnyField]\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:type collapsible: bool\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:type collapsed_by_default: bool\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:type render_after_submit: bool\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.\n:type forbidden: list[FieldGate] | None",
+        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:type title: NonEmptyStr\n:param description: Optional helper text rendered beneath the section\n    heading. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param fields: The list of fields belonging to this section. May include\n    :class:`OneOfGroup` containers alongside leaf fields.\n:type fields: list[AnyField]\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:type collapsible: bool\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:type collapsed_by_default: bool\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:type render_after_submit: bool\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.\n:type forbidden: list[FieldGate] | None",
         "properties": {
           "cardinality_rules": {
             "anyOf": [
@@ -1507,6 +1049,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/YamlField"
+                },
+                {
+                  "$ref": "#/components/schemas/OneOfGroup"
                 }
               ]
             },
@@ -1615,7 +1160,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1723,7 +1268,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1866,7 +1411,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1907,35 +1452,173 @@
         "title": "MultiChoiceField",
         "type": "object"
       },
-      "PaginatedResponse_BackupTaskResponse_": {
+      "OneOfBranch": {
+        "additionalProperties": false,
+        "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:type value: NonEmptyStr\n:param label: The human-readable label for the segmented-control option.\n:type label: NonEmptyStr\n:param fields: The leaf fields revealed when this branch is active.\n:type fields: list[LeafField]",
         "properties": {
-          "items": {
+          "fields": {
             "items": {
-              "$ref": "#/components/schemas/BackupTaskResponse"
+              "discriminator": {
+                "mapping": {
+                  "bool": "#/components/schemas/BoolField",
+                  "choice": "#/components/schemas/ChoiceField",
+                  "datetime": "#/components/schemas/DateTimeField",
+                  "file": "#/components/schemas/FileField",
+                  "float": "#/components/schemas/FloatField",
+                  "host": "#/components/schemas/HostField",
+                  "integer": "#/components/schemas/IntegerField",
+                  "multi_choice": "#/components/schemas/MultiChoiceField",
+                  "schema": "#/components/schemas/SchemaField",
+                  "script_preview": "#/components/schemas/ScriptPreviewField",
+                  "service": "#/components/schemas/ServiceField",
+                  "string": "#/components/schemas/StringField",
+                  "table": "#/components/schemas/TableField",
+                  "textarea": "#/components/schemas/TextAreaField",
+                  "yaml": "#/components/schemas/YamlField"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/BoolField"
+                },
+                {
+                  "$ref": "#/components/schemas/ChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/DateTimeField"
+                },
+                {
+                  "$ref": "#/components/schemas/FileField"
+                },
+                {
+                  "$ref": "#/components/schemas/FloatField"
+                },
+                {
+                  "$ref": "#/components/schemas/HostField"
+                },
+                {
+                  "$ref": "#/components/schemas/IntegerField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/SchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/ScriptPreviewField"
+                },
+                {
+                  "$ref": "#/components/schemas/ServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/StringField"
+                },
+                {
+                  "$ref": "#/components/schemas/TableField"
+                },
+                {
+                  "$ref": "#/components/schemas/TextAreaField"
+                },
+                {
+                  "$ref": "#/components/schemas/YamlField"
+                }
+              ]
             },
-            "title": "Items",
+            "minItems": 1,
+            "title": "Fields",
             "type": "array"
           },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
           },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
           }
         },
         "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
+          "value",
+          "label",
+          "fields"
         ],
-        "title": "PaginatedResponse[BackupTaskResponse]",
+        "title": "OneOfBranch",
+        "type": "object"
+      },
+      "OneOfGroup": {
+        "additionalProperties": false,
+        "description": "Represent a labelled either/or field group with a segmented mode switch.\n\nThe React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,\nshows :attr:`description` as helper text, and renders only the active\nbranch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden\nat validation time via rules synthesised from the group's branch contract.\n\n:param field_type: The discriminator literal; always ``\"one_of\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"one_of\"]\n:param name: Stable group identifier used as the React list key. Not a\n    separate form value — :attr:`discriminator` names the mode field.\n:type name: NonEmptyStr\n:param label: The human-readable group heading above the segmented control.\n:type label: NonEmptyStr\n:param description: Optional helper text rendered beneath the group label.\n    Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param discriminator: Dotted path to the mode field (for example,\n    ``\"source.mode\"``) whose value selects the active branch.\n:type discriminator: NonEmptyStr\n:param default: Optional default branch :attr:`~OneOfBranch.value`. Must\n    match one of the declared branches when set. Defaults to ``None``.\n:type default: NonEmptyStr | None\n:param branches: Two or more named branches, each owning its own field list.\n:type branches: list[OneOfBranch]",
+        "properties": {
+          "branches": {
+            "items": {
+              "$ref": "#/components/schemas/OneOfBranch"
+            },
+            "minItems": 2,
+            "title": "Branches",
+            "type": "array"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "discriminator": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Discriminator",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "one_of",
+            "default": "one_of",
+            "enum": [
+              "one_of"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "discriminator",
+          "branches"
+        ],
+        "title": "OneOfGroup",
         "type": "object"
       },
       "PaginatedResponse_RestoreTaskResponse_": {
@@ -2037,7 +1720,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           }
@@ -2167,7 +1850,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2758,7 +2441,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2870,7 +2553,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2968,7 +2651,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -3099,7 +2782,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -3225,7 +2908,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -3352,7 +3035,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -3502,7 +3185,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -3564,6 +3247,37 @@
           "label"
         ],
         "title": "YamlField",
+        "type": "object"
+      },
+      "app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__models__BackupTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[BackupTaskResponse]",
         "type": "object"
       },
       "app__sep__plugins__backup_mongo__models__BackupExecuteWrite": {
@@ -3633,6 +3347,464 @@
           "task_name"
         ],
         "title": "BackupExecutionResponse",
+        "type": "object"
+      },
+      "app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse": {
+        "description": "Represent a backup task detail API response.\n\n:param derived_tasks: Latest status for each derived logical, physical, and\n    status sibling.\n:type derived_tasks: list[BackupDerivedTaskSummary]\n:param latest_pbm_status: Tail of the latest PBM status task stdout, if\n    available.\n:type latest_pbm_status: str | None",
+        "properties": {
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "backup_type": {
+            "title": "Backup Type",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "derived_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/BackupDerivedTaskSummary"
+            },
+            "title": "Derived Tasks",
+            "type": "array"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated By"
+          },
+          "latest_pbm_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Pbm Status"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/TaskOwner"
+          },
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backend",
+          "backup_type",
+          "data",
+          "protected",
+          "alert_on_fail"
+        ],
+        "title": "BackupTaskDetailResponse",
+        "type": "object"
+      },
+      "app__sep__plugins__backup_mongo__models__BackupTaskResponse": {
+        "description": "Represent a backup task API response.\n\n:param id: The unique identifier for the backup task.\n:type id: int | None\n:param backend: The backend worker/engine executing the task.\n:type backend: TaskBackendEnum\n:param backup_type: The PBM backup type stored on the task.\n:type backup_type: str\n:param data: The raw configuration and parameters for the backup execution.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:type alert_on_fail: bool\n:param created_at: The timestamp when the task was first created.\n:type created_at: datetime | None\n:param updated_at: The timestamp of the last modification to the task.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None",
+        "properties": {
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "backup_type": {
+            "title": "Backup Type",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated By"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/TaskOwner"
+          },
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backend",
+          "backup_type",
+          "data",
+          "protected",
+          "alert_on_fail"
+        ],
+        "title": "BackupTaskResponse",
+        "type": "object"
+      },
+      "app__sep__plugins__backup_mongo__models__BackupTaskWrite": {
+        "description": "Represent a JSON request body for creating a backup task group.\n\nMirrors :class:`BackupCreate` except ``backup_type``, which is always\n``pbm_config`` on create. POST creates the parent config task plus derived\nlogical, physical, and status siblings.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the MongoDB service to connect to.\n:type service_id: int\n:param alert_on_fail: If True, send an alert if the task fails.\n:type alert_on_fail: bool\n:param pitr_oplog_span_min: PITR oplog span in minutes.\n:type pitr_oplog_span_min: int | None\n:param pitr_enabled: Whether PITR is enabled.\n:type pitr_enabled: bool\n:param pitr_compression: PITR compression algorithm.\n:type pitr_compression: str | None\n:param storage_type: Storage backend type (``s3`` or ``filesystem``).\n:type storage_type: str | None\n:param storage_s3_region: S3 region when ``storage_type`` is ``s3``.\n:type storage_s3_region: str | None\n:param storage_s3_bucket: S3 bucket when ``storage_type`` is ``s3``.\n:type storage_s3_bucket: str | None\n:param storage_s3_prefix: S3 key prefix when ``storage_type`` is ``s3``.\n:type storage_s3_prefix: str | None\n:param storage_s3_endpoint_url: S3 endpoint URL when ``storage_type`` is ``s3``.\n:type storage_s3_endpoint_url: str | None\n:param storage_filesystem_path: Filesystem path when ``storage_type`` is\n    ``filesystem``.\n:type storage_filesystem_path: str | None\n:param backup_priority: Node priority mapping as YAML.\n:type backup_priority: str | None\n:param backup_compression: Backup snapshot compression algorithm.\n:type backup_compression: CompressionAlgorithm | None\n:param backup_compression_level: Backup compression level.\n:type backup_compression_level: int | None\n:param backup_timeouts_starting_status: PBM starting-status timeout in seconds.\n:type backup_timeouts_starting_status: int | None\n:param backup_oplog_span_min: Logical backup oplog span in minutes.\n:type backup_oplog_span_min: float | None\n:param backup_num_parallel_collections: Parallel collections for logical backup.\n:type backup_num_parallel_collections: int | None\n:param credentials_path: Path to MongoDB URI credentials on the Nomad node.\n:type credentials_path: str | None",
+        "properties": {
+          "alert_on_fail": {
+            "default": false,
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backup_compression": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__models__CompressionAlgorithm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "backup_compression_level": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Compression Level"
+          },
+          "backup_num_parallel_collections": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Num Parallel Collections"
+          },
+          "backup_oplog_span_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Oplog Span Min"
+          },
+          "backup_priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Priority"
+          },
+          "backup_timeouts_starting_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Timeouts Starting Status"
+          },
+          "credentials_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials Path"
+          },
+          "hostname": {
+            "minLength": 1,
+            "title": "Hostname",
+            "type": "string"
+          },
+          "pitr_compression": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pitr Compression"
+          },
+          "pitr_enabled": {
+            "default": false,
+            "title": "Pitr Enabled",
+            "type": "boolean"
+          },
+          "pitr_oplog_span_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pitr Oplog Span Min"
+          },
+          "service_id": {
+            "title": "Service Id",
+            "type": "integer"
+          },
+          "storage_filesystem_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Filesystem Path"
+          },
+          "storage_s3_bucket": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage S3 Bucket"
+          },
+          "storage_s3_endpoint_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage S3 Endpoint Url"
+          },
+          "storage_s3_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage S3 Prefix"
+          },
+          "storage_s3_region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage S3 Region"
+          },
+          "storage_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Type"
+          },
+          "task_name": {
+            "minLength": 1,
+            "title": "Task Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_name",
+          "hostname",
+          "service_id"
+        ],
+        "title": "BackupTaskWrite",
         "type": "object"
       },
       "app__sep__plugins__backup_mongo__models__BackupType": {
@@ -3713,7 +3885,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_BackupTaskResponse_"
+                  "$ref": "#/components/schemas/app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1"
                 }
               }
             },
@@ -3742,7 +3914,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BackupTaskWrite"
+                "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__models__BackupTaskWrite"
               }
             }
           },
@@ -3753,7 +3925,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BackupTaskDetailResponse"
+                  "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse"
                 }
               }
             },
@@ -4168,7 +4340,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BackupTaskDetailResponse"
+                  "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse"
                 }
               }
             },

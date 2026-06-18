@@ -28,4 +28,13 @@ export type { CardinalityViolation } from './hooks/useCardinalityRules';
 export { useFailRules } from './hooks/useFailRules';
 export type { FailViolation } from './hooks/useFailRules';
 export { buildValidationRules, coerceFormValues } from './utils/validationMapper';
+export {
+  flattenSectionFields,
+  flattenSectionItem,
+  isOneOfGroup,
+  collectOneOfGroups,
+} from './utils/flattenSectionFields';
+export { getAtPath, setAtPath } from './utils/fieldPath';
+export { OneOfGroupSlot } from './OneOfGroupSlot';
+export { ConditionalFieldSlot } from './ConditionalFieldSlot';
 export { evaluatePredicate } from './utils/predicateEvaluator';

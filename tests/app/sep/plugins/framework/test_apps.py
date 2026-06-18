@@ -29,6 +29,7 @@ import pytest
 from fastapi import APIRouter, status
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
@@ -60,7 +61,7 @@ from tests.app.sep.plugins.framework.contract_suite import build_contract_client
 from tests.app.sep.plugins.framework.contract_suite import (
     routes_of as _routes,
 )
-from tests.app.sep.plugins.framework.kit import synth_app
+from tests.app.sep.plugins.framework.kit import synth_app, synth_reject_running_task
 from tests.app.sep.plugins.framework.kit import (
     SYNTH_EXECUTOR_HOST as _EXECUTOR_HOST,
 )
@@ -232,7 +233,9 @@ class TestRouterComposition:
 
     def test_no_create_route_when_create_capability_off(self) -> None:
         """Assert ``create=False`` derives no ``POST /`` route."""
-        routes = _routes(_synth_app(capabilities=AppCapabilities(create=False)))
+        routes = _routes(
+            _synth_app(capabilities=AppCapabilities(create=False), create_extra_deps=())
+        )
 
         assert ("/", "POST") not in routes
         assert ("/{task_name}", "GET") in routes
@@ -380,6 +383,30 @@ class TestCreateRoute:
         )
         assert posted["alert_on_fail"] is True
 
+    def test_create_response_model_with_context_provider_succeeds(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a synthesized create builder tolerates an active context provider.
+
+        ``create_response_model`` synthesizes a no-extras create builder; with the
+        inherited context provider active the framework binds context into it, so it
+        must accept (and ignore) the context kwarg rather than crash on the request.
+        """
+        tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
+        client = _client(
+            _synth_app(create_response_model=_SynthResponse),
+            tasks_api,
+            regular_user,
+            inventory_api=_make_inventory_api(),
+        )
+
+        response = client.post(
+            f"{_BASE}/",
+            json={"task_name": "new-task", "service_id": 1, "host": _EXECUTOR_HOST},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+
     def test_create_422_on_invalid_body(self, regular_user: CasdoorUser) -> None:
         """Assert a body missing required fields 422s before any upstream POST."""
         tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
@@ -486,7 +513,10 @@ class TestVerbGating:
         self, regular_user: CasdoorUser
     ) -> None:
         """Assert a read-only app 404/405s create and execute but serves reads."""
-        app_def = _synth_app(capabilities=AppCapabilities(create=False, execute=False))
+        app_def = _synth_app(
+            capabilities=AppCapabilities(create=False, execute=False),
+            create_extra_deps=(),
+        )
         tasks_api = _make_tasks_api(detail_task=_task_dict("t-1"))
         client = _client(app_def, tasks_api, regular_user)
 
@@ -603,6 +633,140 @@ class TestDefinitionValidation:
                 payload_builder=_passthrough_payload_builder,
                 create_form_encoded=True,
             )
+
+    def test_service_type_filter_without_service_type_raises(self) -> None:
+        """Assert ``list_service_type_filter`` without a ``service_type`` is rejected."""
+        with pytest.raises(ValueError, match="service_type"):
+            _synth_app(service_type=None)
+
+    def test_context_provider_without_response_builder_raises(self) -> None:
+        """Assert ``response_context_provider`` without ``response_builder`` is rejected."""
+        with pytest.raises(ValueError, match="response_builder"):
+            _synth_app(response_builder=None)
+
+    def test_create_extra_deps_without_create_capability_raises(self) -> None:
+        """Assert ``create_extra_deps`` with create disabled is rejected."""
+        with pytest.raises(ValueError, match="create_extra_deps"):
+            _synth_app(capabilities=AppCapabilities(create=False))
+
+
+class _AltListResponse(BaseModel):
+    """Represent a distinct list/detail model proving the builder override is used."""
+
+    name: str
+    list_flag: bool = True
+
+
+class _AltDetailResponse(BaseModel):
+    """Represent a distinct detail model proving the detail builder override is used."""
+
+    name: str
+    detail_flag: bool = True
+
+
+def _alt_list_builder(
+    task: Task,
+    *,
+    status: object = None,
+    context: dict | None = None,
+) -> _AltListResponse:
+    """Build the alternate list/detail response, accepting a bound context."""
+    return _AltListResponse(name=task.name)
+
+
+def _alt_detail_builder(
+    task: Task,
+    *,
+    status: object = None,
+    context: dict | None = None,
+) -> _AltDetailResponse:
+    """Build the alternate detail response, accepting a bound context."""
+    return _AltDetailResponse(name=task.name)
+
+
+def _list_query_param_names(app_def: TaskExecutionApp, user: CasdoorUser) -> set[str]:
+    """Return the query-parameter names the derived list route exposes."""
+    client = _client(
+        app_def, _make_tasks_api(), user, inventory_api=_make_inventory_api()
+    )
+    operation = client.get("/openapi.json").json()["paths"][f"{_BASE}/"]["get"]
+    return {param["name"] for param in operation.get("parameters", [])}
+
+
+def _create_route(app_def: TaskExecutionApp) -> APIRoute:
+    """Return the derived ``POST /`` create route of ``app_def``."""
+    return next(
+        route
+        for route in app_def.api_router.routes
+        if isinstance(route, APIRoute) and route.path == "/" and "POST" in route.methods
+    )
+
+
+def _detail_route(app_def: TaskExecutionApp) -> APIRoute:
+    """Return the derived ``GET /{task_name}`` detail route of ``app_def``."""
+    return next(
+        route
+        for route in app_def.api_router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/{task_name}"
+        and "GET" in route.methods
+    )
+
+
+class TestResponseAndFilterKnobs:
+    """Cover the response-builder, context, list-filter, and extra-dep knobs."""
+
+    def test_status_filter_exposes_status_query_param(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``list_status_filter`` adds a ``status`` query param to the route."""
+        names = _list_query_param_names(_synth_app(), regular_user)
+
+        assert "status" in names
+
+    def test_service_type_filter_exposes_service_type_query_param(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``list_service_type_filter`` adds a ``service_type`` query param."""
+        names = _list_query_param_names(_synth_app(), regular_user)
+
+        assert "service_type" in names
+
+    def test_no_filters_exposes_no_filter_query_params(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert an app with both filters off exposes neither filter query param."""
+        app_def = _synth_app(list_status_filter=False, list_service_type_filter=False)
+
+        names = _list_query_param_names(app_def, regular_user)
+
+        assert "status" not in names
+        assert "service_type" not in names
+
+    def test_response_builder_override_drives_list_model(self) -> None:
+        """Assert a ``response_builder`` override supplies the list response model."""
+        app_def = _synth_app(response_builder=_alt_list_builder)
+        list_route = next(
+            route
+            for route in app_def.api_router.routes
+            if isinstance(route, APIRoute)
+            and route.path == "/"
+            and "GET" in route.methods
+        )
+
+        assert list_route.response_model == list[_AltListResponse]
+
+    def test_detail_response_builder_drives_detail_model(self) -> None:
+        """Assert a ``detail_response_builder`` supplies the detail response model."""
+        app_def = _synth_app(detail_response_builder=_alt_detail_builder)
+
+        assert _detail_route(app_def).response_model is _AltDetailResponse
+
+    def test_create_route_carries_extra_dep(self) -> None:
+        """Assert ``create_extra_deps`` rides the derived create route."""
+        callables = {dep.dependency for dep in _create_route(_synth_app()).dependencies}
+
+        assert synth_reject_running_task in callables
 
 
 class TestSchemaPassthrough:
