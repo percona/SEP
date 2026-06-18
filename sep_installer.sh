@@ -300,22 +300,21 @@ IP.1=127.0.0.1
 
 def strip_marker(content, marker, keep):
     lines = content.splitlines()
+    marker_count = sum(1 for line in lines if line.strip() == marker)
+    if marker_count % 2 != 0:
+        raise SystemExit(f"Unbalanced marker block: {marker}")
+
     if keep:
         return "\n".join(line for line in lines if line.strip() != marker)
 
     kept = []
     in_block = False
-    marker_count = 0
     for line in lines:
         if line.strip() == marker:
             in_block = not in_block
-            marker_count += 1
             continue
         if not in_block:
             kept.append(line)
-
-    if marker_count % 2 != 0:
-        raise SystemExit(f"Unbalanced marker block: {marker}")
 
     return "\n".join(kept)
 
