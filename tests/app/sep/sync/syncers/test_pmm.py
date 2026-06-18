@@ -16,6 +16,7 @@
 """Define tests for the app.sep.sync.syncers.pmm module."""
 
 from collections import defaultdict
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -121,9 +122,11 @@ class TestPMMRemoteAPI:
         )
 
     @pytest.fixture
-    def pmm_remote_api(self) -> PMMRemoteAPI:
-        """Return a PMMRemoteAPI instance."""
-        return PMMRemoteAPI(endpoint="http://localhost", api_key="test-key")
+    def pmm_remote_api(self) -> Iterator[PMMRemoteAPI]:
+        """Yield a PMMRemoteAPI instance, clearing its version cache on teardown."""
+        pmm_remote_api = PMMRemoteAPI(endpoint="http://localhost", api_key="test-key")
+        yield pmm_remote_api
+        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -172,8 +175,6 @@ class TestPMMRemoteAPI:
             node_id=node_id, skip_failed=True, filter_=None
         )
 
-        pmm_remote_api.is_older_than_v3.cache_clear()
-
     @pytest.mark.asyncio
     async def test_get_node_skip_failed_services_false_passes_through(
         self,
@@ -196,8 +197,6 @@ class TestPMMRemoteAPI:
         mock_get_services.assert_awaited_once_with(
             node_id=node_id, skip_failed=False, filter_=None
         )
-
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_node_with_filter_excludes_node_when_filter_returns_false(
@@ -227,7 +226,6 @@ class TestPMMRemoteAPI:
 
         assert node is None
         mock_get_services.assert_not_awaited()
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -272,8 +270,6 @@ class TestPMMRemoteAPI:
             expected_method, expected_path, **expected_kwargs
         )
 
-        pmm_remote_api.is_older_than_v3.cache_clear()
-
     @pytest.mark.asyncio
     async def test_get_service_with_filter_excludes_service_when_filter_returns_false(
         self,
@@ -302,7 +298,6 @@ class TestPMMRemoteAPI:
         )
 
         assert service is None
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -345,8 +340,6 @@ class TestPMMRemoteAPI:
             expected_method, expected_path, **expected_kwargs
         )
 
-        pmm_remote_api.is_older_than_v3.cache_clear()
-
     @pytest.mark.asyncio
     async def test_get_services_skip_failed_true_logs_and_filters(
         self, mock_request, mock_get_version, mock_logger, pmm_remote_api, mocker
@@ -381,8 +374,6 @@ class TestPMMRemoteAPI:
         assert validate.call_count == expected_service_count
         mock_logger.exception.assert_called()
 
-        pmm_remote_api.is_older_than_v3.cache_clear()
-
     @pytest.mark.asyncio
     async def test_get_services_skip_failed_false_raises(
         self, mock_request, mock_get_version, mock_logger, pmm_remote_api, mocker
@@ -414,7 +405,6 @@ class TestPMMRemoteAPI:
             await pmm_remote_api.get_services(skip_failed=False)
 
         mock_logger.exception.assert_not_called()
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_services_filters_sep_sync_disabled(
@@ -462,7 +452,6 @@ class TestPMMRemoteAPI:
         )
 
         assert {s.external_id for s in services} == {"service-2", "service-3"}
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_services_by_node_external_id(
@@ -528,8 +517,6 @@ class TestPMMRemoteAPI:
         )
         mock_get_services.assert_awaited_once_with(skip_failed=True, filter_=None)
 
-        pmm_remote_api.is_older_than_v3.cache_clear()
-
     @pytest.mark.asyncio
     async def test_get_nodes_skip_failed_true_logs_and_filters(
         self, mock_request, mock_get_version, mock_logger, pmm_remote_api, mocker
@@ -566,8 +553,6 @@ class TestPMMRemoteAPI:
         assert node_ctor.call_count == expected_node_count
         mock_logger.exception.assert_called()
 
-        pmm_remote_api.is_older_than_v3.cache_clear()
-
     @pytest.mark.asyncio
     async def test_get_nodes_skip_failed_false_raises(
         self, mock_request, mock_get_version, mock_logger, pmm_remote_api, mocker
@@ -599,7 +584,6 @@ class TestPMMRemoteAPI:
             await pmm_remote_api.get_nodes(skip_failed=False)
 
         mock_logger.exception.assert_not_called()
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_nodes_with_filter_excludes_nodes_when_filter_returns_false(
@@ -641,7 +625,6 @@ class TestPMMRemoteAPI:
         nodes = await pmm_remote_api.get_nodes(filter_=filter_exclude_disabled)
 
         assert {n.external_id for n in nodes} == {"node-2", "node-3"}
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -669,8 +652,6 @@ class TestPMMRemoteAPI:
         assert result is expected_result
         mock_get_version.assert_awaited_once()
 
-        pmm_remote_api.is_older_than_v3.cache_clear()
-
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         ("version", "default_to_v3", "expected_result", "log_arg"),
@@ -696,8 +677,6 @@ class TestPMMRemoteAPI:
         )
         assert result is expected_result
         mock_get_version.assert_awaited_once()
-
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_version(self, mock_request, pmm_remote_api):
