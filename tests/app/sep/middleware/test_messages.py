@@ -38,6 +38,9 @@ from app.sep.middleware.messages import (
 )
 from app.sep.middleware.messages.models import Message, MessageLevel
 
+# Captured at import, before any test mutates the class attribute.
+DEFAULT_MAX_COOKIE_SIZE = MessagesMiddleware.MAX_COOKIE_SIZE
+
 
 @pytest.fixture
 def app_with_middleware() -> FastAPI:
@@ -236,7 +239,9 @@ class TestMessagesMiddleware:
         one_msg_cookie = b64encode_str(
             json_serializer([one_msg.model_dump(by_alias=True)], separators=(",", ":"))
         )
-        MessagesMiddleware.MAX_COOKIE_SIZE = len(one_msg_cookie) + 5
+        monkeypatch.setattr(
+            MessagesMiddleware, "MAX_COOKIE_SIZE", len(one_msg_cookie) + 5
+        )
 
         response = test_client.get("/add-two-messages")
         new_value = response.cookies.get("messages")
@@ -244,3 +249,7 @@ class TestMessagesMiddleware:
         assert len(parsed) == 1
 
         logger_mock.debug.assert_called_with("Discarding message %s for %s", ANY, ANY)
+
+    def test_max_cookie_size_not_leaked(self):
+        """Assert the size-limit test restores MAX_COOKIE_SIZE to its default."""
+        assert MessagesMiddleware.MAX_COOKIE_SIZE == DEFAULT_MAX_COOKIE_SIZE
