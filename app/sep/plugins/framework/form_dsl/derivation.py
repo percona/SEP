@@ -374,11 +374,12 @@ def _branch_label(
 
 def _discriminator_default_value(
     field_info: FieldInfo,
+    ui: Ui,
     disc_key: str,
     members: list[type[BaseModel]],
 ) -> str | None:
     """Return the default branch value for a derived one-of group."""
-    default = _field_default(field_info)
+    default = _field_default(field_info, ui)
     if default is not None:
         disc_val = getattr(default, disc_key, None)
         if disc_val is not None:
@@ -464,7 +465,7 @@ def _derive_one_of_from_union(
         label=ui.label,
         description=ui.description,
         discriminator=f"{name}.{disc_key}",
-        default=_discriminator_default_value(field_info, disc_key, members),
+        default=_discriminator_default_value(field_info, ui, disc_key, members),
         branches=branches,
     )
 
@@ -484,7 +485,7 @@ def _derive_multi_ref_one_of(
         if ui.required is not None
         else field_info.is_required(),
         "description": ui.description,
-        "default": _field_default(field_info),
+        "default": _field_default(field_info, ui),
         "requires": _gates(metadata, Requires) or None,
         "forbidden": _gates(metadata, Forbidden) or None,
     }
