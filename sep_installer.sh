@@ -1428,13 +1428,28 @@ secrets_reusable() {
 
 load_existing_secrets_and_certs() {
     local saved_install_dir="${INSTALL_DIR}"
+    # PMM credentials are not tied to the data volumes, so explicitly provided
+    # values take precedence over the ones reused from .secrets.
+    local provided_pmm_user="${SEP_PMM_URL_AUTH_ACCOUNT_USER}"
+    local provided_pmm_pass="${SEP_PMM_URL_AUTH_ACCOUNT_PASS}"
+    local provided_pmm_token="${SEP_PMM_URL_AUTH_TOKEN:-}"
+
     set -a
     # shellcheck disable=SC1090,SC1091
     . "${INSTALL_DIR}/.secrets"
     set +a
+
     INSTALL_DIR="${saved_install_dir}"
     FINAL_INSTALL_DIR="${saved_install_dir}"
-    export INSTALL_DIR FINAL_INSTALL_DIR
+
+    if [ -n "${provided_pmm_user}" ] || [ -n "${provided_pmm_pass}" ]; then
+        SEP_PMM_URL_AUTH_ACCOUNT="${provided_pmm_user:-admin}:${provided_pmm_pass:-admin}"
+    fi
+    if [ -n "${provided_pmm_token}" ]; then
+        SEP_PMM_URL_AUTH_TOKEN="${provided_pmm_token}"
+    fi
+
+    export INSTALL_DIR FINAL_INSTALL_DIR SEP_PMM_URL_AUTH_ACCOUNT SEP_PMM_URL_AUTH_TOKEN
     cp -rf "${saved_install_dir}/certs" "${ATOMIC_DIR}/certs"
 }
 
