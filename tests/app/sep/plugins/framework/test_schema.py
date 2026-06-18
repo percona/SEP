@@ -20,6 +20,8 @@ from pydantic import ValidationError
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.schema import (
+    _declared_field_names_from_forms,
+    _iter_section_fields,
     BoolField,
     Capabilities,
     ChainedPredecessor,
@@ -40,6 +42,8 @@ from app.sep.plugins.framework.schema import (
     IntegerField,
     ListView,
     MultiChoiceField,
+    OneOfBranch,
+    OneOfGroup,
     PluginEntitySchema,
     PluginSchema,
     SchemaField,
@@ -1959,3 +1963,254 @@ class TestDetailViewReviewFixes:
             "json",
             "bash",
         }
+
+
+def _sample_one_of_group() -> OneOfGroup:
+    """Return a minimal one-of group for schema tests."""
+    return OneOfGroup(
+        name="source",
+        label="Source",
+        description="Choose how to specify source rows.",
+        discriminator="source.mode",
+        default="schema",
+        branches=[
+            OneOfBranch(
+                value="schema",
+                label="Schema & Table",
+                fields=[
+                    StringField(
+                        name="source.source_db_id",
+                        label="Source Schema",
+                    ),
+                ],
+            ),
+            OneOfBranch(
+                value="query",
+                label="Custom Query",
+                fields=[
+                    StringField(
+                        name="source.source_query",
+                        label="Source Query",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
+class TestOneOfGroup:
+    """Tests for the :class:`OneOfGroup` schema primitive."""
+
+    def test_serialises_with_type_discriminator(self) -> None:
+        """Serialise a one-of group with ``type`` as the wire discriminator key."""
+        group = _sample_one_of_group()
+        dumped = group.model_dump(mode="json", by_alias=True)
+
+        assert dumped["type"] == "one_of"
+        assert dumped["discriminator"] == "source.mode"
+        assert len(dumped["branches"]) == len(group.branches)
+        assert dumped["branches"][0]["fields"][0]["type"] == "string"
+        assert "field_type" not in dumped
+
+    def test_round_trips_through_form_section(self) -> None:
+        """Round-trip a one-of group inside a ``FormSection``."""
+        section = FormSection(
+            title="Source",
+            fields=[_sample_one_of_group()],
+        )
+        dumped = section.model_dump(mode="json", by_alias=True)
+        rehydrated = FormSection.model_validate(dumped)
+
+        field = rehydrated.fields[0]
+        assert isinstance(field, OneOfGroup)
+        assert field.branches[1].value == "query"
+
+    def test_iter_section_fields_expands_branches(self) -> None:
+        """Expand one-of branches when iterating section leaf fields."""
+        section = FormSection(title="S", fields=[_sample_one_of_group()])
+        names = [field.name for field in _iter_section_fields(section)]
+
+        assert names == ["source.source_db_id", "source.source_query"]
+
+    def test_declared_field_names_includes_discriminator(self) -> None:
+        """Include the discriminator path in declared rule-reference names."""
+        section = FormSection(title="S", fields=[_sample_one_of_group()])
+        names = _declared_field_names_from_forms([section])
+
+        assert "source.mode" in names
+        assert "source.source_db_id" in names
+        assert "source.source_query" in names
+
+    def test_allows_shared_leaf_name_across_branches(self) -> None:
+        """Permit the same leaf name in every branch of one one-of group."""
+        group = OneOfGroup(
+            name="target",
+            label="Target",
+            discriminator="target.mode",
+            branches=[
+                OneOfBranch(
+                    value="service",
+                    label="Service",
+                    fields=[
+                        ServiceField(
+                            name="target",
+                            label="Target",
+                            service_types=[ServiceTypeEnum.MYSQL],
+                        ),
+                    ],
+                ),
+                OneOfBranch(
+                    value="schema",
+                    label="Schema",
+                    fields=[
+                        SchemaField(
+                            name="target",
+                            label="Target",
+                            depends_on="service_id",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        section = FormSection(title="T", fields=[group])
+        _ = PluginEntitySchema(
+            name="e",
+            display_name="E",
+            forms=[section],
+            list_view=_minimal_list_view(),
+        )
+
+    def test_rejects_duplicate_leaf_outside_one_of_reuse(self) -> None:
+        """Reject a leaf name that collides outside one-of branch reuse."""
+        group = _sample_one_of_group()
+        with pytest.raises(ValueError, match="duplicate field name"):
+            PluginEntitySchema(
+                name="e",
+                display_name="E",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[
+                            group,
+                            StringField(
+                                name="source.source_query",
+                                label="Collision",
+                            ),
+                        ],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
+    def test_rejects_shared_branch_leaf_reused_outside_one_of(self) -> None:
+        """Reject a branch-shared leaf name when reused by another form field."""
+        group = OneOfGroup(
+            name="target",
+            label="Target",
+            discriminator="target.mode",
+            branches=[
+                OneOfBranch(
+                    value="service",
+                    label="Service",
+                    fields=[
+                        ServiceField(
+                            name="target",
+                            label="Target",
+                            service_types=[ServiceTypeEnum.MYSQL],
+                        ),
+                    ],
+                ),
+                OneOfBranch(
+                    value="schema",
+                    label="Schema",
+                    fields=[
+                        SchemaField(
+                            name="target",
+                            label="Target",
+                            depends_on="service_id",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        with pytest.raises(ValueError, match="duplicate field name"):
+            PluginEntitySchema(
+                name="e",
+                display_name="E",
+                forms=[
+                    FormSection(
+                        title="S",
+                        fields=[
+                            group,
+                            StringField(name="target", label="Collision"),
+                        ],
+                    ),
+                ],
+                list_view=_minimal_list_view(),
+            )
+
+    def test_rejects_duplicate_branch_values(self) -> None:
+        """Reject two branches that share the same ``value``."""
+        with pytest.raises(ValidationError, match="duplicate one_of branch value"):
+            OneOfGroup(
+                name="g",
+                label="G",
+                discriminator="g.mode",
+                branches=[
+                    OneOfBranch(
+                        value="a",
+                        label="A",
+                        fields=[StringField(name="a_field", label="A")],
+                    ),
+                    OneOfBranch(
+                        value="a",
+                        label="A again",
+                        fields=[StringField(name="b_field", label="B")],
+                    ),
+                ],
+            )
+
+    def test_rejects_default_not_in_branches(self) -> None:
+        """Reject a default branch value that does not match any branch."""
+        with pytest.raises(ValidationError, match="not a declared branch value"):
+            OneOfGroup(
+                name="g",
+                label="G",
+                discriminator="g.mode",
+                default="missing",
+                branches=[
+                    OneOfBranch(
+                        value="a",
+                        label="A",
+                        fields=[StringField(name="a_field", label="A")],
+                    ),
+                    OneOfBranch(
+                        value="b",
+                        label="B",
+                        fields=[StringField(name="b_field", label="B")],
+                    ),
+                ],
+            )
+
+    def test_rule_ref_validation_accepts_discriminator_path(self) -> None:
+        """Accept fail_when rules that reference a one-of discriminator path."""
+        group = _sample_one_of_group()
+        section = FormSection(
+            title="S",
+            fields=[group],
+            fail_when=[
+                FailRule(
+                    fail_when=F("source.mode") == "schema",
+                    error_fields=["source.source_db_id"],
+                )
+            ],
+        )
+        schema = PluginSchema(
+            name="p",
+            display_name="P",
+            task_type="t",
+            forms=[section],
+            list_view=_minimal_list_view(),
+            detail_view=_minimal_detail_view(),
+        )
+        assert schema.forms[0].fields[0].name == "source"

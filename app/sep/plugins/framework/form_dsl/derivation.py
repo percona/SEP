@@ -30,6 +30,7 @@ from types import UnionType
 from typing import Any, get_args, get_origin, Literal, TYPE_CHECKING, Union
 
 import annotated_types
+from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
@@ -62,6 +63,8 @@ from app.sep.plugins.framework.schema import (
     IntegerField,
     ListView,
     MultiChoiceField,
+    OneOfBranch,
+    OneOfGroup,
     PluginSchema,
     SchemaField,
     ServiceField,
@@ -83,6 +86,13 @@ __all__ = [
 ]
 
 _REF_TYPES = (ServiceRef, SchemaRef, TableRef, HostRef)
+_REF_BRANCH_META: dict[type, tuple[str, str]] = {
+    ServiceRef: ("service", "Service"),
+    SchemaRef: ("schema", "Schema"),
+    TableRef: ("table", "Table"),
+    HostRef: ("host", "Host"),
+}
+_MIN_ONE_OF_BRANCHES = 2
 _NONE_TYPE = type(None)
 _SIMPLE_SCALAR_FIELDS: dict[type, type[BaseField]] = {
     bool: BoolField,
@@ -100,7 +110,7 @@ class _FieldSpec:
     :param index: The declaration index, used as a stable tiebreaker.
     """
 
-    base_field: BaseField
+    base_field: BaseField | OneOfGroup
     section: str
     order: int
     index: int
@@ -324,6 +334,208 @@ def _build_ref_field(ref: Any, ui: Ui, common: dict[str, Any]) -> BaseField:
     return HostField(**common, allow_custom=allow_custom)
 
 
+def _union_model_members(annotation: Any) -> list[type[BaseModel]]:
+    """Return the ``BaseModel`` members of a discriminated union annotation."""
+    current = _strip_annotated(annotation)
+    if get_origin(current) not in (Union, UnionType):
+        return []
+    members: list[type[BaseModel]] = []
+    for member_arg in get_args(current):
+        member = _strip_annotated(member_arg)
+        if member is _NONE_TYPE:
+            continue
+        if isinstance(member, type) and issubclass(member, BaseModel):
+            members.append(member)
+    return members
+
+
+def _literal_single_value(annotation: Any) -> str | None:
+    """Return the sole ``Literal`` value when ``annotation`` is a one-value literal."""
+    ann = _strip_annotated(annotation)
+    if not _is_literal(ann):
+        return None
+    args = get_args(ann)
+    return str(args[0]) if len(args) == 1 else None
+
+
+def _branch_label(
+    member_model: type[BaseModel], disc_key: str, branch_value: str
+) -> str:
+    """Return the segmented-control label for one union branch."""
+    disc_info = member_model.model_fields.get(disc_key)
+    if disc_info is not None:
+        choices = _find_marker(list(disc_info.metadata), (Choices,))
+        if choices is not None:
+            for value, label in choices.options:
+                if str(value) == branch_value:
+                    return label
+    return branch_value.replace("_", " ").title()
+
+
+def _discriminator_default_value(
+    field_info: FieldInfo,
+    ui: Ui,
+    disc_key: str,
+    members: list[type[BaseModel]],
+) -> str | None:
+    """Return the default branch value for a derived one-of group."""
+    default = _field_default(field_info, ui)
+    if default is not None:
+        disc_val = getattr(default, disc_key, None)
+        if disc_val is not None:
+            return str(disc_val)
+    for member in members:
+        disc_info = member.model_fields.get(disc_key)
+        if disc_info is None:
+            continue
+        value = _literal_single_value(disc_info.annotation)
+        if value is not None:
+            return value
+    return None
+
+
+def _derive_branch_leaves(
+    member_model: type[BaseModel],
+    prefix: str,
+    disc_key: str,
+) -> list[BaseField]:
+    """Derive prefixed leaf fields for one union branch model."""
+    leaves: list[BaseField] = []
+    for leaf_name, leaf_info in member_model.model_fields.items():
+        if leaf_name == disc_key:
+            continue
+        wire_name = f"{prefix}.{leaf_name}"
+        leaf_metadata = list(leaf_info.metadata)
+        leaf_ui = _find_marker(leaf_metadata, (Ui,))
+        if leaf_ui is None:
+            raise ValueError(
+                f"field {wire_name!r} is missing a Ui(...) marker; every branch "
+                "model field must declare Ui(label=..., section=...)"
+            )
+        leaves.append(_build_base_field(wire_name, leaf_info, leaf_ui, leaf_metadata))
+    if not leaves:
+        raise ValueError(
+            f"one_of branch model {member_model.__name__!r} has no derivable leaf "
+            f"fields besides discriminator {disc_key!r}"
+        )
+    return leaves
+
+
+def _derive_one_of_from_union(
+    name: str,
+    field_info: FieldInfo,
+    ui: Ui,
+) -> OneOfGroup:
+    """Derive a :class:`OneOfGroup` from a nested discriminated union field."""
+    disc_key = field_info.discriminator
+    if not disc_key:
+        raise ValueError(f"field {name!r} has no discriminator key")
+    members = _union_model_members(field_info.annotation)
+    if len(members) < _MIN_ONE_OF_BRANCHES:
+        raise ValueError(
+            f"field {name!r} declares a discriminated union with {len(members)} "
+            "branch model(s); one_of requires at least two branches"
+        )
+    branches: list[OneOfBranch] = []
+    for member in members:
+        disc_info = member.model_fields.get(disc_key)
+        if disc_info is None:
+            raise ValueError(
+                f"one_of branch model {member.__name__!r} is missing discriminator "
+                f"field {disc_key!r}"
+            )
+        branch_value = _literal_single_value(disc_info.annotation)
+        if branch_value is None:
+            default = disc_info.get_default(call_default_factory=False)
+            branch_value = str(default) if default is not PydanticUndefined else None
+        if branch_value is None:
+            raise ValueError(
+                f"one_of branch model {member.__name__!r} discriminator {disc_key!r} "
+                "must be a single-value Literal or carry a default"
+            )
+        branches.append(
+            OneOfBranch(
+                value=branch_value,
+                label=_branch_label(member, disc_key, branch_value),
+                fields=_derive_branch_leaves(member, name, disc_key),
+            )
+        )
+    return OneOfGroup(
+        name=name,
+        label=ui.label,
+        description=ui.description,
+        discriminator=f"{name}.{disc_key}",
+        default=_discriminator_default_value(field_info, ui, disc_key, members),
+        branches=branches,
+    )
+
+
+def _derive_multi_ref_one_of(
+    name: str,
+    ref_markers: list[Any],
+    field_info: FieldInfo,
+    ui: Ui,
+    metadata: list[Any],
+) -> OneOfGroup:
+    """Derive a :class:`OneOfGroup` when multiple reference markers share one field."""
+    common = {
+        "name": name,
+        "label": ui.label,
+        "required": ui.required
+        if ui.required is not None
+        else field_info.is_required(),
+        "description": ui.description,
+        "default": _field_default(field_info, ui),
+        "requires": _gates(metadata, Requires) or None,
+        "forbidden": _gates(metadata, Forbidden) or None,
+    }
+    branches: list[OneOfBranch] = []
+    for ref in ref_markers:
+        ref_type = type(ref)
+        branch_meta = _REF_BRANCH_META.get(ref_type)
+        if branch_meta is None:
+            raise ValueError(
+                f"field {name!r} declares unsupported reference marker "
+                f"{ref_type.__name__}"
+            )
+        value, branch_label = branch_meta
+        if ref.allow_custom and not _annotation_accepts_str(field_info.annotation):
+            raise ValueError(
+                f"field {name!r} sets allow_custom=True but its annotation does not "
+                "accept str; widen it to include str (e.g. int | str) so the model "
+                "accepts the free-typed value the schema advertises"
+            )
+        branches.append(
+            OneOfBranch(
+                value=value,
+                label=branch_label,
+                fields=[_build_ref_field(ref, ui, common)],
+            )
+        )
+    return OneOfGroup(
+        name=name,
+        label=ui.label,
+        description=ui.description,
+        discriminator=f"{name}_mode",
+        default=branches[0].value,
+        branches=branches,
+    )
+
+
+def _derive_section_field(
+    name: str, field_info: FieldInfo, ui: Ui, metadata: list[Any]
+) -> BaseField | OneOfGroup:
+    """Return the schema section item derived from one model field."""
+    if field_info.discriminator is not None:
+        return _derive_one_of_from_union(name, field_info, ui)
+
+    ref_markers = [item for item in metadata if isinstance(item, _REF_TYPES)]
+    if len(ref_markers) > 1:
+        return _derive_multi_ref_one_of(name, ref_markers, field_info, ui, metadata)
+
+    return _build_base_field(name, field_info, ui, metadata)
+
+
 def _build_base_field(
     name: str, field_info: FieldInfo, ui: Ui, metadata: list[Any]
 ) -> BaseField:
@@ -350,12 +562,6 @@ def _build_base_field(
     }
 
     ref_markers = [item for item in metadata if isinstance(item, _REF_TYPES)]
-    if len(ref_markers) > 1:
-        raise ValueError(
-            f"field {name!r} declares {len(ref_markers)} reference markers; "
-            "discriminated-union (one-of) reference groups are deferred to FE-4 "
-            "and are not derived here — declare a single reference per field"
-        )
     if ref_markers:
         ref = ref_markers[0]
         if ref.allow_custom and not _annotation_accepts_str(field_info.annotation):
@@ -446,15 +652,24 @@ def _derive_field_specs(model: type["AppFormModel"]) -> list[_FieldSpec]:
     applies: it is omitted from the derived schema (the framework renders it from a
     capability instead) and so needs no ``Ui`` presentation metadata.
     """
+    consumed_mode_fields: set[str] = set()
+    for name, field_info in model.model_fields.items():
+        metadata = list(field_info.metadata)
+        ref_markers = [item for item in metadata if isinstance(item, _REF_TYPES)]
+        if len(ref_markers) > 1:
+            consumed_mode_fields.add(f"{name}_mode")
+
     specs = []
     for index, (name, field_info) in enumerate(model.model_fields.items()):
+        if name in consumed_mode_fields:
+            continue
         metadata = list(field_info.metadata)
         if _find_marker(metadata, (Hidden,)) is not None:
             continue
         ui = _field_ui(name, metadata)
         specs.append(
             _FieldSpec(
-                base_field=_build_base_field(name, field_info, ui, metadata),
+                base_field=_derive_section_field(name, field_info, ui, metadata),
                 section=ui.section,
                 order=ui.order,
                 index=index,
@@ -463,23 +678,36 @@ def _derive_field_specs(model: type["AppFormModel"]) -> list[_FieldSpec]:
     return specs
 
 
-def _gate_only_fields(model: type["AppFormModel"]) -> list[BaseField]:
-    """Return one minimal field per model field, carrying only name and gates.
+def _runtime_form_fields(model: type["AppFormModel"]) -> list[BaseField | OneOfGroup]:
+    """Return runtime rule-plan fields, using one-of groups where required.
 
-    The runtime rule plan needs only field names and their ``requires`` /
-    ``forbidden`` gates, not full type inference. Building gate-only fields keeps
-    rule-plan extraction at class definition cheap and independent of field-kind
-    inference, so a field-kind error (an unresolvable choice, a duplicate
-    reference marker) surfaces at :func:`derive_form_sections` time rather than
-    on class definition.
-
-    :param model: The create model whose fields to project.
-    :return: One :class:`~app.sep.plugins.framework.schema.StringField` per model
-        field, carrying its name and any field gates.
+    Gate-only :class:`StringField` projections are enough for ordinary leaves.
+    Discriminated unions and multi-reference fields must surface as
+    :class:`OneOfGroup` containers so branch-selection rules are synthesised.
     """
-    fields = []
+    consumed_mode_fields: set[str] = set()
     for name, field_info in model.model_fields.items():
         metadata = list(field_info.metadata)
+        ref_markers = [item for item in metadata if isinstance(item, _REF_TYPES)]
+        if len(ref_markers) > 1:
+            consumed_mode_fields.add(f"{name}_mode")
+
+    fields: list[BaseField | OneOfGroup] = []
+    for name, field_info in model.model_fields.items():
+        if name in consumed_mode_fields:
+            continue
+        metadata = list(field_info.metadata)
+        if field_info.discriminator is not None:
+            ui = _field_ui(name, metadata)
+            fields.append(_derive_one_of_from_union(name, field_info, ui))
+            continue
+        ref_markers = [item for item in metadata if isinstance(item, _REF_TYPES)]
+        if len(ref_markers) > 1:
+            ui = _field_ui(name, metadata)
+            fields.append(
+                _derive_multi_ref_one_of(name, ref_markers, field_info, ui, metadata)
+            )
+            continue
         fields.append(
             StringField(
                 name=name,
@@ -608,9 +836,9 @@ def build_runtime_schema(model: type["AppFormModel"]) -> PluginSchema:
     only to the wire layout (which :func:`derive_form_sections` handles).
 
     :param model: The create model carrying the field markers and rules.
-    :return: A schema whose single form section holds every gate-only field.
+    :return: A schema whose single form section holds runtime rule-plan fields.
     """
-    fields = _gate_only_fields(model)
+    fields = _runtime_form_fields(model)
     rules = getattr(model, "__form_rules__", FormRules())
     fail_when = list(rules.fail_when)
     cardinality = list(rules.cardinality_rules)

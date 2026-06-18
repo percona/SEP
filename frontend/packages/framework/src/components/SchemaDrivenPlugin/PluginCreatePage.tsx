@@ -23,7 +23,7 @@ import IconButton from '@mui/material/IconButton';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
 import { useCreatePluginEntity, useCreatePluginTask, type PluginSchema } from '@sep/api';
-import { SchemaFormRenderer, coerceFormValues } from '../SchemaFormRenderer';
+import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
 import type { RenderFormSlot } from './types';
 
@@ -71,22 +71,16 @@ export function PluginCreatePage({
     // form (bypassing SchemaFormRenderer's internal coercion) still send a
     // backend-ready payload. Idempotent for the default SchemaFormRenderer
     // path, which has already coerced.
-    create.mutate(
-      coerceFormValues(
-        data,
-        sections.flatMap((s) => s.fields),
-      ),
-      {
-        onSuccess: () => {
-          enqueueSnackbar(`${title} created`, { variant: 'success' });
-          navigate('..', { relative: 'path' });
-        },
-        onError: (error: unknown) => {
-          const message = error instanceof Error ? error.message : 'Failed to create';
-          enqueueSnackbar(message, { variant: 'error' });
-        },
+    create.mutate(coerceFormValues(data, flattenSectionFields(sections)), {
+      onSuccess: () => {
+        enqueueSnackbar(`${title} created`, { variant: 'success' });
+        navigate('..', { relative: 'path' });
       },
-    );
+      onError: (error: unknown) => {
+        const message = error instanceof Error ? error.message : 'Failed to create';
+        enqueueSnackbar(message, { variant: 'error' });
+      },
+    });
   };
 
   return (
