@@ -60,6 +60,9 @@ export type RenderFieldOverride = (args: RenderFieldArgs) => ReactNode;
 export type {
   PluginSchema,
   PluginField,
+  SectionField,
+  OneOfBranch,
+  OneOfGroup,
   FormSection,
   StringField,
   IntegerField,
