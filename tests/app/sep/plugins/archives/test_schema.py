@@ -311,6 +311,15 @@ class TestArchivesSchemaFailRules:
         gates = [g.when.to_dict() for g in section.forbidden]
         assert {"truthy": "delete_data"} in gates
 
+    @pytest.mark.parametrize("section_title", ["Destination", "Destination Host"])
+    def test_destination_sections_forbidden_gate_in_wire_schema(
+        self, section_title: str
+    ):
+        """Preserve delete_data section forbidden gates in wire schema payload."""
+        wire_schema = archives_schema.model_dump(by_alias=True, exclude_none=True)
+        section = next(s for s in wire_schema["forms"] if s["title"] == section_title)
+        assert {"when": {"truthy": "delete_data"}} in section["forbidden"]
+
     def test_dest_required_fail_rule_present(self):
         """FailRule fires when no dest and not SWAP_DROP and not delete_data."""
         all_fail_rules = []
