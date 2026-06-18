@@ -273,7 +273,7 @@ fi
 if [[ ${REDISMODE} -eq 1 ]]; then
     DBCLI=redis-cli
     DBSERVER=redis-server
-    DBMODE=redos
+    DBMODE=redis
 else
     DBCLI=valkey-cli
     DBSERVER=valkey-server

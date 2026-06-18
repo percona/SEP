@@ -101,6 +101,8 @@
 #     arg_format: "--cluster"
 # ---
 
+from __future__ import annotations
+
 import argparse
 import datetime
 import json
@@ -190,7 +192,7 @@ class CollectPmmError(Exception):
 #
 # Base Functions
 #
-def get_graph_window(startstr: str, endstr: str) -> list:
+def get_graph_window(startstr: str | None, endstr: str | None) -> tuple[datetime.datetime, datetime.datetime]:
 
   # Defaults to 24hrs ago
   end = datetime.datetime.now(tz=datetime.timezone.utc)
@@ -341,7 +343,7 @@ def render_graphs(graphs: list[str], dashboard_params: dict[str, str], path_to_g
     print(json.dumps(p))
     raise
 
-def get_dashboard(uid: str) -> str:
+def get_dashboard(uid: str) -> dict:
 
   # https://10.0.1.38/graph/d/node-instance-summary/node-summary?from=now-12h&to=now...
   #                           ^------- uid -------^ ^-- slug --^
