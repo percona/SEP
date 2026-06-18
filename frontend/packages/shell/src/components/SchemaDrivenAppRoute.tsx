@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { SchemaDrivenPlugin } from '@sep/framework';
+import { SchemaDrivenPlugin, type RenderFormSlot } from '@sep/framework';
 import { getAppRouteMeta } from '../appNavConfig';
 import { ArchiveForm } from './ArchiveForm';
 
@@ -34,15 +34,21 @@ interface SchemaDrivenAppRouteProps {
  */
 export function SchemaDrivenAppRoute({ appKey }: SchemaDrivenAppRouteProps) {
   const meta = getAppRouteMeta(appKey);
-  const archiveFormSlots =
+  const renderCreateForm: RenderFormSlot | undefined =
     appKey === 'archives'
-      ? {
-          renderCreateForm: (props) => <ArchiveForm {...props} submitLabel="Create Archives" />,
-          renderEditForm: (props) => <ArchiveForm {...props} submitLabel="Save Archives" />,
-        }
-      : {};
+      ? (props) => <ArchiveForm {...props} submitLabel="Create Archives" />
+      : undefined;
+  const renderEditForm: RenderFormSlot | undefined =
+    appKey === 'archives'
+      ? (props) => <ArchiveForm {...props} submitLabel="Save Archives" />
+      : undefined;
 
   return (
-    <SchemaDrivenPlugin pluginName={appKey} routeBase={meta?.routeBase} {...archiveFormSlots} />
+    <SchemaDrivenPlugin
+      pluginName={appKey}
+      routeBase={meta?.routeBase}
+      renderCreateForm={renderCreateForm}
+      renderEditForm={renderEditForm}
+    />
   );
 }
