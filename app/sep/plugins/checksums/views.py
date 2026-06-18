@@ -15,11 +15,12 @@
 
 """Define the presentation bundle for the Checksums app.
 
-The form section layout, list columns, detail layout, and UI capability flags
-are not derivable from :class:`~app.sep.plugins.checksums.models.ChecksumsForm`,
-so they live here and feed the derived ``GET /schema``. Section titles/order,
-column set, detail fields, and capabilities are carried over verbatim from the
-previous hand-written ``PluginSchema`` so the schema wire format is unchanged.
+Section *membership* is already declared on
+:class:`~app.sep.plugins.checksums.models.ChecksumsForm` via ``Ui(section=...)``;
+what lives here is the part the model cannot express: the section order and
+titles, the list columns, the detail layout, and the UI capability flags. These
+feed the derived ``GET /schema`` and are carried over verbatim from the previous
+hand-written ``PluginSchema`` so the schema wire format is unchanged.
 """
 
 from app.sep.plugins.framework.apps import Views
