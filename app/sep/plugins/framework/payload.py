@@ -389,7 +389,7 @@ def build_command_args(form: AppFormModel) -> list[str]:
     value_args = []
     flag_args = []
     for name, field_info in type(form).model_fields.items():
-        marker = _find_arg_format(name, list(field_info.metadata))
+        marker = _find_arg_format(name, field_info.metadata)
         if marker is None:
             continue
         value = getattr(form, name)
@@ -419,7 +419,7 @@ def validate_arg_formats(model: type[AppFormModel]) -> None:
         or when a flag template is declared on a non-``bool`` field.
     """
     for name, field_info in model.model_fields.items():
-        marker = _find_arg_format(name, list(field_info.metadata))
+        marker = _find_arg_format(name, field_info.metadata)
         if marker is None:
             continue
         identifiers = set(Template(marker.template).get_identifiers())

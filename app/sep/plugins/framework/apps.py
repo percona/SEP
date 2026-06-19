@@ -491,11 +491,11 @@ class TaskExecutionApp(BaseApp):
     def _validate_view_columns(self) -> None:
         """Reject a ``list_view`` column key that is not a response-model field.
 
-        Enforce at construction so a column typo fails fast rather than rendering a
-        blank column at runtime. Skip ``schema=`` passthrough apps (no
-        ``create_model``) and model-first apps that declare no ``list_view``;
-        detail-view ``data.*`` paths stay free-form and are checked by the
-        conformance suite instead.
+        Enforce at construction — collecting every unknown column and raising once —
+        so a column typo is rejected up front rather than rendering a blank column at
+        runtime. Skip ``schema=`` passthrough apps (no ``create_model``) and
+        model-first apps that declare no ``list_view``; detail-view ``data.*`` paths
+        stay free-form and are checked by the conformance suite instead.
 
         :raises ValueError: When a ``views.list_view`` column ``key`` is not a field
             on ``response_model``.
