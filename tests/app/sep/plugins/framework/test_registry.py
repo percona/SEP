@@ -43,35 +43,31 @@ class TestLegacyWrapping:
 
     def test_legacy_plugin_wrapped_with_metadata(self) -> None:
         """A plugin with no ``app`` export is wrapped from its settings entry."""
-        registry = build_app_registry(
-            [Plugin(name="Checksums", module_name="checksums")]
-        )
-        app = registry.get("checksums")
+        registry = build_app_registry([Plugin(name="Snippets", module_name="snippets")])
+        app = registry.get("snippets")
         assert app is not None
-        assert app.name == "Checksums"
-        assert app.uri_path == "/checksums"
-        assert app.css_class == "checksums"
+        assert app.name == "Snippets"
+        assert app.uri_path == "/snippets"
+        assert app.css_class == "snippets"
         assert app.sidebar is True
         assert app.custom_ui is False
         assert app.app_schema is None
 
     def test_legacy_plugin_resolves_both_routers(self) -> None:
         """The synthesized app carries the resolved Jinja and API routers."""
-        registry = build_app_registry(
-            [Plugin(name="Checksums", module_name="checksums")]
-        )
-        app = registry.get("checksums")
+        registry = build_app_registry([Plugin(name="Snippets", module_name="snippets")])
+        app = registry.get("snippets")
         assert isinstance(app.jinja_router, APIRouter)
         assert isinstance(app.api_router, APIRouter)
 
     def test_module_name_only_derives_metadata(self) -> None:
         """A MODULE_NAME-only entry derives name/uri/css/display from the key."""
-        registry = build_app_registry([Plugin(module_name="checksums")])
-        app = registry.get("checksums")
-        assert app.name == "checksums"
-        assert app.uri_path == "/checksums"
-        assert app.css_class == "checksums"
-        assert app.display_name == "checksums"
+        registry = build_app_registry([Plugin(module_name="snippets")])
+        app = registry.get("snippets")
+        assert app.name == "snippets"
+        assert app.uri_path == "/snippets"
+        assert app.css_class == "snippets"
+        assert app.display_name == "snippets"
 
     def test_api_router_is_none_when_opted_out(self) -> None:
         """A plugin opting out of the API mount carries ``api_router is None``."""
@@ -87,22 +83,22 @@ class TestFailFast:
     def test_non_router_attribute_raises_type_error(self) -> None:
         """An ``api_router_path`` resolving to a non-``APIRouter`` raises ``TypeError``."""
         plugin = Plugin(
-            name="Checksums",
-            module_name="checksums",
+            name="Snippets",
+            module_name="snippets",
             api_router_path="app.sep.config.Plugin",
         )
-        with pytest.raises(TypeError, match="checksums"):
+        with pytest.raises(TypeError, match="snippets"):
             build_app_registry([plugin])
 
     def test_empty_string_api_router_path_is_no_mount(self) -> None:
         """An empty-string ``api_router_path`` yields ``api_router is None``."""
         plugin = Plugin.model_construct(
             name="Ghost",
-            module_name="app.sep.plugins.checksums",
+            module_name="app.sep.plugins.snippets",
             api_router_path="",
         )
         registry = build_app_registry([plugin])
-        assert registry.get("checksums").api_router is None
+        assert registry.get("snippets").api_router is None
 
 
 class TestOrderAndLookup:

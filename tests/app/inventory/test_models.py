@@ -128,4 +128,5 @@ class TestServiceTypeEnum:
             "proxysql",
             "haproxy",
             "external",
+            "valkey",
         }
