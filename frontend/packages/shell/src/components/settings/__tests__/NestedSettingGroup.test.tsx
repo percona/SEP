@@ -138,9 +138,11 @@ describe('NestedSettingGroup', () => {
     render(<NestedSettingGroup node={tree[0] as GroupNode} />, { wrapper: makeWrapper() });
 
     await user.click(screen.getByRole('button', { name: 'SECURITY_HEADERS nested settings' }));
-    // The inner submodel renders as its own expandable subgroup.
+    // The inner submodel renders as its own expandable subgroup. The testid is
+    // built from the segment chain joined on `.` (not `__`) so distinct chains
+    // can never collide.
     const inner = screen.getByTestId(
-      'nested-setting-group-SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY',
+      'nested-setting-group-SECURITY_HEADERS.STRICT_TRANSPORT_SECURITY',
     );
     expect(inner).toBeInTheDocument();
     await user.click(

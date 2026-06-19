@@ -110,10 +110,28 @@ export interface GroupNode {
   segment: string;
   /** The `__`-joined prefix down to and including this node (e.g. `A__B`). */
   keyPrefix: string;
+  /**
+   * The canonical segment chain down to and including this node (e.g.
+   * `['A', 'B']`). This is the node's true identity: unlike `keyPrefix`, two
+   * distinct chains can never share one `keyPath`, so it is the safe basis for
+   * a stable, unambiguous key / `data-testid`.
+   */
+  keyPath: string[];
   children: SettingNode[];
 }
 
 export type SettingNode = LeafNode | GroupNode;
+
+/**
+ * A collision-free identity string for a group node, for use as a React `key`
+ * or `data-testid`. Segments are canonical attribute names (which cannot
+ * contain `.`), so joining on `.` can never alias the way the `__`-joined
+ * `keyPrefix` can (e.g. `['A__B']` and `['A', 'B']` share a `keyPrefix` but not
+ * a `keyPath`).
+ */
+export function groupNodeId(node: GroupNode): string {
+  return node.keyPath.join('.');
+}
 
 /**
  * Build the parent -> child render tree for one settings class from its flat
@@ -159,7 +177,13 @@ export function buildSettingTree(settings: SettingResponse[]): SettingNode[] {
       const identity = JSON.stringify(prefixParts);
       let group = groupsByPrefix.get(identity);
       if (!group) {
-        group = { kind: 'group', segment, keyPrefix: prefixParts.join('__'), children: [] };
+        group = {
+          kind: 'group',
+          segment,
+          keyPrefix: prefixParts.join('__'),
+          keyPath: [...prefixParts],
+          children: [],
+        };
         groupsByPrefix.set(identity, group);
         siblings.push(group);
       }
@@ -171,7 +195,8 @@ export function buildSettingTree(settings: SettingResponse[]): SettingNode[] {
   return roots;
 }
 
-/** Count the editable leaves reachable under a node (for a parent summary). */
+/** Count the leaves reachable under a node (for a parent summary). A leaf is
+ * not necessarily editable; a NOT_OVERRIDABLE leaf still counts. */
 export function countLeaves(node: SettingNode): number {
   if (node.kind === 'leaf') {
     return 1;

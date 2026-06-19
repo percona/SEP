@@ -26,7 +26,7 @@ import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 import SettingRow from './SettingRow';
-import { type GroupNode, countLeaves, countOverriddenLeaves } from './settingField';
+import { type GroupNode, countLeaves, countOverriddenLeaves, groupNodeId } from './settingField';
 
 export interface NestedSettingGroupProps {
   node: GroupNode;
@@ -67,7 +67,7 @@ export default function NestedSettingGroup({
       expanded={expanded}
       onChange={(_event, isExpanded) => setExpanded(isExpanded)}
       disableGutters
-      data-testid={`nested-setting-group-${node.keyPrefix}`}
+      data-testid={`nested-setting-group-${groupNodeId(node)}`}
       sx={{ boxShadow: 'none', '&:before': { display: 'none' } }}
     >
       <AccordionSummary
@@ -90,7 +90,7 @@ export default function NestedSettingGroup({
         {node.children.map((child) =>
           child.kind === 'group' ? (
             <NestedSettingGroup
-              key={`group:${child.keyPrefix}`}
+              key={`group:${groupNodeId(child)}`}
               node={child}
               searchActive={searchActive}
             />

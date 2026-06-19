@@ -26,7 +26,7 @@ import type { SettingResponse } from '@sep/api';
 
 import SettingRow from './SettingRow';
 import NestedSettingGroup from './NestedSettingGroup';
-import { buildSettingTree } from './settingField';
+import { buildSettingTree, groupNodeId } from './settingField';
 
 export interface SettingsGroupProps {
   settingClass: string;
@@ -58,7 +58,7 @@ export default function SettingsGroup({
         {tree.map((node) =>
           node.kind === 'group' ? (
             <NestedSettingGroup
-              key={`group:${node.keyPrefix}`}
+              key={`group:${groupNodeId(node)}`}
               node={node}
               searchActive={searchActive}
             />

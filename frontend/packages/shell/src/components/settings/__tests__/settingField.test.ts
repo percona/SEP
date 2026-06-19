@@ -21,6 +21,7 @@ import {
   buildSettingTree,
   countLeaves,
   countOverriddenLeaves,
+  groupNodeId,
   formatSettingValue,
   getFieldKind,
   isEditable,
@@ -199,6 +200,10 @@ describe('buildSettingTree', () => {
     expect(tree).toHaveLength(2);
     expect((tree[0] as GroupNode).segment).toBe('A__B');
     expect((tree[1] as GroupNode).segment).toBe('A');
+    // Their keyPrefix collides, but their identity (keyPath) does not.
+    expect((tree[0] as GroupNode).keyPrefix).toBe('A__B');
+    expect((tree[1] as GroupNode).keyPath).toEqual(['A']);
+    expect(groupNodeId(tree[0] as GroupNode)).not.toBe(groupNodeId(tree[1] as GroupNode));
   });
 
   it('clamps anything deeper than two levels onto the level-two group', () => {
