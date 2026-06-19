@@ -172,6 +172,32 @@ class TestListAggregation:
         assert classes[-1] == SettingClassEnum.TASKS_SETTINGS.value
         mock_tasks.get.assert_awaited_once_with(f"{REMOTE_BASE}/")
 
+    def test_list_emits_is_advanced_for_sep_settings(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """The SEP group flags advanced settings (incl. every SESSION leaf) and only those."""
+        mock_tasks.get.return_value = _tasks_list()
+        response = admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        sep_group = next(
+            g
+            for g in response.json()["groups"]
+            if g["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+        )
+        advanced = {s["key"]: s["is_advanced"] for s in sep_group["settings"]}
+        # Top-level advanced settings.
+        assert advanced["INVENTORY_ENDPOINT"] is True
+        assert advanced["TASKS_ENDPOINT"] is True
+        assert advanced["FOOTER_TEMPLATE"] is True
+        # Every expanded SESSION / SESSION_REFRESH leaf inherits the flag.
+        session_leaves = [
+            k for k in advanced if k.startswith(("SESSION__", "SESSION_REFRESH__"))
+        ]
+        assert session_leaves  # the parents expand into leaves, not a single entry
+        assert all(advanced[k] is True for k in session_leaves)
+        # A basic setting stays False.
+        assert advanced["SYNC_REFRESH_TIME"] is False
+
     def test_empty_tasks_group_still_renders(
         self, admin_client: TestClient, mock_tasks: AsyncMock
     ) -> None:
@@ -249,6 +275,21 @@ class TestDispatch:
         mock_tasks.get.assert_awaited_once_with(
             f"{REMOTE_BASE}/TasksSettings/{TASKS_KEY}"
         )
+
+    def test_detail_defaults_is_advanced_when_upstream_omits(
+        self, admin_client: TestClient, mock_tasks: AsyncMock
+    ) -> None:
+        """An upstream payload without ``is_advanced`` validates and defaults to False.
+
+        Guards the additive contract: a Tasks app that predates the field still
+        proxies cleanly rather than 500ing on a missing key.
+        """
+        mock_tasks.get.return_value = _tasks_setting()
+        response = admin_client.get(
+            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["is_advanced"] is False
 
     def test_patch_dispatches_to_proxy(
         self, admin_client: TestClient, mock_tasks: AsyncMock
