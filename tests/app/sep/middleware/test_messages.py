@@ -219,28 +219,38 @@ class TestMessagesMiddleware:
         self, app_with_middleware, test_client, monkeypatch, mocker
     ):
         """Assert middleware pops messages to satisfy the cookie size limit."""
-        monkeypatch.setattr(
-            "app.sep.middleware.messages._middleware.crypto_serializer.dumps",
-            b64encode_str,
-        )
-        logger_mock = mocker.patch("app.sep.middleware.messages._middleware.logger")
+        default_max_cookie_size = MessagesMiddleware.MAX_COOKIE_SIZE
+        with monkeypatch.context() as context:
+            context.setattr(
+                "app.sep.middleware.messages._middleware.crypto_serializer.dumps",
+                b64encode_str,
+            )
+            logger_mock = mocker.patch("app.sep.middleware.messages._middleware.logger")
 
-        @app_with_middleware.get("/add-two-messages")
-        async def add_two_messages(request: Request):
-            """Add two messages to the request state."""
-            add_message(request, MessageLevel.INFO, "A")
-            add_message(request, MessageLevel.INFO, "B")
-            return JSONResponse({"detail": "Two messages added"})
+            @app_with_middleware.get("/add-two-messages")
+            async def add_two_messages(request: Request):
+                """Add two messages to the request state."""
+                add_message(request, MessageLevel.INFO, "A")
+                add_message(request, MessageLevel.INFO, "B")
+                return JSONResponse({"detail": "Two messages added"})
 
-        one_msg = Message(level=MessageLevel.INFO, text="A")
-        one_msg_cookie = b64encode_str(
-            json_serializer([one_msg.model_dump(by_alias=True)], separators=(",", ":"))
-        )
-        MessagesMiddleware.MAX_COOKIE_SIZE = len(one_msg_cookie) + 5
+            one_msg = Message(level=MessageLevel.INFO, text="A")
+            one_msg_cookie = b64encode_str(
+                json_serializer(
+                    [one_msg.model_dump(by_alias=True)], separators=(",", ":")
+                )
+            )
+            context.setattr(
+                MessagesMiddleware, "MAX_COOKIE_SIZE", len(one_msg_cookie) + 5
+            )
 
-        response = test_client.get("/add-two-messages")
-        new_value = response.cookies.get("messages")
-        parsed = json.loads(b64decode(new_value))
-        assert len(parsed) == 1
+            response = test_client.get("/add-two-messages")
+            new_value = response.cookies.get("messages")
+            parsed = json.loads(b64decode(new_value))
+            assert len(parsed) == 1
 
-        logger_mock.debug.assert_called_with("Discarding message %s for %s", ANY, ANY)
+            logger_mock.debug.assert_called_with(
+                "Discarding message %s for %s", ANY, ANY
+            )
+
+        assert default_max_cookie_size == MessagesMiddleware.MAX_COOKIE_SIZE
