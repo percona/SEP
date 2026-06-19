@@ -90,9 +90,10 @@ async def build_owner_alert_details(
 
     Look up the builder registered for the task's owner and delegate to it.
     Return ``None`` for any owner without a builder, leaving the generic alert
-    path unchanged. A builder that cannot be imported is swallowed (logged) so a
-    missing or misconfigured plugin can never prevent the failure alert itself
-    from firing.
+    path unchanged. A builder that cannot be imported -- or that raises while
+    running -- is swallowed (logged) so a missing, misconfigured, or buggy
+    plugin can never prevent the failure alert itself from firing. This hook is
+    best-effort enrichment; the base alert always takes priority.
 
     :param history: The failed task execution history.
     :return: The owner-specific alert additions, or ``None``.
@@ -108,4 +109,8 @@ async def build_owner_alert_details(
             logger.exception("Failed to resolve alert detail builder %r.", path)
             return None
         _RESOLVED[path] = builder
-    return await builder(history)
+    try:
+        return await builder(history)
+    except Exception:
+        logger.exception("Alert detail builder %r raised; skipping enrichment.", path)
+        return None

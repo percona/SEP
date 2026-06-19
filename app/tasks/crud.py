@@ -726,9 +726,11 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         """Return a task history's newest ``STDERR`` chunk contents, newest-first.
 
         Generic tail accessor: returns up to ``limit`` STDERR chunk contents
-        ordered newest-first by insertion id (the true cross-source
-        chronological order). Callers reconstruct chronological order by
-        reversing and joining. STDOUT chunks are ignored.
+        ordered newest-first by insertion id (``TaskHistoryLog.id``, i.e. DB
+        row-insertion order -- a stable proxy for arrival order, not a guarantee
+        about the chronology of the underlying log content across sources or
+        streams). Callers reconstruct insertion order by reversing and joining.
+        STDOUT chunks are ignored.
 
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.

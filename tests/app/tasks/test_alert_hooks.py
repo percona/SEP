@@ -66,3 +66,23 @@ class TestBuildOwnerAlertDetails:
         mocker.patch.dict(alert_hooks._RESOLVED, {}, clear=True)
 
         assert await build_owner_alert_details(_history("BROKEN")) is None
+
+    @pytest.mark.asyncio
+    async def test_swallows_builder_runtime_error(self, mocker):
+        """Return ``None`` (logged) when a resolved builder raises at runtime."""
+
+        async def _raising_builder(history):
+            raise RuntimeError("boom")
+
+        mocker.patch.dict(
+            alert_hooks.ALERT_DETAIL_BUILDERS,
+            {"BUGGY": "some.module:raising"},
+            clear=False,
+        )
+        mocker.patch.dict(
+            alert_hooks._RESOLVED,
+            {"some.module:raising": _raising_builder},
+            clear=False,
+        )
+
+        assert await build_owner_alert_details(_history("BUGGY")) is None
