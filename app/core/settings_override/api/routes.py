@@ -328,6 +328,7 @@ def _settings_response_from_field(
         is_secret=field_meta.is_secret,
         is_complex=field_meta.is_complex,
         has_override=has_override,
+        is_advanced=field_meta.is_advanced,
     )
 
 

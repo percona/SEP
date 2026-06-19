@@ -29,9 +29,11 @@ from app.core.settings_override.api.routes import (
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
+    chain_has_advanced,
     coerce_field_value,
     dump_field_value,
     hot_field,
+    is_advanced_field,
     iter_class_fields,
     iter_nested_leaf_keys,
     nested_overridable_field,
@@ -233,6 +235,95 @@ def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
     assert response.value == "**********"
     assert response.is_secret is True
     assert response.key_path == ["GROUP", "TOKEN"]
+
+
+class _DeepLeafModel(BaseModel):
+    """Innermost submodel, two levels under a nested-overridable parent."""
+
+    DEEP: int = 1
+
+
+class _AdvancedLeafModel(BaseModel):
+    """Submodel exposing both a deep submodel and a flat leaf."""
+
+    INNER: _DeepLeafModel = _DeepLeafModel()
+    FLAT: str = "flat"
+
+
+class _AdvancedFixtureSettings(BaseYamlSettings):
+    """Synthetic settings class exercising the ``advanced`` flag end-to-end."""
+
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["ADV"]
+
+    PLAIN: int = hot_field(1)
+    MARKED: int = hot_field(2, advanced=True)
+    ADV_PARENT: _AdvancedLeafModel = nested_overridable_field(
+        _AdvancedLeafModel(), advanced=True
+    )
+    BASIC_PARENT: _AdvancedLeafModel = nested_overridable_field(_AdvancedLeafModel())
+
+
+def test_is_advanced_field_false_for_unmarked() -> None:
+    """A field without an ``advanced`` marker reads ``False``."""
+    field = _AdvancedFixtureSettings.model_fields["PLAIN"]
+    assert is_advanced_field(field) is False
+
+
+def test_is_advanced_field_true_for_marked() -> None:
+    """A field declared ``advanced=True`` reads ``True``."""
+    field = _AdvancedFixtureSettings.model_fields["MARKED"]
+    assert is_advanced_field(field) is True
+
+
+def test_iter_class_fields_unmarked_field_not_advanced() -> None:
+    """An unmarked field surfaces ``is_advanced=False`` (backward-compatible default)."""
+    metas = {meta.key: meta for meta in iter_class_fields(_AdvancedFixtureSettings)}
+    assert metas["PLAIN"].is_advanced is False
+
+
+def test_iter_class_fields_marks_top_level_advanced() -> None:
+    """A top-level ``advanced=True`` field surfaces ``is_advanced=True``."""
+    metas = {meta.key: meta for meta in iter_class_fields(_AdvancedFixtureSettings)}
+    assert metas["MARKED"].is_advanced is True
+
+
+def test_nested_leaf_inherits_advanced_from_parent() -> None:
+    """A leaf two levels under an advanced parent inherits ``is_advanced=True``.
+
+    Neither ``INNER`` nor ``DEEP`` is marked; only the top-level ``ADV_PARENT``
+    carries the flag, so the chain walk is what propagates it to the leaf.
+    """
+    leaf_meta = resolve_nested_field_metadata(
+        _AdvancedFixtureSettings, "ADV_PARENT__INNER__DEEP"
+    )
+    assert leaf_meta is not None
+    assert leaf_meta.is_advanced is True
+
+
+def test_nested_leaf_under_basic_parent_not_advanced() -> None:
+    """A sibling leaf under an unmarked parent stays ``is_advanced=False``."""
+    leaf_meta = resolve_nested_field_metadata(
+        _AdvancedFixtureSettings, "BASIC_PARENT__FLAT"
+    )
+    assert leaf_meta is not None
+    assert leaf_meta.is_advanced is False
+
+
+def test_chain_has_advanced_true_for_advanced_ancestor() -> None:
+    """``chain_has_advanced`` reports ``True`` when an ancestor is marked advanced."""
+    assert (
+        chain_has_advanced(_AdvancedFixtureSettings, "ADV_PARENT__INNER__DEEP") is True
+    )
+
+
+def test_chain_has_advanced_false_for_unmarked_chain() -> None:
+    """``chain_has_advanced`` reports ``False`` when no segment is advanced."""
+    assert chain_has_advanced(_AdvancedFixtureSettings, "BASIC_PARENT__FLAT") is False
+
+
+def test_chain_has_advanced_false_for_unresolvable_key() -> None:
+    """An unresolvable key reports ``False`` rather than raising."""
+    assert chain_has_advanced(_AdvancedFixtureSettings, "NOPE__NOPE") is False
 
 
 def test_remote_wiring_requires_dep_when_remote_classes_present() -> None:
