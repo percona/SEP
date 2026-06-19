@@ -15,7 +15,8 @@
 
 """Tests for the shared JSON-API list-pipeline framework helpers."""
 
-from unittest.mock import AsyncMock
+from collections import defaultdict
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import BaseModel, ConfigDict
@@ -23,11 +24,13 @@ from pydantic import BaseModel, ConfigDict
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.requests import RemoteAPI
 from app.sep.plugins.framework import (
+    BaseTaskResponse,
     build_default_task_response,
     build_task_list_responses,
     ConnectivityWarning,
     derive_create_response_model,
 )
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner
 from tests.app.factories import TaskFactory
 
@@ -434,3 +437,61 @@ class TestDeriveCreateResponseModel:
 
         assert field.annotation == (ConnectivityWarning | None)
         assert field.is_required() is False
+
+
+class TestBaseTaskResponse:
+    """Test suite for the shared ``BaseTaskResponse`` model."""
+
+    BASE_FIELDS: dict = {
+        "name": "test-task",
+        "owner": TaskOwner.CHECKSUMS,
+        "backend": "nomad",
+        "data": {},
+        "protected": False,
+        "alert_on_fail": False,
+    }
+
+    def test_explicit_mask_returns_sorted_entity_names(self) -> None:
+        """Decode an explicit ``anonymize_mask`` to a sorted list of entity names."""
+        mask = int(PIIEntity.IP_ADDRESS | PIIEntity.PERSON)
+
+        response = BaseTaskResponse.model_validate(
+            {**self.BASE_FIELDS, "anonymize_mask": mask}
+        )
+
+        assert response.anonymized_entities == ["IP_ADDRESS", "PERSON"]
+
+    def test_zero_mask_returns_empty_list(self) -> None:
+        """Decode ``anonymize_mask=0`` to an empty list (no entities set)."""
+        response = BaseTaskResponse.model_validate(
+            {**self.BASE_FIELDS, "anonymize_mask": 0}
+        )
+
+        assert response.anonymized_entities == []
+
+    def test_none_mask_falls_back_to_owner_defaults(self) -> None:
+        """Fall back to ``DEFAULT_ENTITIES[owner]`` when ``anonymize_mask`` is ``None``."""
+        default_entities = {PIIEntity.EMAIL_ADDRESS}
+        mock_defaults = defaultdict(lambda: default_entities)
+        fields = {**self.BASE_FIELDS, "anonymize_mask": None}
+
+        with patch(
+            "app.sep.plugins.framework.responses.anonymizer_settings"
+        ) as mock_settings:
+            mock_settings.DEFAULT_ENTITIES = mock_defaults
+            response = BaseTaskResponse.model_validate(fields)
+            result = response.anonymized_entities
+
+        assert result == ["EMAIL_ADDRESS"]
+
+    def test_round_trips_task_dump_with_connectivity_warning_default_none(self) -> None:
+        """Build from a task dump, defaulting ``connectivity_warning`` to ``None``."""
+        task = TaskFactory.build(name="task-a", owner=TaskOwner.CHECKSUMS)
+
+        result = build_default_task_response(
+            BaseTaskResponse, task, TaskHistoryStatusEnum.SUCCESS
+        )
+
+        assert result.name == "task-a"
+        assert result.status == TaskHistoryStatusEnum.SUCCESS
+        assert result.connectivity_warning is None

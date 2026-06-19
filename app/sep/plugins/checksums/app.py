@@ -31,50 +31,12 @@ from fastapi import Depends
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import get_username_mapping, HasNoConflictedRunningTasks
 from app.sep.plugins.checksums.deps import get_unprotected_checksums_task
-from app.sep.plugins.checksums.models import (
-    ChecksumExecuteWrite,
-    ChecksumExecutionResponse,
-    ChecksumsForm,
-    ChecksumTaskResponse,
-)
+from app.sep.plugins.checksums.models import ChecksumsForm
 from app.sep.plugins.checksums.payload import build_checksums_spec
 from app.sep.plugins.checksums.routes import router as jinja_router
 from app.sep.plugins.checksums.views import checksums_views
-from app.sep.plugins.framework import build_default_task_response
 from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner
-
-
-def build_checksums_response(
-    task: Task,
-    *,
-    status: TaskHistoryStatusEnum | None = None,
-    context: dict[str, str] | None = None,
-) -> ChecksumTaskResponse:
-    """Build a checksum task response, injecting the service type and usernames.
-
-    Wired as both the list/detail ``response_builder`` and the create/update
-    ``create_response_builder``. The ``connectivity_warning`` is left at its model
-    default here and merged by the framework on the create/update routes, so
-    list/detail responses carry ``None`` exactly as before.
-
-    :param task: The checksum task to render.
-    :param status: The latest known execution status.
-    :param context: The bound user-id-to-username map, or ``None`` when unbound.
-    :return: The checksum task API response.
-    """
-    mapping = context or {}
-    return build_default_task_response(
-        ChecksumTaskResponse,
-        task,
-        status,
-        extras={
-            "created_by": mapping.get(task.created_by, task.created_by),
-            "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
-            "service_type": ServiceTypeEnum.MYSQL,
-        },
-    )
-
+from app.tasks.models import TaskOwner
 
 app = TaskExecutionApp(
     name="checksums",
@@ -83,7 +45,6 @@ app = TaskExecutionApp(
     description="Run pt-table-checksum to verify MySQL replication consistency.",
     owner=TaskOwner.CHECKSUMS,
     create_model=ChecksumsForm,
-    response_model=ChecksumTaskResponse,
     views=checksums_views,
     task_spec_builder=build_checksums_spec,
     capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),
@@ -91,11 +52,7 @@ app = TaskExecutionApp(
     list_status_filter=True,
     list_service_type_filter=True,
     connectivity_check=True,
-    response_builder=build_checksums_response,
-    create_response_builder=build_checksums_response,
     response_context_provider=get_username_mapping,
-    execute_write_model=ChecksumExecuteWrite,
-    execute_response_model=ChecksumExecutionResponse,
     update_guard=(Depends(get_unprotected_checksums_task), HasNoConflictedRunningTasks),
     jinja_router=jinja_router,
 )
