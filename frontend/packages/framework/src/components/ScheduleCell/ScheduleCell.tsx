@@ -88,7 +88,7 @@ export function ScheduleCell({ task, isLoading = false }: ScheduleCellProps) {
           —
         </Typography>
       )}
-      <Tooltip title={period.display}>
+      <Tooltip title={period.tooltip ? `${period.display} (${period.tooltip})` : period.display}>
         <RepeatIcon
           fontSize="inherit"
           aria-label={`Recurs ${period.display}`}

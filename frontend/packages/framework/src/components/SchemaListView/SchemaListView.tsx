@@ -221,8 +221,13 @@ function SchemaListViewCore({
             enableSorting: col.sortable ?? false,
             Cell: ({ row }) => {
               const name = row.original.name;
+              // Trim to match how the detail summary derives its lookup key
+              // (PluginDetailPage trims `task.name`), so the list cell and the
+              // summary join to the same schedule even with stray whitespace.
               const matched =
-                name === undefined || name === null ? undefined : scheduleByTask.get(String(name));
+                name === undefined || name === null
+                  ? undefined
+                  : scheduleByTask.get(String(name).trim());
               return <ScheduleCell task={matched} isLoading={scheduleLoading} />;
             },
           };
