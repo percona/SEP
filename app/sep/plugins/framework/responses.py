@@ -129,9 +129,15 @@ class TaskExecutionResponse(BaseModel):
 class TaskResponseBuilder(Protocol[R]):
     """Build a JSON-API response model from a task and its latest status.
 
-    The list pipeline always invokes the builder as
+    This is the minimum builder contract. The pipeline invokes the builder as
     ``response_builder(task, status=...)``, so every per-plugin builder whose
     ``status`` is positional-or-keyword or keyword-only is a structural subtype.
+    When a context provider is configured the pipeline additionally binds its
+    once-awaited result as a ``context`` keyword (via :func:`functools.partial`),
+    so a context-aware builder declares an extra keyword-only ``context`` (or
+    ``**kwargs``). That keyword is intentionally left out of this protocol so a
+    contextless builder stays a valid subtype; the route-derivation layer rejects
+    a builder paired with a context provider that cannot accept ``context``.
     """
 
     def __call__(self, task: Task, *, status: TaskHistoryStatusEnum | None = None) -> R:
