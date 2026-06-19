@@ -739,7 +739,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
 
         A single-chunk read is insufficient: the last error block can straddle a
         chunk boundary, leaving the newest chunk without the ``ERROR`` marker and
-        yielding a placeholder downstream (SEP-1340 AC #2).
+        yielding a placeholder downstream.
 
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
@@ -757,8 +757,8 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             .order_by(col(TaskHistoryLog.id).desc())
             .limit(TAIL_SCAN_MAX_CHUNKS)
         )
-        result = await session.exec(query)
-        parts: list[str] = []
+        result = await cls._exec(session, query)
+        parts = []
         total_bytes = 0
         marker_seen = False
         marker_overlap = len(STDERR_ERROR_MARKER) - 1

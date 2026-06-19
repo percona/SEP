@@ -67,8 +67,14 @@ _KV_SECRET_RE = re.compile(
 #: longer token (e.g. ``...,p=`` matches, ``help=`` does not).
 _DSN_PASSWORD_RE = re.compile(r"(?<![A-Za-z0-9_])(?P<key>p)=(?P<val>[^,\s\"']+)")
 
-#: CLI password flags: ``--password=val``, ``--password val``, ``-pVAL``.
-_CLI_PASSWORD_RE = re.compile(r"(?i)(?P<flag>--password(?:[=\s])|-p)(?P<val>[^\s\"']+)")
+#: CLI password flags: ``--password=val``, ``--password val``, ``-pVAL``. The
+#: ``-p`` short flag is anchored to an argument boundary (look-behind) and
+#: case-sensitive so it masks only a real ``mysql -pSECRET`` token, not the
+#: ``-p`` inside ``--purge``/``--progress``/``--output-path`` nor the ``-P``
+#: (port) flag. ``--password`` stays case-insensitive.
+_CLI_PASSWORD_RE = re.compile(
+    r"(?P<flag>(?i:--password)(?:[=\s])|(?<![\w./-])-p(?=\S))(?P<val>[^\s\"']+)"
+)
 
 
 def redact_secrets(text: str) -> str:
@@ -91,7 +97,7 @@ def redact_secrets(text: str) -> str:
     return _CLI_PASSWORD_RE.sub(rf"\g<flag>{_REDACTION_MASK}", text)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ArchiverPurgeFields:
     """Hold the archiver fields extracted from a ``PURGE_LIST`` entry.
 
@@ -287,7 +293,7 @@ def build_archiver_description(
     return anonymize_text(redact_secrets(block), entities)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class OwnerAlertDetails:
     """Hold the owner-specific additions to a task failure alert.
 

@@ -1231,10 +1231,10 @@ class TestTaskHistoryLogManagerLastErrorLog:
     ) -> None:
         """Scan back past the final chunk so a straddling ERROR block survives.
 
-        Regression for SEP-1340: the last error block can straddle a chunk
-        boundary, with the ``ERROR`` marker in an earlier chunk and only the
-        trailing continuation lines in the newest chunk. Reading just the newest
-        chunk would drop the marker and yield a placeholder downstream.
+        The last error block can straddle a chunk boundary, with the ``ERROR``
+        marker in an earlier chunk and only the trailing continuation lines in
+        the newest chunk. Reading just the newest chunk would drop the marker
+        and yield a placeholder downstream.
         """
         task = await _create_task(session)
         history = await _seed_task_history(session, task, "node-a")
@@ -1256,10 +1256,10 @@ class TestTaskHistoryLogManagerLastErrorLog:
     ) -> None:
         """Detect an ERROR marker split across the chunk boundary.
 
-        Regression for SEP-1340: the ``ERROR`` token itself can land half in one
-        chunk and half in the next (``"...ER" | "ROR: ..."``). The reverse scan
-        bridges adjacent chunks with a short prefix so the split marker is still
-        recognized and the full block is returned (not a placeholder downstream).
+        The ``ERROR`` token itself can land half in one chunk and half in the
+        next (``"...ER" | "ROR: ..."``). The reverse scan bridges adjacent
+        chunks with a short prefix so the split marker is still recognized and
+        the full block is returned (not a placeholder downstream).
         """
         task = await _create_task(session)
         history = await _seed_task_history(session, task, "node-a")
@@ -1291,7 +1291,7 @@ class TestTaskHistoryLogManagerLastErrorLog:
 
     @pytest.mark.asyncio
     async def test_ignores_stdout_chunks(self, session: AsyncSession) -> None:
-        """Only STDERR chunks are considered; STDOUT is ignored."""
+        """Consider only STDERR chunks; ignore STDOUT."""
         task = await _create_task(session)
         history = await _seed_task_history(session, task, "node-a")
         await _seed_chunk(session, history.id, payload=b"stdout only")

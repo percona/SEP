@@ -689,7 +689,7 @@ class TestTaskHistory:
     async def test_alert_for_status_failed_archiver(
         self, execution_request: TaskExecutionRequest, mocker
     ) -> None:
-        """Archiver failure: summary uses source node, custom_details attached."""
+        """Use the source node in the summary and attach custom_details on failure."""
         history = TaskHistory(
             id=1075,
             task_id=1,
@@ -705,13 +705,13 @@ class TestTaskHistory:
         with patch.object(AlertService, "trigger", mock_trigger):
             await history.alert_for_status()
             alert_data = mock_trigger.call_args[0][0]
-            # AC #1: source node in the summary, not the executor target.
+            # Source node in the summary, not the executor target.
             assert "mvc-lab2-db1" in alert_data["summary"]
             assert "failed" in alert_data["summary"]
-            # AC #1: dedup_key and source stay keyed on the executor target.
+            # dedup_key and source stay keyed on the executor target.
             assert alert_data["dedup_key"] == "task:test-task:node-1"
             assert alert_data["source"] == "test-task:1075:node-1"
-            # AC #2: combined detail block carried in custom_details.
+            # Combined detail block carried in custom_details.
             desc = alert_data["custom_details"]["description"]
             assert "=== ERROR DETAILS ===" in desc
             assert "Purge Failed" in desc
@@ -723,7 +723,7 @@ class TestTaskHistory:
     async def test_alert_for_status_failed_archiver_pmm_node_name_fallback(
         self, execution_request: TaskExecutionRequest, mocker
     ) -> None:
-        """Without ``_pmm_node_name`` the summary falls back to the target."""
+        """Fall back to the target in the summary without ``_pmm_node_name``."""
         history = TaskHistory(
             id=1075,
             task_id=1,
@@ -746,7 +746,7 @@ class TestTaskHistory:
     async def test_alert_for_status_failed_archiver_empty_trace_placeholder(
         self, execution_request: TaskExecutionRequest, mocker
     ) -> None:
-        """A missing STDERR trace yields the placeholder, never an empty block."""
+        """Render the placeholder for a missing STDERR trace, never an empty block."""
         from app.tasks.alerts import ARCHIVER_TRACE_PLACEHOLDER
 
         history = TaskHistory(
@@ -770,7 +770,7 @@ class TestTaskHistory:
     async def test_alert_for_status_failed_non_archiver_unchanged(
         self, task_instance: Task, execution_request: TaskExecutionRequest, mocker
     ) -> None:
-        """Non-archiver failures get no custom_details and keep the target summary."""
+        """Give non-archiver failures no custom_details and keep the target summary."""
         read_spy = mocker.patch(
             "app.tasks.alerts._read_last_stderr", new=AsyncMock(return_value="x")
         )
@@ -793,7 +793,7 @@ class TestTaskHistory:
     async def test_alert_for_status_lost_archiver_unchanged(
         self, execution_request: TaskExecutionRequest, mocker
     ) -> None:
-        """Archiver LOST is unchanged: no custom_details, no source-node summary."""
+        """Leave Archiver LOST unchanged: no custom_details, no source-node summary."""
         read_spy = mocker.patch(
             "app.tasks.alerts._read_last_stderr", new=AsyncMock(return_value="x")
         )
@@ -820,8 +820,8 @@ class TestTaskHistory:
     ) -> None:
         """Describe the failed execution's config, not a later-edited task.
 
-        Regression for SEP-1340: ``task.data["meta"]`` is mutable after dispatch,
-        while ``execution_request.meta`` is the snapshot captured at dispatch. The
+        ``task.data["meta"]`` is mutable after dispatch, while
+        ``execution_request.meta`` is the snapshot captured at dispatch. The
         failure alert must reflect the snapshot (source node + config).
         """
         snapshot_request = TaskExecutionRequest(

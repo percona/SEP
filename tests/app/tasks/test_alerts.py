@@ -67,19 +67,19 @@ class TestParseArchiverPurgeConfig:
         assert fields.target == "sbtest_archived.sbtest2"
 
     def test_target_dest_db_falls_back_to_source_db(self):
-        """Target uses SOURCE_DB when DEST_DB is absent."""
+        """Use SOURCE_DB for the target when DEST_DB is absent."""
         fields = parse_archiver_purge_config(_config_yaml(DEST_DB=None))
         assert fields.target == "sbtest.sbtest2"
 
     def test_target_dest_file_when_no_dest_table(self):
-        """Target is the destination file path when no destination table is set."""
+        """Use the destination file path as target when no destination table is set."""
         fields = parse_archiver_purge_config(
             _config_yaml(DEST_TABLE=None, DEST_DB=None, DEST_FILE="/backups/out.csv")
         )
         assert fields.target == "/backups/out.csv"
 
     def test_only_first_purge_list_entry_used(self):
-        """Only the first PURGE_LIST entry contributes fields."""
+        """Use only the first PURGE_LIST entry's fields."""
         cfg = yaml.dump(
             {
                 "PURGE_LIST": [
@@ -92,7 +92,7 @@ class TestParseArchiverPurgeConfig:
         assert fields.source == "db1.t1"
 
     def test_missing_individual_fields_yield_none(self):
-        """Absent source/condition/target fields parse to None (not a crash)."""
+        """Parse absent source/condition/target fields to None (not a crash)."""
         cfg = yaml.dump({"PURGE_LIST": [{"SWAP_DROP": 0}]})
         fields = parse_archiver_purge_config(cfg)
         assert fields is not None
@@ -101,23 +101,23 @@ class TestParseArchiverPurgeConfig:
         assert fields.target is None
 
     def test_none_config_returns_none(self):
-        """A ``None`` config string returns None."""
+        """Return None for a ``None`` config string."""
         assert parse_archiver_purge_config(None) is None
 
     def test_invalid_yaml_returns_none(self):
-        """Unparseable YAML returns None instead of raising."""
+        """Return None for unparseable YAML instead of raising."""
         assert parse_archiver_purge_config("::: not yaml :::\n- [") is None
 
     def test_empty_purge_list_returns_none(self):
-        """An empty PURGE_LIST returns None."""
+        """Return None for an empty PURGE_LIST."""
         assert parse_archiver_purge_config(yaml.dump({"PURGE_LIST": []})) is None
 
     def test_missing_purge_list_returns_none(self):
-        """A config without PURGE_LIST returns None."""
+        """Return None for a config without PURGE_LIST."""
         assert parse_archiver_purge_config(yaml.dump({"ALL": {}})) is None
 
     def test_scalar_config_returns_none(self):
-        """A scalar (non-mapping) config returns None."""
+        """Return None for a scalar (non-mapping) config."""
         assert parse_archiver_purge_config("just a string") is None
 
 
@@ -142,21 +142,21 @@ class TestExtractLastErrorTrace:
         assert "first error" not in trace
 
     def test_no_error_marker_returns_placeholder(self):
-        """STDERR with no ERROR marker yields the placeholder."""
+        """Return the placeholder for STDERR with no ERROR marker."""
         assert extract_last_error_trace("just some info\nmore info") == (
             ARCHIVER_TRACE_PLACEHOLDER
         )
 
     def test_none_returns_placeholder(self):
-        """A ``None`` stderr yields the placeholder."""
+        """Return the placeholder for a ``None`` stderr."""
         assert extract_last_error_trace(None) == ARCHIVER_TRACE_PLACEHOLDER
 
     def test_empty_returns_placeholder(self):
-        """Empty/whitespace stderr yields the placeholder."""
+        """Return the placeholder for empty/whitespace stderr."""
         assert extract_last_error_trace("   \n  ") == ARCHIVER_TRACE_PLACEHOLDER
 
     def test_caps_at_max_trace_bytes(self):
-        """An oversized trace is capped to MAX_TRACE_BYTES, keeping the tail."""
+        """Cap an oversized trace to MAX_TRACE_BYTES, keeping the tail."""
         big = "ERROR: " + ("x" * (MAX_TRACE_BYTES * 2)) + "\nERROR: tail marker"
         trace = extract_last_error_trace(big)
         assert len(trace.encode()) <= MAX_TRACE_BYTES
@@ -178,7 +178,7 @@ class TestBuildArchiverDescription:
         assert "Target: sbtest_archived.sbtest2" in desc
 
     def test_all_four_labels_present_when_fields_none(self):
-        """All labels render with placeholders when config is unavailable."""
+        """Render all labels with placeholders when config is unavailable."""
         desc = build_archiver_description(None, "boom trace", set())
         assert "boom trace" in desc
         assert f"Source: {ARCHIVER_FIELD_PLACEHOLDER}" in desc
@@ -186,20 +186,20 @@ class TestBuildArchiverDescription:
         assert f"Target: {ARCHIVER_FIELD_PLACEHOLDER}" in desc
 
     def test_missing_field_renders_placeholder(self):
-        """A single missing config field renders the placeholder for that line."""
+        """Render the placeholder for a single missing config field's line."""
         fields = parse_archiver_purge_config(_config_yaml(WHERE=None))
         desc = build_archiver_description(fields, "boom", set())
         assert f"Condition: {ARCHIVER_FIELD_PLACEHOLDER}" in desc
         assert "Source: sbtest.sbtest2" in desc
 
     def test_empty_entities_passes_through_unscrubbed(self):
-        """An empty entity set leaves the description text unchanged."""
+        """Leave the description text unchanged for an empty entity set."""
         fields = parse_archiver_purge_config(_config_yaml(WHERE="email = 'a@b.com'"))
         desc = build_archiver_description(fields, "boom", set())
         assert "email = 'a@b.com'" in desc
 
     def test_anonymizes_assembled_block(self, mocker):
-        """The assembled block is passed through anonymize_text once."""
+        """Pass the assembled block through anonymize_text once."""
         mock_anon = mocker.patch(
             "app.tasks.alerts.anonymize_text", return_value="SCRUBBED"
         )
@@ -215,11 +215,11 @@ class TestBuildArchiverDescription:
         assert desc == "SCRUBBED"
 
     def test_redacts_credentials_with_empty_entities(self):
-        """Credentials are stripped even when no PII mask is configured.
+        """Strip credentials even when no PII mask is configured.
 
-        Regression for SEP-1340: redaction is mask-independent, so a DSN/password
-        echoed in the trace never reaches the provider despite the default-off
-        PII mask (empty entity set).
+        Redaction is mask-independent, so a DSN/password echoed in the trace
+        never reaches the provider despite the default-off PII mask (empty
+        entity set).
         """
         trace = "DBI connect('h=db1,P=3306,u=root,p=s3cr3t') failed"
         desc = build_archiver_description(None, trace, set())
@@ -234,32 +234,42 @@ class TestRedactSecrets:
     """Test ``redact_secrets``."""
 
     def test_masks_uri_userinfo(self):
-        """A ``scheme://user:pass@host`` URI has its userinfo masked."""
+        """Mask the userinfo of a ``scheme://user:pass@host`` URI."""
         assert redact_secrets("mysql://admin:hunter2@db:3306/x") == (
             "mysql://***@db:3306/x"
         )
 
     def test_masks_password_key_value(self):
-        """``password=``/``passwd=``/``pwd=`` values are masked (case-insensitive)."""
+        """Mask ``password=``/``passwd=``/``pwd=`` values (case-insensitive)."""
         assert "hunter2" not in redact_secrets("password=hunter2")
         assert "hunter2" not in redact_secrets("PASSWD: hunter2")
         assert "hunter2" not in redact_secrets("pwd=hunter2&x=1")
 
     def test_masks_dsn_lowercase_p_only(self):
-        """The DBI DSN ``p=`` (password) is masked; ``P=`` (port) is preserved."""
+        """Mask the DBI DSN ``p=`` (password) but preserve ``P=`` (port)."""
         out = redact_secrets("h=db1,P=3306,u=root,p=s3cr3t")
         assert "s3cr3t" not in out
         assert "p=***" in out
         assert "P=3306" in out
 
     def test_masks_cli_password_flags(self):
-        """``--password=``, ``--password `` and ``-p`` CLI flags are masked."""
+        """Mask ``--password=``, ``--password `` and ``-p`` CLI flags."""
         assert "topsecret" not in redact_secrets("pt-archiver --password=topsecret")
         assert "topsecret" not in redact_secrets("pt-archiver --password topsecret")
         assert "topsecret" not in redact_secrets("mysql -ptopsecret")
 
+    def test_dash_p_inside_long_flags_not_masked(self):
+        """Leave non-secret ``-p`` substrings (e.g. ``--purge``) untouched.
+
+        The ``-p`` short flag is anchored to an argument boundary, so the ``-p``
+        inside ``--purge``/``--progress``/``--output-path`` — and the ``-P``
+        (port) flag — survive intact; only a real ``-pSECRET`` token is masked.
+        """
+        cmd = "pt-archiver --purge --progress 1000 --output-path=/tmp/out -P 3306"
+        assert redact_secrets(cmd) == cmd
+
     def test_leaves_clean_text_unchanged(self):
-        """Text with no credentials is returned verbatim."""
+        """Return text with no credentials verbatim."""
         clean = "ERROR: Purge Failed on sbtest.sbtest2 where k <= 2000"
         assert redact_secrets(clean) == clean
 
@@ -276,17 +286,17 @@ class TestEffectiveEntities:
         )
 
     def test_history_mask_wins(self):
-        """The history-level mask is used when present."""
+        """Use the history-level mask when present."""
         history = self._history(int(PIIEntity.EMAIL_ADDRESS), int(PIIEntity.IP_ADDRESS))
         assert _effective_entities(history) == {PIIEntity.EMAIL_ADDRESS}
 
     def test_falls_back_to_task_mask(self):
-        """The owning task's mask is used when the history has none."""
+        """Use the owning task's mask when the history has none."""
         history = self._history(None, int(PIIEntity.IP_ADDRESS))
         assert _effective_entities(history) == {PIIEntity.IP_ADDRESS}
 
     def test_both_none_yields_empty_set(self):
-        """No mask anywhere yields an empty set (no PII scrubbing)."""
+        """Yield an empty set when no mask is configured anywhere (no PII scrubbing)."""
         assert _effective_entities(self._history(None, None)) == set()
 
 
@@ -309,7 +319,7 @@ class TestBuildOwnerAlertDetails:
 
     @pytest.mark.asyncio
     async def test_returns_none_for_non_archiver(self, mocker):
-        """A non-archiver task yields ``None`` (generic path unchanged)."""
+        """Return ``None`` for a non-archiver task (generic path unchanged)."""
         from app.tasks.models import TaskOwner
 
         history = SimpleNamespace(
@@ -322,7 +332,7 @@ class TestBuildOwnerAlertDetails:
 
     @pytest.mark.asyncio
     async def test_falls_back_to_task_data_meta_when_snapshot_empty(self, mocker):
-        """When the execution snapshot meta is empty, fall back to task.data meta.
+        """Fall back to task.data meta when the execution snapshot meta is empty.
 
         Covers legacy histories whose ``execution_request.meta`` is empty: the
         builder reads ``task.data["meta"]`` so source node + config still render.
@@ -344,7 +354,7 @@ class TestBuildOwnerAlertDetails:
 
     @pytest.mark.asyncio
     async def test_stderr_read_failure_yields_placeholder_not_crash(self, mocker):
-        """A STDERR-read failure must not abort the alert; use the placeholder.
+        """Use the placeholder when a STDERR read fails; never abort the alert.
 
         ``_read_last_stderr`` swallows any read error and returns ``None`` so the
         failure alert still fires with the trace placeholder.

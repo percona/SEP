@@ -121,9 +121,9 @@ def test_pagerduty_alert_extra_ignored_and_validation():
 
 
 def test_pagerduty_alert_promotes_custom_details_extra_from_base_alert():
-    """custom_details carried as an extra on a base Alert lands in the typed field.
+    """Promote a base Alert's ``custom_details`` extra into the typed field.
 
-    This is the provider-agnostic seam (AC #3): ``alert_for_status`` attaches
+    This is the provider-agnostic seam: ``alert_for_status`` attaches
     ``custom_details`` as an extra field on the base ``Alert`` (``extra="allow"``)
     and it surfaces through ``PagerDutyAlert.custom_details`` when the provider
     re-validates the alert.
