@@ -31,7 +31,7 @@ from app.sep.deps import InventoryAPI
 router = APIRouter()
 
 
-@router.get("/", response_model=PaginatedResponse[ServiceResponse])
+@router.get("/")
 async def list_services(
     inventory_api: InventoryAPI,
     pagination: PaginationDep,
@@ -55,7 +55,7 @@ async def list_services(
     return PaginatedResponse[ServiceResponse].model_validate(response)
 
 
-@router.get("/{service_id}/schemas", response_model=list[InventorySelectorOption])
+@router.get("/{service_id}/schemas")
 async def list_service_schemas(
     service_id: int,
     inventory_api: InventoryAPI,

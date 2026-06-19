@@ -41,7 +41,6 @@ router = APIRouter(tags=["sep", "tasks", "files"])
 @router.get(
     "/{task_history_id}",
     dependencies=[IsAuthenticated],
-    response_model=dict[str, FileMetadata],
 )
 @csrf_exempt
 async def list_task_history_files(
