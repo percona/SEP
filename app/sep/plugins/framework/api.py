@@ -47,6 +47,8 @@ from app.sep.plugins.framework.connectivity import (
 from app.sep.plugins.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
+    TaskExecuteWrite,
+    TaskExecutionResponse,
     TaskResponseBuilder,
 )
 from app.sep.plugins.framework.schema import PluginSchema
@@ -1222,8 +1224,8 @@ def derive_execute_route(
     router: APIRouter,
     *,
     task_dep: Any,
-    write_model: type[BaseModel],
-    response_model: type[BaseModel],
+    write_model: type[BaseModel] = TaskExecuteWrite,
+    response_model: type[BaseModel] = TaskExecutionResponse,
     name: str | None = None,
     description: str = "",
     extra_deps: Sequence[params.Depends] = (),
@@ -1260,8 +1262,6 @@ def derive_execute_route(
             name="checksums_api_execute",
             description="Execute a checksum task.",
             task_dep=ChecksumsTask,
-            write_model=ChecksumExecuteWrite,
-            response_model=ChecksumExecutionResponse,
         )
 
     :param router: The plugin's ``APIRouter``.
@@ -1269,9 +1269,11 @@ def derive_execute_route(
         dependency alias; its inner getter resolves the task by name (and owns
         the ``task_name`` path parameter and the 404-on-mismatch behaviour).
     :param write_model: The execute request body model; its annotation drives
-        the requestBody schema and the body-validation ``422``.
+        the requestBody schema and the body-validation ``422``. Defaults to
+        :class:`~app.sep.plugins.framework.responses.TaskExecuteWrite`.
     :param response_model: The execute response model, constructed with
-        ``task_name`` and ``task_id`` keyword arguments.
+        ``task_name`` and ``task_id`` keyword arguments. Defaults to
+        :class:`~app.sep.plugins.framework.responses.TaskExecutionResponse`.
     :param name: The route name; drives the OpenAPI ``operationId`` and
         ``summary``. ``None`` falls back to the inner handler's ``__name__``.
     :param description: The OpenAPI operation ``description``; ``""`` falls back

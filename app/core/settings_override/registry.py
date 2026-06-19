@@ -23,6 +23,7 @@ __all__ = [
     "MaterializerContext",
     "ReloadClassification",
     "canonical_override_key",
+    "chain_has_advanced",
     "chain_has_explicit_not_overridable",
     "coerce_field_value",
     "coerce_nested_field_value",
@@ -31,6 +32,7 @@ __all__ = [
     "field_reload_classification",
     "hot_field",
     "hot_field_names",
+    "is_advanced_field",
     "is_explicit_not_overridable",
     "is_hot_reloadable",
     "is_nested_overridable_parent",
@@ -130,7 +132,11 @@ Materializer = Callable[[MaterializerContext], Any]
 
 
 def hot_field(
-    default: Any, *, materializer: Materializer | None = None, **kwargs: Any
+    default: Any,
+    *,
+    materializer: Materializer | None = None,
+    advanced: bool = False,
+    **kwargs: Any,
 ) -> FieldInfo:
     """Declare a settings field as HOT-reloadable from a DB override.
 
@@ -142,24 +148,27 @@ def hot_field(
     place of the default :func:`coerce_field_value` coercion -- used for fields
     whose snapshot value cannot be produced by a plain ``TypeAdapter`` (a
     before-validator must run, the type is not Pydantic-serialisable, or a plain
-    fingerprint must be stored for diff stability).
+    fingerprint must be stored for diff stability). When ``advanced`` is set it
+    rides the same channel under the ``"advanced"`` key, read back by
+    :func:`is_advanced_field`; it is display-only metadata and does not affect
+    override eligibility.
 
     :param default: The field's default value, passed positionally to ``Field``.
     :type default: Any
     :param materializer: An optional callable that converts the raw override
         value into the snapshot value. Receives a :class:`MaterializerContext`.
     :type materializer: Materializer | None
+    :param advanced: Whether to flag the field as ``advanced`` for UI grouping.
     :param kwargs: Additional keyword arguments forwarded to ``Field``.
     :type kwargs: Any
     :return: A Pydantic field marked with the HOT reload classification.
     :rtype: FieldInfo
     """
-    reload_metadata = {"reload": ReloadClassification.HOT}
-    metadata = (
-        {**reload_metadata, "materializer": materializer}
-        if materializer is not None
-        else reload_metadata
-    )
+    metadata = {
+        "reload": ReloadClassification.HOT,
+        **({"materializer": materializer} if materializer is not None else {}),
+        **({"advanced": True} if advanced else {}),
+    }
     return field_with_metadata(default, metadata=metadata, **kwargs)
 
 
@@ -332,6 +341,24 @@ def field_materializer(
     return CustomFieldMetadata.field_to_dict(field).get("materializer")
 
 
+def is_advanced_field(field_info: FieldInfo) -> bool:
+    """Return whether a field is flagged ``advanced`` via field metadata.
+
+    Reads the ``"advanced"`` entry attached by :func:`hot_field`,
+    :func:`nested_overridable_field`, or :func:`not_overridable_field` through
+    the same custom-metadata channel :func:`field_reload_classification` reads
+    ``"reload"`` from. ``advanced`` is display-only metadata used by the settings
+    UI to group rarely-changed, easy-to-misconfigure settings separately; it does
+    not affect override, PATCH, or DELETE eligibility. Operates on a
+    :class:`FieldInfo` directly so callers can classify a nested leaf resolved
+    out of a submodel.
+
+    :param field_info: The Pydantic field metadata to inspect.
+    :return: ``True`` iff the field carries an explicit ``advanced`` marker.
+    """
+    return CustomFieldMetadata.field_to_dict(field_info).get("advanced", False) is True
+
+
 def materialize_via_owning_model(ctx: MaterializerContext) -> Any:
     """Materialize a value by validating it through its owning settings class.
 
@@ -432,7 +459,9 @@ def materialize_override_value(
     return coerce_field_value(field_info, raw)
 
 
-def nested_overridable_field(default: Any, **kwargs: Any) -> FieldInfo:
+def nested_overridable_field(
+    default: Any, *, advanced: bool = False, **kwargs: Any
+) -> FieldInfo:
     """Declare a nested-model field whose children may be overridden by DB rows.
 
     The parent field itself rejects whole-object override
@@ -441,42 +470,50 @@ def nested_overridable_field(default: Any, **kwargs: Any) -> FieldInfo:
     :func:`not_overridable_field`-marked.
 
     Mirrors :func:`hot_field`'s call signature; attaches
-    ``{"reload": ReloadClassification.NESTED_ONLY}``.
+    ``{"reload": ReloadClassification.NESTED_ONLY}``. When ``advanced`` is set,
+    the parent carries an ``advanced`` marker that every emitted leaf inherits
+    via :func:`chain_has_advanced` -- the parent's per-leaf expansion would
+    otherwise never surface the flag for the session/security-header fields.
 
     :param default: The field's default value, passed positionally to ``Field``.
     :type default: Any
+    :param advanced: Whether to flag the field (and its leaves) as ``advanced``.
     :param kwargs: Additional keyword arguments forwarded to ``Field``.
     :type kwargs: Any
     :return: A Pydantic field marked NESTED_ONLY.
     :rtype: FieldInfo
     """
-    return field_with_metadata(
-        default,
-        metadata={"reload": ReloadClassification.NESTED_ONLY},
-        **kwargs,
-    )
+    metadata = {
+        "reload": ReloadClassification.NESTED_ONLY,
+        **({"advanced": True} if advanced else {}),
+    }
+    return field_with_metadata(default, metadata=metadata, **kwargs)
 
 
-def not_overridable_field(default: Any, **kwargs: Any) -> FieldInfo:
+def not_overridable_field(
+    default: Any, *, advanced: bool = False, **kwargs: Any
+) -> FieldInfo:
     """Declare a settings field as explicitly NOT overridable from a DB row.
 
     Mirrors :func:`hot_field` but attaches
     ``{"reload": ReloadClassification.NOT_OVERRIDABLE}``. Use under a HOT or
     NESTED_ONLY parent when a specific nested leaf must NOT inherit the
-    parent's HOT-by-default child semantics.
+    parent's HOT-by-default child semantics. ``advanced`` rides the same channel
+    as on the other helpers and is independent of the reload classification.
 
     :param default: The field's default value, passed positionally to ``Field``.
     :type default: Any
+    :param advanced: Whether to flag the field as ``advanced``.
     :param kwargs: Additional keyword arguments forwarded to ``Field``.
     :type kwargs: Any
     :return: A Pydantic field marked NOT_OVERRIDABLE.
     :rtype: FieldInfo
     """
-    return field_with_metadata(
-        default,
-        metadata={"reload": ReloadClassification.NOT_OVERRIDABLE},
-        **kwargs,
-    )
+    metadata = {
+        "reload": ReloadClassification.NOT_OVERRIDABLE,
+        **({"advanced": True} if advanced else {}),
+    }
+    return field_with_metadata(default, metadata=metadata, **kwargs)
 
 
 def is_nested_overridable_parent(
@@ -656,6 +693,27 @@ def chain_has_explicit_not_overridable(settings_cls: type[BaseModel], key: str) 
     return any(is_explicit_not_overridable(info) for _, info in resolved)
 
 
+def chain_has_advanced(settings_cls: type[BaseModel], key: str) -> bool:
+    """Return whether any segment of a nested key is flagged ``advanced``.
+
+    Walks every segment from the top-level parent down to the leaf -- mirroring
+    :func:`chain_has_explicit_not_overridable` -- and reports ``True`` if *any* of
+    them carries an ``advanced`` marker. A parent marked advanced therefore
+    propagates the flag to every leaf it expands into, which is
+    the only way the dashboard sees ``advanced`` for the session and
+    security-header fields whose parent, not leaves, is marked. Returns ``False``
+    for an unresolvable key.
+
+    :param settings_cls: The top-level Pydantic settings class.
+    :param key: The ``__``-delimited override key.
+    :return: ``True`` iff some segment in the chain is flagged ``advanced``.
+    """
+    resolved = _resolve_nested_segments(settings_cls, key)
+    if resolved is None:
+        return False
+    return any(is_advanced_field(info) for _, info in resolved)
+
+
 def coerce_nested_field_value(
     settings_cls: type[BaseModel],
     key: str,
@@ -814,7 +872,7 @@ def _clear_cached_properties(instance: BaseModel) -> None:
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class FieldMetadata:
-    """Introspected metadata for a single settings field.
+    """Represent introspected metadata for a single settings field.
 
     :param key: The field name on the owning settings class.
     :type key: str
@@ -838,6 +896,9 @@ class FieldMetadata:
         :class:`pydantic.BaseModel` subclass (true for nested submodels and
         unions containing them).
     :type is_complex: bool
+    :param is_advanced: Whether the field is flagged ``advanced`` for UI grouping.
+        For a nested leaf this is chain-resolved: ``True`` when the leaf or any
+        ancestor is marked. Display-only; does not affect override eligibility.
     """
 
     key: str
@@ -847,6 +908,7 @@ class FieldMetadata:
     reload: ReloadClassification
     is_secret: bool
     is_complex: bool
+    is_advanced: bool = False
 
 
 def _iter_type_arguments(annotation: Any) -> Iterator[Any]:
@@ -922,8 +984,10 @@ def iter_class_fields(
     Each entry exposes the public attributes the settings API needs without
     leaking :class:`FieldInfo` into the response layer: ``key``, ``annotation``,
     ``default``, ``description``, ``reload`` (HOT or NOT_OVERRIDABLE),
-    ``is_secret`` (whether the field's type contains a SecretStr anywhere) and
-    ``is_complex`` (whether the type is a nested Pydantic model).
+    ``is_secret`` (whether the field's type contains a SecretStr anywhere),
+    ``is_complex`` (whether the type is a nested Pydantic model) and
+    ``is_advanced`` (whether the field, or an advanced ancestor, is marked
+    display-only advanced).
 
     :param settings_cls: The Pydantic settings class to introspect.
     :type settings_cls: type[BaseYamlSettings]
@@ -939,6 +1003,7 @@ def iter_class_fields(
             reload=field_reload_classification(field),
             is_secret=_field_contains_secret(field),
             is_complex=_field_is_complex(field.annotation),
+            is_advanced=is_advanced_field(field),
         )
 
 
@@ -955,7 +1020,9 @@ def resolve_nested_field_metadata(
     ``NOT_OVERRIDABLE`` when the leaf **or any intermediate in its chain** is
     explicitly :func:`not_overridable_field`-marked -- the same chain check that
     gates PATCH/DELETE, so the reported classification matches what an override
-    would actually be allowed to do.
+    would actually be allowed to do. ``is_advanced`` is likewise chain-resolved
+    via :func:`chain_has_advanced`, so a leaf inherits the flag from an advanced
+    parent.
 
     :param settings_cls: The top-level Pydantic settings class.
     :type settings_cls: type[BaseModel]
@@ -982,6 +1049,7 @@ def resolve_nested_field_metadata(
         reload=reload,
         is_secret=_field_contains_secret(leaf_info),
         is_complex=_field_is_complex(leaf_info.annotation),
+        is_advanced=chain_has_advanced(settings_cls, key),
     )
 
 

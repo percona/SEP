@@ -368,6 +368,32 @@ class TestTasksSettingsNestedOverrides:
         assert "__".join(leaf["key_path"]) == leaf["key"]
         assert leaf["value"] is None
 
+    async def test_list_marks_security_header_leaves_advanced(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """Every expanded ``SECURITY_HEADERS`` leaf inherits ``is_advanced`` in LIST.
+
+        Only the ``SECURITY_HEADERS`` parent is marked advanced (SEP-1382); the
+        real LIST projection must propagate the flag to every leaf — including the
+        two-level HSTS ``max_age`` leaf — while a basic Tasks sibling stays False.
+        This exercises the live ``TasksSettings`` projection, not the SEP proxy's
+        mocked upstream payload.
+        """
+        settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
+            "settings"
+        ]
+        by_key = {s["key"]: s for s in settings}
+        header_leaves = [k for k in by_key if k.startswith("SECURITY_HEADERS__")]
+        assert header_leaves  # the parent expands into leaves, not a single entry
+        assert all(by_key[k]["is_advanced"] is True for k in header_leaves)
+        assert (
+            by_key["SECURITY_HEADERS__strict_transport_security__max_age"][
+                "is_advanced"
+            ]
+            is True
+        )
+        assert by_key["STALENESS_THRESHOLD_SECONDS"]["is_advanced"] is False
+
     async def test_get_multi_level_nested_before_override_returns_200(
         self, admin_test_client: TestClient
     ) -> None:

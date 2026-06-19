@@ -23,9 +23,11 @@ from pydantic import BaseModel
 from app.core.alerts.config import AlertSettings
 from app.core.alerts.models import BaseAlertProvider
 from app.core.settings_override.registry import (
+    chain_has_advanced,
     field_materializer,
     hot_field,
     hot_field_names,
+    is_advanced_field,
     is_hot_reloadable,
     materialize_fingerprint,
     materialize_template,
@@ -33,6 +35,7 @@ from app.core.settings_override.registry import (
     MaterializerContext,
     nested_overridable_field_names,
     ReloadClassification,
+    resolve_nested_field_metadata,
 )
 from app.core.utils.pydantic import field_with_metadata
 from app.inventory.config import InventorySettings
@@ -218,3 +221,86 @@ def test_reload_classification_values() -> None:
     """``ReloadClassification`` exposes ``HOT`` and ``NOT_OVERRIDABLE`` values."""
     assert ReloadClassification.HOT.value == "hot"
     assert ReloadClassification.NOT_OVERRIDABLE.value == "not_overridable"
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "SESSION",
+        "SESSION_REFRESH",
+        "INVENTORY_ENDPOINT",
+        "TASKS_ENDPOINT",
+        "FOOTER_TEMPLATE",
+    ],
+)
+def test_sep_settings_marked_advanced(field_name: str) -> None:
+    """The five SEP settings this ticket promotes carry the advanced flag."""
+    assert is_advanced_field(SEPSettings.model_fields[field_name]) is True
+
+
+@pytest.mark.parametrize(
+    "field_name", ["SYNC_REFRESH_TIME", "PLUGINS", "DATABASE", "PMM"]
+)
+def test_sep_settings_not_marked_advanced(field_name: str) -> None:
+    """SEP settings left basic do not carry the advanced flag (no over-marking)."""
+    assert is_advanced_field(SEPSettings.model_fields[field_name]) is False
+
+
+def test_security_headers_marked_advanced() -> None:
+    """``Tasks.SECURITY_HEADERS`` is the only Tasks setting promoted to advanced."""
+    assert is_advanced_field(TasksSettings.model_fields["SECURITY_HEADERS"]) is True
+
+
+@pytest.mark.parametrize("field_name", ["NOMAD", "STALENESS_THRESHOLD_SECONDS"])
+def test_tasks_settings_not_marked_advanced(field_name: str) -> None:
+    """``NOMAD`` and other Tasks settings stay basic (intentionally left out)."""
+    assert is_advanced_field(TasksSettings.model_fields[field_name]) is False
+
+
+def test_session_leaf_inherits_advanced() -> None:
+    """Every ``SESSION`` leaf inherits the parent's advanced flag."""
+    leaf = resolve_nested_field_metadata(SEPSettings, "SESSION__COOKIE_NAME")
+    assert leaf is not None
+    assert leaf.is_advanced is True
+
+
+def test_security_headers_deep_leaf_inherits_advanced() -> None:
+    """A two-level ``SECURITY_HEADERS`` leaf inherits advanced from the top parent.
+
+    Only ``SECURITY_HEADERS`` is marked; ``strict_transport_security`` and
+    ``max_age`` are not, so the chain walk is what propagates the flag down.
+    """
+    leaf = resolve_nested_field_metadata(
+        TasksSettings, "SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE"
+    )
+    assert leaf is not None
+    assert leaf.is_advanced is True
+    assert chain_has_advanced(
+        TasksSettings, "SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE"
+    )
+
+
+def test_non_advanced_nested_leaf_stays_false() -> None:
+    """A leaf under a non-advanced parent reports ``is_advanced=False``."""
+    leaf = resolve_nested_field_metadata(SEPSettings, "DATABASE__NAME")
+    assert leaf is not None
+    assert leaf.is_advanced is False
+
+
+def test_advanced_does_not_change_reload_classification() -> None:
+    """Marking a HOT field advanced leaves its reload classification untouched.
+
+    ``advanced`` is display-only: a marked-advanced HOT endpoint stays HOT (and
+    thus still patchable), proving the flag does not gate override eligibility.
+    """
+    assert is_advanced_field(SEPSettings.model_fields["INVENTORY_ENDPOINT"]) is True
+    assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is True
+
+
+def test_is_advanced_field_false_without_metadata() -> None:
+    """A field without any ``CustomFieldMetadata`` reads ``False`` without raising."""
+
+    class _Plain(BaseModel):
+        value: int = 1
+
+    assert is_advanced_field(_Plain.model_fields["value"]) is False
