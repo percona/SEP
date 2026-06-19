@@ -29,12 +29,18 @@ from app.sep.connectivity import (
 )
 
 __all__ = [
+    "CONNECTIVITY_WARNING_FIELD",
     "ConnectivityWarning",
     "maybe_record_connectivity_warning",
     "record_connectivity_warning",
 ]
 
 _CONNECTIVITY_CHECK_FAILED_FALLBACK = "Connectivity check failed"
+
+#: Name of the response-model field carrying the post-creation connectivity
+#: probe result. Shared by the create-route presence check and the derived
+#: create-response model so the two cannot drift apart.
+CONNECTIVITY_WARNING_FIELD = "connectivity_warning"
 
 
 class ConnectivityWarning(BaseModel):
