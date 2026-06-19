@@ -121,7 +121,7 @@ class TestPcsCollectPmmMysqlHaDbaasConsolidation:
         assert "--aurora" not in stdout
 
     def test_yaml_frontmatter_ha_dbaas_parameters(self):
-        """YAML frontmatter must expose ha, ha-name, and dbaas so they surface in the dipper UI."""
+        """YAML frontmatter must expose ha, ha_name, and dbaas so they surface in the dipper UI."""
         frontmatter = _frontmatter()
         for legacy_name in ("pxc", "gr", "async", "rds", "aurora"):
             assert f"name: {legacy_name}" not in frontmatter
@@ -134,7 +134,7 @@ class TestPcsCollectPmmMysqlHaDbaasConsolidation:
         assert "value: async" in ha_block
         assert 'arg_format: "--ha ${value}"' in ha_block
 
-        ha_name_block = _parameter_block(frontmatter, "ha-name")
+        ha_name_block = _parameter_block(frontmatter, "ha_name")
         assert "group: High Availability" in ha_name_block
         assert 'arg_format: "--ha-name ${value}"' in ha_name_block
 
@@ -195,3 +195,37 @@ class TestPcsCollectPmmMysqlApikeyHidden:
         by_name = {p.name: p for p in validated.parameters}
         assert by_name["apikey"].hidden is True
         assert by_name["pmmserver"].hidden is False
+
+
+class TestPcsCollectPmmMysqlListVisibility:
+    """Hide date/HA/DBaaS fields in list-services mode (SEP-1319)."""
+
+    _GATED_PARAMETERS = ("start", "end", "ha", "ha_name", "dbaas")
+
+    def test_frontmatter_marks_fields_hidden_when_list(self):
+        """start, end, ha, ha_name, and dbaas declare visible_when_not: list."""
+        frontmatter = _frontmatter()
+        for name in self._GATED_PARAMETERS:
+            block = _parameter_block(frontmatter, name)
+            assert "visible_when_not: list" in block
+
+    @pytest.mark.asyncio
+    async def test_schema_forbids_gated_fields_when_list(self):
+        """The synthesised schema hides the gated fields when ``list`` is truthy."""
+        from app.sep.plugins.snippets.schema import field_for
+        from app.sep.snippets.models.snippet import BaseSnippet
+
+        meta = await BaseSnippet.get_meta_by_path(SCRIPT)
+        snippet = BaseSnippet(
+            filename="pcs-collect-pmm-mysql.py",
+            size=1,
+            md5_digest="a" * 32,
+            meta=meta,
+        )
+        validated = snippet.validated_parameters
+        assert validated.errors == []
+        by_name = {p.name: field_for(p) for p in validated.parameters}
+        for name in self._GATED_PARAMETERS:
+            gate = by_name[name].forbidden
+            assert gate is not None, name
+            assert gate[0].when.to_dict() == {"truthy": "list"}

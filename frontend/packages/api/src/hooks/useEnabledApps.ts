@@ -18,22 +18,24 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../client';
 
-/** Minimal per-app entry returned by the public ``GET /api/apps/`` endpoint. */
+/** Per-app entry returned by the public ``GET /api/apps/`` endpoint. */
 export interface EnabledApp {
   app_key: string;
   enabled: boolean;
   sidebar: boolean;
   uri_path: string;
+  display_name: string;
+  custom_ui: boolean;
 }
 
 export const ENABLED_APPS_QUERY_KEY = ['apps'] as const;
 
 /**
- * Fetches the per-app enabled state for the current user's navigation.
+ * Fetches per-app navigation metadata for the current user.
  *
- * Powers the shell's sidebar filtering: items tagged with a disabled app's
- * key are hidden. The data is cached for 30s — admins toggle apps
- * infrequently and a brief staleness is acceptable for navigation.
+ * Powers registry-driven sidebar labels (``display_name``), visibility
+ * (``enabled``, ``sidebar``), and routing hints. Cached for 30s — admins
+ * toggle apps infrequently and brief staleness is acceptable for navigation.
  */
 export function useEnabledApps() {
   return useQuery<EnabledApp[]>({
