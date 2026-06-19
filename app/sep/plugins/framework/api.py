@@ -40,7 +40,10 @@ from pydantic import BaseModel
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
-from app.sep.plugins.framework.connectivity import maybe_record_connectivity_warning
+from app.sep.plugins.framework.connectivity import (
+    CONNECTIVITY_WARNING_FIELD,
+    maybe_record_connectivity_warning,
+)
 from app.sep.plugins.framework.responses import (
     build_task_list_responses,
     derive_create_response_model,
@@ -85,10 +88,9 @@ def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
         from fastapi import APIRouter
 
         from app.sep.plugins.framework.api import schema_endpoint
-        from app.sep.plugins.checksums.schema import checksums_schema
 
         router = APIRouter()
-        schema_endpoint(router, checksums_schema)
+        schema_endpoint(router, plugin_schema)
 
     The route pins ``response_model_by_alias=True`` so the
     ``field_type → "type"`` discriminator alias on each field serialises
@@ -452,6 +454,52 @@ async def _bind_context(
     return functools.partial(builder, context=context)
 
 
+def _resolve_create_response_model(
+    create_response_builder: TaskResponseBuilder[Any] | None,
+    base_model: type[BaseModel],
+    *,
+    connectivity_check: bool,
+    plugin_schema: PluginSchema,
+) -> type[BaseModel]:
+    """Resolve the response model shared by the create and derived-update routes.
+
+    Prefer an explicit ``create_response_builder``'s inferred model (rejecting it
+    when ``connectivity_check`` is on but the model omits ``connectivity_warning``,
+    so the probe result has somewhere to land); else auto-derive a create model
+    wrapping ``base_model`` with ``connectivity_warning`` when the probe is on;
+    else fall back to ``base_model`` unchanged. Sharing this between create and
+    the derived update keeps both routes' response model byte-identical.
+
+    :param create_response_builder: The explicit create builder, or ``None``.
+    :param base_model: The list/detail model used as the auto-derive base.
+    :param connectivity_check: Whether the probe (and ``connectivity_warning``)
+        is in play.
+    :param plugin_schema: The schema seeding the auto-derived model name.
+    :return: The resolved create/update response model.
+    :raises TypeError: When ``connectivity_check`` is on and an explicit
+        ``create_response_builder``'s model omits a ``connectivity_warning`` field.
+    """
+    if create_response_builder is not None:
+        model = _resolve_response_model(
+            create_response_builder,
+            helper="derive_crud_routes",
+            param="create_response_builder",
+        )
+        if connectivity_check and CONNECTIVITY_WARNING_FIELD not in model.model_fields:
+            raise TypeError(
+                "derive_crud_routes: create_response_builder's model must declare a "
+                "connectivity_warning field when connectivity_check=True; build it "
+                "via derive_create_response_model so the probe result is attached "
+                "rather than silently dropped."
+            )
+        return model
+    if connectivity_check:
+        return derive_create_response_model(
+            base_model, name=_create_response_name(plugin_schema)
+        )
+    return base_model
+
+
 def _register_create_route(
     router: APIRouter,
     *,
@@ -496,28 +544,12 @@ def _register_create_route(
         ``create_response_builder`` is given whose model omits a
         ``connectivity_warning`` field.
     """
-    if create_response_builder is not None:
-        create_model = _resolve_response_model(
-            create_response_builder,
-            helper="derive_crud_routes",
-            param="create_response_builder",
-        )
-        if (
-            connectivity_check
-            and "connectivity_warning" not in create_model.model_fields
-        ):
-            raise TypeError(
-                "derive_crud_routes: create_response_builder's model must declare a "
-                "connectivity_warning field when connectivity_check=True; build it "
-                "via derive_create_response_model so the probe result is attached "
-                "rather than silently dropped."
-            )
-    elif connectivity_check:
-        create_model = derive_create_response_model(
-            base_model, name=_create_response_name(plugin_schema)
-        )
-    else:
-        create_model = base_model
+    create_model = _resolve_create_response_model(
+        create_response_builder,
+        base_model,
+        connectivity_check=connectivity_check,
+        plugin_schema=plugin_schema,
+    )
 
     if not connectivity_check:
 
@@ -560,11 +592,250 @@ def _register_create_route(
         "/",
         _create,
         methods=["POST"],
+        summary="Create",
         status_code=status.HTTP_201_CREATED,
         response_model=create_model,
         response_model_by_alias=True,
         dependencies=[IsApiAuthenticated, *extra_deps],
     )
+
+
+def _register_update_route(
+    router: APIRouter,
+    *,
+    plugin_schema: PluginSchema,
+    get_task: Callable[..., Awaitable[Task]],
+    base_builder: TaskResponseBuilder[ListDetailResponseT],
+    create_payload: Callable[..., Awaitable[TaskWrite]],
+    create_response_builder: TaskResponseBuilder[CreateResponseT] | None,
+    base_model: type[ListDetailResponseT],
+    connectivity_check: bool,
+    detail_path: str,
+    context_provider: Callable[[], Awaitable[Any]] | None = None,
+    extra_deps: Sequence[params.Depends] = (),
+) -> None:
+    """Register the derived ``PUT /{detail}`` update route, mirroring create.
+
+    The handler fetches the task by name (404 + any ``extra_deps`` guard target),
+    rebuilds the ``TaskWrite`` from the request body through the same
+    ``create_payload`` dependency the create route uses, PUTs it upstream, and
+    renders the updated task through the create-path response surface — except it
+    threads the task's latest status (an update reflects prior execution history,
+    where a fresh create has none). With ``connectivity_check`` on it gains the
+    ``check_connectivity`` query parameter and attaches the probe warning, exactly
+    as create does.
+
+    :param router: The plugin router to register the update route on.
+    :param plugin_schema: The schema seeding the auto-derived model name.
+    :param get_task: The task-by-name dependency (resolves 404 and owns the path
+        parameter); its inner parameter must equal the detail path parameter.
+    :param base_builder: The fallback builder when no explicit create builder is
+        given — the detail builder when the app overrides detail, else the list
+        builder.
+    :param create_payload: The create-payload dependency declaring the body.
+    :param create_response_builder: An explicit create-response builder whose
+        model wins when supplied.
+    :param base_model: The fallback response model used as the auto-derive base.
+    :param connectivity_check: Whether to add the connectivity probe and the
+        ``check_connectivity`` query parameter.
+    :param detail_path: The ``/{detail}`` route template the PUT mounts on.
+    :param context_provider: A zero-arg async provider whose once-awaited result
+        is bound as the active builder's ``context`` keyword. ``None`` leaves the
+        builder unbound.
+    :param extra_deps: Extra route dependencies (guards) appended after
+        ``IsApiAuthenticated``, never replacing it.
+    :raises TypeError: If ``connectivity_check`` is on and an explicit
+        ``create_response_builder``'s model omits a ``connectivity_warning`` field.
+    """
+    update_model = _resolve_create_response_model(
+        create_response_builder,
+        base_model,
+        connectivity_check=connectivity_check,
+        plugin_schema=plugin_schema,
+    )
+
+    if not connectivity_check:
+
+        async def _update(
+            tasks_api: TaskAPI,
+            task: Annotated[Task, Depends(get_task)],
+            task_write: Annotated[TaskWrite, Depends(create_payload)],
+        ) -> BaseModel:
+            updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
+            updated_task = Task.model_validate(updated)
+            task_status = await get_task_latest_status(tasks_api, updated_task.name)
+            if create_response_builder is not None:
+                builder = await _bind_context(create_response_builder, context_provider)
+                return builder(updated_task, status=task_status)
+            builder = await _bind_context(base_builder, context_provider)
+            return builder(updated_task, status=task_status)
+    else:
+
+        async def _update(
+            tasks_api: TaskAPI,
+            task: Annotated[Task, Depends(get_task)],
+            task_write: Annotated[TaskWrite, Depends(create_payload)],
+            *,
+            check_connectivity: Annotated[bool, Query()] = True,
+        ) -> BaseModel:
+            updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
+            updated_task = Task.model_validate(updated)
+            task_status = await get_task_latest_status(tasks_api, updated_task.name)
+            warning = await maybe_record_connectivity_warning(
+                tasks_api,
+                updated_task.data.get("meta", {}),
+                check_connectivity=check_connectivity,
+            )
+            if create_response_builder is not None:
+                builder = await _bind_context(create_response_builder, context_provider)
+                return builder(updated_task, status=task_status).model_copy(
+                    update={"connectivity_warning": warning}
+                )
+            builder = await _bind_context(base_builder, context_provider)
+            base = builder(updated_task, status=task_status)
+            return update_model(**base.model_dump(), connectivity_warning=warning)
+
+    router.add_api_route(
+        detail_path,
+        _update,
+        methods=["PUT"],
+        summary="Update",
+        response_model=update_model,
+        response_model_by_alias=True,
+        dependencies=[IsApiAuthenticated, *extra_deps],
+    )
+
+
+def _register_delete_route(
+    router: APIRouter,
+    *,
+    get_task: Callable[..., Awaitable[Task]],
+    detail_path: str,
+) -> None:
+    """Register the derived ``DELETE /{detail}`` route (``204``) on ``router``.
+
+    The handler resolves the task by name (404 on unknown / wrong owner) and
+    deletes it upstream — the plain cascade-free delete shared by the standard
+    task plugins. A plugin needing cascade semantics supplies a full
+    ``delete_handler`` override instead.
+
+    :param router: The plugin router to register the delete route on.
+    :param get_task: The task-by-name dependency owning the path parameter.
+    :param detail_path: The ``/{detail}`` route template the DELETE mounts on.
+    """
+
+    async def _delete(
+        tasks_api: TaskAPI, task: Annotated[Task, Depends(get_task)]
+    ) -> None:
+        await tasks_api.delete(f"/{task.name}")
+
+    router.add_api_route(
+        detail_path,
+        _delete,
+        methods=["DELETE"],
+        summary="Delete",
+        status_code=status.HTTP_204_NO_CONTENT,
+        response_model_by_alias=True,
+        dependencies=[IsApiAuthenticated],
+    )
+
+
+def _register_mutation_routes(
+    router: APIRouter,
+    *,
+    plugin_schema: PluginSchema,
+    detail_path: str,
+    get_task: Callable[..., Awaitable[Task]],
+    detail_builder: TaskResponseBuilder[Any],
+    detail_model: type[BaseModel],
+    create_payload: Callable[..., Awaitable[TaskWrite]] | None,
+    create_response_builder: TaskResponseBuilder[Any] | None,
+    connectivity_check: bool,
+    context_provider: Callable[[], Awaitable[Any]] | None,
+    update_enabled: bool,
+    update_handler: Callable[..., Awaitable[Any]] | None,
+    update_extra_deps: Sequence[params.Depends],
+    delete_enabled: bool,
+    delete_handler: Callable[..., Awaitable[Any]] | None,
+) -> None:
+    """Register the ``PUT`` / ``DELETE`` routes, derived or handler-overridden.
+
+    A supplied handler always wins (the cascade escape hatch); otherwise the
+    capability flag drives the standard derived default — the create-mirroring PUT
+    (guarded by ``update_extra_deps``) and the plain fetch-then-delete DELETE.
+
+    :param router: The plugin router to register the mutation routes on.
+    :param plugin_schema: The schema seeding any auto-derived model name.
+    :param detail_path: The ``/{detail}`` route template both verbs mount on.
+    :param get_task: The task-by-name dependency owning the path parameter.
+    :param detail_builder: The detail/create fallback builder for the derived PUT.
+    :param detail_model: The detail/create fallback model for the derived PUT.
+    :param create_payload: The create-payload dependency the derived PUT rebuilds
+        the body through; ``None`` when create is disabled.
+    :param create_response_builder: The explicit create builder reused by the PUT.
+    :param connectivity_check: Whether the derived PUT runs the connectivity probe.
+    :param context_provider: The once-per-request async context provider, or ``None``.
+    :param update_enabled: Whether to derive the default PUT when no handler is set.
+    :param update_handler: A full PUT override, or ``None`` for the derived default.
+    :param update_extra_deps: Guards appended to the derived PUT after the auth guard.
+    :param delete_enabled: Whether to derive the default DELETE when no handler is set.
+    :param delete_handler: A full DELETE override, or ``None`` for the derived default.
+    :raises ValueError: If ``update_extra_deps`` are supplied alongside a full
+        ``update_handler`` or without the update capability; or if the derived PUT
+        is enabled without a ``create_payload`` to rebuild the body.
+    """
+    if update_extra_deps and update_handler is not None:
+        raise ValueError(
+            "derive_crud_routes: update_extra_deps attach to the derived PUT; a full "
+            "update_handler must declare its own signature dependencies instead — "
+            "drop update_extra_deps or the update_handler"
+        )
+    if update_extra_deps and not update_enabled:
+        raise ValueError(
+            "derive_crud_routes: update_extra_deps need a derived PUT to attach to; "
+            "enable the update capability or drop update_extra_deps"
+        )
+
+    if update_handler is not None:
+        router.add_api_route(
+            detail_path,
+            update_handler,
+            methods=["PUT"],
+            response_model_by_alias=True,
+            dependencies=[IsApiAuthenticated],
+        )
+    elif update_enabled:
+        if create_payload is None:
+            raise ValueError(
+                "derive_crud_routes: the derived PUT rebuilds the body through the "
+                "create payload; pass create_payload (enable create) or supply a full "
+                "update_handler"
+            )
+        _register_update_route(
+            router,
+            plugin_schema=plugin_schema,
+            get_task=get_task,
+            base_builder=detail_builder,
+            create_payload=create_payload,
+            create_response_builder=create_response_builder,
+            base_model=detail_model,
+            connectivity_check=connectivity_check,
+            detail_path=detail_path,
+            context_provider=context_provider,
+            extra_deps=update_extra_deps,
+        )
+
+    if delete_handler is not None:
+        router.add_api_route(
+            detail_path,
+            delete_handler,
+            methods=["DELETE"],
+            status_code=status.HTTP_204_NO_CONTENT,
+            response_model_by_alias=True,
+            dependencies=[IsApiAuthenticated],
+        )
+    elif delete_enabled:
+        _register_delete_route(router, get_task=get_task, detail_path=detail_path)
 
 
 def _resolve_detail_target(
@@ -666,6 +937,7 @@ def _register_list_route(
             "/",
             _list,
             methods=["GET"],
+            summary="List",
             response_model=list[list_detail_model],
             response_model_by_alias=True,
             dependencies=[IsApiAuthenticated],
@@ -692,6 +964,7 @@ def _register_list_route(
             "/",
             _list_paginated,
             methods=["GET"],
+            summary="List",
             response_model=PaginatedResponse[list_detail_model],
             response_model_by_alias=True,
             dependencies=[IsApiAuthenticated],
@@ -715,15 +988,23 @@ def derive_crud_routes(
     list_service_type: ServiceTypeEnum | None = None,
     context_provider: Callable[[], Awaitable[Any]] | None = None,
     create_extra_deps: Sequence[params.Depends] = (),
+    update_enabled: bool = False,
     update_handler: Callable[..., Awaitable[Any]] | None = None,
+    update_extra_deps: Sequence[params.Depends] = (),
+    delete_enabled: bool = False,
     delete_handler: Callable[..., Awaitable[Any]] | None = None,
 ) -> APIRouter:
     """Build a plugin router with the standard schema + CRUD routes.
 
     Register ``GET /schema`` plus standard task-plugin CRUD routes:
     owner-filtered list (``GET /``), detail (``GET /{detail_path_param}``),
-    create (``POST /`` with ``201``), and optional update/delete overrides
-    (``PUT`` / ``DELETE`` on ``/{detail_path_param}``; delete uses ``204``).
+    create (``POST /`` with ``201``), and update/delete (``PUT`` / ``DELETE`` on
+    ``/{detail_path_param}``; delete uses ``204``). Update and delete derive a
+    standard default from ``update_enabled`` / ``delete_enabled`` alone — the PUT
+    mirrors create (rebuild the body through ``create_payload``, PUT upstream,
+    render through the create-path response surface with the task's latest
+    status), the DELETE is the plain fetch-then-delete. A full ``update_handler``
+    / ``delete_handler`` overrides that default for cascade plugins.
     All derived routes use ``IsApiAuthenticated`` and
     ``response_model_by_alias=True``. Enabling ``connectivity_check`` extends
     the create route with a post-creation connectivity probe and a
@@ -798,18 +1079,30 @@ def derive_crud_routes(
         list, detail, and create builds. ``None`` (default) leaves builders unbound.
     :param create_extra_deps: Extra route dependencies appended to the create
         route after ``IsApiAuthenticated``, never replacing it.
-    :param update_handler: A fully-formed update handler; when given, a
-        ``PUT /{detail_path_param}`` route is registered using it. The helper
-        applies only ``IsApiAuthenticated`` and ``response_model_by_alias`` — any
-        additional route guard (e.g. ``HasNoConflictedRunningTasks``) must be
-        declared as one of the handler's own signature dependencies (e.g.
-        ``Annotated[None, Depends(HasNoConflictedRunningTasks)]``), since the
-        handler is passed as a bare callable and carries no decorator-level
-        dependencies into the helper.
-    :param delete_handler: A fully-formed delete handler; when given, a
-        ``DELETE /{detail_path_param}`` route is registered using it, with
-        ``status_code=204``. As with ``update_handler``, any extra route guard
-        must be declared as one of the handler's own signature dependencies.
+    :param update_enabled: When ``True`` and no ``update_handler`` is supplied,
+        mount the derived default ``PUT /{detail_path_param}`` route. Defaults to
+        ``False`` (no PUT). Requires ``create_payload`` (the derived PUT rebuilds
+        the body through it).
+    :param update_handler: A fully-formed update handler that overrides the
+        derived default; when given, a ``PUT /{detail_path_param}`` route is
+        registered using it. The helper applies only ``IsApiAuthenticated`` and
+        ``response_model_by_alias`` — any additional route guard (e.g.
+        ``HasNoConflictedRunningTasks``) must be declared as one of the handler's
+        own signature dependencies, since the handler is passed as a bare callable
+        and carries no decorator-level dependencies into the helper.
+    :param update_extra_deps: Extra route dependencies (guards) appended after
+        ``IsApiAuthenticated`` on the *derived* PUT — the handler-less escape hatch
+        for a per-plugin guard (e.g. a protected-task check). Rejected alongside a
+        full ``update_handler`` (declare guards in the handler signature instead)
+        or when the update capability is off. Defaults to ``()``.
+    :param delete_enabled: When ``True`` and no ``delete_handler`` is supplied,
+        mount the derived default ``DELETE /{detail_path_param}`` route (plain
+        fetch-then-delete, ``204``). Defaults to ``False`` (no DELETE).
+    :param delete_handler: A fully-formed delete handler that overrides the
+        derived default; when given, a ``DELETE /{detail_path_param}`` route is
+        registered using it, with ``status_code=204``. As with ``update_handler``,
+        any extra route guard must be declared as one of the handler's own
+        signature dependencies.
     :return: A plugin ``APIRouter`` carrying the schema + CRUD routes.
     :raises TypeError: If ``response_builder``, ``detail_response_builder``, or
         ``create_response_builder`` is an ``async def`` callable (the derived
@@ -820,7 +1113,10 @@ def derive_crud_routes(
         model omits a ``connectivity_warning`` field.
     :raises ValueError: If ``create_payload`` is ``None`` while
         ``connectivity_check`` is on or a ``create_response_builder`` is supplied
-        — both are create-route options that need a create route to attach to.
+        (both are create-route options that need a create route to attach to); if
+        ``update_extra_deps`` are supplied alongside a full ``update_handler`` or
+        without the update capability; or if the derived PUT is enabled without a
+        ``create_payload`` to rebuild the body.
     """
     _reject_async_builders(
         response_builder=response_builder,
@@ -871,6 +1167,7 @@ def derive_crud_routes(
         detail_path,
         _detail,
         methods=["GET"],
+        summary="Detail",
         response_model=detail_model,
         response_model_by_alias=True,
         dependencies=[IsApiAuthenticated],
@@ -900,24 +1197,23 @@ def derive_crud_routes(
             extra_deps=create_extra_deps,
         )
 
-    if update_handler is not None:
-        router.add_api_route(
-            detail_path,
-            update_handler,
-            methods=["PUT"],
-            response_model_by_alias=True,
-            dependencies=[IsApiAuthenticated],
-        )
-
-    if delete_handler is not None:
-        router.add_api_route(
-            detail_path,
-            delete_handler,
-            methods=["DELETE"],
-            status_code=status.HTTP_204_NO_CONTENT,
-            response_model_by_alias=True,
-            dependencies=[IsApiAuthenticated],
-        )
+    _register_mutation_routes(
+        router,
+        plugin_schema=plugin_schema,
+        detail_path=detail_path,
+        get_task=get_task,
+        detail_builder=detail_builder,
+        detail_model=detail_model,
+        create_payload=create_payload,
+        create_response_builder=create_response_builder,
+        connectivity_check=connectivity_check,
+        context_provider=context_provider,
+        update_enabled=update_enabled,
+        update_handler=update_handler,
+        update_extra_deps=update_extra_deps,
+        delete_enabled=delete_enabled,
+        delete_handler=delete_handler,
+    )
 
     return router
 

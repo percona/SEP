@@ -2025,7 +2025,7 @@ class TestOneOfGroup:
         assert isinstance(field, OneOfGroup)
         assert field.branches[1].value == "query"
 
-    def test_iter_section_fields_expands_branches(self) -> None:
+    def testiter_section_fields_expands_branches(self) -> None:
         """Expand one-of branches when iterating section leaf fields."""
         section = FormSection(title="S", fields=[_sample_one_of_group()])
         names = [field.name for field in _iter_section_fields(section)]

@@ -771,3 +771,116 @@ class TestDipperExecuteEndpoint:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
+
+
+class TestDipperValkeyCollectors:
+    """Valkey is selectable for both the environment and PMM collectors."""
+
+    @staticmethod
+    def _fields_by_name(response) -> dict:
+        fields = [
+            field for section in response.json()["forms"] for field in section["fields"]
+        ]
+        return {field["name"]: field for field in fields}
+
+    def test_preview_returns_bash_for_valkey_environment(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """The Valkey environment collector previews as a bash script."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.VALKEY.value)
+        )
+
+        response = test_client.get(
+            f"{API_BASE}/script-preview",
+            params={"service_id": 1, "collector_type": "environment"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["language"] == "bash"
+
+    def test_preview_returns_python_for_valkey_pmm(
+        self, test_client, mock_inventory_api_dep
+    ):
+        """Valkey is the first non-MySQL service to resolve a PMM collector."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.VALKEY.value)
+        )
+
+        response = test_client.get(
+            f"{API_BASE}/script-preview",
+            params={"service_id": 1, "collector_type": "pmm"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["language"] == "python"
+
+    def test_valkey_environment_schema_contains_payload_fields(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """The Valkey environment form exposes its getopts-derived parameters."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.VALKEY.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "environment"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        field_names = set(self._fields_by_name(response))
+        assert {"o", "d", "i", "t", "p", "l", "c", "s"} <= field_names
+
+    def test_valkey_pmm_schema_omits_hidden_fields(
+        self, test_client, mock_inventory_api_dep, mock_task_api_dep
+    ):
+        """The Valkey PMM form surfaces PMM fields but hides apikey and sentinel."""
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.VALKEY.value)
+        )
+        mock_task_api_dep.get = AsyncMock(return_value={})
+
+        response = test_client.get(
+            f"{API_BASE}/form-schema",
+            params={"service_id": 1, "collector_type": "pmm"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        by_name = self._fields_by_name(response)
+        assert {"pmmserver", "node", "service", "cluster"} <= set(by_name)
+        assert "apikey" not in by_name
+        assert "sentinel" not in by_name
+
+    def test_execute_valkey_pmm_returns_201(
+        self, test_client, mock_task_api_dep, mock_inventory_api_dep
+    ):
+        """PMM execute for a Valkey service runs end-to-end through the deps stack.
+
+        The body-model dep is intentionally not overridden so the PMM-config
+        fallback in ``build_dipper_execution_meta`` is exercised for the second
+        PMM-capable service type.
+        """
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=build_fake_service(service_type=ServiceTypeEnum.VALKEY.value)
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": FAKE_TASK_ID})
+
+        response = test_client.post(
+            f"{API_BASE}/",
+            json={
+                "service_id": 1,
+                "collector_type": "pmm",
+                "executor_host": "node1",
+                "args": {
+                    "pmmserver": "https://pmm.example.com:8443",
+                    "node": "test-node",
+                    "service": "test-svc",
+                },
+            },
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.json()["collector_type"] == "pmm"
+        mock_task_api_dep.post.assert_awaited_once()
