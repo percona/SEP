@@ -163,4 +163,4 @@ def test_stream_execution_events_event_stream(
     assert "Received" in streamed_content
     assert "Started" in streamed_content
     assert "event: finish" in streamed_content
-    assert '"status": "failed"' in streamed_content
+    assert f'"status": "{TaskHistoryStatusEnum.FAILED.value}"' in streamed_content
