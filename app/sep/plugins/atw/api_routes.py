@@ -96,7 +96,7 @@ def _build_summary(snippet: Snippet) -> ATWSnippetSummary:
     )
 
 
-@router.get("/", response_model=list[ATWCategoryListing])
+@router.get("/")
 async def atw_api_list(session: SessionDep) -> list[ATWCategoryListing]:
     """List ATW-tagged snippets grouped by category.
 

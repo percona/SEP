@@ -33,7 +33,6 @@ router = APIRouter(tags=["connectivity"])
 @router.post(
     "/connectivity-check/",
     dependencies=[IsAuthenticatedDep],
-    response_model=ConnectivityCheckResponse,
     status_code=status.HTTP_200_OK,
 )
 async def connectivity_check(
