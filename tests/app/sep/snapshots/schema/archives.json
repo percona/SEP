@@ -460,6 +460,13 @@
           "type": "string"
         }
       ],
+      "forbidden": [
+        {
+          "when": {
+            "truthy": "delete_data"
+          }
+        }
+      ],
       "render_after_submit": false,
       "title": "Destination"
     },
@@ -595,6 +602,13 @@
           "name": "dest_db_name",
           "required": false,
           "type": "string"
+        }
+      ],
+      "forbidden": [
+        {
+          "when": {
+            "truthy": "delete_data"
+          }
         }
       ],
       "render_after_submit": false,
