@@ -34,13 +34,11 @@ from typing import cast
 from urllib.parse import urlencode
 
 from app.sep.plugins.framework.rules import (
-    _extract_rule_plan,
-    _RuleKind,
     evaluate_conditional_rules,
+    extract_forbidden_field_gate_plan,
     F,
     FieldGate,
     Not,
-    RulePlan,
     truthy,
 )
 from app.sep.plugins.framework.schema import (
@@ -369,13 +367,9 @@ def evaluate_visibility_gates(
     :rtype: list[str]
     """
     schema = build_snippet_schema(snippet)
-    forbidden = [
-        rule
-        for rule in _extract_rule_plan(schema).rules
-        if rule.kind is _RuleKind.FIELD_GATE_FORBIDDEN
-    ]
-    if not forbidden:
+    plan = extract_forbidden_field_gate_plan(schema)
+    if not plan.rules:
         return []
     alias_view = SimpleNamespace()
     alias_view.__dict__.update(execution_args.model_dump(by_alias=True))
-    return evaluate_conditional_rules(alias_view, RulePlan(rules=forbidden))
+    return evaluate_conditional_rules(alias_view, plan)
