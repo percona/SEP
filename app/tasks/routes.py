@@ -397,7 +397,6 @@ async def list_task_history(
 @router.post(
     "/history/latest",
     dependencies=[IsAuthenticatedDep],
-    response_model=dict[str, TaskHistoryStatusEnum | None],
 )
 async def latest_task_history_status(
     session: SessionDep,

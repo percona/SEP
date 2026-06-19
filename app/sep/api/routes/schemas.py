@@ -28,7 +28,7 @@ from app.sep.deps import InventoryAPI
 router = APIRouter()
 
 
-@router.get("/{schema_id}/tables", response_model=list[InventorySelectorOption])
+@router.get("/{schema_id}/tables")
 async def list_schema_tables(
     schema_id: int,
     inventory_api: InventoryAPI,
