@@ -21,6 +21,7 @@ import pytest
 import yaml
 from fastapi import status
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
     CHECK_TIMEOUT,
     clear_connectivity_caches,
@@ -186,7 +187,7 @@ def test_backups_create_triggers_connectivity_check(
                 "target": "node1",
                 "_connectivity_host": "10.0.0.1",
                 "_connectivity_port": 3306,
-                "_connectivity_service_type": "mysql",
+                "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
             },
             "payload": "",
         },
@@ -243,7 +244,7 @@ def test_backups_create_skips_connectivity_check_when_opted_out(
                 "target": "node1",
                 "_connectivity_host": "10.0.0.1",
                 "_connectivity_port": 3306,
-                "_connectivity_service_type": "mysql",
+                "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
             },
             "payload": "",
         },
