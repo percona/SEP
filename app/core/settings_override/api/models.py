@@ -68,7 +68,6 @@ class SettingResponse(BaseModel):
         present it separately from everyday settings. Defaults to ``False`` so
         the addition is purely additive and backward-compatible. Display-only:
         it does not affect PATCH/DELETE eligibility.
-    :type is_advanced: bool
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
