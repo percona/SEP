@@ -20,14 +20,23 @@ applied automatically. The lane skips cleanly when ``schemathesis`` is not
 installed locally; CI installs it on every PR (milestone M6).
 """
 
+from pathlib import Path
+
 import pytest
+
+_THIS_DIR = Path(__file__).parent
 
 
 def pytest_collection_modifyitems(
     config: pytest.Config,
     items: list[pytest.Item],
 ) -> None:
-    """Apply ``contract`` marker to every item collected under this directory."""
+    """Apply ``contract`` marker to every item collected under this directory.
+
+    ``pytest_collection_modifyitems`` is session-global: it receives every
+    collected item, not just those under this directory. The path check scopes
+    the marker back to this subtree (cross-platform via :mod:`pathlib`).
+    """
     for item in items:
-        if "tests/contract/" in str(item.fspath):
+        if _THIS_DIR in item.path.parents:
             item.add_marker(pytest.mark.contract)

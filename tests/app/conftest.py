@@ -21,6 +21,7 @@ applied automatically via :func:`pytest_collection_modifyitems` below.
 
 import inspect
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
@@ -267,11 +268,19 @@ def mock_remote_api() -> AsyncMock:
     return AsyncMock(spec=RemoteAPI)
 
 
+_THIS_DIR = Path(__file__).parent
+
+
 def pytest_collection_modifyitems(
     config: pytest.Config,
     items: list[pytest.Item],
 ) -> None:
-    """Apply ``integration`` marker to every test collected under this directory."""
+    """Apply ``integration`` marker to every test collected under this directory.
+
+    ``pytest_collection_modifyitems`` is session-global: it receives every
+    collected item, not just those under this directory. The path check scopes
+    the marker back to this subtree (cross-platform via :mod:`pathlib`).
+    """
     for item in items:
-        if "tests/app/" in str(item.fspath):
+        if _THIS_DIR in item.path.parents:
             item.add_marker(pytest.mark.integration)

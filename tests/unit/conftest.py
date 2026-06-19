@@ -20,14 +20,23 @@ automatically. Selecting the unit lane is then ``pytest -m unit``, no manual
 decoration required on each file.
 """
 
+from pathlib import Path
+
 import pytest
+
+_THIS_DIR = Path(__file__).parent
 
 
 def pytest_collection_modifyitems(
     config: pytest.Config,
     items: list[pytest.Item],
 ) -> None:
-    """Apply ``unit`` marker to every item collected under this directory."""
+    """Apply ``unit`` marker to every item collected under this directory.
+
+    ``pytest_collection_modifyitems`` is session-global: it receives every
+    collected item, not just those under this directory. The path check scopes
+    the marker back to this subtree (cross-platform via :mod:`pathlib`).
+    """
     for item in items:
-        if "tests/unit/" in str(item.fspath):
+        if _THIS_DIR in item.path.parents:
             item.add_marker(pytest.mark.unit)
