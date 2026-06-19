@@ -16,56 +16,21 @@
 """Define tests for the app.sep.plugins.checksums.deps module."""
 
 import shlex
-from collections import defaultdict
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
-from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.checksums.app import build_checksums_response
 from app.sep.plugins.checksums.deps import (
     _assemble_checksum_payload,
     build_checksums_task_payload,
 )
-from app.sep.plugins.checksums.models import (
-    ChecksumsCreate,
-    ChecksumsForm,
-    ChecksumTaskResponse,
-)
+from app.sep.plugins.checksums.models import ChecksumsCreate, ChecksumsForm
 from app.sep.plugins.checksums.payload import (
     build_checksums_spec,
     DEFAULT_RECURSION_DSN_TABLE,
 )
 from app.sep.plugins.framework.payload import assemble_envelope, ResolvedEntities
-from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
-from tests.app.factories import TaskFactory
-
-
-def _make_checksums_task(
-    created_by: str | None = None, last_updated_by: str | None = None
-) -> Task:
-    return TaskFactory.build(
-        name="test-checksums",
-        owner=TaskOwner.CHECKSUMS,
-        backend=TaskBackendEnum.PROXY,
-        is_template=False,
-        protected=False,
-        alert_on_fail=False,
-        data={
-            "task": "run-command",
-            "meta": {
-                "command": "pt-table-checksum",
-                "args": "--recursion-method=processlist",
-                "target": "host1",
-                "_service_name": "test-svc",
-                "_service_host": "127.0.0.1",
-                "_service_port": 3306,
-            },
-        },
-        created_by=created_by,
-        last_updated_by=last_updated_by,
-    )
+from app.tasks.models import TaskOwner, TaskWrite
 
 
 class TestChecksumsJinjaFormDeps:
@@ -385,89 +350,3 @@ class TestChecksumsPayloadAssembly:
         ]
         for flag in bool_flags:
             assert flag in args, f"{flag} should appear when True"
-
-
-class TestBuildChecksumsResponse:
-    """Tests for build_checksums_response context-driven username resolution."""
-
-    def test_created_by_resolved_to_display_name_when_mapping_provided(self):
-        """Assert created_by is resolved to display name when context contains the ID."""
-        task = _make_checksums_task(created_by="uid-abc", last_updated_by=None)
-
-        result = build_checksums_response(task, context={"uid-abc": "Alice"})
-
-        assert result.created_by == "Alice"
-
-    def test_created_by_falls_back_to_raw_id_when_not_in_mapping(self):
-        """Assert created_by is preserved as-is when the ID is not in the context."""
-        task = _make_checksums_task(created_by="uid-unknown", last_updated_by=None)
-
-        result = build_checksums_response(task, context={"uid-other": "Bob"})
-
-        assert result.created_by == "uid-unknown"
-
-    def test_last_updated_by_resolved_to_display_name(self):
-        """Assert last_updated_by is also resolved via the context."""
-        task = _make_checksums_task(created_by=None, last_updated_by="uid-xyz")
-
-        result = build_checksums_response(task, context={"uid-xyz": "Carol"})
-
-        assert result.last_updated_by == "Carol"
-
-    def test_context_none_preserves_raw_ids(self):
-        """Assert created_by and last_updated_by are unchanged when context is None."""
-        task = _make_checksums_task(created_by="uid-123", last_updated_by="uid-456")
-
-        result = build_checksums_response(task)
-
-        assert result.created_by == "uid-123"
-        assert result.last_updated_by == "uid-456"
-
-    def test_service_type_injected(self):
-        """Assert the builder always injects the MySQL service type."""
-        task = _make_checksums_task()
-
-        result = build_checksums_response(task)
-
-        assert result.service_type == ServiceTypeEnum.MYSQL
-
-
-class TestChecksumTaskResponseAnonymizedEntities:
-    """Test the anonymized_entities computed field on ChecksumTaskResponse."""
-
-    BASE_FIELDS: dict = {
-        "name": "test-checksum",
-        "owner": TaskOwner.CHECKSUMS,
-        "backend": "nomad",
-        "data": {},
-        "protected": False,
-        "alert_on_fail": False,
-    }
-
-    def test_explicit_mask_returns_sorted_entity_names(self) -> None:
-        """Explicit anonymize_mask decodes to a sorted list of PIIEntity name strings."""
-        mask = int(PIIEntity.IP_ADDRESS | PIIEntity.PERSON)
-        response = ChecksumTaskResponse.model_validate(
-            {**self.BASE_FIELDS, "anonymize_mask": mask}
-        )
-        assert response.anonymized_entities == ["IP_ADDRESS", "PERSON"]
-
-    def test_zero_mask_returns_empty_list(self) -> None:
-        """anonymize_mask=0 decodes to an empty list (no entities set)."""
-        response = ChecksumTaskResponse.model_validate(
-            {**self.BASE_FIELDS, "anonymize_mask": 0}
-        )
-        assert response.anonymized_entities == []
-
-    def test_none_mask_falls_back_to_owner_defaults(self) -> None:
-        """anonymize_mask=None falls back to anonymizer_settings.DEFAULT_ENTITIES[owner]."""
-        default_entities = {PIIEntity.EMAIL_ADDRESS}
-        mock_defaults = defaultdict(lambda: default_entities)
-        fields = {**self.BASE_FIELDS, "anonymize_mask": None}
-        with patch(
-            "app.sep.plugins.checksums.models.anonymizer_settings"
-        ) as mock_settings:
-            mock_settings.DEFAULT_ENTITIES = mock_defaults
-            response = ChecksumTaskResponse.model_validate(fields)
-            result = response.anonymized_entities
-        assert result == ["EMAIL_ADDRESS"]

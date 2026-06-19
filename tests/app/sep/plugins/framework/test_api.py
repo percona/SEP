@@ -51,7 +51,11 @@ from app.sep.deps import (
     IsApiAuthenticated,
     TaskAPI,
 )
-from app.sep.plugins.framework import ConnectivityWarning
+from app.sep.plugins.framework import (
+    ConnectivityWarning,
+    TaskExecuteWrite,
+    TaskExecutionResponse,
+)
 from app.sep.plugins.framework.api import (
     capabilities_endpoint,
     derive_crud_routes,
@@ -2505,6 +2509,17 @@ class TestDeriveExecuteRouteComposition:
         route = _route_for(_execute_router(), "/{task_name}/execute", "POST")
 
         assert route.response_model is _SyntheticExecutionResponse
+
+    def test_omitted_models_use_framework_defaults(self) -> None:
+        """Assert omitting execute models uses the framework defaults."""
+        router = APIRouter()
+        derive_execute_route(router, task_dep=_SYNTHETIC_TASK_DEP)
+        route = _route_for(router, "/{task_name}/execute", "POST")
+
+        assert route.response_model is TaskExecutionResponse
+        assert inspect.signature(route.endpoint).parameters["body"].annotation is (
+            TaskExecuteWrite
+        )
 
     def test_route_declares_standard_guards(self) -> None:
         """Assert the route declares ``IsApiAuthenticated`` + the conflict guard."""

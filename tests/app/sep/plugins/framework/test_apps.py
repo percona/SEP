@@ -41,7 +41,12 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
 from app.sep.deps import InventoryAPI, IsApiAuthenticated
-from app.sep.plugins.framework import ConnectivityWarning
+from app.sep.plugins.framework import (
+    BaseTaskResponse,
+    ConnectivityWarning,
+    TaskExecuteWrite,
+    TaskExecutionResponse,
+)
 from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp, Views
 from app.sep.plugins.framework.form_dsl import AppFormModel, Ui
 from app.sep.plugins.framework.schema import (
@@ -61,7 +66,12 @@ from tests.app.sep.plugins.framework.contract_suite import build_contract_client
 from tests.app.sep.plugins.framework.contract_suite import (
     routes_of as _routes,
 )
-from tests.app.sep.plugins.framework.kit import synth_app, synth_reject_running_task
+from tests.app.sep.plugins.framework.kit import (
+    synth_app,
+    synth_app_kwargs,
+    synth_reject_running_task,
+    SynthExecuteResponse,
+)
 from tests.app.sep.plugins.framework.kit import (
     SYNTH_EXECUTOR_HOST as _EXECUTOR_HOST,
 )
@@ -585,11 +595,6 @@ class TestDefinitionValidation:
         with pytest.raises(ValueError, match="detail_path_param"):
             _synth_app(detail_path_param="name")
 
-    def test_execute_without_models_raises(self) -> None:
-        """Assert enabling execute without its models is rejected."""
-        with pytest.raises(ValueError, match="execute"):
-            _synth_app(execute_write_model=None)
-
     def test_missing_response_model_raises(self) -> None:
         """Assert a definition without a ``response_model`` is rejected."""
         with pytest.raises(ValueError, match="response_model"):
@@ -643,10 +648,15 @@ class TestDefinitionValidation:
         with pytest.raises(ValueError, match="service_type"):
             _synth_app(service_type=None)
 
-    def test_context_provider_without_response_builder_raises(self) -> None:
-        """Assert ``response_context_provider`` without ``response_builder`` is rejected."""
-        with pytest.raises(ValueError, match="response_builder"):
-            _synth_app(response_builder=None)
+    def test_context_provider_without_response_builder_accepted(self) -> None:
+        """Assert ``response_context_provider`` without ``response_builder`` now builds.
+
+        The framework default builder consumes the bound context, so an app may
+        wire a ``response_context_provider`` while omitting ``response_builder``.
+        """
+        app_def = _synth_app(response_builder=None)
+
+        assert app_def.api_router is not None
 
     def test_create_extra_deps_without_create_capability_raises(self) -> None:
         """Assert ``create_extra_deps`` with create disabled is rejected."""
@@ -725,6 +735,170 @@ def _detail_route(app_def: TaskExecutionApp) -> APIRoute:
         and route.path == "/{task_name}"
         and "GET" in route.methods
     )
+
+
+def _execute_route(app_def: TaskExecutionApp) -> APIRoute:
+    """Return the derived ``POST /{task_name}/execute`` route of ``app_def``."""
+    return next(
+        route
+        for route in app_def.api_router.routes
+        if isinstance(route, APIRoute)
+        and route.path == "/{task_name}/execute"
+        and "POST" in route.methods
+    )
+
+
+class _RemapResponse(BaseModel):
+    """Carry the fields the framework default builder stamps and remaps."""
+
+    name: str
+    service_type: ServiceTypeEnum | None = None
+    created_by: str | None = None
+    last_updated_by: str | None = None
+
+
+class _BaseLikeResponse(BaseModel):
+    """Carry ``connectivity_warning`` so it can pin a connectivity-checked create."""
+
+    name: str
+    service_type: ServiceTypeEnum | None = None
+    created_by: str | None = None
+    last_updated_by: str | None = None
+    connectivity_warning: ConnectivityWarning | None = None
+
+
+async def _remap_context_provider() -> dict[str, str]:
+    """Return a username map the default builder remaps the user-ids through."""
+    return {"uid-a": "Alice", "uid-b": "Bob"}
+
+
+def _raw_task_dict() -> dict:
+    """Return a created-task payload with distinct creator and updater user-ids."""
+    return TaskFactory.build(
+        name="t-1",
+        owner=_OWNER.value,
+        created_by="uid-a",
+        last_updated_by="uid-b",
+        data={"meta": {}},
+    ).model_dump(mode="json")
+
+
+class TestDefaultResponseBuilder:
+    """Cover the framework default list builder's stamp + username remap."""
+
+    def test_omitted_response_model_uses_base_task_response(self) -> None:
+        """Assert omitting ``response_model`` falls back to ``BaseTaskResponse``."""
+        kwargs = synth_app_kwargs()
+        kwargs.pop("response_model")
+        kwargs["response_builder"] = None
+        app_def = TaskExecutionApp(**kwargs)
+
+        assert _detail_route(app_def).response_model is BaseTaskResponse
+
+    def test_stamps_service_type_and_remaps_usernames_from_context(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the default builder stamps ``service_type`` and remaps usernames."""
+        tasks_api = _make_tasks_api(list_items=[_raw_task_dict()])
+        app_def = _synth_app(
+            response_builder=None,
+            response_model=_RemapResponse,
+            response_context_provider=_remap_context_provider,
+        )
+        client = _client(
+            app_def, tasks_api, regular_user, inventory_api=_make_inventory_api()
+        )
+
+        item = client.get(f"{_BASE}/").json()[0]
+
+        assert item["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert item["created_by"] == "Alice"
+        assert item["last_updated_by"] == "Bob"
+
+    def test_passes_raw_ids_through_without_context(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the default builder leaves user-ids unmapped without a provider."""
+        tasks_api = _make_tasks_api(list_items=[_raw_task_dict()])
+        app_def = _synth_app(
+            response_builder=None,
+            response_model=_RemapResponse,
+            response_context_provider=None,
+        )
+        client = _client(
+            app_def, tasks_api, regular_user, inventory_api=_make_inventory_api()
+        )
+
+        item = client.get(f"{_BASE}/").json()[0]
+
+        assert item["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert item["created_by"] == "uid-a"
+        assert item["last_updated_by"] == "uid-b"
+
+
+class TestDefaultCreateResponseBuilder:
+    """Cover the framework default create builder's create-component resolution."""
+
+    def test_default_create_builder_pins_create_to_base_model(self) -> None:
+        """Assert a standard app's create route reuses the base response model."""
+        app_def = _synth_app(
+            response_builder=None,
+            response_model=_BaseLikeResponse,
+            connectivity_check=True,
+        )
+
+        assert _create_route(app_def).response_model is _BaseLikeResponse
+
+    def test_connectivity_base_without_warning_field_auto_derives(self) -> None:
+        """Assert a connectivity app whose base lacks the warning field auto-derives."""
+        app_def = _synth_app(connectivity_check=True)
+
+        model = _create_route(app_def).response_model
+
+        assert model is not _SynthResponse
+        assert "connectivity_warning" in model.model_fields
+
+    def test_detail_override_keeps_create_rendering_like_detail(self) -> None:
+        """Assert a detail override still drives the create response model."""
+        app_def = _synth_app(detail_response_builder=_alt_detail_builder)
+
+        assert _create_route(app_def).response_model is _AltDetailResponse
+
+
+class TestDefaultExecuteModels:
+    """Cover the framework default execute request/response models."""
+
+    def test_omitted_execute_models_use_framework_defaults(self) -> None:
+        """Assert omitting both execute models derives with the framework defaults."""
+        app_def = _synth_app(execute_write_model=None, execute_response_model=None)
+
+        assert _execute_route(app_def).response_model is TaskExecutionResponse
+
+    def test_omitted_execute_write_model_documents_default_in_openapi(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the derived execute body references ``TaskExecuteWrite``."""
+        app_def = _synth_app(execute_write_model=None, execute_response_model=None)
+        client = _client(
+            app_def,
+            _make_tasks_api(),
+            regular_user,
+            inventory_api=_make_inventory_api(),
+        )
+
+        spec = client.get("/openapi.json").json()
+        request_body = spec["paths"][f"{_BASE}/{{task_name}}/execute"]["post"][
+            "requestBody"
+        ]
+        ref = request_body["content"]["application/json"]["schema"]["$ref"]
+
+        assert ref.endswith(f"/{TaskExecuteWrite.__name__}")
+
+    def test_supplied_execute_models_win_over_defaults(self) -> None:
+        """Assert an app supplying execute models keeps them over the defaults."""
+        app_def = _synth_app()
+
+        assert _execute_route(app_def).response_model is SynthExecuteResponse
 
 
 class TestResponseAndFilterKnobs:
