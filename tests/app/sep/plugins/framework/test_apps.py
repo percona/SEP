@@ -96,6 +96,10 @@ async def _delete_handler(task_name: str) -> None:
     """Stand in as a delete handler so the delete route can be registered."""
 
 
+async def _update_handler(task_name: str) -> None:
+    """Stand in as an update handler so the update route can be registered."""
+
+
 async def _passthrough_payload_builder(inventory_api: InventoryAPI) -> TaskWrite:
     """Stand in as the create payload for a transitional ``schema=`` app."""
     return TaskWrite(name="passthrough", owner=_OWNER, data={})
@@ -648,6 +652,16 @@ class TestDefinitionValidation:
         """Assert ``create_extra_deps`` with create disabled is rejected."""
         with pytest.raises(ValueError, match="create_extra_deps"):
             _synth_app(capabilities=AppCapabilities(create=False))
+
+    def test_update_handler_without_update_capability_raises(self) -> None:
+        """Assert an ``update_handler`` set with update disabled is rejected."""
+        with pytest.raises(ValueError, match="update_handler"):
+            _synth_app(update_handler=_update_handler)
+
+    def test_delete_handler_without_delete_capability_raises(self) -> None:
+        """Assert a ``delete_handler`` set with delete disabled is rejected."""
+        with pytest.raises(ValueError, match="delete_handler"):
+            _synth_app(delete_handler=_delete_handler)
 
 
 class _AltListResponse(BaseModel):

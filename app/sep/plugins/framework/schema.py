@@ -591,11 +591,8 @@ class OneOfBranch(SchemaBaseModel):
     """Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.
 
     :param value: The discriminator value that selects this branch.
-    :type value: NonEmptyStr
     :param label: The human-readable label for the segmented-control option.
-    :type label: NonEmptyStr
     :param fields: The leaf fields revealed when this branch is active.
-    :type fields: list[LeafField]
     """
 
     value: NonEmptyStr
@@ -613,23 +610,16 @@ class OneOfGroup(SchemaBaseModel):
 
     :param field_type: The discriminator literal; always ``"one_of"`` for this
         class. Serialised as the JSON key ``"type"``.
-    :type field_type: Literal["one_of"]
     :param name: Stable group identifier used as the React list key. Not a
         separate form value — :attr:`discriminator` names the mode field.
-    :type name: NonEmptyStr
     :param label: The human-readable group heading above the segmented control.
-    :type label: NonEmptyStr
     :param description: Optional helper text rendered beneath the group label.
         Defaults to ``None``.
-    :type description: NonEmptyStr | None
     :param discriminator: Dotted path to the mode field (for example,
         ``"source.mode"``) whose value selects the active branch.
-    :type discriminator: NonEmptyStr
     :param default: Optional default branch :attr:`~OneOfBranch.value`. Must
         match one of the declared branches when set. Defaults to ``None``.
-    :type default: NonEmptyStr | None
     :param branches: Two or more named branches, each owning its own field list.
-    :type branches: list[OneOfBranch]
     """
 
     field_type: Literal["one_of"] = Field(

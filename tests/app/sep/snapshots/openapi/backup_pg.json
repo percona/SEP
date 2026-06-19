@@ -1425,7 +1425,7 @@
       },
       "OneOfBranch": {
         "additionalProperties": false,
-        "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:type value: NonEmptyStr\n:param label: The human-readable label for the segmented-control option.\n:type label: NonEmptyStr\n:param fields: The leaf fields revealed when this branch is active.\n:type fields: list[LeafField]",
+        "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:param label: The human-readable label for the segmented-control option.\n:param fields: The leaf fields revealed when this branch is active.",
         "properties": {
           "fields": {
             "items": {
@@ -1522,7 +1522,7 @@
       },
       "OneOfGroup": {
         "additionalProperties": false,
-        "description": "Represent a labelled either/or field group with a segmented mode switch.\n\nThe React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,\nshows :attr:`description` as helper text, and renders only the active\nbranch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden\nat validation time via rules synthesised from the group's branch contract.\n\n:param field_type: The discriminator literal; always ``\"one_of\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"one_of\"]\n:param name: Stable group identifier used as the React list key. Not a\n    separate form value — :attr:`discriminator` names the mode field.\n:type name: NonEmptyStr\n:param label: The human-readable group heading above the segmented control.\n:type label: NonEmptyStr\n:param description: Optional helper text rendered beneath the group label.\n    Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param discriminator: Dotted path to the mode field (for example,\n    ``\"source.mode\"``) whose value selects the active branch.\n:type discriminator: NonEmptyStr\n:param default: Optional default branch :attr:`~OneOfBranch.value`. Must\n    match one of the declared branches when set. Defaults to ``None``.\n:type default: NonEmptyStr | None\n:param branches: Two or more named branches, each owning its own field list.\n:type branches: list[OneOfBranch]",
+        "description": "Represent a labelled either/or field group with a segmented mode switch.\n\nThe React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,\nshows :attr:`description` as helper text, and renders only the active\nbranch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden\nat validation time via rules synthesised from the group's branch contract.\n\n:param field_type: The discriminator literal; always ``\"one_of\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param name: Stable group identifier used as the React list key. Not a\n    separate form value — :attr:`discriminator` names the mode field.\n:param label: The human-readable group heading above the segmented control.\n:param description: Optional helper text rendered beneath the group label.\n    Defaults to ``None``.\n:param discriminator: Dotted path to the mode field (for example,\n    ``\"source.mode\"``) whose value selects the active branch.\n:param default: Optional default branch :attr:`~OneOfBranch.value`. Must\n    match one of the declared branches when set. Defaults to ``None``.\n:param branches: Two or more named branches, each owning its own field list.",
         "properties": {
           "branches": {
             "items": {
@@ -2158,14 +2158,15 @@
         "type": "object"
       },
       "ServiceTypeEnum": {
-        "description": "Enumeration of supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str",
+        "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
         "enum": [
           "mysql",
           "postgresql",
           "mongodb",
           "proxysql",
           "haproxy",
-          "external"
+          "external",
+          "valkey"
         ],
         "title": "ServiceTypeEnum",
         "type": "string"

@@ -151,6 +151,10 @@
                 {
                   "label": "External",
                   "value": "external"
+                },
+                {
+                  "label": "Valkey",
+                  "value": "valkey"
                 }
               ],
               "label": "Service type",
