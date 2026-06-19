@@ -157,6 +157,19 @@
     {
       "collapsed_by_default": false,
       "collapsible": false,
+      "fail_when": [
+        {
+          "error_fields": [
+            "swap_drop"
+          ],
+          "fail_when": {
+            "not_equals": {
+              "swap_drop": 0
+            }
+          },
+          "message": "Not available yet. Only Purge Only is currently supported."
+        }
+      ],
       "fields": [
         {
           "choices": [
@@ -165,14 +178,19 @@
               "value": "0"
             },
             {
+              "disabled": true,
+              "disabled_reason": "Not available yet. Only Purge Only is currently supported.",
               "label": "Swap & Drop",
               "value": "1"
             },
             {
+              "disabled": true,
+              "disabled_reason": "Not available yet. Only Purge Only is currently supported.",
               "label": "Swap Archive & Drop",
               "value": "2"
             }
           ],
+          "default": "0",
           "label": "Archive Type",
           "name": "swap_drop",
           "required": true,

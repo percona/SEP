@@ -54,7 +54,7 @@ from app.sep.plugins.framework.schema import (
 )
 
 # Shared copy for the disabled-choice tooltip and the server-side FailRule so the
-# UI hint and the validation error stay in sync. Only Purge Only is supported for now.
+# UI hint and the validation error stay in sync.
 _SWAP_DROP_UNSUPPORTED = "Not available yet. Only Purge Only is currently supported."
 
 archives_schema = PluginSchema(
@@ -334,8 +334,7 @@ archives_schema = PluginSchema(
                 ),
                 # Validator 3d: SWAP_ARCHIVE_DROP cannot have a destination host.
                 # Unreachable while only Purge Only is selectable (the Archive Type
-                # FailRule rejects swap_drop != PURGE_ONLY first); retained for when
-                # SWAP_ARCHIVE_DROP is re-enabled.
+                # FailRule rejects swap_drop != PURGE_ONLY first).
                 FailRule(
                     fail_when=all_(
                         F("swap_drop") == SwapDropEnum.SWAP_ARCHIVE_DROP,
