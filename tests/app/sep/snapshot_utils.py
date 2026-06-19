@@ -25,7 +25,7 @@ from fastapi import FastAPI
 
 from app.core.utils.openapi import generate_tag_prefixed_unique_id
 from app.sep.api.router import api_router
-from app.sep.config import sep_settings
+from app.sep.plugins.framework.registry import get_app_registry
 
 SNAPSHOTS_DIR = Path(__file__).parent / "snapshots"
 PLUGIN_PREFIX = "/api/plugins"
@@ -106,21 +106,20 @@ def slice_openapi_subtree(openapi: dict[str, Any], prefix: str) -> dict[str, Any
 
 
 def configured_plugin_keys() -> list[str]:
-    """Return plugin keys derived from config (not live-app discovery), sorted.
+    """Return registry keys for plugins that expose a JSON API router, sorted.
 
-    Mirror ``build_plugins_router``: take ``module_name.split('.')[-1]`` for
-    each configured plugin that has an ``api_router_path``. Reading from
-    ``sep_settings.PLUGINS`` keeps the inventory independent of sibling
-    conftests that inject extra routers into the process-global ``sep_app``.
+    Read from the cached :func:`get_app_registry` (built once from
+    ``sep_settings.PLUGINS`` and never mutated) rather than ``sep_settings``
+    directly, so a definition-based app whose JSON router is the derived
+    ``api_router`` (no ``api_router_path``) is counted alongside legacy
+    ``api_router_path`` plugins. Reading the registry keeps the inventory
+    independent of sibling conftests that inject extra routers into the
+    process-global ``sep_app``.
 
-    :return: The sorted list of configured plugin keys exposing an API router.
+    :return: The sorted list of plugin keys exposing an API router.
     :rtype: list[str]
     """
-    return sorted(
-        plugin.module_name.split(".")[-1]
-        for plugin in sep_settings.PLUGINS
-        if plugin.api_router_path
-    )
+    return sorted(app.key for app in get_app_registry() if app.api_router is not None)
 
 
 def build_plugins_openapi() -> dict[str, Any]:
