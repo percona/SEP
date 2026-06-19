@@ -195,7 +195,6 @@ async def dipper_api_script_preview(
 
 @router.post(
     "/",
-    response_model=DipperExecutionResponse,
     status_code=http_status.HTTP_201_CREATED,
     dependencies=[IsApiAuthenticated],
 )
