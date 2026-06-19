@@ -1260,8 +1260,8 @@ def derive_execute_route(
             name="checksums_api_execute",
             description="Execute a checksum task.",
             task_dep=ChecksumsTask,
-            write_model=ChecksumExecuteWrite,
-            response_model=ChecksumExecutionResponse,
+            write_model=TaskExecuteWrite,
+            response_model=TaskExecutionResponse,
         )
 
     :param router: The plugin's ``APIRouter``.

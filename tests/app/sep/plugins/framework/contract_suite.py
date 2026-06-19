@@ -49,7 +49,7 @@ from app.sep.deps import (
     get_tasks_api,
     IsApiAuthenticated,
 )
-from app.sep.plugins.framework import ConnectivityWarning
+from app.sep.plugins.framework import ConnectivityWarning, TaskExecuteWrite
 from app.sep.plugins.framework.apps import TaskExecutionApp
 from app.sep.plugins.framework.conformance import CAPABILITY_RENDERED_CONTROLS
 from app.sep.plugins.framework.form_dsl import (
@@ -626,7 +626,9 @@ class DerivedRouterContractTests:
         if not self.app_def.capabilities.execute:
             pytest.skip("execute capability disabled")
         body = (
-            ModelFactory.create_factory(self.app_def.execute_write_model)
+            ModelFactory.create_factory(
+                self.app_def.execute_write_model or TaskExecuteWrite
+            )
             .build()
             .model_dump(mode="json")
         )
@@ -651,7 +653,9 @@ class DerivedRouterContractTests:
             pytest.skip("execute capability disabled")
         mock_task_api.seed_running(_CONFLICT_TASK_NAME, owner=self.app_def.owner)
         body = (
-            ModelFactory.create_factory(self.app_def.execute_write_model)
+            ModelFactory.create_factory(
+                self.app_def.execute_write_model or TaskExecuteWrite
+            )
             .build()
             .model_dump(mode="json")
         )

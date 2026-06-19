@@ -68,9 +68,12 @@ from app.sep.plugins.framework.payload import (
     RunPythonSpec,
 )
 from app.sep.plugins.framework.responses import (
+    BaseTaskResponse,
     build_default_task_response,
     build_task_list_responses,
     derive_create_response_model,
+    TaskExecuteWrite,
+    TaskExecutionResponse,
 )
 from app.sep.plugins.framework.rules import (
     absent,
@@ -109,6 +112,7 @@ __all__ = [
     "AppCapabilities",
     "AppFormModel",
     "BaseApp",
+    "BaseTaskResponse",
     "CardinalityRule",
     "Cascade",
     "CascadeFailure",
@@ -136,7 +140,9 @@ __all__ = [
     "SectionRules",
     "ServiceRef",
     "TableRef",
+    "TaskExecuteWrite",
     "TaskExecutionApp",
+    "TaskExecutionResponse",
     "Ui",
     "Views",
     "absent",

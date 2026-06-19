@@ -15,14 +15,12 @@
 
 """Define models for the Checksums plugin."""
 
-from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 
-from pydantic import BaseModel, computed_field, FutureDatetime
+from pydantic import BaseModel
 
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.framework import ConnectivityWarning
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     Choices,
@@ -31,9 +29,6 @@ from app.sep.plugins.framework.form_dsl import (
     ServiceRef,
     Ui,
 )
-from app.tasks.anonymizer.config import anonymizer_settings
-from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
 class ChecksumsCreate(BaseModel):
@@ -257,110 +252,3 @@ class ChecksumsForm(AppFormModel):
         ),
     ] = ""
     alert_on_fail: Annotated[bool, Hidden()] = False
-
-
-class ChecksumTaskBase(BaseModel):
-    """Define the common fields shared across checksum task API responses.
-
-    :param name: The name of the checksum task.
-    :type name: str
-    :param owner: The entity or user that owns the task.
-    :type owner: TaskOwner
-    :param service_type: The type of database service (e.g., MySQL, PostgreSQL).
-    :type service_type: ServiceTypeEnum | None
-    :param status: The current execution status of the task.
-    :type status: TaskHistoryStatusEnum | None
-    """
-
-    name: str
-    owner: TaskOwner
-    service_type: ServiceTypeEnum | None = None
-    status: TaskHistoryStatusEnum | None = None
-
-
-class ChecksumTaskResponse(ChecksumTaskBase):
-    """Represent a checksum task API response.
-
-    :param id: The unique identifier for the checksum task.
-    :type id: int | None
-    :param backend: The backend worker/engine executing the task.
-    :type backend: TaskBackendEnum
-    :param data: The raw configuration and parameters used for the checksum execution.
-    :type data: dict[str, Any]
-    :param protected: Whether the task is protected from deletion or modification.
-    :type protected: bool
-    :param alert_on_fail: If True, notifications are sent upon task failure.
-    :type alert_on_fail: bool
-    :param anonymize_mask: Bitmask of PII entities to anonymize. Defaults to None.
-    :type anonymize_mask: int | None
-    :param created_at: The timestamp when the task was first created.
-    :type created_at: datetime | None
-    :param updated_at: The timestamp of the last modification to the task.
-    :type updated_at: datetime | None
-    :param created_by: Display name for the user who initiated the task
-        (Casdoor username when resolvable, otherwise the stored user id).
-    :type created_by: str | None
-    :param last_updated_by: Display name for the user who last modified the task record
-        (Casdoor username when resolvable, otherwise the stored user id).
-    :type last_updated_by: str | None
-    :param connectivity_warning: A warning surfaced when the post-creation
-        database connectivity check fails. ``None`` when the check passes,
-        is opted out, or the task meta lacks the connectivity keys.
-    :type connectivity_warning: ConnectivityWarning | None
-    :param anonymized_entities: Sorted list of PII entity names derived from
-        ``anonymize_mask`` (or from the owner's configured defaults when the
-        mask is ``None``). Read-only; computed on serialisation.
-    :type anonymized_entities: list[str]
-    """
-
-    id: int | None = None
-    backend: TaskBackendEnum
-    data: dict[str, Any]
-    protected: bool
-    alert_on_fail: bool
-    anonymize_mask: int | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    created_by: str | None = None
-    last_updated_by: str | None = None
-    connectivity_warning: ConnectivityWarning | None = None
-
-    @computed_field
-    @property
-    def anonymized_entities(self) -> list[str]:
-        """Return sorted PII entity names decoded from ``anonymize_mask``."""
-        entities = (
-            PIIEntity.decode_selection(self.anonymize_mask)
-            if self.anonymize_mask is not None
-            else anonymizer_settings.DEFAULT_ENTITIES[self.owner]
-        )
-        return sorted(entity.name for entity in entities)
-
-
-class ChecksumExecuteWrite(BaseModel):
-    """Represent a JSON request body for executing a checksum task.
-
-    :param eta: Optional future datetime to schedule execution.
-    :type eta: FutureDatetime | None
-    :param chain_task_names: Optional list of task names to chain after this one.
-    :type chain_task_names: list[str] | None
-    :param chain_on_failure: Whether to run chained tasks even on failure.
-    :type chain_on_failure: bool | None
-    """
-
-    eta: FutureDatetime | None = None
-    chain_task_names: list[str] | None = None
-    chain_on_failure: bool | None = None
-
-
-class ChecksumExecutionResponse(BaseModel):
-    """Represent the response from POST /api/plugins/checksums/{task_name}/execute.
-
-    :param task_name: The name of the task that was executed.
-    :type task_name: str
-    :param task_id: The id of the task-history row created by the tasks API.
-    :type task_id: int | None
-    """
-
-    task_name: str
-    task_id: int | None = None

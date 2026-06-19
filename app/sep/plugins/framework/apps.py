@@ -42,6 +42,7 @@ from app.sep.plugins.framework.api import (
     derive_execute_route,
 )
 from app.sep.plugins.framework.base import BaseApp
+from app.sep.plugins.framework.connectivity import CONNECTIVITY_WARNING_FIELD
 from app.sep.plugins.framework.deps import make_task_dep
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
@@ -56,6 +57,8 @@ from app.sep.plugins.framework.payload import (
 )
 from app.sep.plugins.framework.responses import (
     build_default_task_response,
+    TaskExecuteWrite,
+    TaskExecutionResponse,
     TaskResponseBuilder,
 )
 from app.sep.plugins.framework.schema import (
@@ -208,10 +211,14 @@ class TaskExecutionApp(BaseApp):
         derived default; used only when ``capabilities.delete``. When ``None``
         (default) and ``capabilities.delete`` is on, the framework derives a plain
         fetch-then-delete DELETE.
-    :param execute_write_model: The execute request body model; required when
-        ``capabilities.execute``. Defaults to ``None``.
-    :param execute_response_model: The execute response model; required when
-        ``capabilities.execute``. Defaults to ``None``.
+    :param execute_write_model: The execute request body model used when
+        ``capabilities.execute``. Defaults to ``None``, which derives the route
+        with the framework's
+        :class:`~app.sep.plugins.framework.responses.TaskExecuteWrite`.
+    :param execute_response_model: The execute response model used when
+        ``capabilities.execute``. Defaults to ``None``, which derives the route
+        with the framework's
+        :class:`~app.sep.plugins.framework.responses.TaskExecutionResponse`.
     :param capabilities_provider: A sync provider returning the runtime
         ``GET /capabilities`` response model. Defaults to ``None`` (no
         capabilities route).
@@ -226,8 +233,11 @@ class TaskExecutionApp(BaseApp):
         when it differs from ``service_type``. Requires ``service_type``. Defaults
         to ``False``.
     :param response_builder: A sync list/detail builder override injecting the
-        per-plugin response extras; replaces the default no-extras builder.
-        Defaults to ``None``.
+        per-plugin response extras; replaces the framework default builder. When
+        ``None`` (default) the framework builds a default list/detail builder
+        that stamps ``service_type`` and remaps the ``created_by`` /
+        ``last_updated_by`` user-ids to usernames through the bound response
+        context. Defaults to ``None``.
     :param detail_response_builder: A sync detail-only builder override; when
         ``None`` the detail route falls back to ``response_builder`` and the list
         model. When set, the create route renders like detail too unless an
@@ -237,14 +247,19 @@ class TaskExecutionApp(BaseApp):
         builder whose return type cannot be introspected). Defaults to ``None``.
     :param response_context_provider: A zero-arg async provider whose once-awaited
         result (for example a username map) is bound as the builders' ``context``
-        across the list, detail, and create builds. Requires ``response_builder``.
-        Defaults to ``None``.
+        across the list, detail, and create builds, consumed by the framework
+        default builder or an overriding ``response_builder``. Defaults to
+        ``None``.
     :param create_extra_deps: Extra create-route dependencies appended after the
         standard auth guard; requires ``capabilities.create``. Defaults to ``()``.
     :param create_response_builder: A sync create-response builder override that
         injects the per-plugin create-response extras and pins a stable
         create-response component (in place of the framework's auto-derived one),
-        reused by the derived PUT. Mutually exclusive with ``create_response_model``
+        reused by the derived PUT. When ``None`` (default) a standard app (no
+        detail override, and a ``response_model`` that carries
+        ``connectivity_warning`` when ``connectivity_check`` is on) reuses the
+        framework default create builder over ``response_model``, pinning the
+        create component to it. Mutually exclusive with ``create_response_model``
         and requires ``capabilities.create``. Defaults to ``None``.
     :param update_guard: Extra route dependencies (guards) appended after the auth
         guard on the *derived* PUT — the handler-less escape hatch for a per-plugin
@@ -417,24 +432,17 @@ class TaskExecutionApp(BaseApp):
         """Validate the detail-path, execute, and update route knobs.
 
         :raises ValueError: When a non-default ``detail_path_param`` has no custom
-            ``get_task``; when an execute-enabled app lacks its models; when an
-            ``update_handler`` or ``delete_handler`` is set without its capability
-            enabled (it would otherwise be silently dropped); when ``update_guard``
-            is set on a non-derived update (no update capability, or a full
-            ``update_handler``); or when the derived update lacks the create
-            capability whose payload it rebuilds the body through.
+            ``get_task``; when an ``update_handler`` or ``delete_handler`` is set
+            without its capability enabled (it would otherwise be silently
+            dropped); when ``update_guard`` is set on a non-derived update (no
+            update capability, or a full ``update_handler``); or when the derived
+            update lacks the create capability whose payload it rebuilds the body
+            through.
         """
         if self.detail_path_param != "task_name" and self.get_task is None:
             raise ValueError(
                 "TaskExecutionApp: detail_path_param other than 'task_name' requires "
                 "a custom get_task whose inner path parameter matches it"
-            )
-        if self.capabilities.execute and (
-            self.execute_write_model is None or self.execute_response_model is None
-        ):
-            raise ValueError(
-                "TaskExecutionApp: the execute capability needs execute_write_model "
-                "and execute_response_model"
             )
         if self.update_handler is not None and not self.capabilities.update:
             raise ValueError(
@@ -466,21 +474,15 @@ class TaskExecutionApp(BaseApp):
             )
 
     def _validate_response_knobs(self) -> None:
-        """Validate the list-filter and response-context knobs are self-consistent.
+        """Validate the list-filter knob is self-consistent.
 
         :raises ValueError: When ``list_service_type_filter`` is set without a
-            ``service_type`` to filter against; or when ``response_context_provider``
-            is set without a ``response_builder`` to receive the resolved context.
+            ``service_type`` to filter against.
         """
         if self.list_service_type_filter and self.service_type is None:
             raise ValueError(
                 "TaskExecutionApp: list_service_type_filter needs a service_type to "
                 "filter against; set service_type or drop the filter"
-            )
-        if self.response_context_provider is not None and self.response_builder is None:
-            raise ValueError(
-                "TaskExecutionApp: response_context_provider feeds context into the "
-                "response_builder; set response_builder or drop the provider"
             )
 
     @property
@@ -545,8 +547,8 @@ class TaskExecutionApp(BaseApp):
             derive_execute_route(
                 router,
                 task_dep=self.task_dep,
-                write_model=self.execute_write_model,
-                response_model=self.execute_response_model,
+                write_model=self.execute_write_model or TaskExecuteWrite,
+                response_model=self.execute_response_model or TaskExecutionResponse,
                 name=f"{self.name}_api_execute",
             )
 
@@ -577,59 +579,115 @@ class TaskExecutionApp(BaseApp):
             predecessors=list(cascade.predecessors) or None,
         )
 
+    def _default_task_response_builder(
+        self, response_model: type[BaseModel]
+    ) -> TaskResponseBuilder:
+        """Build the framework default response builder over ``response_model``.
+
+        Stamp the app's ``service_type`` and remap the ``created_by`` /
+        ``last_updated_by`` user-ids to usernames through the bound response
+        context, falling back to the raw id when the map lacks an entry. Shared by
+        the list/detail and create/update response surfaces so a standard app
+        needs no per-app builder; left ``connectivity_warning`` at the model
+        default for the framework to merge on create/update.
+
+        :param response_model: The model the builder constructs; its return
+            annotation supplies the derived route's response model.
+        :return: A ``(task, *, status, context) -> response_model`` builder.
+        """
+        service_type = self.service_type
+
+        def _builder(
+            task: Task,
+            *,
+            status: TaskHistoryStatusEnum | None = None,
+            context: dict[str, str] | None = None,
+        ) -> response_model:
+            mapping = context or {}
+            return build_default_task_response(
+                response_model,
+                task,
+                status,
+                extras={
+                    "created_by": mapping.get(task.created_by, task.created_by),
+                    "last_updated_by": mapping.get(
+                        task.last_updated_by, task.last_updated_by
+                    ),
+                    "service_type": service_type,
+                },
+            )
+
+        return _builder
+
     def _build_response_builder(self) -> TaskResponseBuilder:
         """Return the plugin's ``response_builder`` override, or a default builder.
 
-        Use the supplied ``response_builder`` verbatim when set (it injects the
-        per-plugin response extras via ``build_default_task_response(extras=...)``);
-        otherwise build the default no-extras sync builder over ``response_model``.
+        Use the supplied ``response_builder`` verbatim when set; otherwise build
+        the framework default builder (stamp ``service_type`` + remap usernames)
+        over ``response_model``.
 
-        :return: A ``(task, *, status) -> response_model`` builder whose return
-            annotation supplies the derived list/detail response model.
+        :return: A ``(task, *, status, context) -> response_model`` builder whose
+            return annotation supplies the derived list/detail response model.
         """
         if self.response_builder is not None:
             return self.response_builder
-
-        response_model = self.response_model
-
-        def _builder(
-            task: Task, *, status: TaskHistoryStatusEnum | None = None
-        ) -> response_model:
-            return build_default_task_response(response_model, task, status)
-
-        return _builder
+        return self._default_task_response_builder(self.response_model)
 
     def _build_create_response_builder(self) -> TaskResponseBuilder | None:
         """Return the create response builder for the derived create/update routes.
 
         Use the supplied ``create_response_builder`` verbatim when set (it injects
         the per-plugin create-response extras and pins a stable create-response
-        component), mirroring ``_build_response_builder``. Otherwise, when a
-        ``create_response_model`` is set, build the default no-extras sync builder
-        over it — the builder accepts (and ignores) a ``context`` keyword so the
-        create route can bind a ``response_context_provider``'s result into it
-        uniformly.
+        component). Otherwise, when a ``create_response_model`` is set, build a
+        no-extras sync builder over it — the builder accepts (and ignores) a
+        ``context`` keyword so the create route can bind a
+        ``response_context_provider``'s result uniformly.
 
-        :return: The explicit ``create_response_builder``; or a sync builder over
-            ``create_response_model``; or ``None`` when neither is configured.
+        When neither is set, a create-enabled standard app reuses the framework
+        default builder over ``response_model``, pinning the create component to
+        it (no auto-derived ``<App>CreateResponse``). That shortcut is skipped —
+        falling back to ``None`` so the framework's existing create-model
+        resolution applies — when create is disabled (there is no create route to
+        attach a builder to), when a detail override means the create route
+        renders like detail (its base is the detail model, not ``response_model``),
+        or when ``connectivity_check`` is on but ``response_model`` cannot carry
+        the probe ``connectivity_warning``.
+
+        :return: The explicit ``create_response_builder``; a no-extras builder over
+            ``create_response_model``; the framework default builder over
+            ``response_model``; or ``None`` when the default shortcut is skipped.
         """
         if self.create_response_builder is not None:
             return self.create_response_builder
 
-        if self.create_response_model is None:
+        if self.create_response_model is not None:
+            create_response_model = self.create_response_model
+
+            def _builder(
+                task: Task,
+                *,
+                status: TaskHistoryStatusEnum | None = None,
+                **_: Any,
+            ) -> create_response_model:
+                return build_default_task_response(create_response_model, task, status)
+
+            return _builder
+
+        renders_like_detail = (
+            self.detail_response_builder is not None
+            or self.detail_response_model is not None
+        )
+        base_cannot_hold_warning = (
+            self.connectivity_check
+            and CONNECTIVITY_WARNING_FIELD not in self.response_model.model_fields
+        )
+        if (
+            not self.capabilities.create
+            or renders_like_detail
+            or base_cannot_hold_warning
+        ):
             return None
-
-        create_response_model = self.create_response_model
-
-        def _builder(
-            task: Task,
-            *,
-            status: TaskHistoryStatusEnum | None = None,
-            **_: Any,
-        ) -> create_response_model:
-            return build_default_task_response(create_response_model, task, status)
-
-        return _builder
+        return self._default_task_response_builder(self.response_model)
 
     def _build_create_payload(self) -> Callable[..., Awaitable[TaskWrite]]:
         """Return the create-payload dependency for the derived create route.

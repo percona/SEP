@@ -13,24 +13,117 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Provide the shared JSON-API list pipeline and default task response builder."""
+"""Provide the shared JSON-API list pipeline, default builder, and base models."""
 
 import functools
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import datetime
 from typing import Any, cast, overload, Protocol, TypeVar
 
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, computed_field, create_model, FutureDatetime
 
 from app.core.pagination import PaginatedResponse, Pagination
+from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import TaskAPI
 from app.sep.plugins.framework.connectivity import (
     CONNECTIVITY_WARNING_FIELD,
     ConnectivityWarning,
 )
 from app.sep.plugins.framework.task_status import batch_get_latest_statuses
-from app.tasks.models import Task, TaskHistoryStatusEnum
+from app.tasks.anonymizer.config import anonymizer_settings
+from app.tasks.anonymizer.entities import PIIEntity
+from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 R = TypeVar("R", bound=BaseModel)
+
+
+class BaseTaskResponse(BaseModel):
+    """Represent the universal task-response surface for standard task apps.
+
+    Carry the fields shared by every standard ``TaskExecutionApp`` response:
+    the task identity and ownership, the resolved execution status, the stored
+    configuration, and the audit/anonymization metadata. A standard app whose
+    response has no app-specific fields uses this model directly; an app with
+    extras subclasses it. The model is parametrized by the task ``owner``, which
+    drives the ``anonymized_entities`` default-entity lookup.
+
+    :param name: The task name.
+    :param owner: The entity or user that owns the task.
+    :param service_type: The database service type, stamped by the builder;
+        ``None`` for an app without a fixed service type.
+    :param status: The latest known execution status; ``None`` until the task
+        runs.
+    :param id: The task's unique identifier.
+    :param backend: The backend worker/engine executing the task.
+    :param data: The raw configuration and parameters used for execution.
+    :param protected: Whether the task is protected from deletion or modification.
+    :param alert_on_fail: Whether a notification is sent on task failure.
+    :param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls
+        back to the owner's configured defaults.
+    :param created_at: The timestamp when the task was first created.
+    :param updated_at: The timestamp of the last modification to the task.
+    :param created_by: Display name for the user who initiated the task (Casdoor
+        username when resolvable, otherwise the stored user id).
+    :param last_updated_by: Display name for the user who last modified the task
+        record (Casdoor username when resolvable, otherwise the stored user id).
+    :param connectivity_warning: A warning surfaced when the post-creation
+        database connectivity check fails. ``None`` when the check passes, is
+        opted out, or the task meta lacks the connectivity keys.
+    :param anonymized_entities: Sorted PII entity names derived from
+        ``anonymize_mask`` (or from the owner's configured defaults when the mask
+        is ``None``). Read-only; computed on serialisation.
+    """
+
+    name: str
+    owner: TaskOwner
+    service_type: ServiceTypeEnum | None = None
+    status: TaskHistoryStatusEnum | None = None
+    id: int | None = None
+    backend: TaskBackendEnum
+    data: dict[str, Any]
+    protected: bool
+    alert_on_fail: bool
+    anonymize_mask: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str | None = None
+    last_updated_by: str | None = None
+    connectivity_warning: ConnectivityWarning | None = None
+
+    @computed_field
+    @property
+    def anonymized_entities(self) -> list[str]:
+        """Return sorted PII entity names decoded from ``anonymize_mask``."""
+        entities = (
+            PIIEntity.decode_selection(self.anonymize_mask)
+            if self.anonymize_mask is not None
+            else anonymizer_settings.DEFAULT_ENTITIES[self.owner]
+        )
+        return sorted(entity.name for entity in entities)
+
+
+class TaskExecuteWrite(BaseModel):
+    """Represent the default JSON request body for executing a task.
+
+    :param eta: Optional future datetime to schedule execution.
+    :param chain_task_names: Optional list of task names to chain after this one.
+    :param chain_on_failure: Whether to run chained tasks even on failure.
+    """
+
+    eta: FutureDatetime | None = None
+    chain_task_names: list[str] | None = None
+    chain_on_failure: bool | None = None
+
+
+class TaskExecutionResponse(BaseModel):
+    """Represent the default response from a task execute route.
+
+    :param task_name: The name of the task that was executed.
+    :param task_id: The id of the task-history row created by the tasks API.
+    """
+
+    task_name: str
+    task_id: int | None = None
 
 
 class TaskResponseBuilder(Protocol[R]):
