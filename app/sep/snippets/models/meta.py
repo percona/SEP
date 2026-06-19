@@ -79,6 +79,26 @@ ParameterType = str | int | float | bool | datetime | None
 logger = logging.getLogger(__name__)
 
 
+def _value_is_present(value: Any) -> bool:
+    """Return whether ``value`` would count as *present* to a forbidden gate.
+
+    Mirrors the framework's ``_field_is_present`` semantics so the meta-time
+    guard matches runtime gate evaluation: ``None`` and ``False`` and empty
+    strings/collections are *absent*; any other value (including ``0``) is
+    *present*.
+
+    :param value: The default value to classify.
+    :type value: Any
+    :return: ``True`` when the value would trip a forbidden gate.
+    :rtype: bool
+    """
+    if value is None or value is False:
+        return False
+    if isinstance(value, str | bytes | list | tuple | set | frozenset | dict):
+        return len(value) > 0
+    return True
+
+
 class SnippetMetaParameterType(EnumFieldMixin, Enum):
     """Enumerate the possible types for snippet parameters."""
 
@@ -143,12 +163,14 @@ class SnippetVisibilityCondition(BaseModel):
     (when ``equals`` is ``None``) or its equality against a literal value.
 
     .. note::
-        Visibility conditions are *client-enforced only*. They lower onto the
-        framework's ``forbidden`` :class:`~app.sep.plugins.framework.rules.FieldGate`,
-        which the React renderer evaluates to hide the field and drop its value
-        from the submitted payload. The snippet execute endpoint validates only
-        type/presence (``BaseSnippetArgs``) and does not server-reject a value
-        that is submitted directly for a hidden field.
+        Visibility conditions lower onto the framework's ``forbidden``
+        :class:`~app.sep.plugins.framework.rules.FieldGate`. The React renderer
+        evaluates them to hide the field and drop its value from the submitted
+        payload, and both snippet execute paths additionally enforce them
+        server-side: a value submitted directly for a field whose gate fires is
+        rejected (HTTP 422 on the JSON API; flash + redirect on the legacy form),
+        matching ``field_gate_forbidden`` "must be absent" semantics. See
+        :func:`app.sep.plugins.snippets.schema.evaluate_visibility_gates`.
 
     :param parameter: The name of the sibling parameter the rule references.
     :type parameter: NonEmptyStr
@@ -312,9 +334,13 @@ class SnippetMetaParameter(BaseModel):
         :raises ValueError: If both conditions are declared, a condition
             references the parameter itself, a condition is combined with
             ``required=True`` (a hidden field is dropped client-side and would
-            then fail server-side required validation), or a gated parameter's
-            name or referenced sibling is not a valid Python identifier (the
-            framework conditional-rules engine rejects hyphenated names).
+            then fail server-side required validation), a condition is combined
+            with a non-empty ``default`` (the dropped field is backfilled with
+            the default, which the server-side forbidden gate then sees as
+            present and rejects — an unsatisfiable trap), or a gated
+            parameter's name or referenced sibling is not a valid Python
+            identifier (the framework conditional-rules engine rejects
+            hyphenated names).
         """
         if self.visible_when is not None and self.visible_when_not is not None:
             raise ValueError("declare only one of 'visible_when' or 'visible_when_not'")
@@ -328,6 +354,11 @@ class SnippetMetaParameter(BaseModel):
         if self.required:
             raise ValueError(
                 "a required parameter cannot declare a visibility condition"
+            )
+        if _value_is_present(self.default):
+            raise ValueError(
+                "a parameter with a non-empty default cannot declare a "
+                "visibility condition"
             )
         if not self.name.isidentifier():
             raise ValueError(

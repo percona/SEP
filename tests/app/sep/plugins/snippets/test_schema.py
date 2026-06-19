@@ -240,9 +240,9 @@ async def test_per_snippet_schema_maps_choices_to_choice_field(create_snippet):
 class TestVisibilityGates:
     """Test that field_for lowers visibility conditions onto forbidden gates.
 
-    These gates are client-enforced: the React renderer hides the field and
-    drops its value. The snippet execute endpoint does not server-reject a
-    directly-submitted hidden value.
+    The React renderer hides the field and drops its value; the gates are also
+    enforced server-side on the execute paths (see ``evaluate_visibility_gates``
+    and the execute-path tests), which reject a directly-submitted hidden value.
     """
 
     def test_no_condition_leaves_forbidden_none(self):

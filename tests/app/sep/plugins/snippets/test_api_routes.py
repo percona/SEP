@@ -46,6 +46,22 @@ from app.tasks.models import TaskHistoryStatusEnum
 API_BASE = "/api/plugins/snippets"
 
 
+async def _seed_gated_snippet(
+    create_snippet, session, parameters, *, filename="gated.sh"
+):
+    """Seed an approved snippet whose meta declares ``parameters`` (persisted).
+
+    The execute route reloads the snippet from the DB by filename, so the gated
+    parameter metadata must be persisted (not just mutated in memory). The
+    ``validated_parameters`` cache is dropped so the new meta is re-validated.
+    """
+    snippet = await create_snippet(filename, approved=True)
+    snippet.meta = {**snippet.meta, "parameters": parameters}
+    snippet.__dict__.pop("validated_parameters", None)
+    await SnippetManager.save(session, snippet, flag_modified_fields=["meta"])
+    return snippet
+
+
 @pytest.fixture
 def enable_manual_sync(mocker):
     """Fixture to patch ``ENABLE_MANUAL_SYNC`` setting."""
@@ -470,6 +486,150 @@ class TestSnippetsApiExecute:
         assert meta["target"] == "host1"
         assert meta["_snippet_filename"] == snippet.filename
         assert meta["md5_checksum"] == snippet.md5_digest
+
+    async def test_rejects_submitted_value_for_gated_hidden_param(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """A value for a gated-hidden param is rejected (422); no task dispatched.
+
+        ``start`` is hidden when ``list`` is truthy (``visible_when_not``), so a
+        direct POST that supplies ``start`` while ``list`` is on must be
+        server-rejected — the client would have dropped it.
+        """
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+            ],
+        )
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {"list": True, "start": "2020"}},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    async def test_allows_value_when_gate_not_fired(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """When the gate does not fire, the submitted value executes normally."""
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+            ],
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": 7})
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {"list": False, "start": "2020"}},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert mock_task_api_dep.post.called
+
+    async def test_allows_gated_param_omitted(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """A hidden param the client dropped (absent) executes without rejection."""
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+            ],
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": 8})
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {"list": True}},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert mock_task_api_dep.post.called
+
+    async def test_rejects_on_equals_gate(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """An equality-based forbidden gate rejects a submitted hidden value."""
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {
+                    "name": "mode",
+                    "type": "str",
+                    "label": "Mode",
+                    "choices": ["basic", "advanced"],
+                },
+                {
+                    "name": "region",
+                    "type": "str",
+                    "label": "Region",
+                    "visible_when_not": {"parameter": "mode", "equals": "advanced"},
+                },
+            ],
+        )
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={
+                "executor_host": "host1",
+                "args": {"mode": "advanced", "region": "us"},
+            },
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    async def test_gateless_snippet_executes_unchanged(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """A snippet with params but no visibility rule executes as before."""
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [{"name": "name", "type": "str", "label": "Name"}],
+            filename="plain.sh",
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": 9})
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {"name": "x"}},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert mock_task_api_dep.post.called
 
 
 @pytest.mark.asyncio
