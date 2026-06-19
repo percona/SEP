@@ -34,7 +34,6 @@ router = APIRouter(tags=["sep", "tasks"])
 @router.get(
     "/{task_history_id}",
     dependencies=[IsAuthenticated],
-    response_model=list[ExecutionEvent],
 )
 @csrf_exempt
 async def list_task_execution_events(
