@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from enum import Enum, IntEnum, StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Self, TypeVar
+from urllib.parse import urlparse, urlunparse
 
 from pydantic import (
     AfterValidator,
@@ -37,6 +38,7 @@ from pydantic import (
     StringConstraints,
     TypeAdapter,
     UrlConstraints,
+    WrapSerializer,
 )
 from pydantic.json_schema import JsonSchemaValue
 from pydantic_core import core_schema, Url
@@ -480,6 +482,85 @@ StrAnyUrl = Annotated[str, AsTypeValidator(AnyUrl, str)]
 """Define a string field representing any valid URL.
 
 This annotated type validates the string as any valid URL without additional processing.
+"""
+
+CREDENTIAL_URL_MASK = "****"
+PRESERVE_CREDENTIALS_CONTEXT: dict[str, bool] = {"preserve_credentials": True}
+
+
+def redact_credential_url(url: str, *, mask: str = CREDENTIAL_URL_MASK) -> str:
+    """Return ``url`` with any embedded userinfo password replaced by ``mask``.
+
+    Scheme, username, host, port, path, query, and fragment are preserved.
+    URLs without an embedded password are returned unchanged.
+
+    :param url: The URL string to redact.
+    :param mask: The replacement for the password segment.
+    :return: The URL with a redacted password, or ``url`` when none is present.
+    """
+    parsed = urlparse(url)
+    if not parsed.password:
+        return url
+    hostname = parsed.hostname or ""
+    host = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
+    username = parsed.username or ""
+    userinfo = f"{username}:{mask}"
+    netloc = f"{userinfo}@{host}"
+    return urlunparse(
+        (
+            parsed.scheme,
+            netloc,
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+
+def _credential_url_serializer(
+    value: Any,
+    handler: Callable[[Any], Any],
+    info: Any,
+) -> Any:
+    """Serialize a URL value, redacting embedded passwords unless context opts out."""
+    serialized = handler(value)
+    context = getattr(info, "context", None) or {}
+    if context.get("preserve_credentials"):
+        return serialized
+    return redact_credential_url(str(serialized))
+
+
+CredentialHttpUrl = Annotated[
+    HttpUrl,
+    WrapSerializer(_credential_url_serializer, when_used="json"),
+]
+"""HTTP URL that redacts embedded userinfo passwords on JSON serialization only.
+
+The in-memory / python-mode value retains the real credential for outbound
+requests. Pass :data:`PRESERVE_CREDENTIALS_CONTEXT` when dumping internal
+config fingerprints that must store the full URL.
+"""
+
+StrCredentialHttpUrl = Annotated[
+    str,
+    AsTypeValidator(HttpUrl, lambda v: str(v).rstrip("/")),
+    WrapSerializer(_credential_url_serializer, when_used="json"),
+]
+"""String HTTP URL that redacts embedded passwords on JSON serialization only.
+
+Validates as :class:`~pydantic.HttpUrl`, stores as a string with trailing
+slashes stripped, and masks any embedded password in JSON dumps.
+"""
+
+StrCredentialAnyUrl = Annotated[
+    str,
+    AsTypeValidator(AnyUrl, str),
+    WrapSerializer(_credential_url_serializer, when_used="json"),
+]
+"""String URL (any scheme) that redacts embedded passwords on JSON serialization.
+
+Use for broker/backend URLs that may carry credentials in the userinfo segment.
 """
 
 URIPath = Annotated[str, StringConstraints(pattern=r"^\/[^\s]*$")]
