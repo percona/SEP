@@ -47,7 +47,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -428,8 +428,8 @@
         "title": "ChecksumTaskResponse",
         "type": "object"
       },
-      "ChecksumTaskWrite": {
-        "description": "Represent a JSON request body for creating a checksum task.\n\nMirrors :class:`ChecksumsCreate` minus the form-only resolution fields\n(``schema_id``, ``table_id``, ``extra_args``). The caller is responsible\nfor pre-resolving database and table names before submitting.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the MySQL service to connect to.\n:type service_id: int\n:param databases: Comma-separated database names.\n:type databases: str\n:param tables: Comma-separated table names (``schema.table`` format).\n:type tables: str\n:param recursion_method: The method for handling replica discovery.\n:type recursion_method: str\n:param dsn_table: The DSN table when ``recursion_method`` is ``\"dsn\"``.\n:type dsn_table: str\n:param pause_file: Execution pauses while this file exists.\n:type pause_file: str\n:param binary_index: Use BLOB type for replicate-table boundary columns.\n:type binary_index: bool\n:param explain_arg: Show but do not execute checksum queries.\n:type explain_arg: bool\n:param fail_on_stopped_replication: Fail if replication is stopped.\n:type fail_on_stopped_replication: bool\n:param truncate_replicate_table: Truncate the replicate table before starting.\n:type truncate_replicate_table: bool\n:param progress: Print progress reports to STDERR.\n:type progress: str\n:param set_vars: MySQL variables to set (comma-separated key=value pairs).\n:type set_vars: str\n:param max_load: Pause when any GLOBAL STATUS variable exceeds this threshold.\n:type max_load: str\n:param chunk_time: Target execution time per chunk.\n:type chunk_time: str\n:param max_lag: Pause until replica lag falls below this value.\n:type max_lag: str\n:param alert_on_fail: Send an alert if the task fails.\n:type alert_on_fail: bool",
+      "ChecksumsForm": {
+        "description": "Define the model-first create/update body and schema source for Checksums.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the previous hand-written request body so the OpenAPI\nrequest body stays a no-op; the form-display defaults that differ from the\nmodel default are carried on ``Ui(default=...)``.\n\nFields are declared in request-body order; the form section order is set by\nthe layout in ``views.py`` (Task, Data, Recursion, Flags, Advanced).",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -526,7 +526,7 @@
           "hostname",
           "service_id"
         ],
-        "title": "ChecksumTaskWrite",
+        "title": "ChecksumsForm",
         "type": "object"
       },
       "Choice": {
@@ -628,7 +628,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -790,7 +790,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1099,7 +1099,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1207,7 +1207,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1260,7 +1260,7 @@
       },
       "FormSection": {
         "additionalProperties": false,
-        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:type title: NonEmptyStr\n:param description: Optional helper text rendered beneath the section\n    heading. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param fields: The list of fields belonging to this section.\n:type fields: list[AnyField]\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:type collapsible: bool\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:type collapsed_by_default: bool\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:type render_after_submit: bool\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.\n:type forbidden: list[FieldGate] | None",
+        "description": "Represent a labelled group of related fields rendered as one fieldset.\n\n:param title: The section heading displayed above the grouped fields.\n:type title: NonEmptyStr\n:param description: Optional helper text rendered beneath the section\n    heading. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param fields: The list of fields belonging to this section. May include\n    :class:`OneOfGroup` containers alongside leaf fields.\n:type fields: list[AnyField]\n:param cardinality_rules: Optional cross-field cardinality constraints\n    scoped to the fields in this section. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional predicate-only invariants scoped to this\n    section. Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param collapsible: Whether the renderer may collapse this section behind\n    a toggle. Defaults to ``False``.\n:type collapsible: bool\n:param collapsed_by_default: Whether a collapsible section should start\n    collapsed. Ignored when ``collapsible`` is ``False``. Defaults to\n    ``False``.\n:type collapsed_by_default: bool\n:param render_after_submit: Whether this section should render after the\n    submit button instead of before it. Defaults to ``False``.\n:type render_after_submit: bool\n:param forbidden: Optional gates that hide the entire section when any\n    of them fires. The schema-driven React renderer skips the section\n    and unregisters every child field from the form so stale values\n    do not ship in the submission payload. Gates may reference any\n    field declared in the plugin schema (including fields in other\n    sections). Defaults to ``None`` — sections render unconditionally.\n    Backend ``fail_when`` and conditional-rule validation on hidden\n    sections still applies: hidden-section children arrive in the\n    submitted payload as **absent** (not zeroed or defaulted), so\n    ``truthy``/``present`` predicates silently pass while\n    ``falsy``/``absent`` predicates see the children as missing.\n    Author ``fail_when`` rules accordingly.\n:type forbidden: list[FieldGate] | None",
         "properties": {
           "cardinality_rules": {
             "anyOf": [
@@ -1359,6 +1359,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/YamlField"
+                },
+                {
+                  "$ref": "#/components/schemas/OneOfGroup"
                 }
               ]
             },
@@ -1467,7 +1470,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1575,7 +1578,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1718,7 +1721,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -1757,6 +1760,175 @@
           "choices"
         ],
         "title": "MultiChoiceField",
+        "type": "object"
+      },
+      "OneOfBranch": {
+        "additionalProperties": false,
+        "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:param label: The human-readable label for the segmented-control option.\n:param fields: The leaf fields revealed when this branch is active.",
+        "properties": {
+          "fields": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "bool": "#/components/schemas/BoolField",
+                  "choice": "#/components/schemas/ChoiceField",
+                  "datetime": "#/components/schemas/DateTimeField",
+                  "file": "#/components/schemas/FileField",
+                  "float": "#/components/schemas/FloatField",
+                  "host": "#/components/schemas/HostField",
+                  "integer": "#/components/schemas/IntegerField",
+                  "multi_choice": "#/components/schemas/MultiChoiceField",
+                  "schema": "#/components/schemas/SchemaField",
+                  "script_preview": "#/components/schemas/ScriptPreviewField",
+                  "service": "#/components/schemas/ServiceField",
+                  "string": "#/components/schemas/StringField",
+                  "table": "#/components/schemas/TableField",
+                  "textarea": "#/components/schemas/TextAreaField",
+                  "yaml": "#/components/schemas/YamlField"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/BoolField"
+                },
+                {
+                  "$ref": "#/components/schemas/ChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/DateTimeField"
+                },
+                {
+                  "$ref": "#/components/schemas/FileField"
+                },
+                {
+                  "$ref": "#/components/schemas/FloatField"
+                },
+                {
+                  "$ref": "#/components/schemas/HostField"
+                },
+                {
+                  "$ref": "#/components/schemas/IntegerField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/SchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/ScriptPreviewField"
+                },
+                {
+                  "$ref": "#/components/schemas/ServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/StringField"
+                },
+                {
+                  "$ref": "#/components/schemas/TableField"
+                },
+                {
+                  "$ref": "#/components/schemas/TextAreaField"
+                },
+                {
+                  "$ref": "#/components/schemas/YamlField"
+                }
+              ]
+            },
+            "minItems": 1,
+            "title": "Fields",
+            "type": "array"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "fields"
+        ],
+        "title": "OneOfBranch",
+        "type": "object"
+      },
+      "OneOfGroup": {
+        "additionalProperties": false,
+        "description": "Represent a labelled either/or field group with a segmented mode switch.\n\nThe React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,\nshows :attr:`description` as helper text, and renders only the active\nbranch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden\nat validation time via rules synthesised from the group's branch contract.\n\n:param field_type: The discriminator literal; always ``\"one_of\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param name: Stable group identifier used as the React list key. Not a\n    separate form value — :attr:`discriminator` names the mode field.\n:param label: The human-readable group heading above the segmented control.\n:param description: Optional helper text rendered beneath the group label.\n    Defaults to ``None``.\n:param discriminator: Dotted path to the mode field (for example,\n    ``\"source.mode\"``) whose value selects the active branch.\n:param default: Optional default branch :attr:`~OneOfBranch.value`. Must\n    match one of the declared branches when set. Defaults to ``None``.\n:param branches: Two or more named branches, each owning its own field list.",
+        "properties": {
+          "branches": {
+            "items": {
+              "$ref": "#/components/schemas/OneOfBranch"
+            },
+            "minItems": 2,
+            "title": "Branches",
+            "type": "array"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "discriminator": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Discriminator",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "one_of",
+            "default": "one_of",
+            "enum": [
+              "one_of"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "discriminator",
+          "branches"
+        ],
+        "title": "OneOfGroup",
         "type": "object"
       },
       "PluginEntitySchema": {
@@ -1827,7 +1999,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           }
@@ -1957,7 +2129,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2057,7 +2229,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2169,7 +2341,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2267,7 +2439,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2316,14 +2488,15 @@
         "type": "object"
       },
       "ServiceTypeEnum": {
-        "description": "Enumeration of supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str",
+        "description": "Enumerate the supported service types.\n\n:cvar MYSQL: Represents the MySQL service type.\n:vartype MYSQL: str\n:cvar POSTGRESQL: Represents the PostgreSQL service type.\n:vartype POSTGRESQL: str\n:cvar MONGODB: Represents the MongoDB service type.\n:vartype MONGODB: str\n:cvar PROXYSQL: Represents the ProxySQL service type.\n:vartype PROXYSQL: str\n:cvar HAPROXY: Represents the HAProxy service type.\n:vartype HAPROXY: str\n:cvar EXTERNAL: Represents an external service type.\n:vartype EXTERNAL: str\n:cvar VALKEY: Represents the Valkey service type.\n:vartype VALKEY: str",
         "enum": [
           "mysql",
           "postgresql",
           "mongodb",
           "proxysql",
           "haproxy",
-          "external"
+          "external",
+          "valkey"
         ],
         "title": "ServiceTypeEnum",
         "type": "string"
@@ -2398,7 +2571,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2524,7 +2697,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2651,7 +2824,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2801,7 +2974,7 @@
           },
           "name": {
             "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w-]*\\w)?$",
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
             "title": "Name",
             "type": "string"
           },
@@ -2870,8 +3043,7 @@
   "paths": {
     "/api/plugins/checksums/": {
       "get": {
-        "description": "List checksum tasks.",
-        "operationId": "checksums_checksums_api_list_api_plugins_checksums__get",
+        "operationId": "checksums__list_api_plugins_checksums__get",
         "parameters": [
           {
             "in": "query",
@@ -2914,7 +3086,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ChecksumTaskResponse"
                   },
-                  "title": "Response Checksums Checksums Api List Api Plugins Checksums  Get",
+                  "title": "Response Checksums  List Api Plugins Checksums  Get",
                   "type": "array"
                 }
               }
@@ -2932,14 +3104,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Checksums Api List",
+        "summary": "List",
         "tags": [
           "checksums"
         ]
       },
       "post": {
-        "description": "Create a checksum task from a JSON payload request body.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics — an unchecked box\n    submits no field); this asymmetry is intentional.\n:type check_connectivity: bool",
-        "operationId": "checksums_checksums_api_create_api_plugins_checksums__post",
+        "operationId": "checksums__create_api_plugins_checksums__post",
         "parameters": [
           {
             "in": "query",
@@ -2956,7 +3127,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ChecksumTaskWrite"
+                "$ref": "#/components/schemas/ChecksumsForm"
               }
             }
           },
@@ -2984,7 +3155,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Checksums Api Create",
+        "summary": "Create",
         "tags": [
           "checksums"
         ]
@@ -3014,8 +3185,7 @@
     },
     "/api/plugins/checksums/{task_name}": {
       "delete": {
-        "description": "Delete a checksum task.",
-        "operationId": "checksums_checksums_api_delete_api_plugins_checksums__task_name__delete",
+        "operationId": "checksums__delete_api_plugins_checksums__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -3042,14 +3212,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Checksums Api Delete",
+        "summary": "Delete",
         "tags": [
           "checksums"
         ]
       },
       "get": {
-        "description": "Retrieve a single checksum task.",
-        "operationId": "checksums_checksums_api_detail_api_plugins_checksums__task_name__get",
+        "operationId": "checksums__detail_api_plugins_checksums__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3083,14 +3252,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Checksums Api Detail",
+        "summary": "Detail",
         "tags": [
           "checksums"
         ]
       },
       "put": {
-        "description": "Update a checksum task from a JSON payload request body.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after the update. Defaults to ``True``; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics); this asymmetry is\n    intentional.\n:type check_connectivity: bool",
-        "operationId": "checksums_checksums_api_update_api_plugins_checksums__task_name__put",
+        "operationId": "checksums__update_api_plugins_checksums__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -3116,7 +3284,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ChecksumTaskWrite"
+                "$ref": "#/components/schemas/ChecksumsForm"
               }
             }
           },
@@ -3144,7 +3312,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Checksums Api Update",
+        "summary": "Update",
         "tags": [
           "checksums"
         ]
@@ -3152,7 +3320,7 @@
     },
     "/api/plugins/checksums/{task_name}/execute": {
       "post": {
-        "description": "Execute a checksum task.",
+        "description": "Resolve, dispatch, and wrap a standard task execution.",
         "operationId": "checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post",
         "parameters": [
           {

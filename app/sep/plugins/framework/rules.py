@@ -33,7 +33,7 @@ This module exposes three layers:
   mode.
 
 The JSON wire format produced by :meth:`Predicate.to_dict` is the contract
-consumed verbatim by the SEP-1077 frontend renderer; predicate authoring
+consumed verbatim by the frontend renderer; predicate authoring
 in production uses this DSL only.
 """
 
@@ -223,6 +223,25 @@ def _wrap_rhs(value: object) -> object:
 # ── Field-presence / truthiness helpers ──────────────────────────────────
 
 
+def _resolve_field(instance: Any, path: str) -> Any:
+    """Return the value at ``path``, walking dotted nested attribute paths.
+
+    Each segment is resolved with ``getattr(segment, default=None)``. A
+    missing intermediate value short-circuits to ``None``.
+
+    :param instance: The model instance being evaluated.
+    :param path: A top-level field name or dotted path (for example,
+        ``"source.mode"``).
+    :return: The resolved value, or ``None`` when any segment is absent.
+    """
+    current: Any = instance
+    for segment in path.split("."):
+        if current is None:
+            return None
+        current = getattr(current, segment, None)
+    return current
+
+
 def _field_is_present(instance: Any, name: str) -> bool:
     """Return ``True`` iff ``instance.<name>`` is set and non-empty.
 
@@ -239,7 +258,7 @@ def _field_is_present(instance: Any, name: str) -> bool:
     :return: Whether the field is considered present.
     :rtype: bool
     """
-    value = getattr(instance, name, None)
+    value = _resolve_field(instance, name)
     if value is None or value is False:
         return False
     return not (
@@ -258,7 +277,7 @@ def _field_is_truthy(instance: Any, name: str) -> bool:
     :return: The Python truthiness of the field's value.
     :rtype: bool
     """
-    return bool(getattr(instance, name, None))
+    return bool(_resolve_field(instance, name))
 
 
 # ── Predicate hierarchy ──────────────────────────────────────────────────
@@ -352,7 +371,7 @@ class Predicate(ABC):
 
         Predicate JSON is a discriminated union over operator keys (each
         producing a single-key object). Modelling that precisely as a
-        JSON-schema oneOf is overkill for the FE contract, since SEP-1077
+        JSON-schema oneOf is overkill for the FE contract, since the frontend
         consumes the wire format directly rather than auto-generating a
         TypeScript model from it. An open ``object`` shape lets FastAPI
         emit a valid OpenAPI document while keeping the wire contract
@@ -420,7 +439,7 @@ class Equals(Predicate):
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
-        return getattr(instance, self.field, None) == self.value
+        return _resolve_field(instance, self.field) == self.value
 
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON wire shape for this predicate."""
@@ -448,7 +467,7 @@ class NotEquals(Predicate):
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
-        return getattr(instance, self.field, None) != self.value
+        return _resolve_field(instance, self.field) != self.value
 
     def to_dict(self) -> dict[str, Any]:
         """Return the JSON wire shape for this predicate."""
@@ -496,7 +515,7 @@ class Contains(Predicate):
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
-        container = getattr(instance, self.field, None)
+        container = _resolve_field(instance, self.field)
         if not isinstance(container, list | tuple | set | frozenset):
             return False
         target_keys = self._keys(self.value)
@@ -535,9 +554,9 @@ class _OrderedComparison(Predicate):
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
-        lhs = getattr(instance, self.field, None)
+        lhs = _resolve_field(instance, self.field)
         if isinstance(self.value, _FieldRef):
-            rhs = getattr(instance, self.value.name, None)
+            rhs = _resolve_field(instance, self.value.name)
         else:
             rhs = self.value
         if lhs is None or rhs is None:
@@ -764,8 +783,8 @@ class AllEqual(_MultiFieldPredicate):
 
     def evaluate(self, instance: Any) -> bool:
         """Evaluate this predicate against ``instance``."""
-        first = getattr(instance, self.fields[0], None)
-        return all(getattr(instance, name, None) == first for name in self.fields[1:])
+        first = _resolve_field(instance, self.fields[0])
+        return all(_resolve_field(instance, name) == first for name in self.fields[1:])
 
 
 # ── Boolean composition ──────────────────────────────────────────────────
@@ -1278,6 +1297,107 @@ class RulePlan:
     rules: tuple[_PreparedRule, ...]
 
 
+def _append_leaf_field_gates(
+    prepared: list[_PreparedRule],
+    field: Any,
+    *,
+    field_scope_prefix: str,
+    scope_path: str | None = None,
+) -> None:
+    """Append ``requires`` / ``forbidden`` gates declared on one leaf field.
+
+    :param prepared: Mutable list to extend.
+    :param field: The leaf :class:`~app.sep.plugins.framework.schema.BaseField`.
+    :param field_scope_prefix: Prefix for default ``scope_path`` values.
+    :param scope_path: Optional explicit ``scope_path`` label for this field.
+    """
+    self_name = field.name
+    base_scope = scope_path or (
+        f"{field_scope_prefix}BaseField {self_name!r}"
+        if field_scope_prefix
+        else f"BaseField {self_name!r}"
+    )
+    for rule_index, gate in enumerate(field.requires or []):
+        prepared.append(
+            _PreparedRule(
+                kind=_RuleKind.FIELD_GATE_REQUIRES,
+                scope_path=f"{base_scope} requires[{rule_index}]",
+                predicate=gate.when,
+                fields=(self_name,),
+                min=None,
+                max=None,
+                message=gate.message,
+            )
+        )
+    for rule_index, gate in enumerate(field.forbidden or []):
+        prepared.append(
+            _PreparedRule(
+                kind=_RuleKind.FIELD_GATE_FORBIDDEN,
+                scope_path=f"{base_scope} forbidden[{rule_index}]",
+                predicate=gate.when,
+                fields=(self_name,),
+                min=None,
+                max=None,
+                message=gate.message,
+            )
+        )
+
+
+def _append_one_of_group_rules(
+    prepared: list[_PreparedRule],
+    group: Any,
+    *,
+    field_scope_prefix: str,
+) -> None:
+    """Append branch-selection and leaf gates for one :class:`OneOfGroup`."""
+    from app.sep.plugins.framework.schema import OneOfGroup
+
+    if not isinstance(group, OneOfGroup):
+        return
+    group_scope = (
+        f"{field_scope_prefix}OneOfGroup {group.name!r}"
+        if field_scope_prefix
+        else f"OneOfGroup {group.name!r}"
+    )
+    all_branch_values = {branch.value for branch in group.branches}
+    leaves_by_name: dict[str, Any] = {}
+    allowed_branch_values: dict[str, set[str]] = {}
+    for branch in group.branches:
+        for leaf in branch.fields:
+            leaves_by_name.setdefault(leaf.name, leaf)
+            allowed_branch_values.setdefault(leaf.name, set()).add(branch.value)
+    for leaf_name, leaf in leaves_by_name.items():
+        allowed = allowed_branch_values.get(leaf_name, set())
+        if allowed and allowed != all_branch_values:
+            predicate: Predicate
+            if len(allowed) == 1:
+                predicate = NotEquals(group.discriminator, next(iter(allowed)))
+            else:
+                predicate = all_(
+                    *[
+                        NotEquals(group.discriminator, value)
+                        for value in sorted(allowed)
+                    ]
+                )
+            prepared.append(
+                _PreparedRule(
+                    kind=_RuleKind.FIELD_GATE_FORBIDDEN,
+                    scope_path=(f"{group_scope} forbidden[{leaf_name!r}]"),
+                    predicate=predicate,
+                    fields=(leaf_name,),
+                    min=None,
+                    max=None,
+                    message=None,
+                )
+            )
+        _append_leaf_field_gates(
+            prepared,
+            leaf,
+            field_scope_prefix=field_scope_prefix,
+            scope_path=f"{group_scope} BaseField {leaf_name!r}",
+        )
+
+
 def _append_rules_for_form_sections(
     prepared: list[_PreparedRule],
     forms: list,
@@ -1295,38 +1415,18 @@ def _append_rules_for_form_sections(
     :param section_label_for_index: Returns the scope label for a section's
         cardinality / fail rules.
     """
+    from app.sep.plugins.framework.schema import OneOfGroup
+
     for section_index, section in enumerate(forms):
         section_scope = section_label_for_index(section_index, section)
         for field in section.fields:
-            self_name = field.name
-            base_scope = (
-                f"{field_scope_prefix}BaseField {field.name!r}"
-                if field_scope_prefix
-                else f"BaseField {field.name!r}"
-            )
-            for rule_index, gate in enumerate(field.requires or []):
-                prepared.append(
-                    _PreparedRule(
-                        kind=_RuleKind.FIELD_GATE_REQUIRES,
-                        scope_path=f"{base_scope} requires[{rule_index}]",
-                        predicate=gate.when,
-                        fields=(self_name,),
-                        min=None,
-                        max=None,
-                        message=gate.message,
-                    )
+            if isinstance(field, OneOfGroup):
+                _append_one_of_group_rules(
+                    prepared, field, field_scope_prefix=field_scope_prefix
                 )
-            for rule_index, gate in enumerate(field.forbidden or []):
-                prepared.append(
-                    _PreparedRule(
-                        kind=_RuleKind.FIELD_GATE_FORBIDDEN,
-                        scope_path=f"{base_scope} forbidden[{rule_index}]",
-                        predicate=gate.when,
-                        fields=(self_name,),
-                        min=None,
-                        max=None,
-                        message=gate.message,
-                    )
+            else:
+                _append_leaf_field_gates(
+                    prepared, field, field_scope_prefix=field_scope_prefix
                 )
         prepared.extend(
             _prepare_cardinality_rules(section.cardinality_rules, section_scope)
@@ -1599,11 +1699,19 @@ def _validate_plan_against_model_fields(
         ``cls.model_fields``.
     """
     model_fields = set(cls.model_fields)
+
+    def _declared_on_model(name: str) -> bool:
+        if name in model_fields:
+            return True
+        if "." not in name:
+            return False
+        return name.split(".", 1)[0] in model_fields
+
     for rule in plan.rules:
         referenced = set(rule.fields)
         if rule.predicate is not None:
             referenced |= rule.predicate.referenced_fields()
-        missing = referenced - model_fields
+        missing = {name for name in referenced if not _declared_on_model(name)}
         if missing:
             raise TypeError(
                 f"@apply_conditional_rules on {cls.__name__}: rule "

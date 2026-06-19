@@ -16,13 +16,21 @@
 """Define models for the Checksums plugin."""
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, computed_field, FutureDatetime
 
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework import ConnectivityWarning
+from app.sep.plugins.framework.form_dsl import (
+    AppFormModel,
+    Choices,
+    Hidden,
+    HostRef,
+    ServiceRef,
+    Ui,
+)
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
@@ -99,69 +107,156 @@ class ChecksumsCreate(BaseModel):
     alert_on_fail: bool = False
 
 
-class ChecksumTaskWrite(BaseModel):
-    """Represent a JSON request body for creating a checksum task.
+class ChecksumsForm(AppFormModel):
+    """Define the model-first create/update body and schema source for Checksums.
 
-    Mirrors :class:`ChecksumsCreate` minus the form-only resolution fields
-    (``schema_id``, ``table_id``, ``extra_args``). The caller is responsible
-    for pre-resolving database and table names before submitting.
+    The single source of the JSON request body (the field types and defaults the
+    server validates) *and* the derived ``GET /schema`` form (driven by the
+    :class:`Ui` / reference / :class:`Choices` markers). Field set, types, and
+    model defaults match the previous hand-written request body so the OpenAPI
+    request body stays a no-op; the form-display defaults that differ from the
+    model default are carried on ``Ui(default=...)``.
 
-    :param task_name: The name of the task to be created.
-    :type task_name: NonEmptyStr
-    :param hostname: The target hostname for the task execution.
-    :type hostname: NonEmptyStr
-    :param service_id: The Inventory ID of the MySQL service to connect to.
-    :type service_id: int
-    :param databases: Comma-separated database names.
-    :type databases: str
-    :param tables: Comma-separated table names (``schema.table`` format).
-    :type tables: str
-    :param recursion_method: The method for handling replica discovery.
-    :type recursion_method: str
-    :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``.
-    :type dsn_table: str
-    :param pause_file: Execution pauses while this file exists.
-    :type pause_file: str
-    :param binary_index: Use BLOB type for replicate-table boundary columns.
-    :type binary_index: bool
-    :param explain_arg: Show but do not execute checksum queries.
-    :type explain_arg: bool
-    :param fail_on_stopped_replication: Fail if replication is stopped.
-    :type fail_on_stopped_replication: bool
-    :param truncate_replicate_table: Truncate the replicate table before starting.
-    :type truncate_replicate_table: bool
-    :param progress: Print progress reports to STDERR.
-    :type progress: str
-    :param set_vars: MySQL variables to set (comma-separated key=value pairs).
-    :type set_vars: str
-    :param max_load: Pause when any GLOBAL STATUS variable exceeds this threshold.
-    :type max_load: str
-    :param chunk_time: Target execution time per chunk.
-    :type chunk_time: str
-    :param max_lag: Pause until replica lag falls below this value.
-    :type max_lag: str
-    :param alert_on_fail: Send an alert if the task fails.
-    :type alert_on_fail: bool
+    Fields are declared in request-body order; the form section order is set by
+    the layout in ``views.py`` (Task, Data, Recursion, Flags, Advanced).
     """
 
-    task_name: NonEmptyStr
-    hostname: NonEmptyStr
-    service_id: int
-    databases: str = ""
-    tables: str = ""
-    recursion_method: str = "processlist"
-    dsn_table: str = ""
-    pause_file: str = ""
-    binary_index: bool = False
-    explain_arg: bool = False
-    fail_on_stopped_replication: bool = False
-    truncate_replicate_table: bool = False
-    progress: str = ""
-    set_vars: str = ""
-    max_load: str = ""
-    chunk_time: str = ""
-    max_lag: str = ""
-    alert_on_fail: bool = False
+    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
+    hostname: Annotated[
+        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
+    ]
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(label="Database Host", section="Task"),
+    ]
+    databases: Annotated[
+        str,
+        Ui(
+            label="Databases",
+            section="Data",
+            default=None,
+            description="Comma-separated database names",
+        ),
+    ] = ""
+    tables: Annotated[
+        str,
+        Ui(
+            label="Tables",
+            section="Data",
+            default=None,
+            description="Comma-separated table names (schema.table format)",
+        ),
+    ] = ""
+    recursion_method: Annotated[
+        str,
+        Choices(
+            (
+                ("default", "Default"),
+                ("processlist", "Processlist"),
+                ("hosts", "Hosts"),
+                ("dsn", "DSN"),
+                ("none", "None"),
+            )
+        ),
+        Ui(label="Recursion Method", section="Recursion", required=True),
+    ] = "processlist"
+    dsn_table: Annotated[
+        str,
+        Ui(
+            label="DSN Table",
+            section="Recursion",
+            default="D=percona,t=dsns",
+            description="Only used when recursion method is 'dsn'",
+        ),
+    ] = ""
+    pause_file: Annotated[
+        str,
+        Ui(
+            label="Pause File",
+            section="Advanced",
+            default=None,
+            description="Execution pauses while this file exists",
+        ),
+    ] = ""
+    binary_index: Annotated[
+        bool,
+        Ui(
+            label="Binary Index",
+            section="Flags",
+            description="Use BLOB type for replicate-table boundary columns",
+        ),
+    ] = False
+    explain_arg: Annotated[
+        bool,
+        Ui(
+            label="Explain (dry run)",
+            section="Flags",
+            description="Show but do not execute checksum queries",
+        ),
+    ] = False
+    fail_on_stopped_replication: Annotated[
+        bool,
+        Ui(
+            label="Fail on Stopped Replication",
+            section="Flags",
+            description="Fail with an error if replication is stopped",
+        ),
+    ] = False
+    truncate_replicate_table: Annotated[
+        bool,
+        Ui(
+            label="Truncate Replicate Table",
+            section="Flags",
+            description="Truncate the replicate table before starting",
+        ),
+    ] = False
+    progress: Annotated[
+        str,
+        Ui(
+            label="Progress",
+            section="Advanced",
+            default="time,10",
+            description="Print progress reports to STDERR (e.g. time,10)",
+        ),
+    ] = ""
+    set_vars: Annotated[
+        str,
+        Ui(
+            label="Set Vars",
+            section="Advanced",
+            default="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5",
+            description="MySQL variables to set (comma-separated key=value pairs)",
+        ),
+    ] = ""
+    max_load: Annotated[
+        str,
+        Ui(
+            label="Max Load",
+            section="Advanced",
+            default="Threads_running=50",
+            description="Pause when any GLOBAL STATUS variable exceeds this threshold",
+        ),
+    ] = ""
+    chunk_time: Annotated[
+        str,
+        Ui(
+            label="Chunk Time",
+            section="Advanced",
+            default="0.5",
+            description="Target execution time per chunk in seconds",
+        ),
+    ] = ""
+    max_lag: Annotated[
+        str,
+        Ui(
+            label="Max Lag",
+            section="Advanced",
+            default="150",
+            description="Pause until replica lag falls below this value (seconds)",
+        ),
+    ] = ""
+    alert_on_fail: Annotated[bool, Hidden()] = False
 
 
 class ChecksumTaskBase(BaseModel):

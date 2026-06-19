@@ -115,6 +115,14 @@ describe('coerceFormValues', () => {
     expect(out.alert_on_fail).toBe(true);
   });
 
+  it('coerces nested dotted field paths', () => {
+    const out = coerceFormValues({ source: { source_db_id: '42', source_query: '' } }, [
+      { type: 'integer', name: 'source.source_db_id', label: 'Schema' },
+      { type: 'string', name: 'source.source_query', label: 'Query' },
+    ]);
+    expect(out).toEqual({ source: { source_db_id: 42, source_query: '' } });
+  });
+
   it('unwraps option objects from service/schema/table/host fields to scalar ids', () => {
     const out = coerceFormValues(
       {
@@ -2067,5 +2075,126 @@ describe('SchemaFormRenderer — renderField override', () => {
     expect(screen.getByLabelText('Mode')).toBeInTheDocument();
     expect(screen.getByLabelText('Title')).toBeInTheDocument();
     expect(screen.queryByLabelText('custom-mode')).toBeNull();
+  });
+});
+
+describe('SchemaFormRenderer — one_of groups', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Source',
+      fields: [
+        {
+          type: 'one_of',
+          name: 'source',
+          label: 'Source',
+          description: 'Choose how to specify source rows.',
+          discriminator: 'source.mode',
+          default: 'schema',
+          branches: [
+            {
+              value: 'schema',
+              label: 'Schema & Table',
+              fields: [
+                {
+                  type: 'string',
+                  name: 'source.source_db_id',
+                  label: 'Source Schema',
+                },
+              ],
+            },
+            {
+              value: 'query',
+              label: 'Custom Query',
+              fields: [
+                {
+                  type: 'string',
+                  name: 'source.source_query',
+                  label: 'Source Query',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+
+  it('renders segmented control, helper text, and the default branch fields', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    expect(screen.getByTestId('one-of-source')).toBeInTheDocument();
+    expect(screen.getByText('Choose how to specify source rows.')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-source.source_db_id')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-source.source_query')).toBeNull();
+  });
+
+  it('swaps visible branch fields and omits inactive values on submit', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByTestId('one-of-option-query'));
+    expect(await screen.findByTestId('text-input-source.source_query')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-source.source_db_id')).toBeNull();
+
+    await user.type(screen.getByTestId('text-input-source.source_query'), 'SELECT 1');
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit).toHaveBeenCalledWith({
+      source: { mode: 'query', source_query: 'SELECT 1' },
+    });
+  });
+
+  it('unregisters one_of discriminator and leaf values when a section becomes hidden', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const gatedSections: FormSection[] = [
+      {
+        title: 'Options',
+        fields: [{ type: 'bool', name: 'include_target', label: 'Include Target', default: true }],
+      },
+      {
+        title: 'Target',
+        forbidden: [{ when: { not_equals: { include_target: true } } }],
+        fields: [
+          {
+            type: 'one_of',
+            name: 'target',
+            label: 'Target',
+            discriminator: 'target_mode',
+            default: 'service',
+            branches: [
+              {
+                value: 'service',
+                label: 'Service',
+                fields: [{ type: 'string', name: 'target', label: 'Service Target' }],
+              },
+              {
+                value: 'schema',
+                label: 'Schema',
+                fields: [{ type: 'string', name: 'target', label: 'Schema Target' }],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={gatedSections}
+        onSubmit={onSubmit}
+        defaultValues={{ include_target: true, target_mode: 'schema', target: 'inventory' }}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Include Target'));
+    await waitFor(() => expect(screen.queryByText('Target')).toBeNull());
+
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ include_target: false });
+    expect(payload).not.toHaveProperty('target');
+    expect(payload).not.toHaveProperty('target_mode');
   });
 });
