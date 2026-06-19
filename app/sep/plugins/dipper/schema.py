@@ -63,6 +63,7 @@ dipper_schema = PluginSchema(
                         ServiceTypeEnum.MYSQL,
                         ServiceTypeEnum.MONGODB,
                         ServiceTypeEnum.POSTGRESQL,
+                        ServiceTypeEnum.VALKEY,
                     ],
                 ),
                 ChoiceField(

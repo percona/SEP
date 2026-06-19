@@ -21,18 +21,22 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.checksums.app import build_checksums_response
 from app.sep.plugins.checksums.deps import (
     _assemble_checksum_payload,
-    build_checksum_task,
-    build_checksums_api_task_response,
     build_checksums_task_payload,
-    DEFAULT_RECURSION_DSN_TABLE,
 )
 from app.sep.plugins.checksums.models import (
     ChecksumsCreate,
+    ChecksumsForm,
     ChecksumTaskResponse,
-    ChecksumTaskWrite,
 )
+from app.sep.plugins.checksums.payload import (
+    build_checksums_spec,
+    DEFAULT_RECURSION_DSN_TABLE,
+)
+from app.sep.plugins.framework.payload import assemble_envelope, ResolvedEntities
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import TaskFactory
@@ -99,16 +103,22 @@ class TestChecksumsJinjaFormDeps:
         assert DEFAULT_RECURSION_DSN_TABLE in recursion_arg
 
 
-class TestChecksumsJsonApiDeps:
-    """Tests for the JSON API path (build_checksum_task) and form/API parity."""
+class TestChecksumsNomadPayloadParity:
+    """Assert the Jinja form path and the model-first spec path are byte-identical."""
 
     @pytest.mark.asyncio
-    async def test_form_and_json_paths_produce_identical_task_write(
+    async def test_form_and_spec_paths_produce_identical_task_write(
         self,
         created_service,
         mock_remote_api,
     ):
-        """Assert build_checksums_task_payload and build_checksum_task produce identical TaskWrite."""
+        """Assert the form payload and the spec-built envelope produce identical TaskWrite.
+
+        The model-first JSON create path runs the ``ChecksumsForm`` through
+        ``build_checksums_spec`` + the framework's ``assemble_envelope``; the
+        Jinja path runs ``ChecksumsCreate`` through ``build_checksums_task_payload``.
+        Both must produce the same Nomad payload for the same inputs.
+        """
         service_dump = created_service.model_dump()
         mock_remote_api.get = AsyncMock(return_value=service_dump)
 
@@ -133,14 +143,24 @@ class TestChecksumsJsonApiDeps:
             "alert_on_fail": False,
         }
 
-        form_input = ChecksumsCreate(**common_fields, extra_args="")
-        json_input = ChecksumTaskWrite(**common_fields)
+        form_result = await build_checksums_task_payload(
+            ChecksumsCreate(**common_fields, extra_args=""), mock_remote_api
+        )
 
-        form_result = await build_checksums_task_payload(form_input, mock_remote_api)
-        mock_remote_api.get = AsyncMock(return_value=service_dump)
-        json_result = await build_checksum_task(json_input, mock_remote_api)
+        resolved = ResolvedEntities(
+            service=created_service,
+            entities={"service_id": created_service},
+            executor_host=common_fields["hostname"],
+        )
+        spec_result = assemble_envelope(
+            build_checksums_spec(ChecksumsForm(**common_fields), resolved),
+            resolved,
+            name=common_fields["task_name"],
+            owner=TaskOwner.CHECKSUMS,
+            alert_on_fail=common_fields["alert_on_fail"],
+        )
 
-        assert form_result.model_dump() == json_result.model_dump()
+        assert form_result.model_dump() == spec_result.model_dump()
 
 
 class TestChecksumsPayloadAssembly:
@@ -367,47 +387,49 @@ class TestChecksumsPayloadAssembly:
             assert flag in args, f"{flag} should appear when True"
 
 
-class TestBuildChecksumsApiTaskResponse:
-    """Tests for build_checksums_api_task_response username mapping."""
+class TestBuildChecksumsResponse:
+    """Tests for build_checksums_response context-driven username resolution."""
 
     def test_created_by_resolved_to_display_name_when_mapping_provided(self):
-        """Assert created_by is resolved to display name when mapping contains the ID."""
+        """Assert created_by is resolved to display name when context contains the ID."""
         task = _make_checksums_task(created_by="uid-abc", last_updated_by=None)
 
-        result = build_checksums_api_task_response(
-            task, username_mapping={"uid-abc": "Alice"}
-        )
+        result = build_checksums_response(task, context={"uid-abc": "Alice"})
 
         assert result.created_by == "Alice"
 
     def test_created_by_falls_back_to_raw_id_when_not_in_mapping(self):
-        """Assert created_by is preserved as-is when the ID is not in the mapping."""
+        """Assert created_by is preserved as-is when the ID is not in the context."""
         task = _make_checksums_task(created_by="uid-unknown", last_updated_by=None)
 
-        result = build_checksums_api_task_response(
-            task, username_mapping={"uid-other": "Bob"}
-        )
+        result = build_checksums_response(task, context={"uid-other": "Bob"})
 
         assert result.created_by == "uid-unknown"
 
     def test_last_updated_by_resolved_to_display_name(self):
-        """Assert last_updated_by is also resolved via the mapping."""
+        """Assert last_updated_by is also resolved via the context."""
         task = _make_checksums_task(created_by=None, last_updated_by="uid-xyz")
 
-        result = build_checksums_api_task_response(
-            task, username_mapping={"uid-xyz": "Carol"}
-        )
+        result = build_checksums_response(task, context={"uid-xyz": "Carol"})
 
         assert result.last_updated_by == "Carol"
 
-    def test_username_mapping_none_preserves_raw_ids(self):
-        """Assert created_by and last_updated_by are unchanged when mapping is None."""
+    def test_context_none_preserves_raw_ids(self):
+        """Assert created_by and last_updated_by are unchanged when context is None."""
         task = _make_checksums_task(created_by="uid-123", last_updated_by="uid-456")
 
-        result = build_checksums_api_task_response(task, username_mapping=None)
+        result = build_checksums_response(task)
 
         assert result.created_by == "uid-123"
         assert result.last_updated_by == "uid-456"
+
+    def test_service_type_injected(self):
+        """Assert the builder always injects the MySQL service type."""
+        task = _make_checksums_task()
+
+        result = build_checksums_response(task)
+
+        assert result.service_type == ServiceTypeEnum.MYSQL
 
 
 class TestChecksumTaskResponseAnonymizedEntities:
