@@ -42,6 +42,7 @@ from app.sep.connectivity import (
 )
 from app.sep.deps import InventoryAPI, IsApiAuthenticated
 from app.sep.plugins.framework import (
+    BaseTaskResponse,
     ConnectivityWarning,
     TaskExecuteWrite,
     TaskExecutionResponse,
@@ -67,6 +68,7 @@ from tests.app.sep.plugins.framework.contract_suite import (
 )
 from tests.app.sep.plugins.framework.kit import (
     synth_app,
+    synth_app_kwargs,
     synth_reject_running_task,
     SynthExecuteResponse,
 )
@@ -783,6 +785,15 @@ def _raw_task_dict() -> dict:
 
 class TestDefaultResponseBuilder:
     """Cover the framework default list builder's stamp + username remap."""
+
+    def test_omitted_response_model_uses_base_task_response(self) -> None:
+        """Assert omitting ``response_model`` falls back to ``BaseTaskResponse``."""
+        kwargs = synth_app_kwargs()
+        kwargs.pop("response_model")
+        kwargs["response_builder"] = None
+        app_def = TaskExecutionApp(**kwargs)
+
+        assert _detail_route(app_def).response_model is BaseTaskResponse
 
     def test_stamps_service_type_and_remaps_usernames_from_context(
         self, regular_user: CasdoorUser

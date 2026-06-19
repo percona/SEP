@@ -35,7 +35,6 @@ from app.sep.plugins.checksums.models import ChecksumsForm
 from app.sep.plugins.checksums.payload import build_checksums_spec
 from app.sep.plugins.checksums.routes import router as jinja_router
 from app.sep.plugins.checksums.views import checksums_views
-from app.sep.plugins.framework import BaseTaskResponse
 from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp
 from app.tasks.models import TaskOwner
 
@@ -46,7 +45,6 @@ app = TaskExecutionApp(
     description="Run pt-table-checksum to verify MySQL replication consistency.",
     owner=TaskOwner.CHECKSUMS,
     create_model=ChecksumsForm,
-    response_model=BaseTaskResponse,
     views=checksums_views,
     task_spec_builder=build_checksums_spec,
     capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),

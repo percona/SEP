@@ -56,9 +56,8 @@ from app.sep.plugins.framework.payload import (
     ResolvedEntities,
 )
 from app.sep.plugins.framework.responses import (
+    BaseTaskResponse,
     build_default_task_response,
-    TaskExecuteWrite,
-    TaskExecutionResponse,
     TaskResponseBuilder,
 )
 from app.sep.plugins.framework.schema import (
@@ -168,7 +167,8 @@ class TaskExecutionApp(BaseApp):
     :param create_model: The model-first ``AppFormModel`` subclass whose fields
         drive the derived schema and create form. Mutually exclusive with the
         transitional ``schema=`` passthrough; one of the two is required.
-    :param response_model: The list/detail response model. Required.
+    :param response_model: The list/detail response model. Defaults to
+        :class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.
     :param views: The presentation bundle (layout, list/detail views, UI
         capabilities). Its ``layout`` is required when ``create_model`` is set.
     :param task_spec_builder: A pure ``(form, resolved) -> EnvelopeSpec`` builder
@@ -272,7 +272,7 @@ class TaskExecutionApp(BaseApp):
 
     owner: TaskOwner
     create_model: type[AppFormModel] | None = None
-    response_model: type[BaseModel]
+    response_model: type[BaseModel] = BaseTaskResponse
     views: SkipValidation[Views] = Views()
     task_spec_builder: TaskSpecBuilder | None = None
     payload_builder: Callable[..., Awaitable[TaskWrite]] | None = None
@@ -544,12 +544,16 @@ class TaskExecutionApp(BaseApp):
         router.include_router(crud)
 
         if self.capabilities.execute:
+            execute_models: dict[str, type[BaseModel]] = {}
+            if self.execute_write_model is not None:
+                execute_models["write_model"] = self.execute_write_model
+            if self.execute_response_model is not None:
+                execute_models["response_model"] = self.execute_response_model
             derive_execute_route(
                 router,
                 task_dep=self.task_dep,
-                write_model=self.execute_write_model or TaskExecuteWrite,
-                response_model=self.execute_response_model or TaskExecutionResponse,
                 name=f"{self.name}_api_execute",
+                **execute_models,
             )
 
         for extra in self.extra_routes:
