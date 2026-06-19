@@ -23,7 +23,10 @@ from pydantic import BaseModel, create_model
 
 from app.core.pagination import PaginatedResponse, Pagination
 from app.sep.deps import TaskAPI
-from app.sep.plugins.framework.connectivity import ConnectivityWarning
+from app.sep.plugins.framework.connectivity import (
+    CONNECTIVITY_WARNING_FIELD,
+    ConnectivityWarning,
+)
 from app.sep.plugins.framework.task_status import batch_get_latest_statuses
 from app.tasks.models import Task, TaskHistoryStatusEnum
 
@@ -101,7 +104,7 @@ def derive_create_response_model(
     :return: A ``response_model`` subclass that adds ``connectivity_warning``.
     """
     fields = dict(extra_fields or {})
-    fields["connectivity_warning"] = (ConnectivityWarning | None, None)
+    fields[CONNECTIVITY_WARNING_FIELD] = (ConnectivityWarning | None, None)
     return cast(
         type[R],
         create_model(name, __base__=response_model, __doc__=doc, **fields),
