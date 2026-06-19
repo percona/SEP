@@ -29,4 +29,5 @@ def pytest_collection_modifyitems(
 ) -> None:
     """Apply ``contract`` marker to every item collected under this directory."""
     for item in items:
-        item.add_marker(pytest.mark.contract)
+        if "tests/contract/" in str(item.fspath):
+            item.add_marker(pytest.mark.contract)

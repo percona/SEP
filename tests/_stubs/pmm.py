@@ -40,30 +40,35 @@ def patch_pmm_metrics(
     *,
     nodes: int = 0,
     services: int = 0,
-    extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Patch the PMM client's metrics query with a deterministic snapshot.
+) -> dict[str, list[dict[str, Any]]]:
+    """Patch the PMM client's inventory queries with a deterministic snapshot.
 
     Reference shape only — the production stub will cover the full
-    inventory-sync surface once milestone M4 lands. The returned dict is the
-    same shape the dashboard expects so tests can assert against it.
+    inventory-sync surface once milestone M4 lands. Patches the two
+    ``PMMRemoteAPI`` coroutines the dashboard counts (``get_nodes`` and
+    ``get_services``) so a test gets stable node/service inventories without a
+    live PMM. The returned dict holds the same lists that were installed, so
+    tests can assert against them.
 
     :param mocker: The ``pytest-mock`` fixture from the calling test.
     :type mocker: pytest_mock.MockerFixture
-    :param nodes: Node count returned by the metrics query.
+    :param nodes: Number of placeholder nodes ``get_nodes`` returns.
     :type nodes: int
-    :param services: Service count returned by the metrics query.
+    :param services: Number of placeholder services ``get_services`` returns.
     :type services: int
-    :param extra: Optional extra metric fields merged into the snapshot.
-    :type extra: dict[str, Any] | None
-    :return: The metrics payload the PMM client would return.
-    :rtype: dict[str, Any]
+    :return: The node and service lists the patched methods return.
+    :rtype: dict[str, list[dict[str, Any]]]
     """
-    snapshot: dict[str, Any] = {"nodes": nodes, "services": services}
-    if extra:
-        snapshot.update(extra)
+    snapshot: dict[str, list[dict[str, Any]]] = {
+        "nodes": [{"node_id": f"node-{i}"} for i in range(nodes)],
+        "services": [{"service_id": f"service-{i}"} for i in range(services)],
+    }
     mocker.patch(
-        "app.core.pmm.client.PMMClient.get_metrics",
-        new=mocker.AsyncMock(return_value=snapshot),
+        "app.sep.clients.pmm.PMMRemoteAPI.get_nodes",
+        new=mocker.AsyncMock(return_value=snapshot["nodes"]),
+    )
+    mocker.patch(
+        "app.sep.clients.pmm.PMMRemoteAPI.get_services",
+        new=mocker.AsyncMock(return_value=snapshot["services"]),
     )
     return snapshot

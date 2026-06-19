@@ -43,12 +43,13 @@ def patch_nomad_dispatch(
     allocation_id: str = "alloc-test-0001",
     dispatched_job_id: str | None = None,
 ) -> dict[str, Any]:
-    """Patch the Nomad client's dispatch surface with a deterministic response.
+    """Patch the Nomad executor's dispatch surface with a deterministic response.
 
     Reference shape only — the production stub will expand to allocation
     polling, log streaming, and signal handling once milestone M4 lands. The
     return value is the dispatch payload the production code consumes, so
-    tests can assert against it.
+    tests can assert against it. ``NomadExecutor.dispatch_job`` is synchronous,
+    so it is patched with a plain ``MagicMock``.
 
     :param mocker: The ``pytest-mock`` fixture from the calling test.
     :type mocker: pytest_mock.MockerFixture
@@ -58,7 +59,7 @@ def patch_nomad_dispatch(
     :param dispatched_job_id: The dispatched-job id; defaults to a derived
         value when not provided.
     :type dispatched_job_id: str | None
-    :return: The payload the Nomad client would return on dispatch.
+    :return: The payload the Nomad executor would return on dispatch.
     :rtype: dict[str, Any]
     """
     payload: dict[str, Any] = {
@@ -67,7 +68,7 @@ def patch_nomad_dispatch(
         "Index": 1,
     }
     mocker.patch(
-        "app.tasks.execution.executors.nomad.client.NomadClient.dispatch",
-        new=mocker.AsyncMock(return_value=payload),
+        "app.tasks.execution.executors.nomad.models.NomadExecutor.dispatch_job",
+        new=mocker.MagicMock(return_value=payload),
     )
     return payload
