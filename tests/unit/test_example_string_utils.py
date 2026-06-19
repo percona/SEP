@@ -48,7 +48,7 @@ class TestSlugify:
         ],
     )
     def test_produces_url_safe_slug(self, text: str, expected: str) -> None:
-        """A range of inputs collapses to a lowercase, hyphen-separated slug."""
+        """Collapse a range of inputs to a lowercase, hyphen-separated slug."""
         assert slugify(text) == expected
 
 
@@ -56,11 +56,11 @@ class TestShortenText:
     """Exercise :func:`app.core.utils.strings.shorten_text`."""
 
     def test_short_input_is_returned_unchanged(self) -> None:
-        """Text that already fits the limit is not modified."""
+        """Return text unchanged when it already fits the limit."""
         assert shorten_text("short", max_length=100) == "short"
 
     def test_long_input_is_truncated_with_ellipsis(self) -> None:
-        """Text longer than ``max_length`` gets the ellipsis suffix."""
+        """Append the ellipsis suffix when text exceeds ``max_length``."""
         max_length = 20
         result = shorten_text("a" * 200, max_length=max_length)
 
@@ -68,13 +68,13 @@ class TestShortenText:
         assert len(result) == max_length
 
     def test_keep_last_chars_preserves_tail(self) -> None:
-        """``keep_last_chars`` preserves the original suffix after truncation."""
+        """Preserve the original suffix after truncation with ``keep_last_chars``."""
         result = shorten_text("a" * 100 + "TAIL", max_length=20, keep_last_chars=4)
 
         assert result.startswith("a")
         assert result.endswith("...TAIL")
 
     def test_rejects_inconsistent_lengths(self) -> None:
-        """``max_length`` smaller than ``ellipsis`` + ``keep_last_chars`` is invalid."""
+        """Raise ``ValueError`` when ``max_length`` is smaller than suffix requirements."""
         with pytest.raises(ValueError, match="must be less than max_length"):
             shorten_text("a" * 200, max_length=5, keep_last_chars=10)

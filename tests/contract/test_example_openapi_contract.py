@@ -42,7 +42,7 @@ _schema = schemathesis.from_dict(inventory_app.openapi())
 
 @_schema.parametrize()
 def test_inventory_app_conforms_to_its_openapi_schema(case) -> None:
-    """Schemathesis-derived cases must satisfy the declared OpenAPI contract.
+    """Validate Schemathesis-derived cases against the declared OpenAPI contract.
 
     The call below uses Schemathesis' built-in default checks: status code,
     content type, schema conformance, headers. The contract lane catches

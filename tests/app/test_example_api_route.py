@@ -59,7 +59,7 @@ def test_each_mounted_app_exposes_its_openapi_document(
     client: TestClient,
     openapi_path: str,
 ) -> None:
-    """Every mounted sub-app must expose its own ``openapi.json``.
+    """Verify that every mounted sub-app exposes its own ``openapi.json``.
 
     This is the kind of property that only an integration test can defend:
     each sub-app declares the helper route independently, and the mount
