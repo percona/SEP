@@ -15,6 +15,7 @@
 
 """Define tests for the alerting methods of app.sep.clients.pmm."""
 
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, call, MagicMock
 
@@ -34,9 +35,11 @@ ALERTING_HEADERS = {"X-Disable-Provenance": "true"}
 
 
 @pytest.fixture
-def pmm_remote_api() -> PMMRemoteAPI:
-    """Return a PMMRemoteAPI instance."""
-    return PMMRemoteAPI(endpoint="http://localhost", api_key="test-key")
+def pmm_remote_api() -> Iterator[PMMRemoteAPI]:
+    """Yield a PMMRemoteAPI instance, clearing its version cache on teardown."""
+    pmm_remote_api = PMMRemoteAPI(endpoint="http://localhost", api_key="test-key")
+    yield pmm_remote_api
+    pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 @pytest.fixture
@@ -101,7 +104,6 @@ class TestCreateTemplate:
             json={"yaml": "name: cpu-high\n"},
             headers=ALERTING_HEADERS,
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_create_template_returns_none_on_empty_response(
@@ -117,7 +119,6 @@ class TestCreateTemplate:
         result = await pmm_remote_api.create_template("name: cpu-high\n")
 
         assert result is None
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 class TestListTemplates:
@@ -174,7 +175,6 @@ class TestListTemplates:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_list_templates_returns_empty_list_when_no_templates(
@@ -190,7 +190,6 @@ class TestListTemplates:
         result = await pmm_remote_api.list_templates()
 
         assert result == []
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 class TestTemplateExists:
@@ -305,7 +304,6 @@ class TestCreateRule:
             },
             headers=ALERTING_HEADERS,
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_create_rule_with_params(
@@ -336,7 +334,6 @@ class TestCreateRule:
 
         call_json = mock_request.call_args.kwargs["json"]
         assert call_json["params"] == params
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_create_rule_omits_none_labels_and_params(
@@ -366,7 +363,6 @@ class TestCreateRule:
         call_json = mock_request.call_args.kwargs["json"]
         assert "labels" not in call_json
         assert "params" not in call_json
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 class TestListRules:
@@ -848,7 +844,6 @@ class TestGetAdvisorChecks:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_advisor_checks_returns_empty_list_when_no_checks(
@@ -864,7 +859,6 @@ class TestGetAdvisorChecks:
         result = await pmm_remote_api.get_advisor_checks()
 
         assert result == []
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 class TestGetFailedAdvisorChecks:
@@ -918,7 +912,6 @@ class TestGetFailedAdvisorChecks:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_failed_advisor_checks_returns_empty_list_when_no_results(
@@ -934,7 +927,6 @@ class TestGetFailedAdvisorChecks:
         result = await pmm_remote_api.get_failed_advisor_checks()
 
         assert result == []
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 class TestStartAdvisorChecks:
@@ -963,7 +955,6 @@ class TestStartAdvisorChecks:
         await pmm_remote_api.start_advisor_checks()
 
         mock_request.assert_awaited_once_with("POST", expected_path, json={})
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_start_advisor_checks_passes_names_when_provided(
@@ -983,7 +974,6 @@ class TestStartAdvisorChecks:
             "/v1/advisors/checks:start",
             json={"names": ["mysql_version"]},
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_start_advisor_checks_sends_empty_payload_when_names_is_none(
@@ -1000,7 +990,6 @@ class TestStartAdvisorChecks:
 
         call_json = mock_request.call_args.kwargs["json"]
         assert call_json == {}
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
 
 class TestGetGrafanaAnnotations:
@@ -1274,7 +1263,6 @@ class TestGetInventoryServicesWithAgents:
         mock_request.assert_awaited_once_with(
             expected_method, expected_path, **expected_kwargs
         )
-        pmm_remote_api.is_older_than_v3.cache_clear()
 
     @pytest.mark.asyncio
     async def test_get_inventory_services_with_agents_returns_empty_list(
@@ -1290,4 +1278,3 @@ class TestGetInventoryServicesWithAgents:
         result = await pmm_remote_api.get_inventory_services_with_agents()
 
         assert result == []
-        pmm_remote_api.is_older_than_v3.cache_clear()
