@@ -110,14 +110,13 @@ class TestArchivesCreateDestinationValidation:
                 swap_drop=SwapDropEnum.PURGE_ONLY,
                 where="id > 1",
                 dest_table_id=2,
-                dest_service_id=2,
-                dest_port=3307,
+                dest_service_id=SAMPLE_DEST_SERVICE_ID,
+                dest_port=SAMPLE_DEST_PORT,
             )
         assert "dest_port" in str(exc_info.value)
 
     def test_dest_service_id_with_empty_dest_port_succeeds(self):
         """Empty dest_port alongside dest_service_id is valid; port is derived from the service."""
-        dest_service_id = 2
         form = ArchivesCreate(
             alias="test",
             hostname="host",
@@ -127,10 +126,10 @@ class TestArchivesCreateDestinationValidation:
             swap_drop=SwapDropEnum.PURGE_ONLY,
             where="id > 1",
             dest_table_id=2,
-            dest_service_id=dest_service_id,
+            dest_service_id=SAMPLE_DEST_SERVICE_ID,
             dest_port="",
         )
-        assert form.dest_service_id == dest_service_id
+        assert form.dest_service_id == SAMPLE_DEST_SERVICE_ID
         assert form.dest_port is None
 
     def test_dest_db_id_and_dest_db_name_mutually_exclusive(self):
