@@ -898,7 +898,6 @@ class FieldMetadata:
     :param is_advanced: Whether the field is flagged ``advanced`` for UI grouping.
         For a nested leaf this is chain-resolved: ``True`` when the leaf or any
         ancestor is marked. Display-only; does not affect override eligibility.
-    :type is_advanced: bool
     """
 
     key: str
