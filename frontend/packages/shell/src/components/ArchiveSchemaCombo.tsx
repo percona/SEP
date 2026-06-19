@@ -44,6 +44,14 @@ export interface ArchiveSchemaComboProps {
   disabled?: boolean;
   helperText?: string;
   placeholder?: string;
+  /**
+   * Write the picked inventory id as a scalar number rather than the full
+   * `{ id, name }` option object. Needed for wire fields whose schema type does
+   * not unwrap options on submit (e.g. the Destination Table, an `IntegerField`,
+   * unlike the Source schema/table which are `schema`/`table` types). Defaults to
+   * `false` so the existing schema/table behaviour is unchanged.
+   */
+  emitScalarId?: boolean;
 }
 
 const getOptionLabel = (opt: ArchiveComboOption | string) =>
@@ -72,6 +80,7 @@ export function ArchiveSchemaCombo({
   disabled,
   helperText,
   placeholder,
+  emitScalarId = false,
 }: ArchiveSchemaComboProps) {
   const { control, setValue } = useFormContext();
 
@@ -96,7 +105,10 @@ export function ArchiveSchemaCombo({
   }
 
   const writeId = (option: ArchiveComboOption) => {
-    setValue(idFieldName, option, { shouldDirty: true, shouldValidate: true });
+    setValue(idFieldName, emitScalarId ? option.id : option, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
     setValue(nameFieldName, '', { shouldDirty: true, shouldValidate: true });
   };
 

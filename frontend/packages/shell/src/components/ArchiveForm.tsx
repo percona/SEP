@@ -18,16 +18,20 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import Box from '@mui/material/Box';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import {
   SchemaFormRenderer,
+  ServiceSelector,
   useSchemas,
   useTables,
   type PluginFormSlotProps,
   type RenderFieldArgs,
+  type ServiceType,
 } from '@sep/framework';
 import { ArchiveSchemaCombo, type ArchiveComboOption } from './ArchiveSchemaCombo';
 
@@ -49,6 +53,27 @@ const SOURCE_FIELD_NAMES = new Set([
   SOURCE_TABLE_NAME,
   SOURCE_QUERY,
 ]);
+
+// Destination-section wire field names (must match app/sep/plugins/archives/schema.py).
+const DEST_TABLE_ID = 'dest_table_id';
+const DEST_TABLE_NAME = 'dest_table_name';
+const DEST_FILE = 'dest_file';
+const DEST_SERVICE_ID = 'dest_service_id';
+const DEST_HOST = 'dest_host';
+const DEST_PORT = 'dest_port';
+const DEST_DB_ID = 'dest_db_id';
+const DEST_DB_NAME = 'dest_db_name';
+
+// Folded into ArchiveDestinationFields (the Destination-section block). The
+// schema (dest_db_*) pair is relocated here out of the Destination Host section.
+const DEST_FOLDED_FIELD_NAMES = new Set([DEST_TABLE_NAME, DEST_FILE, DEST_DB_ID, DEST_DB_NAME]);
+// Folded into ArchiveDestinationHostFields (the Destination Host block).
+const DEST_HOST_FOLDED_FIELD_NAMES = new Set([DEST_HOST, DEST_PORT]);
+
+/** Destination mode: archive into a schema + table, or into a file. */
+type DestMode = 'table' | 'file';
+/** Within the "Use a different host?" opt-in: inventory service vs manual host. */
+type HostMode = 'service' | 'manual';
 
 /** Resolve an id-or-option form value down to a numeric inventory id, or null. */
 function resolveId(value: unknown): number | null {
@@ -271,29 +296,372 @@ export function ArchiveSourceFields({ mode, onModeChange }: ArchiveSourceFieldsP
   );
 }
 
+interface DestModeToggleProps {
+  mode: DestMode;
+  onChange: (mode: DestMode) => void;
+}
+
 /**
- * Build the per-field override that replaces the Source section. The five source
- * wire fields are folded into {@link ArchiveSourceFields}: it renders on the
- * anchor field that is visible in the active mode (`source_db_id` for schema,
- * `source_query` for query), and the rest collapse to nothing. Every other
- * field defers to the framework default.
+ * Explicit Schema + Table vs Destination File selector. On switch it clears the
+ * inactive mode's wire fields so a submission never carries both branches —
+ * keeping the backend `CardinalityRule(max=1)` over
+ * dest_file / dest_table_id / dest_table_name satisfied.
+ */
+function DestModeToggle({ mode, onChange }: DestModeToggleProps) {
+  const { setValue } = useFormContext();
+
+  const handleChange = (_event: unknown, next: DestMode | null) => {
+    if (!next || next === mode) {
+      return;
+    }
+    const clearOpts = { shouldDirty: true, shouldValidate: true };
+    if (next === 'file') {
+      setValue(DEST_DB_ID, '', clearOpts);
+      setValue(DEST_DB_NAME, '', clearOpts);
+      setValue(DEST_TABLE_ID, '', clearOpts);
+      setValue(DEST_TABLE_NAME, '', clearOpts);
+    } else {
+      setValue(DEST_FILE, '', clearOpts);
+    }
+    onChange(next);
+  };
+
+  return (
+    <Box sx={{ mb: 1 }}>
+      <ToggleButtonGroup
+        exclusive
+        size="small"
+        value={mode}
+        onChange={handleChange}
+        aria-label="Destination mode"
+      >
+        <ToggleButton value="table">Schema + Table</ToggleButton>
+        <ToggleButton value="file">Destination File</ToggleButton>
+      </ToggleButtonGroup>
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+        {mode === 'table'
+          ? 'Archive into a destination schema and table. Picks come from inventory; typed values are sent as names.'
+          : 'Archive rows into a file on the executor host instead of a destination table.'}
+      </Typography>
+    </Box>
+  );
+}
+
+interface ArchiveDestinationFieldsProps {
+  mode: DestMode;
+  onModeChange: (mode: DestMode) => void;
+}
+
+/**
+ * The Destination-section body. Owns the Schema + Table vs File toggle and,
+ * in table mode, the unified destination schema and table combos. The schema
+ * combo (dest_db_id / dest_db_name) is relocated here from the Destination Host
+ * section per the redesign; its inventory picks resolve only when a destination
+ * service is selected (validator 3c), so options come from `dest_service_id`.
+ *
+ * Exported for unit testing of the cascade effects and the toggle.
+ */
+export function ArchiveDestinationFields({ mode, onModeChange }: ArchiveDestinationFieldsProps) {
+  const { control, register, setValue } = useFormContext();
+
+  const destServiceId = resolveId(useWatch({ control, name: DEST_SERVICE_ID }));
+  const schemaIdValue = useWatch({ control, name: DEST_DB_ID });
+  const schemaId = resolveId(schemaIdValue);
+  const schemaNameValue = useWatch({ control, name: DEST_DB_NAME }) as string | undefined;
+
+  // Only table mode shows the combos, so skip the inventory fetches in file mode.
+  const enabled = mode === 'table';
+  const { data: schemas = [], isLoading: schemasLoading } = useSchemas({
+    serviceId: destServiceId,
+    enabled,
+  });
+  const { data: tables = [], isLoading: tablesLoading } = useTables({ schemaId, enabled });
+
+  const clearOpts = { shouldDirty: true, shouldValidate: true };
+
+  // Cascade: changing the destination service invalidates the picked schema and
+  // table (and clears any typed schema name, mirroring the Source section), so a
+  // stale inventory id can never outlive its service (validator 3c). Seed the ref
+  // with the mounted value to skip the initial render / edit prefill.
+  const prevServiceId = useRef(destServiceId);
+  useEffect(() => {
+    if (prevServiceId.current !== destServiceId) {
+      prevServiceId.current = destServiceId;
+      setValue(DEST_DB_ID, '', clearOpts);
+      setValue(DEST_DB_NAME, '', clearOpts);
+      setValue(DEST_TABLE_ID, '', clearOpts);
+      setValue(DEST_TABLE_NAME, '', clearOpts);
+    }
+    // clearOpts is a stable literal; setValue is stable from RHF.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destServiceId, setValue]);
+
+  // Cascade: any post-mount change to the inventory schema id invalidates the
+  // picked table — including a transition to null (the schema was cleared or
+  // typed over), which would otherwise leave a stale dest_table_id pointing at
+  // the old schema's table. Unlike the Source section, the destination has no
+  // id<->name normalisation effect that spuriously nulls schemaId, so there is
+  // no need to gate on `schemaId !== null` here (and gating would reintroduce
+  // the stale-table bug). The destination schema/table pair has no "both ids or
+  // both names" coupling validator (the Source section's 5a/5b have no
+  // destination analogue — see schema.py validators 3a-3d), so a mixed
+  // inventory-schema + typed-table state is wire-legal and needs no downgrade.
+  const prevSchemaId = useRef(schemaId);
+  useEffect(() => {
+    if (prevSchemaId.current !== schemaId) {
+      prevSchemaId.current = schemaId;
+      setValue(DEST_TABLE_ID, '', clearOpts);
+      setValue(DEST_TABLE_NAME, '', clearOpts);
+    }
+    // clearOpts is a stable literal; setValue is stable from RHF.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schemaId, setValue]);
+
+  return (
+    <Box>
+      <DestModeToggle mode={mode} onChange={onModeChange} />
+
+      {mode === 'table' ? (
+        <>
+          {/*
+           * Intentional layout inversion (mandated by the acceptance criteria):
+           * the destination schema combo lives in the Destination section, above
+           * the "Use a different host?" service selector that supplies its
+           * inventory options. With no destination service chosen the combo is
+           * type-only (validator 3c); the helper text steers the user downward.
+           */}
+          <Box sx={{ mb: 2 }}>
+            <ArchiveSchemaCombo
+              idFieldName={DEST_DB_ID}
+              nameFieldName={DEST_DB_NAME}
+              label="Destination Schema"
+              options={schemas}
+              loading={schemasLoading}
+              helperText={
+                destServiceId === null
+                  ? 'Type a schema name. To pick from inventory, enable "Use a different host?" and select a destination service.'
+                  : 'Pick a schema from inventory or type a new one.'
+              }
+            />
+          </Box>
+          <Box sx={{ mb: 2 }}>
+            <ArchiveSchemaCombo
+              idFieldName={DEST_TABLE_ID}
+              nameFieldName={DEST_TABLE_NAME}
+              label="Destination Table"
+              options={tables}
+              loading={tablesLoading}
+              emitScalarId
+              helperText={
+                schemaId !== null
+                  ? 'Pick a table from inventory or type a new one.'
+                  : schemaNameValue
+                    ? 'Type a table name (the schema is not from inventory).'
+                    : 'Choose or type a destination schema first, or type a table name.'
+              }
+            />
+          </Box>
+        </>
+      ) : (
+        <Box sx={{ mb: 2 }}>
+          <TextField
+            {...register(DEST_FILE)}
+            label="Destination File"
+            fullWidth
+            helperText="File path for archiving rows instead of a destination table."
+          />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+interface ArchiveDestinationHostFieldsProps {
+  useDifferentHost: boolean;
+  onUseDifferentHostChange: (value: boolean) => void;
+  hostMode: HostMode;
+  onHostModeChange: (mode: HostMode) => void;
+  serviceTypes: readonly ServiceType[];
+}
+
+/**
+ * The Destination Host body. The destination defaults to the source service; an
+ * explicit "Use a different host?" opt-in reveals a mutually-exclusive choice
+ * between an inventory service (dest_service_id) and a manual host
+ * (dest_host + dest_port). When the opt-in is off, no host fields are sent and
+ * the backend falls back to the source service. The Destination Port renders
+ * ONLY in the manual-host branch — the backend ignores a typed port when a
+ * destination service is selected, so it must not appear there.
+ *
+ * Exported for unit testing of the opt-in mutual exclusivity and port visibility.
+ */
+export function ArchiveDestinationHostFields({
+  useDifferentHost,
+  onUseDifferentHostChange,
+  hostMode,
+  onHostModeChange,
+  serviceTypes,
+}: ArchiveDestinationHostFieldsProps) {
+  const { register, setValue } = useFormContext();
+
+  const clearOpts = { shouldDirty: true, shouldValidate: true };
+
+  const handleUseDifferentHost = (checked: boolean) => {
+    if (!checked) {
+      // Opt-out: drop every host field so the backend falls back to the source
+      // service. Clearing dest_service_id cascades (in ArchiveDestinationFields)
+      // to the relocated destination schema, keeping validator 3c satisfied.
+      setValue(DEST_SERVICE_ID, '', clearOpts);
+      setValue(DEST_HOST, '', clearOpts);
+      setValue(DEST_PORT, '', clearOpts);
+    }
+    onUseDifferentHostChange(checked);
+  };
+
+  const handleHostMode = (_event: unknown, next: HostMode | null) => {
+    if (!next || next === hostMode) {
+      return;
+    }
+    if (next === 'service') {
+      setValue(DEST_HOST, '', clearOpts);
+      setValue(DEST_PORT, '', clearOpts);
+    } else {
+      // Manual host: no inventory service, so an inventory destination schema
+      // can no longer resolve (validator 3c). Clearing it cascades the table too.
+      setValue(DEST_SERVICE_ID, '', clearOpts);
+    }
+    onHostModeChange(next);
+  };
+
+  return (
+    <Box>
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={useDifferentHost}
+            onChange={(event) => handleUseDifferentHost(event.target.checked)}
+          />
+        }
+        label="Use a different host?"
+      />
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        Off: the destination uses the source service. On: choose a destination service from
+        inventory, or enter a host manually.
+      </Typography>
+
+      {useDifferentHost && (
+        <Box>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={hostMode}
+            onChange={handleHostMode}
+            aria-label="Destination host mode"
+            sx={{ mb: 1 }}
+          >
+            <ToggleButton value="service">Pick from inventory</ToggleButton>
+            <ToggleButton value="manual">Enter host manually</ToggleButton>
+          </ToggleButtonGroup>
+
+          {hostMode === 'service' ? (
+            <Box sx={{ mb: 2 }}>
+              <ServiceSelector
+                name={DEST_SERVICE_ID}
+                label="Destination Service"
+                serviceTypes={serviceTypes}
+                helperText="Inventory lookup for the destination host."
+              />
+            </Box>
+          ) : (
+            <>
+              <Box sx={{ mb: 2 }}>
+                <TextField
+                  {...register(DEST_HOST)}
+                  label="Destination Host"
+                  fullWidth
+                  helperText="Manual host address for the destination database."
+                />
+              </Box>
+              <Box sx={{ mb: 2 }}>
+                <TextField
+                  {...register(DEST_PORT)}
+                  label="Destination Port"
+                  type="number"
+                  fullWidth
+                  slotProps={{ htmlInput: { min: 1, max: 65535 } }}
+                  helperText="Port of the destination database (1-65535)."
+                />
+              </Box>
+            </>
+          )}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+interface DestinationRenderConfig {
+  destMode: DestMode;
+  onDestModeChange: (mode: DestMode) => void;
+  useDifferentHost: boolean;
+  onUseDifferentHostChange: (value: boolean) => void;
+  hostMode: HostMode;
+  onHostModeChange: (mode: HostMode) => void;
+}
+
+/**
+ * Build the per-field override that replaces the Source, Destination, and
+ * Destination Host sections. Each section folds its wire fields onto a single
+ * anchor field (the rest collapse to nothing via `false`), so the unified
+ * combos and the explicit toggles render in place of the raw inputs. Every
+ * other field defers to the framework default.
  */
 function makeRenderField(
   mode: SourceMode,
   onModeChange: (mode: SourceMode) => void,
+  dest: DestinationRenderConfig,
 ): (args: RenderFieldArgs) => ReactNode {
-  const anchor = mode === 'schema' ? SOURCE_DB_ID : SOURCE_QUERY;
+  const sourceAnchor = mode === 'schema' ? SOURCE_DB_ID : SOURCE_QUERY;
   return ({ field }: RenderFieldArgs) => {
-    if (!SOURCE_FIELD_NAMES.has(field.name)) {
-      return undefined;
+    // Source section.
+    if (SOURCE_FIELD_NAMES.has(field.name)) {
+      if (field.name === sourceAnchor) {
+        return <ArchiveSourceFields mode={mode} onModeChange={onModeChange} />;
+      }
+      // Folded into ArchiveSourceFields. Return `false` (not nullish) so the slot
+      // renders nothing instead of falling back to the framework default widget;
+      // the empty wrappers collapse to a single margin in normal block flow.
+      return false;
     }
-    if (field.name === anchor) {
-      return <ArchiveSourceFields mode={mode} onModeChange={onModeChange} />;
+
+    // Destination section: anchor the whole block (toggle + relocated schema +
+    // table, or the file input) on dest_table_id.
+    if (field.name === DEST_TABLE_ID) {
+      return <ArchiveDestinationFields mode={dest.destMode} onModeChange={dest.onDestModeChange} />;
     }
-    // Folded into ArchiveSourceFields. Return `false` (not nullish) so the slot
-    // renders nothing instead of falling back to the framework default widget;
-    // the empty wrappers collapse to a single margin in normal block flow.
-    return false;
+    if (DEST_FOLDED_FIELD_NAMES.has(field.name)) {
+      return false;
+    }
+
+    // Destination Host section: anchor the opt-in block on dest_service_id.
+    if (field.name === DEST_SERVICE_ID) {
+      return (
+        <ArchiveDestinationHostFields
+          useDifferentHost={dest.useDifferentHost}
+          onUseDifferentHostChange={dest.onUseDifferentHostChange}
+          hostMode={dest.hostMode}
+          onHostModeChange={dest.onHostModeChange}
+          serviceTypes={
+            ((field as { service_types?: string[] }).service_types ?? []) as readonly ServiceType[]
+          }
+        />
+      );
+    }
+    if (DEST_HOST_FOLDED_FIELD_NAMES.has(field.name)) {
+      return false;
+    }
+
+    return undefined;
   };
 }
 
@@ -303,10 +671,10 @@ export interface ArchiveFormProps extends PluginFormSlotProps {
 
 /**
  * Whole-form slot for the archives create / edit pages. It composes the
- * framework {@link SchemaFormRenderer} unchanged except for the Source section,
- * which it overrides with a unified free-solo schema / table combo and an
- * explicit mode toggle. The framework still owns chrome, mutation, snackbars,
- * coercion, and the (unchanged) fail_when validators.
+ * framework {@link SchemaFormRenderer} unchanged except for the Source,
+ * Destination, and Destination Host sections, which it overrides with unified
+ * free-solo combos and explicit toggles. The framework still owns chrome,
+ * mutation, snackbars, coercion, and the (unchanged) fail_when validators.
  */
 export function ArchiveForm({
   sections,
@@ -317,10 +685,29 @@ export function ArchiveForm({
   submitLabel,
 }: ArchiveFormProps) {
   const [mode, setMode] = useState<SourceMode>(defaultValues?.[SOURCE_QUERY] ? 'query' : 'schema');
+  const [destMode, setDestMode] = useState<DestMode>(defaultValues?.[DEST_FILE] ? 'file' : 'table');
+  // UI-only opt-in: on when an edit prefill carries any destination host field.
+  const [useDifferentHost, setUseDifferentHost] = useState<boolean>(
+    Boolean(defaultValues?.[DEST_SERVICE_ID]) || Boolean(defaultValues?.[DEST_HOST]),
+  );
+  const [hostMode, setHostMode] = useState<HostMode>(
+    defaultValues?.[DEST_HOST] ? 'manual' : 'service',
+  );
 
-  // The override only depends on `mode` (setMode is stable), so memoize the
-  // function itself rather than rebuilding it on every per-field render.
-  const renderField = useMemo(() => makeRenderField(mode, setMode), [mode]);
+  // The override depends only on the mode flags (the setters are stable), so
+  // memoize the function itself rather than rebuilding it on every render.
+  const renderField = useMemo(
+    () =>
+      makeRenderField(mode, setMode, {
+        destMode,
+        onDestModeChange: setDestMode,
+        useDifferentHost,
+        onUseDifferentHostChange: setUseDifferentHost,
+        hostMode,
+        onHostModeChange: setHostMode,
+      }),
+    [mode, destMode, useDifferentHost, hostMode],
+  );
 
   return (
     <SchemaFormRenderer
