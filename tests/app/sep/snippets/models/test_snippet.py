@@ -16,13 +16,12 @@
 """Tests for BaseSnippet and Snippet models."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, PropertyMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
-    SnippetInterpreterConfig,
     snippets_settings,
     SnippetSudoOption,
 )
@@ -207,68 +206,57 @@ class TestBaseSnippetProperties:
         assert snippet.requirements is None
 
 
+@pytest.fixture(autouse=True)
+def _clear_interpreter_config_cache():
+    """Clear the ttl_cache on _get_execution_interpreter_config between tests.
+
+    The cache is keyed by the resolved snippet ``Path`` (which includes
+    ``BASE_DIR``). Same-filename tests share a deterministic bucket, but
+    ``TestFromPath`` mutates ``BASE_DIR``; clearing the cache on teardown keeps
+    cases independent.
+    """
+    yield
+    BaseSnippet._get_execution_interpreter_config.cache_clear()
+
+
 class TestExecutionInterpreter:
-    """Test the execution_interpreter and execution_task_name properties."""
+    """Test the execution_interpreter and execution_task_name properties.
+
+    These tests drive the real ``snippets_settings.INTERPRETERS`` lookup by
+    varying the snippet ``filename`` and ``meta`` — no mocking of the subject
+    under test. ``.sh`` resolves to bash, ``.py`` to python3, and an unmapped
+    extension (``.xyz``) resolves to no interpreter.
+    """
 
     def test_interpreter_found(self):
-        """Verify interpreter command is returned when config matches."""
+        """Verify the real .sh lookup resolves to the bash interpreter."""
         snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
-        config = SnippetInterpreterConfig(command="bash")
-        with patch.object(
-            BaseSnippet,
-            "_get_execution_interpreter_config",
-            return_value=config,
-        ):
-            assert snippet.execution_interpreter == "bash"
+        assert snippet.execution_interpreter == "bash"
 
     def test_interpreter_not_found(self):
-        """Verify None is returned when no interpreter config matches."""
+        """Verify an unmapped extension resolves to no interpreter."""
         snippet = BaseSnippet(filename="test.xyz", size=100, md5_digest="a" * 32)
-        with patch.object(
-            BaseSnippet,
-            "_get_execution_interpreter_config",
-            return_value=None,
-        ):
-            assert snippet.execution_interpreter is None
+        assert snippet.execution_interpreter is None
 
     def test_task_name_default_when_no_interpreter(self):
-        """Verify default task name when no interpreter config found."""
+        """Verify default task name when no interpreter config is found."""
         snippet = BaseSnippet(filename="test.xyz", size=100, md5_digest="a" * 32)
-        with patch.object(
-            BaseSnippet,
-            "_get_execution_interpreter_config",
-            return_value=None,
-        ):
-            assert snippet.execution_task_name == DEFAULT_SNIPPETS_TASK
+        assert snippet.execution_task_name == DEFAULT_SNIPPETS_TASK
 
     def test_task_name_with_requirements(self):
-        """Verify task_with_requirements is used when snippet has packages."""
+        """Verify task_with_requirements is used when a .py snippet has packages."""
         snippet = BaseSnippet(
             filename="test.py",
             size=100,
             md5_digest="a" * 32,
             meta={"requires_packages": ["requests"]},
         )
-        config = SnippetInterpreterConfig(
-            command="python3", task_with_requirements="exec-python-artifact"
-        )
-        with patch.object(
-            BaseSnippet,
-            "_get_execution_interpreter_config",
-            return_value=config,
-        ):
-            assert snippet.execution_task_name == "exec-python-artifact"
+        assert snippet.execution_task_name == "exec-python-artifact"
 
     def test_task_name_without_requirements(self):
-        """Verify regular task is used when snippet has no packages."""
+        """Verify the default task is used when a .sh snippet has no packages."""
         snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
-        config = SnippetInterpreterConfig(command="bash")
-        with patch.object(
-            BaseSnippet,
-            "_get_execution_interpreter_config",
-            return_value=config,
-        ):
-            assert snippet.execution_task_name == config.task
+        assert snippet.execution_task_name == DEFAULT_SNIPPETS_TASK
 
 
 class TestGetExecutionModel:
@@ -503,35 +491,27 @@ class TestCanExecute:
     """Test the can_execute property."""
 
     def test_with_interpreter_and_valid_params(self):
-        """Verify can_execute is True with interpreter and valid params."""
+        """Verify can_execute is True with a real interpreter and valid params."""
         snippet = BaseSnippet(
             filename="test.sh",
             size=100,
             md5_digest="a" * 32,
             meta={"parameters": [{"name": "host", "type": "str"}]},
         )
-        with patch.object(
-            type(snippet),
-            "execution_interpreter",
-            new_callable=PropertyMock,
-            return_value="bash",
-        ):
-            assert snippet.can_execute is True
+        assert snippet.can_execute is True
 
     def test_no_interpreter(self):
-        """Verify can_execute is False when no interpreter is found."""
+        """Verify can_execute is False when no interpreter resolves.
+
+        The snippet has no parameters, so there are no validation errors; a
+        ``False`` result can only stem from the unresolved interpreter.
+        """
         snippet = BaseSnippet(
             filename="test.unknown",
             size=100,
             md5_digest="a" * 32,
         )
-        with patch.object(
-            type(snippet),
-            "execution_interpreter",
-            new_callable=PropertyMock,
-            return_value=None,
-        ):
-            assert snippet.can_execute is False
+        assert snippet.can_execute is False
 
 
 class TestSnippetModel:
@@ -583,20 +563,23 @@ class TestSnippetModel:
         assert snippet.reason == "No longer valid"
 
     def test_can_execute_requires_approval(self):
-        """Verify Snippet.can_execute requires approval on top of base check."""
+        """Verify Snippet.can_execute requires approval on top of base check.
+
+        The base ``BaseSnippet.can_execute`` resolves to ``True`` for this
+        snippet (bash interpreter, no parameter errors), so the unapproved
+        ``Snippet`` returning ``False`` proves the approval gate is what blocks
+        it — not a coincidentally-failing base check.
+        """
+        base = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        assert base.can_execute is True
+
         snippet = Snippet(
             filename="test.sh",
             size=100,
             md5_digest="a" * 32,
             approved_at=None,
         )
-        with patch.object(
-            BaseSnippet,
-            "can_execute",
-            new_callable=PropertyMock,
-            return_value=True,
-        ):
-            assert snippet.can_execute is False
+        assert snippet.can_execute is False
 
     @pytest.mark.asyncio
     async def test_update_from_snippet(self):
@@ -631,28 +614,32 @@ class TestSnippetModel:
 class TestFromPath:
     """Test the from_path class method."""
 
+    @pytest.fixture
+    def base_dir(self, tmp_path, monkeypatch):
+        """Redirect BaseSnippet.BASE_DIR to a tmp_path via a pytest seam."""
+        monkeypatch.setattr(BaseSnippet, "BASE_DIR", tmp_path)
+        return tmp_path
+
     @pytest.mark.asyncio
-    async def test_creates_snippet_from_file(self, tmp_path):
+    async def test_creates_snippet_from_file(self, base_dir):
         """Verify from_path creates a snippet with correct hash and filename."""
-        snippet_file = tmp_path / "hello.sh"
+        snippet_file = base_dir / "hello.sh"
         snippet_file.write_text("echo hello\n")
 
-        with patch.object(BaseSnippet, "BASE_DIR", tmp_path):
-            snippet = await BaseSnippet.from_path("hello.sh")
+        snippet = await BaseSnippet.from_path("hello.sh")
 
         assert snippet.filename == "hello.sh"
         assert len(snippet.md5_digest) == MD5_DIGEST_LENGTH
         assert snippet.size > 0
 
     @pytest.mark.asyncio
-    async def test_from_path_with_update_meta(self, tmp_path):
+    async def test_from_path_with_update_meta(self, base_dir):
         """Verify from_path calls update_meta when flag is True."""
         content = "# ---\n# title: Hello Script\n# ---\necho hello\n"
-        snippet_file = tmp_path / "hello.sh"
+        snippet_file = base_dir / "hello.sh"
         snippet_file.write_text(content)
 
-        with patch.object(BaseSnippet, "BASE_DIR", tmp_path):
-            snippet = await BaseSnippet.from_path("hello.sh", update_meta=True)
+        snippet = await BaseSnippet.from_path("hello.sh", update_meta=True)
 
         assert snippet.meta.get("title") == "Hello Script"
 

@@ -1068,8 +1068,8 @@ class TestCardinalityPatterns:
 class TestWorkedExamples:
     """Verify the 6 worked declarative-DSL equivalents fire correctly.
 
-    These mirror the imperative validators in archives / alters that
-    SEP-1071 documents are now expressible declaratively.
+    These mirror the imperative validators in archives / alters that are
+    now expressible declaratively.
     """
 
     def _build_dsn_table_body(self) -> type:

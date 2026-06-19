@@ -380,13 +380,13 @@ class TestApiRouterConfigDrivenLoop:
     def test_plugin_with_api_router_path_is_mounted(self) -> None:
         """Assert a plugin with ``api_router_path`` set produces mounted routes."""
         plugin = Plugin(
-            name="Checksums",
-            module_name="checksums",
-            api_router_path="app.sep.plugins.checksums.api_routes.router",
+            name="Snippets",
+            module_name="snippets",
+            api_router_path="app.sep.plugins.snippets.api_routes.router",
         )
         router = build_plugins_router(build_app_registry([plugin]))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
-        assert any(p.startswith("/plugins/checksums/") for p in paths)
+        assert any(p.startswith("/plugins/snippets/") for p in paths)
 
     def test_plugin_without_api_router_path_is_not_mounted(self) -> None:
         """Assert a plugin with ``api_router_path=None`` contributes no routes."""
@@ -450,8 +450,8 @@ class TestApiRouterConfigDrivenLoop:
         """
         plugin = Plugin(
             name="Bad",
-            module_name="checksums",
-            api_router_path="app.sep.plugins.checksums.api_routes:router",
+            module_name="snippets",
+            api_router_path="app.sep.plugins.snippets.api_routes:router",
         )
         with pytest.raises((ImportError, AttributeError, ModuleNotFoundError)):
             build_plugins_router(build_app_registry([plugin]))
@@ -462,7 +462,6 @@ class TestApiRouterConfigDrivenLoop:
         """Assert convention auto-derive sets ``api_router_path`` for built-ins."""
         for module, expected in (
             ("archives", "app.sep.plugins.archives.api_routes.router"),
-            ("checksums", "app.sep.plugins.checksums.api_routes.router"),
             ("dipper", "app.sep.plugins.dipper.api_routes.router"),
             ("snippets", "app.sep.plugins.snippets.api_routes.router"),
         ):
@@ -541,7 +540,7 @@ class TestApiRouterConfigDrivenLoop:
         """
         plugin = Plugin.model_construct(
             name="Ghost",
-            module_name="app.sep.plugins.checksums",
+            module_name="app.sep.plugins.snippets",
             api_router_path="",
         )
         router = build_plugins_router(build_app_registry([plugin]))
@@ -555,11 +554,11 @@ class TestApiRouterConfigDrivenLoop:
         ``include_router``.
         """
         plugin = Plugin(
-            name="Checksums",
-            module_name="checksums",
+            name="Snippets",
+            module_name="snippets",
             api_router_path="app.sep.config.Plugin",
         )
-        with pytest.raises(TypeError, match="checksums"):
+        with pytest.raises(TypeError, match="snippets"):
             build_plugins_router(build_app_registry([plugin]))
 
     def test_plugin_api_router_path_rejects_bad_module_at_parse(self) -> None:
@@ -578,9 +577,9 @@ class TestApiRouterConfigDrivenLoop:
     def test_module_level_plugins_router_matches_settings(self) -> None:
         """Assert module-level ``plugins_router`` mirrors ``sep_settings.PLUGINS``."""
         expected_keys = {
-            plugin.module_name.split(".")[-1]
-            for plugin in sep_settings.PLUGINS
-            if plugin.api_router_path is not None
+            app.key
+            for app in build_app_registry(sep_settings.PLUGINS)
+            if app.api_router is not None
         }
         seen_prefixes = {
             r.path.split("/")[2]
