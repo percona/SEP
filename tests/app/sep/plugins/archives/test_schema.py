@@ -295,6 +295,31 @@ class TestArchivesSchemaFailRules:
         expected = {"any": [{"equals": {"swap_drop": 1}}, {"truthy": "delete_data"}]}
         assert expected in gates
 
+    def test_destination_section_hidden_when_delete_data(self):
+        """Destination section is hidden when delete_data is truthy."""
+        section = next(s for s in archives_schema.forms if s.title == "Destination")
+        assert section.forbidden is not None
+        gates = [g.when.to_dict() for g in section.forbidden]
+        assert {"truthy": "delete_data"} in gates
+
+    def test_destination_host_section_hidden_when_delete_data(self):
+        """Destination Host section is hidden when delete_data is truthy."""
+        section = next(
+            s for s in archives_schema.forms if s.title == "Destination Host"
+        )
+        assert section.forbidden is not None
+        gates = [g.when.to_dict() for g in section.forbidden]
+        assert {"truthy": "delete_data"} in gates
+
+    @pytest.mark.parametrize("section_title", ["Destination", "Destination Host"])
+    def test_destination_sections_forbidden_gate_in_wire_schema(
+        self, section_title: str
+    ):
+        """Preserve delete_data section forbidden gates in wire schema payload."""
+        wire_schema = archives_schema.model_dump(by_alias=True, exclude_none=True)
+        section = next(s for s in wire_schema["forms"] if s["title"] == section_title)
+        assert {"when": {"truthy": "delete_data"}} in section["forbidden"]
+
     def test_dest_required_fail_rule_present(self):
         """FailRule fires when no dest and not SWAP_DROP and not delete_data."""
         all_fail_rules = []
