@@ -13,15 +13,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.tasks.alerts module."""
+"""Define tests for the app.sep.plugins.archives.alerts module."""
 
 from types import SimpleNamespace
 
 import pytest
 import yaml
 
-from app.tasks.alerts import (
+from app.sep.plugins.archives.alerts import (
     _effective_entities,
+    _reconstruct_error_tail,
     ARCHIVER_FIELD_PLACEHOLDER,
     ARCHIVER_TRACE_PLACEHOLDER,
     build_archiver_description,
@@ -163,6 +164,67 @@ class TestExtractLastErrorTrace:
         assert "tail marker" in trace
 
 
+class TestReconstructErrorTail:
+    """Test ``_reconstruct_error_tail`` chunk reassembly."""
+
+    def test_returns_joined_stderr_tail(self):
+        """Join a short multi-chunk stream whole, in chronological order.
+
+        Chunks arrive newest-first; the reconstructed tail restores stream
+        order so the downstream extractor sees the complete tail rather than
+        just the final chunk.
+        """
+        # newest-first: ["last error", "first error"]
+        assert _reconstruct_error_tail(["last error", "first error"]) == (
+            "first errorlast error"
+        )
+
+    def test_returns_tail_when_error_marker_in_earlier_chunk(self):
+        """Scan back past the newest chunk so a straddling ERROR block survives.
+
+        The last error block can straddle a chunk boundary, with the ``ERROR``
+        marker in an earlier chunk and only the trailing continuation lines in
+        the newest chunk. Reading just the newest chunk would drop the marker.
+        """
+        chunks = [
+            "DBD::mysql failed at line 1929.\n",
+            "prelude\nERROR: pt-archiver Purge Failed\n",
+        ]
+        content = _reconstruct_error_tail(chunks)
+        assert content is not None
+        assert "ERROR: pt-archiver Purge Failed" in content
+        assert "DBD::mysql failed at line 1929." in content
+
+    def test_detects_marker_split_across_chunk_boundary(self):
+        """Detect an ERROR marker split across the chunk boundary.
+
+        The ``ERROR`` token itself can land half in one chunk and half in the
+        next (``"...ER" | "ROR: ..."``). The reverse scan bridges adjacent
+        chunks with a short prefix so the split marker is still recognized.
+        """
+        # newest-first: ["ROR: boom\n", "prelude ER"]
+        assert _reconstruct_error_tail(["ROR: boom\n", "prelude ER"]) == (
+            "prelude ERROR: boom\n"
+        )
+
+    def test_stops_scanning_once_marker_and_min_bytes_reached(self):
+        """Stop the reverse scan after the marker plus the trailing byte budget.
+
+        When the newest chunk already holds the marker and exceeds the trailing
+        byte budget, older chunks are not pulled into the result.
+        """
+        big = "ERROR: " + ("x" * (4 * 1024))
+        # newest-first: [big, "OLD CONTEXT\n"]
+        content = _reconstruct_error_tail([big, "OLD CONTEXT\n"])
+        assert content is not None
+        assert content.startswith("ERROR: ")
+        assert "OLD CONTEXT" not in content
+
+    def test_returns_none_for_no_chunks(self):
+        """Return None when there are no STDERR chunks."""
+        assert _reconstruct_error_tail([]) is None
+
+
 class TestBuildArchiverDescription:
     """Test ``build_archiver_description``."""
 
@@ -201,10 +263,8 @@ class TestBuildArchiverDescription:
     def test_anonymizes_assembled_block(self, mocker):
         """Pass the assembled block through anonymize_text once."""
         mock_anon = mocker.patch(
-            "app.tasks.alerts.anonymize_text", return_value="SCRUBBED"
+            "app.sep.plugins.archives.alerts.anonymize_text", return_value="SCRUBBED"
         )
-        from app.tasks.anonymizer.entities import PIIEntity
-
         fields = parse_archiver_purge_config(_config_yaml())
         entities = {PIIEntity.EMAIL_ADDRESS}
         desc = build_archiver_description(fields, "trace", entities)
@@ -318,19 +378,6 @@ class TestBuildOwnerAlertDetails:
         )
 
     @pytest.mark.asyncio
-    async def test_returns_none_for_non_archiver(self, mocker):
-        """Return ``None`` for a non-archiver task (generic path unchanged)."""
-        from app.tasks.models import TaskOwner
-
-        history = SimpleNamespace(
-            task=SimpleNamespace(owner=TaskOwner.ANY, data={}, anonymize_mask=None),
-            execution_request=SimpleNamespace(meta={}, target="t"),
-            anonymize_mask=None,
-            id=1,
-        )
-        assert await build_owner_alert_details(history) is None
-
-    @pytest.mark.asyncio
     async def test_falls_back_to_task_data_meta_when_snapshot_empty(self, mocker):
         """Fall back to task.data meta when the execution snapshot meta is empty.
 
@@ -338,7 +385,7 @@ class TestBuildOwnerAlertDetails:
         builder reads ``task.data["meta"]`` so source node + config still render.
         """
         mocker.patch(
-            "app.tasks.alerts._read_last_stderr",
+            "app.sep.plugins.archives.alerts._read_last_stderr",
             return_value="ERROR: boom",
         )
         meta = {

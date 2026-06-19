@@ -39,6 +39,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.archives.alerts import parse_archiver_purge_config
 from app.sep.plugins.archives.models import (
     ArchivesCreate,
     ArchivesTaskResponse,
@@ -50,7 +51,6 @@ from app.sep.plugins.framework import (
     build_task_list_responses,
     make_task_dep,
 )
-from app.tasks.alerts import parse_archiver_purge_config
 from app.tasks.models import (
     Task,
     TaskBackendEnum,

@@ -31,7 +31,7 @@ from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
-from app.tasks.logs.constants import STDERR_ERROR_MARKER, TAIL_SCAN_MAX_CHUNKS
+from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     DispatchLock,
     Task,
@@ -45,12 +45,6 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-#: Minimum trailing STDERR bytes to accumulate before stopping the reverse scan
-#: once an error marker has been seen. Covers the downstream trace cap
-#: (``app.tasks.alerts.MAX_TRACE_BYTES``) so an error block that straddles a
-#: chunk boundary is fully present in the returned tail.
-_STDERR_TAIL_MIN_BYTES = 4 * 1024
 
 
 class TaskManager(BaseSQLModelManager):
@@ -723,59 +717,35 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             yield row
 
     @classmethod
-    async def get_last_error_log(
-        cls, session: AsyncSession, task_history_id: int
-    ) -> str | None:
-        """Return the trailing ``STDERR`` of a task history for alerting.
+    async def get_stderr_tail_chunks(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        limit: int = TAIL_SCAN_MAX_CHUNKS,
+    ) -> list[str]:
+        """Return a task history's newest ``STDERR`` chunk contents, newest-first.
 
-        Reads ``STDERR`` chunks newest-first (by insertion id, the true
-        cross-source chronological order) and prepends them into a buffer,
-        reconstructing chronological stream order. The scan stops as soon as the
-        buffer holds an error marker plus at least :data:`_STDERR_TAIL_MIN_BYTES`
-        of trailing content — enough that an error block straddling a chunk
-        boundary is fully captured — or after
-        :data:`~app.tasks.logs.constants.TAIL_SCAN_MAX_CHUNKS` chunks. STDOUT
-        chunks are ignored.
-
-        A single-chunk read is insufficient: the last error block can straddle a
-        chunk boundary, leaving the newest chunk without the ``ERROR`` marker and
-        yielding a placeholder downstream.
+        Generic tail accessor: returns up to ``limit`` STDERR chunk contents
+        ordered newest-first by insertion id (the true cross-source
+        chronological order). Callers reconstruct chronological order by
+        reversing and joining. STDOUT chunks are ignored.
 
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
-        :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier.
-        :type task_history_id: int
-        :return: The trailing STDERR content guaranteed to contain the last error
-            block (when one exists), or ``None`` when no STDERR chunk exists.
-        :rtype: str | None
+        :param limit: The maximum number of newest STDERR chunks to return.
+        :return: The newest STDERR chunk contents, newest-first; empty when no
+            STDERR chunk exists.
         """
         query = (
             select(TaskHistoryLog)
             .where(col(TaskHistoryLog.task_history_id) == task_history_id)
             .where(col(TaskHistoryLog.stream) == TaskLogType.STDERR)
             .order_by(col(TaskHistoryLog.id).desc())
-            .limit(TAIL_SCAN_MAX_CHUNKS)
+            .limit(limit)
         )
         result = await cls._exec(session, query)
-        parts = []
-        total_bytes = 0
-        marker_seen = False
-        marker_overlap = len(STDERR_ERROR_MARKER) - 1
-        for chunk in result.all():
-            content = chunk.content
-            if not marker_seen:
-                # Bridge the boundary with a prefix of the newer chunk so a marker
-                # split across the two is still detected.
-                boundary_prefix = parts[-1][:marker_overlap] if parts else ""
-                marker_seen = STDERR_ERROR_MARKER in content + boundary_prefix
-            parts.append(content)
-            total_bytes += len(content.encode("utf-8"))
-            if marker_seen and total_bytes >= _STDERR_TAIL_MIN_BYTES:
-                break
-        if not parts:
-            return None
-        return "".join(reversed(parts))
+        return [chunk.content for chunk in result.all()]
 
     @classmethod
     async def insert_chunk_idempotent(

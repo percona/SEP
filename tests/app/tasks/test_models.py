@@ -698,7 +698,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.tasks.alerts._read_last_stderr",
+            "app.sep.plugins.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="2026 ERROR: pt-archiver Purge Failed"),
         )
         mock_trigger = AsyncMock()
@@ -732,7 +732,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.tasks.alerts._read_last_stderr",
+            "app.sep.plugins.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="ERROR: boom"),
         )
         mock_trigger = AsyncMock()
@@ -747,7 +747,7 @@ class TestTaskHistory:
         self, execution_request: TaskExecutionRequest, mocker
     ) -> None:
         """Render the placeholder for a missing STDERR trace, never an empty block."""
-        from app.tasks.alerts import ARCHIVER_TRACE_PLACEHOLDER
+        from app.sep.plugins.archives.alerts import ARCHIVER_TRACE_PLACEHOLDER
 
         history = TaskHistory(
             id=1075,
@@ -757,7 +757,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.tasks.alerts._read_last_stderr",
+            "app.sep.plugins.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value=None),
         )
         mock_trigger = AsyncMock()
@@ -772,7 +772,8 @@ class TestTaskHistory:
     ) -> None:
         """Give non-archiver failures no custom_details and keep the target summary."""
         read_spy = mocker.patch(
-            "app.tasks.alerts._read_last_stderr", new=AsyncMock(return_value="x")
+            "app.sep.plugins.archives.alerts._read_last_stderr",
+            new=AsyncMock(return_value="x"),
         )
         history = TaskHistory(
             id=1,
@@ -795,7 +796,8 @@ class TestTaskHistory:
     ) -> None:
         """Leave Archiver LOST unchanged: no custom_details, no source-node summary."""
         read_spy = mocker.patch(
-            "app.tasks.alerts._read_last_stderr", new=AsyncMock(return_value="x")
+            "app.sep.plugins.archives.alerts._read_last_stderr",
+            new=AsyncMock(return_value="x"),
         )
         history = TaskHistory(
             id=1,
@@ -855,7 +857,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.tasks.alerts._read_last_stderr",
+            "app.sep.plugins.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="ERROR: boom"),
         )
         mock_trigger = AsyncMock()

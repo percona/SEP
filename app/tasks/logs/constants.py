@@ -13,18 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Dependency-neutral constants shared by the task log/alert scanners.
+"""Define dependency-neutral constants shared by the task log scanners.
 
 This module imports nothing from the rest of the tasks package so it can be
-imported from ``crud``, ``logs.log_reader``, and ``alerts`` without creating an
-import cycle (``log_reader`` already imports ``crud``). It is the single source
-of truth for the tail-scan bound and the STDERR error marker.
+imported from ``crud`` and ``logs.log_reader`` without creating an import cycle
+(``log_reader`` already imports ``crud``). It is the single source of truth for
+the tail-scan bound.
 """
-
-#: Substring marking an error line in a task's STDERR stream. Recognized by both
-#: the error-tail reader (``app.tasks.crud``) and the archiver alert formatter
-#: (``app.tasks.alerts``).
-STDERR_ERROR_MARKER = "ERROR"
 
 #: Hard cap on chunks scanned for a tail read. Bounds a pathological
 #: marker-free STDERR stream.

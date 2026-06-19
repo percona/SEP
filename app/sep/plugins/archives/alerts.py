@@ -13,34 +13,51 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Build owner-specific detail blocks for task failure alerts.
+"""Build archiver-specific detail blocks for task failure alerts.
 
-This module lives in the tasks service and must never import from
-``app/sep``: the tasks API and the Celery worker that runs
-``alert_for_status`` cannot depend on the SEP plugin package. The archiver
-config parser here is the single source of truth for the
-``PURGE_LIST`` -> (source, condition, target) mapping; the SEP archives
-plugin imports it rather than duplicating the field-extraction logic.
+This module owns the archiver domain knowledge behind a failure alert: the
+``PURGE_LIST`` -> (source, condition, target) mapping, the STDERR error-trace
+extraction, the credential redaction applied before the detail egresses to an
+external alerting provider, and the assembly of the owner-specific alert
+additions. The generic tasks service consults it lazily through the
+``app.tasks.alert_hooks`` resolver (keyed on :attr:`TaskOwner.ARCHIVER`), so this
+knowledge stays inside the plugin package rather than leaking into ``app/tasks``.
+
+The module depends only on ``app.tasks`` (the allowed direction) and is safe to
+import standalone, so the lazy hook resolves identically in the Celery worker,
+the SEP app, and the tasks API. The archiver config parser here is the single
+source of truth for the purge-field mapping; the archives ``deps`` layer imports
+it rather than duplicating the field extraction.
 """
 
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import yaml
 
+from app.tasks.alert_hooks import OwnerAlertDetails
 from app.tasks.anonymizer import anonymize_text
 from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.logs.constants import STDERR_ERROR_MARKER as _ERROR_MARKER
 
 if TYPE_CHECKING:
     from app.tasks.models import TaskHistory
 
 logger = logging.getLogger(__name__)
 
-#: Shown for the Error Details section when no trace can be extracted. AC #2
-#: forbids a silently null/empty Error Details block.
+#: Substring marking an error line in the archiver's STDERR stream. Used by the
+#: tail reader to ensure the last error block is fully captured.
+STDERR_ERROR_MARKER = "ERROR"
+
+#: Minimum trailing STDERR bytes to accumulate before stopping the reverse scan
+#: once an error marker has been seen. Covers the downstream trace cap
+#: (:data:`MAX_TRACE_BYTES`) so an error block straddling a chunk boundary is
+#: fully present in the reconstructed tail.
+_STDERR_TAIL_MIN_BYTES = 4 * 1024
+
+#: Shown for the Error Details section when no trace can be extracted; the Error
+#: Details block is never silently null/empty.
 ARCHIVER_TRACE_PLACEHOLDER = "No error trace captured from STDERR."
 
 #: Shown for a configuration field that cannot be resolved from the task config.
@@ -87,9 +104,7 @@ def redact_secrets(text: str) -> str:
     component, and the ``--password``/``-p`` CLI flags.
 
     :param text: The text that may contain credentials.
-    :type text: str
     :return: The text with any detected credential replaced by ``***``.
-    :rtype: str
     """
     text = _URI_USERINFO_RE.sub(rf"\g<scheme>{_REDACTION_MASK}@", text)
     text = _KV_SECRET_RE.sub(rf"\g<key>={_REDACTION_MASK}", text)
@@ -102,19 +117,12 @@ class ArchiverPurgeFields:
     """Hold the archiver fields extracted from a ``PURGE_LIST`` entry.
 
     :param source_db: The source database name (``SOURCE_DB``).
-    :type source_db: str | None
     :param source_table: The source table name (``SOURCE_TABLE``).
-    :type source_table: str | None
     :param where: The archiving ``WHERE`` condition.
-    :type where: str | None
     :param dest_db: The destination database name (``DEST_DB``).
-    :type dest_db: str | None
     :param dest_table: The destination table name (``DEST_TABLE``).
-    :type dest_table: str | None
     :param dest_file: The destination file/storage path (``DEST_FILE``).
-    :type dest_file: str | None
     :param source_query: An optional source query (``SOURCE_QUERY``).
-    :type source_query: str | None
     """
 
     source_db: str | None
@@ -131,7 +139,6 @@ class ArchiverPurgeFields:
 
         :return: The composed source identifier, or ``None`` when either part
             is missing.
-        :rtype: str | None
         """
         if self.source_db and self.source_table:
             return f"{self.source_db}.{self.source_table}"
@@ -142,7 +149,6 @@ class ArchiverPurgeFields:
         """Return the archiving ``WHERE`` condition.
 
         :return: The ``WHERE`` clause, or ``None`` when not set.
-        :rtype: str | None
         """
         return self.where
 
@@ -155,7 +161,6 @@ class ArchiverPurgeFields:
 
         :return: The composed destination table identifier, or ``None`` when
             no destination table is set.
-        :rtype: str | None
         """
         if not self.dest_table:
             return None
@@ -170,7 +175,6 @@ class ArchiverPurgeFields:
 
         :return: The destination table (``DB.TABLE``) when present, else the
             destination file path, else ``None``.
-        :rtype: str | None
         """
         return self.dest_table_display or self.dest_file
 
@@ -183,9 +187,7 @@ def parse_archiver_purge_config(config_yaml: str | None) -> ArchiverPurgeFields 
     ``None`` so the failure-alert path can fall back to placeholders.
 
     :param config_yaml: The serialized archiver config (``meta["config"]``).
-    :type config_yaml: str | None
     :return: The extracted fields, or ``None`` when no entry can be parsed.
-    :rtype: ArchiverPurgeFields | None
     """
     if not config_yaml:
         return None
@@ -222,9 +224,7 @@ def extract_last_error_trace(stderr: str | None) -> str:
     Error Details section is never silently empty.
 
     :param stderr: The decoded STDERR content, or ``None``.
-    :type stderr: str | None
     :return: The extracted error block, or the placeholder.
-    :rtype: str
     """
     if not stderr or not stderr.strip():
         return ARCHIVER_TRACE_PLACEHOLDER
@@ -232,7 +232,7 @@ def extract_last_error_trace(stderr: str | None) -> str:
     lines = stderr.splitlines()
     last_error_idx = None
     for idx, line in enumerate(lines):
-        if _ERROR_MARKER in line:
+        if STDERR_ERROR_MARKER in line:
             last_error_idx = idx
     if last_error_idx is None:
         return ARCHIVER_TRACE_PLACEHOLDER
@@ -269,13 +269,9 @@ def build_archiver_description(
     runs.
 
     :param fields: The parsed archiver fields, or ``None`` when unavailable.
-    :type fields: ArchiverPurgeFields | None
     :param error_trace: The extracted error trace or placeholder.
-    :type error_trace: str
     :param entities: The PII entities to scrub from the assembled block.
-    :type entities: set[PIIEntity]
     :return: The rendered (and anonymized) description block.
-    :rtype: str
     """
     source = (fields.source if fields else None) or ARCHIVER_FIELD_PLACEHOLDER
     condition = (fields.condition if fields else None) or ARCHIVER_FIELD_PLACEHOLDER
@@ -293,22 +289,6 @@ def build_archiver_description(
     return anonymize_text(redact_secrets(block), entities)
 
 
-@dataclass(frozen=True, slots=True)
-class OwnerAlertDetails:
-    """Hold the owner-specific additions to a task failure alert.
-
-    :param source_node: The source database node name used in the alert
-        summary (Short Description).
-    :type source_node: str
-    :param custom_details: The provider-agnostic detail payload attached to the
-        alert; surfaces through ``PagerDutyAlert.custom_details``.
-    :type custom_details: dict[str, Any]
-    """
-
-    source_node: str
-    custom_details: dict[str, Any]
-
-
 def _effective_entities(history: "TaskHistory") -> set[PIIEntity]:
     """Return the PII entities to scrub, preferring the history-level mask.
 
@@ -320,9 +300,7 @@ def _effective_entities(history: "TaskHistory") -> set[PIIEntity]:
     :func:`build_archiver_description` runs unconditionally regardless of mask.
 
     :param history: The task execution history.
-    :type history: TaskHistory
     :return: The set of PII entities to anonymize.
-    :rtype: set[PIIEntity]
     """
     mask = history.anonymize_mask
     if mask is None:
@@ -331,18 +309,18 @@ def _effective_entities(history: "TaskHistory") -> set[PIIEntity]:
 
 
 async def _read_last_stderr(task_history_id: int) -> str | None:
-    """Read the failed execution's trailing STDERR in an isolated session.
+    """Read and reconstruct the failed execution's trailing error STDERR.
 
-    Delegates to :meth:`TaskHistoryLogManager.get_last_error_log`, which may
-    span multiple chunks so an error block straddling a chunk boundary is fully
-    captured. Opens its own session so the read works identically in the Celery
-    worker and the tasks API, and swallows any error: a log-read failure must
-    never prevent the failure alert itself from firing.
+    Fetches the newest STDERR chunks (newest-first) via
+    :meth:`TaskHistoryLogManager.get_stderr_tail_chunks` and reconstructs the
+    chronological tail, scanning back far enough that an error block straddling a
+    chunk boundary — including an ``ERROR`` marker split across the boundary
+    itself — is fully captured. Opens its own session so the read works
+    identically in the Celery worker and the tasks API, and swallows any error:
+    a log-read failure must never prevent the failure alert itself from firing.
 
     :param task_history_id: The ``TaskHistory`` identifier.
-    :type task_history_id: int
     :return: The trailing STDERR content, or ``None`` when unavailable.
-    :rtype: str | None
     """
     from app.tasks.crud import TaskHistoryLogManager
     from app.tasks.db import get_async_session_maker
@@ -350,7 +328,7 @@ async def _read_last_stderr(task_history_id: int) -> str | None:
     try:
         async_session = get_async_session_maker()
         async with async_session() as session:
-            return await TaskHistoryLogManager.get_last_error_log(
+            chunks = await TaskHistoryLogManager.get_stderr_tail_chunks(
                 session, task_history_id
             )
     except Exception:
@@ -360,16 +338,49 @@ async def _read_last_stderr(task_history_id: int) -> str | None:
         )
         return None
 
+    return _reconstruct_error_tail(chunks)
+
+
+def _reconstruct_error_tail(chunks: list[str]) -> str | None:
+    """Reconstruct the chronological error tail from newest-first chunks.
+
+    Walks the chunks newest-first, prepending each into the tail, and stops once
+    an error marker has been seen and at least :data:`_STDERR_TAIL_MIN_BYTES` of
+    trailing content has accumulated — enough that an error block straddling a
+    chunk boundary is fully captured. Adjacent chunks are bridged with a short
+    prefix so an ``ERROR`` marker split across the boundary is still detected.
+
+    :param chunks: The STDERR chunk contents ordered newest-first.
+    :return: The reconstructed chronological tail, or ``None`` when empty.
+    """
+    if not chunks:
+        return None
+    parts: list[str] = []
+    total_bytes = 0
+    marker_seen = False
+    marker_overlap = len(STDERR_ERROR_MARKER) - 1
+    for content in chunks:
+        if not marker_seen:
+            # Bridge the boundary with a prefix of the newer chunk so a marker
+            # split across the two is still detected.
+            boundary_prefix = parts[-1][:marker_overlap] if parts else ""
+            marker_seen = STDERR_ERROR_MARKER in content + boundary_prefix
+        parts.append(content)
+        total_bytes += len(content.encode("utf-8"))
+        if marker_seen and total_bytes >= _STDERR_TAIL_MIN_BYTES:
+            break
+    return "".join(reversed(parts))
+
 
 async def build_owner_alert_details(
     history: "TaskHistory",
 ) -> OwnerAlertDetails | None:
-    """Build owner-specific failure-alert details for the given history.
+    """Build archiver failure-alert details for the given history.
 
-    Returns ``None`` for any non-archiver task, leaving the generic alert path
-    unchanged. For :attr:`TaskOwner.ARCHIVER` failures, resolve the source
-    database node and assemble the combined ``custom_details`` description block
-    (error trace plus Source/Condition/Target).
+    Registered as the :attr:`TaskOwner.ARCHIVER` builder in
+    ``app.tasks.alert_hooks``. Resolve the source database node and assemble the
+    combined ``custom_details`` description block (error trace plus
+    Source/Condition/Target).
 
     The config is taken from the dispatch-time snapshot
     (``execution_request.meta``) so the alert describes what actually ran rather
@@ -380,16 +391,8 @@ async def build_owner_alert_details(
     not PII-scrubbed; sensitive content lives in the redacted detail block.
 
     :param history: The failed task execution history.
-    :type history: TaskHistory
-    :return: The owner-specific alert additions, or ``None`` for non-archiver
-        tasks.
-    :rtype: OwnerAlertDetails | None
+    :return: The owner-specific alert additions.
     """
-    from app.tasks.models import TaskOwner
-
-    if history.task.owner != TaskOwner.ARCHIVER:
-        return None
-
     meta = history.execution_request.meta or (history.task.data or {}).get("meta") or {}
     source_node = meta.get("_pmm_node_name") or history.execution_request.target
 
