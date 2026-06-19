@@ -41,6 +41,8 @@ export { SchemaSelector } from './components/SchemaSelector';
 export type { SchemaSelectorProps } from './components/SchemaSelector';
 export { TableSelector } from './components/TableSelector';
 export type { TableSelectorProps } from './components/TableSelector';
+export { FreeSoloSelect } from './components/FreeSoloSelect';
+export type { FreeSoloSelectProps } from './components/FreeSoloSelect';
 export { HostSelector, StandaloneHostSelector } from './components/HostSelector';
 export type { StandaloneHostSelectorProps } from './components/HostSelector';
 export {

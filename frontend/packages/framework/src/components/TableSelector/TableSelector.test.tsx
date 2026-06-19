@@ -16,6 +16,7 @@
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FormProvider, useForm } from 'react-hook-form';
@@ -144,5 +145,69 @@ describe('TableSelector', () => {
       </Wrapper>,
     );
     await screen.findByText('No tables in this schema');
+  });
+
+  describe('allow_custom (free-solo)', () => {
+    function CustomProbe() {
+      const methods = useForm<FormShape>({
+        defaultValues: { schema: { id: 42, name: 'app_prod' }, table: null },
+      });
+      return (
+        <FormProvider {...methods}>
+          <TableSelector name="table" label="Table" dependsOn="schema" allowCustom />
+          <output data-testid="table-value">{JSON.stringify(methods.watch('table'))}</output>
+        </FormProvider>
+      );
+    }
+
+    const value = () => screen.getByTestId('table-value').textContent;
+
+    it('commits the inventory id when a table is picked', async () => {
+      mocked.get.mockResolvedValue({
+        data: [
+          { id: 100, name: 'users' },
+          { id: 101, name: 'orders' },
+        ],
+      });
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.click(screen.getByLabelText('Table'));
+      await user.click(await screen.findByText('orders'));
+      expect(value()).toBe('101');
+    });
+
+    it('commits a typed value as a string', async () => {
+      mocked.get.mockResolvedValue({ data: [{ id: 100, name: 'users' }] });
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.type(screen.getByLabelText('Table'), 'manual_table');
+      expect(value()).toBe('"manual_table"');
+    });
+
+    it('resolves a typed value matching an existing table to its id', async () => {
+      mocked.get.mockResolvedValue({ data: [{ id: 100, name: 'users' }] });
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.type(screen.getByLabelText('Table'), 'users');
+      expect(value()).toBe('100');
+    });
   });
 });

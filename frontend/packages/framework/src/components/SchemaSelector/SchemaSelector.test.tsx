@@ -16,6 +16,7 @@
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { FormProvider, useForm } from 'react-hook-form';
@@ -156,5 +157,108 @@ describe('SchemaSelector', () => {
       </Wrapper>,
     );
     await screen.findByText('No schemas in this service');
+  });
+
+  describe('allow_custom (free-solo)', () => {
+    function CustomProbe() {
+      const methods = useForm<FormShape>({
+        defaultValues: { service: { id: 7, name: 'svc', type: 'mysql' }, schema: null },
+      });
+      return (
+        <FormProvider {...methods}>
+          <SchemaSelector name="schema" label="Schema" dependsOn="service" allowCustom />
+          <output data-testid="schema-value">{JSON.stringify(methods.watch('schema'))}</output>
+        </FormProvider>
+      );
+    }
+
+    const value = () => screen.getByTestId('schema-value').textContent;
+
+    it('commits the inventory id when a schema is picked', async () => {
+      mocked.get.mockResolvedValue({
+        data: [
+          { id: 10, name: 'app_prod' },
+          { id: 11, name: 'analytics' },
+        ],
+      });
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.click(screen.getByLabelText('Schema'));
+      await user.click(await screen.findByText('app_prod'));
+      expect(value()).toBe('10');
+    });
+
+    it('commits a typed value as a string', async () => {
+      mocked.get.mockResolvedValue({ data: [{ id: 10, name: 'app_prod' }] });
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.type(screen.getByLabelText('Schema'), 'manual_db');
+      expect(value()).toBe('"manual_db"');
+    });
+
+    it('stays enabled and accepts a typed value when the parent service is custom', async () => {
+      const client = makeClient();
+      const user = userEvent.setup();
+      function CascadeProbe() {
+        // Parent service holds a free-typed (custom) string, not an inventory id.
+        const methods = useForm<{ service: unknown; schema: unknown }>({
+          defaultValues: { service: 'custom-svc', schema: null },
+        });
+        return (
+          <FormProvider {...methods}>
+            <SchemaSelector name="schema" label="Schema" dependsOn="service" allowCustom />
+            <output data-testid="schema-value">{JSON.stringify(methods.watch('schema'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <CascadeProbe />
+        </Wrapper>,
+      );
+      const input = screen.getByLabelText('Schema');
+      expect(input).not.toBeDisabled();
+      // No service id means no schema fetch is issued.
+      expect(mocked.get).not.toHaveBeenCalled();
+      await user.type(input, 'custom_schema');
+      expect(screen.getByTestId('schema-value').textContent).toBe('"custom_schema"');
+    });
+  });
+
+  it('back-compat: without allowCustom a typed value is not committed', async () => {
+    mocked.get.mockResolvedValue({ data: [{ id: 10, name: 'app_prod' }] });
+    const client = makeClient();
+    const user = userEvent.setup();
+    function Probe() {
+      const methods = useForm<FormShape>({
+        defaultValues: { service: { id: 7, name: 'svc', type: 'mysql' }, schema: null },
+      });
+      return (
+        <FormProvider {...methods}>
+          <SchemaSelector name="schema" label="Schema" dependsOn="service" />
+          <output data-testid="bc-value">{JSON.stringify(methods.watch('schema'))}</output>
+        </FormProvider>
+      );
+    }
+    render(
+      <Wrapper client={client}>
+        <Probe />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+    await user.type(screen.getByLabelText('Schema'), 'manual_db');
+    expect(screen.getByTestId('bc-value').textContent).toBe('null');
   });
 });
