@@ -551,31 +551,32 @@ class TestConvertValidationErrors:
 
     def test_converts_to_error_strings(self):
         """Verify ValidationError is converted to a list of readable error strings."""
-        try:
+        with pytest.raises(ValidationError) as exc_info:
             SnippetMetaParameter(name="")
-        except ValidationError as exc:
-            errors = SnippetMetaParameter.convert_validation_errors(exc, {"name": ""})
-            assert len(errors) > 0
-            assert all(isinstance(e, str) for e in errors)
-            assert any("Parameter error" in e for e in errors)
+        errors = SnippetMetaParameter.convert_validation_errors(
+            exc_info.value, {"name": ""}
+        )
+        assert len(errors) > 0
+        assert all(isinstance(e, str) for e in errors)
+        assert any("Parameter error" in e for e in errors)
 
     def test_dict_input_shows_name(self):
         """Verify dict input with 'name' key shows parameter name in error."""
-        try:
+        with pytest.raises(ValidationError) as exc_info:
             SnippetMetaParameter(name="")
-        except ValidationError as exc:
-            errors = SnippetMetaParameter.convert_validation_errors(
-                exc, {"name": "my_param"}
-            )
-            assert any("my_param" in e for e in errors)
+        errors = SnippetMetaParameter.convert_validation_errors(
+            exc_info.value, {"name": "my_param"}
+        )
+        assert any("my_param" in e for e in errors)
 
     def test_non_dict_input_shows_repr(self):
         """Verify non-dict input shows repr in error message."""
-        try:
+        with pytest.raises(ValidationError) as exc_info:
             SnippetMetaParameter(name="")
-        except ValidationError as exc:
-            errors = SnippetMetaParameter.convert_validation_errors(exc, "bad_input")
-            assert any("bad_input" in e for e in errors)
+        errors = SnippetMetaParameter.convert_validation_errors(
+            exc_info.value, "bad_input"
+        )
+        assert any("bad_input" in e for e in errors)
 
 
 class TestHiddenParameter:
