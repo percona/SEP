@@ -704,11 +704,8 @@ def chain_has_advanced(settings_cls: type[BaseModel], key: str) -> bool:
     for an unresolvable key.
 
     :param settings_cls: The top-level Pydantic settings class.
-    :type settings_cls: type[BaseModel]
     :param key: The ``__``-delimited override key.
-    :type key: str
     :return: ``True`` iff some segment in the chain is flagged ``advanced``.
-    :rtype: bool
     """
     resolved = _resolve_nested_segments(settings_cls, key)
     if resolved is None:
