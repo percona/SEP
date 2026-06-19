@@ -164,11 +164,11 @@ def hot_field(
     :return: A Pydantic field marked with the HOT reload classification.
     :rtype: FieldInfo
     """
-    metadata: dict[Any, Any] = {"reload": ReloadClassification.HOT}
-    if materializer is not None:
-        metadata["materializer"] = materializer
-    if advanced:
-        metadata["advanced"] = True
+    metadata = {
+        "reload": ReloadClassification.HOT,
+        **({"materializer": materializer} if materializer is not None else {}),
+        **({"advanced": True} if advanced else {}),
+    }
     return field_with_metadata(default, metadata=metadata, **kwargs)
 
 
@@ -483,9 +483,10 @@ def nested_overridable_field(
     :return: A Pydantic field marked NESTED_ONLY.
     :rtype: FieldInfo
     """
-    metadata: dict[Any, Any] = {"reload": ReloadClassification.NESTED_ONLY}
-    if advanced:
-        metadata["advanced"] = True
+    metadata = {
+        "reload": ReloadClassification.NESTED_ONLY,
+        **({"advanced": True} if advanced else {}),
+    }
     return field_with_metadata(default, metadata=metadata, **kwargs)
 
 
@@ -508,9 +509,10 @@ def not_overridable_field(
     :return: A Pydantic field marked NOT_OVERRIDABLE.
     :rtype: FieldInfo
     """
-    metadata: dict[Any, Any] = {"reload": ReloadClassification.NOT_OVERRIDABLE}
-    if advanced:
-        metadata["advanced"] = True
+    metadata = {
+        "reload": ReloadClassification.NOT_OVERRIDABLE,
+        **({"advanced": True} if advanced else {}),
+    }
     return field_with_metadata(default, metadata=metadata, **kwargs)
 
 
@@ -697,7 +699,7 @@ def chain_has_advanced(settings_cls: type[BaseModel], key: str) -> bool:
     Walks every segment from the top-level parent down to the leaf -- mirroring
     :func:`chain_has_explicit_not_overridable` -- and reports ``True`` if *any* of
     them carries an ``advanced`` marker. A parent marked advanced therefore
-    propagates the flag to every leaf it expands into (per SEP-1331), which is
+    propagates the flag to every leaf it expands into, which is
     the only way the dashboard sees ``advanced`` for the session and
     security-header fields whose parent, not leaves, is marked. Returns ``False``
     for an unresolvable key.

@@ -258,7 +258,7 @@ def test_tasks_settings_not_marked_advanced(field_name: str) -> None:
 
 
 def test_session_leaf_inherits_advanced() -> None:
-    """Every ``SESSION`` leaf inherits the parent's advanced flag (per SEP-1331)."""
+    """Every ``SESSION`` leaf inherits the parent's advanced flag."""
     leaf = resolve_nested_field_metadata(SEPSettings, "SESSION__COOKIE_NAME")
     assert leaf is not None
     assert leaf.is_advanced is True

@@ -65,8 +65,7 @@ class SettingResponse(BaseModel):
         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
     :type has_override: bool
     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
-        present it separately from everyday settings. Defaults to ``False`` so
-        the addition is purely additive and backward-compatible. Display-only:
+        present it separately from everyday settings. Display-only:
         it does not affect PATCH/DELETE eligibility.
     """
 
