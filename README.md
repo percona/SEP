@@ -50,7 +50,7 @@
 | app/core/settings\_override/proxy.py                                                                            |       22 |        0 |    100% |           |
 | app/core/settings\_override/registry.py                                                                         |      248 |        5 |     98% |566, 724, 756, 788, 970 |
 | app/core/utils/async\_run.py                                                                                    |       13 |        0 |    100% |           |
-| app/core/utils/cache.py                                                                                         |       92 |       11 |     88% |60-62, 151, 197-200, 208-209, 223 |
+| app/core/utils/cache.py                                                                                         |       92 |        7 |     92% |60-62, 151, 208-209, 223 |
 | app/core/utils/date\_time.py                                                                                    |        8 |        0 |    100% |           |
 | app/core/utils/dict.py                                                                                          |       27 |        4 |     85% |   160-163 |
 | app/core/utils/fields.py                                                                                        |      148 |        5 |     97% |140, 206-207, 374, 378 |
@@ -101,7 +101,7 @@
 | app/sep/db/seed.py                                                                                              |       50 |       15 |     70% |     84-98 |
 | app/sep/deps.py                                                                                                 |      325 |       10 |     97% |380, 383-384, 402, 991-992, 1174-1177 |
 | app/sep/exceptions.py                                                                                           |       13 |        0 |    100% |           |
-| app/sep/inventory.py                                                                                            |       97 |        8 |     92% |81, 92, 229, 286, 326, 363, 385, 419 |
+| app/sep/inventory.py                                                                                            |       97 |        9 |     91% |81, 92, 229, 286, 304, 326, 363, 385, 419 |
 | app/sep/main.py                                                                                                 |      204 |       17 |     92% |93-95, 137-139, 271-288, 311, 607-611 |
 | app/sep/middleware/csrf.py                                                                                      |       48 |        0 |    100% |           |
 | app/sep/middleware/messages/\_middleware.py                                                                     |       28 |        0 |    100% |           |
@@ -210,7 +210,7 @@
 | app/sep/plugins/mysql\_backups/api\_routes.py                                                                   |       37 |        0 |    100% |           |
 | app/sep/plugins/mysql\_backups/deps.py                                                                          |      107 |        6 |     94% |201, 248, 263, 266-267, 384 |
 | app/sep/plugins/mysql\_backups/models.py                                                                        |      139 |        3 |     98% |308, 342, 357 |
-| app/sep/plugins/mysql\_backups/restore/deps.py                                                                  |       69 |       14 |     80% |73-75, 78-84, 103, 119, 204, 220-225, 258 |
+| app/sep/plugins/mysql\_backups/restore/deps.py                                                                  |       69 |       11 |     84% |78-84, 103, 119, 204, 220-225, 258 |
 | app/sep/plugins/mysql\_backups/restore/models.py                                                                |       73 |        1 |     99% |       198 |
 | app/sep/plugins/mysql\_backups/restore/routes.py                                                                |       65 |        8 |     88% |146-147, 176-185, 222-224 |
 | app/sep/plugins/mysql\_backups/routes.py                                                                        |       77 |        6 |     92% |77, 185-186, 239-244 |
@@ -312,7 +312,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                             |      227 |       38 |     83% |139-143, 200, 221-228, 260, 316-317, 323, 367-368, 393-394, 434-435, 454, 594, 618, 631-645, 666-679, 695-696 |
 | app/tasks/settings/routes.py                                                                                    |       10 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **21385** | **2679** | **87%** |           |
+| **TOTAL**                                                                                                       | **21385** | **2673** | **88%** |           |
 
 
 ## Setup coverage badge
