@@ -171,33 +171,31 @@ def _root_segment(path: str) -> str:
 
 
 def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str]:
-    """Return violations where a view path's root is not a response-model field.
+    """Return violations where a detail-view path's root is not a response field.
 
     Validate the root segment (before the first ``.``, stripped of any ``[N]``) of
-    every ``list_view`` column key and ``detail_view`` field path against
-    ``app.response_model.model_fields``.
+    every ``detail_view`` field path against ``app.response_model.model_fields``,
+    exempting paths rooted at ``data`` (the opaque task-payload dict whose
+    sub-paths are free-form). ``list_view`` column keys are enforced at
+    ``TaskExecutionApp`` construction instead, so they are not checked here.
 
-    :param app: The migrated app whose views are checked against its response model.
+    :param app: The migrated app whose detail-view paths are checked against its
+        response model.
     :return: One message per unknown root segment; empty when all resolve.
     """
+    if app.views.detail_view is None:
+        return []
     response_fields = set(app.response_model.model_fields)
-    views = app.views
-    refs = []
-    if views.list_view is not None:
-        refs.extend(
-            ("list_view column", column.key) for column in views.list_view.columns
-        )
-    if views.detail_view is not None:
-        refs.extend(
-            ("detail_view field", field.path)
-            for section in views.detail_view.sections
-            for field in section.fields
-        )
+    paths = [
+        field.path
+        for section in app.views.detail_view.sections
+        for field in section.fields
+    ]
     return [
-        f"{kind} {ref!r} references {_root_segment(ref)!r}, absent from "
+        f"detail_view field {path!r} references {_root_segment(path)!r}, absent from "
         f"{app.response_model.__name__}"
-        for kind, ref in refs
-        if _root_segment(ref) not in response_fields
+        for path in paths
+        if _root_segment(path) != "data" and _root_segment(path) not in response_fields
     ]
 
 

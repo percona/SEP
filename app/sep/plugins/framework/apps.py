@@ -54,6 +54,7 @@ from app.sep.plugins.framework.payload import (
     EnvelopeSpec,
     resolve_refs,
     ResolvedEntities,
+    validate_arg_formats,
 )
 from app.sep.plugins.framework.responses import (
     BaseTaskResponse,
@@ -324,13 +325,15 @@ class TaskExecutionApp(BaseApp):
         """Reject an internally-inconsistent definition at construction.
 
         :raises ValueError: When the schema source, the create-payload path, the
-            route knobs, or the response/filter knobs are inconsistent (see the
-            per-aspect helpers).
+            route knobs, the response/filter knobs, the list-view columns, or the
+            ``ArgFormat`` markers are inconsistent (see the per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
         self._validate_route_knobs()
         self._validate_response_knobs()
+        self._validate_view_columns()
+        self._validate_arg_formats()
 
     def _validate_schema_source(self) -> None:
         """Validate the create_model / ``schema=`` source is unambiguous.
@@ -484,6 +487,50 @@ class TaskExecutionApp(BaseApp):
                 "TaskExecutionApp: list_service_type_filter needs a service_type to "
                 "filter against; set service_type or drop the filter"
             )
+
+    def _validate_view_columns(self) -> None:
+        """Reject a ``list_view`` column key that is not a response-model field.
+
+        Enforce at construction — collecting every unknown column and raising once —
+        so a column typo is rejected up front rather than rendering a blank column at
+        runtime. Skip ``schema=`` passthrough apps (no ``create_model``) and
+        model-first apps that declare no ``list_view``; detail-view ``data.*`` paths
+        stay free-form and are checked by the conformance suite instead.
+
+        :raises ValueError: When a ``views.list_view`` column ``key`` is not a field
+            on ``response_model``.
+        """
+        if self.create_model is None or self.views.list_view is None:
+            return
+        response_fields = set(self.response_model.model_fields)
+        unknown = [
+            column.key
+            for column in self.views.list_view.columns
+            if column.key not in response_fields
+        ]
+        if unknown:
+            raise ValueError(
+                f"TaskExecutionApp: list_view column keys {unknown} are not fields "
+                f"on {self.response_model.__name__}"
+            )
+
+    def _validate_arg_formats(self) -> None:
+        """Reject a create-model ``ArgFormat`` template the assembler would silently drop.
+
+        Delegate to
+        :func:`~app.sep.plugins.framework.payload.validate_arg_formats` for a
+        model-first app so a typo'd placeholder or a flag template on a non-``bool``
+        field fails fast at construction rather than dropping the argument at
+        task-creation time. Skip a ``schema=`` passthrough app, which has no
+        ``create_model`` to introspect.
+
+        :raises ValueError: When a ``create_model`` field's ``ArgFormat`` template
+            carries an unsupported placeholder or is a flag template on a non-``bool``
+            field.
+        """
+        if self.create_model is None:
+            return
+        validate_arg_formats(self.create_model)
 
     @property
     def task_dep(self) -> Any:

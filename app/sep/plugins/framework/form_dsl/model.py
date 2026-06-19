@@ -15,10 +15,10 @@
 
 """Define ``AppFormModel``, the single-declaration base for model-first plugins."""
 
-from typing import Any, ClassVar
+from typing import Annotated, Any, ClassVar
 
 from app.sep.plugins.framework.form_dsl.derivation import build_runtime_schema
-from app.sep.plugins.framework.form_dsl.markers import FormRules
+from app.sep.plugins.framework.form_dsl.markers import FormRules, Hidden
 from app.sep.plugins.framework.rules import (
     apply_conditional_rules,
     ConditionalRulesModel,
@@ -40,12 +40,18 @@ __conditional_rules_plan__` so the inherited validator enforces them, while
     :func:`~app.sep.plugins.framework.form_dsl.derivation.derive_form_sections`
     derives the wire schema from the same fields.
 
+    :param alert_on_fail: Whether to alert on task failure and auto-resolve on a
+        later success. Excluded from the derived schema — the framework renders it
+        from the ``alert_on_fail`` capability — yet validated in the JSON body so
+        every model-first form accepts it. Defaults to ``False``.
     :cvar __form_rules__: Section-scoped and plugin-scoped conditional rules that
         cannot attach to a single field (field-level gates live on the fields via
         ``Requires`` / ``Forbidden``). Defaults to an empty :class:`FormRules`.
     """
 
     __form_rules__: ClassVar[FormRules] = FormRules()
+
+    alert_on_fail: Annotated[bool, Hidden()] = False
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
