@@ -29,6 +29,7 @@ from typing import Any, cast
 from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
+from app.core.pagination import Pagination
 from app.sep.api.constants import UPSTREAM_ERROR_HEADER
 from app.sep.deps import InventoryAPI, SessionDep, TaskAPI
 from app.sep.snippets.crud import SnippetManager
@@ -55,7 +56,7 @@ class DashboardStatsResponse(BaseModel):
     targets: int
 
 
-@router.get("/", response_model=DashboardStatsResponse)
+@router.get("/")
 async def get_dashboard_stats(
     response: Response,
     session: SessionDep,
@@ -67,7 +68,7 @@ async def get_dashboard_stats(
     Sources (each degrades to ``0`` on failure):
 
     * ``nodes`` — ``GET /summary/`` on the Inventory API.
-    * ``tasks`` — ``GET /`` on the Tasks API (``limit=0``; reads ``total``).
+    * ``tasks`` — ``GET /`` on the Tasks API (``limit=1``; reads ``total``).
     * ``snippets`` — :meth:`SnippetManager.count` on the SEP database.
     * ``targets`` — ``GET /hosts/`` on the Tasks API; count of returned items.
 
@@ -93,7 +94,9 @@ async def get_dashboard_stats(
         return int(summary.get("nodes", 0))
 
     async def _tasks() -> int:
-        task_list: dict[str, Any] = await tasks_api.get("/", params={"limit": 0})
+        task_list: dict[str, Any] = await tasks_api.get(
+            "/", params=Pagination(offset=0, limit=1).model_dump()
+        )
         return int(task_list.get("total", 0))
 
     async def _snippets() -> int:

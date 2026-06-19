@@ -28,6 +28,7 @@ __all__ = ["SNIPPETS_PLUGIN_SCHEMA", "build_snippet_schema"]
 from typing import cast
 from urllib.parse import urlencode
 
+from app.sep.plugins.framework.rules import F, FieldGate, Not, truthy
 from app.sep.plugins.framework.schema import (
     AnyField,
     BoolField,
@@ -35,6 +36,7 @@ from app.sep.plugins.framework.schema import (
     ChoiceField,
     Column,
     ColumnFormat,
+    DateTimeField,
     FloatField,
     FormSection,
     HostField,
@@ -158,19 +160,67 @@ def _bool_field_for(parameter: SnippetMetaParameter) -> BoolField:
     )
 
 
+def _datetime_field_for(parameter: SnippetMetaParameter) -> DateTimeField:
+    """Build a :class:`DateTimeField` from a DATETIME-typed parameter."""
+    return DateTimeField(
+        name=parameter.name,
+        label=parameter.label or parameter.name,
+        required=parameter.required,
+        description=parameter.description,
+        default=parameter.default,
+    )
+
+
 _FIELD_BUILDERS = {
     SnippetMetaParameterType.STR: _string_field_for,
     SnippetMetaParameterType.INT: _int_field_for,
     SnippetMetaParameterType.FLOAT: _float_field_for,
     SnippetMetaParameterType.BOOL: _bool_field_for,
+    SnippetMetaParameterType.DATETIME: _datetime_field_for,
 }
+
+
+def _visibility_forbidden(parameter: SnippetMetaParameter) -> list[FieldGate] | None:
+    """Lower a parameter's visibility condition onto a ``forbidden`` gate.
+
+    ``visible_when_not(cond)`` hides the field when ``cond`` matches, so it
+    forbids the field when the predicate fires. ``visible_when(cond)`` hides the
+    field when ``cond`` does **not** match, so it forbids on the negated
+    predicate. A condition's ``equals`` value yields an equality predicate;
+    otherwise a truthiness predicate on the referenced parameter is used.
+
+    .. note::
+        The resulting gate is client-enforced: the React renderer hides the
+        field and drops its value from the payload. The snippet execute endpoint
+        validates type/presence only and does not server-reject a value
+        submitted directly for a hidden field.
+
+    :param parameter: The validated snippet meta parameter.
+    :type parameter: SnippetMetaParameter
+    :return: A single-element list with the ``forbidden`` gate, or ``None`` when
+        the parameter declares no visibility condition.
+    :rtype: list[FieldGate] | None
+    """
+    condition = parameter.visible_when or parameter.visible_when_not
+    if condition is None:
+        return None
+    if condition.equals is None:
+        predicate = truthy(condition.parameter)
+    else:
+        predicate = F(condition.parameter) == condition.equals
+    gate_predicate = (
+        predicate if parameter.visible_when_not is not None else Not(predicate)
+    )
+    return [FieldGate(when=gate_predicate)]
 
 
 def field_for(parameter: SnippetMetaParameter) -> AnyField:
     """Map a snippet meta parameter to its framework field counterpart.
 
     A parameter declaring ``choices`` always maps to :class:`ChoiceField`
-    regardless of ``py_type``.
+    regardless of ``py_type``. A parameter declaring ``visible_when`` /
+    ``visible_when_not`` additionally carries a ``forbidden`` gate (see
+    :func:`_visibility_forbidden`).
 
     :param parameter: The validated snippet meta parameter.
     :type parameter: SnippetMetaParameter
@@ -178,8 +228,13 @@ def field_for(parameter: SnippetMetaParameter) -> AnyField:
     :rtype: AnyField
     """
     if parameter.choices:
-        return cast(AnyField, _choice_field_for(parameter))
-    return cast(AnyField, _FIELD_BUILDERS[parameter.py_type](parameter))
+        field = cast(AnyField, _choice_field_for(parameter))
+    else:
+        field = cast(AnyField, _FIELD_BUILDERS[parameter.py_type](parameter))
+    forbidden = _visibility_forbidden(parameter)
+    if forbidden is not None:
+        field = cast(AnyField, field.model_copy(update={"forbidden": forbidden}))
+    return field
 
 
 def build_snippet_schema(snippet: Snippet) -> PluginSchema:
@@ -189,7 +244,8 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
     the snippet metadata (or a single ``"Parameters"`` section if no
     groups are declared), plus a trailing ``"Execution"`` section for
     dispatch controls and a separate collapsible ``"Script preview"``
-    section rendered after submit.
+    section rendered after submit. Parameters marked ``hidden`` are excluded
+    from the parameter sections.
 
     :param snippet: The snippet whose schema to synthesise.
     :type snippet: Snippet
@@ -197,7 +253,7 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
     :rtype: PluginSchema
     """
     parameter_sections: dict[str, list[AnyField]] = {}
-    for parameter in snippet.validated_parameters.parameters:
+    for parameter in snippet.validated_parameters.visible_parameters:
         section_title = parameter.group or "Parameters"
         parameter_sections.setdefault(section_title, []).append(field_for(parameter))
 

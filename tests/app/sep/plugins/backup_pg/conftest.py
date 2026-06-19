@@ -33,8 +33,8 @@ from app.sep.plugins.backup_pg.routes import router as backup_pg_router
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import TaskFactory
 
-if not any(route.path.startswith("/backup-pg") for route in sep_app.routes):
-    sep_app.include_router(backup_pg_router, prefix="/backup-pg")
+if not any(route.path.startswith("/backup_pg") for route in sep_app.routes):
+    sep_app.include_router(backup_pg_router, prefix="/backup_pg")
 
 if not any(route.path.startswith("/api/plugins/backup_pg") for route in sep_app.routes):
     sep_app.include_router(
@@ -71,6 +71,7 @@ def backup_create() -> BackupCreate:
         hostname="localhost",
         service_id=1,
         backup_type=BackupType.PGBACKREST,
+        stanza="sep-test",
     )
 
 

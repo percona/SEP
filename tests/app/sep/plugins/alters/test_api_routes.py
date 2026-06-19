@@ -195,15 +195,15 @@ class TestAltersApiList:
         """List only parent execute tasks, not dry-run or pre-checks siblings."""
         group = build_alters_task_group(DEFAULT_PARENT_NAME)
         mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                {
-                    "items": [group["parent"], group["dry_run"]],
-                    "total": 2,
-                    "offset": 0,
-                    "limit": 50,
-                },
-                {"items": [{"status": TaskHistoryStatusEnum.SUCCESS.value}]},
-            ]
+            return_value={
+                "items": [group["parent"], group["dry_run"]],
+                "total": 2,
+                "offset": 0,
+                "limit": 50,
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={DEFAULT_PARENT_NAME: TaskHistoryStatusEnum.SUCCESS.value}
         )
 
         response = test_client.get(f"{API_BASE}/")
@@ -213,6 +213,10 @@ class TestAltersApiList:
         assert len(data) == 1
         assert data[0]["name"] == DEFAULT_PARENT_NAME
         assert data[0]["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert data[0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest", json={"names": [DEFAULT_PARENT_NAME]}
+        )
 
     def test_list_returns_empty_for_non_mysql_service_type(
         self, test_client, mock_task_api_dep

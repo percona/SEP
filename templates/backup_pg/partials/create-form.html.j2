@@ -161,6 +161,18 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     </fieldset>
     <fieldset id="pgbackrest_container" style="flex-direction: column; gap: 1em">
         <legend>PgBackRest Configuration</legend>
+        {% set stanza_title = "The pgBackRest stanza name as defined in pgbackrest.conf on the host (e.g. sep-test). Passed verbatim as --stanza to every pgbackrest invocation." %}
+        <label for="stanza" title="{{ stanza_title }}">
+            Stanza:
+            <input type="text"
+                   id="stanza"
+                   name="stanza"
+                   class="validate"
+                   required
+                   placeholder="e.g. sep-test" />
+        </label>
+        <br>
+        <br>
         {% set pgbackrest_bin_title = "The path to the pgbackrest binary." %}
         <label for="pgbackrest_bin" title="{{ pgbackrest_bin_title }}">
             PgBackRest Binary Path:

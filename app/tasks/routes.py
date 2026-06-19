@@ -34,13 +34,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.deps import CurrentUserID, IsAuthenticatedDep
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.config import settings
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPBadRequestException,
     HTTPConflictException,
 )
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.core.utils import utc_now
 from app.core.utils.fields import NonEmptyStr
 from app.tasks.celery import (
@@ -103,13 +103,12 @@ router = APIRouter(tags=["tasks"])
 )
 async def list_tasks(
     session: SessionDep,
+    pagination: PaginationDep,
     owner: str | None = None,
     target: str | None = None,
     parent_is_null: bool | None = None,
     backup_type: str | None = None,
     self_parent: bool | None = None,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
 ) -> PaginatedResponse[Task]:
     """List all active tasks."""
     logger.debug("Listing tasks")
@@ -120,8 +119,7 @@ async def list_tasks(
         parent_is_null=parent_is_null,
         backup_type=backup_type,
         self_parent=self_parent,
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
     )
 
 
@@ -380,9 +378,8 @@ async def _populate_has_logs(
 )
 async def list_task_history(
     session: SessionDep,
+    pagination: PaginationDep,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
 ) -> PaginatedResponse[TaskHistory]:
     """List all task history records."""
     logger.debug("Listing task history")
@@ -390,8 +387,7 @@ async def list_task_history(
         session,
         select_related=(TaskHistory.task,),
         query_options=[undefer(TaskHistory.execution_request)],
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
         status=task_status,
     )
     await _populate_has_logs(session, response.items)
@@ -401,7 +397,6 @@ async def list_task_history(
 @router.post(
     "/history/latest",
     dependencies=[IsAuthenticatedDep],
-    response_model=dict[str, TaskHistoryStatusEnum | None],
 )
 async def latest_task_history_status(
     session: SessionDep,
@@ -420,10 +415,9 @@ async def latest_task_history_status(
 async def get_task_history(
     session: SessionDep,
     task: str,
+    pagination: PaginationDep,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
     snippet_filename: NonEmptyStr | None = None,
-    offset: int = DEFAULT_PAGINATION_OFFSET,
-    limit: int = DEFAULT_PAGINATION_LIMIT,
 ) -> PaginatedResponse[TaskHistory]:
     """Retrieve task history by task name."""
     logger.debug("Requesting task history for %s", task)
@@ -433,8 +427,7 @@ async def get_task_history(
         status=task_status,
         select_related_task=True,
         snippet_filename=snippet_filename,
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
         query_options=[undefer(TaskHistory.execution_request)],
     )
     await _populate_has_logs(session, response.items)
@@ -484,8 +477,13 @@ async def stream_task_history_logs(
     task_history: TaskHistoryWithTaskDep,
     offsets: LogsOffsetsDep,
     step: str | None = None,
+    tail: Annotated[int | None, Query(ge=1)] = None,
 ) -> StreamingResponse:
-    """Stream a task history's logs."""
+    """Stream a task history's logs.
+
+    ``tail`` limits output to the last N lines per stream for finished histories
+    only. It is ignored while the task is ``RUNNING`` (live executor stream).
+    """
     logger.debug("Requesting logs for task history %s", task_history.id)
     if task_history.status == TaskHistoryStatusEnum.PENDING:
         raise HTTPConflictException("Task history is pending.")
@@ -499,7 +497,11 @@ async def stream_task_history_logs(
 
         async def _stream_finished_logs() -> AsyncGenerator[str, None]:
             async for log in iter_task_history_logs(
-                session, task_history, offsets, source=step
+                session,
+                task_history,
+                offsets,
+                source=step,
+                tail_lines=tail,
             ):
                 yield log.model_dump_json() + "\n"
 

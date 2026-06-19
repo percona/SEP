@@ -33,7 +33,7 @@ In addition to CRUD, this router mounts the ad-hoc inventory-sync trigger
 (``POST /sync/``) and the running-state polling endpoint
 (``GET /sync/status/``) consumed by the React inventory sync control. Schedule
 discovery (``GET /``) and available-syncers (``GET /available-syncers/``) are
-also mounted here so the React schedule UI (SEP-1058) can fetch its data
+also mounted here so the React schedule UI can fetch its data
 through the plugin API gateway. Periodic-task CRUD remains delegated to
 ``/api/tasks/periodic/*`` as the single source of truth; this router does not
 duplicate that surface. The inventory service remains the canonical CRUD
@@ -48,22 +48,25 @@ from fastapi import APIRouter, BackgroundTasks, Body, Request, Response, status
 
 from app.core.exceptions import HTTPBadRequestException
 from app.sep.crud import SyncItemManager
-from app.sep.deps import ApiCurrentUser, InventoryAPI, SessionDep
+from app.sep.deps import InventoryAPI, SessionDep
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.framework.api import schema_endpoint
 from app.sep.plugins.inventory.deps import (
     AvailableSyncer,
     filter_syncers_by_name,
+    InternalTokenDep,
     inventory_plugin_query_params,
     inventory_service_create_path,
     inventory_service_detail_path,
     inventory_service_list_path,
+    inventory_system_observation_path,
     InventoryAvailableSyncersDep,
     InventoryPluginJsonObjectBody,
     InventorySyncStatusResponse,
     InventorySyncTriggerWrite,
     require_inventory_plugin_entity,
     SyncersDep,
+    SYSTEM_OBSERVATION_SEGMENT,
     unwrap_inventory_plugin_list_payload,
 )
 from app.sep.plugins.inventory.models import (
@@ -83,9 +86,9 @@ _OPTIONAL_TRIGGER_BODY = Body(default=None)
 
 @router.post("/sync/", status_code=status.HTTP_202_ACCEPTED, response_class=Response)
 async def inventory_sync_trigger(
-    user: ApiCurrentUser,
     syncers: SyncersDep,
     background_tasks: BackgroundTasks,
+    internal_token: InternalTokenDep,
     body: InventorySyncTriggerWrite | None = _OPTIONAL_TRIGGER_BODY,
 ) -> Response:
     """Schedule an ad-hoc inventory sync as a background task.
@@ -96,13 +99,15 @@ async def inventory_sync_trigger(
     declaration order; otherwise only the named syncer is forwarded. An
     unknown or inapplicable syncer raises HTTP 400 — never a silent no-op.
 
-    :param user: Current API-authenticated user; the access token is
-        forwarded to the background task.
-    :type user: ApiCurrentUser
+    Authentication is enforced by the parent ``api_router``'s
+    ``IsApiAuthenticated`` dependency, so this handler needs no auth parameter.
+
     :param syncers: Configured syncers from ``SyncersDep``.
     :type syncers: SyncersDep
     :param background_tasks: FastAPI's background task scheduler.
     :type background_tasks: BackgroundTasks
+    :param internal_token: SEP-internal service token injected by
+        ``InternalTokenDep`` and forwarded to the background sync task.
     :param body: Optional trigger body.
     :type body: InventorySyncTriggerWrite | None
     :return: Empty 202 Accepted response.
@@ -119,7 +124,7 @@ async def inventory_sync_trigger(
         )
     except ValueError as exc:
         raise HTTPBadRequestException(str(exc)) from exc
-    background_tasks.add_task(run_inventory_sync, user.access_token, *selected)
+    background_tasks.add_task(run_inventory_sync, internal_token, *selected)
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 
@@ -194,6 +199,47 @@ async def inventory_create_entity(
     entity = require_inventory_plugin_entity(entity)
     inv_path = inventory_service_create_path(entity, body)
     return await inventory_api.post(inv_path, json=body)
+
+
+@router.get(f"/nodes/{{node_id:int}}/{SYSTEM_OBSERVATION_SEGMENT}")
+async def inventory_node_system_observation(
+    node_id: int,
+    inventory_api: InventoryAPI,
+) -> Any:
+    """Proxy the host-level system observation for a node (read-only).
+
+    Forwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``
+    endpoint via ``InventoryAPI``. This three-segment literal path cannot
+    collide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An
+    upstream HTTP 404 — the "not collected yet" signal — propagates unchanged
+    for the React panel to render as an empty state.
+
+    :param node_id: Primary key of the node.
+    :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
+    :return: The host-level system observation payload.
+    """
+    return await inventory_api.get(inventory_system_observation_path("nodes", node_id))
+
+
+@router.get(f"/services/{{service_id:int}}/{SYSTEM_OBSERVATION_SEGMENT}")
+async def inventory_service_system_observation(
+    service_id: int,
+    inventory_api: InventoryAPI,
+) -> Any:
+    """Proxy the service-level system observation for a service (read-only).
+
+    Forwards to the inventory sub-app's
+    ``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.
+    An upstream HTTP 404 propagates unchanged so the React panel renders its
+    "not collected yet" empty state.
+
+    :param service_id: Primary key of the service.
+    :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
+    :return: The service-level system observation payload.
+    """
+    return await inventory_api.get(
+        inventory_system_observation_path("services", service_id)
+    )
 
 
 @router.get("/{entity}/{item_id:int}")

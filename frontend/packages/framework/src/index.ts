@@ -20,7 +20,9 @@ export { SEP_TABLE_CLASS } from './constants';
 
 // Components
 export { SchemaFormRenderer } from './components/SchemaFormRenderer';
+export type { RenderFieldArgs, RenderFieldOverride } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
+export type { RenderListColumnArgs, RenderListColumnOverride } from './components/SchemaListView';
 export {
   SchemaDrivenPlugin,
   DeleteConfirmDialog,
@@ -29,6 +31,7 @@ export {
   PluginListPage,
   PluginSchedulePage,
 } from './components/SchemaDrivenPlugin';
+export type { PluginFormSlotProps, RenderFormSlot } from './components/SchemaDrivenPlugin';
 export type { DeleteConfirmDialogProps } from './components/SchemaDrivenPlugin';
 export type { TaskExecuteAction } from './components/SchemaDrivenPlugin/PluginDetailPage';
 export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';

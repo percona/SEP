@@ -38,9 +38,11 @@ from app.sep.inventory import CreatedService
 from app.sep.plugins.dipper.constants import CollectorTypeEnum
 from app.sep.plugins.dipper.deps import (
     build_dipper_execution_meta,
+    fetch_pmm_node_service_names,
     get_dipper_script_preview,
     get_pmm_form_defaults,
     load_dipper_script,
+    PMMAPIDep,
     resolve_pmm_executor_host,
 )
 from app.sep.plugins.dipper.models import (
@@ -108,6 +110,7 @@ async def dipper_api_form_schema(
     collector_type: CollectorTypeEnum,
     inventory_api: InventoryAPI,
     executor_hosts: ExecutorHosts,
+    pmm_api: PMMAPIDep,
 ) -> PluginSchema:
     """Return the selected Dipper payload's dynamic execution schema.
 
@@ -119,6 +122,9 @@ async def dipper_api_form_schema(
     :type inventory_api: RemoteAPI
     :param executor_hosts: Available executor hosts keyed by hostname.
     :type executor_hosts: dict
+    :param pmm_api: The configured PMM API client, or ``None`` when PMM is not
+        configured (injected via ``PMMAPIDep``).
+    :type pmm_api: PMMRemoteAPI | None
     :return: Context-specific schema including payload parameters.
     :rtype: PluginSchema
     """
@@ -134,17 +140,22 @@ async def dipper_api_form_schema(
             )
         ) from exc
     defaults = None
+    node_options: list[str] = []
+    service_options: list[str] = []
     if collector_type == CollectorTypeEnum.PMM:
         defaults = get_pmm_form_defaults(
             resolve_pmm_executor_host(executor_hosts),
             service.name,
             service.node.name if service.node else "",
         )
+        node_options, service_options = await fetch_pmm_node_service_names(pmm_api)
     return build_dipper_form_schema(
         script,
         service.id,
         collector_type.value,
         defaults=defaults,
+        node_options=node_options,
+        service_options=service_options,
     )
 
 
@@ -184,7 +195,6 @@ async def dipper_api_script_preview(
 
 @router.post(
     "/",
-    response_model=DipperExecutionResponse,
     status_code=http_status.HTTP_201_CREATED,
     dependencies=[IsApiAuthenticated],
 )

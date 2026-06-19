@@ -24,18 +24,13 @@ mutations are rejected with 401 before reaching route logic).
 """
 
 import logging
-from datetime import datetime, UTC
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from fastapi import status as http_status
 
-from app.core.db.crud import (
-    DEFAULT_PAGINATION_LIMIT,
-    DEFAULT_PAGINATION_OFFSET,
-    MAX_PAGINATION_LIMIT,
-)
 from app.core.exceptions import HTTPInternalServerErrorException
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -43,6 +38,7 @@ from app.sep.deps import (
 )
 from app.sep.plugins.backup_pg.deps import (
     backup_create_from_write,
+    BackupsTask,
     build_backup_pg_api_detail_response,
     build_backup_task_payload,
     get_backup_pg_api_task_responses,
@@ -57,9 +53,9 @@ from app.sep.plugins.backup_pg.models import (
     BackupTaskWrite,
 )
 from app.sep.plugins.backup_pg.schema import backup_pg_schema
-from app.sep.plugins.framework.api import schema_endpoint
+from app.sep.plugins.framework.api import derive_execute_route, schema_endpoint
 from app.sep.plugins.framework.cascade import cascade_create_tasks, cascade_delete_tasks
-from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -67,25 +63,25 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=backup_pg_schema)
 
 
-@router.get("/", response_model=PaginatedResponse[BackupTaskResponse])
+@router.get("/")
 async def backup_pg_api_list(
     tasks_api: TaskAPI,
+    pagination: PaginationDep,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=1, le=MAX_PAGINATION_LIMIT),
 ) -> PaginatedResponse[BackupTaskResponse]:
     """List pgBackRest backup tasks.
 
-    ``limit`` is capped because each listed task triggers a follow-up
-    history fetch in :func:`get_backup_pg_api_task_responses`; an
-    unbounded ``limit`` would amplify fan-out to the Tasks API.
+    ``limit`` is capped to keep the page size bounded; latest statuses for the
+    page are resolved in a single batched round-trip to the Tasks API.
     """
     return await get_backup_pg_api_task_responses(
-        tasks_api, status=status, offset=offset, limit=limit
+        tasks_api,
+        pagination=pagination,
+        status=status,
     )
 
 
-@router.get("/{task_name}", response_model=BackupTaskDetailResponse)
+@router.get("/{task_name}")
 async def backup_pg_api_detail(
     task_name: str,
     tasks_api: TaskAPI,
@@ -98,7 +94,6 @@ async def backup_pg_api_detail(
 @router.post(
     "/",
     status_code=http_status.HTTP_201_CREATED,
-    response_model=BackupTaskDetailResponse,
     dependencies=[HasNoConflictedRunningTasksOnCreate],
 )
 async def backup_pg_api_create(
@@ -121,44 +116,14 @@ async def backup_pg_api_create(
     return await build_backup_pg_api_detail_response(task, tasks_api)
 
 
-@router.post(
-    "/{task_name}/execute",
-    status_code=http_status.HTTP_201_CREATED,
+derive_execute_route(
+    router,
+    name="backup_pg_api_execute",
+    description="Execute a pgBackRest backup task.",
+    task_dep=BackupsTask,
+    write_model=BackupExecuteWrite,
     response_model=BackupExecutionResponse,
-    dependencies=[HasNoConflictedRunningTasks],
 )
-async def backup_pg_api_execute(
-    task_name: str,
-    body: BackupExecuteWrite,
-    tasks_api: TaskAPI,
-) -> BackupExecutionResponse:
-    """Execute a pgBackRest backup task.
-
-    If ``body.eta`` is non-null but already in the past (e.g. because of
-    client/server clock skew or request latency), it is dropped from the
-    upstream payload and the task is dispatched immediately rather than
-    rejecting the request with a 422.
-    """
-    task = await get_backups_task(task_name, tasks_api)
-    logger.info("Executing backup_pg task %r", task.name)
-    exclude: set[str] = set()
-    if body.eta is not None:
-        now = (
-            datetime.now(tz=body.eta.tzinfo)
-            if body.eta.tzinfo
-            else datetime.now(tz=UTC).replace(tzinfo=None)
-        )
-        if body.eta <= now:
-            exclude.add("eta")
-    created = await tasks_api.post(
-        f"/execute/{task.name}",
-        json=body.model_dump(mode="json", exclude_none=True, exclude=exclude),
-    )
-    task_history = TaskHistoryResponse.model_validate(created)
-    return BackupExecutionResponse(
-        task_name=task.name,
-        task_id=task_history.id,
-    )
 
 
 @router.delete(

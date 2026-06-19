@@ -15,7 +15,6 @@
 
 """Define dependencies for the Backups plugin."""
 
-import asyncio
 import logging
 from pathlib import Path
 from typing import Annotated, Any
@@ -25,7 +24,7 @@ from fastapi import Depends, Form, HTTPException
 from fastapi.encoders import jsonable_encoder
 
 from app.core.exceptions import HTTPConflictException
-from app.core.models import PaginatedResponse
+from app.core.pagination import PaginatedResponse, Pagination
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -38,7 +37,6 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
@@ -54,7 +52,12 @@ from app.sep.plugins.backup_pg.models import (
     BackupTaskWrite,
     BackupType,
 )
-from app.sep.plugins.framework import extract_latest_task_status
+from app.sep.plugins.framework import (
+    build_default_task_response,
+    build_task_list_responses,
+    get_task_latest_status,
+    make_task_dep,
+)
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -93,15 +96,15 @@ async def build_backup_task_payload(
             "hostname",
             "service_id",
             "backup_type",
+            "stanza",
         },
         by_alias=True,
     )
 
     server_config = {
-        "alias": service.node.address,
+        "alias": form.stanza,
         "backup_type": form.backup_type,
-        # for now only localhost allowed for X
-        "host": "localhost",  # service.node.address
+        "host": "localhost",
         "port": service.port,
     }
 
@@ -177,33 +180,6 @@ def backup_create_from_write(body: BackupTaskWrite) -> BackupCreate:
     )
 
 
-async def get_backup_pg_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for a backup_pg task.
-
-    :param task_name: The name of the task.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to query history.
-    :type tasks_api: TaskAPI
-    :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(f"/{task_name}/history/")
-    return extract_latest_task_status(response["items"])
-
-
-_STATUS_FETCH_CONCURRENCY = 10
-
-
-def _gathered_task_status(
-    result: TaskHistoryStatusEnum | BaseException | None,
-) -> TaskHistoryStatusEnum | None:
-    """Map a ``gather`` result to a status, treating failures as unknown."""
-    return None if isinstance(result, BaseException) else result
-
-
 def _parse_first_server_config(task: Task) -> dict[str, Any]:
     """Parse ``meta['config']`` YAML and return the first ``SERVER_LIST`` entry.
 
@@ -246,25 +222,24 @@ def build_backup_pg_api_task_response(
     if server_config is None:
         server_config = _parse_first_server_config(task)
     backup_type = str(server_config.get("BACKUP_TYPE", ""))
-    return BackupTaskResponse(
-        **task.model_dump(),
-        hostname=meta.get("target"),
-        status=status,
-        backup_type=backup_type,
+    return build_default_task_response(
+        BackupTaskResponse,
+        task,
+        status,
+        extras={"hostname": meta.get("target"), "backup_type": backup_type},
     )
 
 
 async def get_backup_pg_api_task_responses(
     tasks_api: TaskAPI,
+    *,
+    pagination: Pagination,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = 0,
-    limit: int = 50,
 ) -> PaginatedResponse[BackupTaskResponse]:
     """Retrieve a paginated page of backup_pg task responses for the JSON API.
 
-    Concurrency for per-task history fetches is bounded by
-    :data:`_STATUS_FETCH_CONCURRENCY` so a large page cannot fan-out into
-    an unbounded burst of HTTPS calls to the Tasks API.
+    Latest statuses for the page are resolved in a single batched round-trip to
+    the Tasks API rather than one history call per task.
 
     The ``status`` filter is applied client-side after the page is fetched
     (the Tasks API does not yet expose a server-side latest-status filter).
@@ -276,44 +251,19 @@ async def get_backup_pg_api_task_responses(
 
     :param tasks_api: The TaskAPI instance used to query backup tasks.
     :type tasks_api: TaskAPI
+    :param pagination: Validated offset/limit window for this page.
+    :type pagination: Pagination
     :param status: Optional latest-history status filter (client-side).
     :type status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based start offset for the underlying Tasks listing.
-    :type offset: int
-    :param limit: Maximum rows to fetch from the Tasks API for this page.
-    :type limit: int
     :return: Paginated backup task responses matching the filter.
     :rtype: PaginatedResponse[BackupTaskResponse]
     """
-    params = {
-        "owner": TaskOwner.BACKUP_PG.value,
-        "offset": offset,
-        "limit": limit,
-    }
-    response = await tasks_api.get("/", params=params)
-    tasks = [Task.model_validate(item) for item in response["items"]]
-    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
-
-    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
-        async with sem:
-            return await get_backup_pg_task_status(task.name, tasks_api)
-
-    raw_statuses = await asyncio.gather(
-        *(_bounded_status(task) for task in tasks),
-        return_exceptions=True,
-    )
-    task_statuses = [_gathered_task_status(item) for item in raw_statuses]
-    items = [
-        build_backup_pg_api_task_response(task, status=task_status)
-        for task, task_status in zip(tasks, task_statuses, strict=True)
-        if status is None or task_status == status
-    ]
-    total = len(items) if status is not None else response.get("total", len(items))
-    return PaginatedResponse[BackupTaskResponse](
-        items=items,
-        total=total,
-        offset=offset,
-        limit=limit,
+    return await build_task_list_responses(
+        tasks_api,
+        owner=TaskOwner.BACKUP_PG.value,
+        response_builder=build_backup_pg_api_task_response,
+        pagination=pagination,
+        status_filter=status,
     )
 
 
@@ -332,7 +282,7 @@ async def build_backup_pg_api_detail_response(
     """
     status: TaskHistoryStatusEnum | None
     try:
-        status = await get_backup_pg_task_status(task.name, tasks_api)
+        status = await get_task_latest_status(tasks_api, task.name)
     except HTTPException:
         logger.exception("Failed to fetch history for backup_pg task %s", task.name)
         status = None
@@ -409,26 +359,7 @@ async def get_backups_index_context(
     )
 
 
-async def get_backups_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Backups plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Backups plugin. If the task does not exist or is not
-    owned by Backups, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Backups.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.BACKUP_PG)
-
+get_backups_task = make_task_dep(TaskOwner.BACKUP_PG)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 

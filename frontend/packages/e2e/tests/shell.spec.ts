@@ -16,6 +16,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 // ── Mock stubs ────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ const MOCK_PLUGIN_SCHEMA = {
  *   /api/plugins/:name/schema    -> minimal valid PluginSchema (renders heading)
  *   /api/sep/dashboard/          -> zero counts for dashboard stat cards
  *   /api/tasks/history/          -> empty paginated response (prevents refetchInterval crash)
+ *   /api/apps/                   -> every nav app enabled (renders the full sidebar)
  *   everything else              -> 200 [] (empty task list; sufficient for smoke assertions)
  */
 async function mockAuthenticatedApis(page: Page): Promise<void> {
@@ -108,6 +110,10 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
         contentType: 'application/json',
         body: JSON.stringify({ items: [], total: 0, offset: 0, limit: 5 }),
       });
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     // Default: empty success for plugin task lists and anything else
@@ -167,10 +173,10 @@ test.describe('shell sanity smoke', () => {
 
     // Sidebar navigation items must be present (permanent drawer on desktop).
     // "Schema Change" only appears in the nav (not duplicated on the dashboard),
-    // so it uniquely identifies the sidebar.  "Snippets" appears both in the
-    // nav and as a stat card; use getByRole('button') to target the nav entry.
+    // so it uniquely identifies the sidebar.  "Snippet Manager" is the registry
+    // display_name for snippets; use getByRole('button') to target the nav entry.
     await expect(page.getByText('Schema Change')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Snippets' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Snippet Manager' })).toBeVisible();
   });
 
   test('checksums plugin route mounts without console errors', async ({ page }) => {
@@ -185,7 +191,7 @@ test.describe('shell sanity smoke', () => {
     await page.goto('/plugins/checksums');
 
     // SchemaDrivenPlugin renders the schema displayName as an h4 heading.
-    // Allow extra time for the lazy-loaded @sep/plugin-checksums chunk to
+    // Allow extra time for the lazy-loaded SchemaDrivenPlugin / framework chunk to
     // load (Vite preview serves a cold network roundtrip on first nav).
     await expect(page.getByRole('heading', { name: 'Checksums' })).toBeVisible({
       timeout: 30_000,

@@ -227,8 +227,8 @@ async def check_and_warn_connectivity(
     if not success:
         messages.warning(
             request,
-            f"Connectivity warning for {target} ({service_type}): "
-            f"{error or 'check failed'}",
+            f"Connectivity warning for {host}:{port} ({service_type}) "
+            f"on executor {target}: {error or 'check failed'}",
         )
 
 

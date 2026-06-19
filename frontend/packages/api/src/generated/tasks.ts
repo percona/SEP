@@ -133,6 +133,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/history/latest': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Latest Task History Status
+     * @description Return the latest known execution status for each requested task name.
+     */
+    post: operations['tasks_latest_task_history_status_history_latest_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/{task}/history/': {
     parameters: {
       query?: never;
@@ -285,6 +305,14 @@ export interface paths {
     /**
      * Sync Task History
      * @description Sync task history with the executor and persist the latest status.
+     *
+     *     Atomically claim the ``sync_in_progress_started_at`` lock before calling
+     *     the executor so the celery ``sync_running_tasks`` periodic and this route
+     *     never both progress past the executor call for the same row. When the
+     *     claim returns no rows — either because another syncer holds the lock or
+     *     because the status has already flipped to terminal — refresh the row
+     *     from the DB and return without re-syncing. The holder (or completed
+     *     syncer) is responsible for dispatching any chained task.
      */
     post: operations['tasks_sync_task_history_history__task_history_id__sync__post'];
     delete?: never;
@@ -323,6 +351,18 @@ export interface paths {
     /**
      * Get Executor Hosts
      * @description Return the executor hosts from the executor.
+     *
+     *     Wrap the upstream executor call so connection failures or non-JSON
+     *     bodies surface as a 502 JSON response instead of leaking a default
+     *     500 + text/plain that masks the real failure on the dashboard banner.
+     *
+     *     :param executor: The task executor backend used to fetch host metadata.
+     *     :type executor: TaskExecutor
+     *     :return: A mapping of executor node name to network address.
+     *     :rtype: dict[str, str]
+     *     :raises HTTPBadGatewayException: If the executor backend raises a
+     *         ``requests.exceptions.RequestException`` (e.g. a non-JSON response
+     *         body or a connection failure outside the Nomad SDK's own wrapping).
      */
     get: operations['tasks_get_executor_hosts_hosts__get'];
     put?: never;
@@ -426,6 +466,119 @@ export interface paths {
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  '/admin/settings/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Settings
+     * @description List every exposed settings class with current values and metadata.
+     *
+     *     :param session: The sub-app's database session.
+     *     :type session: AsyncSession
+     *     :return: Grouped responses, one group per configured settings class.
+     *     :rtype: SettingsListResponse
+     */
+    get: operations['settings_list_settings_admin_settings__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/settings/{setting_class}/{key}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Setting
+     * @description Return one field's metadata and current value.
+     *
+     *     :param setting_class: The settings class the field belongs to.
+     *     :type setting_class: SettingClassEnum
+     *     :param key: The field name on the settings class.
+     *     :type key: str
+     *     :param session: The sub-app's database session.
+     *     :type session: AsyncSession
+     *     :return: The structured response for the field.
+     *     :rtype: SettingResponse
+     *     :raises HTTPNotFoundException: If the class isn't exposed or the key
+     *         doesn't exist on the class.
+     */
+    get: operations['settings_get_setting_admin_settings__setting_class___key__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete Setting
+     * @description Revert one override row to the field's declared default.
+     *
+     *     Idempotent: deleting a (class, key) pair that has no override row
+     *     succeeds with 204. Attempting to delete a NOT_OVERRIDABLE field
+     *     responds 409 -- the field cannot have an override row in the first
+     *     place, so the operator's intent is unsatisfiable.
+     *
+     *     :param setting_class: The settings class the field belongs to.
+     *     :type setting_class: SettingClassEnum
+     *     :param key: The field name on the settings class.
+     *     :type key: str
+     *     :param session: The sub-app's database session.
+     *     :type session: AsyncSession
+     *     :raises HTTPNotFoundException: If the class isn't exposed or the key
+     *         doesn't exist on the class.
+     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
+     */
+    delete: operations['settings_delete_setting_admin_settings__setting_class___key__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/admin/settings/{setting_class}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Patch Settings
+     * @description Apply a batch of overrides for one settings class atomically.
+     *
+     *     Phase A validates every key in ``body`` (existence on the class, HOT
+     *     classification, type/constraint coercion) and collects per-key errors.
+     *     If any key fails, the whole batch is rejected with a structured 422
+     *     and nothing is written. Phase B persists every valid entry in a single
+     *     transaction, then refreshes the proxy snapshot once.
+     *
+     *     :param setting_class: The settings class the override targets.
+     *     :type setting_class: SettingClassEnum
+     *     :param body: The batch of ``{key: value, ...}`` overrides.
+     *     :type body: SettingsPatch
+     *     :param session: The sub-app's database session.
+     *     :type session: AsyncSession
+     *     :return: One :class:`SettingResponse` per applied key, in input order.
+     *     :rtype: list[SettingResponse]
+     *     :raises HTTPNotFoundException: If the class isn't exposed.
+     *     :raises HTTPUnprocessableEntityException: If any key fails validation;
+     *         no rows are written.
+     */
+    patch: operations['settings_patch_settings_admin_settings__setting_class__patch'];
     trace?: never;
   };
 }
@@ -607,6 +760,7 @@ export interface components {
       every: number;
       period: components['schemas']['Period'];
     };
+    JsonValue: unknown;
     /** PaginatedResponse[TaskHistoryResponse] */
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
@@ -850,6 +1004,148 @@ export interface components {
       kwargs: string;
     };
     /**
+     * ReloadClassification
+     * @description Declare the reload behavior of an overridable settings field.
+     *
+     *     :cvar HOT: Field can be overridden via a DB row and the new value takes
+     *         effect on the next snapshot refresh, without restarting the service.
+     *     :vartype HOT: str
+     *     :cvar NOT_OVERRIDABLE: Field is not overridable from the database; YAML
+     *         and environment variables remain the only sources of truth.
+     *     :vartype NOT_OVERRIDABLE: str
+     * @enum {string}
+     */
+    ReloadClassification: 'hot' | 'not_overridable';
+    /**
+     * SettingClassEnum
+     * @description Enumerate settings classes that may have HOT override rows.
+     *
+     *     Only classes whose proxy is actually wired in this ticket are listed:
+     *     ``SEPSettings``, ``TasksSettings``, ``SnippetsSettings`` and
+     *     ``MessagesSettings``. ``Settings``, ``InventorySettings``,
+     *     ``AlertSettings`` and ``AnonymizerSettings`` are intentionally NOT here
+     *     -- wrapping them is deferred to follow-up tickets.
+     *
+     *     To wire a new settings class:
+     *
+     *     1. Add a member here whose value matches the Pydantic class ``__name__``.
+     *     2. Generate an Alembic migration on every consumer track that extends the
+     *        ``CHECK`` constraint on ``settingoverride.setting_class``. The column
+     *        uses ``native_enum=False`` so the value list lives in a constraint,
+     *        not a PostgreSQL ``TYPE`` -- the migration ``ALTER``s the constraint.
+     *        Note that the column and ``CHECK`` constraint persist the enum member
+     *        *names* (e.g. ``SEP_SETTINGS``), which is distinct from the member
+     *        *value* (the Pydantic class name, e.g. ``SEPSettings``).
+     *     3. Wire a ``ProxyEntry`` for the new class in the relevant service's
+     *        lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
+     * @enum {string}
+     */
+    SettingClassEnum: 'SEPSettings' | 'TasksSettings' | 'SnippetsSettings' | 'MessagesSettings';
+    /**
+     * SettingClassGroup
+     * @description One settings-class group in the LIST response.
+     *
+     *     :param setting_class: The settings class this group represents.
+     *     :type setting_class: SettingClassEnum
+     *     :param settings: The fields declared on the settings class, with their
+     *         current values and metadata.
+     *     :type settings: list[SettingResponse]
+     */
+    SettingClassGroup: {
+      setting_class: components['schemas']['SettingClassEnum'];
+      /** Settings */
+      settings: components['schemas']['SettingResponse'][];
+    };
+    /**
+     * SettingResponse
+     * @description A single setting's metadata and current value.
+     *
+     *     :param setting_class: The settings class the field belongs to.
+     *     :type setting_class: SettingClassEnum
+     *     :param key: The field name on the settings class.
+     *     :type key: str
+     *     :param value: The current value visible through the proxy, dumped to a
+     *         JSON-safe shape via the field's annotation. ``SecretStr`` fields are
+     *         redacted to ``"**********"``.
+     *     :type value: Any
+     *     :param default_value: The field's declared default value, dumped via the
+     *         same JSON serialiser. ``None`` when no default exists.
+     *     :type default_value: Any
+     *     :param type: A human-readable representation of the field's declared
+     *         annotation (for operator visibility; validation uses the actual
+     *         ``FieldInfo``).
+     *     :type type: str
+     *     :param reload: The reload classification (HOT or NOT_OVERRIDABLE).
+     *     :type reload: ReloadClassification
+     *     :param description: The field's free-text description, or ``None``.
+     *     :type description: str | None
+     *     :param is_secret: Whether the field's annotation contains a Pydantic secret
+     *         (``SecretStr`` / ``SecretBytes``) at any depth.
+     *     :type is_secret: bool
+     *     :param is_complex: Whether the field's annotation is or contains a Pydantic
+     *         ``BaseModel`` subclass (true for nested submodels).
+     *     :type is_complex: bool
+     *     :param has_override: Whether a row exists in the ``settingoverride`` table
+     *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
+     *     :type has_override: bool
+     *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
+     *         present it separately from everyday settings. Defaults to ``False`` so
+     *         the addition is purely additive and backward-compatible. Display-only:
+     *         it does not affect PATCH/DELETE eligibility.
+     *     :type is_advanced: bool
+     */
+    SettingResponse: {
+      setting_class: components['schemas']['SettingClassEnum'];
+      /** Key */
+      key: string;
+      /** Key Path */
+      key_path?: string[];
+      /** Value */
+      value: unknown;
+      /** Default Value */
+      default_value: unknown;
+      /** Type */
+      type: string;
+      reload: components['schemas']['ReloadClassification'];
+      /** Description */
+      description: string | null;
+      /** Is Secret */
+      is_secret: boolean;
+      /** Is Complex */
+      is_complex: boolean;
+      /** Has Override */
+      has_override: boolean;
+      /**
+       * Is Advanced
+       * @default false
+       */
+      is_advanced?: boolean;
+    };
+    /**
+     * SettingsListResponse
+     * @description The LIST endpoint response, grouping settings by class.
+     *
+     *     :param groups: One :class:`SettingClassGroup` per settings class the
+     *         router was configured with.
+     *     :type groups: list[SettingClassGroup]
+     */
+    SettingsListResponse: {
+      /** Groups */
+      groups: components['schemas']['SettingClassGroup'][];
+    };
+    /**
+     * SettingsPatch
+     * @description Batch PATCH payload: a flat ``{field_name: new_value, ...}`` mapping.
+     *
+     *     An empty body is rejected as 422 because a no-op PATCH is a client bug, not
+     *     a valid request. The server coerces each value to the field's declared
+     *     type via :func:`coerce_field_value`; validation is all-or-nothing -- if any
+     *     key fails, nothing is written.
+     */
+    SettingsPatch: {
+      [key: string]: components['schemas']['JsonValue'];
+    };
+    /**
      * TaskBackendEnum
      * @description Control the choice of backends.
      *
@@ -993,6 +1289,17 @@ export interface components {
       task_id: number;
       /** Sync In Progress Started At */
       sync_in_progress_started_at?: string | null;
+    };
+    /**
+     * TaskHistoryLatestStatusRequest
+     * @description Define request body for batch latest-history status lookup.
+     *
+     *     :param names: Task names to resolve latest non-null history statuses for.
+     *     :type names: list[str]
+     */
+    TaskHistoryLatestStatusRequest: {
+      /** Names */
+      names?: string[];
     };
     /**
      * TaskHistoryResponse
@@ -1140,6 +1447,11 @@ export interface components {
      *     :type created_by: str | None
      *     :param last_updated_by: The user ID of the user who last modified the task.
      *     :type last_updated_by: str | None
+     *     :param anonymized_entities: Sorted list of PII entity names derived from
+     *         ``anonymize_mask`` (or from the owner's configured defaults when the
+     *         mask is ``None``). Each name is the raw ``PIIEntity`` member name
+     *         (e.g. ``"EMAIL_ADDRESS"``). Read-only; computed on serialisation.
+     *     :type anonymized_entities: list[str]
      */
     TaskResponse: {
       /** Id */
@@ -1185,6 +1497,11 @@ export interface components {
       created_by: string | null;
       /** Last Updated By */
       last_updated_by: string | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
     };
     /**
      * TaskStats
@@ -1323,6 +1640,10 @@ export interface components {
       msg: string;
       /** Error Type */
       type: string;
+      /** Input */
+      input?: unknown;
+      /** Context */
+      ctx?: Record<string, never>;
     };
   };
   responses: never;
@@ -1338,6 +1659,9 @@ export interface operations {
       query?: {
         owner?: string | null;
         target?: string | null;
+        parent_is_null?: boolean | null;
+        backup_type?: string | null;
+        self_parent?: boolean | null;
         offset?: number;
         limit?: number;
       };
@@ -1651,6 +1975,41 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TaskHistoryResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_latest_task_history_status_history_latest_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TaskHistoryLatestStatusRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            [key: string]: components['schemas']['TaskHistoryStatusEnum'] | null;
+          };
         };
       };
       /** @description Validation Error */
@@ -2179,6 +2538,123 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ConnectivityCheckResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  settings_list_settings_admin_settings__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingsListResponse'];
+        };
+      };
+    };
+  };
+  settings_get_setting_admin_settings__setting_class___key__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  settings_delete_setting_admin_settings__setting_class___key__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  settings_patch_settings_admin_settings__setting_class__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SettingsPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingResponse'][];
         };
       };
       /** @description Validation Error */

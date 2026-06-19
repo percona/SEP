@@ -18,13 +18,16 @@
 import { Controller, useFormContext } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import FormHelperText from '@mui/material/FormHelperText';
-import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
-import { RadioGroup } from '@percona/percona-ui';
+import MuiRadioGroup from '@mui/material/RadioGroup';
+import Radio from '@mui/material/Radio';
+import { LabeledContent, RadioGroup } from '@percona/percona-ui';
+import { SchemaSelectShell } from '../SchemaSelectShell';
 import type { ChoiceField as ChoiceFieldType } from '../types';
 import { buildValidationRules } from '../utils/validationMapper';
+import { renderChoiceLabel } from './choiceLabel';
 
 interface ChoiceFieldProps {
   field: ChoiceFieldType;
@@ -36,8 +39,43 @@ const RADIO_THRESHOLD = 3;
 export function ChoiceField({ field }: ChoiceFieldProps) {
   const { control } = useFormContext();
   const rules = buildValidationRules(field);
+  const hasDisabledChoice = field.choices.some((choice) => choice.disabled);
 
   if (field.choices.length > 0 && field.choices.length <= RADIO_THRESHOLD) {
+    // The percona-ui RadioGroup keys its options by `label`, so a
+    // Tooltip-wrapped (ReactNode) label would collide to the same React key
+    // across multiple disabled options. Only the disabled-aware path needs
+    // ReactNode labels, so render that branch with MUI primitives keyed by
+    // `value`; the common path stays on the shared percona-ui RadioGroup
+    // unchanged.
+    if (hasDisabledChoice) {
+      return (
+        <LabeledContent label={field.label} isRequired={field.required} caption={field.description}>
+          <Controller
+            name={field.name}
+            control={control}
+            rules={rules}
+            render={({ field: rhfField, fieldState: { error } }) => (
+              <FormControl error={!!error} component="fieldset">
+                <MuiRadioGroup row aria-label={field.label} {...rhfField}>
+                  {field.choices.map((choice) => (
+                    <FormControlLabel
+                      key={choice.value}
+                      value={choice.value}
+                      disabled={choice.disabled}
+                      control={<Radio />}
+                      label={renderChoiceLabel(choice)}
+                    />
+                  ))}
+                </MuiRadioGroup>
+                {error?.message && <FormHelperText>{error.message}</FormHelperText>}
+              </FormControl>
+            )}
+          />
+        </LabeledContent>
+      );
+    }
+
     return (
       <RadioGroup
         name={field.name}
@@ -59,39 +97,30 @@ export function ChoiceField({ field }: ChoiceFieldProps) {
       control={control}
       rules={rules}
       render={({ field: rhfField, fieldState: { error } }) => (
-        <FormControl fullWidth size="small" error={!!error}>
-          <InputLabel id={labelId} shrink required={field.required}>
-            {field.label}
-          </InputLabel>
-          <Select
-            {...rhfField}
-            labelId={labelId}
-            label={field.label}
-            displayEmpty
-            notched
-            data-testid={`select-${field.name}-button`}
-            inputProps={{ 'data-testid': `select-input-${field.name}` }}
-            renderValue={(value) => {
-              if (value === undefined || value === null || value === '') {
-                return (
-                  <Box component="span" sx={{ color: 'text.disabled' }}>
-                    Select…
-                  </Box>
-                );
-              }
-              return field.choices.find((c) => c.value === value)?.label ?? String(value);
-            }}
-          >
-            {field.choices.map((choice) => (
-              <MenuItem key={choice.value} value={choice.value}>
-                {choice.label}
-              </MenuItem>
-            ))}
-          </Select>
-          {(error?.message || field.description) && (
-            <FormHelperText>{error?.message ?? field.description}</FormHelperText>
-          )}
-        </FormControl>
+        <SchemaSelectShell
+          field={rhfField}
+          labelId={labelId}
+          label={field.label}
+          required={field.required}
+          error={error}
+          description={field.description}
+          renderValue={(value) => {
+            if (value === undefined || value === null || value === '') {
+              return (
+                <Box component="span" sx={{ color: 'text.disabled' }}>
+                  Select…
+                </Box>
+              );
+            }
+            return field.choices.find((c) => c.value === value)?.label ?? String(value);
+          }}
+        >
+          {field.choices.map((choice) => (
+            <MenuItem key={choice.value} value={choice.value} disabled={choice.disabled}>
+              {renderChoiceLabel(choice)}
+            </MenuItem>
+          ))}
+        </SchemaSelectShell>
       )}
     />
   );

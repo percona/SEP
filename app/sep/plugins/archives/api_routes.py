@@ -31,14 +31,16 @@ from app.sep.plugins.archives.deps import (
     ArchivesTask,
     build_archives_api_task_response,
     get_archives_api_task_responses,
-    get_archives_task_status,
 )
 from app.sep.plugins.archives.models import (
     ArchivesCreateResponse,
     ArchivesTaskResponse,
 )
 from app.sep.plugins.archives.schema import archives_schema
-from app.sep.plugins.framework import maybe_record_connectivity_warning
+from app.sep.plugins.framework import (
+    get_task_latest_status,
+    maybe_record_connectivity_warning,
+)
 from app.sep.plugins.framework.api import schema_endpoint
 from app.tasks.models import Task
 
@@ -48,25 +50,24 @@ router = APIRouter()
 schema_endpoint(router=router, plugin_schema=archives_schema)
 
 
-@router.get("/", response_model=list[ArchivesTaskResponse])
+@router.get("/")
 async def archives_api_list(tasks_api: TaskAPI) -> list[ArchivesTaskResponse]:
     """List archive tasks."""
     return await get_archives_api_task_responses(tasks_api)
 
 
-@router.get("/{task_name}", response_model=ArchivesTaskResponse)
+@router.get("/{task_name}")
 async def archives_api_detail(
     task: ArchivesTask,
     tasks_api: TaskAPI,
 ) -> ArchivesTaskResponse:
     """Retrieve a single archive task."""
-    task_status = await get_archives_task_status(task.name, tasks_api)
+    task_status = await get_task_latest_status(tasks_api, task.name)
     return build_archives_api_task_response(task, status=task_status)
 
 
 @router.post(
     "/",
-    response_model=ArchivesCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def archives_api_create(

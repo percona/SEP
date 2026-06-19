@@ -15,12 +15,27 @@
 
 """Tests for the HOT-classification registry."""
 
+from string import Template
+
+import pytest
 from pydantic import BaseModel
 
+from app.core.alerts.config import AlertSettings
+from app.core.alerts.models import BaseAlertProvider
 from app.core.settings_override.registry import (
+    chain_has_advanced,
+    field_materializer,
+    hot_field,
     hot_field_names,
+    is_advanced_field,
     is_hot_reloadable,
+    materialize_fingerprint,
+    materialize_template,
+    materialize_via_owning_model,
+    MaterializerContext,
+    nested_overridable_field_names,
     ReloadClassification,
+    resolve_nested_field_metadata,
 )
 from app.core.utils.pydantic import field_with_metadata
 from app.inventory.config import InventorySettings
@@ -30,18 +45,91 @@ from app.sep.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
 
 
+def _ctx(settings_cls: type, field_name: str, raw: object) -> MaterializerContext:
+    """Build a :class:`MaterializerContext` for the given class field and raw value."""
+    return MaterializerContext(
+        settings_cls, field_name, settings_cls.model_fields[field_name], raw
+    )
+
+
+class _ProbeWithMaterializer(BaseModel):
+    """A probe model whose HOT field declares a materializer."""
+
+    value: str = hot_field("", materializer=materialize_template)
+
+
+class _ProbeWithoutMaterializer(BaseModel):
+    """A probe model whose HOT field declares no materializer."""
+
+    value: str = hot_field("")
+
+
+def test_hot_field_records_materializer_in_metadata() -> None:
+    """``hot_field(materializer=...)`` round-trips the callable through metadata."""
+    assert field_materializer(_ProbeWithMaterializer, "value") is materialize_template
+
+
+def test_hot_field_without_materializer_returns_none() -> None:
+    """A HOT field declared without a materializer reports ``None``."""
+    assert field_materializer(_ProbeWithoutMaterializer, "value") is None
+
+
+def test_field_materializer_unknown_field_returns_none() -> None:
+    """An unknown field name reports no materializer instead of raising."""
+    assert field_materializer(SEPSettings, "DOES_NOT_EXIST") is None
+
+
+def test_materialize_via_owning_model_runs_before_validator() -> None:
+    """``materialize_via_owning_model`` runs the owning model's before-validator."""
+    result = materialize_via_owning_model(
+        _ctx(
+            AlertSettings,
+            "PROVIDERS",
+            [{"PROVIDER": "pagerduty", "routing_key": "abc123"}],
+        )
+    )
+    assert isinstance(result, set)
+    assert all(isinstance(provider, BaseAlertProvider) for provider in result)
+    assert len(result) == 1
+
+
+def test_materialize_template_builds_template_from_string() -> None:
+    """``materialize_template`` converts a raw string into a ``Template``."""
+    result = materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", "$summary"))
+    assert isinstance(result, Template)
+    assert result.template == "$summary"
+
+
+def test_materialize_template_passes_through_existing_template() -> None:
+    """``materialize_template`` returns an already-``Template`` value unchanged."""
+    tmpl = Template("$version")
+    result = materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", tmpl))
+    assert result is tmpl
+
+
+def test_materialize_template_rejects_non_string() -> None:
+    """A non-string, non-``Template`` override is rejected instead of passed through."""
+    with pytest.raises(ValueError, match="must be a string"):
+        materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", 1))
+
+
+def test_materialize_fingerprint_returns_diff_stable_dict() -> None:
+    """``materialize_fingerprint`` returns a plain dict equal across two calls."""
+    raw = {"endpoint": "https://nomad.example.org"}
+    first = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
+    second = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
+    assert isinstance(first, dict)
+    assert first == second
+
+
 def test_is_hot_reloadable_true_for_marked_field() -> None:
     """A field marked HOT via ``field_with_metadata`` is detected."""
     assert is_hot_reloadable(SEPSettings, "CONNECTIVITY_CHECK_DEFAULT") is True
 
 
-def test_is_hot_reloadable_false_for_unmarked_field() -> None:
-    """A field on the model but not marked HOT is NOT_OVERRIDABLE.
-
-    ``INVENTORY_ENDPOINT`` is explicitly deferred to SEP-1037 -- guarding
-    against accidental promotion here.
-    """
-    assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is False
+def test_is_hot_reloadable_true_for_promoted_endpoint() -> None:
+    """``INVENTORY_ENDPOINT`` is promoted to HOT for live endpoint rebind."""
+    assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is True
 
 
 def test_is_hot_reloadable_false_for_structural_field() -> None:
@@ -55,16 +143,42 @@ def test_is_hot_reloadable_false_for_missing_field() -> None:
 
 
 def test_hot_field_names_sep_settings() -> None:
-    """``SEPSettings`` ships exactly the three HOT fields this ticket promotes."""
+    """``SEPSettings`` HOT fields include the endpoint and footer promotions."""
     assert hot_field_names(SEPSettings) == frozenset(
-        {"CONNECTIVITY_CHECK_DEFAULT", "ARTIFACT_DOWNLOAD_TTL", "SYNC_REFRESH_TIME"}
+        {
+            "CONNECTIVITY_CHECK_DEFAULT",
+            "ARTIFACT_DOWNLOAD_TTL",
+            "SYNC_REFRESH_TIME",
+            "INVENTORY_ENDPOINT",
+            "TASKS_ENDPOINT",
+            "FOOTER_TEMPLATE",
+        }
     )
 
 
 def test_hot_field_names_tasks_settings() -> None:
-    """``TasksSettings`` ships the two HOT fields this ticket promotes."""
+    """``TasksSettings`` HOT fields include ``NOMAD`` after its promotion."""
     assert hot_field_names(TasksSettings) == frozenset(
-        {"PRE_EXECUTION_CONNECTIVITY_CHECK", "STALENESS_THRESHOLD_SECONDS"}
+        {"PRE_EXECUTION_CONNECTIVITY_CHECK", "STALENESS_THRESHOLD_SECONDS", "NOMAD"}
+    )
+
+
+def test_nested_overridable_field_names_sep_settings() -> None:
+    """``SEPSettings`` ships exactly the two NESTED_ONLY parents this ticket promotes."""
+    assert nested_overridable_field_names(SEPSettings) == frozenset(
+        {"SESSION", "SESSION_REFRESH"}
+    )
+
+
+def test_nested_overridable_field_names_tasks_settings() -> None:
+    """``SECURITY_HEADERS`` is the NESTED_ONLY parent on ``TasksSettings``.
+
+    ``NOMAD`` is HOT (whole-object override materializes a config fingerprint
+    that the lifecycle holder rebinds), so it is not in the NESTED_ONLY set even
+    though HOT also accepts per-child overrides.
+    """
+    assert nested_overridable_field_names(TasksSettings) == frozenset(
+        {"SECURITY_HEADERS"}
     )
 
 
@@ -107,3 +221,86 @@ def test_reload_classification_values() -> None:
     """``ReloadClassification`` exposes ``HOT`` and ``NOT_OVERRIDABLE`` values."""
     assert ReloadClassification.HOT.value == "hot"
     assert ReloadClassification.NOT_OVERRIDABLE.value == "not_overridable"
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "SESSION",
+        "SESSION_REFRESH",
+        "INVENTORY_ENDPOINT",
+        "TASKS_ENDPOINT",
+        "FOOTER_TEMPLATE",
+    ],
+)
+def test_sep_settings_marked_advanced(field_name: str) -> None:
+    """The five SEP settings this ticket promotes carry the advanced flag."""
+    assert is_advanced_field(SEPSettings.model_fields[field_name]) is True
+
+
+@pytest.mark.parametrize(
+    "field_name", ["SYNC_REFRESH_TIME", "PLUGINS", "DATABASE", "PMM"]
+)
+def test_sep_settings_not_marked_advanced(field_name: str) -> None:
+    """SEP settings left basic do not carry the advanced flag (no over-marking)."""
+    assert is_advanced_field(SEPSettings.model_fields[field_name]) is False
+
+
+def test_security_headers_marked_advanced() -> None:
+    """``Tasks.SECURITY_HEADERS`` is the only Tasks setting promoted to advanced."""
+    assert is_advanced_field(TasksSettings.model_fields["SECURITY_HEADERS"]) is True
+
+
+@pytest.mark.parametrize("field_name", ["NOMAD", "STALENESS_THRESHOLD_SECONDS"])
+def test_tasks_settings_not_marked_advanced(field_name: str) -> None:
+    """``NOMAD`` and other Tasks settings stay basic (intentionally left out)."""
+    assert is_advanced_field(TasksSettings.model_fields[field_name]) is False
+
+
+def test_session_leaf_inherits_advanced() -> None:
+    """Every ``SESSION`` leaf inherits the parent's advanced flag."""
+    leaf = resolve_nested_field_metadata(SEPSettings, "SESSION__COOKIE_NAME")
+    assert leaf is not None
+    assert leaf.is_advanced is True
+
+
+def test_security_headers_deep_leaf_inherits_advanced() -> None:
+    """A two-level ``SECURITY_HEADERS`` leaf inherits advanced from the top parent.
+
+    Only ``SECURITY_HEADERS`` is marked; ``strict_transport_security`` and
+    ``max_age`` are not, so the chain walk is what propagates the flag down.
+    """
+    leaf = resolve_nested_field_metadata(
+        TasksSettings, "SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE"
+    )
+    assert leaf is not None
+    assert leaf.is_advanced is True
+    assert chain_has_advanced(
+        TasksSettings, "SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE"
+    )
+
+
+def test_non_advanced_nested_leaf_stays_false() -> None:
+    """A leaf under a non-advanced parent reports ``is_advanced=False``."""
+    leaf = resolve_nested_field_metadata(SEPSettings, "DATABASE__NAME")
+    assert leaf is not None
+    assert leaf.is_advanced is False
+
+
+def test_advanced_does_not_change_reload_classification() -> None:
+    """Marking a HOT field advanced leaves its reload classification untouched.
+
+    ``advanced`` is display-only: a marked-advanced HOT endpoint stays HOT (and
+    thus still patchable), proving the flag does not gate override eligibility.
+    """
+    assert is_advanced_field(SEPSettings.model_fields["INVENTORY_ENDPOINT"]) is True
+    assert is_hot_reloadable(SEPSettings, "INVENTORY_ENDPOINT") is True
+
+
+def test_is_advanced_field_false_without_metadata() -> None:
+    """A field without any ``CustomFieldMetadata`` reads ``False`` without raising."""
+
+    class _Plain(BaseModel):
+        value: int = 1
+
+    assert is_advanced_field(_Plain.model_fields["value"]) is False

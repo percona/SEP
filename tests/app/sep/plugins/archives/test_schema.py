@@ -18,8 +18,15 @@
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
+from app.sep.plugins.archives.constants import SwapDropEnum
+from app.sep.plugins.archives.models import ArchivesCreate
 from app.sep.plugins.archives.schema import archives_schema
+
+# The exact tooltip / error copy that the disabled choices and the FailRule
+# must surface. Pinned here so a copy change is a deliberate test update.
+_SWAP_DROP_UNSUPPORTED = "Not available yet. Only Purge Only is currently supported."
 
 
 class TestArchivesSchemaStructure:
@@ -35,7 +42,12 @@ class TestArchivesSchemaStructure:
         assert caps.stats is True
 
     def test_field_names_are_snake_case(self):
-        """All field names must match the Write-model attribute names (snake_case)."""
+        """All field names must match the Write-model attribute names (snake_case).
+
+        ``alert_on_fail`` is intentionally absent: it is rendered by the
+        capability-driven control (``capabilities.alert_on_fail``), not as an
+        explicit form field, so the form shows exactly one alert-on-fail toggle.
+        """
         all_names = {
             field.name for section in archives_schema.forms for field in section.fields
         }
@@ -66,9 +78,51 @@ class TestArchivesSchemaStructure:
             "dest_port",
             "dest_db_id",
             "dest_db_name",
-            "alert_on_fail",
         }
         assert expected.issubset(all_names), f"Missing fields: {expected - all_names}"
+        assert "alert_on_fail" not in all_names
+
+    def test_no_explicit_alert_on_fail_form_field(self):
+        """Only the capability-driven alert-on-fail control renders (no duplicate).
+
+        The schema declares ``capabilities.alert_on_fail=True`` (auto-rendered by
+        SchemaFormRenderer); an explicit ``alert_on_fail`` BoolField would render
+        a second, duplicate control. Assert the explicit field is gone while the
+        capability stays on.
+        """
+        form_field_names = [
+            field.name for section in archives_schema.forms for field in section.fields
+        ]
+        assert "alert_on_fail" not in form_field_names
+        assert archives_schema.capabilities is not None
+        assert archives_schema.capabilities.alert_on_fail is True
+
+    def test_advanced_section_collapsed_by_default(self):
+        """Rarely-used knobs live in a collapsible 'Advanced' section, collapsed.
+
+        WHERE stays in the visible Options section so the common filter is not
+        hidden behind the toggle.
+        """
+        advanced = next(
+            (s for s in archives_schema.forms if s.title == "Advanced"), None
+        )
+        assert advanced is not None, "Expected an 'Advanced' form section"
+        assert advanced.collapsible is True
+        assert advanced.collapsed_by_default is True
+        advanced_names = {f.name for f in advanced.fields}
+        assert advanced_names == {
+            "use_index",
+            "extra_args",
+            "limit",
+            "sleep",
+            "disable_binlog",
+            "disable_bulk_insert",
+            "delete_data",
+        }
+        assert "where" not in advanced_names
+        options = next((s for s in archives_schema.forms if s.title == "Options"), None)
+        assert options is not None
+        assert "where" in {f.name for f in options.fields}
 
     def test_delete_data_label_and_description(self):
         """Assert delete_data is labelled to disambiguate purge-vs-archive."""
@@ -116,7 +170,55 @@ class TestArchivesSchemaFieldGates:
         )
         assert swp_field.requires is not None
         assert len(swp_field.requires) == 1
-        assert swp_field.requires[0].when.to_dict() == {"equals": {"swap_drop": 2}}
+        assert swp_field.requires[0].when.to_dict() == {
+            "equals": {"swap_drop": SwapDropEnum.SWAP_ARCHIVE_DROP.value}
+        }
+
+    def test_swp_table_suffix_hidden_unless_swap_archive_drop(self):
+        """swp_table_suffix is hidden (forbidden) unless swap_drop == 2.
+
+        A requires gate governs required-ness, not visibility; without an
+        explicit forbidden gate the field renders for every archive type. Only
+        Purge Only is selectable in the current scope, so the gate
+        (swap_drop != SWAP_ARCHIVE_DROP) keeps the field from ever rendering.
+        """
+        swp_field = next(
+            f
+            for section in archives_schema.forms
+            for f in section.fields
+            if f.name == "swp_table_suffix"
+        )
+        assert swp_field.forbidden is not None
+        gates = [g.when.to_dict() for g in swp_field.forbidden]
+        assert {
+            "not_equals": {"swap_drop": SwapDropEnum.SWAP_ARCHIVE_DROP.value}
+        } in gates
+
+    def test_where_required_for_purge_only(self):
+        """WHERE is required for Purge Only (swap_drop == 0) and not hidden.
+
+        The requires gate (swap_drop != SWAP_DROP) fires for PURGE_ONLY, so WHERE
+        is mandatory; the only forbidden gate targets SWAP_DROP, so WHERE is
+        never hidden for Purge Only. There is no forbidden-for-Purge-Only gate.
+        """
+        where_field = next(
+            f
+            for section in archives_schema.forms
+            for f in section.fields
+            if f.name == "where"
+        )
+        assert where_field.requires is not None
+        requires_gates = [g.when.to_dict() for g in where_field.requires]
+        assert {
+            "not_equals": {"swap_drop": SwapDropEnum.SWAP_DROP.value}
+        } in requires_gates
+        forbidden_gates = [g.when.to_dict() for g in (where_field.forbidden or [])]
+        assert {
+            "equals": {"swap_drop": SwapDropEnum.SWAP_DROP.value}
+        } in forbidden_gates
+        assert {
+            "equals": {"swap_drop": SwapDropEnum.PURGE_ONLY.value}
+        } not in forbidden_gates
 
     def test_where_requires_when_not_swap_drop(self):
         """where.requires fires when swap_drop != 1 (SWAP_DROP)."""
@@ -198,6 +300,31 @@ class TestArchivesSchemaFailRules:
 
         expected = {"any": [{"equals": {"swap_drop": 1}}, {"truthy": "delete_data"}]}
         assert expected in gates
+
+    def test_destination_section_hidden_when_delete_data(self):
+        """Destination section is hidden when delete_data is truthy."""
+        section = next(s for s in archives_schema.forms if s.title == "Destination")
+        assert section.forbidden is not None
+        gates = [g.when.to_dict() for g in section.forbidden]
+        assert {"truthy": "delete_data"} in gates
+
+    def test_destination_host_section_hidden_when_delete_data(self):
+        """Destination Host section is hidden when delete_data is truthy."""
+        section = next(
+            s for s in archives_schema.forms if s.title == "Destination Host"
+        )
+        assert section.forbidden is not None
+        gates = [g.when.to_dict() for g in section.forbidden]
+        assert {"truthy": "delete_data"} in gates
+
+    @pytest.mark.parametrize("section_title", ["Destination", "Destination Host"])
+    def test_destination_sections_forbidden_gate_in_wire_schema(
+        self, section_title: str
+    ):
+        """Preserve delete_data section forbidden gates in wire schema payload."""
+        wire_schema = archives_schema.model_dump(by_alias=True, exclude_none=True)
+        section = next(s for s in wire_schema["forms"] if s["title"] == section_title)
+        assert {"when": {"truthy": "delete_data"}} in section["forbidden"]
 
     def test_dest_required_fail_rule_present(self):
         """FailRule fires when no dest and not SWAP_DROP and not delete_data."""
@@ -302,3 +429,84 @@ class TestArchivesSchemaCardinality:
         assert found, (
             "Expected CardinalityRule(max=1) covering dest_file/dest_table_id/dest_table_name"
         )
+
+
+class TestArchivesSchemaArchiveTypeRestriction:
+    """Archive Type restriction: Purge Only default + only-selectable, others disabled."""
+
+    @staticmethod
+    def _swap_drop_field():
+        return next(
+            f
+            for section in archives_schema.forms
+            for f in section.fields
+            if f.name == "swap_drop"
+        )
+
+    def test_purge_only_is_default(self):
+        """Purge Only is the pre-selected default for the Archive Type field."""
+        field = self._swap_drop_field()
+        assert field.default == "0"
+
+    def test_purge_only_choice_is_selectable(self):
+        """The Purge Only choice is not disabled."""
+        field = self._swap_drop_field()
+        purge_only = next(c for c in field.choices if c.label == "Purge Only")
+        assert not purge_only.disabled
+        assert purge_only.disabled_reason is None
+
+    @pytest.mark.parametrize("label", ["Swap & Drop", "Swap Archive & Drop"])
+    def test_swap_choices_disabled_with_tooltip(self, label: str):
+        """Swap & Drop and Swap Archive & Drop are disabled with the tooltip copy."""
+        field = self._swap_drop_field()
+        choice = next(c for c in field.choices if c.label == label)
+        assert choice.disabled is True
+        assert choice.disabled_reason == _SWAP_DROP_UNSUPPORTED
+
+    def test_swap_drop_fail_rule_present(self):
+        """A FailRule rejects any swap_drop other than PURGE_ONLY (server-side)."""
+        all_fail_rules = []
+        for section in archives_schema.forms:
+            if section.fail_when:
+                all_fail_rules.extend(section.fail_when)
+        if archives_schema.fail_when:
+            all_fail_rules.extend(archives_schema.fail_when)
+
+        rule = next(
+            (r for r in all_fail_rules if r.error_fields == ["swap_drop"]), None
+        )
+        assert rule is not None, "Expected a FailRule guarding swap_drop"
+        assert rule.message == _SWAP_DROP_UNSUPPORTED
+        assert rule.fail_when.to_dict() == {
+            "not_equals": {"swap_drop": SwapDropEnum.PURGE_ONLY.value}
+        }
+
+    def test_purge_only_payload_is_accepted(self):
+        """A valid Purge Only payload passes validation."""
+        model = ArchivesCreate(
+            alias="test",
+            hostname="host",
+            service_id=1,
+            source_db_id=1,
+            source_table_id=1,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=2,
+        )
+        assert model.swap_drop == SwapDropEnum.PURGE_ONLY
+
+    @pytest.mark.parametrize(
+        "swap_drop", [SwapDropEnum.SWAP_DROP, SwapDropEnum.SWAP_ARCHIVE_DROP]
+    )
+    def test_non_purge_only_payload_is_rejected(self, swap_drop: SwapDropEnum):
+        """A crafted payload bypassing the disabled UI is rejected by validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            ArchivesCreate(
+                alias="test",
+                hostname="host",
+                service_id=1,
+                source_db_id=1,
+                source_table_id=1,
+                swap_drop=swap_drop,
+            )
+        assert _SWAP_DROP_UNSUPPORTED in str(exc_info.value)

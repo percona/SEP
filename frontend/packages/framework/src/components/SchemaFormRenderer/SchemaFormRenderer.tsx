@@ -35,14 +35,20 @@ import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import type { PluginCapabilities } from '@sep/api';
 import { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from '../AlertOnFailField';
-import { FieldRenderer } from './fields';
-import { useConditionalField } from './hooks/useConditionalField';
+import { ConditionalFieldSlot } from './ConditionalFieldSlot';
+import { OneOfGroupSlot } from './OneOfGroupSlot';
 import { useConditionalSection } from './hooks/useConditionalSection';
 import { useCardinalityRules } from './hooks/useCardinalityRules';
 import { useFailRules } from './hooks/useFailRules';
 import { useUnsavedChangesGuard } from './hooks/useUnsavedChangesGuard';
 import { coerceFormValues } from './utils/validationMapper';
-import type { FormSection, PluginField } from './types';
+import { getAtPath, setAtPath } from './utils/fieldPath';
+import {
+  collectOneOfGroups,
+  flattenSectionFields,
+  isOneOfGroup,
+} from './utils/flattenSectionFields';
+import type { FormSection, PluginField, RenderFieldOverride } from './types';
 
 function fieldDefault(field: PluginField): unknown {
   switch (field.type) {
@@ -66,40 +72,46 @@ function fieldDefault(field: PluginField): unknown {
 }
 
 function flattenFields(sections: FormSection[]): PluginField[] {
-  return sections.flatMap((s) => s.fields);
+  return flattenSectionFields(sections);
 }
 
-const ConditionalFieldSlot = memo(function ConditionalFieldSlot({ field }: { field: PluginField }) {
-  const { isHidden, isRequired } = useConditionalField(field);
-
-  if (isHidden) {
-    return null;
+function buildFormDefaults(
+  sections: FormSection[],
+  allFields: PluginField[],
+  defaultValues: Record<string, unknown> | undefined,
+  capabilities: PluginCapabilities | undefined,
+): Record<string, unknown> {
+  const defaults: Record<string, unknown> = {};
+  for (const field of allFields) {
+    const seed = defaultValues ? getAtPath(defaultValues, field.name) : undefined;
+    setAtPath(defaults, field.name, seed ?? fieldDefault(field));
   }
-
-  // Clone the field with the resolved required flag so FieldRenderer passes it
-  // to register(). RHF's register() is idempotent — re-calling it on each
-  // render updates the validation rules in place, so the required constraint
-  // stays in sync with gate state without a separate validate callback.
-  const resolvedField =
-    Boolean(field.required) !== isRequired ? { ...field, required: isRequired } : field;
-
-  return (
-    <Box sx={{ mb: 2 }}>
-      <FieldRenderer field={resolvedField} />
-    </Box>
-  );
-});
+  for (const group of collectOneOfGroups(sections)) {
+    const seed = defaultValues ? getAtPath(defaultValues, group.discriminator) : undefined;
+    setAtPath(
+      defaults,
+      group.discriminator,
+      seed ?? group.default ?? group.branches[0]?.value ?? '',
+    );
+  }
+  if (capabilities?.alert_on_fail) {
+    defaults[ALERT_ON_FAIL_FIELD_NAME] = defaultValues?.[ALERT_ON_FAIL_FIELD_NAME] ?? false;
+  }
+  return defaults;
+}
 
 interface SectionRendererProps {
   section: FormSection;
   idx: number;
   violations: Array<{ message: string }>;
+  renderField?: RenderFieldOverride;
 }
 
 const SectionRenderer = memo(function SectionRenderer({
   section,
   idx,
   violations,
+  renderField,
 }: SectionRendererProps) {
   const { isHidden } = useConditionalSection(section);
 
@@ -119,9 +131,13 @@ const SectionRenderer = memo(function SectionRenderer({
           {v.message}
         </Alert>
       ))}
-      {section.fields.map((field) => (
-        <ConditionalFieldSlot key={field.name} field={field} />
-      ))}
+      {section.fields.map((field) =>
+        isOneOfGroup(field) ? (
+          <OneOfGroupSlot key={field.name} group={field} renderField={renderField} />
+        ) : (
+          <ConditionalFieldSlot key={field.name} field={field} renderField={renderField} />
+        ),
+      )}
     </>
   );
 
@@ -171,6 +187,13 @@ export interface SchemaFormRendererProps {
   submitError?: string | null;
   /** Plugin capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
   capabilities?: PluginCapabilities;
+  /**
+   * Optional per-field widget override. Applied after the conditional gate
+   * decides visibility / required-ness; receives the gate-resolved field and a
+   * `renderDefault()` callback. Overrides must write through react-hook-form.
+   * See {@link RenderFieldOverride}.
+   */
+  renderField?: RenderFieldOverride;
 }
 
 /**
@@ -222,6 +245,7 @@ function SchemaFormBody({
   loading = false,
   submitError,
   capabilities,
+  renderField,
 }: SchemaFormRendererProps) {
   const { handleSubmit, formState } = useFormContext<Record<string, unknown>>();
   const isGuarded = useUnsavedChangesGuard(submitError);
@@ -286,6 +310,7 @@ function SchemaFormBody({
             section={section}
             idx={idx}
             violations={violationsBySection.get(section) ?? []}
+            renderField={renderField}
           />
         ))}
 
@@ -314,6 +339,7 @@ function SchemaFormBody({
                 section={section}
                 idx={idx}
                 violations={violationsBySection.get(section) ?? []}
+                renderField={renderField}
               />
             ))}
           </Box>
@@ -327,20 +353,10 @@ export function SchemaFormRenderer(props: SchemaFormRendererProps) {
   const { sections, defaultValues, capabilities } = props;
   const allFields = useMemo(() => flattenFields(sections), [sections]);
 
-  const formDefaults = useMemo(() => {
-    const defaults = allFields.reduce<Record<string, unknown>>((acc, field) => {
-      acc[field.name] = defaultValues?.[field.name] ?? fieldDefault(field);
-      return acc;
-    }, {});
-    if (capabilities?.alert_on_fail) {
-      // Capability-injected fields are not in allFields, so coerceFormValues leaves them
-      // unchanged (extra keys pass through as-is via the initial spread). The value seeded
-      // here must therefore already be the correct submit type — boolean for alert_on_fail.
-      // If more capability fields are added, ensure they are pre-coerced at this point.
-      defaults[ALERT_ON_FAIL_FIELD_NAME] = defaultValues?.[ALERT_ON_FAIL_FIELD_NAME] ?? false;
-    }
-    return defaults;
-  }, [allFields, defaultValues, capabilities]);
+  const formDefaults = useMemo(
+    () => buildFormDefaults(sections, allFields, defaultValues, capabilities),
+    [sections, allFields, defaultValues, capabilities],
+  );
 
   const methods = useForm<Record<string, unknown>>({ defaultValues: formDefaults });
 

@@ -33,6 +33,7 @@ from app.sep.deps import (
     validate_csrf,
 )
 from app.sep.main import sep_app
+from app.sep.plugins.framework.registry import build_app_registry
 
 
 class TestApiRouterComposition:
@@ -379,13 +380,13 @@ class TestApiRouterConfigDrivenLoop:
     def test_plugin_with_api_router_path_is_mounted(self) -> None:
         """Assert a plugin with ``api_router_path`` set produces mounted routes."""
         plugin = Plugin(
-            name="Checksums",
-            module_name="checksums",
-            api_router_path="app.sep.plugins.checksums.api_routes.router",
+            name="Snippets",
+            module_name="snippets",
+            api_router_path="app.sep.plugins.snippets.api_routes.router",
         )
-        router = build_plugins_router([plugin])
+        router = build_plugins_router(build_app_registry([plugin]))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
-        assert any(p.startswith("/plugins/checksums/") for p in paths)
+        assert any(p.startswith("/plugins/snippets/") for p in paths)
 
     def test_plugin_without_api_router_path_is_not_mounted(self) -> None:
         """Assert a plugin with ``api_router_path=None`` contributes no routes."""
@@ -394,12 +395,12 @@ class TestApiRouterConfigDrivenLoop:
             module_name="inventory",
             api_router_path=None,
         )
-        router = build_plugins_router([plugin])
+        router = build_plugins_router(build_app_registry([plugin]))
         assert router.routes == []
 
     def test_empty_plugins_iterable_produces_empty_router(self) -> None:
         """Assert no plugins → no plugin routes (only the prefix)."""
-        router = build_plugins_router([])
+        router = build_plugins_router(build_app_registry([]))
         assert router.prefix == "/plugins"
         assert router.routes == []
 
@@ -410,7 +411,7 @@ class TestApiRouterConfigDrivenLoop:
             module_name="dipper",
             api_router_path="app.sep.plugins.dipper.api_routes.router",
         )
-        router = build_plugins_router([plugin])
+        router = build_plugins_router(build_app_registry([plugin]))
         tagged = [
             r.tags for r in router.routes if hasattr(r, "path") and "dipper" in r.path
         ]
@@ -439,7 +440,7 @@ class TestApiRouterConfigDrivenLoop:
             api_router_path="app.sep.plugins.snippets.api_routes.does_not_exist",
         )
         with pytest.raises(AttributeError):
-            build_plugins_router([plugin])
+            build_plugins_router(build_app_registry([plugin]))
 
     def test_colon_syntax_in_api_router_path_is_rejected(self) -> None:
         """Assert colon-style ``module:attr`` paths are rejected.
@@ -449,11 +450,11 @@ class TestApiRouterConfigDrivenLoop:
         """
         plugin = Plugin(
             name="Bad",
-            module_name="checksums",
-            api_router_path="app.sep.plugins.checksums.api_routes:router",
+            module_name="snippets",
+            api_router_path="app.sep.plugins.snippets.api_routes:router",
         )
         with pytest.raises((ImportError, AttributeError, ModuleNotFoundError)):
-            build_plugins_router([plugin])
+            build_plugins_router(build_app_registry([plugin]))
 
     def test_plugin_omitting_api_router_path_auto_derives_for_known_module(
         self,
@@ -461,7 +462,6 @@ class TestApiRouterConfigDrivenLoop:
         """Assert convention auto-derive sets ``api_router_path`` for built-ins."""
         for module, expected in (
             ("archives", "app.sep.plugins.archives.api_routes.router"),
-            ("checksums", "app.sep.plugins.checksums.api_routes.router"),
             ("dipper", "app.sep.plugins.dipper.api_routes.router"),
             ("snippets", "app.sep.plugins.snippets.api_routes.router"),
         ):
@@ -525,7 +525,7 @@ class TestApiRouterConfigDrivenLoop:
                 css_class="dipper",
             ),
         ]
-        router = build_plugins_router(plugins)
+        router = build_plugins_router(build_app_registry(plugins))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
         assert any(p.startswith("/plugins/snippets/") for p in paths)
         assert any(p.startswith("/plugins/checksums/") for p in paths)
@@ -540,10 +540,10 @@ class TestApiRouterConfigDrivenLoop:
         """
         plugin = Plugin.model_construct(
             name="Ghost",
-            module_name="app.sep.plugins.checksums",
+            module_name="app.sep.plugins.snippets",
             api_router_path="",
         )
-        router = build_plugins_router([plugin])
+        router = build_plugins_router(build_app_registry([plugin]))
         assert router.routes == []
 
     def test_build_plugins_router_raises_type_error_for_non_router(self) -> None:
@@ -554,12 +554,12 @@ class TestApiRouterConfigDrivenLoop:
         ``include_router``.
         """
         plugin = Plugin(
-            name="Checksums",
-            module_name="checksums",
+            name="Snippets",
+            module_name="snippets",
             api_router_path="app.sep.config.Plugin",
         )
-        with pytest.raises(TypeError, match="checksums"):
-            build_plugins_router([plugin])
+        with pytest.raises(TypeError, match="snippets"):
+            build_plugins_router(build_app_registry([plugin]))
 
     def test_plugin_api_router_path_rejects_bad_module_at_parse(self) -> None:
         """Assert an explicit ``api_router_path`` with a non-importable module raises ``ValidationError``.
@@ -577,9 +577,9 @@ class TestApiRouterConfigDrivenLoop:
     def test_module_level_plugins_router_matches_settings(self) -> None:
         """Assert module-level ``plugins_router`` mirrors ``sep_settings.PLUGINS``."""
         expected_keys = {
-            plugin.module_name.split(".")[-1]
-            for plugin in sep_settings.PLUGINS
-            if plugin.api_router_path is not None
+            app.key
+            for app in build_app_registry(sep_settings.PLUGINS)
+            if app.api_router is not None
         }
         seen_prefixes = {
             r.path.split("/")[2]

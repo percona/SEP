@@ -21,10 +21,11 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { useState, type ReactNode } from 'react';
+import { useFormContext } from 'react-hook-form';
 import { SchemaFormRenderer } from './SchemaFormRenderer';
 import { buildValidationRules, coerceFormValues } from './utils/validationMapper';
 import { evaluatePredicate, isPresent } from './utils/predicateEvaluator';
-import type { FormSection } from './types';
+import type { FormSection, RenderFieldOverride } from './types';
 
 const useAlertConfigMock = vi.fn();
 
@@ -112,6 +113,14 @@ describe('coerceFormValues', () => {
       { type: 'string', name: 'title', label: 'Title' },
     ]);
     expect(out.alert_on_fail).toBe(true);
+  });
+
+  it('coerces nested dotted field paths', () => {
+    const out = coerceFormValues({ source: { source_db_id: '42', source_query: '' } }, [
+      { type: 'integer', name: 'source.source_db_id', label: 'Schema' },
+      { type: 'string', name: 'source.source_query', label: 'Query' },
+    ]);
+    expect(out).toEqual({ source: { source_db_id: 42, source_query: '' } });
   });
 
   it('unwraps option objects from service/schema/table/host fields to scalar ids', () => {
@@ -1898,5 +1907,294 @@ describe('SchemaFormRenderer — multi_choice default value', () => {
     renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
     expect(screen.queryByText('Select…')).toBeNull();
     expect(screen.getByText('S3')).toBeVisible();
+  });
+});
+
+// ── renderField override hook (SEP-1355) ──────────────────────────────────
+//
+// A renderField override that writes its value through react-hook-form so the
+// value participates in the rule engines and submission. This is the documented
+// write-through contract.
+function CustomTextWidget({ name }: { name: string }) {
+  const { register } = useFormContext();
+  return <input aria-label={`custom-${name}`} {...register(name)} />;
+}
+
+describe('SchemaFormRenderer — renderField override', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Main',
+      fields: [
+        { type: 'string', name: 'mode', label: 'Mode' },
+        { type: 'string', name: 'title', label: 'Title' },
+      ],
+    },
+  ];
+
+  // Only customizes `mode`; every other field falls back to renderDefault().
+  const renderField: RenderFieldOverride = ({ field, renderDefault }) =>
+    field.name === 'mode' ? <CustomTextWidget name={field.name} /> : renderDefault();
+
+  it('renders the override widget for a matching field', () => {
+    renderWithProviders(
+      <SchemaFormRenderer sections={sections} onSubmit={vi.fn()} renderField={renderField} />,
+    );
+    // Override widget present; the default Mode widget is replaced.
+    expect(screen.getByLabelText('custom-mode')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Mode')).toBeNull();
+  });
+
+  it('falls back to the default widget for a non-matching field', () => {
+    renderWithProviders(
+      <SchemaFormRenderer sections={sections} onSubmit={vi.fn()} renderField={renderField} />,
+    );
+    // `title` is not customized → framework default widget renders.
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+  });
+
+  it('does not call the override for a field hidden by its gate', () => {
+    const gatedSections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          { type: 'bool', name: 'advanced', label: 'Advanced mode' },
+          {
+            type: 'string',
+            name: 'mode',
+            label: 'Mode',
+            forbidden: [{ when: { falsy: 'advanced' } }],
+          },
+        ],
+      },
+    ];
+    const override = vi.fn(renderField);
+    renderWithProviders(
+      <SchemaFormRenderer sections={gatedSections} onSubmit={vi.fn()} renderField={override} />,
+    );
+    // advanced=false (default) → forbidden gate fires → mode hidden → override
+    // never invoked for it, and the override widget is absent.
+    expect(screen.queryByLabelText('custom-mode')).toBeNull();
+    expect(override).not.toHaveBeenCalledWith(
+      expect.objectContaining({ field: expect.objectContaining({ name: 'mode' }) }),
+    );
+  });
+
+  it('passes the gate-resolved required flag to the override', async () => {
+    const user = userEvent.setup();
+    const seenRequired: boolean[] = [];
+    const captureOverride: RenderFieldOverride = ({ field, renderDefault }) => {
+      if (field.name === 'mode') {
+        seenRequired.push(Boolean(field.required));
+        return <CustomTextWidget name={field.name} />;
+      }
+      return renderDefault();
+    };
+    const gatedSections: FormSection[] = [
+      {
+        title: 'Main',
+        fields: [
+          { type: 'bool', name: 'advanced', label: 'Advanced mode' },
+          {
+            type: 'string',
+            name: 'mode',
+            label: 'Mode',
+            // becomes required only when `advanced` is truthy
+            requires: [{ when: { truthy: 'advanced' } }],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={gatedSections}
+        onSubmit={vi.fn()}
+        renderField={captureOverride}
+      />,
+    );
+    // advanced=false at mount → resolved required=false
+    expect(seenRequired.at(-1)).toBe(false);
+    // flip advanced → requires gate fires → resolved required=true reaches override
+    await user.click(screen.getByLabelText('Advanced mode'));
+    await waitFor(() => expect(seenRequired.at(-1)).toBe(true));
+  });
+
+  it('write-through: overridden value participates in the fail_when engine', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={[
+          {
+            title: 'Main',
+            fail_when: [
+              {
+                fail_when: { truthy: 'mode' },
+                error_fields: ['mode'],
+                message: 'Mode must be empty.',
+              },
+            ],
+            fields: [{ type: 'string', name: 'mode', label: 'Mode' }],
+          },
+        ]}
+        onSubmit={vi.fn()}
+        renderField={renderField}
+      />,
+    );
+    // mode empty at mount → predicate inactive
+    expect(screen.queryByText('Mode must be empty.')).toBeNull();
+    // type into the OVERRIDDEN widget → value reaches RHF watch state → fail_when fires
+    await user.type(screen.getByLabelText('custom-mode'), 'danger');
+    expect(await screen.findByText('Mode must be empty.')).toBeInTheDocument();
+  });
+
+  it('write-through: overridden value is included in the submit payload', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(
+      <SchemaFormRenderer sections={sections} onSubmit={onSubmit} renderField={renderField} />,
+    );
+    await user.type(screen.getByLabelText('custom-mode'), 'fast');
+    await user.click(screen.getByRole('button', { name: /Run/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ mode: 'fast' }));
+  });
+
+  it('falls back to the default widget when the override returns a nullish value', () => {
+    // Override opts out of every field by returning undefined → defaults render.
+    const optOut: RenderFieldOverride = () => undefined;
+    renderWithProviders(
+      <SchemaFormRenderer sections={sections} onSubmit={vi.fn()} renderField={optOut} />,
+    );
+    expect(screen.getByLabelText('Mode')).toBeInTheDocument();
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+    expect(screen.queryByLabelText('custom-mode')).toBeNull();
+  });
+
+  it('renders identically when no override is supplied (no regression)', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={vi.fn()} />);
+    // Default widgets for both fields; no custom widget.
+    expect(screen.getByLabelText('Mode')).toBeInTheDocument();
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+    expect(screen.queryByLabelText('custom-mode')).toBeNull();
+  });
+});
+
+describe('SchemaFormRenderer — one_of groups', () => {
+  const sections: FormSection[] = [
+    {
+      title: 'Source',
+      fields: [
+        {
+          type: 'one_of',
+          name: 'source',
+          label: 'Source',
+          description: 'Choose how to specify source rows.',
+          discriminator: 'source.mode',
+          default: 'schema',
+          branches: [
+            {
+              value: 'schema',
+              label: 'Schema & Table',
+              fields: [
+                {
+                  type: 'string',
+                  name: 'source.source_db_id',
+                  label: 'Source Schema',
+                },
+              ],
+            },
+            {
+              value: 'query',
+              label: 'Custom Query',
+              fields: [
+                {
+                  type: 'string',
+                  name: 'source.source_query',
+                  label: 'Source Query',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ];
+
+  it('renders segmented control, helper text, and the default branch fields', () => {
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={() => {}} />);
+    expect(screen.getByTestId('one-of-source')).toBeInTheDocument();
+    expect(screen.getByText('Choose how to specify source rows.')).toBeInTheDocument();
+    expect(screen.getByTestId('text-input-source.source_db_id')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-source.source_query')).toBeNull();
+  });
+
+  it('swaps visible branch fields and omits inactive values on submit', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    renderWithProviders(<SchemaFormRenderer sections={sections} onSubmit={onSubmit} />);
+
+    await user.click(screen.getByTestId('one-of-option-query'));
+    expect(await screen.findByTestId('text-input-source.source_query')).toBeInTheDocument();
+    expect(screen.queryByTestId('text-input-source.source_db_id')).toBeNull();
+
+    await user.type(screen.getByTestId('text-input-source.source_query'), 'SELECT 1');
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit).toHaveBeenCalledWith({
+      source: { mode: 'query', source_query: 'SELECT 1' },
+    });
+  });
+
+  it('unregisters one_of discriminator and leaf values when a section becomes hidden', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    const gatedSections: FormSection[] = [
+      {
+        title: 'Options',
+        fields: [{ type: 'bool', name: 'include_target', label: 'Include Target', default: true }],
+      },
+      {
+        title: 'Target',
+        forbidden: [{ when: { not_equals: { include_target: true } } }],
+        fields: [
+          {
+            type: 'one_of',
+            name: 'target',
+            label: 'Target',
+            discriminator: 'target_mode',
+            default: 'service',
+            branches: [
+              {
+                value: 'service',
+                label: 'Service',
+                fields: [{ type: 'string', name: 'target', label: 'Service Target' }],
+              },
+              {
+                value: 'schema',
+                label: 'Schema',
+                fields: [{ type: 'string', name: 'target', label: 'Schema Target' }],
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={gatedSections}
+        onSubmit={onSubmit}
+        defaultValues={{ include_target: true, target_mode: 'schema', target: 'inventory' }}
+      />,
+    );
+
+    await user.click(screen.getByLabelText('Include Target'));
+    await waitFor(() => expect(screen.queryByText('Target')).toBeNull());
+
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    const payload = onSubmit.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ include_target: false });
+    expect(payload).not.toHaveProperty('target');
+    expect(payload).not.toHaveProperty('target_mode');
   });
 });

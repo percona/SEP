@@ -100,6 +100,23 @@ def test_archives_logs_event_stream(
     )
 
 
+def test_logs_event_stream_forwards_tail_query_param(
+    mocker, test_client, mock_tasks_client, task_history_response
+):
+    """Assert ``tail`` on the SEP SSE route is passed through to the Tasks API."""
+    response = test_client.get(f"/stream-logs/{task_history_response.id}?tail=1000")
+
+    assert response.status_code == HTTP_200_OK
+    assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+    mock_tasks_client.stream.assert_called_once_with(
+        f"/history/{task_history_response.id}/logs/",
+        params=mocker.ANY,
+        timeout=mocker.ANY,
+    )
+    assert mock_tasks_client.stream.call_args.kwargs["params"]["tail"] == "1000"
+
+
 def test_stream_execution_events_event_stream(
     mocker, test_client, mock_tasks_client, task_history_response
 ):
@@ -146,4 +163,4 @@ def test_stream_execution_events_event_stream(
     assert "Received" in streamed_content
     assert "Started" in streamed_content
     assert "event: finish" in streamed_content
-    assert '"status": "failed"' in streamed_content
+    assert f'"status": "{TaskHistoryStatusEnum.FAILED.value}"' in streamed_content

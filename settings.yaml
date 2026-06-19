@@ -4,7 +4,7 @@ default:
     - "127.0.0.1"
   AUTH_USER_MODEL: app.models.CasdoorUser
   ALLOW_CONCURRENT_SESSIONS: False
-  SECRET_KEY: ""  # Auto-generated if empty
+  SECRET_KEY: "dev-only-not-for-production"  # Dev only; production must override
   LOGGING: WARNING  # LogLevel: DEBUG, INFO, WARNING, ERROR, CRITICAL
   SSL_CAFILE: null
   BASE_URL: null
@@ -87,6 +87,10 @@ default:
         MODULE_NAME: backup_mongo
         URI_PATH: /backup_mongo
         CSS_CLASS: backup_mongo
+      - NAME: PostgreSQL Backups
+        MODULE_NAME: backup_pg
+        URI_PATH: /backup_pg
+        CSS_CLASS: backup_pg
       - NAME: Dipper Data Collection
         MODULE_NAME: dipper
         URI_PATH: /dipper
@@ -151,6 +155,8 @@ default:
           - performance_schema
           - mysql
           - information_schema
+        DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
+      - SYNCER: SystemFactsSyncer
         DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
     SYNC_REFRESH_TIME: 5  # Browser refresh interval during sync (seconds)
   INVENTORY:
@@ -225,6 +231,8 @@ development:
           - performance_schema
           - mysql
           - information_schema
+        DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
+      - SYNCER: SystemFactsSyncer
         DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
   CASDOOR:
     ORGANIZATION_NAME: built-in
@@ -318,6 +326,8 @@ production_docker:
           - performance_schema
           - mysql
           - information_schema
+        DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
+      - SYNCER: SystemFactsSyncer
         DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
     TASKS_ENDPOINT: https://127.0.0.1:9002
   SSL_CAFILE: /data/certs/sep-ca.pem

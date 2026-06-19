@@ -18,7 +18,6 @@
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.backup_pg.models import PgBackRestBackupType
 from app.sep.plugins.framework.schema import (
-    BoolField,
     Capabilities,
     Choice,
     ChoiceField,
@@ -63,16 +62,21 @@ backup_pg_schema = PluginSchema(
                     required=True,
                     service_types=[ServiceTypeEnum.POSTGRESQL],
                 ),
-                BoolField(
-                    name="alert_on_fail",
-                    label="Alert on Failure",
-                    default=False,
-                ),
             ],
         ),
         FormSection(
             title="pgBackRest",
             fields=[
+                StringField(
+                    name="stanza",
+                    label="Stanza",
+                    required=True,
+                    description=(
+                        "pgBackRest stanza name as defined in pgbackrest.conf on the "
+                        "host (e.g. ``sep-test``). Passed verbatim as ``--stanza`` to "
+                        "every pgbackrest invocation."
+                    ),
+                ),
                 ChoiceField(
                     name="pgbackrest_backup_type",
                     label="pgBackRest Backup Type",

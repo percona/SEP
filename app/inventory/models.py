@@ -39,7 +39,7 @@ class SourceEnum(StrEnum):
 
 
 class ServiceTypeEnum(StrEnum):
-    """Enumeration of supported service types.
+    """Enumerate the supported service types.
 
     :cvar MYSQL: Represents the MySQL service type.
     :vartype MYSQL: str
@@ -53,6 +53,8 @@ class ServiceTypeEnum(StrEnum):
     :vartype HAPROXY: str
     :cvar EXTERNAL: Represents an external service type.
     :vartype EXTERNAL: str
+    :cvar VALKEY: Represents the Valkey service type.
+    :vartype VALKEY: str
     """
 
     MYSQL = auto()
@@ -61,6 +63,7 @@ class ServiceTypeEnum(StrEnum):
     PROXYSQL = auto()
     HAPROXY = auto()
     EXTERNAL = auto()
+    VALKEY = auto()
 
 
 class NodeBase(SQLModel):
@@ -98,7 +101,7 @@ class NodeBase(SQLModel):
         Raises
         ------
         ValueError
-            If `external_id` is provided without a corresponding `source`.
+            If ``external_id`` is provided without a corresponding ``source``.
 
         :return: The validated instance.
         :rtype: Self
@@ -666,12 +669,12 @@ class HostSystemObservationBase(SQLModel):
     def validate_at_least_one_observation_field(self) -> Self:
         """Ensure that at least one of os_version, installed_packages, or config is set.
 
-        Validates that at least one of `os_version`, `installed_packages`, or
-        `config` is provided.
+        Validates that at least one of ``os_version``, ``installed_packages``, or
+        ``config`` is provided.
 
         :return: The validated instance.
         :rtype: Self
-        :raises ValueError: If `os_version`, `installed_packages`, and `config`
+        :raises ValueError: If ``os_version``, ``installed_packages``, and ``config``
             are all unset.
         """
         if (
@@ -793,3 +796,43 @@ class ServiceSystemObservationWrite(ServiceSystemObservationBase):
         index=True,
         ondelete="CASCADE",
     )
+
+
+class HostSystemObservationResponse(BaseSQLModel, HostSystemObservationBase):
+    """Define the response model for host system observation data.
+
+    :param id: The primary key of the observation record.
+    :type id: int | None
+    :param created_at: When the record was created.
+    :type created_at: UTCDatetime
+    :param updated_at: When the record was last updated.
+    :type updated_at: UTCDatetime | None
+    :param node_id: The unique identifier of the observed node.
+    :type node_id: int
+    :param os_version: The observed operating system version.
+    :type os_version: str | None
+    :param installed_packages: Snapshot of installed packages.
+    :type installed_packages: list[dict[str, Any]] | None
+    :param config: Snapshot of host configuration.
+    :type config: dict[str, Any] | None
+    :param observed_at: When this observation was collected.
+    :type observed_at: UTCDatetime
+    """
+
+
+class ServiceSystemObservationResponse(BaseSQLModel, ServiceSystemObservationBase):
+    """Define the response model for service system observation data.
+
+    :param id: The primary key of the observation record.
+    :type id: int | None
+    :param created_at: When the record was created.
+    :type created_at: UTCDatetime
+    :param updated_at: When the record was last updated.
+    :type updated_at: UTCDatetime | None
+    :param service_id: The unique identifier of the observed service.
+    :type service_id: int
+    :param db_engine_version: The observed database engine version.
+    :type db_engine_version: NonEmptyStr
+    :param observed_at: When this observation was collected.
+    :type observed_at: UTCDatetime
+    """

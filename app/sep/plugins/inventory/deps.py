@@ -30,12 +30,17 @@ from app.core.exceptions import (
 )
 from app.core.utils import import_var
 from app.inventory.config import inventory_settings
-from app.sep.config import sep_settings
+from app.sep.config import sep_settings, SyncOptions
 from app.sep.deps import InventoryClient, TasksClient
 from app.sep.sync.models import BaseSyncer
 from app.tasks.config import tasks_settings
 
 INVENTORY_PLUGIN_ENTITY_NAMES = frozenset({"nodes", "services", "schemas", "tables"})
+
+# Single source of truth for the read-only system-observation sub-resource
+# segment, shared by the proxy route decorators and the forwarded-path helper
+# so the inbound and forwarded paths cannot drift apart.
+SYSTEM_OBSERVATION_SEGMENT = "system-observation"
 
 
 class InventorySyncTriggerWrite(BaseModel):
@@ -194,6 +199,21 @@ def filter_syncers_by_name(
     return matched
 
 
+def _syncer_init_kwargs(sync_option: SyncOptions) -> dict[str, Any]:
+    """Build constructor kwargs from a configured ``SyncOptions`` entry.
+
+    Drops ``None`` leaves so optional nested models (notably ``pmm`` on
+    ``PMMSyncer``) are not passed as explicit ``None``, which would override
+    the syncer's default factory and fail validation.
+
+    :param sync_option: One element from ``sep_settings.SYNCERS``.
+    :type sync_option: SyncOptions
+    :return: Keyword arguments for the syncer class constructor.
+    :rtype: dict[str, Any]
+    """
+    return sync_option.model_dump(exclude={"syncer"}, exclude_none=True)
+
+
 def get_syncers(
     inventory_api: InventoryClient, tasks_api: TasksClient
 ) -> list[BaseSyncer]:
@@ -216,7 +236,7 @@ def get_syncers(
             syncer_class(
                 inventory_api=inventory_api,
                 tasks_api=tasks_api,
-                **sync_option.model_dump(exclude={"syncer"}),
+                **_syncer_init_kwargs(sync_option),
             ),
         )
     return syncers
@@ -273,7 +293,7 @@ async def get_syncers_standalone() -> list[BaseSyncer]:
             syncer_class(
                 inventory_api=inventory_api,
                 tasks_api=tasks_api,
-                **sync_option.model_dump(exclude={"syncer"}),
+                **_syncer_init_kwargs(sync_option),
             ),
         )
     return syncers
@@ -318,11 +338,11 @@ def inventory_service_list_path(entity: str) -> str:
 
     :param entity: One of ``nodes``, ``services``, ``schemas``, or ``tables``.
     :type entity: str
-    :return: Path relative to the inventory API root (``/`` for nodes).
+    :return: Path relative to the inventory API root (``/nodes/`` for nodes).
     :rtype: str
     """
     if entity == "nodes":
-        return "/"
+        return "/nodes/"
     return f"/{entity}/"
 
 
@@ -337,8 +357,27 @@ def inventory_service_detail_path(entity: str, item_id: int) -> str:
     :rtype: str
     """
     if entity == "nodes":
-        return f"/{item_id}"
+        return f"/nodes/{item_id}"
     return f"/{entity}/{item_id}"
+
+
+def inventory_system_observation_path(entity: str, item_id: int) -> str:
+    """Map a plugin entity and id to the inventory system-observation sub-resource.
+
+    Built by appending ``/system-observation`` to the detail path from
+    ``inventory_service_detail_path`` so the sub-resource always tracks the
+    canonical detail mapping and the two cannot drift. Targets the read-only
+    system-observation endpoint exposed by the inventory sub-app. Only
+    ``nodes`` and ``services`` carry an observation; callers reach this helper
+    through the explicit per-entity proxy routes.
+
+    :param entity: ``nodes`` or ``services``.
+    :param item_id: Primary key of the node or service.
+    :return: Path relative to the inventory API root.
+    """
+    return (
+        f"{inventory_service_detail_path(entity, item_id)}/{SYSTEM_OBSERVATION_SEGMENT}"
+    )
 
 
 def _parse_positive_int_parent_id(value: Any, *, field_name: str) -> int:
@@ -395,7 +434,7 @@ def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
     :raises HTTPNotFoundException: When ``entity`` is unknown.
     """
     if entity == "nodes":
-        return "/"
+        return "/nodes/"
     if entity == "services":
         node_id = body.get("node_id")
         if node_id is None:
@@ -403,7 +442,7 @@ def inventory_service_create_path(entity: str, body: dict[str, Any]) -> str:
                 "node_id is required to create a service",
             )
         parsed_node_id = _parse_positive_int_parent_id(node_id, field_name="node_id")
-        return f"/{parsed_node_id}/services/"
+        return f"/nodes/{parsed_node_id}/services/"
     if entity == "schemas":
         service_id = body.get("service_id")
         if service_id is None:
@@ -466,3 +505,22 @@ InventoryPluginJsonObjectBody = Annotated[
     dict[str, Any],
     Depends(inventory_plugin_json_object_body),
 ]
+
+
+def provide_internal_token() -> str:
+    """Resolve the internal service token for request-scoped injection.
+
+    Adapts ``require_internal_token`` for FastAPI dependency injection. The
+    import is local because ``sync`` imports syncer helpers from this module at
+    module load, so importing ``require_internal_token`` at module level would
+    create a circular import.
+
+    :return: The internal service token's secret value.
+    :raises RuntimeError: When no internal token is configured or derived.
+    """
+    from app.sep.plugins.inventory.sync import require_internal_token
+
+    return require_internal_token()
+
+
+InternalTokenDep = Annotated[str, Depends(provide_internal_token)]

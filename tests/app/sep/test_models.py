@@ -18,8 +18,43 @@
 import pytest
 from pydantic import ValidationError
 
+from app.sep.models import AppLifecycleEnum, AppState, AppStateBase, AppStateWrite
 from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.models import ArchivesCreate
+
+
+class TestAppStateModel:
+    """Test suite for the AppState model and its companions."""
+
+    def test_base_lifecycle_state_defaults_to_enabled(self):
+        """The shared base column-default for ``lifecycle_state`` is ``ENABLED``."""
+        assert (
+            AppStateBase(app_key="snippets").lifecycle_state is AppLifecycleEnum.ENABLED
+        )
+
+    def test_base_requires_app_key(self):
+        """``app_key`` has no default — omitting it fails validation."""
+        with pytest.raises(ValidationError):
+            AppStateBase()
+
+    def test_base_rejects_empty_app_key(self):
+        """``app_key`` is a ``NonEmptyStr`` — an empty string is rejected."""
+        with pytest.raises(ValidationError):
+            AppStateBase(app_key="")
+
+    def test_table_model_lifecycle_state_defaults_to_enabled(self):
+        """The table model inherits the ``lifecycle_state=ENABLED`` column default."""
+        assert AppState(app_key="snippets").lifecycle_state is AppLifecycleEnum.ENABLED
+
+    def test_write_model_requires_lifecycle_state(self):
+        """The write payload requires ``lifecycle_state`` — it has no default."""
+        with pytest.raises(ValidationError):
+            AppStateWrite()
+
+    def test_write_model_rejects_unknown_lifecycle_state(self):
+        """The write payload rejects a value outside ``AppLifecycleEnum``."""
+        with pytest.raises(ValidationError):
+            AppStateWrite(lifecycle_state="BOGUS")
 
 
 class TestArchivesCreateModel:
@@ -72,18 +107,20 @@ class TestArchivesCreateModel:
         assert instance.alias == "purge_rows"
         assert instance.delete_data == 1
 
-    def test_drop_swap(self):
-        """Test swap and drop with swap_drop set to 1."""
-        instance = ArchivesCreate(
-            alias="drop_swap",
-            hostname="source_db",
-            service_id=1,
-            source_db_id=10,
-            source_table_id=20,
-            swap_drop=SwapDropEnum.SWAP_DROP,
-        )
-        assert instance.alias == "drop_swap"
-        assert instance.swap_drop == 1
+    def test_swap_drop_rejected(self):
+        """Only Purge Only is supported; SWAP_DROP is rejected by validation."""
+        with pytest.raises(
+            ValidationError,
+            match="Not available yet. Only Purge Only is currently supported.",
+        ):
+            ArchivesCreate(
+                alias="drop_swap",
+                hostname="source_db",
+                service_id=1,
+                source_db_id=10,
+                source_table_id=20,
+                swap_drop=SwapDropEnum.SWAP_DROP,
+            )
 
     def test_dynamic_tables_sources(self):
         """Test archiving with a dynamic source query and destination file."""

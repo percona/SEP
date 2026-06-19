@@ -17,9 +17,9 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, FutureDatetime, StringConstraints
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
@@ -37,6 +37,17 @@ class PgBackRestBackupType(EnumFieldMixin, StrEnum):
 
     INCR = "incr"
     DIFF = "diff"
+
+
+SafeStanza = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+    ),
+]
+"""Define a safe pgBackRest stanza name."""
 
 
 class BackupConfigAll(BaseCaseInsensitiveModel):
@@ -82,6 +93,7 @@ class BackupCreate(BackupConfigAll):
     hostname: NonEmptyStr
     service_id: int
     backup_type: BackupType
+    stanza: SafeStanza
     alert_on_fail: bool = False
 
 
@@ -110,6 +122,8 @@ class BackupTaskWrite(BaseModel):
     :type hostname: NonEmptyStr
     :param service_id: The Inventory ID of the PostgreSQL service.
     :type service_id: int
+    :param stanza: pgBackRest stanza name from pgbackrest.conf on the host (for example, ``sep-test``). Passed as ``--stanza`` to pgbackrest commands.
+    :type stanza: SafeStanza
     :param alert_on_fail: If True, fire a PMM alert on task failure.
     :type alert_on_fail: bool
     :param logging_dir: Optional directory used by the payload for logs.
@@ -137,6 +151,7 @@ class BackupTaskWrite(BaseModel):
     task_name: NonEmptyStr
     hostname: NonEmptyStr
     service_id: int
+    stanza: SafeStanza
     alert_on_fail: bool = False
     logging_dir: str | None = None
     backup_dir: NonEmptyStr
@@ -225,16 +240,15 @@ class BackupTaskDetailResponse(BackupTaskResponse):
 class BackupExecuteWrite(BaseModel):
     """Represent a JSON request body for executing a backup task.
 
-    :param eta: Optional datetime to schedule execution. Values in the past
-        are dropped by the execute route and the task runs immediately.
-    :type eta: datetime | None
+    :param eta: Optional datetime to schedule execution. Must be in the future;
+        a past value is rejected with a 422 validation error.
     :param chain_task_names: Optional list of task names to chain after.
     :type chain_task_names: list[str] | None
     :param chain_on_failure: Whether to run chained tasks even on failure.
     :type chain_on_failure: bool | None
     """
 
-    eta: datetime | None = None
+    eta: FutureDatetime | None = None
     chain_task_names: list[str] | None = None
     chain_on_failure: bool | None = None
 

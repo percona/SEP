@@ -16,7 +16,7 @@
 """Define SEP routes."""
 
 import logging.config
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from traceback import format_exception
 from typing import Annotated, Any
@@ -26,22 +26,24 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import ValidationError
+from pydantic import HttpUrl, ValidationError
 from starlette.staticfiles import StaticFiles
 
 from app import __summary__, __version__
+from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
-from app.core.config import create_app, default_lifespan, settings
+from app.core.config import create_app, default_lifespan, Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.settings_override.lifecycle import (
     ProxyEntry,
+    RefreshCallback,
     settings_override_refresher,
 )
 from app.core.settings_override.models import SettingClassEnum
-from app.core.utils import import_var, run_pydantic_type_validator
+from app.core.utils import run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
@@ -59,19 +61,27 @@ from app.sep.deps import (
     IsAuthenticated,
     IsCsrfValidated,
     IsNotAuthenticated,
+    PROTECTED_APP_KEYS,
+    require_app_enabled,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
+from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
 
-JSON_API_PATH_PREFIXES: tuple[str, ...] = ("/api/plugins/", "/api/sep/")
+JSON_API_PATH_PREFIXES: tuple[str, ...] = (
+    "/api/plugins/",
+    "/api/sep/",
+    "/api/admin/",
+    "/api/apps/",
+)
 
 
 async def sep_startup() -> None:
@@ -85,15 +95,86 @@ async def sep_startup() -> None:
         sync_snippets.delay()
 
 
+def _make_remote_api_rebinder(
+    app: FastAPI,
+    name: str,
+    endpoint_getter: Callable[[], HttpUrl],
+    **ssl: Any,
+) -> RefreshCallback:
+    """Build a rebind callback for an ``app.state`` RemoteAPI endpoint override.
+
+    The returned callback handles both deployment shapes. Under standalone
+    ``sep_lifespan`` the client lives in ``app.state.<name>``: it is rebuilt on
+    the new endpoint and the old one closed. Under the combined ``app.main:app``
+    no ``app.state`` client exists -- ``get_*_client`` falls back to the
+    registry-cached ``get_remote_api`` per request, which already key-misses to
+    the new HOT endpoint -- so the callback only evicts any stale client left on
+    the new endpoint.
+
+    :param app: The FastAPI application whose ``state`` holds the client.
+    :type app: FastAPI
+    :param name: The ``app.state`` attribute name (``inventory_api`` /
+        ``tasks_api``).
+    :type name: str
+    :param endpoint_getter: A zero-argument callable returning the current
+        (override-aware) endpoint.
+    :type endpoint_getter: Callable[[], HttpUrl]
+    :param ssl: SSL keyword arguments forwarded to :class:`RemoteAPI` (not HOT,
+        captured once at wiring time).
+    :type ssl: Any
+    :return: The rebind callback.
+    :rtype: RefreshCallback
+    """
+
+    async def _rebind(_: Mapping[str, object]) -> None:
+        new_endpoint = endpoint_getter()
+        old = getattr(app.state, name, None)
+        if old is None:
+            await settings.invalidate_client(str(new_endpoint))
+            return
+        try:
+            new_api = await RemoteAPI(endpoint=new_endpoint, **ssl).open()
+        except Exception:
+            logger.exception("Failed to rebind %s; keeping previous client", name)
+            return
+        setattr(app.state, name, new_api)
+        await old.__aexit__(None, None, None)
+
+    return _rebind
+
+
+async def _invalidate_pmm_clients(_: Mapping[str, object]) -> None:
+    """Evict the cached PMM client on the current endpoint after a ``PMM`` override.
+
+    A same-endpoint change (credentials, SSL) evicts the now-stale client so the
+    next :class:`PMMSyncer` key-misses to a fresh one via its ``default_factory``
+    PMM read. Known limitation: when the PMM *endpoint itself* changes, the client
+    keyed by the **old** endpoint is not evicted here (this callback only sees the
+    new endpoint); it is harmless -- new syncers key-miss to a fresh client on the
+    new endpoint -- and the old client is closed at shutdown via ``close_all``.
+
+    :param _: The new effective ``Settings`` snapshot mapping (unused -- the
+        current PMM endpoint is re-read from the proxy).
+    :type _: Mapping[str, object]
+    """
+    endpoint = settings.PMM.endpoint
+    if endpoint is not None:
+        await settings.invalidate_client(str(endpoint))
+
+
 @asynccontextmanager
-async def sep_overrides_lifespan(
-    app: FastAPI,  # noqa: ARG001
-) -> AsyncGenerator[None, None]:
+async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Wire the SEP-side settings override refresher into a lifespan.
 
-    Force-resolves ``messages_settings`` (fail-fast validation) and starts
-    the background refresher for the ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``
-    and ``MESSAGES_SETTINGS`` proxies for the duration of the wrapped block.
+    Force-resolves ``messages_settings`` (fail-fast validation), then starts the
+    background refresher for the ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``,
+    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global) and ``ALERT_SETTINGS`` proxies
+    for the duration of the wrapped block. ``SETTINGS`` and ``ALERT_SETTINGS``
+    wrap shared module-level proxies (``settings`` / ``alert_settings``); the SEP
+    refresher is their **sole** owner so that under the combined ``app.main:app``
+    the Tasks refresher does not also publish into them from the Tasks database.
+    Endpoint and PMM rebind callbacks are built here -- where ``app`` is
+    available -- so both run modes wire them.
 
     This is extracted from :func:`sep_lifespan` because ``sep_app`` is mounted
     under the top-level ``app`` via Starlette's ``Mount``, which only forwards
@@ -106,8 +187,8 @@ async def sep_overrides_lifespan(
     block) or ``app.sep.main:sep_app`` standalone (in which case
     ``sep_lifespan`` enters it). The refresher therefore starts exactly once.
 
-    :param app: The FastAPI application instance. Unused -- accepted to
-        match the lifespan-context-manager signature.
+    :param app: The FastAPI application instance, used to wire endpoint rebind
+        callbacks against ``app.state``.
     :type app: FastAPI
     :yield: None
     :rtype: AsyncGenerator[None, None]
@@ -117,6 +198,32 @@ async def sep_overrides_lifespan(
     # effects (DB init, snippet sync enqueue) can fire. Mirrors the previous
     # eager ``MessagesSettings()`` fail-fast behavior at import time.
     messages_settings._resolve()  # noqa: SLF001
+    callbacks = {
+        (
+            SettingClassEnum.SEP_SETTINGS,
+            "INVENTORY_ENDPOINT",
+        ): _make_remote_api_rebinder(
+            app,
+            "inventory_api",
+            lambda: sep_settings.INVENTORY_ENDPOINT,
+            ssl_cafile=settings.SSL_CAFILE,
+            ssl_keyfile=inventory_settings.SSL_KEYFILE,
+            ssl_certfile=inventory_settings.SSL_CERTFILE,
+        ),
+        (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"): _make_remote_api_rebinder(
+            app,
+            "tasks_api",
+            lambda: sep_settings.TASKS_ENDPOINT,
+            ssl_cafile=settings.SSL_CAFILE,
+            ssl_keyfile=tasks_settings.SSL_KEYFILE,
+            ssl_certfile=tasks_settings.SSL_CERTFILE,
+        ),
+        (SettingClassEnum.SETTINGS, "PMM"): _invalidate_pmm_clients,
+    }
+    # On ``sep_app``'s state, not the lifespan's parent ``app``: requests to
+    # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
+    # the settings-API handlers read it.
+    sep_app.state.override_callbacks = callbacks
     async with settings_override_refresher(
         get_async_session_maker,
         {
@@ -127,9 +234,12 @@ async def sep_overrides_lifespan(
             SettingClassEnum.MESSAGES_SETTINGS: ProxyEntry(
                 messages_settings, MessagesSettings
             ),
+            SettingClassEnum.SETTINGS: ProxyEntry(settings, Settings),
+            SettingClassEnum.ALERT_SETTINGS: ProxyEntry(alert_settings, AlertSettings),
         },
         settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
         enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+        callbacks=callbacks,
     ):
         yield
 
@@ -138,9 +248,18 @@ async def sep_overrides_lifespan(
 async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage SEP's lifespan.
 
-    Initializes the SEP periodic task database and the RemoteAPI clients for inventory
-    and tasks services, ensuring they are properly managed during the application's
-    startup and shutdown phases.
+    Initializes the SEP periodic task database and the RemoteAPI clients for
+    inventory and tasks services, ensuring they are properly managed during the
+    application's startup and shutdown phases. The override refresher publishes
+    its initial snapshot *before* the ``app.state`` clients are constructed, so
+    they read the effective (override-aware) endpoint; because the initial
+    refresh fires no callbacks, the endpoint rebinders never dereference
+    not-yet-built ``app.state``.
+
+    The clients are closed via ``app.state`` (not via the originals captured
+    at startup) on shutdown, so a client a rebind callback swapped in mid-run is
+    the one that gets closed -- the swapped-out original was already closed by
+    the rebinder.
 
     :param app: The FastAPI application instance.
     :type app: FastAPI
@@ -148,25 +267,25 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :rtype: AsyncGenerator[None, None]
     """
     await sep_startup()
-    app.state.inventory_api = RemoteAPI(
-        endpoint=sep_settings.INVENTORY_ENDPOINT,
-        ssl_cafile=settings.SSL_CAFILE,
-        ssl_keyfile=inventory_settings.SSL_KEYFILE,
-        ssl_certfile=inventory_settings.SSL_CERTFILE,
-    )
-    app.state.tasks_api = RemoteAPI(
-        endpoint=sep_settings.TASKS_ENDPOINT,
-        ssl_cafile=settings.SSL_CAFILE,
-        ssl_keyfile=tasks_settings.SSL_KEYFILE,
-        ssl_certfile=tasks_settings.SSL_CERTFILE,
-    )
-    async with (
-        sep_overrides_lifespan(app),
-        app.state.inventory_api,
-        app.state.tasks_api,
-        default_lifespan(app),
-    ):
-        yield
+    async with sep_overrides_lifespan(app):
+        app.state.inventory_api = await RemoteAPI(
+            endpoint=sep_settings.INVENTORY_ENDPOINT,
+            ssl_cafile=settings.SSL_CAFILE,
+            ssl_keyfile=inventory_settings.SSL_KEYFILE,
+            ssl_certfile=inventory_settings.SSL_CERTFILE,
+        ).open()
+        app.state.tasks_api = await RemoteAPI(
+            endpoint=sep_settings.TASKS_ENDPOINT,
+            ssl_cafile=settings.SSL_CAFILE,
+            ssl_keyfile=tasks_settings.SSL_KEYFILE,
+            ssl_certfile=tasks_settings.SSL_CERTFILE,
+        ).open()
+        try:
+            async with default_lifespan(app):
+                yield
+        finally:
+            await app.state.tasks_api.__aexit__(None, None, None)
+            await app.state.inventory_api.__aexit__(None, None, None)
 
 
 lifespan = sep_lifespan
@@ -187,10 +306,16 @@ sep_app.add_middleware(messages.MessagesMiddleware)
 
 
 imported_plugins = set()
-for plugin in sep_settings.PLUGINS:
-    router = import_var(plugin.router_path)
-    sep_app.include_router(router, prefix=plugin.uri_path)
-    imported_plugins.add(plugin.module_name.split(".")[-1])
+for app in get_app_registry():
+    if app.jinja_router is None:
+        continue
+    plugin_deps = (
+        [] if app.key in PROTECTED_APP_KEYS else [Depends(require_app_enabled(app.key))]
+    )
+    sep_app.include_router(
+        app.jinja_router, prefix=app.uri_path, dependencies=plugin_deps
+    )
+    imported_plugins.add(app.key)
 
 _TASK_INFRA_PLUGINS = frozenset(
     {
@@ -261,13 +386,15 @@ async def internal_error_handler(
         "Internal Server Error. Please contact the administrators for help.",
         sticky=True,
     )
+    async with get_async_session_maker()() as session:
+        default_context = await get_default_context(request, user, base_url, session)
     return templates.TemplateResponse(
         request=request,
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         name="error.html.j2",
         context={
             "exception": "".join(format_exception(exc, limit=-1, chain=False)),
-            **await get_default_context(request, user, base_url),
+            **default_context,
         },
     )
 
@@ -295,13 +422,15 @@ async def custom_404_handler(
             redirect_exc.location,
             status_code=redirect_exc.status_code,
         )
+    async with get_async_session_maker()() as session:
+        default_context = await get_default_context(request, user, base_url, session)
     return templates.TemplateResponse(
         request=request,
         status_code=status.HTTP_404_NOT_FOUND,
         name="404.html.j2",
         context={
             "exception": exc,
-            **await get_default_context(request, user, base_url),
+            **default_context,
         },
     )
 

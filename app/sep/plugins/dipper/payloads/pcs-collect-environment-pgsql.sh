@@ -41,6 +41,10 @@
 ## Globals
 PT_DIRECTORY=".percona-toolkit"
 DB_CLI_OPTIONS=()
+# Holds only the user-supplied -o connection options (e.g. -h/-U/-p), without the
+# psql-specific flags added below. pt-pg-summary is a separate Go binary with its
+# own flag set (no -tA / --dbname), so it can't be fed DB_CLI_OPTIONS directly.
+PT_PG_SUMMARY_OPTIONS=()
 OUT_DIR=$(hostname)_environment_$(date +%FT%H%M)
 if [[ -z ${ISRDS} ]]; then
     ISRDS=0
@@ -53,6 +57,7 @@ SKIPTARRESULT=0
 ## DB Globals
 PSQLBIN="/usr/bin/psql"
 DB_CLI_OPTIONS+=("-tA")
+DB_CLI_OPTIONS+=("--dbname=postgres")
 SQLINOUTPUT=0
 COLLECT_WALL_STATS=1
 PT_TOOLS=(pt-summary pt-pg-summary)
@@ -88,6 +93,7 @@ while getopts hrto:d:i:p:sw flag; do
             IFS=" " read -r -a OPTS <<< "${OPTARG}"
             for o in "${OPTS[@]}"; do
                 DB_CLI_OPTIONS+=("${o}")
+                PT_PG_SUMMARY_OPTIONS+=("${o}")
             done
             ;;
         d)
@@ -217,7 +223,9 @@ function check_pids {
 # Try to run a query and print error if it fails.
 function check_pgsql_connection {
     local result
-    result=$(/bin/su postgres -c "echo \"SELECT 1\" | \"${PSQLBIN}\" \"${DB_CLI_OPTIONS[*]}\" 2> /dev/null")
+    # Run as the invoking (percona) user; no su escalation. Relies on percona being
+    # able to authenticate to PostgreSQL (peer/ident/trust or a configured role).
+    result=$(echo "SELECT 1" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null || true)
     if [[ ${result} != "1" ]]; then
         echo "Can't connect to psql using '${PSQLBIN} ${DB_CLI_OPTIONS[*]}'"
         echo "Please confirm connectivity."
@@ -256,8 +264,9 @@ function sql_to_file {
         echo '-----'${stat_query}'=====' > "${OUT_DIR}/${stat_file}"
     fi
 
-    # Script is executed as root. Use 'su' to run SQL under postgres user
-    /bin/su postgres -c "echo \"${stat_query}\" | \"${PSQLBIN}\" -d ${stat_database} \"${DB_CLI_OPTIONS[*]}\"" 1>> "${OUT_DIR}/${stat_file}"
+    # Run SQL directly as the invoking (percona) user; no su escalation.
+    # -d comes after DB_CLI_OPTIONS so the per-stat database overrides the default --dbname.
+    echo "${stat_query}" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" -d "${stat_database}" 1>> "${OUT_DIR}/${stat_file}"
 }
 
 ## Global Pre-flight Checks
@@ -293,7 +302,7 @@ check_pgsql_connection
 # to discover any global variables/settings from the DB which will be used later in the script.
 
 # get some PSQL variables we'll need
-variables_datadir=$(/bin/su postgres -c "echo \"SHOW data_directory\" | \"${PSQLBIN}\" \"${DB_CLI_OPTIONS[*]}\" 2> /dev/null")
+variables_datadir=$(echo "SHOW data_directory" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null || true)
 
 ## Main
 
@@ -443,7 +452,28 @@ fi
 ## Database Information
 
 echo -n "Executing pt-pg-summary..."
-"${PT_DIRECTORY}/pt-pg-summary" -U postgres "${DB_CLI_OPTIONS[*]}" > "${OUT_DIR}/pt-pg-summary"
+# pt-pg-summary is a separate Go binary (lib/pq driver), not psql: when no host is
+# given its driver defaults to a TCP localhost connection, whereas psql defaults to
+# the local Unix socket. So unless the operator passed an explicit -h/--host via -o,
+# point pt-pg-summary at the server's Unix socket directory so it authenticates the
+# same way the rest of the script's psql calls do (e.g. peer auth as the invoking
+# user) instead of failing on a password-protected TCP connection.
+PT_PG_SUMMARY_ARGS=("${PT_PG_SUMMARY_OPTIONS[@]}")
+HOST_SUPPLIED=0
+for opt in "${PT_PG_SUMMARY_OPTIONS[@]}"; do
+    if [[ ${opt} == -h* || ${opt} == "--host" || ${opt} == --host=* ]]; then
+        HOST_SUPPLIED=1
+        break
+    fi
+done
+if [[ ${HOST_SUPPLIED} -eq 0 ]]; then
+    # SHOW returns the configured socket dirs (may be comma-separated); use the first.
+    socket_dir=$(echo "SHOW unix_socket_directories" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null | cut -d',' -f1 | tr -d '[:space:]' || true)
+    if [[ -n ${socket_dir} ]]; then
+        PT_PG_SUMMARY_ARGS=("--host=${socket_dir}" "${PT_PG_SUMMARY_OPTIONS[@]}")
+    fi
+fi
+"${PT_DIRECTORY}/pt-pg-summary" "${PT_PG_SUMMARY_ARGS[@]}" > "${OUT_DIR}/pt-pg-summary"
 echo "Done"
 
 echo -n "Collecting PGSQL info... "
@@ -452,14 +482,8 @@ echo -n "Collecting PGSQL info... "
 # MAJOR_VERSION=$(/bin/su postgres -c "echo \"SELECT SUBSTRING(version() FROM '[0-9]+')\" | \"${PSQLBIN}\" \"${OPTIONS[*]}\" 2> /dev/null")
 # MINOR_VERSION=$(/bin/su postgres -c "echo \"SELECT RIGHT(SUBSTRING(version() FROM '\.[0-9]+'), -1)\" | \"${PSQLBIN}\" \"${OPTIONS[*]}\" 2> /dev/null")
 
-if [[ ${ISRDS} -eq 1 ]]; then
-    echo "Environment is RDS. Not collecting datadir sizes"
-elif [[ -d ${variables_datadir} ]]; then
-    du -sh "${variables_datadir}" >> "${OUT_DIR}/data_usage_raw"
-    echo "Done."
-else
-    echo "Can't find the datadir; Will skip collection raw data info."
-fi
+# Datadir-size collection removed: 'du -sh' on the PostgreSQL-owned data directory
+# requires root and fails when the script runs as the percona user.
 
 #############################
 # SQL beautified using https://codebeautify.org/sqlformatter
@@ -1194,8 +1218,8 @@ COPY ( SELECT * FROM pg_stat_database ) TO stdout WITH (FORMAT csv);
 sql_to_file 'pg_stat_database' "${sql}" statDatabase.csv "global"
 
 ## Stat Statements
-check=$(/bin/su postgres -c "echo \"SELECT COUNT(1) FROM pg_available_extensions WHERE name = 'pg_stat_statements'\" | \"${PSQLBIN}\" \"${DB_CLI_OPTIONS[*]}\" 2> /dev/null")
-if [[ ${check} -eq 1 ]]; then
+check=$(echo "SELECT COUNT(1) FROM pg_available_extensions WHERE name = 'pg_stat_statements'" | "${PSQLBIN}" "${DB_CLI_OPTIONS[@]}" 2> /dev/null || echo 0)
+if [[ ${check} == "1" ]]; then
     sql="COPY (SELECT * FROM pg_stat_statements
   WHERE dbid = (SELECT datid FROM pg_stat_database where datname = current_database())
   AND query != '<insufficient privilege>') TO stdout WITH (FORMAT csv);

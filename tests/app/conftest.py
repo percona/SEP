@@ -30,6 +30,7 @@ from aiohttp import ClientResponse
 from faker import Faker
 from pytest_mock import MockerFixture
 
+from app.core.alerts.config import alert_settings
 from app.core.auth.models import OAuthToken
 from app.core.config import settings
 from app.core.requests import RemoteAPI
@@ -91,10 +92,12 @@ def _override_snapshot_cleared() -> None:
     ``__getattr__`` falls through to the wrapped Pydantic instance. An active
     snapshot entry would shadow the monkey-patched value and confuse the test.
     """
+    settings._set_snapshot({})  # noqa: SLF001
     sep_settings._set_snapshot({})  # noqa: SLF001
     tasks_settings._set_snapshot({})  # noqa: SLF001
     snippets_settings._set_snapshot({})  # noqa: SLF001
     messages_settings._set_snapshot({})  # noqa: SLF001
+    alert_settings._set_snapshot({})  # noqa: SLF001
 
 
 @pytest.fixture(scope="session")
