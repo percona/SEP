@@ -50,6 +50,7 @@ from app.sep.plugins.framework import (
 from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp, Views
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
+    ArgFormat,
     FormLayout,
     SectionLayout,
     Ui,
@@ -105,6 +106,15 @@ class _NoTaskNameForm(AppFormModel):
     """Represent a synthetic create form that omits the mandatory ``task_name`` field."""
 
     label: Annotated[str, Ui(label="Label", section="main")] = ""
+
+
+class _BadArgFormatForm(AppFormModel):
+    """Represent a create form whose ``ArgFormat`` template misspells the placeholder."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")]
+    databases: Annotated[
+        str, ArgFormat("--databases=${vale}"), Ui(label="DB", section="main")
+    ] = ""
 
 
 async def _delete_handler(task_name: str) -> None:
@@ -686,6 +696,11 @@ class TestDefinitionValidation:
         )
         with pytest.raises(ValueError, match="ghost_field"):
             _synth_app(views=bad_views)
+
+    def test_create_model_with_malformed_arg_format_raises(self) -> None:
+        """Reject a ``create_model`` whose ``ArgFormat`` template has an unsupported placeholder."""
+        with pytest.raises(ValueError, match="unsupported placeholder"):
+            _synth_app(create_model=_BadArgFormatForm)
 
     def test_list_view_columns_present_in_response_model_construct(self) -> None:
         """Construct cleanly when every ``list_view`` column resolves to a response field."""

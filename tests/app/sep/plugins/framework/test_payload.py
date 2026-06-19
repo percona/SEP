@@ -51,6 +51,7 @@ from app.sep.plugins.framework.payload import (
     ResolvedEntities,
     RunCommandSpec,
     RunPythonSpec,
+    validate_arg_formats,
 )
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import (
@@ -542,3 +543,39 @@ class TestBuildCommandArgs:
         args = build_command_args(_ArgForm(task_name="my-task"))
 
         assert args == []
+
+
+class _TypoPlaceholderForm(AppFormModel):
+    """Carry a value-arg template whose placeholder is misspelled."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    databases: Annotated[
+        str, ArgFormat("--databases=${vale}"), Ui(label="DB", section="main")
+    ] = ""
+
+
+class _FlagOnNonBoolForm(AppFormModel):
+    """Carry a no-placeholder (flag) template on a non-bool field."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    explain_arg: Annotated[
+        str, ArgFormat("--explain"), Ui(label="Explain", section="main")
+    ] = ""
+
+
+class TestValidateArgFormats:
+    """Cover the construction-time ``ArgFormat`` validation in ``validate_arg_formats``."""
+
+    def test_well_formed_markers_pass(self) -> None:
+        """Accept exact ``${value}`` value templates and flag templates on bool fields."""
+        validate_arg_formats(_ArgForm)
+
+    def test_unsupported_placeholder_raises(self) -> None:
+        """Reject a value template whose placeholder is not ``value`` (a typo footgun)."""
+        with pytest.raises(ValueError, match="unsupported placeholder"):
+            validate_arg_formats(_TypoPlaceholderForm)
+
+    def test_flag_template_on_non_bool_field_raises(self) -> None:
+        """Reject a no-placeholder template on a field that is not ``bool``."""
+        with pytest.raises(ValueError, match="bool field"):
+            validate_arg_formats(_FlagOnNonBoolForm)

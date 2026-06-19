@@ -61,6 +61,7 @@ __all__ = [
     "assemble_envelope",
     "build_command_args",
     "resolve_refs",
+    "validate_arg_formats",
 ]
 
 _REF_ENTITY_TYPES = {
@@ -400,3 +401,38 @@ def build_command_args(form: AppFormModel) -> list[str]:
         elif value is True:
             flag_args.extend(shlex.split(marker.template))
     return value_args + flag_args
+
+
+def validate_arg_formats(model: type[AppFormModel]) -> None:
+    """Reject an ``ArgFormat`` template :func:`build_command_args` would silently drop.
+
+    Check each field's :class:`ArgFormat` marker against the value-vs-flag contract
+    the assembler enforces: a template may carry only the ``${value}`` placeholder,
+    and a flag template (no placeholder) must sit on a ``bool`` field. A typo'd
+    placeholder or a flag template on a non-``bool`` field would otherwise fall
+    through to the flag branch and be emitted only when the value is ``True`` —
+    dropping the argument with no error — so this surfaces the misconfiguration at
+    app construction instead of silently at task-creation time.
+
+    :param model: The create model whose fields' ``ArgFormat`` markers are validated.
+    :raises ValueError: When a template carries a placeholder other than ``value``,
+        or when a flag template is declared on a non-``bool`` field.
+    """
+    for name, field_info in model.model_fields.items():
+        marker = _find_arg_format(name, list(field_info.metadata))
+        if marker is None:
+            continue
+        identifiers = set(Template(marker.template).get_identifiers())
+        unsupported = identifiers - {"value"}
+        if unsupported:
+            raise ValueError(
+                f"field {name!r} ArgFormat template {marker.template!r} uses "
+                f"unsupported placeholder(s) {sorted(unsupported)}; a value arg uses "
+                f"exactly ${{value}} and a flag uses none"
+            )
+        if not identifiers and field_info.annotation is not bool:
+            raise ValueError(
+                f"field {name!r} ArgFormat template {marker.template!r} declares no "
+                "value placeholder, so it is a flag emitted only when the field is "
+                "True; a flag arg requires a bool field"
+            )
