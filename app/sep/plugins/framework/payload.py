@@ -25,8 +25,10 @@ byte-uniform with the canonical hand-written envelopes in
 ``checksums/deps.py`` (run-command) and ``backup_pg/deps.py`` (run-python).
 """
 
+import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from string import Template
 from typing import Any, cast, Protocol
 
 from app.core.exceptions import HTTPBadRequestException
@@ -42,6 +44,7 @@ from app.sep.inventory import CreatedEntity, CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
+    ArgFormat,
     find_ref_marker,
     HostRef,
     SchemaRef,
@@ -56,6 +59,7 @@ __all__ = [
     "RunCommandSpec",
     "RunPythonSpec",
     "assemble_envelope",
+    "build_command_args",
     "resolve_refs",
 ]
 
@@ -346,3 +350,53 @@ def assemble_envelope(
         data=data,
         alert_on_fail=alert_on_fail,
     )
+
+
+def _find_arg_format(name: str, metadata: list[Any]) -> ArgFormat | None:
+    """Return the field's single :class:`ArgFormat` marker, or ``None``.
+
+    :param name: The field name, used in the error message.
+    :param metadata: The field's ``FieldInfo.metadata`` list.
+    :return: The ``ArgFormat`` marker, or ``None`` when the field declares none.
+    :raises ValueError: When the field declares more than one ``ArgFormat`` marker.
+    """
+    found = [item for item in metadata if isinstance(item, ArgFormat)]
+    if len(found) > 1:
+        raise ValueError(
+            f"field {name!r} declares {len(found)} ArgFormat markers; at most one "
+            "is allowed per field"
+        )
+    return found[0] if found else None
+
+
+def build_command_args(form: AppFormModel) -> list[str]:
+    """Assemble the run-command argument list from the form's ``ArgFormat`` markers.
+
+    Walk the form's fields in declaration order and emit all value args before all
+    flag args, each group in field-declaration order. A value arg (template
+    containing ``${value}``) is emitted only when its field value is truthy, with
+    the value stringified, ``shlex.quote``'d, and substituted into the template; a
+    flag arg (template without ``${value}``) is emitted verbatim only when its
+    field value is ``True``. The ``shlex.quote`` → ``safe_substitute`` →
+    ``shlex.split`` round-trip keeps a whitespace-bearing value a single token.
+
+    :param form: The validated create form whose fields carry the ``ArgFormat``
+        markers.
+    :return: The ordered argument list (value args then flag args), ready to follow
+        any per-app prefix and be ``shlex.join``'d into ``meta.args``.
+    """
+    value_args = []
+    flag_args = []
+    for name, field_info in type(form).model_fields.items():
+        marker = _find_arg_format(name, list(field_info.metadata))
+        if marker is None:
+            continue
+        value = getattr(form, name)
+        template = Template(marker.template)
+        if "value" in template.get_identifiers():
+            if value:
+                substituted = template.safe_substitute(value=shlex.quote(str(value)))
+                value_args.extend(shlex.split(substituted))
+        elif value is True:
+            flag_args.extend(shlex.split(marker.template))
+    return value_args + flag_args

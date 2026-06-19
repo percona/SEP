@@ -46,6 +46,7 @@ from app.sep.plugins.framework.rules import (
 )
 
 __all__ = [
+    "ArgFormat",
     "Choices",
     "FieldWidget",
     "Forbidden",
@@ -131,6 +132,26 @@ class Ui:
     def has_default(self) -> bool:
         """Return whether a tri-state form default was set (a value or ``None``)."""
         return self.default is not _UNSET
+
+
+@dataclass(frozen=True, slots=True)
+class ArgFormat:
+    """Map a field to a CLI argument via a ``${value}`` template.
+
+    Mirrors the ``${value}`` convention used by snippet parameter metadata. A
+    *value* arg's template contains ``${value}`` and is emitted — with the field
+    value shlex-quoted and substituted in — only when the field value is truthy.
+    A *flag* arg's template omits ``${value}`` and is emitted verbatim only when
+    the field value is ``True``. The marker is read back from the field's
+    ``FieldInfo.metadata`` to assemble the run-command argument string; the
+    presence of ``${value}`` is itself the value-vs-flag discriminator, so no
+    separate flag attribute is needed.
+
+    :param template: The argument template — ``"--databases=${value}"`` for a
+        value arg or ``"--binary-index"`` for a flag.
+    """
+
+    template: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -284,10 +305,13 @@ class SectionLayout:
 
 @dataclass(frozen=True, slots=True)
 class FormLayout:
-    """Declare the ordered sections of a plugin's create form.
+    """Declare a plugin's create-form sections by key.
 
-    :param sections: The ordered section layouts; section order is the wire
-        order, and every :attr:`Ui.section` must match one ``key`` here.
+    :param sections: The section layouts keyed by ``key``; each supplies a
+        section's title and non-order metadata (``collapsible``, ``forbidden``,
+        ...). The section wire order is derived from field first-appearance on the
+        model, not from this tuple's order; every :attr:`Ui.section` must match one
+        ``key`` here.
     """
 
     sections: tuple[SectionLayout, ...]

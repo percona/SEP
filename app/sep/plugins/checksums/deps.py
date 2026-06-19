@@ -40,9 +40,10 @@ from app.sep.deps import (
 )
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.checksums.models import ChecksumsCreate
-from app.sep.plugins.checksums.payload import build_checksums_args
+from app.sep.plugins.checksums.models import ChecksumsCreate, ChecksumsForm
+from app.sep.plugins.checksums.payload import build_checksums_arg_prefix
 from app.sep.plugins.framework import make_task_dep
+from app.sep.plugins.framework.payload import build_command_args
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -157,11 +158,13 @@ def _assemble_checksum_payload(
 ) -> TaskWrite:
     """Assemble a TaskWrite for pt-table-checksum from pre-resolved inputs.
 
-    The legacy Jinja form path's envelope builder. Delegates the CLI argument
-    string to :func:`~app.sep.plugins.checksums.payload.build_checksums_args`
-    (shared with the model-first JSON spec builder) and assembles the
-    ``TaskWrite`` meta, so a form-created task's Nomad payload stays byte-identical
-    to a JSON-created one.
+    The legacy Jinja form path's envelope builder. Builds the CLI argument string
+    from the shared
+    :func:`~app.sep.plugins.checksums.payload.build_checksums_arg_prefix` plus the
+    framework's declarative ``build_command_args`` (over a ``ChecksumsForm`` rebuilt
+    from the resolved values) — the same pair the model-first JSON spec builder
+    uses — and assembles the ``TaskWrite`` meta, so a form-created task's Nomad
+    payload stays byte-identical to a JSON-created one.
 
     :param service: The validated inventory service instance.
     :type service: CreatedService
@@ -204,8 +207,10 @@ def _assemble_checksum_payload(
     :return: A fully constructed ``TaskWrite`` object.
     :rtype: TaskWrite
     """
-    args = build_checksums_args(
-        service,
+    form = ChecksumsForm(
+        task_name=task_name,
+        hostname=hostname,
+        service_id=service.id,
         recursion_method=recursion_method,
         dsn_table=dsn_table,
         databases=databases,
@@ -220,8 +225,14 @@ def _assemble_checksum_payload(
         max_load=max_load,
         chunk_time=chunk_time,
         max_lag=max_lag,
-        extra_remaining_args=extra_remaining_args,
+        alert_on_fail=alert_on_fail,
     )
+    args = build_checksums_arg_prefix(
+        service,
+        recursion_method=recursion_method,
+        dsn_table=dsn_table,
+        extra_remaining_args=extra_remaining_args,
+    ) + build_command_args(form)
 
     return TaskWrite(
         owner=TaskOwner.CHECKSUMS,

@@ -48,7 +48,12 @@ from app.sep.plugins.framework import (
     TaskExecutionResponse,
 )
 from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp, Views
-from app.sep.plugins.framework.form_dsl import AppFormModel, Ui
+from app.sep.plugins.framework.form_dsl import (
+    AppFormModel,
+    FormLayout,
+    SectionLayout,
+    Ui,
+)
 from app.sep.plugins.framework.schema import (
     BoolField,
     Column,
@@ -672,6 +677,33 @@ class TestDefinitionValidation:
         """Assert a ``delete_handler`` set with delete disabled is rejected."""
         with pytest.raises(ValueError, match="delete_handler"):
             _synth_app(delete_handler=_delete_handler)
+
+    def test_list_view_column_absent_from_response_model_raises(self) -> None:
+        """Reject a ``list_view`` column key that is not a field on the response model."""
+        bad_views = Views(
+            layout=FormLayout(sections=(SectionLayout(key="main", title="Main"),)),
+            list_view=ListView(columns=[Column(key="ghost_field", label="Ghost")]),
+        )
+        with pytest.raises(ValueError, match="ghost_field"):
+            _synth_app(views=bad_views)
+
+    def test_list_view_columns_present_in_response_model_construct(self) -> None:
+        """Construct cleanly when every ``list_view`` column resolves to a response field."""
+        assert _synth_app().api_router is not None
+
+    def test_schema_passthrough_skips_list_view_column_validation(self) -> None:
+        """Skip the ``list_view`` column check for a ``schema=`` passthrough app."""
+        bad_views = Views(
+            list_view=ListView(columns=[Column(key="ghost_field", label="Ghost")]),
+        )
+        app_def = _synth_app(
+            create_model=None,
+            schema=_PASSTHROUGH_SCHEMA,
+            task_spec_builder=None,
+            payload_builder=_passthrough_payload_builder,
+            views=bad_views,
+        )
+        assert app_def.api_router is not None
 
 
 class _AltListResponse(BaseModel):

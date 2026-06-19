@@ -38,6 +38,7 @@ from app.sep.connectivity import (
 )
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
+    ArgFormat,
     HostRef,
     SchemaRef,
     ServiceRef,
@@ -45,6 +46,7 @@ from app.sep.plugins.framework.form_dsl import (
 )
 from app.sep.plugins.framework.payload import (
     assemble_envelope,
+    build_command_args,
     resolve_refs,
     ResolvedEntities,
     RunCommandSpec,
@@ -476,3 +478,67 @@ class TestResolveRefs:
 
         with pytest.raises(HTTPBadRequestException):
             await resolve_refs(_MultiTypeForm(service_id=1), inventory)
+
+
+class _ArgForm(AppFormModel):
+    """Carry value-arg, flag-arg, and unmapped fields for build_command_args tests."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    databases: Annotated[
+        str, ArgFormat("--databases=${value}"), Ui(label="DB", section="main")
+    ] = ""
+    set_vars: Annotated[
+        str, ArgFormat("--set-vars=${value}"), Ui(label="Vars", section="main")
+    ] = ""
+    binary_index: Annotated[
+        bool, ArgFormat("--binary-index"), Ui(label="Binary", section="main")
+    ] = False
+    explain_arg: Annotated[
+        bool, ArgFormat("--explain"), Ui(label="Explain", section="main")
+    ] = False
+
+
+class TestBuildCommandArgs:
+    """Cover the declarative ``ArgFormat`` assembler in ``build_command_args``."""
+
+    def test_value_args_precede_flag_args(self) -> None:
+        """Emit all value args (field order) before all flag args (field order)."""
+        args = build_command_args(
+            _ArgForm(
+                databases="db1",
+                set_vars="v=1",
+                binary_index=True,
+                explain_arg=True,
+            )
+        )
+
+        assert args == [
+            "--databases=db1",
+            "--set-vars=v=1",
+            "--binary-index",
+            "--explain",
+        ]
+
+    def test_empty_value_arg_is_skipped(self) -> None:
+        """Skip a value arg whose field value is an empty string."""
+        args = build_command_args(_ArgForm(databases="", set_vars="v=1"))
+
+        assert args == ["--set-vars=v=1"]
+
+    def test_flag_emitted_only_when_true(self) -> None:
+        """Emit a flag arg only when its boolean field is ``True``."""
+        args = build_command_args(_ArgForm(binary_index=False, explain_arg=True))
+
+        assert args == ["--explain"]
+
+    def test_spaced_value_is_a_single_quoted_round_trip_token(self) -> None:
+        """Keep a whitespace-bearing value as one token through the quote round-trip."""
+        args = build_command_args(_ArgForm(databases="reporting db"))
+
+        assert args == ["--databases=reporting db"]
+
+    def test_field_without_arg_format_is_ignored(self) -> None:
+        """Ignore a field that declares no ``ArgFormat`` marker."""
+        args = build_command_args(_ArgForm(task_name="my-task"))
+
+        assert args == []

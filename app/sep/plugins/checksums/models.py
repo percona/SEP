@@ -23,8 +23,8 @@ from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
+    ArgFormat,
     Choices,
-    Hidden,
     HostRef,
     ServiceRef,
     Ui,
@@ -108,12 +108,18 @@ class ChecksumsForm(AppFormModel):
     The single source of the JSON request body (the field types and defaults the
     server validates) *and* the derived ``GET /schema`` form (driven by the
     :class:`Ui` / reference / :class:`Choices` markers). Field set, types, and
-    model defaults match the previous hand-written request body so the OpenAPI
-    request body stays a no-op; the form-display defaults that differ from the
-    model default are carried on ``Ui(default=...)``.
+    model defaults match the previous hand-written request body; the form-display
+    defaults that differ from the model default are carried on ``Ui(default=...)``.
 
-    Fields are declared in request-body order; the form section order is set by
-    the layout in ``views.py`` (Task, Data, Recursion, Flags, Advanced).
+    Field declaration order is load-bearing. The framework assembles the
+    ``pt-table-checksum`` CLI args as all ``ArgFormat`` value args (in field order)
+    followed by all flag args (in field order), and derives the form section order
+    (Task, Data, Recursion, Flags, Advanced) from each section's first field — so
+    the order here reproduces the historical arg string byte-for-byte. ``progress``
+    is declared last to land at the end of the value args, and ``Ui(order=...)``
+    pins the Advanced section's display order where it diverges from declaration
+    order. The ``alert_on_fail`` capability control is inherited from
+    :class:`AppFormModel` (``Hidden``, off-schema).
     """
 
     task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
@@ -127,6 +133,7 @@ class ChecksumsForm(AppFormModel):
     ]
     databases: Annotated[
         str,
+        ArgFormat("--databases=${value}"),
         Ui(
             label="Databases",
             section="Data",
@@ -136,6 +143,7 @@ class ChecksumsForm(AppFormModel):
     ] = ""
     tables: Annotated[
         str,
+        ArgFormat("--tables=${value}"),
         Ui(
             label="Tables",
             section="Data",
@@ -165,17 +173,9 @@ class ChecksumsForm(AppFormModel):
             description="Only used when recursion method is 'dsn'",
         ),
     ] = ""
-    pause_file: Annotated[
-        str,
-        Ui(
-            label="Pause File",
-            section="Advanced",
-            default=None,
-            description="Execution pauses while this file exists",
-        ),
-    ] = ""
     binary_index: Annotated[
         bool,
+        ArgFormat("--binary-index"),
         Ui(
             label="Binary Index",
             section="Flags",
@@ -184,6 +184,7 @@ class ChecksumsForm(AppFormModel):
     ] = False
     explain_arg: Annotated[
         bool,
+        ArgFormat("--explain"),
         Ui(
             label="Explain (dry run)",
             section="Flags",
@@ -192,6 +193,7 @@ class ChecksumsForm(AppFormModel):
     ] = False
     fail_on_stopped_replication: Annotated[
         bool,
+        ArgFormat("--fail-on-stopped-replication"),
         Ui(
             label="Fail on Stopped Replication",
             section="Flags",
@@ -200,55 +202,75 @@ class ChecksumsForm(AppFormModel):
     ] = False
     truncate_replicate_table: Annotated[
         bool,
+        ArgFormat("--truncate-replicate-table"),
         Ui(
             label="Truncate Replicate Table",
             section="Flags",
             description="Truncate the replicate table before starting",
         ),
     ] = False
-    progress: Annotated[
+    pause_file: Annotated[
         str,
+        ArgFormat("--pause-file=${value}"),
         Ui(
-            label="Progress",
+            label="Pause File",
             section="Advanced",
-            default="time,10",
-            description="Print progress reports to STDERR (e.g. time,10)",
+            default=None,
+            description="Execution pauses while this file exists",
         ),
     ] = ""
     set_vars: Annotated[
         str,
+        ArgFormat("--set-vars=${value}"),
         Ui(
             label="Set Vars",
             section="Advanced",
+            order=2,
             default="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5",
             description="MySQL variables to set (comma-separated key=value pairs)",
         ),
     ] = ""
     max_load: Annotated[
         str,
+        ArgFormat("--max-load=${value}"),
         Ui(
             label="Max Load",
             section="Advanced",
+            order=3,
             default="Threads_running=50",
             description="Pause when any GLOBAL STATUS variable exceeds this threshold",
         ),
     ] = ""
     chunk_time: Annotated[
         str,
+        ArgFormat("--chunk-time=${value}"),
         Ui(
             label="Chunk Time",
             section="Advanced",
+            order=4,
             default="0.5",
             description="Target execution time per chunk in seconds",
         ),
     ] = ""
     max_lag: Annotated[
         str,
+        ArgFormat("--max-lag=${value}"),
         Ui(
             label="Max Lag",
             section="Advanced",
+            order=5,
             default="150",
             description="Pause until replica lag falls below this value (seconds)",
         ),
     ] = ""
-    alert_on_fail: Annotated[bool, Hidden()] = False
+    progress: Annotated[
+        str,
+        ArgFormat("--progress=${value}"),
+        Ui(
+            label="Progress",
+            section="Advanced",
+            order=1,
+            default="time,10",
+            description="Print progress reports to STDERR (e.g. time,10)",
+        ),
+    ] = ""
