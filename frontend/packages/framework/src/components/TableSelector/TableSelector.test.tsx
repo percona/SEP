@@ -148,8 +148,14 @@ describe('TableSelector', () => {
   });
 
   describe('allow_custom (free-solo)', () => {
+    // The allow_custom path commits `number | string | null`, not a `TableOption`.
+    interface CustomFormShape {
+      schema: SchemaOption | null;
+      table: number | string | null;
+    }
+
     function CustomProbe() {
-      const methods = useForm<FormShape>({
+      const methods = useForm<CustomFormShape>({
         defaultValues: { schema: { id: 42, name: 'app_prod' }, table: null },
       });
       return (
@@ -209,5 +215,58 @@ describe('TableSelector', () => {
       await user.type(screen.getByLabelText('Table'), 'users');
       expect(value()).toBe('100');
     });
+
+    it('stays enabled and accepts a typed value when the parent schema is custom', async () => {
+      const client = makeClient();
+      const user = userEvent.setup();
+      function CascadeProbe() {
+        // Parent schema holds a free-typed (custom) string, not an inventory id.
+        const methods = useForm<{ schema: unknown; table: unknown }>({
+          defaultValues: { schema: 'custom_schema', table: null },
+        });
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="table" label="Table" dependsOn="schema" allowCustom />
+            <output data-testid="table-value">{JSON.stringify(methods.watch('table'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <CascadeProbe />
+        </Wrapper>,
+      );
+      const input = screen.getByLabelText('Table');
+      expect(input).not.toBeDisabled();
+      // No schema id means no table fetch is issued.
+      expect(mocked.get).not.toHaveBeenCalled();
+      await user.type(input, 'custom_table');
+      expect(screen.getByTestId('table-value').textContent).toBe('"custom_table"');
+    });
+  });
+
+  it('back-compat: without allowCustom a typed value is not committed', async () => {
+    mocked.get.mockResolvedValue({ data: [{ id: 100, name: 'users' }] });
+    const client = makeClient();
+    const user = userEvent.setup();
+    function Probe() {
+      const methods = useForm<FormShape>({
+        defaultValues: { schema: { id: 42, name: 'app_prod' }, table: null },
+      });
+      return (
+        <FormProvider {...methods}>
+          <TableSelector name="table" label="Table" dependsOn="schema" />
+          <output data-testid="bc-value">{JSON.stringify(methods.watch('table'))}</output>
+        </FormProvider>
+      );
+    }
+    render(
+      <Wrapper client={client}>
+        <Probe />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+    await user.type(screen.getByLabelText('Table'), 'manual_table');
+    expect(screen.getByTestId('bc-value').textContent).toBe('null');
   });
 });

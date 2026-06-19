@@ -160,8 +160,14 @@ describe('SchemaSelector', () => {
   });
 
   describe('allow_custom (free-solo)', () => {
+    // The allow_custom path commits `number | string | null`, not a `SchemaOption`.
+    interface CustomFormShape {
+      service: ServiceOption | null;
+      schema: number | string | null;
+    }
+
     function CustomProbe() {
-      const methods = useForm<FormShape>({
+      const methods = useForm<CustomFormShape>({
         defaultValues: { service: { id: 7, name: 'svc', type: 'mysql' }, schema: null },
       });
       return (
