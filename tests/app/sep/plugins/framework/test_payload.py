@@ -579,3 +579,48 @@ class TestValidateArgFormats:
         """Reject a no-placeholder template on a field that is not ``bool``."""
         with pytest.raises(ValueError, match="bool field"):
             validate_arg_formats(_FlagOnNonBoolForm)
+
+
+class _DefaultArgForm(AppFormModel):
+    """Carry templateless ``ArgFormat`` markers that derive from field name and type."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    max_load: Annotated[str, ArgFormat(), Ui(label="Load", section="main")] = ""
+    binary_index: Annotated[bool, ArgFormat(), Ui(label="Binary", section="main")] = (
+        False
+    )
+    explain_arg: Annotated[
+        bool, ArgFormat("--explain"), Ui(label="Explain", section="main")
+    ] = False
+
+
+class TestDerivedArgFormat:
+    """Cover the templateless ``ArgFormat`` default derivation."""
+
+    def test_value_arg_derives_kebab_name(self) -> None:
+        """Derive ``--<kebab-name>=${value}`` for a non-bool field with no template."""
+        args = build_command_args(_DefaultArgForm(max_load="Threads_running=50"))
+
+        assert args == ["--max-load=Threads_running=50"]
+
+    def test_flag_derives_kebab_name(self) -> None:
+        """Derive ``--<kebab-name>`` for a bool field with no template."""
+        args = build_command_args(_DefaultArgForm(binary_index=True))
+
+        assert args == ["--binary-index"]
+
+    def test_explicit_template_overrides_derived_default(self) -> None:
+        """Keep an explicit template when the CLI spelling diverges from the name."""
+        args = build_command_args(_DefaultArgForm(explain_arg=True))
+
+        assert args == ["--explain"]
+
+    def test_derived_value_arg_skipped_when_empty(self) -> None:
+        """Skip a derived value arg whose field value is empty, like an explicit one."""
+        args = build_command_args(_DefaultArgForm())
+
+        assert args == []
+
+    def test_validate_accepts_templateless_markers(self) -> None:
+        """Accept templateless markers on both bool and non-bool fields."""
+        validate_arg_formats(_DefaultArgForm)

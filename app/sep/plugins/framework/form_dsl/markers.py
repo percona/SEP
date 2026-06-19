@@ -147,11 +147,19 @@ class ArgFormat:
     presence of ``${value}`` is itself the value-vs-flag discriminator, so no
     separate flag attribute is needed.
 
+    Leaving ``template`` unset derives it from the field name and type — a
+    non-``bool`` field becomes the value arg ``--<kebab-field-name>=${value}`` and
+    a ``bool`` field becomes the flag ``--<kebab-field-name>`` — so a field carries
+    an explicit template only when its CLI spelling diverges from its name (a
+    ``bool`` ``explain_arg`` field whose flag is ``--explain``, say).
+
     :param template: The argument template — ``"--databases=${value}"`` for a
-        value arg or ``"--binary-index"`` for a flag.
+        value arg or ``"--binary-index"`` for a flag. Defaults to ``None``, which
+        derives ``--<kebab-field-name>=${value}`` for a non-``bool`` field and
+        ``--<kebab-field-name>`` for a ``bool`` field.
     """
 
-    template: str
+    template: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

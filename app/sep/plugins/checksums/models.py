@@ -133,7 +133,7 @@ class ChecksumsForm(AppFormModel):
     ]
     databases: Annotated[
         str,
-        ArgFormat("--databases=${value}"),
+        ArgFormat(),
         Ui(
             label="Databases",
             section="Data",
@@ -143,7 +143,7 @@ class ChecksumsForm(AppFormModel):
     ] = ""
     tables: Annotated[
         str,
-        ArgFormat("--tables=${value}"),
+        ArgFormat(),
         Ui(
             label="Tables",
             section="Data",
@@ -175,7 +175,7 @@ class ChecksumsForm(AppFormModel):
     ] = ""
     binary_index: Annotated[
         bool,
-        ArgFormat("--binary-index"),
+        ArgFormat(),
         Ui(
             label="Binary Index",
             section="Flags",
@@ -193,7 +193,7 @@ class ChecksumsForm(AppFormModel):
     ] = False
     fail_on_stopped_replication: Annotated[
         bool,
-        ArgFormat("--fail-on-stopped-replication"),
+        ArgFormat(),
         Ui(
             label="Fail on Stopped Replication",
             section="Flags",
@@ -202,7 +202,7 @@ class ChecksumsForm(AppFormModel):
     ] = False
     truncate_replicate_table: Annotated[
         bool,
-        ArgFormat("--truncate-replicate-table"),
+        ArgFormat(),
         Ui(
             label="Truncate Replicate Table",
             section="Flags",
@@ -211,7 +211,7 @@ class ChecksumsForm(AppFormModel):
     ] = False
     pause_file: Annotated[
         str,
-        ArgFormat("--pause-file=${value}"),
+        ArgFormat(),
         Ui(
             label="Pause File",
             section="Advanced",
@@ -221,7 +221,7 @@ class ChecksumsForm(AppFormModel):
     ] = ""
     set_vars: Annotated[
         str,
-        ArgFormat("--set-vars=${value}"),
+        ArgFormat(),
         Ui(
             label="Set Vars",
             section="Advanced",
@@ -232,7 +232,7 @@ class ChecksumsForm(AppFormModel):
     ] = ""
     max_load: Annotated[
         str,
-        ArgFormat("--max-load=${value}"),
+        ArgFormat(),
         Ui(
             label="Max Load",
             section="Advanced",
@@ -243,7 +243,7 @@ class ChecksumsForm(AppFormModel):
     ] = ""
     chunk_time: Annotated[
         str,
-        ArgFormat("--chunk-time=${value}"),
+        ArgFormat(),
         Ui(
             label="Chunk Time",
             section="Advanced",
@@ -254,7 +254,7 @@ class ChecksumsForm(AppFormModel):
     ] = ""
     max_lag: Annotated[
         str,
-        ArgFormat("--max-lag=${value}"),
+        ArgFormat(),
         Ui(
             label="Max Lag",
             section="Advanced",
@@ -265,7 +265,7 @@ class ChecksumsForm(AppFormModel):
     ] = ""
     progress: Annotated[
         str,
-        ArgFormat("--progress=${value}"),
+        ArgFormat(),
         Ui(
             label="Progress",
             section="Advanced",
