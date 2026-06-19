@@ -107,18 +107,20 @@ class TestArchivesCreateModel:
         assert instance.alias == "purge_rows"
         assert instance.delete_data == 1
 
-    def test_drop_swap(self):
-        """Test swap and drop with swap_drop set to 1."""
-        instance = ArchivesCreate(
-            alias="drop_swap",
-            hostname="source_db",
-            service_id=1,
-            source_db_id=10,
-            source_table_id=20,
-            swap_drop=SwapDropEnum.SWAP_DROP,
-        )
-        assert instance.alias == "drop_swap"
-        assert instance.swap_drop == 1
+    def test_swap_drop_rejected(self):
+        """Only Purge Only is supported; SWAP_DROP is rejected by validation."""
+        with pytest.raises(
+            ValidationError,
+            match="Not available yet. Only Purge Only is currently supported.",
+        ):
+            ArchivesCreate(
+                alias="drop_swap",
+                hostname="source_db",
+                service_id=1,
+                source_db_id=10,
+                source_table_id=20,
+                swap_drop=SwapDropEnum.SWAP_DROP,
+            )
 
     def test_dynamic_tables_sources(self):
         """Test archiving with a dynamic source query and destination file."""

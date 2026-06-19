@@ -105,20 +105,6 @@ def created_task() -> Task:
     [
         (
             ArchivesCreate(
-                alias="SWAP_DROP",
-                hostname="localhost",
-                service_id=MOCK_CREATED_SERVICE_ID,
-                source_db_id=MOCK_CREATED_SCHEMA_ID,
-                source_table_id=MOCK_CREATED_TABLE_ID,
-                swap_drop=SwapDropEnum.SWAP_DROP,
-                dest_table_id=None,
-                dest_file=None,
-            ),
-            None,
-            False,
-        ),
-        (
-            ArchivesCreate(
                 alias="PURGE",
                 hostname="localhost",
                 service_id=MOCK_CREATED_SERVICE_ID,
@@ -638,15 +624,13 @@ class TestResolveDestinationTables:
 
     @pytest.mark.asyncio
     async def test_all_absent_returns_empty(self, mock_remote_api):
-        """All dest table fields absent (swap_drop=SWAP_DROP path): empty dict."""
+        """All dest table fields absent (delete_data path): empty dict."""
         mock_remote_api.get = AsyncMock()
         form = _make_form_with_source_ids(
             dest_table_id=None,
             dest_table_name="",
             dest_file=None,
-            swap_drop=SwapDropEnum.SWAP_DROP,
-            where=None,
-            swp_table_suffix=None,
+            delete_data=1,
         )
 
         result = await _resolve_destination_tables(form, mock_remote_api)
