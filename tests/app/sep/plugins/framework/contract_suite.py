@@ -266,9 +266,15 @@ class DerivedRouterContractTests:
     Subclass and set :attr:`app_def`; pytest collects one ``test_*`` per surface.
     Each capability-gated method either exercises the enabled route or asserts the
     disabled route's absence, reading the contract from the definition.
+
+    Set :attr:`remapped_username` to the username the bound app's response context
+    provider remaps the seeded ``created_by`` to; leave it ``None`` for an app whose
+    provider is not deterministic under test (for example a real Casdoor lookup), so
+    the injected-extras tests assert only the deterministic ``service_type`` extra.
     """
 
     app_def: ClassVar[TaskExecutionApp]
+    remapped_username: ClassVar[str | None] = SYNTH_CREATED_BY_NAME
 
     def test_schema_200(self, contract_client: TestClient) -> None:
         """Assert ``GET /schema`` serves the derived plugin schema."""
@@ -520,7 +526,8 @@ class DerivedRouterContractTests:
             if row["name"] == SEEDED_TASK_NAME
         )
         assert row["service_type"] == ServiceTypeEnum.MYSQL.value
-        assert row["created_by"] == SYNTH_CREATED_BY_NAME
+        if self.remapped_username is not None:
+            assert row["created_by"] == self.remapped_username
 
     def test_detail_injects_extras(self, contract_client: TestClient) -> None:
         """Assert ``GET /{name}`` carries the injected extras and resolved username."""
@@ -533,7 +540,8 @@ class DerivedRouterContractTests:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["service_type"] == ServiceTypeEnum.MYSQL.value
-        assert body["created_by"] == SYNTH_CREATED_BY_NAME
+        if self.remapped_username is not None:
+            assert body["created_by"] == self.remapped_username
 
     def test_detail_reflects_injected_status(
         self, contract_client: TestClient, mock_task_api: Any
@@ -594,7 +602,8 @@ class DerivedRouterContractTests:
         assert response.status_code == status.HTTP_201_CREATED
         payload = response.json()
         assert payload["service_type"] == ServiceTypeEnum.MYSQL.value
-        assert payload["created_by"] == SYNTH_CREATED_BY_NAME
+        if self.remapped_username is not None:
+            assert payload["created_by"] == self.remapped_username
 
     def test_create_extra_dep_enforced(
         self, contract_client: TestClient, mock_task_api: Any
@@ -657,20 +666,87 @@ class DerivedRouterContractTests:
     def test_update_route_present(self) -> None:
         """Assert a ``PUT /{detail}`` route exists when update is enabled.
 
-        Update bodies are app-defined, so the suite asserts route derivation
-        rather than driving a generic update request.
+        Holds for both a full ``update_handler`` override and a handler-less
+        derived PUT, since update derivation now fires on the capability alone.
         """
-        if not (self.app_def.capabilities.update and self.app_def.update_handler):
+        if not self.app_def.capabilities.update:
             pytest.skip("update capability disabled")
 
         assert (detail_route_path(self.app_def), "PUT") in routes_of(self.app_def)
 
     def test_update_route_absent(self) -> None:
         """Assert no ``PUT /{detail}`` route exists when update is disabled."""
-        if self.app_def.capabilities.update and self.app_def.update_handler:
+        if self.app_def.capabilities.update:
             pytest.skip("update capability enabled")
 
         assert (detail_route_path(self.app_def), "PUT") not in routes_of(self.app_def)
+
+    def test_update_200(self, contract_client: TestClient) -> None:
+        """Assert a real ``PUT /{detail}`` updates the task and returns 200."""
+        if not self.app_def.capabilities.update:
+            pytest.skip("update capability disabled")
+        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        if body is None:
+            pytest.skip("no derivable update body (schema= passthrough)")
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_update_404(self, contract_client: TestClient) -> None:
+        """Assert ``PUT /{detail}`` 404s for an unknown task name."""
+        if not self.app_def.capabilities.update:
+            pytest.skip("update capability disabled")
+        body = build_valid_create_body(self.app_def, task_name=_UNKNOWN_TASK_NAME)
+        if body is None:
+            pytest.skip("no derivable update body (schema= passthrough)")
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{_UNKNOWN_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_update_derived_injects_extras(self, contract_client: TestClient) -> None:
+        """Assert a derived PUT renders through the create-path builder + context."""
+        if not (
+            self.app_def.capabilities.update and self.app_def.update_handler is None
+        ):
+            pytest.skip("no derived update route")
+        if self.app_def.response_context_provider is None:
+            pytest.skip("no response context provider")
+        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        if body is None:
+            pytest.skip("no derivable update body (schema= passthrough)")
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["service_type"] == ServiceTypeEnum.MYSQL.value
+        if self.remapped_username is not None:
+            assert payload["created_by"] == self.remapped_username
+
+    def test_update_guard_409(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert an ``update_guard`` dependency rejects the derived PUT with 409.
+
+        Seed the *target* task RUNNING so the guard fires whether it checks the
+        single task (a per-task conflict guard) or any owned task.
+        """
+        if not getattr(self.app_def, "update_guard", ()):
+            pytest.skip("no update guard")
+        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        if body is None:
+            pytest.skip("no derivable update body (schema= passthrough)")
+        mock_task_api.seed_running(SEEDED_TASK_NAME, owner=self.app_def.owner)
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_409_CONFLICT
 
     def test_delete_204(self, contract_client: TestClient) -> None:
         """Assert ``DELETE /{detail}`` returns 204 and the task is gone afterward."""

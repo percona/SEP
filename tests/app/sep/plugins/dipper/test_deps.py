@@ -21,16 +21,44 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.core.exceptions import HTTPBadRequestException
+from app.inventory.models import ServiceTypeEnum
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.inventory import CreatedService
+from app.sep.plugins.dipper.constants import CollectorTypeEnum
 from app.sep.plugins.dipper.deps import (
     build_dipper_meta_from_args,
     fetch_pmm_node_service_names,
+    get_dipper_script_filename,
     get_pmm_api,
+    has_pmm_script,
     resolve_executor_host_for_service,
 )
 from app.sep.snippets.config import SnippetSudoOption
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
+
+
+class TestValkeyScriptMapping:
+    """Valkey resolves to both collector scripts and reports a PMM script."""
+
+    def test_environment_script_resolves(self):
+        """Valkey + environment resolves to the Valkey env collector."""
+        assert (
+            get_dipper_script_filename(
+                ServiceTypeEnum.VALKEY, CollectorTypeEnum.ENVIRONMENT
+            )
+            == "pcs-collect-environment-valkey.sh"
+        )
+
+    def test_pmm_script_resolves(self):
+        """Valkey + PMM resolves to the Valkey PMM collector."""
+        assert (
+            get_dipper_script_filename(ServiceTypeEnum.VALKEY, CollectorTypeEnum.PMM)
+            == "pcs-collect-pmm-valkey.py"
+        )
+
+    def test_has_pmm_script_is_true(self):
+        """Valkey is the second service type to carry a PMM collector."""
+        assert has_pmm_script(ServiceTypeEnum.VALKEY) is True
 
 
 def _make_script(
