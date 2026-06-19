@@ -159,7 +159,6 @@ def hot_field(
         value into the snapshot value. Receives a :class:`MaterializerContext`.
     :type materializer: Materializer | None
     :param advanced: Whether to flag the field as ``advanced`` for UI grouping.
-    :type advanced: bool
     :param kwargs: Additional keyword arguments forwarded to ``Field``.
     :type kwargs: Any
     :return: A Pydantic field marked with the HOT reload classification.
