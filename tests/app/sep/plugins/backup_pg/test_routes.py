@@ -122,7 +122,7 @@ def test_pg_backups_create_skips_connectivity_check_when_opted_out(
                 "target": "node1",
                 "_connectivity_host": "10.0.0.1",
                 "_connectivity_port": 5432,
-                "_connectivity_service_type": "postgresql",
+                "_connectivity_service_type": ServiceTypeEnum.POSTGRESQL.value,
             },
             "payload": "",
         },

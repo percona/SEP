@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core.requests import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
     _record_latest_result,
     annotate_tasks_with_connectivity,
@@ -180,7 +181,7 @@ class TestRecordConnectivityWarning:
                 "data": {
                     "meta": {
                         "target": "node1",
-                        "_connectivity_service_type": "mysql",
+                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
                     },
                 },
             },
@@ -206,7 +207,7 @@ class TestMaybeRecordConnectivityWarning:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         result = await maybe_record_connectivity_warning(
@@ -244,7 +245,7 @@ class TestMaybeRecordConnectivityWarning:
             {
                 "_connectivity_host": "10.0.0.1",
                 "_connectivity_port": 3306,
-                "_connectivity_service_type": "mysql",
+                "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
             },
         ],
     )
@@ -274,7 +275,7 @@ class TestMaybeRecordConnectivityWarning:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         result = await maybe_record_connectivity_warning(mock_tasks_api, meta)
@@ -296,7 +297,7 @@ class TestMaybeRecordConnectivityWarning:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         result = await maybe_record_connectivity_warning(
@@ -318,7 +319,7 @@ class TestMaybeRecordConnectivityWarning:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         result = await maybe_record_connectivity_warning(mock_tasks_api, meta)
@@ -343,7 +344,7 @@ class TestMaybeRecordConnectivityWarning:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         result = await maybe_record_connectivity_warning(

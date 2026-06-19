@@ -31,31 +31,43 @@ export interface MockEnabledApp {
   enabled: boolean;
   sidebar: boolean;
   uri_path: string;
+  display_name: string;
+  custom_ui: boolean;
 }
 
-// Every navigation `appKey` from packages/shell/.../navigation.tsx, all enabled,
-// so the full sidebar renders. Keep in sync with `defaultNavItems`.
-const NAV_APP_KEYS = [
-  'tasks',
-  'snippets',
-  'atw',
-  'alerts',
-  'alert_troubleshooting',
-  'alters',
-  'checksums',
-  'mysql_backups',
-  'backup_mongo',
-  'backup_pg',
-  'archives',
-  'dipper',
-  'report',
-] as const;
+// Registry-driven nav app keys from shell/src/appNavConfig.ts — all enabled so
+// the full sidebar renders. ``display_name`` values mirror backend registry labels.
+// ``custom_ui`` is always false today (legacy apps; see test_apps.py).
+const NAV_APP_METADATA = {
+  tasks: { display_name: 'Task Manager', uri_path: '/tasks' },
+  snippets: { display_name: 'Snippet Manager', uri_path: '/snippets' },
+  atw: { display_name: 'Collect Diagnostic Data', uri_path: '/atw' },
+  alerts: { display_name: 'Alert Templates', uri_path: '/alerts' },
+  alert_troubleshooting: {
+    display_name: 'Alert Troubleshooting',
+    uri_path: '/alert-troubleshooting',
+  },
+  alters: { display_name: 'Alters', uri_path: '/alters' },
+  checksums: { display_name: 'Checksums', uri_path: '/checksums' },
+  mysql_backups: { display_name: 'MySQL Backups', uri_path: '/mysql_backups' },
+  backup_mongo: { display_name: 'MongoDB Backups', uri_path: '/backup_mongo' },
+  backup_pg: {
+    display_name: 'PostgreSQL Backups',
+    uri_path: '/backups/postgresql',
+  },
+  archives: { display_name: 'Archives', uri_path: '/archives' },
+  dipper: { display_name: 'Dipper Data Collection', uri_path: '/dipper' },
+  report: { display_name: 'Health & Security Report', uri_path: '/report' },
+} as const satisfies Record<string, { display_name: string; uri_path: string }>;
+
+export const NAV_APP_KEYS = Object.keys(NAV_APP_METADATA) as (keyof typeof NAV_APP_METADATA)[];
 
 export const MOCK_ENABLED_APPS: MockEnabledApp[] = NAV_APP_KEYS.map((app_key) => ({
   app_key,
   enabled: true,
   sidebar: true,
-  uri_path: `/${app_key}`,
+  custom_ui: false,
+  ...NAV_APP_METADATA[app_key],
 }));
 
 /** True when the request targets the shell's ``GET /api/apps/`` endpoint. */

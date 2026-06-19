@@ -24,6 +24,7 @@ from fastapi import HTTPException, Request, status
 from starlette.datastructures import FormData
 
 from app.core.requests import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
     _fetch_connectivity_result,
     _LATEST_RESULTS,
@@ -343,7 +344,7 @@ class TestMaybeCheckConnectivity:
             {
                 "_connectivity_host": "10.0.0.1",
                 "_connectivity_port": 3306,
-                "_connectivity_service_type": "mysql",
+                "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
             },
         ],
     )
@@ -371,7 +372,7 @@ class TestMaybeCheckConnectivity:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         await maybe_check_connectivity(dummy_request, mock_tasks_api, meta)
@@ -397,7 +398,7 @@ class TestMaybeCheckConnectivity:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         await maybe_check_connectivity(
@@ -420,7 +421,7 @@ class TestMaybeCheckConnectivity:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         await maybe_check_connectivity(
@@ -444,7 +445,7 @@ class TestMaybeCheckConnectivity:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         await maybe_check_connectivity(
@@ -465,7 +466,7 @@ class TestMaybeCheckConnectivity:
             "target": "node1",
             "_connectivity_host": "10.0.0.1",
             "_connectivity_port": 3306,
-            "_connectivity_service_type": "mysql",
+            "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
         }
 
         await maybe_check_connectivity(
@@ -511,7 +512,7 @@ class TestAnnotateTasksWithConnectivity:
                 "data": {
                     "meta": {
                         "target": "node1",
-                        "_connectivity_service_type": "mysql",
+                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
                     }
                 },
             }
@@ -528,7 +529,7 @@ class TestAnnotateTasksWithConnectivity:
                 "data": {
                     "meta": {
                         "target": "node1",
-                        "_connectivity_service_type": "mysql",
+                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
                     }
                 },
             }
@@ -550,7 +551,7 @@ class TestAnnotateTasksWithConnectivity:
                 "data": {
                     "meta": {
                         "target": "node1",
-                        "_connectivity_service_type": "mysql",
+                        "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
                     }
                 },
             }
@@ -571,7 +572,7 @@ class TestAnnotateTasksWithConnectivity:
             {
                 "name": "task1",
                 "_connectivity_target": "node1",
-                "_connectivity_service_type": "mysql",
+                "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
             }
         ]
         annotate_tasks_with_connectivity(tasks)
