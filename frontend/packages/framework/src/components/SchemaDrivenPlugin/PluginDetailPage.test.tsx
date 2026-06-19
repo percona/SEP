@@ -43,6 +43,17 @@ const mockUseTaskStats = vi.fn<(...args: unknown[]) => MockStatsResult>(() => ({
 // Manual factory keeps axios out of the resolution graph.
 vi.mock('@sep/api', () => ({
   usePluginTask: (...args: unknown[]) => mockUsePluginTask(...args),
+  // Consumed transitively by the generic ScheduleSummary (gated on
+  // capabilities.scheduling) via useScheduledTasksForPlugin. No tasks ->
+  // the summary renders its "Not scheduled" state, leaving the execute/delete
+  // flows under test untouched.
+  usePluginTasks: () => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
   useDeletePluginTask: () => ({
     mutateAsync: mockDeleteMutate,
     isPending: false,

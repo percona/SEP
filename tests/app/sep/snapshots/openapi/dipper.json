@@ -401,7 +401,7 @@
         "type": "object"
       },
       "ColumnFormat": {
-        "description": "Enumerate the supported list-view column formatting hints.\n\n:cvar TEXT: Render the column value as plain text.\n:vartype TEXT: str\n:cvar CHIP: Render the column value as a Material UI chip.\n:vartype CHIP: str\n:cvar STATUS: Render the column value as a colour-coded status badge.\n:vartype STATUS: str\n:cvar DATE: Render the column value as an absolute date.\n:vartype DATE: str\n:cvar RELATIVE: Render the column value as a relative time (for example,\n    \"2 hours ago\").\n:vartype RELATIVE: str\n:cvar CODE: Render the column value in a monospaced code font.\n:vartype CODE: str\n:cvar ACTIONS: Row actions (for example delete); not bound to row data.\n    Use with a synthetic column key such as ``_actions``.\n:vartype ACTIONS: str",
+        "description": "Enumerate the supported list-view column formatting hints.\n\n:cvar TEXT: Render the column value as plain text.\n:vartype TEXT: str\n:cvar CHIP: Render the column value as a Material UI chip.\n:vartype CHIP: str\n:cvar STATUS: Render the column value as a colour-coded status badge.\n:vartype STATUS: str\n:cvar DATE: Render the column value as an absolute date.\n:vartype DATE: str\n:cvar RELATIVE: Render the column value as a relative time (for example,\n    \"2 hours ago\").\n:vartype RELATIVE: str\n:cvar CODE: Render the column value in a monospaced code font.\n:vartype CODE: str\n:cvar ACTIONS: Row actions (for example delete); not bound to row data.\n    Use with a synthetic column key such as ``_actions``.\n:vartype ACTIONS: str\n:cvar SCHEDULE: Render a generic schedule cell for the row's task. The\n    frontend joins the row to its periodic task by name and shows the next\n    run (relative, with the absolute timestamp on hover) plus a periodicity\n    popover, or a muted \"Not scheduled\" chip when the task has no schedule.\n    Not bound to the column's own cell value.\n:vartype SCHEDULE: str",
         "enum": [
           "text",
           "chip",
@@ -409,7 +409,8 @@
           "date",
           "relative",
           "code",
-          "actions"
+          "actions",
+          "schedule"
         ],
         "title": "ColumnFormat",
         "type": "string"

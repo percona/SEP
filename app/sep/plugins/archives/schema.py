@@ -478,6 +478,12 @@ archives_schema = PluginSchema(
             Column(key="service_type", label="Service Type", format=ColumnFormat.CHIP),
             Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
             Column(key="created_by", label="Created By"),
+            Column(
+                key="schedule",
+                label="Schedule",
+                sortable=False,
+                format=ColumnFormat.SCHEDULE,
+            ),
         ],
     ),
     detail_view=DetailView(
