@@ -481,7 +481,6 @@ def nested_overridable_field(
     :param default: The field's default value, passed positionally to ``Field``.
     :type default: Any
     :param advanced: Whether to flag the field (and its leaves) as ``advanced``.
-    :type advanced: bool
     :param kwargs: Additional keyword arguments forwarded to ``Field``.
     :type kwargs: Any
     :return: A Pydantic field marked NESTED_ONLY.
