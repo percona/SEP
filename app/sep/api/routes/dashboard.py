@@ -56,7 +56,7 @@ class DashboardStatsResponse(BaseModel):
     targets: int
 
 
-@router.get("/", response_model=DashboardStatsResponse)
+@router.get("/")
 async def get_dashboard_stats(
     response: Response,
     session: SessionDep,
