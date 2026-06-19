@@ -34,10 +34,11 @@
  * target's own element first guarantees the page has actually mounted.
  *
  * Entries intentionally excluded (they still route to PlaceholderPage by design):
- * Alerts/Templates, Schema Change/Alters, Reports, Settings.
+ * Alert Templates, Schema Change/Alters, Health & Security Report, Settings.
  */
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 // ── Mocks ───────────────────────────────────────────────────────────────────
 // NOTE: this auth+API mock is intentionally close to the one in shell.spec.ts.
@@ -68,22 +69,8 @@ const SCHEMA_DISPLAY_NAMES: Record<string, string> = {
   checksums: 'Checksums',
   mysql_backups: 'MySQL Backups',
   archives: 'Archives',
+  backup_pg: 'PostgreSQL Backups',
 };
-
-const ENABLED_APPS = [
-  'tasks',
-  'snippets',
-  'atw',
-  'checksums',
-  'alerts',
-  'alert_troubleshooting',
-  'mysql_backups',
-  'backup_mongo',
-  'backup_pg',
-  'archives',
-  'dipper',
-  'report',
-];
 
 async function mockAuthenticatedApis(page: Page): Promise<void> {
   await page.route('**/api/**', (route) => {
@@ -142,19 +129,8 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.endsWith('/apps/')) {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(
-          ENABLED_APPS.map((app_key) => ({
-            app_key,
-            enabled: true,
-            sidebar: true,
-            uri_path: `/${app_key}`,
-          })),
-        ),
-      });
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     // Default: empty success for plugin task lists and anything else
@@ -167,7 +143,8 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
 }
 
 // ── Sidebar map ───────────────────────────────────────────────────────────────
-// One entry per non-placeholder leaf in shell/src/contexts/navigation.tsx.
+// One entry per non-placeholder leaf in shell/src/appNavConfig.ts.
+// `label` must match ``display_name`` from ``GET /api/apps/`` (see mockEnabledApps).
 // `group`      — collapsible parent that must be expanded before the child shows.
 // `urlPattern` — matched against the post-navigation URL (plugins may redirect
 //                to a default sub-route, e.g. /backups/mongodb → /backups/mongodb/backups).
@@ -189,8 +166,12 @@ const TARGETS: SidebarTarget[] = [
     urlPattern: /\/inventory(\/|$)/,
     sentinel: heading(GENERIC_PLUGIN_HEADING),
   },
-  { label: 'Tasks', urlPattern: /\/tasks(\/|$)/, sentinel: heading(GENERIC_PLUGIN_HEADING) },
-  { label: 'Snippets', urlPattern: /\/snippets(\/|$)/, sentinel: heading('Snippet Manager') },
+  { label: 'Task Manager', urlPattern: /\/tasks(\/|$)/, sentinel: heading(GENERIC_PLUGIN_HEADING) },
+  {
+    label: 'Snippet Manager',
+    urlPattern: /\/snippets(\/|$)/,
+    sentinel: heading('Snippet Manager'),
+  },
   {
     label: 'Collect Diagnostic Data',
     urlPattern: /\/atw(\/|$)/,
@@ -198,31 +179,31 @@ const TARGETS: SidebarTarget[] = [
   },
   { label: 'Checksums', urlPattern: /\/plugins\/checksums(\/|$)/, sentinel: heading('Checksums') },
   {
-    label: 'Troubleshooting',
+    label: 'Alert Troubleshooting',
     group: 'Alerts',
     urlPattern: /\/alerts\/troubleshooting(\/|$)/,
     // Empty-state page renders no heading — assert its empty-state copy instead.
     sentinel: (page) => page.getByText(/No alerts found/i),
   },
   {
-    label: 'MySQL',
+    label: 'MySQL Backups',
     group: 'Backups',
     urlPattern: /\/plugins\/mysql_backups(\/|$)/,
     sentinel: heading('MySQL Backups'),
   },
   {
-    label: 'MongoDB',
+    label: 'MongoDB Backups',
     group: 'Backups',
     urlPattern: /\/backups\/mongodb(\/|$)/,
     sentinel: heading(GENERIC_PLUGIN_HEADING),
   },
   {
-    label: 'PostgreSQL',
+    label: 'PostgreSQL Backups',
     group: 'Backups',
     urlPattern: /\/backups\/postgresql(\/|$)/,
-    sentinel: heading(GENERIC_PLUGIN_HEADING),
+    sentinel: heading('PostgreSQL Backups'),
   },
-  { label: 'Archive', urlPattern: /\/plugins\/archives(\/|$)/, sentinel: heading('Archives') },
+  { label: 'Archives', urlPattern: /\/plugins\/archives(\/|$)/, sentinel: heading('Archives') },
   {
     label: 'Dipper Data Collection',
     urlPattern: /\/dipper(\/|$)/,
