@@ -428,8 +428,8 @@
         "title": "ChecksumTaskResponse",
         "type": "object"
       },
-      "ChecksumTaskWrite": {
-        "description": "Represent a JSON request body for creating a checksum task.\n\nMirrors :class:`ChecksumsCreate` minus the form-only resolution fields\n(``schema_id``, ``table_id``, ``extra_args``). The caller is responsible\nfor pre-resolving database and table names before submitting.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the MySQL service to connect to.\n:type service_id: int\n:param databases: Comma-separated database names.\n:type databases: str\n:param tables: Comma-separated table names (``schema.table`` format).\n:type tables: str\n:param recursion_method: The method for handling replica discovery.\n:type recursion_method: str\n:param dsn_table: The DSN table when ``recursion_method`` is ``\"dsn\"``.\n:type dsn_table: str\n:param pause_file: Execution pauses while this file exists.\n:type pause_file: str\n:param binary_index: Use BLOB type for replicate-table boundary columns.\n:type binary_index: bool\n:param explain_arg: Show but do not execute checksum queries.\n:type explain_arg: bool\n:param fail_on_stopped_replication: Fail if replication is stopped.\n:type fail_on_stopped_replication: bool\n:param truncate_replicate_table: Truncate the replicate table before starting.\n:type truncate_replicate_table: bool\n:param progress: Print progress reports to STDERR.\n:type progress: str\n:param set_vars: MySQL variables to set (comma-separated key=value pairs).\n:type set_vars: str\n:param max_load: Pause when any GLOBAL STATUS variable exceeds this threshold.\n:type max_load: str\n:param chunk_time: Target execution time per chunk.\n:type chunk_time: str\n:param max_lag: Pause until replica lag falls below this value.\n:type max_lag: str\n:param alert_on_fail: Send an alert if the task fails.\n:type alert_on_fail: bool",
+      "ChecksumsForm": {
+        "description": "Define the model-first create/update body and schema source for Checksums.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the previous hand-written request body so the OpenAPI\nrequest body stays a no-op; the form-display defaults that differ from the\nmodel default are carried on ``Ui(default=...)``.\n\nFields are declared in request-body order; the form section order is set by\nthe layout in ``views.py`` (Task, Data, Recursion, Flags, Advanced).",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -526,7 +526,7 @@
           "hostname",
           "service_id"
         ],
-        "title": "ChecksumTaskWrite",
+        "title": "ChecksumsForm",
         "type": "object"
       },
       "Choice": {
@@ -1764,7 +1764,7 @@
       },
       "OneOfBranch": {
         "additionalProperties": false,
-        "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:type value: NonEmptyStr\n:param label: The human-readable label for the segmented-control option.\n:type label: NonEmptyStr\n:param fields: The leaf fields revealed when this branch is active.\n:type fields: list[LeafField]",
+        "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:param label: The human-readable label for the segmented-control option.\n:param fields: The leaf fields revealed when this branch is active.",
         "properties": {
           "fields": {
             "items": {
@@ -1861,7 +1861,7 @@
       },
       "OneOfGroup": {
         "additionalProperties": false,
-        "description": "Represent a labelled either/or field group with a segmented mode switch.\n\nThe React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,\nshows :attr:`description` as helper text, and renders only the active\nbranch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden\nat validation time via rules synthesised from the group's branch contract.\n\n:param field_type: The discriminator literal; always ``\"one_of\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"one_of\"]\n:param name: Stable group identifier used as the React list key. Not a\n    separate form value — :attr:`discriminator` names the mode field.\n:type name: NonEmptyStr\n:param label: The human-readable group heading above the segmented control.\n:type label: NonEmptyStr\n:param description: Optional helper text rendered beneath the group label.\n    Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param discriminator: Dotted path to the mode field (for example,\n    ``\"source.mode\"``) whose value selects the active branch.\n:type discriminator: NonEmptyStr\n:param default: Optional default branch :attr:`~OneOfBranch.value`. Must\n    match one of the declared branches when set. Defaults to ``None``.\n:type default: NonEmptyStr | None\n:param branches: Two or more named branches, each owning its own field list.\n:type branches: list[OneOfBranch]",
+        "description": "Represent a labelled either/or field group with a segmented mode switch.\n\nThe React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,\nshows :attr:`description` as helper text, and renders only the active\nbranch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden\nat validation time via rules synthesised from the group's branch contract.\n\n:param field_type: The discriminator literal; always ``\"one_of\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:param name: Stable group identifier used as the React list key. Not a\n    separate form value — :attr:`discriminator` names the mode field.\n:param label: The human-readable group heading above the segmented control.\n:param description: Optional helper text rendered beneath the group label.\n    Defaults to ``None``.\n:param discriminator: Dotted path to the mode field (for example,\n    ``\"source.mode\"``) whose value selects the active branch.\n:param default: Optional default branch :attr:`~OneOfBranch.value`. Must\n    match one of the declared branches when set. Defaults to ``None``.\n:param branches: Two or more named branches, each owning its own field list.",
         "properties": {
           "branches": {
             "items": {
@@ -3043,8 +3043,7 @@
   "paths": {
     "/api/plugins/checksums/": {
       "get": {
-        "description": "List checksum tasks.",
-        "operationId": "checksums_checksums_api_list_api_plugins_checksums__get",
+        "operationId": "checksums__list_api_plugins_checksums__get",
         "parameters": [
           {
             "in": "query",
@@ -3087,7 +3086,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ChecksumTaskResponse"
                   },
-                  "title": "Response Checksums Checksums Api List Api Plugins Checksums  Get",
+                  "title": "Response Checksums  List Api Plugins Checksums  Get",
                   "type": "array"
                 }
               }
@@ -3105,14 +3104,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Checksums Api List",
+        "summary": "List",
         "tags": [
           "checksums"
         ]
       },
       "post": {
-        "description": "Create a checksum task from a JSON payload request body.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics — an unchecked box\n    submits no field); this asymmetry is intentional.\n:type check_connectivity: bool",
-        "operationId": "checksums_checksums_api_create_api_plugins_checksums__post",
+        "operationId": "checksums__create_api_plugins_checksums__post",
         "parameters": [
           {
             "in": "query",
@@ -3129,7 +3127,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ChecksumTaskWrite"
+                "$ref": "#/components/schemas/ChecksumsForm"
               }
             }
           },
@@ -3157,7 +3155,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Checksums Api Create",
+        "summary": "Create",
         "tags": [
           "checksums"
         ]
@@ -3187,8 +3185,7 @@
     },
     "/api/plugins/checksums/{task_name}": {
       "delete": {
-        "description": "Delete a checksum task.",
-        "operationId": "checksums_checksums_api_delete_api_plugins_checksums__task_name__delete",
+        "operationId": "checksums__delete_api_plugins_checksums__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -3215,14 +3212,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Checksums Api Delete",
+        "summary": "Delete",
         "tags": [
           "checksums"
         ]
       },
       "get": {
-        "description": "Retrieve a single checksum task.",
-        "operationId": "checksums_checksums_api_detail_api_plugins_checksums__task_name__get",
+        "operationId": "checksums__detail_api_plugins_checksums__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3256,14 +3252,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Checksums Api Detail",
+        "summary": "Detail",
         "tags": [
           "checksums"
         ]
       },
       "put": {
-        "description": "Update a checksum task from a JSON payload request body.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after the update. Defaults to ``True``; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics); this asymmetry is\n    intentional.\n:type check_connectivity: bool",
-        "operationId": "checksums_checksums_api_update_api_plugins_checksums__task_name__put",
+        "operationId": "checksums__update_api_plugins_checksums__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -3289,7 +3284,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ChecksumTaskWrite"
+                "$ref": "#/components/schemas/ChecksumsForm"
               }
             }
           },
@@ -3317,7 +3312,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Checksums Api Update",
+        "summary": "Update",
         "tags": [
           "checksums"
         ]
@@ -3325,7 +3320,7 @@
     },
     "/api/plugins/checksums/{task_name}/execute": {
       "post": {
-        "description": "Execute a checksum task.",
+        "description": "Resolve, dispatch, and wrap a standard task execution.",
         "operationId": "checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post",
         "parameters": [
           {

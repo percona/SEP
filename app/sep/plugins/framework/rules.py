@@ -33,7 +33,7 @@ This module exposes three layers:
   mode.
 
 The JSON wire format produced by :meth:`Predicate.to_dict` is the contract
-consumed verbatim by the SEP-1077 frontend renderer; predicate authoring
+consumed verbatim by the frontend renderer; predicate authoring
 in production uses this DSL only.
 """
 
@@ -230,12 +230,9 @@ def _resolve_field(instance: Any, path: str) -> Any:
     missing intermediate value short-circuits to ``None``.
 
     :param instance: The model instance being evaluated.
-    :type instance: Any
     :param path: A top-level field name or dotted path (for example,
         ``"source.mode"``).
-    :type path: str
     :return: The resolved value, or ``None`` when any segment is absent.
-    :rtype: Any
     """
     current: Any = instance
     for segment in path.split("."):
@@ -374,7 +371,7 @@ class Predicate(ABC):
 
         Predicate JSON is a discriminated union over operator keys (each
         producing a single-key object). Modelling that precisely as a
-        JSON-schema oneOf is overkill for the FE contract, since SEP-1077
+        JSON-schema oneOf is overkill for the FE contract, since the frontend
         consumes the wire format directly rather than auto-generating a
         TypeScript model from it. An open ``object`` shape lets FastAPI
         emit a valid OpenAPI document while keeping the wire contract
