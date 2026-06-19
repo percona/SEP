@@ -289,6 +289,12 @@ class TestArchivesApiConditionalRules422:
                 "dest_service_id",
                 id="dest-service-and-host-conflict",
             ),
+            # Validator 3c: dest_service_id selected + a manual dest_port
+            pytest.param(
+                {"dest_service_id": 99, "dest_port": 3307},
+                "dest_port",
+                id="dest-service-and-port-conflict",
+            ),
             # Validator 4: SWAP_ARCHIVE_DROP without swp_table_suffix
             pytest.param(
                 {
