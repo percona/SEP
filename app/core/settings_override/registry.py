@@ -355,9 +355,7 @@ def is_advanced_field(field_info: FieldInfo) -> bool:
     out of a submodel.
 
     :param field_info: The Pydantic field metadata to inspect.
-    :type field_info: FieldInfo
     :return: ``True`` iff the field carries an explicit ``advanced`` marker.
-    :rtype: bool
     """
     return CustomFieldMetadata.field_to_dict(field_info).get("advanced", False) is True
 
