@@ -84,7 +84,7 @@ class TasksSettings(BaseYamlAppSettings):
     NOMAD: NomadExecutor = hot_field(..., materializer=materialize_fingerprint)
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
     SECURITY_HEADERS: SecurityHeadersOptions | None = nested_overridable_field(
-        SecurityHeadersOptions(content_security_policy_strict=False)
+        SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
     )
     SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = hot_field(
