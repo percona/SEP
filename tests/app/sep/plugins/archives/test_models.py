@@ -411,16 +411,19 @@ class TestArchivesCreateEmptyStringCoercion:
     def test_empty_string_optional_int_coerced_to_none(self, field: str) -> None:
         """Empty strings on form-bound optional ints become ``None``, not 422.
 
-        Uses a SWAP_DROP + ``source_query`` base so every parametrized field can
-        legitimately be ``None`` without tripping the source/destination
-        exclusivity validators.
+        Uses a Purge Only + ``source_query`` + ``delete_data`` base so every
+        parametrized field can legitimately be ``None`` without tripping the
+        source/destination exclusivity validators (``delete_data`` forbids the
+        destination fields, ``source_query`` covers the source side).
         """
         base = {
             "alias": "t",
             "hostname": "h",
             "service_id": 1,
             "source_query": "SELECT 1",
-            "swap_drop": SwapDropEnum.SWAP_DROP,
+            "where": "id > 1",
+            "delete_data": 1,
+            "swap_drop": SwapDropEnum.PURGE_ONLY,
             field: "",
         }
         form = ArchivesCreate(**base)

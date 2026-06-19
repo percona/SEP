@@ -53,6 +53,10 @@ from app.sep.plugins.framework.schema import (
     TableField,
 )
 
+# Shared copy for the disabled-choice tooltip and the server-side FailRule so the
+# UI hint and the validation error stay in sync.
+_SWAP_DROP_UNSUPPORTED = "Not available yet. Only Purge Only is currently supported."
+
 archives_schema = PluginSchema(
     name="archives",
     display_name="Archives",
@@ -86,11 +90,34 @@ archives_schema = PluginSchema(
                     name="swap_drop",
                     label="Archive Type",
                     required=True,
+                    default="0",
                     choices=[
                         Choice(label="Purge Only", value="0"),
-                        Choice(label="Swap & Drop", value="1"),
-                        Choice(label="Swap Archive & Drop", value="2"),
+                        Choice(
+                            label="Swap & Drop",
+                            value="1",
+                            disabled=True,
+                            disabled_reason=_SWAP_DROP_UNSUPPORTED,
+                        ),
+                        Choice(
+                            label="Swap Archive & Drop",
+                            value="2",
+                            disabled=True,
+                            disabled_reason=_SWAP_DROP_UNSUPPORTED,
+                        ),
                     ],
+                ),
+            ],
+            fail_when=[
+                # Only Purge Only is supported. The disabled choices above gate the
+                # UI; this rule rejects any crafted payload that bypasses them. It
+                # also blocks edits that resubmit a pre-existing SWAP_DROP /
+                # SWAP_ARCHIVE_DROP task (which loads fine read-only) until the
+                # archive type is switched to Purge Only.
+                FailRule(
+                    fail_when=F("swap_drop") != SwapDropEnum.PURGE_ONLY,
+                    error_fields=["swap_drop"],
+                    message=_SWAP_DROP_UNSUPPORTED,
                 ),
             ],
         ),
@@ -179,6 +206,7 @@ archives_schema = PluginSchema(
         ),
         FormSection(
             title="Destination",
+            forbidden=[FieldGate(when=truthy("delete_data"))],
             fields=[
                 IntegerField(
                     name="dest_table_id",
@@ -246,6 +274,7 @@ archives_schema = PluginSchema(
         ),
         FormSection(
             title="Destination Host",
+            forbidden=[FieldGate(when=truthy("delete_data"))],
             fields=[
                 ServiceField(
                     name="dest_service_id",
@@ -306,6 +335,8 @@ archives_schema = PluginSchema(
                     ),
                 ),
                 # Validator 3d: SWAP_ARCHIVE_DROP cannot have a destination host.
+                # Unreachable while only Purge Only is selectable (the Archive Type
+                # FailRule rejects swap_drop != PURGE_ONLY first).
                 FailRule(
                     fail_when=all_(
                         F("swap_drop") == SwapDropEnum.SWAP_ARCHIVE_DROP,
