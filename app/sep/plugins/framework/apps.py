@@ -135,7 +135,7 @@ class Cascade:
 
 
 class TaskExecutionApp(BaseApp):
-    """Compose the Layer 1 helpers into a derived task-app router from one object.
+    """Compose the route-derivation helpers into a derived task-app router from one object.
 
     The router is built once in a ``model_validator(mode="after")`` into the
     inherited ``api_router`` field, so :class:`AppRegistry` mounts it through the
@@ -157,7 +157,7 @@ class TaskExecutionApp(BaseApp):
        collision. A fixed collection-root ``GET`` (for example ``/ping``) is
        therefore shadowed by the greedy ``GET /{detail_path_param}`` detail route;
        mount such a route under a sub-prefix on the extra router.
-    5. Fall through to a bare ``BaseApp`` plus the Layer 1 helpers used directly.
+    5. Fall through to a bare ``BaseApp`` plus the route-derivation helpers used directly.
 
     The spine-knob rule: a definition knob earns first-class support only with at
     least three consuming apps; otherwise it is a handler override or an extra
@@ -498,7 +498,7 @@ class TaskExecutionApp(BaseApp):
         return Annotated[Task, task_by_name]
 
     def build_router(self) -> APIRouter:
-        """Compose the derived router from the Layer 1 helpers.
+        """Compose the derived router from the route-derivation helpers.
 
         Register ``GET /capabilities`` (when a provider is set) before including
         the derived CRUD router, because the CRUD router's greedy
