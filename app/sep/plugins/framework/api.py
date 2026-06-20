@@ -1383,6 +1383,7 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
         dependencies=[IsApiAuthenticated],
     )
     async def list_scripts() -> list[BaseModel]:
+        """List every discovered script as its list-row projection."""
         scripts = await source.list_scripts()
         return [source.list_response(script) for script in scripts]
 
@@ -1395,6 +1396,7 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
         dependencies=[IsApiAuthenticated],
     )
     async def script_schema(script: script_param) -> PluginSchema:
+        """Return the per-script form schema synthesised from its parameters."""
         return source.build_form_schema(script)
 
     @router.get(
@@ -1406,6 +1408,7 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
     async def script_history(
         script: script_param, tasks_api: TaskAPI
     ) -> dict[str, Any]:
+        """Proxy the per-script execution history from the Tasks API by filename."""
         return await tasks_api.get(
             f"/{script.execution_task_name}/history/",
             params={"snippet_filename": script.filename},
@@ -1423,6 +1426,7 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
         body: ScriptExecuteWrite,
         tasks_api: TaskAPI,
     ) -> ScriptExecutionResponse:
+        """Validate the args, assemble the meta, and dispatch the execution."""
         try:
             validated = script.get_execution_model().model_validate(body.args)
         except ValidationError as exc:
