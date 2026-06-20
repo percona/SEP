@@ -1357,9 +1357,11 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
     parameter under the ``/snippet/`` sub-prefix (never a path segment), so a greedy
     detail route cannot shadow ``GET /`` or ``GET /schema``. The execute route
     validates the request ``args`` against the script's dynamic execution model
-    (``422`` on failure), delegates meta assembly to ``source.build_execution_meta``,
-    and posts ``{"meta": ...}`` to ``/execute/{script.execution_task_name}`` — a
-    distinct endpoint and body from the model-first three-phase create envelope.
+    (``422`` on failure), delegates meta assembly to ``source.build_execution_meta``
+    with the model's *coerced* ``args`` (so a consumer never sees the raw,
+    unnormalised values the dynamic model may have type-cast), and posts
+    ``{"meta": ...}`` to ``/execute/{script.execution_task_name}`` — a distinct
+    endpoint and body from the model-first three-phase create envelope.
 
     :param source: The script source supplying the listing, form-synthesis,
         execution-meta, list-row, and optional static-schema hooks.
@@ -1422,10 +1424,12 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
         tasks_api: TaskAPI,
     ) -> ScriptExecutionResponse:
         try:
-            script.get_execution_model().model_validate(body.args)
+            validated = script.get_execution_model().model_validate(body.args)
         except ValidationError as exc:
             raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
-        meta = source.build_execution_meta(script, body)
+        meta = source.build_execution_meta(
+            script, body.model_copy(update={"args": validated.model_dump()})
+        )
         created = await tasks_api.post(
             f"/execute/{script.execution_task_name}",
             json={"meta": meta.model_dump(by_alias=True, exclude_none=True)},

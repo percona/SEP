@@ -437,6 +437,21 @@ class TestDerivedRouteHTTP:
         assert call.kwargs["json"]["meta"]["filename"] == "report.sh"
         assert call.kwargs["json"]["meta"]["target"] == "exec-1"
 
+    def test_execute_passes_coerced_args_to_meta(
+        self, source: ScriptSource, regular_user: CasdoorUser
+    ) -> None:
+        """Build the meta from the model's coerced args, not the raw request body."""
+        tasks_api = _make_tasks_api()
+        client = _client(_script_app(source), tasks_api, regular_user)
+        response = client.post(
+            f"{_BASE}/snippet/execute",
+            params={"snippet_filename": "report.sh"},
+            json={"executor_host": "exec-1", "args": {"database": "db", "count": "5"}},
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        call = tasks_api.post.await_args
+        assert call.kwargs["json"]["meta"]["args"] == {"database": "db", "count": 5}
+
     def test_execute_invalid_args_returns_422(
         self, source: ScriptSource, regular_user: CasdoorUser
     ) -> None:
