@@ -13,7 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.sep.plugins.inventory.app import app
-from app.sep.plugins.inventory.routes import router
+"""Wire the Health & Security Report plugin as a declarative ``BaseApp``.
 
-__all__ = ["app", "router"]
+Register the bespoke report plugin through the registry's definition path
+instead of the synthesized-legacy fallback, exposing the same JSON and Jinja
+routers the registry imports today.
+"""
+
+from app.sep.plugins.framework.base import BaseApp
+from app.sep.plugins.report.api_routes import router as api_router
+from app.sep.plugins.report.routes import router as jinja_router
+
+app = BaseApp(
+    name="report",
+    display_name="Health & Security Report",
+    uri_path="/report",
+    css_class="report",
+    api_router=api_router,
+    jinja_router=jinja_router,
+)
