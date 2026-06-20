@@ -129,8 +129,12 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
     override that reintroduces a route a disabled flag forbids.
 
     :param app: The migrated app whose derived router is inspected.
-    :return: One message per flag/route disagreement; empty when consistent.
+    :return: One message per flag/route disagreement; empty when consistent or when
+        the app is a script-source app (its derived surface is script-centric, not
+        the verb-toggled CRUD surface this check asserts).
     """
+    if app.script_source is not None:
+        return []
     detail = f"/{{{app.detail_path_param}}}"
     expected = {
         "create": ("POST", "/"),
@@ -181,8 +185,11 @@ def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str
 
     :param app: The migrated app whose detail-view paths are checked against its
         response model.
-    :return: One message per unknown root segment; empty when all resolve.
+    :return: One message per unknown root segment; empty when all resolve or when
+        the app is a script-source app (it derives no model-first detail view).
     """
+    if app.script_source is not None:
+        return []
     if app.views.detail_view is None:
         return []
     response_fields = set(app.response_model.model_fields)
@@ -208,7 +215,9 @@ def check_schema_derivation_succeeds(app: "TaskExecutionApp") -> list[str]:
     cannot abort the whole conformance run.
 
     :param app: The migrated app whose ``create_model`` derivation is exercised.
-    :return: A single-element list on failure; empty on success or skip.
+    :return: A single-element list on failure; empty on success or skip (a
+        ``schema=`` passthrough or a script-source app, neither of which has a
+        ``create_model`` — both exit on the ``create_model is None`` check below).
     """
     if app.create_model is None:
         return []

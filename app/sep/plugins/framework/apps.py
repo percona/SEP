@@ -28,6 +28,7 @@ same ``api_router`` seam with no registry change.
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Any, Self
 
 from fastapi import APIRouter, Body, Depends, Form, params
@@ -40,6 +41,7 @@ from app.sep.plugins.framework.api import (
     capabilities_endpoint,
     derive_crud_routes,
     derive_execute_route,
+    derive_script_routes,
 )
 from app.sep.plugins.framework.base import BaseApp
 from app.sep.plugins.framework.connectivity import CONNECTIVITY_WARNING_FIELD
@@ -69,9 +71,16 @@ from app.sep.plugins.framework.schema import (
     ListView,
     PluginSchema,
 )
+from app.sep.plugins.framework.script_source import ScriptSource
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
 
-__all__ = ["AppCapabilities", "Cascade", "TaskExecutionApp", "Views"]
+__all__ = [
+    "AppCapabilities",
+    "Cascade",
+    "StaticMount",
+    "TaskExecutionApp",
+    "Views",
+]
 
 TaskSpecBuilder = Callable[[AppFormModel, ResolvedEntities], EnvelopeSpec]
 
@@ -134,6 +143,24 @@ class Cascade:
     predecessors: tuple[ChainedPredecessor, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class StaticMount:
+    """Declare one authenticated static mount for a script app's payload directory.
+
+    Collected from the registry in ``app/sep/main.py`` and mounted through
+    :class:`~app.sep.utils.static.AuthenticatedStaticFiles`, so a payload directory
+    is never served anonymously.
+
+    :param path: The mount prefix (for example ``/static/snippets``).
+    :param directory: The directory served behind authentication.
+    :param name: The Starlette mount name used for reverse URL lookups.
+    """
+
+    path: str
+    directory: Path
+    name: str
+
+
 class TaskExecutionApp(BaseApp):
     """Compose the route-derivation helpers into a derived task-app router from one object.
 
@@ -178,8 +205,13 @@ class TaskExecutionApp(BaseApp):
         used directly as the create payload, bypassing the three-phase path.
         Required for a ``schema=`` app (no ``AppFormModel`` to introspect refs).
         Defaults to ``None``.
-    :param script_source: Reserved seam for the deferred ``ScriptSource`` flavor;
-        mutually exclusive with ``task_spec_builder``. Defaults to ``None``.
+    :param script_source: A :class:`ScriptSource` backing a script-flavored app:
+        ``build_router`` branches to
+        :func:`~app.sep.plugins.framework.api.derive_script_routes` and bypasses the
+        model-first CRUD derivation entirely. Mutually exclusive with
+        ``create_model``, ``schema=``, and ``task_spec_builder``; the standard
+        create/detail/update/delete capability flags are not derived for a script
+        app. Defaults to ``None``.
     :param get_task: A custom task-by-name dependency whose inner path parameter
         matches a non-default ``detail_path_param``. Defaults to ``None`` (the
         per-owner :func:`make_task_dep` callable, whose path parameter is
@@ -269,6 +301,10 @@ class TaskExecutionApp(BaseApp):
         Defaults to ``()``.
     :param description: The plugin description threaded into the derived
         ``GET /schema`` (``PluginSchema.description``). Defaults to ``None``.
+    :param static_mounts: Authenticated static mounts for the app's payload
+        directories, collected from the registry and mounted in ``app/sep/main.py``
+        through :class:`~app.sep.utils.static.AuthenticatedStaticFiles`. Defaults to
+        an empty tuple.
     """
 
     owner: TaskOwner
@@ -277,7 +313,7 @@ class TaskExecutionApp(BaseApp):
     views: SkipValidation[Views] = Views()
     task_spec_builder: TaskSpecBuilder | None = None
     payload_builder: Callable[..., Awaitable[TaskWrite]] | None = None
-    script_source: Any = None
+    script_source: SkipValidation[ScriptSource | None] = None
     get_task: Callable[..., Awaitable[Task]] | None = None
     capabilities: AppCapabilities = AppCapabilities()
     pagination: PaginationDependency | None = None
@@ -305,6 +341,7 @@ class TaskExecutionApp(BaseApp):
     create_response_builder: SkipValidation[TaskResponseBuilder | None] = None
     update_guard: tuple[params.Depends, ...] = ()
     description: str | None = None
+    static_mounts: tuple[StaticMount, ...] = ()
 
     _task_getter: Callable[..., Awaitable[Task]] | None = PrivateAttr(default=None)
 
@@ -338,10 +375,28 @@ class TaskExecutionApp(BaseApp):
     def _validate_schema_source(self) -> None:
         """Validate the create_model / ``schema=`` source is unambiguous.
 
-        :raises ValueError: When both or neither of ``create_model`` and
-            ``schema=`` are set; or when a ``create_model`` lacks a ``task_name``
-            field or its ``views.layout``.
+        A script-source app derives per-script forms and serves its optional
+        plugin-level schema from ``script_source.static_schema``, so it sets neither
+        ``create_model`` (no single create form) nor ``schema=`` (a second, ignored
+        schema source); both are rejected.
+
+        :raises ValueError: When a script-source app also sets ``create_model`` or
+            ``schema=``; when both or neither of ``create_model`` and ``schema=`` are
+            set; or when a ``create_model`` lacks a ``task_name`` field or its
+            ``views.layout``.
         """
+        if self.script_source is not None:
+            if self.create_model is not None:
+                raise ValueError(
+                    "TaskExecutionApp: a script_source app derives per-script forms; "
+                    "it has no single create_model — drop create_model"
+                )
+            if self.app_schema is not None:
+                raise ValueError(
+                    "TaskExecutionApp: a script_source app serves GET /schema from "
+                    "script_source.static_schema — drop schema="
+                )
+            return
         has_create_model = self.create_model is not None
         has_schema = self.app_schema is not None
         if has_create_model and has_schema:
@@ -370,12 +425,15 @@ class TaskExecutionApp(BaseApp):
 
         :raises ValueError: When a ``schema=`` app supplies a ``task_spec_builder``;
             when ``task_spec_builder`` collides with ``script_source`` or
-            ``payload_builder``; when a ``payload_builder`` app also sets
-            ``create_form_encoded`` (which governs only the derived three-phase
-            body); when a create-enabled app has no payload source; or when a
-            create-disabled app sets a create-route option (``connectivity_check``,
-            ``create_response_model``, ``create_form_encoded``, or
-            ``create_extra_deps``).
+            ``payload_builder``; when a ``script_source`` app sets a model-first
+            create-route option (``connectivity_check``, ``create_response_model``,
+            ``create_response_builder``, ``create_form_encoded``, or
+            ``create_extra_deps``) the script branch would silently drop; when a
+            ``payload_builder`` app also sets ``create_form_encoded`` (which governs
+            only the derived three-phase body); when a create-enabled app that is not
+            a ``script_source`` app has no payload source (a script source is itself
+            the payload mechanism); or when a create-disabled app sets a create-route
+            option.
         """
         if self.app_schema is not None and self.task_spec_builder is not None:
             raise ValueError(
@@ -386,6 +444,19 @@ class TaskExecutionApp(BaseApp):
             raise ValueError(
                 "TaskExecutionApp: task_spec_builder and script_source are mutually "
                 "exclusive"
+            )
+        if self.script_source is not None and (
+            self.connectivity_check
+            or self.create_response_model is not None
+            or self.create_response_builder is not None
+            or self.create_form_encoded
+            or self.create_extra_deps
+        ):
+            raise ValueError(
+                "TaskExecutionApp: connectivity_check, create_response_model, "
+                "create_response_builder, create_form_encoded, and create_extra_deps "
+                "are model-first create-route options; a script_source app derives no "
+                "create route — drop them"
             )
         if self.payload_builder is not None and self.task_spec_builder is not None:
             raise ValueError(
@@ -402,6 +473,7 @@ class TaskExecutionApp(BaseApp):
             self.capabilities.create
             and self.payload_builder is None
             and self.task_spec_builder is None
+            and self.script_source is None
         ):
             raise ValueError(
                 "TaskExecutionApp: the create capability needs a payload source — a "
@@ -547,15 +619,28 @@ class TaskExecutionApp(BaseApp):
     def build_router(self) -> APIRouter:
         """Compose the derived router from the route-derivation helpers.
 
-        Register ``GET /capabilities`` (when a provider is set) before including
-        the derived CRUD router, because the CRUD router's greedy
-        ``GET /{detail_path_param}`` route would otherwise shadow the fixed
-        capabilities path. The derived CRUD router already owns ``GET /schema``,
-        so this method never calls ``schema_endpoint`` itself. ``extra_routes``
-        are included last so a derived route always wins a path collision.
+        A ``script_source`` app branches early to
+        :func:`~app.sep.plugins.framework.api.derive_script_routes` and never reaches
+        the model-first CRUD derivation, but still gets its ``GET /capabilities``
+        provider and ``extra_routes`` (the auxiliary surface a migrating script
+        plugin needs, for example preview/download/approval). Otherwise register
+        ``GET /capabilities`` (when a provider is set) before including the derived
+        CRUD router, because the CRUD router's greedy ``GET /{detail_path_param}``
+        route would otherwise shadow the fixed capabilities path. The derived CRUD
+        router already owns ``GET /schema``, so this method never calls
+        ``schema_endpoint`` itself. ``extra_routes`` are included last so a derived
+        route always wins a path collision.
 
         :return: The composed plugin ``APIRouter``.
         """
+        if self.script_source is not None:
+            router = derive_script_routes(self.script_source, name=self.name)
+            if self.capabilities_provider is not None:
+                capabilities_endpoint(router, self.capabilities_provider)
+            for extra in self.extra_routes:
+                router.include_router(extra)
+            return router
+
         router = APIRouter()
         plugin_schema = self._resolve_plugin_schema()
 
