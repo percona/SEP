@@ -35,8 +35,9 @@ from dataclasses import dataclass
 from typing import Annotated, Any, cast, TypeVar
 
 from fastapi import APIRouter, Depends, params, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
@@ -52,6 +53,12 @@ from app.sep.plugins.framework.responses import (
     TaskResponseBuilder,
 )
 from app.sep.plugins.framework.schema import PluginSchema
+from app.sep.plugins.framework.script_source import (
+    make_script_dep,
+    ScriptExecuteWrite,
+    ScriptExecutionResponse,
+    ScriptSource,
+)
 from app.sep.plugins.framework.task_status import get_task_latest_status
 from app.tasks.models import (
     Task,
@@ -66,6 +73,7 @@ __all__ = [
     "capabilities_endpoint",
     "derive_crud_routes",
     "derive_execute_route",
+    "derive_script_routes",
     "make_list_filter_dep",
     "schema_endpoint",
 ]
@@ -1333,3 +1341,107 @@ def derive_execute_route(
         response_model_by_alias=True,
         dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks, *extra_deps],
     )
+
+
+def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
+    """Build a plugin router carrying a script source's derived surface.
+
+    Register the script-centric surface a script-backed task app exposes, mirroring
+    the working ``snippets`` JSON API: owner-agnostic listing (``GET /``), per-script
+    form schema (``GET /snippet/schema``), execute delegation
+    (``POST /snippet/execute``, ``201``), execution history
+    (``GET /snippet/history``), and — only when ``source.static_schema`` is set — the
+    plugin-level ``GET /schema``. All routes carry ``IsApiAuthenticated``.
+
+    Per-script routes carry the script filename in a ``snippet_filename`` query
+    parameter under the ``/snippet/`` sub-prefix (never a path segment), so a greedy
+    detail route cannot shadow ``GET /`` or ``GET /schema``. The execute route
+    validates the request ``args`` against the script's dynamic execution model
+    (``422`` on failure), delegates meta assembly to ``source.build_execution_meta``
+    with the model's *coerced* ``args`` (so a consumer never sees the raw,
+    unnormalised values the dynamic model may have type-cast), and posts
+    ``{"meta": ...}`` to ``/execute/{script.execution_task_name}`` — a distinct
+    endpoint and body from the model-first three-phase create envelope.
+
+    :param source: The script source supplying the listing, form-synthesis,
+        execution-meta, list-row, and optional static-schema hooks.
+    :param name: The app name seeding each derived route's name (and OpenAPI
+        ``operationId``), so two script apps never collide on a generic route name.
+    :return: A plugin ``APIRouter`` carrying the derived script surface.
+    """
+    router = APIRouter()
+    if source.static_schema is not None:
+        schema_endpoint(router, source.static_schema)
+
+    script_param = Annotated[Any, Depends(make_script_dep(source))]
+
+    @router.get(
+        "/",
+        name=f"{name}_api_list",
+        summary="List",
+        response_model=None,
+        dependencies=[IsApiAuthenticated],
+    )
+    async def list_scripts() -> list[BaseModel]:
+        """List every discovered script as its list-row projection."""
+        scripts = await source.list_scripts()
+        return [source.list_response(script) for script in scripts]
+
+    @router.get(
+        "/snippet/schema",
+        name=f"{name}_api_script_schema",
+        summary="Script schema",
+        response_model_by_alias=True,
+        response_model_exclude_none=True,
+        dependencies=[IsApiAuthenticated],
+    )
+    async def script_schema(script: script_param) -> PluginSchema:
+        """Return the per-script form schema synthesised from its parameters."""
+        return source.build_form_schema(script)
+
+    @router.get(
+        "/snippet/history",
+        name=f"{name}_api_script_history",
+        summary="Script history",
+        dependencies=[IsApiAuthenticated],
+    )
+    async def script_history(
+        script: script_param, tasks_api: TaskAPI
+    ) -> dict[str, Any]:
+        """Proxy the per-script execution history from the Tasks API by filename."""
+        return await tasks_api.get(
+            f"/{script.execution_task_name}/history/",
+            params={"snippet_filename": script.filename},
+        )
+
+    @router.post(
+        "/snippet/execute",
+        name=f"{name}_api_script_execute",
+        summary="Execute script",
+        status_code=status.HTTP_201_CREATED,
+        dependencies=[IsApiAuthenticated],
+    )
+    async def script_execute(
+        script: script_param,
+        body: ScriptExecuteWrite,
+        tasks_api: TaskAPI,
+    ) -> ScriptExecutionResponse:
+        """Validate the args, assemble the meta, and dispatch the execution."""
+        try:
+            validated = script.get_execution_model().model_validate(body.args)
+        except ValidationError as exc:
+            raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
+        meta = source.build_execution_meta(
+            script, body.model_copy(update={"args": validated.model_dump()})
+        )
+        created = await tasks_api.post(
+            f"/execute/{script.execution_task_name}",
+            json={"meta": meta.model_dump(by_alias=True, exclude_none=True)},
+        )
+        return ScriptExecutionResponse(
+            task_name=script.execution_task_name,
+            task_id=created.get("id") if isinstance(created, dict) else None,
+            snippet_filename=script.filename,
+        )
+
+    return router
