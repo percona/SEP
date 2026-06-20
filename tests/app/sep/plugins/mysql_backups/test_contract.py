@@ -112,7 +112,7 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
     def test_create_connectivity_warning(
         self, contract_client: Any, mocker: Any
     ) -> None:
-        """``connectivity_check`` attaches the probe warning to the create response."""
+        """Attach the connectivity probe warning to the create response."""
         mocker.patch(
             _CONNECTIVITY_PATCH_TARGET,
             new_callable=AsyncMock,
