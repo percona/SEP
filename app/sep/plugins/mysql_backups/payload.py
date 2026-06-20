@@ -73,7 +73,7 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
     server_config = {
         "alias": form.alias or service.node.address,
         "backup_type": form.backup_type,
-        # for now only localhost allowed for X
+        # XtraBackup must run on the database host itself
         "host": (
             "localhost"
             if form.backup_type == "X"

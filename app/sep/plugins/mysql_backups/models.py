@@ -123,7 +123,7 @@ _RSYNC_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_RSYNC)))
 # Bool fields owned by a specific backup mode. A truthy value outside its owning
 # mode fails validation via the schema-level ``FailRule``s below. ``binlog_run_all``
 # defaults to True and the legacy form always sends it, so the BINLOG entry is
-# intentionally empty until the form migrates off that default.
+# intentionally empty.
 _MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
     "M": (
         "mydumper_dump_triggers",
