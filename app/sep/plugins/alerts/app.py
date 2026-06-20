@@ -13,7 +13,22 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.sep.plugins.inventory.app import app
-from app.sep.plugins.inventory.routes import router
+"""Wire the Alert Templates plugin as a declarative ``BaseApp``.
 
-__all__ = ["app", "router"]
+Register the bespoke alerts plugin through the registry's definition path
+(``getattr(module, "app")``) instead of the synthesized-legacy fallback,
+exposing the same JSON and Jinja routers the registry imports today.
+"""
+
+from app.sep.plugins.alerts.api_routes import router as api_router
+from app.sep.plugins.alerts.routes import router as jinja_router
+from app.sep.plugins.framework.base import BaseApp
+
+app = BaseApp(
+    name="alerts",
+    display_name="Alert Templates",
+    uri_path="/alerts",
+    css_class="alerts",
+    api_router=api_router,
+    jinja_router=jinja_router,
+)
