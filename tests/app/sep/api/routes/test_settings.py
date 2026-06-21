@@ -891,6 +891,29 @@ class TestSepSettingsSecondaryClasses:
 
 
 @pytest.mark.asyncio
+class TestSepSettingsCredentialUrlWriteback:
+    """PATCH must not persist redacted URL display values over stored credentials."""
+
+    async def test_patch_redacted_inventory_endpoint_preserves_password(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Saving an unchanged redacted ``INVENTORY_ENDPOINT`` keeps the real password."""
+        full_url = "http://inv-user:inv-secret@inventory.internal:8080"
+        redacted_url = "http://inv-user:****@inventory.internal:8080"
+        try:
+            sep_settings._set_snapshot({"INVENTORY_ENDPOINT": full_url})
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/SEPSettings",
+                json={"INVENTORY_ENDPOINT": redacted_url},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert "inv-secret" in str(sep_settings.INVENTORY_ENDPOINT)
+            assert "****" not in str(sep_settings.INVENTORY_ENDPOINT)
+        finally:
+            sep_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
 class TestSepSettingsInlineRebind:
     """Fire the SEP rebind callbacks on an inline PATCH.
 

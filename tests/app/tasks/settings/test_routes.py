@@ -27,11 +27,21 @@ from app.api.deps import get_current_user
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
-from app.core.settings_override.registry import ReloadClassification
+from app.core.settings_override.registry import (
+    materialize_fingerprint,
+    MaterializerContext,
+    ReloadClassification,
+)
 from app.models import CasdoorUser
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.deps import get_request_executor, get_session
+from app.tasks.execution.nomad_lifecycle import normalize_nomad_config_value
 from app.tasks.main import tasks_app
+
+
+def _nomad_endpoint_value() -> str:
+    """Return the effective Nomad ``endpoint`` as a string."""
+    return str(normalize_nomad_config_value(tasks_settings.NOMAD).endpoint)
 
 
 @pytest.fixture(name="admin_test_client")
@@ -532,6 +542,60 @@ class TestTasksSettingsNestedOverrides:
             assert (
                 by_key["NOMAD__check_cert_expiry_interval__every"]["value"] is not None
             )
+        finally:
+            tasks_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsCredentialUrlWriteback:
+    """PATCH must not persist redacted URL display values over stored credentials."""
+
+    @staticmethod
+    def _nomad_ctx(raw: dict[str, object]) -> MaterializerContext:
+        return MaterializerContext(
+            TasksSettings,
+            "NOMAD",
+            TasksSettings.model_fields["NOMAD"],
+            raw,
+        )
+
+    async def test_patch_redacted_nomad_leaf_preserves_password(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """Saving an unchanged redacted ``NOMAD__endpoint`` keeps the real password."""
+        full_url = "http://nomad-user:nomad-secret@nomad.internal:4646"
+        redacted_url = "http://nomad-user:****@nomad.internal:4646"
+        fingerprint = materialize_fingerprint(self._nomad_ctx({"endpoint": full_url}))
+        try:
+            tasks_settings._set_snapshot({"NOMAD": fingerprint})
+            response = admin_test_client.patch(
+                "/admin/settings/TasksSettings",
+                json={"NOMAD__endpoint": redacted_url},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            endpoint = _nomad_endpoint_value()
+            assert "nomad-secret" in endpoint
+            assert "****" not in endpoint
+        finally:
+            tasks_settings._set_snapshot({})
+
+    async def test_patch_redacted_whole_nomad_preserves_password(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """A whole ``NOMAD`` PATCH with a redacted endpoint keeps the real password."""
+        full_url = "http://nomad-user:nomad-secret@nomad.internal:4646"
+        redacted_url = "http://nomad-user:****@nomad.internal:4646"
+        fingerprint = materialize_fingerprint(self._nomad_ctx({"endpoint": full_url}))
+        try:
+            tasks_settings._set_snapshot({"NOMAD": fingerprint})
+            response = admin_test_client.patch(
+                "/admin/settings/TasksSettings",
+                json={"NOMAD": {"endpoint": redacted_url}},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            endpoint = _nomad_endpoint_value()
+            assert "nomad-secret" in endpoint
+            assert "****" not in endpoint
         finally:
             tasks_settings._set_snapshot({})
 

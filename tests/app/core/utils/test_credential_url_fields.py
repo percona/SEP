@@ -21,6 +21,7 @@ from pydantic import BaseModel, TypeAdapter
 from app.core.utils.fields import (
     CREDENTIAL_URL_MASK,
     CredentialHttpUrl,
+    preserve_credential_url_password,
     PRESERVE_CREDENTIALS_CONTEXT,
     redact_credential_url,
     StrCredentialAnyUrl,
@@ -60,6 +61,34 @@ class TestRedactCredentialUrl:
             redact_credential_url(_CREDENTIAL_URL, mask="REDACTED")
             == "http://nomad-user:REDACTED@nomad.internal:4646/v1/jobs"
         )
+
+
+class TestPreserveCredentialUrlPassword:
+    """Write-back protection for unchanged redacted URL PATCH payloads."""
+
+    def test_preserves_password_when_only_mask_differs(self) -> None:
+        """A redacted resubmit restores the stored credential."""
+        current = "http://nomad-user:nomad-secret@nomad.internal:4646/v1/jobs"
+        incoming = "http://nomad-user:****@nomad.internal:4646/v1/jobs"
+        assert preserve_credential_url_password(current, incoming) == current
+
+    def test_returns_incoming_when_password_is_new(self) -> None:
+        """A genuinely new password is accepted as-is."""
+        current = "http://nomad-user:old-secret@nomad.internal:4646"
+        incoming = "http://nomad-user:new-secret@nomad.internal:4646"
+        assert preserve_credential_url_password(current, incoming) == incoming
+
+    def test_returns_incoming_when_host_differs(self) -> None:
+        """A redacted URL with a changed host is not treated as unchanged."""
+        current = "http://nomad-user:secret@nomad-a.internal:4646"
+        incoming = "http://nomad-user:****@nomad-b.internal:4646"
+        assert preserve_credential_url_password(current, incoming) == incoming
+
+    def test_preserves_password_when_paths_differ_only_by_trailing_slash(self) -> None:
+        """HttpUrl dumps may add a trailing slash that the client omits on resubmit."""
+        current = "http://nomad-user:nomad-secret@nomad.internal:4646/"
+        incoming = "http://nomad-user:****@nomad.internal:4646"
+        assert preserve_credential_url_password(current, incoming) == current
 
 
 class TestCredentialHttpUrl:

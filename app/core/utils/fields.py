@@ -518,6 +518,56 @@ def redact_credential_url(url: str, *, mask: str = CREDENTIAL_URL_MASK) -> str:
     )
 
 
+def _credential_url_identity_parts(
+    parsed: Any, *, include_password: bool = True
+) -> tuple[Any, ...]:
+    """Return URL components used to detect an unchanged redacted resubmit."""
+    hostname = parsed.hostname or ""
+    host = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
+    path = parsed.path or ""
+    if path == "/":
+        path = ""
+    parts: tuple[Any, ...] = (
+        parsed.scheme,
+        parsed.username or "",
+        host,
+        path,
+        parsed.params,
+        parsed.query,
+        parsed.fragment,
+    )
+    if include_password:
+        return (*parts, parsed.password or "")
+    return parts
+
+
+def preserve_credential_url_password(current: str, incoming: str) -> str:
+    """Keep the stored URL password when a PATCH resubmits the redacted display value.
+
+    When the dashboard saves an endpoint unchanged, the client sends the JSON-redacted
+    URL (``user:****@host``). Substitute the live password so the override row is
+    not corrupted.
+
+    :param current: The effective stored URL string.
+    :param incoming: The URL string submitted in the PATCH body.
+    :return: ``incoming`` unchanged unless it matches ``current`` with only the
+        password masked.
+    """
+    current_str = str(current)
+    incoming_str = str(incoming)
+    current_parsed = urlparse(current_str)
+    incoming_parsed = urlparse(incoming_str)
+    if incoming_parsed.password != CREDENTIAL_URL_MASK:
+        return incoming_str
+    if not current_parsed.password:
+        return incoming_str
+    if _credential_url_identity_parts(current_parsed, include_password=False) != (
+        _credential_url_identity_parts(incoming_parsed, include_password=False)
+    ):
+        return incoming_str
+    return current_str
+
+
 def _credential_url_serializer(
     value: Any,
     handler: Callable[[Any], Any],
