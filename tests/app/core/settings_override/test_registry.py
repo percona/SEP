@@ -122,6 +122,14 @@ def test_materialize_fingerprint_returns_diff_stable_dict() -> None:
     assert first == second
 
 
+def test_materialize_fingerprint_preserves_embedded_url_credentials() -> None:
+    """Internal fingerprints retain real URL passwords for live executor use."""
+    raw = {"endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646"}
+    fingerprint = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
+    assert "nomad-secret" in fingerprint["endpoint"]
+    assert "****" not in fingerprint["endpoint"]
+
+
 def test_is_hot_reloadable_true_for_marked_field() -> None:
     """A field marked HOT via ``field_with_metadata`` is detected."""
     assert is_hot_reloadable(SEPSettings, "CONNECTIVITY_CHECK_DEFAULT") is True

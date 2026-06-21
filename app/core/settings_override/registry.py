@@ -66,6 +66,7 @@ from pydantic_core import PydanticUndefined
 
 from app.core.settings_override.models import SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.utils.fields import PRESERVE_CREDENTIALS_CONTEXT
 from app.core.utils.pydantic import (
     annotation_pydantic_class,
     CustomFieldMetadata,
@@ -408,7 +409,9 @@ def materialize_fingerprint(ctx: MaterializerContext) -> Any:
     """Materialize a plain JSON config fingerprint instead of a live instance.
 
     Coerces ``raw`` to the field's declared type, then stores only its
-    ``model_dump(mode="json")`` -- a plain dict carrying no private attributes.
+    ``model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)`` -- a
+    plain dict carrying no private attributes and retaining embedded URL
+    credentials (redaction applies only to settings API responses).
     Two snapshots built from the same override therefore compare equal, which a
     live model instance with per-instance private attributes (a ``ContextVar``,
     an aiohttp session) would not. The live resource is owned by a lifecycle
@@ -420,7 +423,9 @@ def materialize_fingerprint(ctx: MaterializerContext) -> Any:
     :rtype: Any
     :raises ValidationError: If ``raw`` cannot be coerced to the declared type.
     """
-    return coerce_field_value(ctx.field_info, ctx.raw).model_dump(mode="json")
+    return coerce_field_value(ctx.field_info, ctx.raw).model_dump(
+        mode="json", context=PRESERVE_CREDENTIALS_CONTEXT
+    )
 
 
 def materialize_override_value(
