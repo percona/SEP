@@ -1214,9 +1214,10 @@ def _resolve_default(field_info: FieldInfo) -> Any:
 def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     """Return a JSON-safe representation of ``value`` for the response model.
 
-    Delegates to ``TypeAdapter(field.annotation).dump_python(value, mode='json')``
+    Delegates to ``TypeAdapter(_annotated_type(field_info)).dump_python(value, mode='json')``
     so nested Pydantic models, enums, timedeltas, URLs and paths all serialise
-    to their canonical JSON shape. :class:`pydantic.SecretStr` /
+    to their canonical JSON shape, including field metadata such as credential-URL
+    serializers and constraint annotations. :class:`pydantic.SecretStr` /
     :class:`pydantic.SecretBytes` instances inside the value are automatically
     redacted to ``"**********"`` by Pydantic's secret-aware JSON dump.
 
@@ -1240,6 +1241,6 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     if value is PydanticUndefined:
         return None
     try:
-        return TypeAdapter(field_info.annotation).dump_python(value, mode="json")
+        return TypeAdapter(_annotated_type(field_info)).dump_python(value, mode="json")
     except PydanticSchemaGenerationError:
         return None
