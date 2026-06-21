@@ -260,6 +260,19 @@ class TestArchivesSchemaFieldGates:
         gates = [g.when.to_dict() for g in field.forbidden]
         assert {"truthy": "source_query"} in gates
 
+    def test_dest_port_forbidden_when_dest_service_id(self):
+        """dest_port is forbidden when a dest_service_id is present."""
+        field = next(
+            f
+            for section in archives_schema.forms
+            for f in section.fields
+            if f.name == "dest_port"
+        )
+        assert field.forbidden is not None
+        gates = [g.when.to_dict() for g in field.forbidden]
+        assert {"any_present": ["dest_service_id"]} in gates
+        assert "derived from" in field.description
+
 
 class TestArchivesSchemaFailRules:
     """Section- and schema-level FailRule assertions (validators 1, 2, 3)."""

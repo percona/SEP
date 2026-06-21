@@ -15,12 +15,13 @@
 
 """Define the presentation bundle for the Checksums app.
 
-Section *membership* is already declared on
-:class:`~app.sep.plugins.checksums.models.ChecksumsForm` via ``Ui(section=...)``;
-what lives here is the part the model cannot express: the section order and
-titles, the list columns, the detail layout, and the UI capability flags. These
-feed the derived ``GET /schema`` and are carried over verbatim from the previous
-hand-written ``PluginSchema`` so the schema wire format is unchanged.
+Section *membership* and *order* are declared on
+:class:`~app.sep.plugins.checksums.models.ChecksumsForm` (via ``Ui(section=...)``
+and field-declaration order); what lives here is the part the model cannot
+express: the section titles and metadata, the list columns, the detail layout,
+and the UI capability flags. These feed the derived ``GET /schema`` and are
+carried over verbatim from the previous hand-written ``PluginSchema`` so the
+schema wire format is unchanged.
 """
 
 from app.sep.plugins.framework.apps import Views

@@ -15,15 +15,16 @@
 
 """Build the ``pt-table-checksum`` run-command spec for the Checksums app.
 
-:func:`build_checksums_args` is the single source of the CLI argument string
-(DSN construction, ``--recursion-method=dsn=…`` expansion, optional/flag arg
-mapping); both the model-first JSON path (via :func:`build_checksums_spec` fed to
-the framework's three-phase create) and the legacy Jinja form path (via
-``deps._assemble_checksum_payload``) delegate to it, so a checksum task's Nomad
-payload is byte-identical regardless of the call origin. The framework's
-``assemble_envelope`` supplies the executor ``target``, ``_service_name``, and
-the connectivity meta keys, byte-uniform with the canonical hand-written
-envelope.
+:func:`build_checksums_arg_prefix` builds the entity-derived argument prefix (DSN
+construction and ``--recursion-method=dsn=…`` expansion) shared by the model-first
+JSON path (:func:`build_checksums_spec` fed to the framework's three-phase create)
+and the legacy Jinja form path (``deps._assemble_checksum_payload``); the
+declarative value/flag args come from the framework's
+:func:`~app.sep.plugins.framework.payload.build_command_args` driven by the form's
+``ArgFormat`` markers, so a checksum task's Nomad payload is byte-identical
+regardless of the call origin. The framework's ``assemble_envelope`` supplies the
+executor ``target``, ``_service_name``, and the connectivity meta keys,
+byte-uniform with the canonical hand-written envelope.
 """
 
 import shlex
@@ -31,53 +32,39 @@ from collections.abc import Iterable
 
 from app.sep.inventory import CreatedService
 from app.sep.plugins.checksums.models import ChecksumsForm
-from app.sep.plugins.framework.payload import ResolvedEntities, RunCommandSpec
+from app.sep.plugins.framework.payload import (
+    build_command_args,
+    ResolvedEntities,
+    RunCommandSpec,
+)
 
 DEFAULT_RECURSION_DSN_TABLE = "D=percona,t=dsns"
 
 
-def build_checksums_args(
+def build_checksums_arg_prefix(
     service: CreatedService,
     *,
     recursion_method: str,
     dsn_table: str,
-    databases: str,
-    tables: str,
-    pause_file: str,
-    binary_index: bool,
-    explain_arg: bool,
-    fail_on_stopped_replication: bool,
-    truncate_replicate_table: bool,
-    progress: str,
-    set_vars: str,
-    max_load: str,
-    chunk_time: str,
-    max_lag: str,
     extra_remaining_args: Iterable[str] = (),
 ) -> list[str]:
-    """Build the ordered ``pt-table-checksum`` CLI argument list.
+    """Return the entity-derived ``pt-table-checksum`` argument prefix.
 
-    Own DSN construction, ``--recursion-method=dsn=…`` expansion (on a local copy
-    — never mutates caller arguments), and the optional/flag arg mapping. The
-    returned list is ``shlex.join``'d by the caller into ``meta.args``.
+    Build the leading ``[dsn]`` token (an empty string — rendered by ``shlex.join``
+    as ``''`` — when the service is local and portless), the
+    ``--recursion-method=...`` arg with ``dsn=...`` expanded when the method is
+    ``dsn`` (on a local copy, never mutating caller arguments), and any pre-parsed
+    extra args the legacy form path threads through. The declarative value/flag
+    args follow via
+    :func:`~app.sep.plugins.framework.payload.build_command_args`.
 
     :param service: The resolved inventory service (drives the DSN host/port).
     :param recursion_method: The replica-discovery method (e.g. ``"processlist"``).
-    :param dsn_table: DSN table used when ``recursion_method == "dsn"``.
-    :param databases: Comma-separated database names (pre-resolved).
-    :param tables: Comma-separated ``schema.table`` strings (pre-resolved).
-    :param pause_file: Pause-file path.
-    :param binary_index: Enable ``--binary-index``.
-    :param explain_arg: Enable ``--explain``.
-    :param fail_on_stopped_replication: Enable ``--fail-on-stopped-replication``.
-    :param truncate_replicate_table: Enable ``--truncate-replicate-table``.
-    :param progress: ``--progress`` value.
-    :param set_vars: ``--set-vars`` value.
-    :param max_load: ``--max-load`` value.
-    :param chunk_time: ``--chunk-time`` value.
-    :param max_lag: ``--max-lag`` value.
-    :param extra_remaining_args: Additional pre-parsed CLI args (form path only).
-    :return: The ordered argument list (DSN first), ready for ``shlex.join``.
+    :param dsn_table: DSN table used when ``recursion_method == "dsn"``; falls back
+        to ``D=percona,t=dsns`` when blank.
+    :param extra_remaining_args: Additional pre-parsed CLI args (legacy form path
+        only; the model-first path passes none).
+    :return: The ordered argument prefix, ready to precede the declarative args.
     """
     dsn = ""
     if service.port is not None:
@@ -91,50 +78,11 @@ def build_checksums_args(
         dsn_table_part = (dsn_table or "").strip() or DEFAULT_RECURSION_DSN_TABLE
         effective_recursion_method = f"dsn={stripped_dsn},{dsn_table_part}"
 
-    args = [dsn]
-
+    prefix = [dsn]
     if effective_recursion_method:
-        args.append(f"--recursion-method={effective_recursion_method}")
-
-    args.extend(extra_remaining_args)
-
-    optional_args = {
-        "databases": f"--databases={databases}",
-        "tables": f"--tables={tables}",
-        "pause_file": f"--pause-file={pause_file}",
-        "set_vars": f"--set-vars={set_vars}",
-        "max_load": f"--max-load={max_load}",
-        "chunk_time": f"--chunk-time={chunk_time}",
-        "max_lag": f"--max-lag={max_lag}",
-        "progress": f"--progress={progress}",
-    }
-    local_values = {
-        "databases": databases,
-        "tables": tables,
-        "pause_file": pause_file,
-        "set_vars": set_vars,
-        "max_load": max_load,
-        "chunk_time": chunk_time,
-        "max_lag": max_lag,
-        "progress": progress,
-    }
-    args.extend(arg for key, arg in optional_args.items() if local_values[key])
-
-    flag_args = {
-        "binary_index": "--binary-index",
-        "explain_arg": "--explain",
-        "fail_on_stopped_replication": "--fail-on-stopped-replication",
-        "truncate_replicate_table": "--truncate-replicate-table",
-    }
-    flag_values = {
-        "binary_index": binary_index,
-        "explain_arg": explain_arg,
-        "fail_on_stopped_replication": fail_on_stopped_replication,
-        "truncate_replicate_table": truncate_replicate_table,
-    }
-    args.extend(arg for key, arg in flag_args.items() if flag_values[key])
-
-    return args
+        prefix.append(f"--recursion-method={effective_recursion_method}")
+    prefix.extend(extra_remaining_args)
+    return prefix
 
 
 def build_checksums_spec(
@@ -144,7 +92,8 @@ def build_checksums_spec(
 
     The framework's ``assemble_envelope`` fills ``target`` (the executor
     ``HostRef``), ``_service_name``, and the connectivity keys around this spec;
-    here we own only the command, the ``shlex.join``'d args, and the
+    here we own only the command, the ``shlex.join``'d args (the entity-derived
+    prefix followed by the form's declarative value/flag args), and the
     ``_service_host`` / ``_service_port`` extras.
 
     :param form: The validated create form (a ``ChecksumsForm``).
@@ -154,23 +103,11 @@ def build_checksums_spec(
     :return: The run-command spec consumed by ``assemble_envelope``.
     """
     service = resolved.service
-    args = build_checksums_args(
+    args = build_checksums_arg_prefix(
         service,
         recursion_method=form.recursion_method,
         dsn_table=form.dsn_table,
-        databases=form.databases,
-        tables=form.tables,
-        pause_file=form.pause_file,
-        binary_index=form.binary_index,
-        explain_arg=form.explain_arg,
-        fail_on_stopped_replication=form.fail_on_stopped_replication,
-        truncate_replicate_table=form.truncate_replicate_table,
-        progress=form.progress,
-        set_vars=form.set_vars,
-        max_load=form.max_load,
-        chunk_time=form.chunk_time,
-        max_lag=form.max_lag,
-    )
+    ) + build_command_args(form)
     return RunCommandSpec(
         command="pt-table-checksum",
         args=shlex.join(args),

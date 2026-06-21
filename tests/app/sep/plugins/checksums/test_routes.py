@@ -29,6 +29,7 @@ from app.sep.main import sep_app
 from app.sep.plugins.checksums.deps import build_checksums_task_payload
 from app.sep.plugins.checksums.models import ChecksumsCreate
 from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 
 
 @pytest.fixture
@@ -113,3 +114,67 @@ def test_checksums_create_skips_connectivity_check_when_opted_out(
 
     clear_connectivity_caches()
     sep_app.dependency_overrides = {}
+
+
+def _deterministic_mysql_service():
+    """Build a MySQL service with a fixed host/port for byte-exact arg assertions."""
+    return CreatedServiceFactory.build(
+        node=CreatedNodeFactory.build(address="db-host"),
+        type=ServiceTypeEnum.MYSQL,
+        name="svc",
+        port=3306,
+    )
+
+
+def test_legacy_create_assembles_exact_args(
+    test_client, mock_task_api_dep, mock_inventory_api_dep
+):
+    """Assert POST /checksums/ (form) assembles the byte-exact pt-table-checksum args."""
+    service = _deterministic_mysql_service()
+    mock_inventory_api_dep.get = AsyncMock(return_value=service.model_dump())
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/checksums/",
+        data={
+            "task_name": "chk-legacy",
+            "hostname": "exec-node",
+            "service_id": service.id,
+            "recursion_method": "processlist",
+            "databases": "db1",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    posted = mock_task_api_dep.post.await_args.kwargs["json"]
+    assert posted["data"]["meta"]["args"] == (
+        "h=db-host,P=3306, --recursion-method=processlist --databases=db1"
+    )
+
+
+def test_legacy_update_assembles_exact_args(
+    test_client, mock_task_api_dep, mock_inventory_api_dep
+):
+    """Assert POST /checksums/{task_name}/update (form) reuses the byte-exact args."""
+    service = _deterministic_mysql_service()
+    mock_inventory_api_dep.get = AsyncMock(return_value=service.model_dump())
+    mock_task_api_dep.put.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/checksums/chk-legacy/update",
+        data={
+            "task_name": "chk-legacy",
+            "hostname": "exec-node",
+            "service_id": service.id,
+            "recursion_method": "hosts",
+            "tables": "db.t1",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    put_json = mock_task_api_dep.put.await_args.kwargs["json"]
+    assert put_json["data"]["meta"]["args"] == (
+        "h=db-host,P=3306, --recursion-method=hosts --tables=db.t1"
+    )
