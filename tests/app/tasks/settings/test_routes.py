@@ -546,18 +546,66 @@ class TestTasksSettingsNestedOverrides:
             tasks_settings._set_snapshot({})
 
 
-@pytest.mark.asyncio
-class TestTasksSettingsCredentialUrlWriteback:
-    """PATCH must not persist redacted URL display values over stored credentials."""
-
-    @staticmethod
-    def _nomad_ctx(raw: dict[str, object]) -> MaterializerContext:
-        return MaterializerContext(
+def _nomad_endpoint_fingerprint(full_url: str) -> dict[str, object]:
+    """Build a ``NOMAD`` override fingerprint with the given endpoint URL."""
+    return materialize_fingerprint(
+        MaterializerContext(
             TasksSettings,
             "NOMAD",
             TasksSettings.model_fields["NOMAD"],
-            raw,
+            {"endpoint": full_url},
         )
+    )
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsCredentialUrlRedaction:
+    """LIST and DETAIL redact ``NOMAD__endpoint`` embedded URL passwords."""
+
+    _FULL_URL = "http://nomad-user:nomad-secret@nomad.internal:4646"
+
+    @pytest.fixture(autouse=True)
+    def _reset_snapshot(self) -> Iterator[None]:
+        """Clear override snapshots after each test."""
+        yield
+        tasks_settings._set_snapshot({})
+
+    async def test_list_redacts_nomad_endpoint_leaf(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """``GET /settings/`` masks ``NOMAD__endpoint`` password components."""
+        tasks_settings._set_snapshot(
+            {"NOMAD": _nomad_endpoint_fingerprint(self._FULL_URL)}
+        )
+        response = admin_test_client.get("/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        settings = response.json()["groups"][0]["settings"]
+        by_key = {entry["key"]: entry for entry in settings}
+        value = by_key["NOMAD__endpoint"]["value"]
+        assert "nomad-secret" not in value
+        assert "****" in value
+        assert "nomad-user" in value
+
+    async def test_detail_redacts_nomad_endpoint_leaf(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """``GET /settings/{class}/{key}`` masks ``NOMAD__endpoint`` passwords."""
+        tasks_settings._set_snapshot(
+            {"NOMAD": _nomad_endpoint_fingerprint(self._FULL_URL)}
+        )
+        response = admin_test_client.get(
+            "/admin/settings/TasksSettings/NOMAD__endpoint"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        value = response.json()["value"]
+        assert "nomad-secret" not in value
+        assert "****" in value
+        assert "nomad-user" in value
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsCredentialUrlWriteback:
+    """PATCH must not persist redacted URL display values over stored credentials."""
 
     async def test_patch_redacted_nomad_leaf_preserves_password(
         self, admin_test_client: TestClient
@@ -565,7 +613,7 @@ class TestTasksSettingsCredentialUrlWriteback:
         """Saving an unchanged redacted ``NOMAD__endpoint`` keeps the real password."""
         full_url = "http://nomad-user:nomad-secret@nomad.internal:4646"
         redacted_url = "http://nomad-user:****@nomad.internal:4646"
-        fingerprint = materialize_fingerprint(self._nomad_ctx({"endpoint": full_url}))
+        fingerprint = _nomad_endpoint_fingerprint(full_url)
         try:
             tasks_settings._set_snapshot({"NOMAD": fingerprint})
             response = admin_test_client.patch(
@@ -585,7 +633,7 @@ class TestTasksSettingsCredentialUrlWriteback:
         """A whole ``NOMAD`` PATCH with a redacted endpoint keeps the real password."""
         full_url = "http://nomad-user:nomad-secret@nomad.internal:4646"
         redacted_url = "http://nomad-user:****@nomad.internal:4646"
-        fingerprint = materialize_fingerprint(self._nomad_ctx({"endpoint": full_url}))
+        fingerprint = _nomad_endpoint_fingerprint(full_url)
         try:
             tasks_settings._set_snapshot({"NOMAD": fingerprint})
             response = admin_test_client.patch(
