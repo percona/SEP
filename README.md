@@ -25,7 +25,7 @@
 | app/core/celery/utils.py                                                                                        |       31 |        2 |     94% |   92, 120 |
 | app/core/config.py                                                                                              |      210 |        7 |     97% |401, 435, 519, 523, 599, 612, 653 |
 | app/core/db/config.py                                                                                           |       17 |        0 |    100% |           |
-| app/core/db/crud.py                                                                                             |      285 |       23 |     92% |194, 310-327, 345, 350, 367, 369, 481-484, 850-854, 1118-1119 |
+| app/core/db/crud.py                                                                                             |      285 |       22 |     92% |194, 310-327, 345, 350, 367, 481-484, 850-854, 1118-1119 |
 | app/core/db/models.py                                                                                           |       14 |        0 |    100% |           |
 | app/core/db/sql\_types.py                                                                                       |       37 |        0 |    100% |           |
 | app/core/db/utils.py                                                                                            |       54 |        4 |     93% |76, 191, 220, 223 |
@@ -46,7 +46,7 @@
 | app/core/settings\_override/cache.py                                                                            |      118 |       13 |     89% |192-197, 210-215, 297, 360, 401, 405-412 |
 | app/core/settings\_override/lifecycle.py                                                                        |       69 |        1 |     99% |       267 |
 | app/core/settings\_override/manager.py                                                                          |        5 |        0 |    100% |           |
-| app/core/settings\_override/models.py                                                                           |       21 |        0 |    100% |           |
+| app/core/settings\_override/models.py                                                                           |       22 |        0 |    100% |           |
 | app/core/settings\_override/proxy.py                                                                            |       22 |        0 |    100% |           |
 | app/core/settings\_override/registry.py                                                                         |      257 |        5 |     98% |603, 782, 814, 846, 1037 |
 | app/core/utils/async\_run.py                                                                                    |       13 |        0 |    100% |           |
@@ -121,6 +121,7 @@
 | app/sep/migrations/versions/2026\_06\_16\_1200-a7c4e9f1b2d3\_add\_lifecycle\_state\_to\_app\_state.py           |       26 |        0 |    100% |           |
 | app/sep/migrations/versions/2026\_06\_16\_1600-b8d5f2a9c1e4\_add\_apprunningtask\_table.py                      |       16 |        3 |     81% |     54-56 |
 | app/sep/migrations/versions/2026\_06\_22\_1223-410eedfc5b43\_merge\_heads.py                                    |        7 |        0 |    100% |           |
+| app/sep/migrations/versions/2026\_06\_22\_1400-c97e7e47c935\_extend\_setting\_class\_enum\_anonymizer.py        |       13 |        3 |     77% |     71-75 |
 | app/sep/models.py                                                                                               |       66 |        1 |     98% |       247 |
 | app/sep/periodic\_tasks.py                                                                                      |       41 |        0 |    100% |           |
 | app/sep/plugins/alert\_troubleshooting/api\_routes.py                                                           |       23 |        4 |     83% |64-65, 73-80 |
@@ -265,10 +266,10 @@
 | app/sep/utils/static.py                                                                                         |       10 |        0 |    100% |           |
 | app/tasks/alert\_hooks.py                                                                                       |       31 |        0 |    100% |           |
 | app/tasks/anonymizer/anonymize.py                                                                               |       50 |        0 |    100% |           |
-| app/tasks/anonymizer/config.py                                                                                  |       27 |        1 |     96% |        68 |
+| app/tasks/anonymizer/config.py                                                                                  |       30 |        1 |     97% |        78 |
 | app/tasks/anonymizer/entities.py                                                                                |       28 |        0 |    100% |           |
-| app/tasks/celery.py                                                                                             |      290 |        8 |     97% |301, 335-337, 644, 715, 738-739 |
-| app/tasks/config.py                                                                                             |       25 |        0 |    100% |           |
+| app/tasks/celery.py                                                                                             |      316 |       11 |     97% |379, 389-391, 413-415, 722, 793, 816-817 |
+| app/tasks/config.py                                                                                             |       26 |        0 |    100% |           |
 | app/tasks/connectivity/constants.py                                                                             |        4 |        0 |    100% |           |
 | app/tasks/connectivity/models.py                                                                                |       11 |        0 |    100% |           |
 | app/tasks/connectivity/payload.py                                                                               |       68 |        1 |     99% |       162 |
@@ -315,6 +316,7 @@
 | app/tasks/migrations/versions/2026\_05\_20\_1500-7d1232c0e3ce\_coerce\_alters\_recursion\_method\_host.py       |       37 |       15 |     59% |     75-91 |
 | app/tasks/migrations/versions/2026\_06\_02\_1512-6d4cfd37bd3a\_extend\_setting\_class\_enum\_settings\_alert.py |       13 |        3 |     77% |     68-73 |
 | app/tasks/migrations/versions/2026\_06\_22\_1223-2f5a00236369\_merge\_heads.py                                  |        7 |        0 |    100% |           |
+| app/tasks/migrations/versions/2026\_06\_22\_1400-abc65df0318a\_extend\_setting\_class\_enum\_anonymizer.py      |       13 |        3 |     77% |     71-75 |
 | app/tasks/migrations/versions/2026\_06\_22\_1830-c4e8f0a3b1d2\_add\_alert\_detail\_builder\_to\_task.py         |       14 |        1 |     93% |        60 |
 | app/tasks/models.py                                                                                             |      306 |        3 |     99% |623, 1087-1088 |
 | app/tasks/periodic/crud.py                                                                                      |       26 |        0 |    100% |           |
@@ -323,7 +325,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       56 |        4 |     93% |64-68, 133-136 |
 | app/tasks/routes.py                                                                                             |      227 |       38 |     83% |139-143, 200, 221-228, 260, 316-317, 323, 367-368, 393-394, 433-434, 453, 593, 617, 630-644, 665-678, 694-695 |
 | app/tasks/settings/routes.py                                                                                    |       10 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **21847** | **2626** | **88%** |           |
+| **TOTAL**                                                                                                       | **21904** | **2634** | **88%** |           |
 
 
 ## Setup coverage badge
