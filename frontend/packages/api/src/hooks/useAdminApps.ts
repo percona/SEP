@@ -68,6 +68,13 @@ export interface AppStateResult {
 
 export const ADMIN_APPS_QUERY_KEY = ['admin', 'apps'] as const;
 
+/**
+ * Shared `mutationKey` for every app-transition mutation. Lets the management
+ * page scope its `useMutationState` row-lock lookup to these mutations alone,
+ * rather than any pending mutation that happens to carry an `appKey` variable.
+ */
+export const ADMIN_APP_MUTATION_KEY = ['admin', 'apps', 'transition'] as const;
+
 /** Base path (relative to the axios client's `/api` baseURL). */
 const ADMIN_APPS_BASE = '/admin/apps';
 
@@ -139,6 +146,7 @@ export interface SetAppStateVars {
 export function useSetAppState() {
   const queryClient = useQueryClient();
   return useMutation<AppStateResult, ApiError, SetAppStateVars>({
+    mutationKey: ADMIN_APP_MUTATION_KEY,
     mutationFn: async ({ appKey, lifecycleState }) => {
       const { data } = await apiClient.put<AppStateResult>(
         `${ADMIN_APPS_BASE}/${encodeURIComponent(appKey)}/state`,
@@ -163,6 +171,7 @@ export interface ForceDisableAppVars {
 export function useForceDisableApp() {
   const queryClient = useQueryClient();
   return useMutation<AppStateResult, ApiError, ForceDisableAppVars>({
+    mutationKey: ADMIN_APP_MUTATION_KEY,
     mutationFn: async ({ appKey }) => {
       const { data } = await apiClient.post<AppStateResult>(
         `${ADMIN_APPS_BASE}/${encodeURIComponent(appKey)}/force-disable`,

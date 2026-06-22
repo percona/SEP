@@ -28,6 +28,7 @@ import LockIcon from '@mui/icons-material/Lock';
 import { useMutationState } from '@tanstack/react-query';
 import { LoadableChildren } from '@percona/percona-ui';
 import {
+  ADMIN_APP_MUTATION_KEY,
   appStateErrorMessage,
   isTransitional,
   useAdminApps,
@@ -122,6 +123,7 @@ function AppRow({
             <LockIcon
               fontSize="small"
               color="disabled"
+              titleAccess="Protected app, cannot be disabled"
               data-testid={`app-protected-${app.app_key}`}
             />
           </Tooltip>
@@ -200,7 +202,7 @@ export default function AdminAppsPage() {
   // pending mutations (not just the latest) keeps each row locked while its own
   // request runs, even when several apps are toggled concurrently.
   const pendingKeys = useMutationState({
-    filters: { status: 'pending' },
+    filters: { mutationKey: ADMIN_APP_MUTATION_KEY, status: 'pending' },
     select: (mutation) => (mutation.state.variables as { appKey?: string } | undefined)?.appKey,
   });
 

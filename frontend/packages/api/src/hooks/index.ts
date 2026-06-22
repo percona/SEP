@@ -59,6 +59,7 @@ export {
   isTransitional,
   appStateErrorMessage,
   ADMIN_APPS_QUERY_KEY,
+  ADMIN_APP_MUTATION_KEY,
 } from './useAdminApps';
 export type {
   AdminApp,

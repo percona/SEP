@@ -124,6 +124,7 @@ export {
   isTransitional,
   appStateErrorMessage,
   ADMIN_APPS_QUERY_KEY,
+  ADMIN_APP_MUTATION_KEY,
   useConfigExport,
 } from './hooks';
 export type { AlertConfig, DashboardStats, EnabledApp } from './hooks';
