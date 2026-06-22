@@ -126,10 +126,16 @@ def start_settings_override_refresher(**kwargs: Any) -> None:
     validation even when the refresher is disabled, mirroring
     ``messages_settings._resolve()`` in ``sep_overrides_lifespan``.
 
+    The handler is idempotent: if a refresher task is already running for this
+    child it returns without starting a second one, so a re-entry (a direct call,
+    or an unexpected second ``worker_process_init``) cannot leak the prior task.
+
     :param kwargs: The ``worker_process_init`` signal keyword arguments (unused).
     """
     anonymizer_settings._resolve()  # noqa: SLF001
     if not settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED:
+        return
+    if _refresher_handle.task is not None and not _refresher_handle.task.done():
         return
     _refresher_handle.task = celery.loop.run_until_complete(
         start_refresh_task(

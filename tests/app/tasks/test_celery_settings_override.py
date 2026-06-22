@@ -301,6 +301,18 @@ class TestWorkerRefresherHandlers:
         assert celery_module._refresher_handle.task is None
         assert task.cancelled() or task.done()
 
+    def test_init_is_idempotent_when_already_running(self, worker_loop_env):
+        """Keep the running refresher and start no second task on re-entry."""
+        loop, _ = worker_loop_env
+        start_settings_override_refresher()
+        first_task = celery_module._refresher_handle.task
+        assert first_task is not None
+
+        start_settings_override_refresher()
+
+        assert celery_module._refresher_handle.task is first_task
+        assert not first_task.done()
+
     def test_post_init_override_visible_after_loop_driven(self, worker_loop_env):
         """Expose an override inserted after init once the loop is driven again."""
         loop, maker = worker_loop_env
