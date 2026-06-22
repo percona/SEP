@@ -421,8 +421,8 @@ class TestFetchMethods:
     ):
         """Test fetch_schema resolves an unattached service via the inventory API.
 
-        Covers the fallback at ``syncer.py:619``: when the schema carries no attached
-        ``service`` (or a service with no address), ``fetch_schema`` must look the
+        Covers the unattached-service fallback in ``fetch_schema``: when the schema
+        carries no attached ``service`` (or a service with no address), it must look the
         service up through ``get_inventory_service(service_id)`` rather than relying on
         a pre-attached parent.
         """
@@ -460,9 +460,9 @@ class TestFetchMethods:
     ):
         """Test fetch_table re-resolves the service when its address is missing.
 
-        Covers ``syncer.py:705-711``: the table's schema has an attached service, but
-        that service has no usable address (no node), so ``fetch_table`` must re-fetch
-        it via ``get_inventory_service(service.id)``.
+        Covers the missing-address re-resolve in ``fetch_table``: the table's schema has
+        an attached service, but that service has no usable address (no node), so it must
+        re-fetch it via ``get_inventory_service(service.id)``.
         """
         resolved_dump = created_service.model_dump()  # capture a copy with a node
         created_service.node = None  # address -> None, forces the re-resolve
@@ -496,8 +496,8 @@ class TestFetchMethods:
     ):
         """Test fetch_table resolves both schema and service when neither is attached.
 
-        Covers the ``else`` branch at ``syncer.py:712-717``: the table's schema has no
-        attached service, so ``fetch_table`` resolves the schema via
+        Covers the unattached-parent ``else`` branch in ``fetch_table``: the table's
+        schema has no attached service, so it resolves the schema via
         ``get_inventory_schema(schema_id)`` and then the service via
         ``get_inventory_service(service_id)``.
         """
