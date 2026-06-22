@@ -271,7 +271,7 @@ async def test_refresh_all_nomad_reconcile_stable_under_per_leaf_override(
 ) -> None:
     """Record reconcile-churn under an active per-child ``NOMAD`` override.
 
-    SEP-1344 evaluation finding: a per-leaf override stores a merged
+    A per-leaf override stores a merged
     ``NomadExecutor`` in the snapshot (not a fingerprint dict). Each
     ``build_snapshot`` produces a fresh instance, but Pydantic field equality
     makes consecutive snapshots compare equal, so ``fire_change_callbacks`` does
