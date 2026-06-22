@@ -313,7 +313,11 @@ async def postgres_engine() -> AsyncEngine:
             await conn.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
         yield base.execution_options(schema_translate_map={None: schema})
     finally:
-        await base.dispose()
+        try:
+            async with base.begin() as conn:
+                await conn.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        finally:
+            await base.dispose()
 
 
 @pytest_asyncio.fixture
