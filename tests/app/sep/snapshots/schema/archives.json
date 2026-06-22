@@ -580,7 +580,16 @@
           "type": "string"
         },
         {
-          "description": "Port of the destination database (1-65535).",
+          "description": "Port of the destination database (1-65535). Applies only when entering a manual host; when a destination service is selected, the port is derived from that service.",
+          "forbidden": [
+            {
+              "when": {
+                "any_present": [
+                  "dest_service_id"
+                ]
+              }
+            }
+          ],
           "ge": 1,
           "label": "Destination Port",
           "le": 65535,
@@ -760,6 +769,12 @@
       {
         "key": "created_by",
         "label": "Created By",
+        "sortable": false
+      },
+      {
+        "format": "schedule",
+        "key": "schedule",
+        "label": "Schedule",
         "sortable": false
       }
     ],

@@ -42,7 +42,6 @@ from app.sep.plugins.framework.deps import make_task_dep
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     FormLayout,
-    Hidden,
     HostRef,
     SectionLayout,
     ServiceRef,
@@ -310,8 +309,8 @@ class SynthForm(AppFormModel):
 
     Mirrors the shape every audited real task plugin hits: an executor ``HostRef``
     distinct from the service ``ServiceRef``, a form-display default differing from
-    the model default (``mode``), and a capability-control field excluded from the
-    schema (``alert_on_fail``, rendered by ``Capabilities(alert_on_fail=True)``).
+    the model default (``mode``), and the inherited ``alert_on_fail`` capability
+    control excluded from the schema (rendered by ``Capabilities(alert_on_fail=True)``).
     """
 
     task_name: Annotated[str, Ui(label="Name", section="main")]
@@ -324,7 +323,6 @@ class SynthForm(AppFormModel):
     mode: Annotated[
         str, Ui(label="Mode", section="main", default="display-default")
     ] = "body-default"
-    alert_on_fail: Annotated[bool, Hidden()] = False
 
 
 class SynthResponse(BaseModel):

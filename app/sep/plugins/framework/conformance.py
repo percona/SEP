@@ -129,8 +129,12 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
     override that reintroduces a route a disabled flag forbids.
 
     :param app: The migrated app whose derived router is inspected.
-    :return: One message per flag/route disagreement; empty when consistent.
+    :return: One message per flag/route disagreement; empty when consistent or when
+        the app is a script-source app (its derived surface is script-centric, not
+        the verb-toggled CRUD surface this check asserts).
     """
+    if app.script_source is not None:
+        return []
     detail = f"/{{{app.detail_path_param}}}"
     expected = {
         "create": ("POST", "/"),
@@ -171,33 +175,34 @@ def _root_segment(path: str) -> str:
 
 
 def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str]:
-    """Return violations where a view path's root is not a response-model field.
+    """Return violations where a detail-view path's root is not a response field.
 
     Validate the root segment (before the first ``.``, stripped of any ``[N]``) of
-    every ``list_view`` column key and ``detail_view`` field path against
-    ``app.response_model.model_fields``.
+    every ``detail_view`` field path against ``app.response_model.model_fields``,
+    exempting paths rooted at ``data`` (the opaque task-payload dict whose
+    sub-paths are free-form). ``list_view`` column keys are enforced at
+    ``TaskExecutionApp`` construction instead, so they are not checked here.
 
-    :param app: The migrated app whose views are checked against its response model.
-    :return: One message per unknown root segment; empty when all resolve.
+    :param app: The migrated app whose detail-view paths are checked against its
+        response model.
+    :return: One message per unknown root segment; empty when all resolve or when
+        the app is a script-source app (it derives no model-first detail view).
     """
+    if app.script_source is not None:
+        return []
+    if app.views.detail_view is None:
+        return []
     response_fields = set(app.response_model.model_fields)
-    views = app.views
-    refs = []
-    if views.list_view is not None:
-        refs.extend(
-            ("list_view column", column.key) for column in views.list_view.columns
-        )
-    if views.detail_view is not None:
-        refs.extend(
-            ("detail_view field", field.path)
-            for section in views.detail_view.sections
-            for field in section.fields
-        )
+    paths = [
+        field.path
+        for section in app.views.detail_view.sections
+        for field in section.fields
+    ]
     return [
-        f"{kind} {ref!r} references {_root_segment(ref)!r}, absent from "
+        f"detail_view field {path!r} references {_root_segment(path)!r}, absent from "
         f"{app.response_model.__name__}"
-        for kind, ref in refs
-        if _root_segment(ref) not in response_fields
+        for path in paths
+        if _root_segment(path) != "data" and _root_segment(path) not in response_fields
     ]
 
 
@@ -210,7 +215,9 @@ def check_schema_derivation_succeeds(app: "TaskExecutionApp") -> list[str]:
     cannot abort the whole conformance run.
 
     :param app: The migrated app whose ``create_model`` derivation is exercised.
-    :return: A single-element list on failure; empty on success or skip.
+    :return: A single-element list on failure; empty on success or skip (a
+        ``schema=`` passthrough or a script-source app, neither of which has a
+        ``create_model`` — both exit on the ``create_model is None`` check below).
     """
     if app.create_model is None:
         return []
