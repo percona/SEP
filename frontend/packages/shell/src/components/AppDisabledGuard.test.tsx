@@ -37,6 +37,8 @@ const app = (overrides: Partial<EnabledApp>): EnabledApp => ({
   uri_path: '/snippets',
   display_name: 'Snippet Manager',
   custom_ui: false,
+  group: null,
+  nav_order: null,
   ...overrides,
 });
 
