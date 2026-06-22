@@ -31,8 +31,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """No-op: merge the two tasks heads into one. No schema change."""
+    """Merge the two tasks heads into one. No-op; no schema change."""
 
 
 def downgrade() -> None:
-    """No-op: nothing to undo for a head merge."""
+    """Unmerge the heads. No-op; a head merge has nothing to undo."""
