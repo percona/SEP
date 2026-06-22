@@ -36,6 +36,7 @@ from app.sep.config import sep_settings
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.middleware.messages.config import messages_settings
 from app.sep.snippets.config import snippets_settings
+from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from tests.app.factories import (
     CasdoorUserFactory,
@@ -94,6 +95,7 @@ def _override_snapshot_cleared() -> None:
     snippets_settings._set_snapshot({})  # noqa: SLF001
     messages_settings._set_snapshot({})  # noqa: SLF001
     alert_settings._set_snapshot({})  # noqa: SLF001
+    anonymizer_settings._set_snapshot({})  # noqa: SLF001
 
 
 @pytest.fixture(scope="session")
