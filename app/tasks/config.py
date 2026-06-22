@@ -61,7 +61,6 @@ class TasksSettings(BaseYamlAppSettings):
     :param NOMAD: The Nomad executor used to integrate with Nomad. Per-leaf
         overrides are accepted via the settings API; the parent object itself
         is not patchable as a whole.
-    :type NOMAD: NomadExecutor
     :param DATABASE: The database configuration options. Defaults to an SQLite database
         with the name 'tasks.db'.
     :type DATABASE: DatabaseOptions

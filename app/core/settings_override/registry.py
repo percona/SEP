@@ -737,24 +737,17 @@ def coerce_nested_field_value(
     return chain, coerce_field_value(leaf_info, raw)
 
 
-def _mapping_has_segment(mapping: Mapping[str, Any], segment: str) -> bool:
-    """Return whether ``segment`` is a key on ``mapping`` (case-insensitive)."""
-    if segment in mapping:
-        return True
-    seg_lower = segment.lower()
-    return any(isinstance(key, str) and key.lower() == seg_lower for key in mapping)
-
-
-def _mapping_get_segment(mapping: Mapping[str, Any], segment: str) -> Any:
-    """Read ``segment`` from ``mapping`` (case-insensitive key match)."""
+def _mapping_segment_or_default(
+    mapping: Mapping[str, Any], segment: str, default: Any
+) -> Any:
+    """Read ``segment`` from ``mapping`` (case-insensitive) or return ``default``."""
     if segment in mapping:
         return mapping[segment]
     seg_lower = segment.lower()
     for key, value in mapping.items():
         if isinstance(key, str) and key.lower() == seg_lower:
             return value
-    msg = f"segment {segment!r} not in mapping"
-    raise KeyError(msg)
+    return default
 
 
 def resolve_nested_value(
@@ -789,14 +782,17 @@ def resolve_nested_value(
     if resolved is None:
         raise KeyError(key)
     chain, leaf_info = resolved
-    current: Any = proxy
+    current = proxy
     for segment in chain:
         if current is None:
             return leaf_info, None
         if isinstance(current, Mapping):
-            if not _mapping_has_segment(current, segment):
+            segment_value = _mapping_segment_or_default(
+                current, segment, NESTED_VALUE_MISSING
+            )
+            if segment_value is NESTED_VALUE_MISSING:
                 return leaf_info, NESTED_VALUE_MISSING
-            current = _mapping_get_segment(current, segment)
+            current = segment_value
             continue
         if not hasattr(current, segment):
             return leaf_info, NESTED_VALUE_MISSING
