@@ -346,7 +346,7 @@ async def get_validated_execution_args(
     gate_failures = evaluate_visibility_gates(snippet, execution_args)
     if gate_failures:
         messages.error(request, "Error executing snippet: " + "; ".join(gate_failures))
-        raise _get_snippet_redirect_exc(request, referer) from None
+        raise _get_snippet_redirect_exc(request, referer)
 
     return execution_args
 
