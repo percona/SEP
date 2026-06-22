@@ -19,7 +19,8 @@ from datetime import timedelta
 from enum import StrEnum
 from typing import Annotated, ClassVar
 
-from pydantic import AfterValidator, PositiveInt
+from annotated_types import Gt
+from pydantic import PositiveInt
 
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
@@ -48,24 +49,6 @@ class PreExecutionCheckMode(StrEnum):
     DISABLED = "disabled"
     WARN = "warn"
     BLOCK = "block"
-
-
-def _require_positive_ttl(value: timedelta) -> timedelta:
-    """Reject a non-positive ``SYNC_LOCK_TTL`` on both YAML and override paths.
-
-    A zero or negative TTL puts the sync-lock cutoff ``utc_now() -
-    SYNC_LOCK_TTL`` at or after the present, so every ``RUNNING`` row is always
-    claimable and the lock is effectively disabled. As an ``AfterValidator`` on
-    the annotation the guard runs on both the YAML-load path and the override
-    coercion path, which a model ``@field_validator`` would not.
-
-    :param value: The candidate sync-lock TTL.
-    :return: ``value`` unchanged when it is a positive duration.
-    :raises ValueError: When ``value`` is zero or negative.
-    """
-    if value <= timedelta(0):
-        raise ValueError("SYNC_LOCK_TTL must be a positive duration")
-    return value
 
 
 class TasksSettings(BaseYamlAppSettings):
@@ -104,8 +87,8 @@ class TasksSettings(BaseYamlAppSettings):
     SECURITY_HEADERS: SecurityHeadersOptions | None = nested_overridable_field(
         SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
     )
-    SYNC_LOCK_TTL: Annotated[timedelta, AfterValidator(_require_positive_ttl)] = (
-        hot_field(timedelta(minutes=5))
+    SYNC_LOCK_TTL: Annotated[timedelta, Gt(timedelta(0))] = hot_field(
+        timedelta(minutes=5)
     )
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = hot_field(
         PreExecutionCheckMode.WARN

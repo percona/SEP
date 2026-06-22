@@ -231,7 +231,7 @@ class TestSyncLockTtlPositivityGuard:
 
     def test_yaml_non_positive_value_raises(self):
         """Reject a non-positive load-time value with ``ValidationError``."""
-        with pytest.raises(ValidationError, match="positive duration"):
+        with pytest.raises(ValidationError, match="greater than 0 seconds"):
             TasksSettings(SYNC_LOCK_TTL=timedelta(0))
 
     @pytest.mark.asyncio
