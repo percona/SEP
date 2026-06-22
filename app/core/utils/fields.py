@@ -585,9 +585,15 @@ def _credential_url_serializer(
     return redact_credential_url(str(serialized))
 
 
+_CREDENTIAL_URL_JSON_SERIALIZER = WrapSerializer(
+    _credential_url_serializer,
+    when_used="json",
+)
+
+
 CredentialHttpUrl = Annotated[
     HttpUrl,
-    WrapSerializer(_credential_url_serializer, when_used="json"),
+    _CREDENTIAL_URL_JSON_SERIALIZER,
 ]
 """Define an HTTP URL that redacts embedded userinfo passwords on JSON serialization.
 
@@ -599,7 +605,7 @@ config fingerprints that must store the full URL.
 StrCredentialHttpUrl = Annotated[
     str,
     AsTypeValidator(HttpUrl, lambda v: str(v).rstrip("/")),
-    WrapSerializer(_credential_url_serializer, when_used="json"),
+    _CREDENTIAL_URL_JSON_SERIALIZER,
 ]
 """Define a string HTTP URL that redacts embedded passwords on JSON serialization.
 
@@ -610,7 +616,7 @@ slashes stripped, and masks any embedded password in JSON dumps.
 StrCredentialAnyUrl = Annotated[
     str,
     AsTypeValidator(AnyUrl, str),
-    WrapSerializer(_credential_url_serializer, when_used="json"),
+    _CREDENTIAL_URL_JSON_SERIALIZER,
 ]
 """Define a string URL (any scheme) that redacts embedded passwords on JSON serialization.
 
