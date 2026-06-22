@@ -560,8 +560,7 @@ def _nomad_endpoint_fingerprint(full_url: str) -> dict[str, object]:
 
 @pytest.mark.asyncio
 class TestTasksSettingsCredentialUrlRedaction:
-    """LIST and DETAIL redact ``NOMAD__endpoint`` embedded URL passwords."""
-
+    """Verify that LIST and DETAIL redact ``NOMAD__endpoint`` embedded URL passwords."""
     _FULL_URL = "http://nomad-user:nomad-secret@nomad.internal:4646"
 
     @pytest.fixture(autouse=True)
