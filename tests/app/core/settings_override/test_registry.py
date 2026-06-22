@@ -29,7 +29,6 @@ from app.core.settings_override.registry import (
     hot_field_names,
     is_advanced_field,
     is_hot_reloadable,
-    materialize_fingerprint,
     materialize_template,
     materialize_via_owning_model,
     MaterializerContext,
@@ -111,15 +110,6 @@ def test_materialize_template_rejects_non_string() -> None:
     """A non-string, non-``Template`` override is rejected instead of passed through."""
     with pytest.raises(ValueError, match="must be a string"):
         materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", 1))
-
-
-def test_materialize_fingerprint_returns_diff_stable_dict() -> None:
-    """``materialize_fingerprint`` returns a plain dict equal across two calls."""
-    raw = {"endpoint": "https://nomad.example.org"}
-    first = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
-    second = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
-    assert isinstance(first, dict)
-    assert first == second
 
 
 def test_is_hot_reloadable_true_for_marked_field() -> None:

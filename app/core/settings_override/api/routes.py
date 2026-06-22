@@ -414,7 +414,7 @@ def _validate_patch_body(
     Performs Phase A of the PATCH handler: each key is checked for existence
     on ``settings_cls``, HOT classification, and type/constraint validation via
     :func:`materialize_override_value` (which routes materializer-backed fields
-    -- ``PROVIDERS``, ``FOOTER_TEMPLATE``, ``NOMAD`` -- through their declared
+    -- ``PROVIDERS``, ``FOOTER_TEMPLATE`` -- through their declared
     materializer so the API accepts the same payloads the snapshot loader does).
     Errors are collected per-key; if any are present the entire batch is
     rejected with HTTP 422. Materializer-backed fields persist the raw JSON (the
@@ -479,7 +479,7 @@ def _validate_patch_body(
                 {"loc": ["body", key], "msg": str(exc), "type": "value_error"}
             )
             continue
-        # Materializer-backed fields (PROVIDERS, FOOTER_TEMPLATE, NOMAD) produce
+        # Materializer-backed fields (PROVIDERS, FOOTER_TEMPLATE) produce
         # values that are not JSON-storable (a provider set, a Template, a
         # NomadExecutor); persist the raw JSON so build_snapshot re-materializes
         # on load.

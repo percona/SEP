@@ -38,7 +38,6 @@ __all__ = [
     "is_nested_overridable_parent",
     "iter_class_fields",
     "iter_nested_leaf_keys",
-    "materialize_fingerprint",
     "materialize_override_value",
     "materialize_template",
     "materialize_via_owning_model",
@@ -147,8 +146,8 @@ def hot_field(
     and :func:`app.core.settings_override.cache.build_snapshot` invokes it in
     place of the default :func:`coerce_field_value` coercion -- used for fields
     whose snapshot value cannot be produced by a plain ``TypeAdapter`` (a
-    before-validator must run, the type is not Pydantic-serialisable, or a plain
-    fingerprint must be stored for diff stability). When ``advanced`` is set it
+    before-validator must run, or the type is not Pydantic-serialisable). When
+    ``advanced`` is set it
     rides the same channel under the ``"advanced"`` key, read back by
     :func:`is_advanced_field`; it is display-only metadata and does not affect
     override eligibility.
@@ -404,25 +403,6 @@ def materialize_template(ctx: MaterializerContext) -> Any:
     )
 
 
-def materialize_fingerprint(ctx: MaterializerContext) -> Any:
-    """Materialize a plain JSON config fingerprint instead of a live instance.
-
-    Coerces ``raw`` to the field's declared type, then stores only its
-    ``model_dump(mode="json")`` -- a plain dict carrying no private attributes.
-    Two snapshots built from the same override therefore compare equal, which a
-    live model instance with per-instance private attributes (a ``ContextVar``,
-    an aiohttp session) would not. The live resource is owned by a lifecycle
-    holder; the snapshot carries only the diff-stable config fingerprint.
-
-    :param ctx: The materialization context.
-    :type ctx: MaterializerContext
-    :return: A JSON-safe ``dict`` fingerprint of the coerced value.
-    :rtype: Any
-    :raises ValidationError: If ``raw`` cannot be coerced to the declared type.
-    """
-    return coerce_field_value(ctx.field_info, ctx.raw).model_dump(mode="json")
-
-
 def materialize_override_value(
     settings_cls: type[BaseYamlSettings],
     field_name: str,
@@ -435,7 +415,7 @@ def materialize_override_value(
     default :func:`coerce_field_value` coercion. Shared by snapshot building
     (:func:`app.core.settings_override.cache.build_snapshot`) and the settings
     API PATCH validation so both accept exactly the same override payloads -- a
-    materializer-backed field (``PROVIDERS``, ``FOOTER_TEMPLATE``, ``NOMAD``)
+    materializer-backed field (``PROVIDERS``, ``FOOTER_TEMPLATE``)
     would otherwise be accepted on snapshot load but rejected by the API.
 
     :param settings_cls: The Pydantic settings class that owns the field.
@@ -762,9 +742,8 @@ def resolve_nested_value(
     (case-corrected) names, so the returned value reflects the merged snapshot
     copy when an override is active and the YAML/env value otherwise. Each
     segment is read as a :class:`~collections.abc.Mapping` key when the current
-    node is a mapping -- a materializer-fingerprint override stores a plain dict
-    rather than a live model -- and as an attribute otherwise. A missing or
-    ``None`` intermediate yields ``None`` rather than raising.
+    node is a mapping, and as an attribute otherwise. A missing or ``None``
+    intermediate yields ``None`` rather than raising.
 
     :param settings_cls: The Pydantic settings class the key belongs to.
     :type settings_cls: type[BaseModel]
