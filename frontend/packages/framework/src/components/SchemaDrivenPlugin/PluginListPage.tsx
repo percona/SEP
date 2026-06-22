@@ -219,6 +219,7 @@ export function PluginListPage({
         listView={listView}
         data={rows}
         isLoading={isLoading}
+        pluginName={pluginName}
         onRowClick={
           listOnly
             ? undefined
