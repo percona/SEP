@@ -13,4 +13,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.sep.plugins.mysql_backups.routes import router
+from app.sep.plugins.mysql_backups.app import app
+
+__all__ = ["app"]
