@@ -125,7 +125,7 @@ def test_get_executor_returns_executor_unchanged_without_override() -> None:
 
 
 def test_get_executor_returns_snapshot_executor_under_override() -> None:
-    """With an override, request-less NOMAD resolution returns the snapshot executor."""
+    """Return the snapshot executor for request-less NOMAD resolution under an override."""
     _override_nomad(_NOMAD_A)
     result = get_executor(TaskBackendEnum.NOMAD)
     assert isinstance(result, NomadExecutor)

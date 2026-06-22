@@ -306,7 +306,7 @@ async def test_invalid_footer_template_value_logged_and_skipped(
 async def test_nomad_per_leaf_override_merged_as_executor(
     session: AsyncSession,
 ) -> None:
-    """A per-leaf ``NOMAD`` override snapshots a merged ``NomadExecutor``."""
+    """Snapshot a per-leaf ``NOMAD`` override as a merged ``NomadExecutor``."""
     nomad = NomadExecutor(endpoint="http://nomad.example:4646")
     base = SimpleNamespace(NOMAD=nomad)
     await _insert(
@@ -554,7 +554,7 @@ async def test_top_level_row_targeting_nested_only_parent_is_skipped(
 async def test_top_level_nomad_row_targeting_nested_only_parent_is_skipped(
     session: AsyncSession, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """A whole-parent ``NOMAD`` row is dropped; per-leaf rows still merge."""
+    """Drop a whole-parent ``NOMAD`` row while still merging per-leaf rows."""
     caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
     nomad = NomadExecutor(endpoint="http://nomad.example:4646")
     base = SimpleNamespace(NOMAD=nomad)

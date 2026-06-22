@@ -353,7 +353,7 @@ class _OptionalIntermediateParent(BaseModel):
 
 
 def test_resolve_nested_value_missing_mapping_segment_returns_sentinel() -> None:
-    """A dict snapshot missing a segment returns :data:`NESTED_VALUE_MISSING`."""
+    """Return :data:`NESTED_VALUE_MISSING` for a dict snapshot missing a segment."""
     proxy = OverridableSettingsProxy(
         _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
     )
@@ -365,7 +365,7 @@ def test_resolve_nested_value_missing_mapping_segment_returns_sentinel() -> None
 
 
 def test_resolve_nested_value_optional_none_intermediate_returns_none() -> None:
-    """A present-``None`` optional intermediate collapses the leaf to ``None``."""
+    """Collapse the leaf to ``None`` for a present-``None`` optional intermediate."""
     proxy = OverridableSettingsProxy(
         _OptionalIntermediateParent, setting_class=SettingClassEnum.SEP_SETTINGS
     )
@@ -379,7 +379,7 @@ def test_resolve_nested_value_optional_none_intermediate_returns_none() -> None:
 
 
 def test_resolve_nested_value_present_none_secret_leaf_returns_none() -> None:
-    """A present-``None`` secret leaf is distinct from a missing segment."""
+    """Distinguish a present-``None`` secret leaf from a missing segment."""
     proxy = OverridableSettingsProxy(
         _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
     )
