@@ -657,7 +657,7 @@ class TestListFolders:
     async def test_list_folders_returns_empty_list_when_no_folders(
         self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
     ) -> None:
-        """Test list_folders returns an empty list when the API returns none."""
+        """Test list_folders returns an empty list when the API returns an empty list."""
         mock_request.return_value = []
 
         result = await pmm_remote_api.list_folders()
@@ -742,7 +742,7 @@ class TestListContactPoints:
     async def test_list_contact_points_returns_empty_list_when_none(
         self, mock_request: AsyncMock, pmm_remote_api: PMMRemoteAPI
     ) -> None:
-        """Test list_contact_points returns an empty list when the API returns none."""
+        """Test list_contact_points returns an empty list when the API returns an empty list."""
         mock_request.return_value = []
 
         result = await pmm_remote_api.list_contact_points()

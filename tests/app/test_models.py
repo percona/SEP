@@ -192,7 +192,7 @@ class TestCasdoorUser:
         """Verify get_oauth_token errors when the upstream returns ``None``."""
         casdoor_mock.get_access_token.return_value = None
 
-        with pytest.raises(TypeError):
+        with pytest.raises(TypeError, match="must be a mapping"):
             await CasdoorUser.get_oauth_token(code="test_code")
 
     @pytest.mark.asyncio
