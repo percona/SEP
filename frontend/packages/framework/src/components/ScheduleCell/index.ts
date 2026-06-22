@@ -15,8 +15,5 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { ScheduledTasksPanel } from './ScheduledTasksPanel';
-export { useScheduledTasksForPlugin } from './hooks';
-export type { UseScheduledTasksOptions, PeriodicTaskResponse } from './hooks';
-export { describePeriod, formatRelativeTime, formatAbsoluteTime, selectSchedule } from './periods';
-export type { PeriodDescription } from './periods';
+export { ScheduleCell } from './ScheduleCell';
+export type { ScheduleCellProps } from './ScheduleCell';
