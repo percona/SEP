@@ -34,8 +34,6 @@ from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp
 from app.sep.plugins.mysql_backups.deps import build_mysql_backups_api_task_response
 from app.sep.plugins.mysql_backups.models import (
     BackupCreate,
-    BackupExecuteWrite,
-    BackupExecutionResponse,
     BackupResponse,
 )
 from app.sep.plugins.mysql_backups.payload import build_backup_spec
@@ -61,7 +59,5 @@ app = TaskExecutionApp(
     connectivity_check=True,
     capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),
     list_status_filter=True,
-    execute_write_model=BackupExecuteWrite,
-    execute_response_model=BackupExecutionResponse,
     jinja_router=jinja_router,
 )

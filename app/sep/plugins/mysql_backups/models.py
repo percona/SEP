@@ -25,7 +25,6 @@ from pydantic import (
     BeforeValidator,
     Field,
     field_validator,
-    FutureDatetime,
     model_validator,
 )
 
@@ -654,41 +653,6 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
     all_servers: BackupConfigAll
     server_list: list[BackupConfigServer]
-
-
-class BackupExecuteWrite(BaseModel):
-    """Represent a JSON request body for executing a backup task.
-
-    Fields default to ``None`` so the API route can serialize the body
-    with ``exclude_none=True`` and omit unset values when forwarding to
-    the Tasks API, which then applies its own defaults
-    (``chain_on_failure`` defaults to ``False`` in ``TaskExecutionRequest``).
-
-    :param eta: Optional future datetime at which to schedule execution.
-    :type eta: FutureDatetime | None
-    :param chain_task_names: Optional list of task names to chain after this one.
-    :type chain_task_names: list[str] | None
-    :param chain_on_failure: Whether chained tasks run even on failure. ``None``
-        means "don't send"; the Tasks API treats an omitted value as ``False``.
-    :type chain_on_failure: bool | None
-    """
-
-    eta: FutureDatetime | None = None
-    chain_task_names: list[str] | None = None
-    chain_on_failure: bool | None = None
-
-
-class BackupExecutionResponse(BaseModel):
-    """Carry the response payload from ``POST /api/plugins/mysql_backups/{task_name}/execute``.
-
-    :param task_name: The name of the task that was executed.
-    :type task_name: str
-    :param task_id: The id of the task-history row created by the tasks API.
-    :type task_id: int | None
-    """
-
-    task_name: str
-    task_id: int | None = None
 
 
 class BackupTaskBase(BaseModel):
