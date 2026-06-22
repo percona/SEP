@@ -98,6 +98,10 @@ class Plugin(BaseCaseInsensitiveModel):
     :type css_class: str
     :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
     :type sidebar: bool
+    :param group: The nav group key this plugin nests under (read from YAML as
+        ``GROUP``); ``None`` renders it as a top-level sidebar entry.
+    :param nav_order: The plugin's sort position within the sidebar (read from
+        YAML as ``NAV_ORDER``); ``None`` sorts last.
     :param enabled: Whether the plugin ships enabled. Read only at first-startup
         seed time to set the initial :class:`app.sep.models.AppState` row;
         defaults to ``True`` so every plugin already in ``settings.yaml`` keeps
@@ -122,6 +126,8 @@ class Plugin(BaseCaseInsensitiveModel):
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
     sidebar: bool = True
+    group: str | None = None
+    nav_order: int | None = None
     enabled: bool = True
     api_router_path: StrImportableAttribute | None = None
 
