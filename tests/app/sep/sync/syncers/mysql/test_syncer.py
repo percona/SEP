@@ -20,9 +20,9 @@ These tests drive a real ``MySQLSyncer`` through its public surface against cann
 real downstream cascade (``sync_*`` / ``delete_*`` / ``update_*`` / ``get_inventory_*``)
 are exercised end-to-end and asserted behaviourally on the ``inventory_api`` traffic,
 on ``_inventory_index_cache`` state, and on the resulting ``SyncItem`` lifecycle —
-never by patching the subject class. Only genuine external boundaries
-(``wait_for_task_output``, the ``/hosts/`` lookup behind ``get_available_hosts``) are
-stubbed, at the ``RemoteAPI`` seam where possible.
+never by patching the subject class. External boundaries (e.g. ``wait_for_task_output``,
+the ``/hosts/`` lookup behind ``get_available_hosts``, and low-level stream/decompression
+helpers) are stubbed, at the ``RemoteAPI`` seam where possible.
 """
 
 import gzip
