@@ -47,6 +47,8 @@ from typing import Any, ClassVar, Self, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic_core import core_schema
 
+from app.core.utils.fields import value_is_present
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
@@ -242,30 +244,6 @@ def _resolve_field(instance: Any, path: str) -> Any:
             return None
         current = getattr(current, segment, None)
     return current
-
-
-def value_is_present(value: Any) -> bool:
-    """Return whether ``value`` counts as *present* to a presence/forbidden gate.
-
-    Treats ``None``, ``False``, and empty strings/bytes/lists/tuples/sets/dicts
-    as absent. ``0`` counts as present (numeric, just falsy). ``False`` is
-    treated as the unset bool default so ``forbidden=`` :class:`FieldGate`
-    entries on :class:`BoolField` fire only on an explicit ``True`` toggle,
-    matching the convention used by :class:`FailRule` ``truthy(name)`` checks.
-
-    The public, value-level entry point shared by :func:`_field_is_present`
-    (runtime gate evaluation) and authoring-time guards (such as the snippets
-    plugin's meta validation) so the two presence checks cannot drift.
-
-    :param value: The value to classify.
-    :return: Whether the value is considered present.
-    """
-    if value is None or value is False:
-        return False
-    return not (
-        isinstance(value, str | bytes | list | tuple | set | frozenset | dict)
-        and not value
-    )
 
 
 def _field_is_present(instance: Any, name: str) -> bool:

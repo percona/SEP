@@ -58,12 +58,12 @@ from app.core.utils.fields import (
     EnumFieldMixin,
     NonEmptyStr,
     UTCDatetime,
+    value_is_present,
 )
 from app.core.utils.pydantic import (
     field_with_metadata,
     loc_to_dot_sep,
 )
-from app.sep.plugins.framework.rules import value_is_present
 from app.sep.snippets.forms import (
     CheckboxInputElement,
     DateTimeInputElement,

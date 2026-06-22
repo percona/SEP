@@ -648,6 +648,23 @@ class TestVisibilityCondition:
         )
         assert param.visible_when_not.parameter == "list"
 
+    def test_zero_default_with_condition_raises(self):
+        """A ``0`` default + visibility condition is rejected.
+
+        ``0`` is falsy but ``value_is_present`` classifies it as *present*
+        (numeric), so it would hit the same unsatisfiable backfill trap as any
+        other non-empty default and must be rejected — unlike ``False``/``""``.
+        """
+        with pytest.raises(ValidationError, match="default"):
+            SnippetMetaParameter(
+                name="count", type="int", default=0, visible_when_not="list"
+            )
+
+    def test_empty_string_default_with_condition_allowed(self):
+        """An empty-string default (treated as absent) is fine with a condition."""
+        param = SnippetMetaParameter(name="note", default="", visible_when_not="list")
+        assert param.visible_when_not.parameter == "list"
+
     def test_blank_parameter_name_raises(self):
         """An empty referenced parameter name is rejected."""
         with pytest.raises(ValidationError):

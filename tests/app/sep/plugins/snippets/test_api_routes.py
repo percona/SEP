@@ -631,6 +631,78 @@ class TestSnippetsApiExecute:
         assert response.status_code == status.HTTP_201_CREATED
         assert mock_task_api_dep.post.called
 
+    async def test_multiple_gated_fields_report_all_failures(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """All fired gates surface in the 422 detail; nothing is dispatched."""
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+                {
+                    "name": "end",
+                    "type": "str",
+                    "label": "End",
+                    "visible_when_not": "list",
+                },
+            ],
+        )
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={
+                "executor_host": "host1",
+                "args": {"list": True, "start": "a", "end": "b"},
+            },
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        expected_failures = 2
+        assert isinstance(detail, list)
+        assert len(detail) == expected_failures
+        mock_task_api_dep.post.assert_not_called()
+
+    async def test_gated_bool_false_executes(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """A gated bool submitted ``false`` is absent, so execution proceeds.
+
+        Guards against a false-positive rejection: the forbidden gate must treat
+        an explicit ``False`` toggle as unset, matching the client renderer.
+        """
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "flag",
+                    "type": "bool",
+                    "label": "Flag",
+                    "visible_when_not": "list",
+                },
+            ],
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": 11})
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {"list": True, "flag": False}},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert mock_task_api_dep.post.called
+
 
 @pytest.mark.asyncio
 class TestSnippetsApiPutApproval:

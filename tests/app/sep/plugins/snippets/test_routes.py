@@ -662,3 +662,54 @@ class TestSnippetsExecuteVisibilityGates:
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
         mock_task_api_dep.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_multiple_gated_fields_flash_lists_each_failure(
+        self,
+        admin_client: TestClient,
+        session: AsyncSession,
+        create_snippet,
+        mock_task_api_dep: AsyncMock,
+        mocker: MockerFixture,
+    ):
+        """Submitting several hidden fields flashes each failure; nothing dispatches."""
+        await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+                {
+                    "name": "end",
+                    "type": "str",
+                    "label": "End",
+                    "visible_when_not": "list",
+                },
+            ],
+            filename="multi-form.sh",
+        )
+        error = mocker.patch("app.sep.plugins.snippets.deps.messages.error")
+
+        response = admin_client.post(
+            _EXECUTE_URL,
+            params={"snippet_filename": "multi-form.sh"},
+            data={
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "list": "1",
+                "start": "2020",
+                "end": "2021",
+            },
+            headers={"referer": "http://testserver/snippets/detail"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        message = str(error.call_args.args[1])
+        assert "start" in message
+        assert "end" in message
+        mock_task_api_dep.post.assert_not_called()

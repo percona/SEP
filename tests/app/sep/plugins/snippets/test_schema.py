@@ -31,12 +31,17 @@ from app.sep.plugins.framework.schema import (
 )
 from app.sep.plugins.snippets.schema import (
     build_snippet_schema,
+    evaluate_visibility_gates,
     field_for,
     SNIPPETS_PLUGIN_SCHEMA,
 )
 from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,
+)
+from app.sep.snippets.models.snippet import (
+    EXECUTOR_HOSTS_INPUT_NAME,
+    Snippet,
 )
 
 
@@ -346,6 +351,144 @@ async def test_per_snippet_schema_omits_hidden_parameter(create_snippet):
     field_names = {field.name for section in schema.forms for field in section.fields}
     assert "pmmserver" in field_names
     assert "apikey" not in field_names
+
+
+def _snippet_with_params(params: list[dict]) -> Snippet:
+    """Return an unpersisted snippet carrying ``params`` as its meta parameters."""
+    snippet = Snippet(filename="gated.sh", size=20, md5_digest="a" * 32)
+    snippet.meta = {**snippet.meta, "parameters": params}
+    return snippet
+
+
+def _exec_args(snippet: Snippet, wire: dict):
+    """Validate ``wire`` (keyed by parameter wire/alias names) into exec args."""
+    return snippet.get_execution_model().model_validate(
+        {EXECUTOR_HOSTS_INPUT_NAME: "host1", **wire}
+    )
+
+
+class TestEvaluateVisibilityGates:
+    """Direct coverage of the server-side gate evaluator.
+
+    ``evaluate_visibility_gates`` is the security backstop: it rejects a value
+    submitted directly for a parameter the client would have hidden. Generated
+    execution models name fields with opaque identifiers and expose each
+    parameter only through its wire alias, so evaluation MUST run against the
+    ``by_alias`` view — these tests pin that and the present/absent boundaries.
+    """
+
+    _LIST_START = [
+        {"name": "list", "type": "bool", "label": "List"},
+        {"name": "start", "type": "str", "label": "Start", "visible_when_not": "list"},
+    ]
+
+    def test_gateless_snippet_returns_empty(self) -> None:
+        """A snippet with no visibility gate never reports a failure."""
+        snippet = _snippet_with_params(
+            [{"name": "name", "type": "str", "label": "Name"}]
+        )
+        assert (
+            evaluate_visibility_gates(snippet, _exec_args(snippet, {"name": "x"})) == []
+        )
+
+    def test_evaluation_runs_against_alias_view(self) -> None:
+        """The gate resolves the wire name even though the python attr differs.
+
+        Regression guard for the ``model_dump(by_alias=True)`` requirement: the
+        plain dump is keyed by generated identifiers, so a non-alias evaluation
+        would silently never fire — a gate bypass.
+        """
+        snippet = _snippet_with_params(self._LIST_START)
+        args = _exec_args(snippet, {"list": True, "start": "2020"})
+
+        assert "start" not in args.model_dump()  # python attr is opaque
+        assert "start" in args.model_dump(by_alias=True)
+        assert evaluate_visibility_gates(snippet, args)  # gate fires
+
+    def test_truthy_gate_not_fired_when_trigger_absent(self) -> None:
+        """With the trigger falsy, the gated value is allowed."""
+        snippet = _snippet_with_params(self._LIST_START)
+        args = _exec_args(snippet, {"start": "2020"})
+        assert evaluate_visibility_gates(snippet, args) == []
+
+    def test_visible_when_negated_gate_fires(self) -> None:
+        """``visible_when`` forbids the field while the trigger is NOT truthy."""
+        snippet = _snippet_with_params(
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when": "list",
+                },
+            ]
+        )
+        # ``list`` falsy -> field is hidden -> a submitted ``start`` is rejected.
+        args = _exec_args(snippet, {"start": "2020"})
+        assert evaluate_visibility_gates(snippet, args)
+
+    def test_equals_gate_fires(self) -> None:
+        """An equals condition rejects the gated value on an equality match."""
+        snippet = _snippet_with_params(
+            [
+                {"name": "mode", "type": "str", "label": "Mode"},
+                {
+                    "name": "region",
+                    "type": "str",
+                    "label": "Region",
+                    "visible_when_not": {"parameter": "mode", "equals": "advanced"},
+                },
+            ]
+        )
+        args = _exec_args(snippet, {"mode": "advanced", "region": "eu"})
+        assert evaluate_visibility_gates(snippet, args)
+
+    def test_multiple_gates_fire_yield_multiple_messages(self) -> None:
+        """Every fired gate contributes a message."""
+        snippet = _snippet_with_params(
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+                {
+                    "name": "end",
+                    "type": "str",
+                    "label": "End",
+                    "visible_when_not": "list",
+                },
+            ]
+        )
+        args = _exec_args(snippet, {"list": True, "start": "a", "end": "b"})
+        expected_failures = 2
+        assert len(evaluate_visibility_gates(snippet, args)) == expected_failures
+
+    def test_gated_bool_false_is_allowed(self) -> None:
+        """A gated bool submitted ``False`` is absent, so the gate does not reject.
+
+        ``True`` for the same field IS rejected — locking the ``value_is_present``
+        ``False``-is-absent convention end-to-end through the evaluator.
+        """
+        snippet = _snippet_with_params(
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "flag",
+                    "type": "bool",
+                    "label": "Flag",
+                    "visible_when_not": "list",
+                },
+            ]
+        )
+        allowed = _exec_args(snippet, {"list": True, "flag": False})
+        rejected = _exec_args(snippet, {"list": True, "flag": True})
+
+        assert evaluate_visibility_gates(snippet, allowed) == []
+        assert evaluate_visibility_gates(snippet, rejected)
 
 
 def test_field_for_maps_datetime_parameter_to_datetime_field():
