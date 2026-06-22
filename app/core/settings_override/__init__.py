@@ -16,6 +16,7 @@
 """DB-backed settings override layer (HOT-only)."""
 
 __all__ = [
+    "NESTED_VALUE_MISSING",
     "CallbackRegistry",
     "FieldMetadata",
     "Materializer",
@@ -81,6 +82,7 @@ from app.core.settings_override.registry import (
     MaterializerContext,
     nested_overridable_field,
     nested_overridable_field_names,
+    NESTED_VALUE_MISSING,
     not_overridable_field,
     ReloadClassification,
     resolve_nested_field,

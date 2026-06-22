@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "NESTED_VALUE_MISSING",
     "FieldMetadata",
     "Materializer",
     "MaterializerContext",
@@ -78,6 +79,12 @@ if TYPE_CHECKING:
     # the concrete settings classes at runtime, which lets ``app.core.config``
     # import this module at top level without a circular import.
     from app.core.config import BaseYamlSettings
+
+#: Sentinel returned by :func:`resolve_nested_value` when a segment along the
+#: chain is absent. Distinct from a present intermediate or leaf whose value is
+#: ``None`` (an optional intermediate collapsing to ``None``, or an unresolved
+#: secret leaf). The LIST response builder maps this to a JSON ``null``.
+NESTED_VALUE_MISSING = object()
 
 
 class ReloadClassification(StrEnum):
@@ -730,6 +737,26 @@ def coerce_nested_field_value(
     return chain, coerce_field_value(leaf_info, raw)
 
 
+def _mapping_has_segment(mapping: Mapping[str, Any], segment: str) -> bool:
+    """Return whether ``segment`` is a key on ``mapping`` (case-insensitive)."""
+    if segment in mapping:
+        return True
+    seg_lower = segment.lower()
+    return any(isinstance(key, str) and key.lower() == seg_lower for key in mapping)
+
+
+def _mapping_get_segment(mapping: Mapping[str, Any], segment: str) -> Any:
+    """Read ``segment`` from ``mapping`` (case-insensitive key match)."""
+    if segment in mapping:
+        return mapping[segment]
+    seg_lower = segment.lower()
+    for key, value in mapping.items():
+        if isinstance(key, str) and key.lower() == seg_lower:
+            return value
+    msg = f"segment {segment!r} not in mapping"
+    raise KeyError(msg)
+
+
 def resolve_nested_value(
     *,
     settings_cls: type[BaseModel],
@@ -742,8 +769,9 @@ def resolve_nested_value(
     (case-corrected) names, so the returned value reflects the merged snapshot
     copy when an override is active and the YAML/env value otherwise. Each
     segment is read as a :class:`~collections.abc.Mapping` key when the current
-    node is a mapping, and as an attribute otherwise. A missing or ``None``
-    intermediate yields ``None`` rather than raising.
+    node is a mapping, and as an attribute otherwise. A **missing** segment
+    returns :data:`NESTED_VALUE_MISSING`; a present ``None`` intermediate
+    collapses the leaf to ``None`` (optional-intermediate contract).
 
     :param settings_cls: The Pydantic settings class the key belongs to.
     :type settings_cls: type[BaseModel]
@@ -751,7 +779,8 @@ def resolve_nested_value(
     :type proxy: OverridableSettingsProxy
     :param key: The ``__``-delimited nested key.
     :type key: str
-    :return: A ``(leaf_FieldInfo, current_value)`` pair.
+    :return: A ``(leaf_FieldInfo, current_value)`` pair. ``current_value`` may
+        be :data:`NESTED_VALUE_MISSING` when a segment is absent.
     :rtype: tuple[FieldInfo, Any]
     :raises KeyError: If ``key`` does not resolve to a nested field on
         ``settings_cls``.
@@ -760,12 +789,18 @@ def resolve_nested_value(
     if resolved is None:
         raise KeyError(key)
     chain, leaf_info = resolved
-    current = proxy
+    current: Any = proxy
     for segment in chain:
+        if current is None:
+            return leaf_info, None
         if isinstance(current, Mapping):
-            current = current.get(segment)
-        else:
-            current = getattr(current, segment, None)
+            if not _mapping_has_segment(current, segment):
+                return leaf_info, NESTED_VALUE_MISSING
+            current = _mapping_get_segment(current, segment)
+            continue
+        if not hasattr(current, segment):
+            return leaf_info, NESTED_VALUE_MISSING
+        current = getattr(current, segment)
     return leaf_info, current
 
 

@@ -59,6 +59,7 @@ from app.core.settings_override.registry import (
     iter_class_fields,
     iter_nested_leaf_keys,
     materialize_override_value,
+    NESTED_VALUE_MISSING,
     override_keys_for_rows,
     ReloadClassification,
     resolve_nested_field,
@@ -312,15 +313,20 @@ def _settings_response_from_field(
         )
         resolved = resolve_nested_field(settings_cls, field_meta.key)
         key_path = list(resolved[0]) if resolved else [field_meta.key]
+        if current_value is NESTED_VALUE_MISSING or current_value is None:
+            serialized_value = None
+        else:
+            serialized_value = dump_field_value(field_info, current_value)
     else:
         field_info = settings_cls.model_fields[field_meta.key]
         current_value = getattr(proxy, field_meta.key)
         key_path = [field_meta.key]
+        serialized_value = dump_field_value(field_info, current_value)
     return SettingResponse(
         setting_class=setting_class,
         key=field_meta.key,
         key_path=key_path,
-        value=dump_field_value(field_info, current_value),
+        value=serialized_value,
         default_value=dump_field_value(field_info, field_meta.default),
         type=_format_annotation(field_meta.annotation),
         reload=field_meta.reload,
