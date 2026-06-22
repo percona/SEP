@@ -322,32 +322,32 @@ def test_resolve_nested_field_metadata_reflects_chain_not_overridable() -> None:
 
 
 class _SecretLeafModel(BaseModel):
-    """Submodel with a required ``SecretStr`` leaf for resolver tests."""
+    """Represent a submodel with a required ``SecretStr`` leaf for resolver tests."""
 
     TOKEN: SecretStr = SecretStr("s3cr3t")
     LABEL: str = "public"
 
 
 class _SecretLeafParent(BaseModel):
-    """Parent declaring a nested-overridable group over a secret submodel."""
+    """Represent a parent declaring a nested-overridable group over a secret submodel."""
 
     GROUP: _SecretLeafModel = nested_overridable_field(_SecretLeafModel())
 
 
 class _OptionalInner(BaseModel):
-    """Inner model reached through an optional intermediate."""
+    """Represent an inner model reached through an optional intermediate."""
 
     DEEP: int = 1
 
 
 class _OptionalIntermediate(BaseModel):
-    """Submodel whose intermediate child defaults to ``None``."""
+    """Represent a submodel whose intermediate child defaults to ``None``."""
 
     INNER: _OptionalInner | None = None
 
 
 class _OptionalIntermediateParent(BaseModel):
-    """Top-level parent for optional-intermediate resolver tests."""
+    """Represent the top-level parent for optional-intermediate resolver tests."""
 
     NESTED: _OptionalIntermediate = nested_overridable_field(_OptionalIntermediate())
 

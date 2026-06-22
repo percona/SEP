@@ -58,8 +58,10 @@ class TasksSettings(BaseYamlAppSettings):
     :param UVICORN_PORT: The port to be used by Uvicorn for running the server.
         Defaults to 8002.
     :type UVICORN_PORT: int
-    :param NOMAD: The configuration options for integrating with Nomad.
-    :type NOMAD: NomadOptions
+    :param NOMAD: The Nomad executor used to integrate with Nomad. Per-leaf
+        overrides are accepted via the settings API; the parent object itself
+        is not patchable as a whole.
+    :type NOMAD: NomadExecutor
     :param DATABASE: The database configuration options. Defaults to an SQLite database
         with the name 'tasks.db'.
     :type DATABASE: DatabaseOptions
