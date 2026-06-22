@@ -97,33 +97,27 @@ class UploadProvider(EnumFieldMixin, StrEnum):
     GSUTIL = auto()
 
 
-# Upload-provider choice values surfaced on the derived ``upload`` multi-choice
-# field; the ``Contains`` gates on the destination fields reference these same
-# tokens so the choice values, gate operands, and ``UploadProvider`` enum names
-# stay in sync. The frontend submits these strings verbatim; the backend coerces
-# them to ``UploadProvider`` via ``EnumFieldMixin``.
+# Single source for the ``upload`` choice values and the destination-field
+# ``Contains`` gate operands, kept in sync with the ``UploadProvider`` enum names.
 _UPLOAD_S3 = "S3"
 _UPLOAD_RSYNC = "RSYNC"
 _UPLOAD_GSUTIL = "GSUTIL"
 
-# Per-mode field gates, one ``Forbidden`` marker per backup type. ``forbidden``
-# (not ``requires``) is used because these fields are optional within their mode
-# and only forbidden outside it. ``_field_is_present`` treats ``False`` as absent
-# so a bool field's default never trips the gate; the bool fields owned by a mode
-# instead carry the schema-level ``FailRule``s below for a per-field message.
+# ``forbidden`` (not ``requires``): these fields are optional within their owning
+# mode, only forbidden outside it. Bool fields are gated by the ``FailRule``s below
+# instead — ``_field_is_present`` treats ``False`` as absent, so a gate here would
+# never fire on their default.
 _MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")
 _XTRABACKUP_ONLY = Forbidden(when=F("backup_type") != "X")
 _BINLOG_ONLY = Forbidden(when=F("backup_type") != "B")
 
-# Destination-field gates, forbidden unless their provider is in ``upload``.
 _S3_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_S3)))
 _GSUTIL_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_GSUTIL)))
 _RSYNC_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_RSYNC)))
 
-# Bool fields owned by a specific backup mode. A truthy value outside its owning
-# mode fails validation via the schema-level ``FailRule``s below. ``binlog_run_all``
-# defaults to True and the legacy form always sends it, so the BINLOG entry is
-# intentionally empty.
+# Bool fields owned by each backup mode. The BINLOG entry is intentionally empty:
+# ``binlog_run_all`` defaults to True and the legacy form always sends it, so no
+# BINLOG-only bool needs gating.
 _MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
     "M": (
         "mydumper_dump_triggers",
