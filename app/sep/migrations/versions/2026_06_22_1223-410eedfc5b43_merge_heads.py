@@ -13,6 +13,26 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.sep.plugins.mysql_backups.app import app
+"""merge heads
 
-__all__ = ["app"]
+Revision ID: 410eedfc5b43
+Revises: b8d5f2a9c1e4, 378c0872642f
+Create Date: 2026-06-22 12:23:53.239429
+
+"""
+from typing import Sequence, Union
+
+
+# revision identifiers, used by Alembic.
+revision: str = '410eedfc5b43'
+down_revision: Union[str, None] = ('b8d5f2a9c1e4', '378c0872642f')
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    """Merge the two sep_main heads into one. No-op; no schema change."""
+
+
+def downgrade() -> None:
+    """Unmerge the heads. No-op; a head merge has nothing to undo."""

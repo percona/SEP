@@ -73,6 +73,7 @@ from app.sep.plugins.snippets.models import (
 )
 from app.sep.plugins.snippets.schema import (
     build_snippet_schema,
+    evaluate_visibility_gates,
     SNIPPETS_PLUGIN_SCHEMA,
 )
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
@@ -287,8 +288,12 @@ async def snippets_api_execute(
     :type snippet_source: str
     :return: The structured response describing the created task.
     :rtype: SnippetExecutionResponse
-    :raises HTTPUnprocessableEntityException: When the per-snippet args
-        fail dynamic validation.
+    :raises HTTPUnprocessableEntityException: When the per-snippet args fail
+        dynamic validation, or a value is submitted for a parameter whose
+        conditional-visibility (``visible_when`` / ``visible_when_not``) gate
+        fires given the rest of the submission — the value is rejected rather
+        than silently stripped, matching ``@apply_conditional_rules`` for
+        hand-coded plugins.
     """
     execution_model = snippet.get_execution_model()
     raw_args = {
@@ -301,6 +306,10 @@ async def snippets_api_execute(
         execution_args = execution_model.model_validate(raw_args)
     except ValidationError as exc:
         raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
+
+    gate_failures = evaluate_visibility_gates(snippet, execution_args)
+    if gate_failures:
+        raise HTTPUnprocessableEntityException(detail=gate_failures)
 
     execution_meta = build_snippet_execution_meta(
         snippet,
