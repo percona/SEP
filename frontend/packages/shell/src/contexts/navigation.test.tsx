@@ -88,8 +88,6 @@ describe('NavigationProvider', () => {
   });
 
   it('renders only the static entries on a cold load or error', () => {
-    // With no cached data the derived nav cannot be reconstructed; the sidebar
-    // falls back to the always-on Dashboard + Inventory destinations only.
     useEnabledApps.mockReturnValue({ data: undefined });
     const titles = renderProvider();
 

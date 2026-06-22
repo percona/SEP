@@ -67,8 +67,7 @@ function findLeaf(items: ReturnType<typeof buildNavigationItems>, appKey: string
 }
 
 describe('buildNavigationItems', () => {
-  it('derives the full top-level order from group/nav_order', () => {
-    // Pass the apps scrambled to prove the builder sorts rather than echoes input.
+  it('derives the full top-level order from group/nav_order regardless of input order', () => {
     const items = buildNavigationItems([...FULL_APP_SET].reverse());
     expect(items.map((item) => item.title)).toEqual([
       'Dashboard',

@@ -126,6 +126,10 @@ class TestListAppsForNavigation:
         assert snippets["group"] is None
         assert isinstance(snippets["nav_order"], int)
 
+        inventory = entries["inventory"]
+        assert inventory["group"] is None
+        assert inventory["nav_order"] is None
+
     async def test_inventory_reported_enabled(
         self, api_user_client: TestClient
     ) -> None:
