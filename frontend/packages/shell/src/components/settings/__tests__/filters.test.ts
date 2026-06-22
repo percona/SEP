@@ -31,7 +31,7 @@ const groups: SettingClassGroup[] = [
       makeSetting({ key: 'FOOTER_TEMPLATE', reload: 'hot', is_advanced: true }),
       // Advanced and not_overridable — both dimensions hide it independently.
       makeSetting({ key: 'LEGACY_FLAG', reload: 'not_overridable', is_advanced: true }),
-      // is_advanced omitted entirely, as older API responses may send it.
+      // is_advanced left undefined, mimicking older API responses that omit the field.
       makeSetting({ key: 'PLAIN_FLAG', reload: 'hot', is_advanced: undefined }),
     ],
   },
