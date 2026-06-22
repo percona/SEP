@@ -15,10 +15,31 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { ListView } from '@sep/api';
+
+const { useScheduledTasksForPluginMock } = vi.hoisted(() => ({
+  useScheduledTasksForPluginMock: vi.fn(),
+}));
+
+// Mock only the schedule hook; pull the real period/select helpers from their
+// leaf module so the by-name grouping and pick mirror production. Importing the
+// leaf directly (instead of `importOriginal` on the barrel) keeps the mock
+// order-independent when the whole suite runs.
+vi.mock('../ScheduledTasksPanel', async () => {
+  const periods = await import('../ScheduledTasksPanel/periods');
+  return {
+    useScheduledTasksForPlugin: (...args: unknown[]) => useScheduledTasksForPluginMock(...args),
+    describePeriod: periods.describePeriod,
+    formatRelativeTime: periods.formatRelativeTime,
+    formatAbsoluteTime: periods.formatAbsoluteTime,
+    selectSchedule: periods.selectSchedule,
+  };
+});
+
 import { SchemaListView, type RenderListColumnOverride } from './SchemaListView';
+import type { PeriodicTaskResponse } from '../ScheduledTasksPanel';
 
 const listView: ListView = {
   columns: [
@@ -79,5 +100,121 @@ describe('SchemaListView — renderListColumn override', () => {
     );
     // delete control still rendered by the bespoke actions branch
     expect(screen.getAllByLabelText('Delete').length).toBe(rows.length);
+  });
+});
+
+const NOW = new Date('2026-06-18T12:00:00Z');
+
+function makePeriodic(overrides: Partial<PeriodicTaskResponse> = {}): PeriodicTaskResponse {
+  return {
+    id: 1,
+    name: 'periodic-1',
+    task: 'plugin-task',
+    enabled: true,
+    description: '',
+    start_time: null,
+    last_run_at: null,
+    date_changed: null,
+    total_run_count: 0,
+    interval: { every: 2, period: 'hours' },
+    crontab: null,
+    execute_request: null,
+    period: 'every 2 hours',
+    next_run_at: '2026-06-18T14:00:00Z',
+    ...overrides,
+  };
+}
+
+const scheduleListView: ListView = {
+  columns: [
+    { key: 'name', label: 'Name' },
+    { key: 'schedule', label: 'Schedule', format: 'schedule' },
+  ],
+};
+
+describe('SchemaListView — schedule-column glue', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    useScheduledTasksForPluginMock.mockReset();
+    useScheduledTasksForPluginMock.mockReturnValue({ periodicTasks: [], isLoading: false });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('fetches the plugin schedule and joins it by trimmed task name into the cell', () => {
+    useScheduledTasksForPluginMock.mockReturnValue({
+      periodicTasks: [makePeriodic({ task: 'alpha' })],
+      isLoading: false,
+    });
+
+    render(
+      <SchemaListView
+        listView={scheduleListView}
+        // Stray whitespace on the row name must still join: the cell trims
+        // before looking up, matching how the detail summary derives its key.
+        data={[
+          { id: 1, name: ' alpha ' },
+          { id: 2, name: 'beta' },
+        ]}
+        pluginName="archives"
+        disableSchedulePolling
+      />,
+    );
+
+    // fetch is scoped to the owning plugin
+    expect(useScheduledTasksForPluginMock).toHaveBeenCalledWith('archives', {
+      disablePolling: true,
+    });
+    // alpha row matched its schedule; beta row has none → unscheduled chip
+    expect(screen.getByTestId('schedule-cell')).toBeInTheDocument();
+    expect(screen.getByTestId('schedule-cell-unscheduled')).toBeInTheDocument();
+  });
+
+  it('groups several schedules per task name and renders the selected one', () => {
+    useScheduledTasksForPluginMock.mockReturnValue({
+      periodicTasks: [
+        makePeriodic({
+          id: 1,
+          task: 'alpha',
+          next_run_at: '2026-06-18T20:00:00Z',
+          interval: { every: 1, period: 'days' },
+          period: 'every 1 days',
+        }),
+        makePeriodic({
+          id: 2,
+          task: 'alpha',
+          next_run_at: '2026-06-18T13:00:00Z',
+          interval: { every: 1, period: 'hours' },
+          period: 'every 1 hours',
+        }),
+      ],
+      isLoading: false,
+    });
+
+    render(
+      <SchemaListView
+        listView={scheduleListView}
+        data={[{ id: 1, name: 'alpha' }]}
+        pluginName="archives"
+        disableSchedulePolling
+      />,
+    );
+
+    // selectSchedule picks the soonest upcoming run for the grouped task
+    expect(screen.getByTestId('schedule-cell-next-run')).toHaveTextContent('in 1 hour');
+    expect(screen.getByLabelText('Recurs every 1 hours')).toBeInTheDocument();
+  });
+
+  it('issues no schedule fetch when the list view has no schedule column', () => {
+    render(<SchemaListView listView={listView} data={rows} pluginName="archives" />);
+    expect(useScheduledTasksForPluginMock).not.toHaveBeenCalled();
+  });
+
+  it('issues no schedule fetch when a schedule column exists but no plugin name is given', () => {
+    render(<SchemaListView listView={scheduleListView} data={rows} />);
+    expect(useScheduledTasksForPluginMock).not.toHaveBeenCalled();
   });
 });

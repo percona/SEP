@@ -73,6 +73,17 @@ export type { ChainBuilderProps, ChainValue, AvailableTask } from './components/
 export { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from './components/AlertOnFailField';
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
 export {
+  describePeriod,
+  formatRelativeTime,
+  formatAbsoluteTime,
+  selectSchedule,
+} from './components/ScheduledTasksPanel';
+export type { PeriodDescription } from './components/ScheduledTasksPanel';
+export { ScheduleCell } from './components/ScheduleCell';
+export type { ScheduleCellProps } from './components/ScheduleCell';
+export { ScheduleSummary } from './components/ScheduleSummary';
+export type { ScheduleSummaryProps } from './components/ScheduleSummary';
+export {
   useScheduledTasksForPlugin,
   useCreateScheduledTask,
   useUpdateScheduledTask,

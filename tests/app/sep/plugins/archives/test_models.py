@@ -98,6 +98,40 @@ class TestArchivesCreateDestinationValidation:
             )
         assert "Cannot use both" in str(exc_info.value)
 
+    def test_dest_service_id_and_dest_port_forbidden(self):
+        """Cannot type a manual dest_port when a dest_service_id is selected."""
+        with pytest.raises(ValidationError) as exc_info:
+            ArchivesCreate(
+                alias="test",
+                hostname="host",
+                service_id=1,
+                source_db_id=1,
+                source_table_id=1,
+                swap_drop=SwapDropEnum.PURGE_ONLY,
+                where="id > 1",
+                dest_table_id=2,
+                dest_service_id=SAMPLE_DEST_SERVICE_ID,
+                dest_port=SAMPLE_DEST_PORT,
+            )
+        assert "dest_port" in str(exc_info.value)
+
+    def test_dest_service_id_with_empty_dest_port_succeeds(self):
+        """Empty dest_port alongside dest_service_id is valid; port is derived from the service."""
+        form = ArchivesCreate(
+            alias="test",
+            hostname="host",
+            service_id=1,
+            source_db_id=1,
+            source_table_id=1,
+            swap_drop=SwapDropEnum.PURGE_ONLY,
+            where="id > 1",
+            dest_table_id=2,
+            dest_service_id=SAMPLE_DEST_SERVICE_ID,
+            dest_port="",
+        )
+        assert form.dest_service_id == SAMPLE_DEST_SERVICE_ID
+        assert form.dest_port is None
+
     def test_dest_db_id_and_dest_db_name_mutually_exclusive(self):
         """Cannot set both dest_db_id (inventory) and dest_db_name (manual)."""
         with pytest.raises(ValidationError) as exc_info:
@@ -543,7 +577,7 @@ class TestArchivesCreateSameTableIdentity:
 
         The validator cannot resolve an inventory ``dest_db_id`` to a schema
         name, so it treats the destination schema as distinct — an accepted
-        limitation tracked by SEP-1310.
+        limitation.
         """
         form = ArchivesCreate(
             **self._base_kwargs(dest_service_id=1, dest_db_id=INVENTORY_DEST_SCHEMA_ID)

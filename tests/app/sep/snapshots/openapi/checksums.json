@@ -360,7 +360,7 @@
         "type": "object"
       },
       "ChecksumsForm": {
-        "description": "Define the model-first create/update body and schema source for Checksums.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the previous hand-written request body so the OpenAPI\nrequest body stays a no-op; the form-display defaults that differ from the\nmodel default are carried on ``Ui(default=...)``.\n\nFields are declared in request-body order; the form section order is set by\nthe layout in ``views.py`` (Task, Data, Recursion, Flags, Advanced).",
+        "description": "Define the model-first create/update body and schema source for Checksums.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the previous hand-written request body; the form-display\ndefaults that differ from the model default are carried on ``Ui(default=...)``.\n\nField declaration order is load-bearing. The framework assembles the\n``pt-table-checksum`` CLI args as all ``ArgFormat`` value args (in field order)\nfollowed by all flag args (in field order), and derives the form section order\n(Task, Data, Recursion, Flags, Advanced) from each section's first field — so\nthe order here reproduces the historical arg string byte-for-byte. ``progress``\nis declared last to land at the end of the value args, and ``Ui(order=...)``\npins the Advanced section's display order where it diverges from declaration\norder. The ``alert_on_fail`` capability control is inherited from\n:class:`AppFormModel` (``Hidden``, off-schema).",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -638,7 +638,7 @@
         "type": "object"
       },
       "ColumnFormat": {
-        "description": "Enumerate the supported list-view column formatting hints.\n\n:cvar TEXT: Render the column value as plain text.\n:vartype TEXT: str\n:cvar CHIP: Render the column value as a Material UI chip.\n:vartype CHIP: str\n:cvar STATUS: Render the column value as a colour-coded status badge.\n:vartype STATUS: str\n:cvar DATE: Render the column value as an absolute date.\n:vartype DATE: str\n:cvar RELATIVE: Render the column value as a relative time (for example,\n    \"2 hours ago\").\n:vartype RELATIVE: str\n:cvar CODE: Render the column value in a monospaced code font.\n:vartype CODE: str\n:cvar ACTIONS: Row actions (for example delete); not bound to row data.\n    Use with a synthetic column key such as ``_actions``.\n:vartype ACTIONS: str",
+        "description": "Enumerate the supported list-view column formatting hints.\n\n:cvar TEXT: Render the column value as plain text.\n:vartype TEXT: str\n:cvar CHIP: Render the column value as a Material UI chip.\n:vartype CHIP: str\n:cvar STATUS: Render the column value as a colour-coded status badge.\n:vartype STATUS: str\n:cvar DATE: Render the column value as an absolute date.\n:vartype DATE: str\n:cvar RELATIVE: Render the column value as a relative time (for example,\n    \"2 hours ago\").\n:vartype RELATIVE: str\n:cvar CODE: Render the column value in a monospaced code font.\n:vartype CODE: str\n:cvar ACTIONS: Row actions (for example delete); not bound to row data.\n    Use with a synthetic column key such as ``_actions``.\n:vartype ACTIONS: str\n:cvar SCHEDULE: Render a generic schedule cell for the row's task. The\n    frontend joins the row to its periodic task by name and shows the next\n    run (relative, with the absolute timestamp on hover) plus a periodicity\n    popover, or a muted \"Not scheduled\" chip when the task has no schedule.\n    Not bound to the column's own cell value.\n:vartype SCHEDULE: str",
         "enum": [
           "text",
           "chip",
@@ -646,7 +646,8 @@
           "date",
           "relative",
           "code",
-          "actions"
+          "actions",
+          "schedule"
         ],
         "title": "ColumnFormat",
         "type": "string"
