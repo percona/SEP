@@ -551,6 +551,37 @@ async def test_top_level_row_targeting_nested_only_parent_is_skipped(
 
 
 @pytest.mark.asyncio
+async def test_top_level_nomad_row_targeting_nested_only_parent_is_skipped(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A whole-parent ``NOMAD`` row is dropped; per-leaf rows still merge."""
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    nomad = NomadExecutor(endpoint="http://nomad.example:4646")
+    base = SimpleNamespace(NOMAD=nomad)
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="NOMAD",
+        value={
+            "endpoint": "https://nomad-whole-override.example.org",
+            "timeout": 99,
+        },
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="NOMAD__TIMEOUT",
+        value=_NOMAD_OVERRIDE_TIMEOUT,
+    )
+    snapshot = await build_snapshot(session, TasksSettings, base_settings=base)
+    merged = snapshot["NOMAD"]
+    assert isinstance(merged, NomadExecutor)
+    assert merged.timeout == _NOMAD_OVERRIDE_TIMEOUT
+    assert str(merged.endpoint).startswith("http://nomad.example")
+    assert any("non-HOT" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_security_headers_uppercase_key_resolves_to_lowercase_attribute(
     session: AsyncSession,
 ) -> None:

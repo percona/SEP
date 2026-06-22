@@ -30,6 +30,7 @@ from app.core.settings_override.registry import ReloadClassification
 from app.models import CasdoorUser
 from app.tasks.config import tasks_settings
 from app.tasks.deps import get_request_executor, get_session
+from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.main import tasks_app
 
 
@@ -236,10 +237,12 @@ class TestTasksSettingsNestedOverrides:
         yield
         tasks_settings._set_snapshot({})
 
-    async def test_patch_nested_nomad_timeout(
-        self, admin_test_client: TestClient
+    async def test_patch_per_leaf_nomad_round_trip(
+        self,
+        admin_test_client: TestClient,
+        session: AsyncSession,
     ) -> None:
-        """A nested ``NOMAD__TIMEOUT`` override persists and reflects in the proxy."""
+        """A per-leaf ``NOMAD__TIMEOUT`` override persists and snapshots an executor."""
         override_timeout = 30
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
@@ -247,9 +250,18 @@ class TestTasksSettingsNestedOverrides:
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
-        # The response echoes the canonical (case-corrected) key.
         assert body[0]["key"] == "NOMAD__timeout"
         assert body[0]["value"] == override_timeout
+        rows = await SettingsOverrideManager.list(
+            session,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key="NOMAD__timeout",
+        )
+        assert len(rows) == 1
+        assert rows[0].value == override_timeout
+        snapshot = tasks_settings.get_snapshot()
+        assert isinstance(snapshot["NOMAD"], NomadExecutor)
+        assert snapshot["NOMAD"].timeout == override_timeout
         assert tasks_settings.NOMAD.timeout == override_timeout
 
     async def test_patch_nested_security_header_bool(
@@ -307,6 +319,15 @@ class TestTasksSettingsNestedOverrides:
             session, setting_class=SettingClassEnum.TASKS_SETTINGS
         )
         assert rows == []
+
+    async def test_delete_whole_parent_nomad_rejected(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """DELETE on the whole NESTED_ONLY ``NOMAD`` parent returns 422."""
+        response = admin_test_client.delete("/admin/settings/TasksSettings/NOMAD")
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        types = {entry["type"] for entry in response.json()["detail"]}
+        assert "not_overridable" in types
 
     async def test_delete_whole_parent_security_headers_rejected(
         self, admin_test_client: TestClient

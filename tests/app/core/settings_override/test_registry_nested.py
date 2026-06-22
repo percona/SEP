@@ -19,9 +19,12 @@ import functools
 from datetime import timedelta
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, SecretStr, ValidationError
 
 from app.core.middleware.security_headers import SecurityHeadersOptions
+from app.core.settings_override.api.routes import _settings_response_from_field
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     _clear_cached_properties,
     _resolve_field_in_model,
@@ -32,10 +35,12 @@ from app.core.settings_override.registry import (
     is_nested_overridable_parent,
     iter_nested_leaf_keys,
     nested_overridable_field,
+    NESTED_VALUE_MISSING,
     not_overridable_field,
     ReloadClassification,
     resolve_nested_field,
     resolve_nested_field_metadata,
+    resolve_nested_value,
 )
 from app.sep.config import SEPSettings, SessionOptions
 from app.tasks.config import TasksSettings
@@ -314,3 +319,115 @@ def test_resolve_nested_field_metadata_reflects_chain_not_overridable() -> None:
     assert locked_leaf is not None
     assert open_leaf.reload is ReloadClassification.HOT
     assert locked_leaf.reload is ReloadClassification.NOT_OVERRIDABLE
+
+
+class _SecretLeafModel(BaseModel):
+    """Submodel with a required ``SecretStr`` leaf for resolver tests."""
+
+    TOKEN: SecretStr = SecretStr("s3cr3t")
+    LABEL: str = "public"
+
+
+class _SecretLeafParent(BaseModel):
+    """Parent declaring a nested-overridable group over a secret submodel."""
+
+    GROUP: _SecretLeafModel = nested_overridable_field(_SecretLeafModel())
+
+
+class _OptionalInner(BaseModel):
+    """Inner model reached through an optional intermediate."""
+
+    DEEP: int = 1
+
+
+class _OptionalIntermediate(BaseModel):
+    """Submodel whose intermediate child defaults to ``None``."""
+
+    INNER: _OptionalInner | None = None
+
+
+class _OptionalIntermediateParent(BaseModel):
+    """Top-level parent for optional-intermediate resolver tests."""
+
+    NESTED: _OptionalIntermediate = nested_overridable_field(_OptionalIntermediate())
+
+
+def test_resolve_nested_value_missing_mapping_segment_returns_sentinel() -> None:
+    """A dict snapshot missing a segment returns :data:`NESTED_VALUE_MISSING`."""
+    proxy = OverridableSettingsProxy(
+        _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    proxy._set_snapshot({"GROUP": {"LABEL": "visible"}})
+    _, value = resolve_nested_value(
+        settings_cls=_SecretLeafParent, proxy=proxy, key="GROUP__TOKEN"
+    )
+    assert value is NESTED_VALUE_MISSING
+
+
+def test_resolve_nested_value_optional_none_intermediate_returns_none() -> None:
+    """A present-``None`` optional intermediate collapses the leaf to ``None``."""
+    proxy = OverridableSettingsProxy(
+        _OptionalIntermediateParent, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    _, value = resolve_nested_value(
+        settings_cls=_OptionalIntermediateParent,
+        proxy=proxy,
+        key="NESTED__INNER__DEEP",
+    )
+    assert value is None
+    assert value is not NESTED_VALUE_MISSING
+
+
+def test_resolve_nested_value_present_none_secret_leaf_returns_none() -> None:
+    """A present-``None`` secret leaf is distinct from a missing segment."""
+    proxy = OverridableSettingsProxy(
+        _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    proxy._set_snapshot(
+        {"GROUP": _SecretLeafModel.model_construct(TOKEN=None, LABEL="public")}
+    )
+    _, value = resolve_nested_value(
+        settings_cls=_SecretLeafParent, proxy=proxy, key="GROUP__TOKEN"
+    )
+    assert value is None
+    assert value is not NESTED_VALUE_MISSING
+
+
+def test_settings_response_serializes_missing_mapping_segment_as_null() -> None:
+    """LIST projection maps a missing nested segment to JSON ``null``."""
+    proxy = OverridableSettingsProxy(
+        _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    proxy._set_snapshot({"GROUP": {"LABEL": "visible"}})
+    leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
+    assert leaf_meta is not None
+    response = _settings_response_from_field(
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        settings_cls=_SecretLeafParent,
+        proxy=proxy,
+        field_meta=leaf_meta,
+        has_override=False,
+    )
+    assert response.value is None
+    assert response.is_secret is True
+
+
+def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None:
+    """LIST projection renders an unresolved secret leaf as JSON ``null``."""
+    proxy = OverridableSettingsProxy(
+        _SecretLeafParent, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    proxy._set_snapshot(
+        {"GROUP": _SecretLeafModel.model_construct(TOKEN=None, LABEL="public")}
+    )
+    leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
+    assert leaf_meta is not None
+    response = _settings_response_from_field(
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        settings_cls=_SecretLeafParent,
+        proxy=proxy,
+        field_meta=leaf_meta,
+        has_override=False,
+    )
+    assert response.value is None
+    assert response.is_secret is True

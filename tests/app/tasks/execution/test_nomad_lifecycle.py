@@ -34,9 +34,9 @@ _NOMAD_A = {"endpoint": "https://nomad-a.example.org"}
 _NOMAD_B = {"endpoint": "https://nomad-b.example.org"}
 
 
-def _override_nomad(fingerprint: dict[str, object]) -> None:
-    """Publish a NOMAD override fingerprint on the tasks proxy snapshot."""
-    tasks_settings._set_snapshot({"NOMAD": fingerprint})
+def _override_nomad(config: dict[str, object]) -> None:
+    """Publish a merged ``NomadExecutor`` NOMAD override on the tasks proxy snapshot."""
+    tasks_settings._set_snapshot({"NOMAD": NomadExecutor.model_validate(config)})
 
 
 def test_normalize_passes_through_executor() -> None:
@@ -112,7 +112,7 @@ async def test_reconcile_construction_failure_keeps_old_executor() -> None:
     _override_nomad(_NOMAD_A)
     async with NomadLifecycle(FastAPI()) as holder:
         old = holder.current
-        _override_nomad({"endpoint": "not-a-url"})
+        tasks_settings._set_snapshot({"NOMAD": {"endpoint": "not-a-url"}})
         with pytest.raises(ValidationError):
             await holder.reconcile()
         assert holder.current is old
@@ -124,13 +124,13 @@ def test_get_executor_returns_executor_unchanged_without_override() -> None:
     assert get_executor(TaskBackendEnum.NOMAD) is tasks_settings.NOMAD
 
 
-def test_get_executor_reconstructs_executor_under_override() -> None:
-    """With an override, request-less NOMAD resolution returns a usable executor."""
+def test_get_executor_returns_snapshot_executor_under_override() -> None:
+    """With an override, request-less NOMAD resolution returns the snapshot executor."""
     _override_nomad(_NOMAD_A)
     result = get_executor(TaskBackendEnum.NOMAD)
     assert isinstance(result, NomadExecutor)
     assert str(result.endpoint).startswith("https://nomad-a.example.org")
-    # The reconstructed executor can build its sync sub-client without a session.
+    # The snapshot executor can build its sync sub-client without a session.
     assert result.backend is not None
 
 
