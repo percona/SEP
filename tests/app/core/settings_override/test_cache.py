@@ -38,6 +38,8 @@ from app.sep.config import SEPSettings, SessionOptions
 from app.tasks.config import PreExecutionCheckMode, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 
+_NOMAD_OVERRIDE_TIMEOUT = 30
+
 
 async def _insert(session: AsyncSession, **kwargs: object) -> None:
     """Insert a setting override row via the manager."""
@@ -301,19 +303,22 @@ async def test_invalid_footer_template_value_logged_and_skipped(
 
 
 @pytest.mark.asyncio
-async def test_nomad_materialized_to_diff_stable_fingerprint(
+async def test_nomad_per_leaf_override_merged_as_executor(
     session: AsyncSession,
 ) -> None:
-    """``NOMAD`` snapshots a plain dict equal across two consecutive builds."""
+    """A per-leaf ``NOMAD`` override snapshots a merged ``NomadExecutor``."""
+    nomad = NomadExecutor(endpoint="http://nomad.example:4646")
+    base = SimpleNamespace(NOMAD=nomad)
     await _insert(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
-        key="NOMAD",
-        value={"endpoint": "https://nomad.example.org"},
+        key="NOMAD__TIMEOUT",
+        value=_NOMAD_OVERRIDE_TIMEOUT,
     )
-    first = await build_snapshot(session, TasksSettings)
-    second = await build_snapshot(session, TasksSettings)
-    assert isinstance(first["NOMAD"], dict)
+    first = await build_snapshot(session, TasksSettings, base_settings=base)
+    second = await build_snapshot(session, TasksSettings, base_settings=base)
+    assert isinstance(first["NOMAD"], NomadExecutor)
+    assert first["NOMAD"].timeout == _NOMAD_OVERRIDE_TIMEOUT
     assert first["NOMAD"] == second["NOMAD"]
 
 

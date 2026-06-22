@@ -24,12 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
-from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.models import CasdoorUser
-from app.tasks.config import tasks_settings, TasksSettings
+from app.tasks.config import tasks_settings
 from app.tasks.deps import get_request_executor, get_session
 from app.tasks.main import tasks_app
 
@@ -117,33 +116,23 @@ class TestTasksSettingsApi:
         assert len(rows) == 1
         assert rows[0].value == new_value
 
-    async def test_patch_materializer_field_nomad_is_patchable(
+    async def test_patch_whole_nomad_rejected(
         self,
         admin_test_client: TestClient,
         session: AsyncSession,
     ) -> None:
-        """A ``NOMAD`` override is accepted and stored as raw config JSON.
-
-        Regression: ``NOMAD`` declares a fingerprint materializer; the PATCH
-        validation must route through it and persist the raw config dict (not the
-        coerced ``NomadExecutor`` instance) so the snapshot loader materializes a
-        diff-stable fingerprint.
-        """
-        raw_config = {"endpoint": "https://nomad-override.example.org"}
+        """Replacing the whole NESTED_ONLY ``NOMAD`` parent is rejected."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
-            json={"NOMAD": raw_config},
+            json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
         )
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        types = {entry["type"] for entry in response.json()["detail"]}
+        assert "not_overridable" in types
         rows = await SettingsOverrideManager.list(
-            session, setting_class=SettingClassEnum.TASKS_SETTINGS, key="NOMAD"
+            session, setting_class=SettingClassEnum.TASKS_SETTINGS
         )
-        assert len(rows) == 1
-        assert rows[0].value == raw_config
-
-        snapshot = await build_snapshot(session, TasksSettings)
-        assert isinstance(snapshot["NOMAD"], dict)
-        assert snapshot["NOMAD"]["endpoint"].rstrip("/") == raw_config["endpoint"]
+        assert rows == []
 
     async def test_patch_multiple_atomic(
         self,
@@ -509,19 +498,14 @@ class TestTasksSettingsNestedOverrides:
         assert echoed["key_path"] == ["SECURITY_HEADERS", "x_frame_options_deny"]
         assert "__".join(echoed["key_path"]) == echoed["key"]
 
-    async def test_list_resolves_nomad_leaf_values_under_whole_override(
+    async def test_list_resolves_nomad_leaf_values_under_per_leaf_override(
         self, admin_test_client: TestClient
     ) -> None:
-        """A whole-NOMAD override still yields real leaf values in LIST, not null.
-
-        ``NOMAD`` is a materializer field whose override snapshot is a JSON
-        fingerprint ``dict``; leaf-value resolution must descend the dict rather
-        than ``getattr`` returning ``None`` for every leaf.
-        """
+        """A per-leaf ``NOMAD`` override yields real leaf values in LIST, not null."""
         try:
             admin_test_client.patch(
                 "/admin/settings/TasksSettings",
-                json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
+                json={"NOMAD__ENDPOINT": "https://nomad-override.example.org"},
             )
             settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
                 "settings"
@@ -570,10 +554,10 @@ class TestTasksSettingsInlineRebind:
     async def test_patch_nomad_fires_rebind_callback(
         self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
     ) -> None:
-        """PATCHing ``NOMAD`` fires its rebind callback inline, before any refresh cycle."""
+        """PATCHing a ``NOMAD`` leaf fires its parent rebind callback inline."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
-            json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
+            json={"NOMAD__ENDPOINT": "https://nomad-override.example.org"},
         )
         assert response.status_code == status.HTTP_200_OK
         nomad_callback_spy.assert_awaited_once()
@@ -592,12 +576,14 @@ class TestTasksSettingsInlineRebind:
     async def test_delete_nomad_override_fires_rebind_callback(
         self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
     ) -> None:
-        """Reverting a ``NOMAD`` override fires its rebind callback inline."""
+        """Reverting a ``NOMAD`` leaf override fires its parent rebind callback inline."""
         admin_test_client.patch(
             "/admin/settings/TasksSettings",
-            json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
+            json={"NOMAD__ENDPOINT": "https://nomad-override.example.org"},
         )
         nomad_callback_spy.reset_mock()
-        response = admin_test_client.delete("/admin/settings/TasksSettings/NOMAD")
+        response = admin_test_client.delete(
+            "/admin/settings/TasksSettings/NOMAD__ENDPOINT"
+        )
         assert response.status_code == status.HTTP_204_NO_CONTENT
         nomad_callback_spy.assert_awaited_once()

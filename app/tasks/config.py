@@ -28,7 +28,6 @@ from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     hot_field,
-    materialize_fingerprint,
     nested_overridable_field,
 )
 from app.tasks.execution.executors.nomad import NomadExecutor
@@ -81,7 +80,7 @@ class TasksSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
     UVICORN_PORT: int = 8002
-    NOMAD: NomadExecutor = hot_field(..., materializer=materialize_fingerprint)
+    NOMAD: NomadExecutor = nested_overridable_field(...)
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
     SECURITY_HEADERS: SecurityHeadersOptions | None = nested_overridable_field(
         SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
