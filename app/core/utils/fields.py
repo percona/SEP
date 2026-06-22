@@ -488,6 +488,14 @@ CREDENTIAL_URL_MASK = "****"
 PRESERVE_CREDENTIALS_CONTEXT: dict[str, bool] = {"preserve_credentials": True}
 
 
+def _netloc_host(netloc: str) -> str:
+    """Return the host portion of a URL netloc, preserving IPv6 bracket notation."""
+    if "@" in netloc:
+        _, host = netloc.rsplit("@", 1)
+        return host
+    return netloc
+
+
 def redact_credential_url(url: str, *, mask: str = CREDENTIAL_URL_MASK) -> str:
     """Return ``url`` with any embedded userinfo password replaced by ``mask``.
 
@@ -501,11 +509,9 @@ def redact_credential_url(url: str, *, mask: str = CREDENTIAL_URL_MASK) -> str:
     parsed = urlparse(url)
     if not parsed.password:
         return url
-    hostname = parsed.hostname or ""
-    host = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
+    host = _netloc_host(parsed.netloc)
     username = parsed.username or ""
-    userinfo = f"{username}:{mask}"
-    netloc = f"{userinfo}@{host}"
+    netloc = f"{username}:{mask}@{host}"
     return urlunparse(
         (
             parsed.scheme,
@@ -522,15 +528,13 @@ def _credential_url_identity_parts(
     parsed: Any, *, include_password: bool = True
 ) -> tuple[Any, ...]:
     """Return URL components used to detect an unchanged redacted resubmit."""
-    hostname = parsed.hostname or ""
-    host = f"{hostname}:{parsed.port}" if parsed.port is not None else hostname
     path = parsed.path or ""
     if path == "/":
         path = ""
     parts: tuple[Any, ...] = (
         parsed.scheme,
         parsed.username or "",
-        host,
+        _netloc_host(parsed.netloc),
         path,
         parsed.params,
         parsed.query,
@@ -585,7 +589,7 @@ CredentialHttpUrl = Annotated[
     HttpUrl,
     WrapSerializer(_credential_url_serializer, when_used="json"),
 ]
-"""HTTP URL that redacts embedded userinfo passwords on JSON serialization only.
+"""Define an HTTP URL that redacts embedded userinfo passwords on JSON serialization.
 
 The in-memory / python-mode value retains the real credential for outbound
 requests. Pass :data:`PRESERVE_CREDENTIALS_CONTEXT` when dumping internal
@@ -597,7 +601,7 @@ StrCredentialHttpUrl = Annotated[
     AsTypeValidator(HttpUrl, lambda v: str(v).rstrip("/")),
     WrapSerializer(_credential_url_serializer, when_used="json"),
 ]
-"""String HTTP URL that redacts embedded passwords on JSON serialization only.
+"""Define a string HTTP URL that redacts embedded passwords on JSON serialization.
 
 Validates as :class:`~pydantic.HttpUrl`, stores as a string with trailing
 slashes stripped, and masks any embedded password in JSON dumps.
@@ -608,7 +612,7 @@ StrCredentialAnyUrl = Annotated[
     AsTypeValidator(AnyUrl, str),
     WrapSerializer(_credential_url_serializer, when_used="json"),
 ]
-"""String URL (any scheme) that redacts embedded passwords on JSON serialization.
+"""Define a string URL (any scheme) that redacts embedded passwords on JSON serialization.
 
 Use for broker/backend URLs that may carry credentials in the userinfo segment.
 """

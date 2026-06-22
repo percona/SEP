@@ -605,7 +605,7 @@ class TestTasksSettingsCredentialUrlRedaction:
 
 @pytest.mark.asyncio
 class TestTasksSettingsCredentialUrlWriteback:
-    """PATCH must not persist redacted URL display values over stored credentials."""
+    """Verify PATCH does not persist redacted URL display values over stored credentials."""
 
     async def test_patch_redacted_nomad_leaf_preserves_password(
         self, admin_test_client: TestClient

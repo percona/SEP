@@ -935,7 +935,7 @@ class TestSepSettingsCredentialUrlRedaction:
 
 @pytest.mark.asyncio
 class TestSepSettingsCredentialUrlWriteback:
-    """PATCH must not persist redacted URL display values over stored credentials."""
+    """Verify PATCH does not persist redacted URL display values over stored credentials."""
 
     async def test_patch_redacted_inventory_endpoint_preserves_password(
         self, api_admin_client: TestClient

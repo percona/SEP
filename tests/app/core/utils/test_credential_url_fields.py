@@ -43,51 +43,62 @@ class TestRedactCredentialUrl:
         assert redact_credential_url(_CREDENTIAL_URL) == _REDACTED_URL
 
     def test_leaves_url_without_credentials_unchanged(self) -> None:
-        """URLs with no embedded password are returned as-is."""
+        """Return URLs with no embedded password unchanged."""
         assert redact_credential_url(_PLAIN_URL) == _PLAIN_URL
 
     def test_leaves_username_only_url_unchanged(self) -> None:
-        """A username without a password is not treated as a credential URL."""
+        """Return a username-only URL unchanged when no password is present."""
         url = "http://nomad-user@nomad.internal:4646"
         assert redact_credential_url(url) == url
 
     def test_supports_non_http_schemes(self) -> None:
-        """Broker-style URLs with arbitrary schemes are redacted the same way."""
+        """Redact broker-style URLs with arbitrary schemes the same way."""
         assert redact_credential_url(_BROKER_URL) == _REDACTED_BROKER_URL
 
     def test_custom_mask(self) -> None:
-        """Callers may override the password mask literal."""
+        """Allow callers to override the password mask literal."""
         assert (
             redact_credential_url(_CREDENTIAL_URL, mask="REDACTED")
             == "http://nomad-user:REDACTED@nomad.internal:4646/v1/jobs"
         )
+
+    def test_preserves_ipv6_brackets_in_host(self) -> None:
+        """Preserve IPv6 bracket notation when redacting embedded credentials."""
+        url = "http://user:secret@[::1]:8080/api"
+        assert redact_credential_url(url) == "http://user:****@[::1]:8080/api"
 
 
 class TestPreserveCredentialUrlPassword:
     """Write-back protection for unchanged redacted URL PATCH payloads."""
 
     def test_preserves_password_when_only_mask_differs(self) -> None:
-        """A redacted resubmit restores the stored credential."""
+        """Restore the stored credential when only the password mask differs."""
         current = "http://nomad-user:nomad-secret@nomad.internal:4646/v1/jobs"
         incoming = "http://nomad-user:****@nomad.internal:4646/v1/jobs"
         assert preserve_credential_url_password(current, incoming) == current
 
     def test_returns_incoming_when_password_is_new(self) -> None:
-        """A genuinely new password is accepted as-is."""
+        """Accept a genuinely new password as-is."""
         current = "http://nomad-user:old-secret@nomad.internal:4646"
         incoming = "http://nomad-user:new-secret@nomad.internal:4646"
         assert preserve_credential_url_password(current, incoming) == incoming
 
     def test_returns_incoming_when_host_differs(self) -> None:
-        """A redacted URL with a changed host is not treated as unchanged."""
+        """Treat a redacted URL with a changed host as a real change."""
         current = "http://nomad-user:secret@nomad-a.internal:4646"
         incoming = "http://nomad-user:****@nomad-b.internal:4646"
         assert preserve_credential_url_password(current, incoming) == incoming
 
     def test_preserves_password_when_paths_differ_only_by_trailing_slash(self) -> None:
-        """HttpUrl dumps may add a trailing slash that the client omits on resubmit."""
+        """Normalize HttpUrl trailing-slash differences on redacted resubmit."""
         current = "http://nomad-user:nomad-secret@nomad.internal:4646/"
         incoming = "http://nomad-user:****@nomad.internal:4646"
+        assert preserve_credential_url_password(current, incoming) == current
+
+    def test_preserves_password_for_ipv6_endpoint(self) -> None:
+        """Restore the stored credential for IPv6 endpoints without raising."""
+        current = "http://user:secret@[::1]:8080"
+        incoming = "http://user:****@[::1]:8080"
         assert preserve_credential_url_password(current, incoming) == current
 
 
@@ -102,14 +113,14 @@ class TestCredentialHttpUrl:
     def test_json_dump_redacts_password(
         self, adapter: TypeAdapter[CredentialHttpUrl]
     ) -> None:
-        """JSON-mode dumps mask the password for API responses."""
+        """Mask the password in JSON-mode dumps for API responses."""
         value = adapter.validate_python(_CREDENTIAL_URL)
         assert adapter.dump_python(value, mode="json") == _REDACTED_URL
 
     def test_python_dump_retains_password(
         self, adapter: TypeAdapter[CredentialHttpUrl]
     ) -> None:
-        """Python-mode dumps keep the real credential for live request use."""
+        """Keep the real credential in python-mode dumps for live request use."""
         value = adapter.validate_python(_CREDENTIAL_URL)
         dumped = adapter.dump_python(value, mode="python")
         assert "nomad-secret" in str(dumped)
@@ -117,7 +128,7 @@ class TestCredentialHttpUrl:
     def test_preserve_context_skips_redaction_on_json_dump(
         self, adapter: TypeAdapter[CredentialHttpUrl]
     ) -> None:
-        """Internal fingerprints can opt out of redaction via serialization context."""
+        """Skip redaction on JSON dump when preserve_credentials context is set."""
         value = adapter.validate_python(_CREDENTIAL_URL)
         dumped = adapter.dump_python(
             value, mode="json", context=PRESERVE_CREDENTIALS_CONTEXT
@@ -125,7 +136,7 @@ class TestCredentialHttpUrl:
         assert "nomad-secret" in dumped
 
     def test_in_memory_value_retains_password(self) -> None:
-        """Validated model attributes are not mutated by serializers."""
+        """Leave validated model attributes unchanged after serialization."""
 
         class _Model(BaseModel):
             endpoint: CredentialHttpUrl
@@ -138,7 +149,7 @@ class TestStrCredentialHttpUrl:
     """Serialization behaviour for :data:`StrCredentialHttpUrl`."""
 
     def test_json_dump_redacts_and_strips_trailing_slash(self) -> None:
-        """String HTTP URLs are normalized and redacted on JSON dump."""
+        """Normalize string HTTP URLs and redact them on JSON dump."""
 
         class _Model(BaseModel):
             endpoint: StrCredentialHttpUrl
@@ -154,7 +165,7 @@ class TestStrCredentialAnyUrl:
     """Serialization behaviour for :data:`StrCredentialAnyUrl`."""
 
     def test_json_dump_redacts_broker_url(self) -> None:
-        """Any-scheme credential URLs redact on JSON dump."""
+        """Redact any-scheme credential URLs on JSON dump."""
 
         class _Model(BaseModel):
             broker_url: StrCredentialAnyUrl
@@ -164,5 +175,5 @@ class TestStrCredentialAnyUrl:
         assert model.broker_url == _BROKER_URL
 
     def test_mask_constant_matches_ticket_example(self) -> None:
-        """The default mask matches the SEP-1381 redaction format."""
+        """Match the SEP-1381 default redaction mask format."""
         assert CREDENTIAL_URL_MASK == "****"
