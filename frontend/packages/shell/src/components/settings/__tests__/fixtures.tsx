@@ -34,6 +34,7 @@ export function makeSetting(overrides: Partial<SettingResponse> = {}): SettingRe
     is_secret: false,
     is_complex: false,
     has_override: false,
+    is_advanced: false,
     ...overrides,
   };
 }
@@ -62,6 +63,14 @@ export const sepListResponse = {
           value: '**********',
           type: 'SecretStr',
           is_secret: true,
+        }),
+        makeSetting({
+          key: 'FOOTER_TEMPLATE',
+          value: '<footer/>',
+          default_value: '<footer/>',
+          type: 'str',
+          reload: 'hot',
+          is_advanced: true,
         }),
       ],
     },
