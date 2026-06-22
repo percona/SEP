@@ -63,6 +63,7 @@ from app.core.utils.pydantic import (
     field_with_metadata,
     loc_to_dot_sep,
 )
+from app.sep.plugins.framework.rules import value_is_present
 from app.sep.snippets.forms import (
     CheckboxInputElement,
     DateTimeInputElement,
@@ -77,26 +78,6 @@ from app.sep.snippets.forms import (
 ParameterType = str | int | float | bool | datetime | None
 
 logger = logging.getLogger(__name__)
-
-
-def _value_is_present(value: Any) -> bool:
-    """Return whether ``value`` would count as *present* to a forbidden gate.
-
-    Mirrors the framework's ``_field_is_present`` semantics so the meta-time
-    guard matches runtime gate evaluation: ``None`` and ``False`` and empty
-    strings/collections are *absent*; any other value (including ``0``) is
-    *present*.
-
-    :param value: The default value to classify.
-    :type value: Any
-    :return: ``True`` when the value would trip a forbidden gate.
-    :rtype: bool
-    """
-    if value is None or value is False:
-        return False
-    if isinstance(value, str | bytes | list | tuple | set | frozenset | dict):
-        return len(value) > 0
-    return True
 
 
 class SnippetMetaParameterType(EnumFieldMixin, Enum):
@@ -355,7 +336,7 @@ class SnippetMetaParameter(BaseModel):
             raise ValueError(
                 "a required parameter cannot declare a visibility condition"
             )
-        if _value_is_present(self.default):
+        if value_is_present(self.default):
             raise ValueError(
                 "a parameter with a non-empty default cannot declare a "
                 "visibility condition"

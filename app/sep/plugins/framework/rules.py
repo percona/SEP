@@ -101,6 +101,7 @@ __all__ = [
     "not_",
     "present",
     "truthy",
+    "value_is_present",
     "xor_",
 ]
 
@@ -243,8 +244,8 @@ def _resolve_field(instance: Any, path: str) -> Any:
     return current
 
 
-def _field_is_present(instance: Any, name: str) -> bool:
-    """Return ``True`` iff ``instance.<name>`` is set and non-empty.
+def value_is_present(value: Any) -> bool:
+    """Return whether ``value`` counts as *present* to a presence/forbidden gate.
 
     Treats ``None``, ``False``, and empty strings/bytes/lists/tuples/sets/dicts
     as absent. ``0`` counts as present (numeric, just falsy). ``False`` is
@@ -252,20 +253,31 @@ def _field_is_present(instance: Any, name: str) -> bool:
     entries on :class:`BoolField` fire only on an explicit ``True`` toggle,
     matching the convention used by :class:`FailRule` ``truthy(name)`` checks.
 
-    :param instance: The model instance being evaluated.
-    :type instance: Any
-    :param name: The field name to check.
-    :type name: str
-    :return: Whether the field is considered present.
-    :rtype: bool
+    The public, value-level entry point shared by :func:`_field_is_present`
+    (runtime gate evaluation) and authoring-time guards (such as the snippets
+    plugin's meta validation) so the two presence checks cannot drift.
+
+    :param value: The value to classify.
+    :return: Whether the value is considered present.
     """
-    value = _resolve_field(instance, name)
     if value is None or value is False:
         return False
     return not (
         isinstance(value, str | bytes | list | tuple | set | frozenset | dict)
         and not value
     )
+
+
+def _field_is_present(instance: Any, name: str) -> bool:
+    """Return ``True`` iff ``instance.<name>`` is set and non-empty.
+
+    Delegates the value-level classification to :func:`value_is_present`.
+
+    :param instance: The model instance being evaluated.
+    :param name: The field name to check.
+    :return: Whether the field is considered present.
+    """
+    return value_is_present(_resolve_field(instance, name))
 
 
 def _field_is_truthy(instance: Any, name: str) -> bool:
@@ -1537,13 +1549,10 @@ def extract_forbidden_field_gate_plan(
     evaluable with :func:`evaluate_conditional_rules`.
 
     :param schema: The plugin schema to extract forbidden field gates from.
-    :type schema: PluginSchema
     :param entity_name: For multi-entity schemas, the entity segment whose
         rules to extract; must be ``None`` for task-style schemas. See
         :func:`_extract_rule_plan`.
-    :type entity_name: str | None
     :return: A frozen plan holding only the ``field_gate_forbidden`` rules.
-    :rtype: RulePlan
     """
     plan = _extract_rule_plan(schema, entity_name=entity_name)
     return RulePlan(

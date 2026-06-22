@@ -359,12 +359,9 @@ def evaluate_visibility_gates(
     names — otherwise the predicates would silently never resolve.
 
     :param snippet: The snippet whose visibility gates to enforce.
-    :type snippet: Snippet
     :param execution_args: The already type/presence-validated execution args.
-    :type execution_args: BaseSnippetArgs
     :return: One message per fired gate; empty when every gate passes (including
         gateless snippets, which take the identical path to before).
-    :rtype: list[str]
     """
     schema = build_snippet_schema(snippet)
     plan = extract_forbidden_field_gate_plan(schema)
