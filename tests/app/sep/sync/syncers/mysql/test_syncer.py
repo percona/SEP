@@ -13,7 +13,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Test the app.sep.sync.syncers.mysql.syncer module."""
+"""Test the app.sep.sync.syncers.mysql.syncer module.
+
+These tests drive a real ``MySQLSyncer`` through its public surface against canned
+``RemoteAPI`` responses. The orchestration methods (``perform_*_sync``) and their
+real downstream cascade (``sync_*`` / ``delete_*`` / ``update_*`` / ``get_inventory_*``)
+are exercised end-to-end and asserted behaviourally on the ``inventory_api`` traffic,
+on ``_inventory_index_cache`` state, and on the resulting ``SyncItem`` lifecycle —
+never by patching the subject class. External boundaries (e.g. ``wait_for_task_output``,
+the ``/hosts/`` lookup behind ``get_available_hosts``, and low-level stream/decompression
+helpers) are stubbed, at the ``RemoteAPI`` seam where possible.
+"""
 
 import gzip
 import json
@@ -21,8 +31,11 @@ from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock
 
 import pytest
+import pytest_asyncio
 
+from app.core.alerts.config import alert_service
 from app.inventory.models import ServiceTypeEnum
+from app.sep.crud import SyncInstanceManager, SyncItemManager
 from app.sep.inventory import (
     CreatedNode,
     CreatedSchema,
@@ -31,6 +44,12 @@ from app.sep.inventory import (
     Node,
     Service,
     Table,
+)
+from app.sep.models import (
+    SyncInstanceWrite,
+    SyncInventoryEntityTypeEnum,
+    SyncItemWrite,
+    SyncStatusEnum,
 )
 from app.sep.sync.exceptions import ExecutorHostNotFoundError
 from app.sep.sync.models import TaskRunResult
@@ -55,6 +74,49 @@ def mock_mysql_syncer(mock_remote_api) -> MySQLSyncer:
     return MySQLSyncer(tasks_api=mock_remote_api, inventory_api=mock_remote_api)
 
 
+@pytest_asyncio.fixture
+async def bound_mysql_syncer(session, mock_remote_api) -> MySQLSyncer:
+    """Return a MySQLSyncer bound to a real sqlite session and persisted SyncInstance.
+
+    Cascade tests whose subject method reaches base ``manage_sync_item`` (which needs a
+    live session and a ``SyncInstance``) use this fixture, mirroring the
+    ``_build_syncer`` pattern in ``tests/app/sep/sync/test_models.py``.
+    """
+    sync_instance = await SyncInstanceManager.create(
+        session,
+        SyncInstanceWrite(syncer=MySQLSyncer.get_name()),
+    )
+    syncer = MySQLSyncer(
+        tasks_api=mock_remote_api,
+        inventory_api=mock_remote_api,
+        sync_instance=sync_instance,
+    )
+    syncer._session = session
+    return syncer
+
+
+async def _seed_sync_item(
+    syncer: MySQLSyncer,
+    session,
+    entity_type: SyncInventoryEntityTypeEnum,
+    entity_id: int | None,
+) -> None:
+    """Pre-seed a SyncItem so ``manage_sync_item`` skips the ``prepare_sync`` recursion.
+
+    Without this, ``prepare_sync`` traverses children via ``get_inventory_service`` and
+    injects stray ``inventory_api`` GET calls that pollute the behavioural assertions.
+    """
+    sync_item, _ = await SyncItemManager.get_or_create(
+        session,
+        SyncItemWrite(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            sync_instance_id=syncer.sync_instance.id,
+        ),
+    )
+    syncer.sync_items[(entity_type, entity_id)] = sync_item
+
+
 @pytest.fixture
 def created_service() -> CreatedService:
     """Test fixture: return a fake created service."""
@@ -65,6 +127,7 @@ def created_service() -> CreatedService:
         address="localhost", id=MOCK_CREATED_NODE_ID, node_name="localhost"
     )
     created_service.port = 8000
+    created_service.schemas = []
     return created_service
 
 
@@ -82,6 +145,7 @@ def created_schema(created_service) -> CreatedSchema:
     """Test fixture: return a fake created schema."""
     created_schema = CreatedSchemaFactory.build(name="test_schema")
     created_schema.service = created_service
+    created_schema.tables = []
     return created_schema
 
 
@@ -115,15 +179,13 @@ class TestConfigAndTargets:
         mock_mysql_syncer.force_executor_host = "some_executor_host"
         target = await mock_mysql_syncer.get_task_target("127.0.0.1")
         assert target == "some_executor_host"
+        # force short-circuits before any /hosts/ lookup.
+        mock_mysql_syncer.tasks_api.get.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_get_task_target_default_executor_fallback(
-        self, mock_mysql_syncer, mocker
-    ):
+    async def test_get_task_target_default_executor_fallback(self, mock_mysql_syncer):
         """Test fallback to default_executor_host when no name/address match (e.g. RDS)."""
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {
+        mock_mysql_syncer.tasks_api.get.return_value = {
             "on-prem-host": "192.168.1.10:3306",
             "monitor-host": "10.0.0.5:3306",
         }
@@ -136,12 +198,13 @@ class TestConfigAndTargets:
 
     @pytest.mark.asyncio
     async def test_get_task_target_first_available_when_no_default(
-        self, mock_mysql_syncer, mocker
+        self, mock_mysql_syncer
     ):
         """Test first available host when no match and default_executor_host not set."""
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"first-host": "1.2.3.4:3306", "second-host": "5.6.7.8:3306"}
+        mock_mysql_syncer.tasks_api.get.return_value = {
+            "first-host": "1.2.3.4:3306",
+            "second-host": "5.6.7.8:3306",
+        }
         mock_mysql_syncer.force_executor_host = None
         mock_mysql_syncer.default_executor_host = None
         target = await mock_mysql_syncer.get_task_target("unknown-rds.endpoint.com")
@@ -156,15 +219,17 @@ class TestConfigAndTargets:
         mock_mysql_syncer.default_executor_host = "default-host"
         target = await mock_mysql_syncer.get_task_target("any-host")
         assert target == "forced-host"
+        mock_mysql_syncer.tasks_api.get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_get_task_target_fallback_when_default_not_in_available_hosts(
-        self, mock_mysql_syncer, mocker
+        self, mock_mysql_syncer
     ):
         """Test fallback to first available when default_executor_host is stale."""
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"live-host": "10.0.0.1:3306", "other-host": "10.0.0.2:3306"}
+        mock_mysql_syncer.tasks_api.get.return_value = {
+            "live-host": "10.0.0.1:3306",
+            "other-host": "10.0.0.2:3306",
+        }
         mock_mysql_syncer.force_executor_host = None
         mock_mysql_syncer.default_executor_host = "stale-host"
         target = await mock_mysql_syncer.get_task_target("rds.example.com")
@@ -182,18 +247,17 @@ class TestConfigAndTargets:
         assert addr == "host:3306"
 
     @pytest.mark.asyncio
-    async def test_get_task_target_strict_raises_on_no_match(
-        self, mock_remote_api, mocker
-    ):
+    async def test_get_task_target_strict_raises_on_no_match(self, mock_remote_api):
         """Assert ``ExecutorHostNotFoundError`` is raised when strict and no match."""
         syncer = MySQLSyncer(
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
         )
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"executor-1": "10.0.0.1", "executor-2": "10.0.0.2"}
+        mock_remote_api.get.return_value = {
+            "executor-1": "10.0.0.1",
+            "executor-2": "10.0.0.2",
+        }
         with pytest.raises(ExecutorHostNotFoundError) as exc_info:
             await syncer.get_task_target("192.168.1.99", name="unknown-node")
         assert exc_info.value.node_name == "unknown-node"
@@ -204,52 +268,51 @@ class TestConfigAndTargets:
         }
 
     @pytest.mark.asyncio
-    async def test_get_task_target_strict_name_matches(self, mock_remote_api, mocker):
+    async def test_get_task_target_strict_name_matches(self, mock_remote_api):
         """Assert matched name is returned when strict and name is in hosts."""
         syncer = MySQLSyncer(
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
         )
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"my-node": "10.0.0.1", "executor-2": "10.0.0.2"}
+        mock_remote_api.get.return_value = {
+            "my-node": "10.0.0.1",
+            "executor-2": "10.0.0.2",
+        }
         target = await syncer.get_task_target("192.168.1.99", name="my-node")
         assert target == "my-node"
 
     @pytest.mark.asyncio
-    async def test_get_task_target_strict_address_matches(
-        self, mock_remote_api, mocker
-    ):
+    async def test_get_task_target_strict_address_matches(self, mock_remote_api):
         """Assert matched target is returned when strict and address matches."""
         syncer = MySQLSyncer(
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
             strict_executor_matching=True,
         )
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"executor-1": "192.168.1.99", "executor-2": "10.0.0.2"}
+        mock_remote_api.get.return_value = {
+            "executor-1": "192.168.1.99",
+            "executor-2": "10.0.0.2",
+        }
         target = await syncer.get_task_target("192.168.1.99", name="unknown")
         assert target == "executor-1"
 
     @pytest.mark.asyncio
-    async def test_get_task_target_non_strict_fallback(self, mock_remote_api, mocker):
+    async def test_get_task_target_non_strict_fallback(self, mock_remote_api):
         """Assert first host is returned as fallback when non-strict and no match."""
         syncer = MySQLSyncer(
             tasks_api=mock_remote_api,
             inventory_api=mock_remote_api,
         )
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"executor-1": "10.0.0.1", "executor-2": "10.0.0.2"}
+        mock_remote_api.get.return_value = {
+            "executor-1": "10.0.0.1",
+            "executor-2": "10.0.0.2",
+        }
         target = await syncer.get_task_target("192.168.1.99", name="unknown")
         assert target == "executor-1"
 
     @pytest.mark.asyncio
-    async def test_get_task_target_force_overrides_strict(
-        self, mock_remote_api, mocker
-    ):
+    async def test_get_task_target_force_overrides_strict(self, mock_remote_api):
         """Assert ``force_executor_host`` takes priority over strict matching."""
         syncer = MySQLSyncer(
             tasks_api=mock_remote_api,
@@ -257,11 +320,10 @@ class TestConfigAndTargets:
             strict_executor_matching=True,
             force_executor_host="forced-host",
         )
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"executor-1": "10.0.0.1"}
         target = await syncer.get_task_target("192.168.1.99", name="unknown")
         assert target == "forced-host"
+        # force short-circuits: the /hosts/ lookup must never run.
+        mock_remote_api.get.assert_not_called()
 
 
 class TestFetchMethods:
@@ -270,9 +332,7 @@ class TestFetchMethods:
     @pytest.mark.asyncio
     async def test_fetch_node(self, created_node, mock_mysql_syncer, mocker):
         """Test fetching node with services index."""
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"localhost:8000": "hostname"}
+        mock_mysql_syncer.tasks_api.get.return_value = {"localhost:8000": "hostname"}
         services_manifest = {
             _MySQLSyncResultEntityTypeEnum.SERVICES: {
                 "localhost:8000": {
@@ -290,13 +350,9 @@ class TestFetchMethods:
         assert isinstance(updated_node.services[0], Service)
 
     @pytest.mark.asyncio
-    async def test_fetch_service(
-        self, created_node, created_service, mock_mysql_syncer, mocker
-    ):
+    async def test_fetch_service(self, created_service, mock_mysql_syncer, mocker):
         """Test fetching service to return schemas index iterator."""
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"localhost:8000": "hostname"}
+        mock_mysql_syncer.tasks_api.get.return_value = {"localhost:8000": "hostname"}
         services_manifest = {
             _MySQLSyncResultEntityTypeEnum.SERVICES: {
                 "localhost:8000": {
@@ -315,9 +371,7 @@ class TestFetchMethods:
     @pytest.mark.asyncio
     async def test_fetch_schema(self, created_schema, mock_mysql_syncer, mocker):
         """Test fetching schema to return tables iterator."""
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"localhost:8000": "hostname"}
+        mock_mysql_syncer.tasks_api.get.return_value = {"localhost:8000": "hostname"}
         schema_address = "localhost:8000/test_schema"
         schemas_manifest = {
             _MySQLSyncResultEntityTypeEnum.SCHEMAS: {
@@ -337,9 +391,7 @@ class TestFetchMethods:
     @pytest.mark.asyncio
     async def test_fetch_table(self, created_table, mock_mysql_syncer, mocker):
         """Test fetching table from tables payload."""
-        mocker.patch.object(
-            MySQLSyncer, "get_available_hosts", new_callable=AsyncMock
-        ).return_value = {"localhost:8000": "hostname"}
+        mock_mysql_syncer.tasks_api.get.return_value = {"localhost:8000": "hostname"}
         table_key = f"localhost:8000/{created_table.database.name}.{created_table.name}"
         payload = {
             _MySQLSyncResultEntityTypeEnum.TABLES: {
@@ -364,6 +416,125 @@ class TestFetchMethods:
         assert updated_table.name == created_table.name
 
     @pytest.mark.asyncio
+    async def test_fetch_schema_resolves_unattached_service(
+        self, created_service, mock_mysql_syncer, mocker
+    ):
+        """Test fetch_schema resolves an unattached service via the inventory API.
+
+        Covers the unattached-service fallback in ``fetch_schema``: when the schema
+        carries no attached ``service`` (or a service with no address), it must look the
+        service up through ``get_inventory_service(service_id)`` rather than relying on
+        a pre-attached parent.
+        """
+        schema = CreatedSchemaFactory.build(name="test_schema")
+        schema.service = None
+        schema.service_id = created_service.id
+        schema.tables = []
+        schema_address = f"{created_service.address}/test_schema"
+        schemas_manifest = {
+            _MySQLSyncResultEntityTypeEnum.SCHEMAS: {
+                schema_address: {
+                    "tables_path": "out/test_schema_tables.ndjson.gz",
+                    "tables_count": 1,
+                }
+            }
+        }
+        mock_mysql_syncer.inventory_api.get.side_effect = [
+            created_service.model_dump(),  # GET /services/{id} — the fallback resolve
+            {"localhost:8000": "hostname"},  # GET /hosts/ via get_available_hosts
+        ]
+        mocker.patch.object(
+            MySQLSyncer, "wait_for_task_output", new_callable=AsyncMock
+        ).return_value = TaskRunResult(789, json.dumps(schemas_manifest))
+        updated_schema = await mock_mysql_syncer.fetch_schema(schema)
+        assert isinstance(updated_schema, MySQLSchema)
+        assert updated_schema.tables_aiter is not None
+        # Behavioural proof the fallback fired: the unattached service was resolved by id.
+        mock_mysql_syncer.inventory_api.get.assert_any_await(
+            f"/services/{created_service.id}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_fetch_table_resolves_service_when_address_missing(
+        self, created_service, created_table, mock_mysql_syncer, mocker
+    ):
+        """Test fetch_table re-resolves the service when its address is missing.
+
+        Covers the missing-address re-resolve in ``fetch_table``: the table's schema has
+        an attached service, but that service has no usable address (no node), so it must
+        re-fetch it via ``get_inventory_service(service.id)``.
+        """
+        resolved_dump = created_service.model_dump()  # capture a copy with a node
+        created_service.node = None  # address -> None, forces the re-resolve
+        table_key = f"localhost:8000/{created_table.database.name}.{created_table.name}"
+        payload = {
+            _MySQLSyncResultEntityTypeEnum.TABLES: {
+                table_key: {
+                    "name": created_table.name,
+                    "create": "CREATE TABLE t (id INT PRIMARY KEY)",
+                    "keys": {},
+                }
+            }
+        }
+        mock_mysql_syncer.inventory_api.get.side_effect = [
+            resolved_dump,  # GET /services/{id} — the fallback resolve
+            {"localhost:8000": "hostname"},  # GET /hosts/ via get_available_hosts
+        ]
+        mocker.patch.object(
+            MySQLSyncer, "wait_for_task_output", new_callable=AsyncMock
+        ).return_value = TaskRunResult(321, json.dumps(payload))
+        updated_table = await mock_mysql_syncer.fetch_table(created_table)
+        assert isinstance(updated_table, Table)
+        assert updated_table.name == created_table.name
+        mock_mysql_syncer.inventory_api.get.assert_any_await(
+            f"/services/{created_service.id}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_fetch_table_resolves_schema_and_service_when_unattached(
+        self, created_service, created_table, mock_mysql_syncer, mocker
+    ):
+        """Test fetch_table resolves both schema and service when neither is attached.
+
+        Covers the unattached-parent ``else`` branch in ``fetch_table``: the table's
+        schema has no attached service, so it resolves the schema via
+        ``get_inventory_schema(schema_id)`` and then the service via
+        ``get_inventory_service(service_id)``.
+        """
+        created_table.database.service = None  # forces the else branch
+        resolved_schema = CreatedSchemaFactory.build(name="test_schema")
+        resolved_schema.service = None
+        resolved_schema.service_id = created_service.id
+        resolved_schema.tables = []
+        table_key = f"localhost:8000/test_schema.{created_table.name}"
+        payload = {
+            _MySQLSyncResultEntityTypeEnum.TABLES: {
+                table_key: {
+                    "name": created_table.name,
+                    "create": "CREATE TABLE t (id INT PRIMARY KEY)",
+                    "keys": {},
+                }
+            }
+        }
+        mock_mysql_syncer.inventory_api.get.side_effect = [
+            resolved_schema.model_dump(),  # GET /schemas/{id}
+            created_service.model_dump(),  # GET /services/{id}
+            {"localhost:8000": "hostname"},  # GET /hosts/ via get_available_hosts
+        ]
+        mocker.patch.object(
+            MySQLSyncer, "wait_for_task_output", new_callable=AsyncMock
+        ).return_value = TaskRunResult(654, json.dumps(payload))
+        updated_table = await mock_mysql_syncer.fetch_table(created_table)
+        assert isinstance(updated_table, Table)
+        assert updated_table.name == created_table.name
+        mock_mysql_syncer.inventory_api.get.assert_any_await(
+            f"/schemas/{created_table.schema_id}"
+        )
+        mock_mysql_syncer.inventory_api.get.assert_any_await(
+            f"/services/{created_service.id}"
+        )
+
+    @pytest.mark.asyncio
     async def test_fetch_service_uses_cached_fetch_result(
         self, created_service, mock_mysql_syncer
     ):
@@ -377,6 +548,8 @@ class TestFetchMethods:
         svc = await mock_mysql_syncer.fetch_service(created_service)
         assert isinstance(svc, MySQLService)
         assert svc.schemas_index is not None
+        # Cache hit short-circuits the task path: no /hosts/, no task execution.
+        mock_mysql_syncer.tasks_api.get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_fetch_schema_uses_cached_fetch_result(
@@ -393,51 +566,118 @@ class TestFetchMethods:
         sch = await mock_mysql_syncer.fetch_schema(created_schema)
         assert isinstance(sch, MySQLSchema)
         assert sch.tables_aiter is not None
+        mock_mysql_syncer.tasks_api.get.assert_not_called()
 
 
 class TestPerformMethods:
-    """Test perform methods for node, service, schema, and table."""
+    """Test perform methods drive the real sync cascade and inventory_api traffic."""
 
     @pytest.mark.asyncio
-    async def test_perform_node_sync(self, created_node, mock_mysql_syncer, mocker):
-        """Test performing node sync with two services on same port."""
-        expected_sync_service_await_count = 2
+    async def test_perform_node_sync(
+        self, created_node, created_service, bound_mysql_syncer, session, mocker
+    ):
+        """Drive perform_node_sync: every service on a port reaches real sync_service."""
+        trigger = mocker.patch.object(alert_service, "trigger", new_callable=AsyncMock)
+        # Two distinct services share port 8000. The grouping rule must sync BOTH when
+        # the updated node reports that port, so both produce inventory traffic.
+        second_service = CreatedServiceFactory.build()
+        second_service.id = created_service.id + 1
+        second_service.node_id = MOCK_CREATED_NODE_ID
+        second_service.type = ServiceTypeEnum.MYSQL
+        second_service.node = CreatedNode(
+            address="otherhost", id=MOCK_CREATED_NODE_ID + 1, node_name="otherhost"
+        )
+        second_service.port = 8000
+        second_service.schemas = []
+        created_node.services = [created_service, second_service]
         updated_node = created_node.model_copy()
-        updated_node.services = created_node.services.copy()
-        updated_node.services.append(
-            CreatedService(
-                id=created_node.services[0].id + 1,
-                node_id=created_node.services[0].node_id,
-                type=ServiceTypeEnum.MYSQL,
-                port=created_node.services[0].port,
-                name="extra-service",
+        updated_node.services = [created_service]
+
+        for service in (created_service, second_service):
+            await _seed_sync_item(
+                bound_mysql_syncer,
+                session,
+                SyncInventoryEntityTypeEnum.SERVICE,
+                service.id,
             )
+            # Seed each SERVICES index with no schemas_path so real fetch_service yields
+            # an empty schemas_index (the model's safe empty async generator).
+            bound_mysql_syncer._inventory_index_cache[
+                _MySQLSyncResultEntityTypeEnum.SERVICES
+            ][service.address] = (None, {})
+        bound_mysql_syncer.inventory_api.get.side_effect = [
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
+
+        await bound_mysql_syncer.perform_node_sync(created_node, updated_node)
+
+        # Both services on the port are synced: one schema-listing GET per distinct id.
+        get_urls = sorted(
+            call.args[0]
+            for call in bound_mysql_syncer.inventory_api.get.await_args_list
         )
-        sync_service = mocker.patch.object(
-            MySQLSyncer, "sync_service", new_callable=AsyncMock
+        assert get_urls == sorted(
+            [
+                f"/services/{created_service.id}/schemas/",
+                f"/services/{second_service.id}/schemas/",
+            ]
         )
-        await mock_mysql_syncer.perform_node_sync(created_node, updated_node)
-        assert sync_service.await_count == expected_sync_service_await_count
-        sync_service.assert_any_await(created_node.services[0])
+        bound_mysql_syncer.inventory_api.post.assert_not_called()
+        bound_mysql_syncer.inventory_api.put.assert_not_called()
+        bound_mysql_syncer.inventory_api.delete.assert_not_called()
+        trigger.assert_not_called()
+        for service in (created_service, second_service):
+            assert (
+                bound_mysql_syncer.sync_items[
+                    (SyncInventoryEntityTypeEnum.SERVICE, service.id)
+                ].status
+                == SyncStatusEnum.SUCCESS
+            )
 
     @pytest.mark.asyncio
     async def test_perform_service_sync_sets_schema_cache(
-        self,
-        created_service,
-        created_schema,
-        mock_remote_api,
-        mock_mysql_syncer,
-        mocker,
+        self, created_service, created_schema, bound_mysql_syncer, session, mocker
     ):
-        """Test setting schema cache while streaming schemas."""
+        """Drive perform_service_sync: a streamed schema is created, cached, and synced.
+
+        The method writes the SERVICES task-history id into the SCHEMAS index cache so
+        the downstream ``fetch_schema`` can reuse it instead of running another task.
+        That cache entry is *transient* — the real ``sync_schema`` immediately pops it —
+        so the mutation is asserted by its effect: ``wait_for_task_output`` is never
+        invoked for the schema (the cache fed ``fetch_schema``).
+        """
+        trigger = mocker.patch.object(alert_service, "trigger", new_callable=AsyncMock)
+        wait_for_task_output = mocker.patch.object(
+            MySQLSyncer, "wait_for_task_output", new_callable=AsyncMock
+        )
         schema_data = created_schema.model_dump()
-        mock_mysql_syncer._inventory_index_cache[
+        # An existing inventory schema absent from the streamed set must be deleted.
+        stale_schema = CreatedSchemaFactory.build(name="stale_schema")
+        stale_schema.id = created_schema.id + 1
+        stale_schema.service = None
+        stale_schema.tables = []
+        for entity_id in (created_schema.id, stale_schema.id):
+            await _seed_sync_item(
+                bound_mysql_syncer,
+                session,
+                SyncInventoryEntityTypeEnum.SCHEMA,
+                entity_id,
+            )
+        bound_mysql_syncer._inventory_index_cache[
             _MySQLSyncResultEntityTypeEnum.SERVICES
         ][created_service.address] = (111, {"schemas_path": "p", "schemas_count": 1})
-        mock_remote_api.post.side_effect = [schema_data]
-        mocker.patch.object(
-            MySQLSyncer, "get_inventory_service_schemas", return_value=[]
-        )
+        # The stale schema is returned by the inventory listing; the streamed schema is
+        # new -> created via POST, while the stale one is deleted.
+        bound_mysql_syncer.inventory_api.get.side_effect = [
+            {
+                "items": [stale_schema.model_dump()],
+                "total": 1,
+                "offset": 0,
+                "limit": 50,
+            },
+        ]
+        bound_mysql_syncer.inventory_api.post.side_effect = [schema_data]
 
         async def schemas_idx():
             yield schema_data
@@ -446,25 +686,55 @@ class TestPerformMethods:
             created_service.model_dump(exclude={"schemas"})
         )
         updated.schemas_index = schemas_idx()
-        mocker.patch.object(MySQLSyncer, "sync_schema", new_callable=AsyncMock)
-        await mock_mysql_syncer.perform_service_sync(created_service, updated)
-        addr = f"{created_service.address}/test_schema"
+
+        await bound_mysql_syncer.perform_service_sync(created_service, updated)
+
+        bound_mysql_syncer.inventory_api.post.assert_awaited_once()
         assert (
-            addr
-            in mock_mysql_syncer._inventory_index_cache[
-                _MySQLSyncResultEntityTypeEnum.SCHEMAS
-            ]
+            bound_mysql_syncer.inventory_api.post.await_args.args[0]
+            == f"/services/{created_service.id}/schemas/"
+        )
+        # The stale schema is deleted from inventory.
+        bound_mysql_syncer.inventory_api.delete.assert_awaited_once_with(
+            f"/schemas/{stale_schema.id}"
+        )
+        # The SCHEMAS cache mutation fed fetch_schema: no extra task ran for the schema.
+        wait_for_task_output.assert_not_awaited()
+        trigger.assert_not_called()
+        assert (
+            bound_mysql_syncer.sync_items[
+                (SyncInventoryEntityTypeEnum.SCHEMA, created_schema.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
         )
 
     @pytest.mark.asyncio
     async def test_perform_schema_sync(
-        self, created_schema, created_table, mock_remote_api, mock_mysql_syncer, mocker
+        self, created_schema, created_table, bound_mysql_syncer, session, mocker
     ):
-        """Test performing schema sync while streaming tables."""
-        updated_schema = created_schema.model_copy()
+        """Drive perform_schema_sync: a new table is created and a stale one deleted."""
+        trigger = mocker.patch.object(alert_service, "trigger", new_callable=AsyncMock)
         table_data = created_table.model_dump()
-        mock_remote_api.put.side_effect = [updated_schema.model_dump()]
-        mock_remote_api.post.side_effect = [table_data]
+        # A stale table not present in the streamed set must be deleted. No back-ref to
+        # created_schema (that would create a serialization cycle in model_dump).
+        stale_table = CreatedTableFactory.build(name="stale_table")
+        stale_table.id = created_table.id + 1
+        stale_table.schema_id = created_schema.id
+        created_schema.tables = [stale_table]
+
+        await _seed_sync_item(
+            bound_mysql_syncer,
+            session,
+            SyncInventoryEntityTypeEnum.TABLE,
+            created_table.id,
+        )
+        await _seed_sync_item(
+            bound_mysql_syncer,
+            session,
+            SyncInventoryEntityTypeEnum.TABLE,
+            stale_table.id,
+        )
+        bound_mysql_syncer.inventory_api.post.side_effect = [table_data]
 
         async def tables_iter() -> AsyncGenerator[dict, None]:
             yield table_data
@@ -474,38 +744,108 @@ class TestPerformMethods:
             | {"address": "localhost:8000/test_schema"}
         )
         mysql_schema.tables_aiter = tables_iter()
-        sync_table = mocker.patch.object(
-            MySQLSyncer, "sync_table", new_callable=AsyncMock
+
+        await bound_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
+
+        bound_mysql_syncer.inventory_api.post.assert_awaited_once()
+        assert (
+            bound_mysql_syncer.inventory_api.post.await_args.args[0]
+            == f"/schemas/{created_schema.id}/tables/"
         )
-        delete_table = mocker.patch.object(
-            MySQLSyncer, "delete_table", new_callable=AsyncMock
+        bound_mysql_syncer.inventory_api.delete.assert_awaited_once_with(
+            f"/tables/{stale_table.id}"
         )
-        await mock_mysql_syncer.perform_schema_sync(created_schema, mysql_schema)
-        sync_table.assert_awaited()
-        delete_table.assert_awaited()
+        trigger.assert_not_called()
+        assert (
+            bound_mysql_syncer.sync_items[
+                (SyncInventoryEntityTypeEnum.TABLE, created_table.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        )
+        assert (
+            bound_mysql_syncer.sync_items[
+                (SyncInventoryEntityTypeEnum.TABLE, stale_table.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        )
 
     @pytest.mark.asyncio
-    async def test_perform_table_sync_calls_update(
-        self, created_table, mock_mysql_syncer, mocker
+    async def test_perform_table_sync_updates_via_inventory_api(
+        self, created_table, mock_mysql_syncer
     ):
-        """Test performing table sync which updates the table."""
+        """Drive perform_table_sync: the changed table is PUT to inventory_api."""
         updated = Table(name=created_table.name, create="CREATE TABLE x()")
-        upd = mocker.patch.object(MySQLSyncer, "update_table", new_callable=AsyncMock)
+        mock_mysql_syncer.inventory_api.put.side_effect = [created_table.model_dump()]
+
         await mock_mysql_syncer.perform_table_sync(created_table, updated)
-        upd.assert_awaited_once()
+
+        mock_mysql_syncer.inventory_api.put.assert_awaited_once()
+        assert (
+            mock_mysql_syncer.inventory_api.put.await_args.args[0]
+            == f"/tables/{created_table.id}"
+        )
+        mock_mysql_syncer.inventory_api.post.assert_not_called()
+        mock_mysql_syncer.inventory_api.delete.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_perform_inventory_sync_invokes_sync_node(
-        self, mock_mysql_syncer, mocker
+    async def test_perform_inventory_sync_drives_discovered_node(
+        self, created_node, created_service, bound_mysql_syncer, session, mocker
     ):
-        """Test performing inventory sync by iterating nodes."""
-        node = CreatedNodeFactory.build()
-        mocker.patch.object(MySQLSyncer, "get_inventory_nodes", return_value=[node])
-        sync_node_mock = mocker.patch.object(
-            MySQLSyncer, "sync_node", new_callable=AsyncMock
+        """Drive perform_inventory_sync: each discovered node is synced through the seam."""
+        trigger = mocker.patch.object(alert_service, "trigger", new_callable=AsyncMock)
+        # Keep the service address stable across re-validation ("localhost" + :8000).
+        created_node.address = "localhost"
+        # force_executor_host removes the /hosts/ lookup from the shared GET queue.
+        bound_mysql_syncer.force_executor_host = "exec-host"
+        # The fetch_node task returns a manifest with the service but no schemas, so the
+        # downstream service sync does only the schema-listing GET (no streaming).
+        services_manifest = {
+            _MySQLSyncResultEntityTypeEnum.SERVICES: {created_service.address: {}}
+        }
+        mocker.patch.object(
+            MySQLSyncer, "wait_for_task_output", new_callable=AsyncMock
+        ).return_value = TaskRunResult(555, json.dumps(services_manifest))
+        await _seed_sync_item(
+            bound_mysql_syncer,
+            session,
+            SyncInventoryEntityTypeEnum.NODE,
+            created_node.id,
         )
-        await mock_mysql_syncer.perform_inventory_sync()
-        sync_node_mock.assert_awaited_once_with(node)
+        await _seed_sync_item(
+            bound_mysql_syncer,
+            session,
+            SyncInventoryEntityTypeEnum.SERVICE,
+            created_service.id,
+        )
+        bound_mysql_syncer.inventory_api.get.side_effect = [
+            {
+                "items": [created_node.model_dump()],
+                "total": 1,
+                "offset": 0,
+                "limit": 50,
+            },
+            {"items": [], "total": 0, "offset": 0, "limit": 50},
+        ]
+
+        await bound_mysql_syncer.perform_inventory_sync()
+
+        # The discovered node is fetched then synced: first GET is the node listing,
+        # and the cascade reaches the per-service schema listing.
+        assert (
+            bound_mysql_syncer.inventory_api.get.await_args_list[0].args[0] == "/nodes/"
+        )
+        get_urls = [
+            call.args[0]
+            for call in bound_mysql_syncer.inventory_api.get.await_args_list
+        ]
+        assert f"/services/{created_service.id}/schemas/" in get_urls
+        trigger.assert_not_called()
+        assert (
+            bound_mysql_syncer.sync_items[
+                (SyncInventoryEntityTypeEnum.NODE, created_node.id)
+            ].status
+            == SyncStatusEnum.SUCCESS
+        )
 
 
 class TestStreamsAndParsing:
