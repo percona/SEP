@@ -22,9 +22,10 @@ import pytest_asyncio
 from sqlalchemy import Column, Integer, JSON, MetaData, select, Table, Text
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.sql import column
 from sqlmodel import col
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.utils import (
     compare_type,
@@ -397,12 +398,12 @@ class TestFuncJsonExtractOnRealPostgres:
     ):
         """Execute a single-element arrow path against a real ``json`` column."""
         name = json_probe_session.get_bind().name
-        await json_probe_session.execute(
+        await json_probe_session.exec(
             _json_probe.insert().values(id=1, payload_json={"task": "mysqldump"})
         )
         await json_probe_session.commit()
 
-        result = await json_probe_session.execute(
+        result = await json_probe_session.exec(
             select(func_json_extract(name, _json_probe.c.payload_json, "task"))
         )
         assert result.scalar_one() == "mysqldump"
@@ -414,12 +415,12 @@ class TestFuncJsonExtractOnRealPostgres:
     ):
         """Execute a nested arrow chain (``-> ... ->>``) against a real ``json`` column."""
         name = json_probe_session.get_bind().name
-        await json_probe_session.execute(
+        await json_probe_session.exec(
             _json_probe.insert().values(id=1, payload_json={"meta": {"key": "v"}})
         )
         await json_probe_session.commit()
 
-        result = await json_probe_session.execute(
+        result = await json_probe_session.exec(
             select(func_json_extract(name, _json_probe.c.payload_json, "meta", "key"))
         )
         assert result.scalar_one() == "v"
@@ -429,12 +430,12 @@ class TestFuncJsonExtractOnRealPostgres:
     async def test_jsonb_column_extracts_scalar(self, json_probe_session: AsyncSession):
         """Execute the arrow chain against a real ``jsonb`` column."""
         name = json_probe_session.get_bind().name
-        await json_probe_session.execute(
+        await json_probe_session.exec(
             _json_probe.insert().values(id=1, payload_jsonb={"task": "restore-weekly"})
         )
         await json_probe_session.commit()
 
-        result = await json_probe_session.execute(
+        result = await json_probe_session.exec(
             select(func_json_extract(name, _json_probe.c.payload_jsonb, "task"))
         )
         assert result.scalar_one() == "restore-weekly"
@@ -453,14 +454,14 @@ class TestFuncJsonExtractOnRealPostgres:
         siblings cannot.
         """
         name = json_probe_session.get_bind().name
-        await json_probe_session.execute(
+        await json_probe_session.exec(
             _json_probe.insert().values(
                 id=1, payload_text='{"task_name": "backup-daily"}'
             )
         )
         await json_probe_session.commit()
 
-        result = await json_probe_session.execute(
+        result = await json_probe_session.exec(
             select(func_json_extract(name, _json_probe.c.payload_text, "task_name"))
         )
         assert result.scalar_one() == "backup-daily"
@@ -485,7 +486,7 @@ class TestFuncJsonExtractOnRealPostgres:
         await TaskHistoryManager.save(postgres_session, build_task_history(task))
         name = postgres_session.get_bind().name
 
-        result = await postgres_session.execute(
+        result = await postgres_session.exec(
             select(func_json_extract(name, col(TaskHistory.execution_request), "task"))
         )
         assert result.scalar_one() == "mysqldump"

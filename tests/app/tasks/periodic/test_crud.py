@@ -221,7 +221,7 @@ class TestPeriodicTaskManagerBuildWhereClause:
         clause = PeriodicTaskManager.build_where_clause_by_task_names(
             "backup-daily", "restore-weekly"
         )
-        result = await postgres_celery_beat_session.execute(
+        result = await postgres_celery_beat_session.exec(
             select(PeriodicTask).where(clause)
         )
 
