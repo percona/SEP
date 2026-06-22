@@ -36,8 +36,8 @@ from app.sep.plugins.mysql_backups.models import (
     BackupCreate,
     BackupResponse,
 )
-from app.sep.plugins.mysql_backups.payload import build_backup_spec
 from app.sep.plugins.mysql_backups.routes import router as jinja_router
+from app.sep.plugins.mysql_backups.spec import build_backup_spec
 from app.sep.plugins.mysql_backups.views import mysql_backups_views
 from app.tasks.models import TaskOwner
 

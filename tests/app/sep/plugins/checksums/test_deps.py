@@ -25,11 +25,11 @@ from app.sep.plugins.checksums.deps import (
     build_checksums_task_payload,
 )
 from app.sep.plugins.checksums.models import ChecksumsCreate, ChecksumsForm
-from app.sep.plugins.checksums.payload import (
+from app.sep.plugins.checksums.spec import (
     build_checksums_spec,
     DEFAULT_RECURSION_DSN_TABLE,
 )
-from app.sep.plugins.framework.payload import assemble_envelope, ResolvedEntities
+from app.sep.plugins.framework.spec import assemble_envelope, ResolvedEntities
 from app.tasks.models import TaskOwner, TaskWrite
 
 
