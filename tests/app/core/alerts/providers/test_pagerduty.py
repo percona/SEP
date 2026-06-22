@@ -18,6 +18,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from aiohttp import ClientError
 from pydantic import ValidationError
 
 from app.core.alerts.models import Alert, AlertSeverity
@@ -82,6 +83,23 @@ async def test_send_alert_builds_correct_payload(mocker, mock_remote_api, sample
 
 
 @pytest.mark.asyncio
+async def test_send_alert_propagates_transport_error(
+    mocker, mock_remote_api, sample_alert
+):
+    """Verify send_alert lets a transport error from ``post`` propagate."""
+    mock_remote_api.post.side_effect = ClientError("connection reset")
+    mocker.patch.object(
+        PagerDutyEventsAlertProvider,
+        "get_api",
+        new=AsyncMock(return_value=mock_remote_api),
+    )
+    prov = PagerDutyEventsAlertProvider(routing_key="rk1")
+
+    with pytest.raises(ClientError):
+        await prov.send_alert(sample_alert)
+
+
+@pytest.mark.asyncio
 async def test_resolve_alert_builds_correct_payload(mocker, mock_remote_api):
     """Verify that the resolve JSON payload sent to PagerDuty is correct."""
     mock_remote_api.post.return_value = {"success": True}
@@ -101,6 +119,32 @@ async def test_resolve_alert_builds_correct_payload(mocker, mock_remote_api):
             "dedup_key": "task:backup:node-1",
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_resolve_alert_rejects_empty_dedup_key(mocker, mock_remote_api):
+    """Verify resolve_alert rejects an empty dedup_key before any API call."""
+    mocker.patch.object(
+        PagerDutyEventsAlertProvider,
+        "get_api",
+        new=AsyncMock(return_value=mock_remote_api),
+    )
+    prov = PagerDutyEventsAlertProvider(routing_key="rk1")
+
+    with pytest.raises(ValidationError):
+        await prov.resolve_alert("")
+
+    mock_remote_api.post.assert_not_awaited()
+
+
+@pytest.mark.parametrize("severity", list(AlertSeverity))
+def test_alert_maps_to_matching_pagerduty_severity(severity):
+    """Verify each AlertSeverity maps to the matching PagerDutyAlertSeverity."""
+    base = Alert(summary="s", source="o", severity=severity)
+
+    pd_alert = PagerDutyAlert.model_validate(base)
+
+    assert pd_alert.severity == PagerDutyAlertSeverity[severity.name]
 
 
 def test_pagerduty_routing_key_masked_in_repr():

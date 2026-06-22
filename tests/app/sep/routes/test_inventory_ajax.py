@@ -89,6 +89,17 @@ class TestListSchemas:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
+    def test_list_schemas_upstream_error(
+        self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
+    ) -> None:
+        """Return empty list when inventory API raises a server error."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        response = test_client.get("/inventory-api/services/10/schemas")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
 
 class TestListTables:
     """Test GET /inventory-api/schemas/{schema_id}/tables endpoint."""
@@ -138,5 +149,16 @@ class TestListTables:
             status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
         )
         response = test_client.get("/inventory-api/schemas/9999/tables")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    def test_list_tables_upstream_error(
+        self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
+    ) -> None:
+        """Return empty list when inventory API raises a server error."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        response = test_client.get("/inventory-api/schemas/5/tables")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []

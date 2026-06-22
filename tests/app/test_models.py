@@ -98,6 +98,24 @@ class TestCasdoorTokenPayload:
         assert token_payload.active == casdoor_token_payload_data["active"]
         casdoor_mock.introspect_token.assert_awaited_once_with(token)
 
+    @pytest.mark.asyncio
+    async def test_from_jwt_raises_on_expired_token(
+        self, casdoor_token_payload_data, casdoor_mock
+    ):
+        """Verify from_jwt rejects a token whose ``exp`` is in the past."""
+        casdoor_token_payload_data["exp"] = 1_000_000_000  # 2001-09-09, long past
+
+        with pytest.raises(ValidationError, match="exp"):
+            await CasdoorTokenPayload.from_jwt("access-token")
+
+    @pytest.mark.asyncio
+    async def test_from_jwt_raises_on_malformed_payload(self, casdoor_mock):
+        """Verify from_jwt rejects an introspection payload missing fields."""
+        casdoor_mock.introspect_token.return_value = {}
+
+        with pytest.raises(ValidationError):
+            await CasdoorTokenPayload.from_jwt("access-token")
+
 
 class TestCasdoorUser:
     """Test suite for CasdoorUser model validation and OAuth operations."""
@@ -168,6 +186,24 @@ class TestCasdoorUser:
         casdoor_mock.refresh_token_request.assert_awaited_once_with(refresh_token)
 
     @pytest.mark.asyncio
+    async def test_get_oauth_token_raises_when_access_token_data_is_none(
+        self, casdoor_mock
+    ):
+        """Verify get_oauth_token errors when the upstream returns ``None``."""
+        casdoor_mock.get_access_token.return_value = None
+
+        with pytest.raises(TypeError):
+            await CasdoorUser.get_oauth_token(code="test_code")
+
+    @pytest.mark.asyncio
+    async def test_get_oauth_token_propagates_refresh_error(self, casdoor_mock):
+        """Verify get_oauth_token propagates an error raised by the upstream."""
+        casdoor_mock.refresh_token_request.side_effect = RuntimeError("upstream down")
+
+        with pytest.raises(RuntimeError, match="upstream down"):
+            await CasdoorUser.get_oauth_token(refresh_token="test_refresh_token")
+
+    @pytest.mark.asyncio
     async def test_invalidate_oauth_token(
         self, casdoor_token_payload_data, refresh_token, casdoor_mock
     ):
@@ -207,6 +243,25 @@ class TestCasdoorUser:
         """Verify creating CasdoorUser from token payload."""
         token_payload = CasdoorTokenPayload.model_validate(casdoor_token_payload_data)
         user = await CasdoorUser.from_token_payload(token_payload)
+        assert isinstance(user, CasdoorUser)
+        assert user.username == token_payload.username
+        casdoor_mock.get_user.assert_awaited_once_with(token_payload.username)
+
+    @pytest.mark.asyncio
+    async def test_from_token_payload_with_defaulted_optional_field(
+        self, casdoor_token_payload_data, casdoor_mock
+    ):
+        """Verify from_token_payload works when ``active`` is omitted (defaults True)."""
+        partial_data = {
+            key: value
+            for key, value in casdoor_token_payload_data.items()
+            if key != "active"
+        }
+        token_payload = CasdoorTokenPayload.model_validate(partial_data)
+        assert token_payload.active is True
+
+        user = await CasdoorUser.from_token_payload(token_payload)
+
         assert isinstance(user, CasdoorUser)
         assert user.username == token_payload.username
         casdoor_mock.get_user.assert_awaited_once_with(token_payload.username)
