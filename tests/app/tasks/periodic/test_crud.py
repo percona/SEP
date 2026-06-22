@@ -19,6 +19,7 @@ import json
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
@@ -178,3 +179,57 @@ class TestPeriodicTaskManagerBuildWhereClause:
         assert "->>" in rendered
         assert "'task_name'" in rendered
         assert "IN (" in rendered.upper()
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_build_where_clause_executes_on_real_postgres(
+        self, postgres_celery_beat_session, mocker
+    ):
+        """Execute ``CAST(kwargs AS JSON) ->> 'task_name' IN (...)`` on real PostgreSQL.
+
+        Real-engine sibling of ``test_renders_cast_on_postgres``. Two things must
+        both hold: the helper dispatches on ``settings.CELERY.beat_dburi`` (not the
+        session bind), so ``beat_dburi`` is patched to a ``postgresql://`` URL; and
+        the clause must execute against the real PG engine. ``PeriodicTask.kwargs``
+        is a ``sa.Text()`` column, so the ``text``-to-``CAST``-to-``->>`` path runs
+        — the text-column regression surface — and only the matching rows come back.
+        """
+        mocker.patch.object(
+            settings.CELERY, "beat_dburi", "postgresql://user:pass@localhost/db"
+        )
+        schedule = IntervalSchedule(every=10, period=Period.MINUTES)
+        postgres_celery_beat_session.add(schedule)
+        await postgres_celery_beat_session.flush()
+
+        for name in ("backup-daily", "restore-weekly"):
+            postgres_celery_beat_session.add(
+                PeriodicTask(
+                    name=f"periodic-{name}",
+                    task=CELERY_TASK_NAME,
+                    kwargs=json.dumps({"task_name": name, "execution_data": None}),
+                    enabled=True,
+                    description=f"Test {name}",
+                    schedule_model=schedule,
+                )
+            )
+        postgres_celery_beat_session.add(
+            PeriodicTask(
+                name="other-celery-task",
+                task=CELERY_TASK_NAME,
+                kwargs=json.dumps({"task_name": "unrelated"}),
+                enabled=True,
+                description="Not managed by SEP",
+                schedule_model=schedule,
+            )
+        )
+        await postgres_celery_beat_session.commit()
+
+        clause = PeriodicTaskManager.build_where_clause_by_task_names(
+            "backup-daily", "restore-weekly"
+        )
+        result = await postgres_celery_beat_session.execute(
+            select(PeriodicTask).where(clause)
+        )
+
+        names = {task.name for task in result.scalars().all()}
+        assert names == {"periodic-backup-daily", "periodic-restore-weekly"}
