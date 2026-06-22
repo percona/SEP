@@ -32,9 +32,9 @@ class SettingClassEnum(StrEnum):
     """Enumerate settings classes that may have HOT override rows.
 
     The wired classes are ``SEPSettings``, ``TasksSettings``,
-    ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings`` and
-    ``AlertSettings``. ``InventorySettings`` and ``AnonymizerSettings`` are
-    intentionally NOT here -- wrapping them is deferred to follow-up tickets.
+    ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
+    ``AlertSettings`` and ``AnonymizerSettings``. ``InventorySettings`` is
+    intentionally NOT here -- wrapping it is deferred to a follow-up ticket.
 
     To wire a new settings class:
 
@@ -56,6 +56,7 @@ class SettingClassEnum(StrEnum):
     MESSAGES_SETTINGS = "MessagesSettings"
     SETTINGS = "Settings"
     ALERT_SETTINGS = "AlertSettings"
+    ANONYMIZER_SETTINGS = "AnonymizerSettings"
 
 
 class SettingOverride(BaseSQLModel, table=True):

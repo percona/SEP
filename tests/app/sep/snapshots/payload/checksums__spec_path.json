@@ -1,5 +1,6 @@
 {
   "all_options_and_flags": {
+    "alert_detail_builder": null,
     "alert_on_fail": true,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -23,6 +24,7 @@
     "protected": false
   },
   "defaults_minimal": {
+    "alert_detail_builder": null,
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -46,6 +48,7 @@
     "protected": false
   },
   "dsn_recursion_custom_table": {
+    "alert_detail_builder": null,
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -69,6 +72,7 @@
     "protected": false
   },
   "dsn_recursion_default_table": {
+    "alert_detail_builder": null,
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -92,6 +96,7 @@
     "protected": false
   },
   "port_none_localhost_dsn_elision": {
+    "alert_detail_builder": null,
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -115,6 +120,7 @@
     "protected": false
   },
   "recursion_none": {
+    "alert_detail_builder": null,
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -138,6 +144,7 @@
     "protected": false
   },
   "value_with_space_quoting": {
+    "alert_detail_builder": null,
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",

@@ -23,12 +23,24 @@ frontmatter and served at
 ``GET /api/plugins/snippets/snippet/schema?snippet_filename=...``.
 """
 
-__all__ = ["SNIPPETS_PLUGIN_SCHEMA", "build_snippet_schema"]
+__all__ = [
+    "SNIPPETS_PLUGIN_SCHEMA",
+    "build_snippet_schema",
+    "evaluate_visibility_gates",
+]
 
+from types import SimpleNamespace
 from typing import cast
 from urllib.parse import urlencode
 
-from app.sep.plugins.framework.rules import F, FieldGate, Not, truthy
+from app.sep.plugins.framework.rules import (
+    evaluate_conditional_rules,
+    extract_forbidden_field_gate_plan,
+    F,
+    FieldGate,
+    Not,
+    truthy,
+)
 from app.sep.plugins.framework.schema import (
     AnyField,
     BoolField,
@@ -51,7 +63,7 @@ from app.sep.snippets.models.meta import (
     SnippetMetaParameter,
     SnippetMetaParameterType,
 )
-from app.sep.snippets.models.snippet import Snippet
+from app.sep.snippets.models.snippet import BaseSnippetArgs, Snippet
 
 _EXECUTOR_HOST_FIELD_NAME = "executor_host"
 _SUDO_FIELD_NAME = "sudo"
@@ -190,10 +202,11 @@ def _visibility_forbidden(parameter: SnippetMetaParameter) -> list[FieldGate] | 
     otherwise a truthiness predicate on the referenced parameter is used.
 
     .. note::
-        The resulting gate is client-enforced: the React renderer hides the
-        field and drops its value from the payload. The snippet execute endpoint
-        validates type/presence only and does not server-reject a value
-        submitted directly for a hidden field.
+        The React renderer hides the field and drops its value from the payload.
+        The resulting gate is *also* enforced server-side on the execute paths
+        via :func:`evaluate_visibility_gates`, which rejects a value submitted
+        directly for a gated-hidden field (matching ``@apply_conditional_rules``
+        for hand-coded plugins).
 
     :param parameter: The validated snippet meta parameter.
     :type parameter: SnippetMetaParameter
@@ -326,3 +339,34 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
         forms=forms,
         list_view=SNIPPETS_PLUGIN_SCHEMA.list_view,
     )
+
+
+def evaluate_visibility_gates(
+    snippet: Snippet, execution_args: BaseSnippetArgs
+) -> list[str]:
+    """Return failure messages for any forbidden visibility gate that fires.
+
+    Snippet ``visible_when`` / ``visible_when_not`` conditions are lowered onto
+    ``forbidden=[FieldGate(...)]`` by :func:`field_for`. This reuses the
+    framework ``field_gate_forbidden`` engine to enforce them server-side on the
+    execute paths, matching how ``@apply_conditional_rules`` enforces hand-coded
+    plugins: a value submitted for a parameter whose gate fires (given the rest
+    of the submission) is rejected.
+
+    Gates reference parameters by their wire (alias) name, so evaluation runs
+    against the alias-shaped view of the validated args
+    (``model_dump(by_alias=True)``), not the model's generated python attribute
+    names — otherwise the predicates would silently never resolve.
+
+    :param snippet: The snippet whose visibility gates to enforce.
+    :param execution_args: The already type/presence-validated execution args.
+    :return: One message per fired gate; empty when every gate passes (including
+        gateless snippets, which take the identical path to before).
+    """
+    schema = build_snippet_schema(snippet)
+    plan = extract_forbidden_field_gate_plan(schema)
+    if not plan.rules:
+        return []
+    alias_view = SimpleNamespace()
+    alias_view.__dict__.update(execution_args.model_dump(by_alias=True))
+    return evaluate_conditional_rules(alias_view, plan)
