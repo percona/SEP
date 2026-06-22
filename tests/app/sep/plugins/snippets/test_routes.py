@@ -34,10 +34,32 @@ from app.sep.main import sep_app
 from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.plugins.snippets.routes import router as snippets_jinja_router
 from app.sep.snippets.crud import SnippetManager
+from app.sep.snippets.models.snippet import EXECUTOR_HOSTS_INPUT_NAME
 
 _BATCH_APPROVE_URL = "/snippets/approve-batch"
 _INDEX_URL_PATH = "/snippets/"
 _COMPLETED_TASKS_PARTIAL = "tasks/partials/completed-tasks.html.j2"
+_EXECUTE_URL = "/snippets/execute"
+
+
+async def _seed_gated_snippet(create_snippet, session, parameters, *, filename):
+    """Seed an approved snippet whose meta declares ``parameters`` (persisted).
+
+    The execute route reloads the snippet from the DB by filename, so the gated
+    parameter metadata must be persisted and the ``validated_parameters`` cache
+    dropped so the new meta is re-validated.
+    """
+    snippet = await create_snippet(filename, approved=True)
+    snippet.meta = {**snippet.meta, "parameters": parameters}
+    snippet.__dict__.pop("validated_parameters", None)
+    await SnippetManager.save(session, snippet, flag_modified_fields=["meta"])
+    return snippet
+
+
+_GATED_PARAMS = [
+    {"name": "list", "type": "bool", "label": "List"},
+    {"name": "start", "type": "str", "label": "Start", "visible_when_not": "list"},
+]
 
 
 class TestSnippetsApproveBatch:
@@ -577,3 +599,117 @@ class TestSnippetsCsrfEnforcement:
         message = str(error.call_args.args[1])
         assert "CSRF" in message or "csrf" in message.lower()
         update.assert_not_awaited()
+
+
+class TestSnippetsExecuteVisibilityGates:
+    """Route-level coverage that POST /snippets/execute enforces visibility gates.
+
+    Complements the unit coverage on ``get_validated_execution_args`` in
+    ``test_deps.py`` by directly posting a hidden-field value through the live
+    legacy form route — the path a non-browser client would abuse (SEP-1364).
+    """
+
+    @pytest.mark.asyncio
+    async def test_rejects_submitted_value_for_gated_hidden_param(
+        self,
+        admin_client: TestClient,
+        session: AsyncSession,
+        create_snippet,
+        mock_task_api_dep: AsyncMock,
+        mocker: MockerFixture,
+    ):
+        """A value for a gate-hidden field is rejected: flash + redirect, no dispatch."""
+        await _seed_gated_snippet(
+            create_snippet, session, _GATED_PARAMS, filename="gated-form.sh"
+        )
+        error = mocker.patch("app.sep.plugins.snippets.deps.messages.error")
+
+        response = admin_client.post(
+            _EXECUTE_URL,
+            params={"snippet_filename": "gated-form.sh"},
+            # ``list`` truthy hides ``start``; submitting ``start`` fires the gate.
+            data={EXECUTOR_HOSTS_INPUT_NAME: "host1", "list": "1", "start": "2020"},
+            headers={"referer": "http://testserver/snippets/detail"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        error.assert_called_once()
+        assert "start" in str(error.call_args.args[1])
+        mock_task_api_dep.post.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_allows_value_when_gate_not_fired(
+        self,
+        admin_client: TestClient,
+        session: AsyncSession,
+        create_snippet,
+        mock_task_api_dep: AsyncMock,
+    ):
+        """When the gate stays shut the value is accepted and the task dispatches."""
+        await _seed_gated_snippet(
+            create_snippet, session, _GATED_PARAMS, filename="open-form.sh"
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": 11})
+
+        response = admin_client.post(
+            _EXECUTE_URL,
+            params={"snippet_filename": "open-form.sh"},
+            # ``list`` omitted -> ``start`` visible -> value allowed.
+            data={EXECUTOR_HOSTS_INPUT_NAME: "host1", "start": "2020"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        mock_task_api_dep.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_multiple_gated_fields_flash_lists_each_failure(
+        self,
+        admin_client: TestClient,
+        session: AsyncSession,
+        create_snippet,
+        mock_task_api_dep: AsyncMock,
+        mocker: MockerFixture,
+    ):
+        """Submitting several hidden fields flashes each failure; nothing dispatches."""
+        await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+                {
+                    "name": "end",
+                    "type": "str",
+                    "label": "End",
+                    "visible_when_not": "list",
+                },
+            ],
+            filename="multi-form.sh",
+        )
+        error = mocker.patch("app.sep.plugins.snippets.deps.messages.error")
+
+        response = admin_client.post(
+            _EXECUTE_URL,
+            params={"snippet_filename": "multi-form.sh"},
+            data={
+                EXECUTOR_HOSTS_INPUT_NAME: "host1",
+                "list": "1",
+                "start": "2020",
+                "end": "2021",
+            },
+            headers={"referer": "http://testserver/snippets/detail"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        message = str(error.call_args.args[1])
+        assert "start" in message
+        assert "end" in message
+        mock_task_api_dep.post.assert_not_called()
