@@ -162,3 +162,21 @@ def test_pagerduty_alert_extra_ignored_and_validation():
         ValidationError, match="Value and name not found for PagerDutyAlertSeverity"
     ):
         PagerDutyAlert(summary="s", source="o", severity="not-a-sev")
+
+
+def test_pagerduty_alert_promotes_custom_details_extra_from_base_alert():
+    """Promote a base Alert's ``custom_details`` extra into the typed field.
+
+    This is the provider-agnostic seam: ``alert_for_status`` attaches
+    ``custom_details`` as an extra field on the base ``Alert`` (``extra="allow"``)
+    and it surfaces through ``PagerDutyAlert.custom_details`` when the provider
+    re-validates the alert.
+    """
+    base = Alert(
+        summary="s",
+        source="o",
+        severity=AlertSeverity.ERROR,
+        custom_details={"description": "=== ERROR DETAILS ==="},
+    )
+    promoted = PagerDutyAlert.model_validate(base.model_dump())
+    assert promoted.custom_details == {"description": "=== ERROR DETAILS ==="}

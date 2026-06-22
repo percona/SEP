@@ -31,6 +31,7 @@ from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
+from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     DispatchLock,
     Task,
@@ -714,6 +715,39 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         result = await session.stream(query)
         async for row in result.scalars():
             yield row
+
+    @classmethod
+    async def get_stderr_tail_chunks(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        limit: int = TAIL_SCAN_MAX_CHUNKS,
+    ) -> list[str]:
+        """Return a task history's newest ``STDERR`` chunk contents, newest-first.
+
+        Generic tail accessor: returns up to ``limit`` STDERR chunk contents
+        ordered newest-first by insertion id (``TaskHistoryLog.id``, i.e. DB
+        row-insertion order -- a stable proxy for arrival order, not a guarantee
+        about the chronology of the underlying log content across sources or
+        streams). Callers reconstruct insertion order by reversing and joining.
+        STDOUT chunks are ignored.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :param limit: The maximum number of newest STDERR chunks to return.
+        :return: The newest STDERR chunk contents, newest-first; empty when no
+            STDERR chunk exists.
+        """
+        query = (
+            select(TaskHistoryLog)
+            .where(col(TaskHistoryLog.task_history_id) == task_history_id)
+            .where(col(TaskHistoryLog.stream) == TaskLogType.STDERR)
+            .order_by(col(TaskHistoryLog.id).desc())
+            .limit(limit)
+        )
+        result = await cls._exec(session, query)
+        return [chunk.content for chunk in result.all()]
 
     @classmethod
     async def insert_chunk_idempotent(

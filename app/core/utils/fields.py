@@ -53,6 +53,32 @@ from app.core.utils.path import resolve_relative_path
 E = TypeVar("E", bound=Enum)
 
 
+def value_is_present(value: Any) -> bool:
+    """Return whether ``value`` counts as *present* to a presence/forbidden gate.
+
+    Treats ``None``, ``False``, and empty strings/bytes/lists/tuples/sets/dicts
+    as absent. ``0`` counts as present (numeric, just falsy). ``False`` is
+    treated as the unset bool default so ``forbidden=`` ``FieldGate`` entries on
+    a ``BoolField`` fire only on an explicit ``True`` toggle, matching the
+    convention used by ``FailRule`` ``truthy(name)`` checks.
+
+    Shared by the framework's runtime gate evaluation (``_field_is_present``)
+    and authoring-time guards (such as the snippets plugin's meta validation) so
+    the two presence checks cannot drift. It lives here, in the core utilities,
+    rather than the framework package so core models can reuse it without
+    importing the plugin layer.
+
+    :param value: The value to classify.
+    :return: Whether the value is considered present.
+    """
+    if value is None or value is False:
+        return False
+    return not (
+        isinstance(value, str | bytes | list | tuple | set | frozenset | dict)
+        and not value
+    )
+
+
 def get_enum_from_value_or_name_factory(enum_class: type[E]) -> Callable[[Any], E]:
     """Generate and return a function that returns the Enum from its value or name.
 
