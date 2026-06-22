@@ -168,6 +168,20 @@ checkmigrations: migrate
 test: venv
 	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) ${PYTEST_PATHS}
 
+
+test-unit: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} -m unit tests/unit/
+
+test-integration: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} --cov=app -m "integration or not (unit or contract)" tests/
+
+test-contract: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} -m contract tests/contract/ \
+		|| [ "$$?" -eq 5 ]
+
+pnpm-audit:
+	@cd frontend && pnpm audit --audit-level high
+
 changelog-add:
 ifndef TICKET
 	$(error TICKET is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
@@ -242,4 +256,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit pnpm-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test test-unit test-integration test-contract release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list

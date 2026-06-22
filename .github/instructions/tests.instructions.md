@@ -6,13 +6,13 @@ applyTo: "tests/**/*.py"
 
 ## Directory layout
 
-Tests mirror app structure exactly. `app/sep/snippets/config.py` → `tests/app/sep/snippets/test_config.py`. Flag tests at the wrong level.
+Tests mirror app structure exactly. `app/sep/snippets/config.py` → `tests/app/sep/snippets/test_config.py`. Flag tests placed at the wrong level.
 
 ## Factories — never manual dicts
 
-Test data MUST come from factories under `tests/app/factories.py` (`SchemaWriteFactory`, `TableWriteFactory`, `TaskWriteFactory`, `PeriodicTaskFactory`, …). Build with `.build()`, customise inline: `CasdoorUserFactory.build(is_admin=True)`. Use mock ID constants from `tests/app/factories.py`.
+Test data MUST come from factories under `tests/app/factories.py` (`SchemaWriteFactory`, `TableWriteFactory`, `TaskWriteFactory`, `PeriodicTaskFactory`, etc.) or polyfactory subclasses. Build with `.build()`, customise inline: `CasdoorUserFactory.build(is_admin=True)`. Flag every manual dict where a matching factory exists.
 
-**Preference order: Factory > `spec=`'d Mock > bare Mock.** Inside the subject of a test, prefer `Factory.build(field=…)` over `MagicMock(spec=Model)` — the factory exercises field validation, where a spec'd mock returns an empty string for a `NonEmptyStr` field and masks the failure. Bare `MagicMock()` / `AsyncMock()` is a smell when the value has a model class to spec against.
+Use mock ID constants from `tests/app/factories.py` (`MOCK_CREATED_NODE_ID`, etc.) — don't invent literals.
 
 ## Mock subjects vs boundaries — critical
 
@@ -20,7 +20,7 @@ Every test has a **subject** (SUT + its session, model instances, loop state) an
 
 **Never mock `AsyncSession` on a session-touching SUT.** If the SUT receives `session: AsyncSession` and performs any session op directly or transitively (`add`, `commit`, `refresh`, `execute`, any `BaseSQLModelManager` method), use the real `session` fixture from `tests/app/tasks/conftest.py`. A mocked session silently accepts every attribute access — the test passes green while production fails on the first real call. Watch for `_session = (AsyncMock(...),)` (1-tuple typo) and `MagicMock(spec=<SQLModel>)` + `AsyncMock(spec=AsyncSession)` together.
 
-**Don't mock the subject.** `patch.object(<SUT class>, "<sibling>")` / `patch("app.<sut_module>.<sibling>")` turn the test into a self-assertion. Always use `spec=`; assert async with `.assert_awaited_once_with()`. ≥3 `patch(...)` against one SUT is **Mockery** — split the SUT.
+If the SUT receives `session: AsyncSession` and performs ANY session operation directly or transitively (`session.add`, `commit`, `refresh`, `execute`, or any `BaseSQLModelManager.save`/`get_or_404`/`create`/`update`), consider using the real `session` fixture from `tests/app/tasks/conftest.py` (or the analogous inventory/sep fixture), not `AsyncMock(spec=AsyncSession)`.
 
 ## Body-dep override masks form/JSON parsing — critical
 
