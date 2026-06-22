@@ -278,6 +278,72 @@ def test_archives_update_accepts_empty_dest_port(
     mock_task_api_dep.put.assert_awaited_once()
 
 
+def test_archives_create_rejects_dest_port_with_dest_service_id(
+    test_client, mock_task_api_dep, mock_inventory_api_dep
+):
+    """POST /archives/ with a dest_service_id and a typed dest_port is rejected.
+
+    The contradictory service-plus-port combination trips the model-level
+    forbidden gate. HTML form routes surface validation failures as a flash +
+    redirect back to the Referer, so the task is never created.
+    """
+    payload = {
+        "alias": "arch_dest_port_conflict",
+        "hostname": "source_db",
+        "service_id": 1,
+        "source_db_id": 10,
+        "source_table_id": 20,
+        "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+        "where": "id > 1",
+        "dest_table_id": 2,
+        "dest_service_id": 2,
+        "dest_port": 3307,
+    }
+    referer = "http://testserver/archives/create"
+    response = test_client.post(
+        "/archives/",
+        data=payload,
+        headers={"referer": referer},
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == referer
+    mock_task_api_dep.post.assert_not_awaited()
+
+
+def test_archives_update_rejects_dest_port_with_dest_service_id(
+    test_client, mock_task_api_dep, mock_inventory_api_dep
+):
+    """POST /archives/{task_name}/update with dest_service_id + typed dest_port is rejected.
+
+    The update route shares the create form's body dependency, so the same
+    forbidden gate rejects the service-plus-port combination on edit; the form
+    route redirects back to the Referer and never updates the task.
+    """
+    payload = {
+        "alias": "arch_update_dest_port_conflict",
+        "hostname": "source_db",
+        "service_id": 1,
+        "source_db_id": 10,
+        "source_table_id": 20,
+        "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+        "where": "id > 1",
+        "dest_table_id": 2,
+        "dest_service_id": 2,
+        "dest_port": 3307,
+    }
+    referer = "http://testserver/archives/arch_update_dest_port_conflict/edit"
+    response = test_client.post(
+        "/archives/arch_update_dest_port_conflict/update",
+        data=payload,
+        headers={"referer": referer},
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"] == referer
+    mock_task_api_dep.put.assert_not_awaited()
+
+
 def test_archives_create_same_as_source_with_manual_dest_schema(
     test_client,
     mock_task_api_dep,

@@ -391,8 +391,8 @@ class TestApiRouterConfigDrivenLoop:
     def test_plugin_without_api_router_path_is_not_mounted(self) -> None:
         """Assert a plugin with ``api_router_path=None`` contributes no routes."""
         plugin = Plugin(
-            name="Inventory",
-            module_name="inventory",
+            name="Snippets",
+            module_name="snippets",
             api_router_path=None,
         )
         router = build_plugins_router(build_app_registry([plugin]))
