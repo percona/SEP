@@ -52,4 +52,20 @@ export type {
 } from './useSettings';
 export { useEnabledApps, ENABLED_APPS_QUERY_KEY } from './useEnabledApps';
 export type { EnabledApp } from './useEnabledApps';
+export {
+  useAdminApps,
+  useSetAppState,
+  useForceDisableApp,
+  isTransitional,
+  appStateErrorMessage,
+  ADMIN_APPS_QUERY_KEY,
+} from './useAdminApps';
+export type {
+  AdminApp,
+  AppStateResult,
+  AppLifecycleState,
+  TransitionalState,
+  SetAppStateVars,
+  ForceDisableAppVars,
+} from './useAdminApps';
 export { useConfigExport } from './useConfigExport';
