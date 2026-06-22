@@ -28,6 +28,7 @@ from itertools import product
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.crud import TaskHistoryLogManager
+from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     TaskHistory,
     TaskLog,
@@ -37,7 +38,6 @@ from app.tasks.models import (
 logger = logging.getLogger(__name__)
 
 TailOffsets = dict[str, dict[TaskLogType, int]]
-TAIL_SCAN_MAX_CHUNKS = 512
 TAIL_SCAN_MAX_BYTES = 64 * 1024 * 1024
 NEWLINE_BYTE = ord("\n")
 NEWLINE_BYTES = b"\n"

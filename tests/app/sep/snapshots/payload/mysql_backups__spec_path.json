@@ -1,5 +1,6 @@
 {
   "binlog_gsutil_alt_host": {
+    "alert_detail_builder": null,
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -22,6 +23,7 @@
     "protected": false
   },
   "binlog_rsync_no_alt": {
+    "alert_detail_builder": null,
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -44,6 +46,7 @@
     "protected": false
   },
   "mydumper_rsync": {
+    "alert_detail_builder": null,
     "alert_on_fail": true,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -66,6 +69,7 @@
     "protected": false
   },
   "xtrabackup_s3_encrypt": {
+    "alert_detail_builder": null,
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
