@@ -22,10 +22,6 @@ Create Date: 2026-06-22 12:23:53.239429
 """
 from typing import Sequence, Union
 
-from alembic import op
-import sqlalchemy as sa
-import sqlmodel
-
 
 # revision identifiers, used by Alembic.
 revision: str = '410eedfc5b43'
@@ -35,8 +31,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    pass
+    """No-op: merge the two sep_main heads into one. No schema change."""
 
 
 def downgrade() -> None:
-    pass
+    """No-op: nothing to undo for a head merge."""
