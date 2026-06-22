@@ -292,7 +292,12 @@ archives_schema = PluginSchema(
                     label="Destination Port",
                     ge=1,
                     le=65535,
-                    description="Port of the destination database (1-65535).",
+                    description=(
+                        "Port of the destination database (1-65535). Applies only "
+                        "when entering a manual host; when a destination service is "
+                        "selected, the port is derived from that service."
+                    ),
+                    forbidden=[FieldGate(when=present("dest_service_id"))],
                 ),
                 SchemaField(
                     name="dest_db_id",
@@ -478,6 +483,12 @@ archives_schema = PluginSchema(
             Column(key="service_type", label="Service Type", format=ColumnFormat.CHIP),
             Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
             Column(key="created_by", label="Created By"),
+            Column(
+                key="schedule",
+                label="Schedule",
+                sortable=False,
+                format=ColumnFormat.SCHEDULE,
+            ),
         ],
     ),
     detail_view=DetailView(

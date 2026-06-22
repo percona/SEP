@@ -15,6 +15,7 @@
 
 """Tests for the ``AppRegistry`` and its builders in ``registry.py``."""
 
+import importlib
 from types import SimpleNamespace
 
 import pytest
@@ -22,12 +23,14 @@ from fastapi import APIRouter
 from pytest_mock import MockerFixture
 
 from app.sep.config import Plugin, sep_settings
+from app.sep.plugins.framework.apps import TaskExecutionApp
 from app.sep.plugins.framework.base import BaseApp
 from app.sep.plugins.framework.registry import (
     AppRegistry,
     build_app_registry,
     get_app_registry,
 )
+from app.sep.plugins.inventory.schema import inventory_schema
 
 
 @pytest.fixture(autouse=True)
@@ -72,9 +75,9 @@ class TestLegacyWrapping:
     def test_api_router_is_none_when_opted_out(self) -> None:
         """A plugin opting out of the API mount carries ``api_router is None``."""
         registry = build_app_registry(
-            [Plugin(name="Inventory", module_name="inventory", api_router_path=None)]
+            [Plugin(name="Snippets", module_name="snippets", api_router_path=None)]
         )
-        assert registry.get("inventory").api_router is None
+        assert registry.get("snippets").api_router is None
 
 
 class TestFailFast:
@@ -235,3 +238,42 @@ class TestGetAppRegistry:
     def test_result_is_cached(self) -> None:
         """Repeated calls return the same cached instance."""
         assert get_app_registry() is get_app_registry()
+
+
+BESPOKE_BASE_APP_PLUGINS = ["alerts", "inventory", "report"]
+
+
+class TestBespokeBaseAppDefinitions:
+    """Tests for the alerts/inventory/report ``BaseApp`` definition wiring."""
+
+    @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
+    def test_module_exports_bare_base_app(self, plugin: str) -> None:
+        """Assert each plugin exports a bare ``BaseApp``, not a ``TaskExecutionApp``."""
+        app = importlib.import_module(f"app.sep.plugins.{plugin}").app
+        assert isinstance(app, BaseApp)
+        assert not isinstance(app, TaskExecutionApp)
+
+    @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
+    def test_registry_binds_definition_routers(self, plugin: str) -> None:
+        """Bind each plugin's API and Jinja routers by identity through the registry."""
+        api_routes = importlib.import_module(f"app.sep.plugins.{plugin}.api_routes")
+        routes = importlib.import_module(f"app.sep.plugins.{plugin}.routes")
+        app = get_app_registry().get(plugin)
+        assert app.api_router is api_routes.router
+        assert app.jinja_router is routes.router
+
+    def test_inventory_definition_carries_schema(self) -> None:
+        """Carry ``inventory_schema`` on the inventory definition's ``app_schema``."""
+        assert get_app_registry().get("inventory").app_schema is inventory_schema
+
+    @pytest.mark.parametrize("plugin", ["alerts", "report"])
+    def test_schemaless_plugins_have_no_app_schema(self, plugin: str) -> None:
+        """Register the alerts and report definitions without a schema."""
+        assert get_app_registry().get(plugin).app_schema is None
+
+    @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
+    def test_legacy_router_reexport_preserved(self, plugin: str) -> None:
+        """Preserve the legacy Jinja ``router`` re-export on each package."""
+        package = importlib.import_module(f"app.sep.plugins.{plugin}")
+        routes = importlib.import_module(f"app.sep.plugins.{plugin}.routes")
+        assert package.router is routes.router

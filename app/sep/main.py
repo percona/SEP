@@ -366,6 +366,13 @@ if "dipper" in imported_plugins:
         AuthenticatedStaticFiles(directory=DIPPER_PAYLOADS_DIR),
         name="dipper_files",
     )
+for app in get_app_registry():
+    for static_mount in getattr(app, "static_mounts", ()):
+        sep_app.mount(
+            static_mount.path,
+            AuthenticatedStaticFiles(directory=static_mount.directory),
+            name=static_mount.name,
+        )
 sep_app.mount("/static", StaticFiles(directory=sep_settings.STATIC_DIR), name="static")
 
 User = get_user_model()

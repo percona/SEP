@@ -18,6 +18,7 @@
 from app.sep.plugins.framework.apps import (
     AppCapabilities,
     Cascade,
+    StaticMount,
     TaskExecutionApp,
     Views,
 )
@@ -102,6 +103,7 @@ from app.sep.plugins.framework.rules import (
     truthy,
     xor_,
 )
+from app.sep.plugins.framework.script_source import ScriptSource
 from app.sep.plugins.framework.task_status import (
     batch_get_latest_statuses,
     extract_latest_task_status,
@@ -136,9 +138,11 @@ __all__ = [
     "RunCommandSpec",
     "RunPythonSpec",
     "SchemaRef",
+    "ScriptSource",
     "SectionLayout",
     "SectionRules",
     "ServiceRef",
+    "StaticMount",
     "TableRef",
     "TaskExecuteWrite",
     "TaskExecutionApp",

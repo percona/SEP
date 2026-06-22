@@ -159,6 +159,12 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     :cvar ACTIONS: Row actions (for example delete); not bound to row data.
         Use with a synthetic column key such as ``_actions``.
     :vartype ACTIONS: str
+    :cvar SCHEDULE: Render a generic schedule cell for the row's task. The
+        frontend joins the row to its periodic task by name and shows the next
+        run (relative, with the absolute timestamp on hover) plus a periodicity
+        popover, or a muted "Not scheduled" chip when the task has no schedule.
+        Not bound to the column's own cell value.
+    :vartype SCHEDULE: str
     """
 
     TEXT = auto()
@@ -168,6 +174,7 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     RELATIVE = auto()
     CODE = auto()
     ACTIONS = auto()
+    SCHEDULE = auto()
 
 
 class DetailHighlightLanguage(EnumFieldMixin, StrEnum):

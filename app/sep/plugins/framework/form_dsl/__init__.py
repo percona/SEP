@@ -22,6 +22,7 @@ from app.sep.plugins.framework.form_dsl.derivation import (
     find_ref_marker,
 )
 from app.sep.plugins.framework.form_dsl.markers import (
+    ArgFormat,
     Choices,
     FieldWidget,
     Forbidden,
@@ -41,6 +42,7 @@ from app.sep.plugins.framework.form_dsl.model import AppFormModel
 
 __all__ = [
     "AppFormModel",
+    "ArgFormat",
     "Choices",
     "FieldWidget",
     "Forbidden",
