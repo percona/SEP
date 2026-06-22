@@ -20,8 +20,10 @@ This module owns the archiver domain knowledge behind a failure alert: the
 extraction, the credential redaction applied before the detail egresses to an
 external alerting provider, and the assembly of the owner-specific alert
 additions. The generic tasks service consults it lazily through the
-``app.tasks.alert_hooks`` resolver (keyed on :attr:`TaskOwner.ARCHIVER`), so this
-knowledge stays inside the plugin package rather than leaking into ``app/tasks``.
+``app.tasks.alert_hooks`` resolver, following the ``"module:function"`` path the
+archiver task carries in ``alert_detail_builder`` (stamped at creation from
+:data:`ALERT_DETAIL_BUILDER`), so this knowledge stays inside the plugin package
+rather than leaking into ``app/tasks``.
 
 The module depends only on ``app.tasks`` (the allowed direction) and is safe to
 import standalone, so the lazy hook resolves identically in the Celery worker,
@@ -45,6 +47,12 @@ if TYPE_CHECKING:
     from app.tasks.models import TaskHistory
 
 logger = logging.getLogger(__name__)
+
+#: Importable ``"module:function"`` path of this module's failure-alert builder.
+#: The archives ``deps`` layer stamps it onto the archiver task
+#: (``TaskWrite.alert_detail_builder``) at creation so the tasks service can
+#: resolve the builder lazily without statically importing the plugin.
+ALERT_DETAIL_BUILDER = f"{__name__}:build_owner_alert_details"
 
 #: Substring marking an error line in the archiver's STDERR stream. Used by the
 #: tail reader to ensure the last error block is fully captured.
@@ -355,7 +363,7 @@ def _reconstruct_error_tail(chunks: list[str]) -> str | None:
     """
     if not chunks:
         return None
-    parts: list[str] = []
+    parts = []
     total_bytes = 0
     marker_seen = False
     marker_overlap = len(STDERR_ERROR_MARKER) - 1
@@ -377,10 +385,10 @@ async def build_owner_alert_details(
 ) -> OwnerAlertDetails | None:
     """Build archiver failure-alert details for the given history.
 
-    Registered as the :attr:`TaskOwner.ARCHIVER` builder in
-    ``app.tasks.alert_hooks``. Resolve the source database node and assemble the
-    combined ``custom_details`` description block (error trace plus
-    Source/Condition/Target).
+    Resolved lazily by ``app.tasks.alert_hooks`` from the ``alert_detail_builder``
+    path the archiver task carries (see :data:`ALERT_DETAIL_BUILDER`). Resolve the
+    source database node and assemble the combined ``custom_details`` description
+    block (error trace plus Source/Condition/Target).
 
     The config is taken from the dispatch-time snapshot
     (``execution_request.meta``) so the alert describes what actually ran rather

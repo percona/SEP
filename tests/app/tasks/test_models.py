@@ -24,6 +24,7 @@ import yaml
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
+from app.sep.plugins.archives.alerts import ALERT_DETAIL_BUILDER
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import (
     _encode_anonymize_mask,
@@ -681,6 +682,7 @@ class TestTaskHistory:
             id=1,
             name="test-task",
             owner=TaskOwner.ARCHIVER,
+            alert_detail_builder=ALERT_DETAIL_BUILDER,
             anonymize_mask=None,
             data={"task": "run-python", "meta": meta},
         )

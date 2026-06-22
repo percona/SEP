@@ -23,49 +23,43 @@ from app.tasks import alert_hooks
 from app.tasks.alert_hooks import build_owner_alert_details, OwnerAlertDetails
 
 
-def _history(owner: str):
-    """Return a stub history whose task owner has the given value."""
-    return SimpleNamespace(task=SimpleNamespace(owner=owner))
+def _history(builder: str | None):
+    """Return a stub history whose task declares the given builder path."""
+    return SimpleNamespace(task=SimpleNamespace(alert_detail_builder=builder))
 
 
 class TestBuildOwnerAlertDetails:
-    """Test the lazy owner -> builder dispatch."""
+    """Test the lazy per-task ``alert_detail_builder`` dispatch."""
 
     @pytest.mark.asyncio
-    async def test_returns_none_for_owner_without_builder(self):
-        """Return ``None`` for an owner with no registered builder."""
-        assert await build_owner_alert_details(_history("ANY")) is None
+    async def test_returns_none_for_task_without_builder(self):
+        """Return ``None`` for a task declaring no builder path."""
+        assert await build_owner_alert_details(_history(None)) is None
 
     @pytest.mark.asyncio
-    async def test_delegates_to_registered_builder(self, mocker):
-        """Resolve and delegate to the builder registered for the owner."""
+    async def test_delegates_to_declared_builder(self, mocker):
+        """Resolve and delegate to the builder the task declares."""
         expected = OwnerAlertDetails(source_node="node-x", custom_details={"k": "v"})
 
         async def _fake_builder(history):
             return expected
 
         mocker.patch.dict(
-            alert_hooks.ALERT_DETAIL_BUILDERS,
-            {"OWNED": "some.module:builder"},
-            clear=False,
-        )
-        mocker.patch.dict(
             alert_hooks._RESOLVED, {"some.module:builder": _fake_builder}, clear=False
         )
 
-        assert await build_owner_alert_details(_history("OWNED")) is expected
+        assert (
+            await build_owner_alert_details(_history("some.module:builder")) is expected
+        )
 
     @pytest.mark.asyncio
     async def test_swallows_unresolvable_builder(self, mocker):
         """Return ``None`` (logged) when the builder path cannot be imported."""
-        mocker.patch.dict(
-            alert_hooks.ALERT_DETAIL_BUILDERS,
-            {"BROKEN": "no.such.module:builder"},
-            clear=False,
-        )
         mocker.patch.dict(alert_hooks._RESOLVED, {}, clear=True)
 
-        assert await build_owner_alert_details(_history("BROKEN")) is None
+        assert (
+            await build_owner_alert_details(_history("no.such.module:builder")) is None
+        )
 
     @pytest.mark.asyncio
     async def test_swallows_builder_runtime_error(self, mocker):
@@ -75,14 +69,9 @@ class TestBuildOwnerAlertDetails:
             raise RuntimeError("boom")
 
         mocker.patch.dict(
-            alert_hooks.ALERT_DETAIL_BUILDERS,
-            {"BUGGY": "some.module:raising"},
-            clear=False,
-        )
-        mocker.patch.dict(
             alert_hooks._RESOLVED,
             {"some.module:raising": _raising_builder},
             clear=False,
         )
 
-        assert await build_owner_alert_details(_history("BUGGY")) is None
+        assert await build_owner_alert_details(_history("some.module:raising")) is None

@@ -39,7 +39,10 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.archives.alerts import parse_archiver_purge_config
+from app.sep.plugins.archives.alerts import (
+    ALERT_DETAIL_BUILDER,
+    parse_archiver_purge_config,
+)
 from app.sep.plugins.archives.models import (
     ArchivesCreate,
     ArchivesTaskResponse,
@@ -301,6 +304,7 @@ async def _build_archives_payload(
         name=form.alias,
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.ARCHIVER,
+        alert_detail_builder=ALERT_DETAIL_BUILDER,
         data={
             "task": "run-python",
             "meta": {

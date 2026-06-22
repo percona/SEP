@@ -13,22 +13,25 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Resolve owner-specific failure-alert enrichment via a plugin hook.
+"""Resolve plugin-specific failure-alert enrichment via a per-task hook.
 
 The tasks service owns the generic failure-alert path but must stay free of any
 static ``app.sep`` import: plugin domain knowledge (e.g. the archiver
-``PURGE_LIST`` schema) lives in the plugin package, not here. A task owner names
-its alert-detail builder by a ``"module:function"`` string in
-:data:`ALERT_DETAIL_BUILDERS`; the builder is resolved lazily with
-:func:`importlib.import_module` the first time an alert for that owner fires.
-This mirrors how the Celery executor resolves a task ``callable`` and how the
-task seed references plugin callables by path.
+``PURGE_LIST`` schema) lives in the plugin package, not here. Rather than the
+core enumerating plugins by owner, each task *carries* its enrichment builder:
+the owning plugin stamps a ``"module:function"`` string onto
+``Task.alert_detail_builder`` at creation, and this resolver imports it lazily
+with :func:`importlib.import_module` the first time the task's alert fires. The
+dependency points the right way — core discovers, the plugin declares — so a new
+plugin needs no edit here. This mirrors how the Celery executor resolves a task
+``callable`` by path.
 
-Resolving lazily — rather than registering at import time — is deliberate:
-``alert_for_status`` fires in three processes that share no plugin-bootstrap
-step (the Celery worker, the SEP app, and the tasks API). A lazy ``module:func``
-lookup works in all three; an import-time registry would only cover whichever
-process happened to import the plugin.
+Resolving lazily from the task — rather than a core registry populated at import
+time — is what keeps this enumeration-free across the three processes that fire
+``alert_for_status`` and share no plugin-bootstrap step: the Celery worker, the
+SEP app, and the tasks API. A core registry would only cover whichever process
+happened to import the plugin; a path carried on the task resolves identically
+in all three.
 """
 
 import importlib
@@ -61,13 +64,6 @@ class OwnerAlertDetails:
 #: owner-specific alert additions (or ``None`` when nothing should be attached).
 AlertDetailBuilder = Callable[["TaskHistory"], Awaitable[OwnerAlertDetails | None]]
 
-#: Map a ``TaskOwner`` value to the ``"module:function"`` path of its
-#: alert-detail builder. Archiver enrichment lives in the archives plugin so
-#: archiver domain knowledge stays out of the tasks service.
-ALERT_DETAIL_BUILDERS: dict[str, str] = {
-    "ARCHIVER": "app.sep.plugins.archives.alerts:build_owner_alert_details",
-}
-
 #: Cache of resolved builders, keyed by ``"module:function"`` path.
 _RESOLVED: dict[str, AlertDetailBuilder] = {}
 
@@ -86,20 +82,21 @@ def _resolve(path: str) -> AlertDetailBuilder:
 async def build_owner_alert_details(
     history: "TaskHistory",
 ) -> OwnerAlertDetails | None:
-    """Build owner-specific failure-alert details for the given history.
+    """Build plugin-specific failure-alert details for the given history.
 
-    Look up the builder registered for the task's owner and delegate to it.
-    Return ``None`` for any owner without a builder, leaving the generic alert
-    path unchanged. A builder that cannot be imported -- or that raises while
-    running -- is swallowed (logged) so a missing, misconfigured, or buggy
-    plugin can never prevent the failure alert itself from firing. This hook is
-    best-effort enrichment; the base alert always takes priority.
+    Resolve the ``"module:function"`` builder the task declares in
+    ``alert_detail_builder`` and delegate to it. Return ``None`` for any task
+    without a builder, leaving the generic alert path unchanged. A builder that
+    cannot be imported -- or that raises while running -- is swallowed (logged)
+    so a missing, misconfigured, or buggy plugin can never prevent the failure
+    alert itself from firing. This hook is best-effort enrichment; the base
+    alert always takes priority.
 
     :param history: The failed task execution history.
-    :return: The owner-specific alert additions, or ``None``.
+    :return: The plugin-specific alert additions, or ``None``.
     """
-    path = ALERT_DETAIL_BUILDERS.get(str(history.task.owner))
-    if path is None:
+    path = history.task.alert_detail_builder
+    if not path:
         return None
     builder = _RESOLVED.get(path)
     if builder is None:
