@@ -79,6 +79,30 @@ class TestLegacyWrapping:
         )
         assert registry.get("snippets").api_router is None
 
+    def test_legacy_plugin_carries_group_and_nav_order(self) -> None:
+        """A plugin with ``GROUP``/``NAV_ORDER`` synthesizes both onto the app."""
+        nav_order = 5
+        registry = build_app_registry(
+            [
+                Plugin(
+                    name="Snippets",
+                    module_name="snippets",
+                    group="alerts",
+                    nav_order=nav_order,
+                )
+            ]
+        )
+        app = registry.get("snippets")
+        assert app.group == "alerts"
+        assert app.nav_order == nav_order
+
+    def test_legacy_plugin_without_grouping_is_ungrouped(self) -> None:
+        """A plugin omitting ``GROUP``/``NAV_ORDER`` synthesizes both as ``None``."""
+        registry = build_app_registry([Plugin(name="Snippets", module_name="snippets")])
+        app = registry.get("snippets")
+        assert app.group is None
+        assert app.nav_order is None
+
 
 class TestFailFast:
     """Tests for the fail-fast carried over from ``build_plugins_router``."""
@@ -223,6 +247,73 @@ class TestDefinitionCollection:
 
         registry = build_app_registry([Plugin(module_name="checksums", enabled=False)])
         assert registry.get("checksums").enabled is False
+
+    def test_definition_grouping_used_when_yaml_silent(
+        self, mocker: MockerFixture
+    ) -> None:
+        """A definition's ``group``/``nav_order`` are kept when YAML omits them."""
+        nav_order = 8
+        definition = BaseApp(
+            name="internal", uri_path="/def-path", group="backups", nav_order=nav_order
+        )
+        self._patch_definition(mocker, definition)
+
+        registry = build_app_registry([Plugin(module_name="checksums")])
+        app = registry.get("checksums")
+        assert app.group == "backups"
+        assert app.nav_order == nav_order
+
+    def test_explicit_yaml_grouping_binds_onto_absent_definition_grouping(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Explicit YAML ``GROUP``/``NAV_ORDER`` bind when the definition omits them."""
+        nav_order = 6
+        definition = BaseApp(name="internal", uri_path="/def-path")
+        self._patch_definition(mocker, definition)
+
+        registry = build_app_registry(
+            [
+                Plugin(
+                    module_name="checksums", group="schema_change", nav_order=nav_order
+                )
+            ]
+        )
+        app = registry.get("checksums")
+        assert app.group == "schema_change"
+        assert app.nav_order == nav_order
+
+    def test_omitted_yaml_grouping_does_not_override_definition(
+        self, mocker: MockerFixture
+    ) -> None:
+        """A YAML entry without ``GROUP``/``NAV_ORDER`` keeps the definition's values."""
+        nav_order = 8
+        definition = BaseApp(
+            name="internal", uri_path="/def-path", group="backups", nav_order=nav_order
+        )
+        self._patch_definition(mocker, definition)
+
+        registry = build_app_registry(
+            [Plugin(name="Yaml Override", module_name="checksums")]
+        )
+        app = registry.get("checksums")
+        assert app.group == "backups"
+        assert app.nav_order == nav_order
+
+    def test_explicit_null_yaml_grouping_forces_ungrouped(
+        self, mocker: MockerFixture
+    ) -> None:
+        """An explicit YAML ``GROUP: null`` overrides the definition to ungrouped."""
+        definition = BaseApp(
+            name="internal", uri_path="/def-path", group="backups", nav_order=8
+        )
+        self._patch_definition(mocker, definition)
+
+        registry = build_app_registry(
+            [Plugin(module_name="checksums", group=None, nav_order=None)]
+        )
+        app = registry.get("checksums")
+        assert app.group is None
+        assert app.nav_order is None
 
 
 class TestGetAppRegistry:

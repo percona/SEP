@@ -104,6 +104,8 @@ def _synthesize_legacy_app(plugin: Plugin, key: str) -> BaseApp:
         uri_path=str(plugin.uri_path) if plugin.uri_path else f"/{key}",
         css_class=plugin.css_class or key,
         sidebar=plugin.sidebar,
+        group=plugin.group,
+        nav_order=plugin.nav_order,
         enabled=plugin.enabled,
         api_router=api_router,
         jinja_router=import_var(plugin.router_path),
@@ -137,6 +139,10 @@ def _bind_definition(definition: BaseApp, plugin: Plugin, key: str) -> BaseApp:
         overrides["css_class"] = plugin.css_class
     if "sidebar" in plugin.model_fields_set:
         overrides["sidebar"] = plugin.sidebar
+    if "group" in plugin.model_fields_set:
+        overrides["group"] = plugin.group
+    if "nav_order" in plugin.model_fields_set:
+        overrides["nav_order"] = plugin.nav_order
     return definition.model_copy(update=overrides)
 
 

@@ -33,32 +33,62 @@ export interface MockEnabledApp {
   uri_path: string;
   display_name: string;
   custom_ui: boolean;
+  group: string | null;
+  nav_order: number | null;
 }
 
 // Registry-driven nav app keys from shell/src/appNavConfig.ts — all enabled so
 // the full sidebar renders. ``display_name`` values mirror backend registry labels.
-// ``custom_ui`` is always false today (legacy apps; see test_apps.py).
+// ``custom_ui`` is always false today (legacy apps; see test_apps.py). ``group`` /
+// ``nav_order`` mirror the backend nav_order scale that drives the derived tree.
 const NAV_APP_METADATA = {
-  tasks: { display_name: 'Task Manager', uri_path: '/tasks' },
-  snippets: { display_name: 'Snippet Manager', uri_path: '/snippets' },
-  atw: { display_name: 'Collect Diagnostic Data', uri_path: '/atw' },
-  alerts: { display_name: 'Alert Templates', uri_path: '/alerts' },
+  tasks: { display_name: 'Task Manager', uri_path: '/tasks', group: null, nav_order: 1 },
+  snippets: { display_name: 'Snippet Manager', uri_path: '/snippets', group: null, nav_order: 2 },
+  atw: { display_name: 'Collect Diagnostic Data', uri_path: '/atw', group: null, nav_order: 3 },
+  alerts: { display_name: 'Alert Templates', uri_path: '/alerts', group: 'alerts', nav_order: 4 },
   alert_troubleshooting: {
     display_name: 'Alert Troubleshooting',
     uri_path: '/alert-troubleshooting',
+    group: 'alerts',
+    nav_order: 5,
   },
-  alters: { display_name: 'Alters', uri_path: '/alters' },
-  checksums: { display_name: 'Checksums', uri_path: '/checksums' },
-  mysql_backups: { display_name: 'MySQL Backups', uri_path: '/mysql_backups' },
-  backup_mongo: { display_name: 'MongoDB Backups', uri_path: '/backup_mongo' },
+  alters: { display_name: 'Alters', uri_path: '/alters', group: 'schema_change', nav_order: 6 },
+  checksums: { display_name: 'Checksums', uri_path: '/checksums', group: null, nav_order: 7 },
+  mysql_backups: {
+    display_name: 'MySQL Backups',
+    uri_path: '/mysql_backups',
+    group: 'backups',
+    nav_order: 8,
+  },
+  backup_mongo: {
+    display_name: 'MongoDB Backups',
+    uri_path: '/backup_mongo',
+    group: 'backups',
+    nav_order: 9,
+  },
   backup_pg: {
     display_name: 'PostgreSQL Backups',
     uri_path: '/backups/postgresql',
+    group: 'backups',
+    nav_order: 10,
   },
-  archives: { display_name: 'Archives', uri_path: '/archives' },
-  dipper: { display_name: 'Dipper Data Collection', uri_path: '/dipper' },
-  report: { display_name: 'Health & Security Report', uri_path: '/report' },
-} as const satisfies Record<string, { display_name: string; uri_path: string }>;
+  archives: { display_name: 'Archives', uri_path: '/archives', group: null, nav_order: 11 },
+  dipper: {
+    display_name: 'Dipper Data Collection',
+    uri_path: '/dipper',
+    group: null,
+    nav_order: 12,
+  },
+  report: {
+    display_name: 'Health & Security Report',
+    uri_path: '/report',
+    group: null,
+    nav_order: 13,
+  },
+} as const satisfies Record<
+  string,
+  { display_name: string; uri_path: string; group: string | null; nav_order: number }
+>;
 
 export const NAV_APP_KEYS = Object.keys(NAV_APP_METADATA) as (keyof typeof NAV_APP_METADATA)[];
 

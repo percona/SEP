@@ -55,9 +55,10 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     setSidebarOpen((prev) => !prev);
   }, []);
 
-  // Until the query resolves (or if it fails), `data` is undefined and the full
-  // nav renders optimistically — a brief flash of the unfiltered nav is
-  // acceptable, and a fetch error must not strand the user with an empty sidebar.
+  // `data` is undefined only on a cold first load/error; after any success
+  // React Query keeps the last-good data across transient refetch errors, so the
+  // derived nav stays rendered. The cold case falls back to static-only
+  // (Dashboard + Inventory) — the full tree can't be rebuilt without the API data.
   const { data: apps } = useEnabledApps();
   const items = useMemo<NavItem[]>(() => buildNavigationItems(apps), [apps]);
 

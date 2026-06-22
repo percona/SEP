@@ -44,6 +44,10 @@ class BaseApp(BaseModel):
     :type css_class: str
     :param sidebar: Whether the app appears in the sidebar.
     :type sidebar: bool
+    :param group: The nav group key this app nests under; ``None`` renders it
+        as a top-level sidebar entry.
+    :param nav_order: The app's sort position within the sidebar; ``None`` sorts
+        last.
     :param enabled: The seed-time enabled default; stamped by the registry.
     :type enabled: bool
     :param custom_ui: Whether the app ships a bespoke React UI.
@@ -65,6 +69,8 @@ class BaseApp(BaseModel):
     uri_path: str
     css_class: str = ""
     sidebar: bool = True
+    group: str | None = None
+    nav_order: int | None = None
     enabled: bool = True
     custom_ui: bool = False
     api_router: APIRouter | None = None

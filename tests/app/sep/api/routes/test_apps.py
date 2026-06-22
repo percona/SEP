@@ -98,6 +98,8 @@ class TestListAppsForNavigation:
             "uri_path",
             "display_name",
             "custom_ui",
+            "group",
+            "nav_order",
         }
 
     async def test_additive_fields_carry_registry_values(
@@ -108,6 +110,21 @@ class TestListAppsForNavigation:
         for entry in response.json():
             assert entry["display_name"]
             assert entry["custom_ui"] is False
+
+    async def test_group_and_nav_order_carry_registry_values(
+        self, api_user_client: TestClient
+    ) -> None:
+        """A grouped app reports its ``group``/``nav_order``; an ungrouped app reports ``None``."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+
+        alerts = entries["alerts"]
+        assert alerts["group"] == "alerts"
+        assert isinstance(alerts["nav_order"], int)
+
+        snippets = entries["snippets"]
+        assert snippets["group"] is None
+        assert isinstance(snippets["nav_order"], int)
 
     async def test_inventory_reported_enabled(
         self, api_user_client: TestClient
