@@ -80,7 +80,7 @@ class TestLegacyWrapping:
         assert registry.get("snippets").api_router is None
 
     def test_legacy_plugin_carries_group_and_nav_order(self) -> None:
-        """A plugin with ``GROUP``/``NAV_ORDER`` synthesizes both onto the app."""
+        """Carry ``group``/``nav_order`` onto the synthesized app from the plugin entry."""
         nav_order = 5
         registry = build_app_registry(
             [
@@ -97,7 +97,7 @@ class TestLegacyWrapping:
         assert app.nav_order == nav_order
 
     def test_legacy_plugin_without_grouping_is_ungrouped(self) -> None:
-        """A plugin omitting ``GROUP``/``NAV_ORDER`` synthesizes both as ``None``."""
+        """Carry ``None`` for ``group``/``nav_order`` when the plugin omits them."""
         registry = build_app_registry([Plugin(name="Snippets", module_name="snippets")])
         app = registry.get("snippets")
         assert app.group is None
@@ -251,7 +251,7 @@ class TestDefinitionCollection:
     def test_definition_grouping_used_when_yaml_silent(
         self, mocker: MockerFixture
     ) -> None:
-        """A definition's ``group``/``nav_order`` are kept when YAML omits them."""
+        """Keep the definition's ``group``/``nav_order`` when YAML omits them."""
         nav_order = 8
         definition = BaseApp(
             name="internal", uri_path="/def-path", group="backups", nav_order=nav_order
@@ -266,7 +266,7 @@ class TestDefinitionCollection:
     def test_explicit_yaml_grouping_binds_onto_absent_definition_grouping(
         self, mocker: MockerFixture
     ) -> None:
-        """Explicit YAML ``GROUP``/``NAV_ORDER`` bind when the definition omits them."""
+        """Bind explicit YAML ``GROUP``/``NAV_ORDER`` when the definition omits them."""
         nav_order = 6
         definition = BaseApp(name="internal", uri_path="/def-path")
         self._patch_definition(mocker, definition)
@@ -285,7 +285,7 @@ class TestDefinitionCollection:
     def test_omitted_yaml_grouping_does_not_override_definition(
         self, mocker: MockerFixture
     ) -> None:
-        """A YAML entry without ``GROUP``/``NAV_ORDER`` keeps the definition's values."""
+        """Keep the definition's values when the YAML entry omits ``GROUP``/``NAV_ORDER``."""
         nav_order = 8
         definition = BaseApp(
             name="internal", uri_path="/def-path", group="backups", nav_order=nav_order
@@ -302,7 +302,7 @@ class TestDefinitionCollection:
     def test_explicit_null_yaml_grouping_forces_ungrouped(
         self, mocker: MockerFixture
     ) -> None:
-        """An explicit YAML ``GROUP: null`` overrides the definition to ungrouped."""
+        """Bind ``group``/``nav_order`` to ``None`` on an explicit YAML ``GROUP: null``."""
         definition = BaseApp(
             name="internal", uri_path="/def-path", group="backups", nav_order=8
         )

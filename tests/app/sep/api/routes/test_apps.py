@@ -114,7 +114,7 @@ class TestListAppsForNavigation:
     async def test_group_and_nav_order_carry_registry_values(
         self, api_user_client: TestClient
     ) -> None:
-        """A grouped app reports its ``group``/``nav_order``; an ungrouped app reports ``None``."""
+        """Carry ``group``/``nav_order`` for a grouped app and ``None`` for an ungrouped one."""
         response = api_user_client.get("/api/apps/")
         entries = {e["app_key"]: e for e in response.json()}
 
