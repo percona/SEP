@@ -892,8 +892,7 @@ class TestSepSettingsSecondaryClasses:
 
 @pytest.mark.asyncio
 class TestSepSettingsCredentialUrlRedaction:
-    """LIST and DETAIL redact embedded URL passwords on credential-bearing fields."""
-
+    """Verify that LIST and DETAIL redact embedded URL passwords on credential-bearing fields."""
     _FULL_URL = "http://inv-user:inv-secret@inventory.internal:8080"
 
     @pytest.fixture(autouse=True)
