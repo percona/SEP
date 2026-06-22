@@ -485,10 +485,9 @@ def _validate_patch_body(
                 {"loc": ["body", key], "msg": str(exc), "type": "value_error"}
             )
             continue
-        # Materializer-backed fields (PROVIDERS, FOOTER_TEMPLATE) produce
-        # values that are not JSON-storable (a provider set, a Template, a
-        # NomadExecutor); persist the raw JSON so build_snapshot re-materializes
-        # on load.
+        # Materializer-backed fields (PROVIDERS, FOOTER_TEMPLATE) produce values that are
+        # not JSON-storable (a provider set, a Template); persist the raw JSON so
+        # build_snapshot re-materializes on load.
         to_apply.append((key, raw_value if materializer is not None else materialized))
 
     if errors:
