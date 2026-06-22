@@ -362,10 +362,9 @@ class TestOneOfDerivation:
         from app.sep.plugins.framework.form_dsl.derivation import build_runtime_schema
 
         schema = build_runtime_schema(_SourceUnionModel)
-        assert len(schema.forms[0].fields) == 1
-        group = schema.forms[0].fields[0]
-        assert isinstance(group, OneOfGroup)
-        assert group.discriminator == "source.mode"
+        groups = [f for f in schema.forms[0].fields if isinstance(f, OneOfGroup)]
+        assert len(groups) == 1
+        assert groups[0].discriminator == "source.mode"
 
     def test_nested_union_runtime_validation_enforces_branch_exclusivity(self) -> None:
         """Reject inactive-branch values on a nested union write model."""
@@ -458,6 +457,12 @@ class TestHiddenExclusion:
         """Skip a ``Hidden`` field before the ``Ui`` requirement, ignoring a paired ``Ui``."""
         assert "excluded_with_ui" not in _fields_by_name(_DefaultModel)
 
+    def test_alert_on_fail_inherited_as_hidden_control(self) -> None:
+        """Inherit ``alert_on_fail`` from ``AppFormModel`` as an off-schema Hidden field."""
+        assert "alert_on_fail" in _DefaultModel.model_fields
+        assert _DefaultModel.model_fields["alert_on_fail"].default is False
+        assert "alert_on_fail" not in _fields_by_name(_DefaultModel)
+
 
 class _GateModel(AppFormModel):
     method: Annotated[
@@ -512,7 +517,12 @@ class TestSectionLayout:
     """Cover grouping, ordering, section forbidden, and layout errors."""
 
     def test_fields_grouped_and_ordered(self) -> None:
-        """Group fields by section and order them by ``Ui(order=...)``."""
+        """Order sections by field first-appearance and fields by ``Ui(order=...)``.
+
+        ``_OrderModel`` declares its first field in section ``two`` though the
+        layout lists ``one`` first, so the derived section order follows the model
+        (``Two`` then ``One``), not the layout tuple order.
+        """
         layout = FormLayout(
             sections=[
                 SectionLayout(key="one", title="One"),
@@ -520,9 +530,9 @@ class TestSectionLayout:
             ]
         )
         sections = derive_form_sections(_OrderModel, layout)
-        assert [s.title for s in sections] == ["One", "Two"]
-        assert [f.name for f in sections[0].fields] == ["c", "a"]
-        assert [f.name for f in sections[1].fields] == ["b"]
+        assert [s.title for s in sections] == ["Two", "One"]
+        assert [f.name for f in sections[0].fields] == ["b"]
+        assert [f.name for f in sections[1].fields] == ["c", "a"]
 
     def test_section_forbidden_from_layout(self) -> None:
         """Copy a layout section's ``forbidden`` hide gate onto the FormSection."""

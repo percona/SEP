@@ -51,7 +51,6 @@ from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     derive_plugin_schema,
     FormLayout,
-    Hidden,
     SectionLayout,
     Ui,
 )
@@ -223,10 +222,9 @@ def test_no_duplicate_control_silent_on_real_derived_schema_without_capability()
 
 
 class _HiddenControlForm(AppFormModel):
-    """Represent a create model that excludes the capability-rendered control."""
+    """Represent a create model that inherits the excluded capability-rendered control."""
 
     task_name: Annotated[str, Ui(label="Name", section="main")]
-    alert_on_fail: Annotated[bool, Hidden()] = False
 
 
 def test_no_duplicate_control_silent_when_control_excluded_from_schema():
@@ -332,16 +330,28 @@ def test_view_fields_clean_app():
     assert check_view_fields_reference_real_fields(_build_app()) == []
 
 
-def test_view_fields_flags_unknown_list_column():
-    """Assert a list column whose root segment is not a response field fires."""
+def test_view_fields_exempts_data_detail_paths():
+    """Assert a detail path rooted at the opaque ``data`` dict is exempt.
+
+    List-column keys are enforced at ``TaskExecutionApp`` construction now; the
+    detector only checks detail-view paths and leaves ``data.*`` sub-paths
+    free-form because ``data`` is an opaque task-payload dict.
+    """
     app = _build_app(
         views=Views(
             layout=_LAYOUT,
-            list_view=ListView(columns=[Column(key="ghost", label="Ghost")]),
-            detail_view=_DETAIL_VIEW,
+            list_view=_LIST_VIEW,
+            detail_view=DetailView(
+                sections=[
+                    DetailSection(
+                        title="X",
+                        fields=[DetailField(path="data.meta.command", label="C")],
+                    )
+                ]
+            ),
         )
     )
-    assert any("ghost" in w for w in check_view_fields_reference_real_fields(app))
+    assert check_view_fields_reference_real_fields(app) == []
 
 
 def test_view_fields_flags_unknown_detail_path():
