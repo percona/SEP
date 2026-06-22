@@ -150,7 +150,9 @@ class TestUpdateTable:
         """
         second = test_client.post(
             f"/services/{service.id}/schemas/",
-            json=SchemaWriteFactory.build().model_dump(mode="json"),
+            json=SchemaWriteFactory.build(name=f"second_schema_{schema.id}").model_dump(
+                mode="json"
+            ),
         )
         assert second.status_code == status.HTTP_201_CREATED
         response = test_client.put(

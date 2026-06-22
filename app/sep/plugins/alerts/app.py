@@ -29,6 +29,8 @@ app = BaseApp(
     display_name="Alert Templates",
     uri_path="/alerts",
     css_class="alerts",
+    group="alerts",
+    nav_order=4,
     api_router=api_router,
     jinja_router=jinja_router,
 )

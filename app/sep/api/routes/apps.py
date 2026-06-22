@@ -49,6 +49,10 @@ class AppKeyResponse(BaseModel):
     :type display_name: str
     :param custom_ui: Whether the app ships a bespoke React UI.
     :type custom_ui: bool
+    :param group: The nav group key this app nests under; ``None`` when the app
+        renders as a top-level sidebar entry.
+    :param nav_order: The app's sort position within the sidebar; ``None`` when
+        unset.
     """
 
     app_key: str
@@ -57,6 +61,8 @@ class AppKeyResponse(BaseModel):
     uri_path: str
     display_name: str
     custom_ui: bool
+    group: str | None
+    nav_order: int | None
 
 
 @router.get("/")
@@ -83,6 +89,8 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
             uri_path=app.uri_path,
             display_name=app.display_name,
             custom_ui=app.custom_ui,
+            group=app.group,
+            nav_order=app.nav_order,
         )
         for app in get_app_registry()
     ]
