@@ -122,7 +122,7 @@ class TestTasksSettingsApi:
         admin_test_client: TestClient,
         session: AsyncSession,
     ) -> None:
-        """Replacing the whole NESTED_ONLY ``NOMAD`` parent is rejected."""
+        """Reject replacing the whole NESTED_ONLY ``NOMAD`` parent."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"NOMAD": {"endpoint": "https://nomad-override.example.org"}},
@@ -242,7 +242,7 @@ class TestTasksSettingsNestedOverrides:
         admin_test_client: TestClient,
         session: AsyncSession,
     ) -> None:
-        """A per-leaf ``NOMAD__TIMEOUT`` override persists and snapshots an executor."""
+        """Persist a per-leaf ``NOMAD__TIMEOUT`` override and snapshot an executor."""
         override_timeout = 30
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
@@ -522,7 +522,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_list_resolves_nomad_leaf_values_under_per_leaf_override(
         self, admin_test_client: TestClient
     ) -> None:
-        """A per-leaf ``NOMAD`` override yields real leaf values in LIST, not null."""
+        """Resolve real leaf values in LIST for a per-leaf ``NOMAD`` override, not null."""
         try:
             admin_test_client.patch(
                 "/admin/settings/TasksSettings",
@@ -575,7 +575,7 @@ class TestTasksSettingsInlineRebind:
     async def test_patch_nomad_fires_rebind_callback(
         self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
     ) -> None:
-        """PATCHing a ``NOMAD`` leaf fires its parent rebind callback inline."""
+        """Fire the parent rebind callback inline when PATCHing a ``NOMAD`` leaf."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"NOMAD__ENDPOINT": "https://nomad-override.example.org"},
@@ -597,7 +597,7 @@ class TestTasksSettingsInlineRebind:
     async def test_delete_nomad_override_fires_rebind_callback(
         self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
     ) -> None:
-        """Reverting a ``NOMAD`` leaf override fires its parent rebind callback inline."""
+        """Fire the parent rebind callback inline when reverting a ``NOMAD`` leaf override."""
         admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"NOMAD__ENDPOINT": "https://nomad-override.example.org"},
