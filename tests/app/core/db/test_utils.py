@@ -33,14 +33,8 @@ from app.core.db.utils import (
     idempotent_insert,
 )
 from app.tasks.crud import TaskHistoryManager, TaskManager
-from app.tasks.models import (
-    TaskExecutionRequest,
-    TaskExecutionRequestJSON,
-    TaskHistory,
-    TaskHistoryStatusEnum,
-    TaskWrite,
-)
-from tests.app.factories import TaskFactory
+from app.tasks.models import TaskExecutionRequestJSON, TaskHistory, TaskWrite
+from tests.app.factories import build_task_history, TaskFactory
 
 
 @pytest.mark.asyncio
@@ -488,19 +482,7 @@ class TestFuncJsonExtractOnRealPostgres:
             postgres_session,
             TaskWrite.model_validate(TaskFactory.build(name="mysqldump")),
         )
-        history = TaskHistory(
-            task_id=task.id,
-            task=task,
-            execution_request=TaskExecutionRequest(
-                task=task.name,
-                target="node1",
-                meta={"target": "node1"},
-                tracking={"evaluation_id": "", "allocation_id": None},
-            ),
-            status=TaskHistoryStatusEnum.SUCCESS,
-            executed_by="test-user",
-        )
-        await TaskHistoryManager.save(postgres_session, history)
+        await TaskHistoryManager.save(postgres_session, build_task_history(task))
         name = postgres_session.get_bind().name
 
         result = await postgres_session.execute(
