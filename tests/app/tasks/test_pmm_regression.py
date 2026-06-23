@@ -21,7 +21,6 @@ reject callers that pass an instance whose deferred
 ``execution_request`` column is still unloaded (SEP-1017).
 """
 
-import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -107,7 +106,7 @@ class TestScheduleAnnotationDetachedInstance:
 
     @pytest.mark.asyncio
     async def test_pmm_failure_is_contained_to_background_task(
-        self, session: AsyncSession, caplog
+        self, session: AsyncSession
     ):
         """Assert a PMM-client failure does not escape ``schedule_annotation``.
 
@@ -163,11 +162,12 @@ class TestScheduleAnnotationDetachedInstance:
 
             # The background task swallows the PMM failure: awaiting it must
             # complete normally rather than re-raising the upstream error.
-            with caplog.at_level(logging.ERROR, logger="app.core.pmm"):
+            with patch("app.core.pmm.logger.exception") as mock_log_exc:
                 await bg_tasks[0]
 
         failing_api.post.assert_awaited_once()
-        assert "Failed to create PMM annotation" in caplog.text
+        mock_log_exc.assert_called_once()
+        assert "Failed to create PMM annotation" in mock_log_exc.call_args.args[0]
 
 
 class TestScheduleAnnotationPrecondition:
