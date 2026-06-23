@@ -86,12 +86,7 @@ default:
         MODULE_NAME: checksums
         URI_PATH: /checksums
         CSS_CLASS: checksums
-      - NAME: MongoDB Backups
-        MODULE_NAME: backup_mongo
-        URI_PATH: /backup_mongo
-        CSS_CLASS: backup_mongo
-        GROUP: backups
-        NAV_ORDER: 9
+      - MODULE_NAME: backup_mongo
       - NAME: PostgreSQL Backups
         MODULE_NAME: backup_pg
         URI_PATH: /backup_pg
