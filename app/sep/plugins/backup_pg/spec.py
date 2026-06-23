@@ -43,26 +43,26 @@ _REQUIREMENTS = "packaging\nPyYAML"
 
 
 def build_backup_pg_spec(
-    form: BackupPgForm, resolved: ResolvedEntities
+    form: BackupPgForm, _resolved: ResolvedEntities
 ) -> RunPythonSpec:
     """Build the ``run-python`` pgBackRest spec from the validated form.
 
     Serialise the pgBackRest ``config`` YAML from the kept ``BackupConfig``
     validators — the ``ALL_SERVERS`` general settings from the form's
     pgbackrest_* / logging / backup-dir fields and a single ``SERVER_LIST`` entry
-    aliased by the stanza, pinned to ``localhost`` and the service port, with the
-    backup type fixed to :attr:`BackupType.PGBACKREST`. The framework's
-    ``assemble_envelope`` fills ``target`` (the executor ``HostRef``),
-    ``_service_name``, and the connectivity keys around this spec.
+    aliased by the stanza, pinned to ``localhost``, with the backup type fixed to
+    :attr:`BackupType.PGBACKREST`. The framework's ``assemble_envelope`` fills
+    ``target`` (the executor ``HostRef``), ``_service_name``, and the connectivity
+    keys — including the resolved service port — around this spec.
 
     :param form: The validated create form (a ``BackupPgForm``).
-    :param resolved: The entities resolved from the form's reference fields; its
-        ``service`` is the ``ServiceRef`` selection (always present — the field is
-        required).
+    :param _resolved: The entities resolved from the form's reference fields, part
+        of the framework's ``(form, resolved) -> RunPythonSpec`` builder contract.
+        Unused here: the ``SERVER_LIST`` host is the fixed ``localhost`` and the
+        service port is carried by ``assemble_envelope``'s connectivity meta, not
+        the dumped config.
     :return: The run-python spec consumed by ``assemble_envelope``.
     """
-    service = resolved.service
-
     all_config = form.model_dump(
         exclude={"task_name", "hostname", "service_id", "stanza"}
     )
@@ -71,7 +71,6 @@ def build_backup_pg_spec(
         "alias": form.stanza,
         "backup_type": BackupType.PGBACKREST,
         "host": "localhost",
-        "port": service.port,
     }
 
     backup_config = BackupConfig(

@@ -109,7 +109,7 @@ class BackupConfigServer(BaseCaseInsensitiveModel):
     :param alias: A unique alias for the server.
     :type alias: NonEmptyStr
     :param backup_type: The type of the backup.
-    :type backup_type: BackupType
+    :type backup_type: str
     :param host: The hostname or address of the server.
     :type host: NonEmptyStr
     """
