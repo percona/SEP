@@ -30,7 +30,7 @@ export interface SettingsSearchBarProps {
   settingClasses: string[];
 }
 
-/** Search box plus class / reload / override-present filter controls. */
+/** Search box plus class / reload / override-present / advanced filter controls. */
 export default function SettingsSearchBar({
   filters,
   onChange,
