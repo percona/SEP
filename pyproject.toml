@@ -177,9 +177,8 @@ exclude_dirs = [
 ]
 
 [tool.ty.environment]
-# Target the project's minimum supported Python (matches ruff target-version = "py311").
+# Target the project's minimum supported Python minor version (matches ruff target-version = "py311").
 python-version = "3.11"
-
 [tool.ty.src]
 # Exclude generated / non-checkable trees. Alembic migrations live under app/*/migrations/.
 exclude = [
