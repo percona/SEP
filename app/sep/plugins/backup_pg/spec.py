@@ -47,7 +47,7 @@ def build_backup_pg_spec(
 ) -> RunPythonSpec:
     """Build the ``run-python`` pgBackRest spec from the validated form.
 
-    Serialise the pgBackRest ``config`` YAML from the kept ``BackupConfig``
+    Serialize the pgBackRest ``config`` YAML from the kept ``BackupConfig``
     validators — the ``ALL_SERVERS`` general settings from the form's
     pgbackrest_* / logging / backup-dir fields and a single ``SERVER_LIST`` entry
     aliased by the stanza, pinned to ``localhost``, with the backup type fixed to
