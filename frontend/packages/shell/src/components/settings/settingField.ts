@@ -108,13 +108,11 @@ export interface GroupNode {
   kind: 'group';
   /** This node's own segment (e.g. `STRICT_TRANSPORT_SECURITY`). */
   segment: string;
-  /** The `__`-joined prefix down to and including this node (e.g. `A__B`). */
-  keyPrefix: string;
   /**
    * The canonical segment chain down to and including this node (e.g.
-   * `['A', 'B']`). This is the node's true identity: unlike `keyPrefix`, two
-   * distinct chains can never share one `keyPath`, so it is the safe basis for
-   * a stable, unambiguous key / `data-testid`.
+   * `['A', 'B']`). This is the node's true identity: unlike a `__`-joined
+   * prefix string, two distinct chains can never share one `keyPath`, so it is
+   * the safe basis for a stable, unambiguous key / `data-testid`.
    */
   keyPath: string[];
   children: SettingNode[];
@@ -125,9 +123,9 @@ export type SettingNode = LeafNode | GroupNode;
 /**
  * A collision-free identity string for a group node, for use as a React `key`
  * or `data-testid`. Segments are canonical attribute names (which cannot
- * contain `.`), so joining on `.` can never alias the way the `__`-joined
- * `keyPrefix` can (e.g. `['A__B']` and `['A', 'B']` share a `keyPrefix` but not
- * a `keyPath`).
+ * contain `.`), so joining on `.` can never alias the way a `__`-joined prefix
+ * can (e.g. `['A__B']` and `['A', 'B']` join to the same `A__B` string but are
+ * distinct `keyPath`s).
  */
 export function groupNodeId(node: GroupNode): string {
   return node.keyPath.join('.');
@@ -180,7 +178,6 @@ export function buildSettingTree(settings: SettingResponse[]): SettingNode[] {
         group = {
           kind: 'group',
           segment,
-          keyPrefix: prefixParts.join('__'),
           keyPath: [...prefixParts],
           children: [],
         };

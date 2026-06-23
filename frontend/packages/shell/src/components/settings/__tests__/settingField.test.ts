@@ -158,7 +158,7 @@ describe('buildSettingTree', () => {
     const group = tree[0] as GroupNode;
     expect(group.kind).toBe('group');
     expect(group.segment).toBe('SESSION');
-    expect(group.keyPrefix).toBe('SESSION');
+    expect(group.keyPath).toEqual(['SESSION']);
     expect(group.children).toEqual([
       { kind: 'leaf', setting: child1 },
       { kind: 'leaf', setting: child2 },
@@ -176,7 +176,7 @@ describe('buildSettingTree', () => {
     const inner = outer.children[0] as GroupNode;
     expect(inner.kind).toBe('group');
     expect(inner.segment).toBe('STRICT_TRANSPORT_SECURITY');
-    expect(inner.keyPrefix).toBe('SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY');
+    expect(inner.keyPath).toEqual(['SECURITY_HEADERS', 'STRICT_TRANSPORT_SECURITY']);
     expect(inner.children).toEqual([{ kind: 'leaf', setting: leaf }]);
   });
 
@@ -200,8 +200,8 @@ describe('buildSettingTree', () => {
     expect(tree).toHaveLength(2);
     expect((tree[0] as GroupNode).segment).toBe('A__B');
     expect((tree[1] as GroupNode).segment).toBe('A');
-    // Their keyPrefix collides, but their identity (keyPath) does not.
-    expect((tree[0] as GroupNode).keyPrefix).toBe('A__B');
+    // Their `__`-joined prefixes collide, but their identity (keyPath) does not.
+    expect((tree[0] as GroupNode).keyPath).toEqual(['A__B']);
     expect((tree[1] as GroupNode).keyPath).toEqual(['A']);
     expect(groupNodeId(tree[0] as GroupNode)).not.toBe(groupNodeId(tree[1] as GroupNode));
   });
@@ -218,7 +218,7 @@ describe('buildSettingTree', () => {
 });
 
 describe('countLeaves', () => {
-  it('counts editable leaves under a node', () => {
+  it('counts all leaves under a node', () => {
     const tree = buildSettingTree([
       makeSetting({ key: 'NOMAD__ENDPOINT', key_path: ['NOMAD', 'ENDPOINT'] }),
       makeSetting({ key: 'NOMAD__TOKEN', key_path: ['NOMAD', 'TOKEN'] }),
