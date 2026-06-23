@@ -13,133 +13,108 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.sep.plugins.backup_pg.deps module."""
+"""Define tests for the app.sep.plugins.backup_pg.deps and spec modules."""
 
 import pytest
 import yaml
 
+from app.core.exceptions import HTTPConflictException
+from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
-from app.sep.inventory import CreatedNode, CreatedService
+from app.sep.inventory import CreatedService
 from app.sep.plugins.backup_pg.deps import (
-    build_backup_task_payload,
     get_backups_task_info,
+    get_unprotected_backups_task,
     parse_backup_task_data,
 )
-from app.sep.plugins.backup_pg.models import BackupCreate, BackupType
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.sep.plugins.backup_pg.models import BackupPgForm, BackupType
+from app.sep.plugins.backup_pg.spec import build_backup_pg_spec
+from app.sep.plugins.framework.spec import ResolvedEntities
+from app.tasks.models import TaskOwner
+from tests.app.factories import (
+    CreatedNodeFactory,
+    CreatedServiceFactory,
+    TaskFactory,
+)
 
 
-@pytest.mark.asyncio
-async def test_build_backup_task_payload(
-    faker,
-    mocker,
-    mock_remote_api,
-    created_service: CreatedService,
-):
-    """Test build_backup_task_payload for backup_pg tasks."""
-    mocker.patch(
-        "app.sep.plugins.backup_pg.deps.get_created_entity",
-        return_value=created_service,
-    )
-    created_service.node = CreatedNode(
-        id=1,
-        address="fake-address",
-        node_name="fake-node",
+def _resolved(service: CreatedService) -> ResolvedEntities:
+    """Wrap ``service`` in the resolved-entities the spec builder reads."""
+    return ResolvedEntities(
+        service=service,
+        entities={"service_id": service},
+        executor_host="executor-host",
     )
 
-    backup_create = BackupCreate(
-        service_id=created_service.id,
+
+def _form(service_id: int, **overrides: object) -> BackupPgForm:
+    """Build a backup_pg create form for the spec-builder tests."""
+    return BackupPgForm(
         task_name="test_task",
-        hostname="test_host",
-        backup_type=BackupType.PGBACKREST,
-        stanza="sep-test",
+        hostname="executor-host",
+        service_id=service_id,
+        stanza=overrides.pop("stanza", "sep-test"),
+        backup_dir=overrides.pop("backup_dir", "/var/lib/pgbackrest"),
+        **overrides,
     )
 
-    task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
 
-    assert isinstance(task_payload, TaskWrite)
-    assert task_payload.name == backup_create.task_name
-    assert task_payload.backend == TaskBackendEnum.PROXY
-    assert task_payload.owner == TaskOwner.BACKUP_PG
+def test_build_backup_pg_spec_produces_run_python_config():
+    """Emit a run-python config carrying the pgBackRest server entry."""
+    service = CreatedServiceFactory.build(
+        node=CreatedNodeFactory.build(address="db.internal"),
+        type=ServiceTypeEnum.POSTGRESQL,
+        port=5432,
+    )
 
-    data = task_payload.data
-    assert data["task"] == "run-python"
+    spec = build_backup_pg_spec(_form(service.id), _resolved(service))
 
-    meta = data["meta"]
-    assert meta["target"] == backup_create.hostname
-    assert meta["requirements"] == "packaging\nPyYAML"
-    assert meta["_service_name"] == created_service.name
+    assert spec.requirements == "packaging\nPyYAML"
+    assert spec.payload.startswith("file://")
+    assert "backup_pg/payload" in spec.payload
 
-    cfg = yaml.safe_load(meta["config"])
-    server_list = cfg["SERVER_LIST"]
-    assert len(server_list) == 1
-    server_config = server_list[0]
-
+    cfg = yaml.safe_load(spec.config)
+    server_config = cfg["SERVER_LIST"][0]
     assert server_config["ALIAS"] == "sep-test"
     assert server_config["HOST"] == "localhost"
     assert server_config["BACKUP_TYPE"] == BackupType.PGBACKREST.value
+    # BackupConfigServer declares no ``port`` field, so the server entry carries
+    # no PORT; the executor port travels on the envelope's connectivity meta key.
     assert "PORT" not in server_config
 
-    assert data["payload"].startswith("file://")
-    assert "backup_pg/payload" in data["payload"]
+
+def test_build_backup_pg_spec_uses_stanza_as_alias():
+    """Use the stanza value, not the service address, as the server ``ALIAS``."""
+    service = CreatedServiceFactory.build(
+        node=CreatedNodeFactory.build(address="10.30.50.162"),
+        type=ServiceTypeEnum.POSTGRESQL,
+        port=5432,
+    )
+
+    spec = build_backup_pg_spec(
+        _form(service.id, stanza="my-custom-stanza"), _resolved(service)
+    )
+
+    cfg = yaml.safe_load(spec.config)
+    assert cfg["SERVER_LIST"][0]["ALIAS"] == "my-custom-stanza"
+    assert cfg["SERVER_LIST"][0]["ALIAS"] != service.node.address
 
 
 @pytest.mark.asyncio
-async def test_build_backup_task_payload_uses_stanza_as_alias(
-    mocker,
-    mock_remote_api,
-    created_service: CreatedService,
-):
-    """Stanza value, not the node address, becomes the pgBackRest ALIAS."""
-    mocker.patch(
-        "app.sep.plugins.backup_pg.deps.get_created_entity",
-        return_value=created_service,
-    )
-    created_service.node = CreatedNode(
-        id=1,
-        address="10.30.50.162",
-        node_name="fake-node",
-    )
+async def test_get_unprotected_backups_task_returns_unprotected_task():
+    """Return an unprotected task unchanged."""
+    task = TaskFactory.build(owner=TaskOwner.BACKUP_PG, protected=False)
 
-    backup_create = BackupCreate(
-        service_id=created_service.id,
-        task_name="test_task",
-        hostname="test_host",
-        backup_type=BackupType.PGBACKREST,
-        stanza="my-custom-stanza",
-    )
-
-    task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
-
-    cfg = yaml.safe_load(task_payload.data["meta"]["config"])
-    server_config = cfg["SERVER_LIST"][0]
-    assert server_config["ALIAS"] == "my-custom-stanza"
-    assert server_config["ALIAS"] != created_service.node.address
+    assert await get_unprotected_backups_task(task) is task
 
 
 @pytest.mark.asyncio
-async def test_build_backup_task_payload_preserves_raw_backup_type(
-    mocker, created_service, mock_remote_api
-):
-    """Test build_backup_task_payload preserves a raw backup_type string."""
-    mocker.patch(
-        "app.sep.plugins.backup_pg.deps.get_created_entity",
-        return_value=created_service,
-    )
+async def test_get_unprotected_backups_task_rejects_protected_task():
+    """Reject a protected task with a 409."""
+    task = TaskFactory.build(owner=TaskOwner.BACKUP_PG, protected=True)
 
-    backup_create = BackupCreate.model_construct(
-        service_id=created_service.id,
-        task_name="test_task",
-        hostname="test_host",
-        backup_type="INVALID_BACKUP_TYPE",
-        stanza="sep-test",
-    )
-
-    task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
-    cfg = yaml.safe_load(task_payload.data["meta"]["config"])
-    server_config = cfg["SERVER_LIST"][0]
-
-    assert server_config["BACKUP_TYPE"] == "INVALID_BACKUP_TYPE"
+    with pytest.raises(HTTPConflictException):
+        await get_unprotected_backups_task(task)
 
 
 def test_get_backups_task_info():
