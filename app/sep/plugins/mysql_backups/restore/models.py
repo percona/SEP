@@ -15,15 +15,15 @@
 
 """Define models for the Restore plugin."""
 
-from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.framework import BaseTaskResponse
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     Choices,
@@ -33,7 +33,6 @@ from app.sep.plugins.framework.form_dsl import (
     Ui,
 )
 from app.sep.plugins.mysql_backups.models import BackupType
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 BACKUP_SOURCE_SHELLBACKTICK = "`"
 BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
@@ -446,47 +445,21 @@ class RestoreCreate(AppFormModel):
         return _validate_backup_source_shell_safe(value)
 
 
-class RestoreTaskBase(BaseModel):
-    """Carry the fields common to every restore-task API response.
-
-    :param name: The name of the restore task.
-    :param owner: The entity or user that owns the task.
-    :param backup_type: The backup type recorded in task config.
-    :param status: The latest execution status of the task.
-    """
-
-    name: str
-    owner: TaskOwner
-    backup_type: BackupType | None = None
-    status: TaskHistoryStatusEnum | None = None
-
-
-class RestoresResponse(RestoreTaskBase):
+class RestoresResponse(BaseTaskResponse):
     """Represent a restore task API response.
 
-    :param id: The unique identifier for the restore task.
-    :param backend: The backend executing the task.
-    :param data: The raw configuration and parameters for the task.
+    Extend the standard task-response surface with the restore-specific
+    destination facts the detail view renders; the shared task identity,
+    status, audit, and anonymization fields come from
+    :class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.
+
+    :param backup_type: The backup type recorded in task config.
     :param hostname: The executor hostname target.
     :param host: The destination host recorded in task config.
     :param port: The destination port recorded in task config.
-    :param protected: Whether the task is protected from deletion or modification.
-    :param alert_on_fail: If True, notifications fire on task failure.
-    :param created_at: When the task was created.
-    :param updated_at: When the task was last modified.
-    :param created_by: The user who initiated the task.
-    :param last_updated_by: The user who last modified the task record.
     """
 
-    id: int | None = None
-    backend: TaskBackendEnum
-    data: dict[str, Any]
+    backup_type: BackupType | None = None
     hostname: str | None = None
     host: str | None = None
     port: int | None = None
-    protected: bool
-    alert_on_fail: bool
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    created_by: str | None = None
-    last_updated_by: str | None = None
