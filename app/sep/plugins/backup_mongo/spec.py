@@ -46,6 +46,8 @@ from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
 
+_BASE_REQUIREMENTS = "packaging\nPyYAML"
+
 
 @dataclass(frozen=True, slots=True)
 class BackupMongoResolved:
@@ -91,7 +93,7 @@ def _parse_backup_priority(priority_str: str) -> dict[str, float] | None:
     mapping node addresses to priority values for PBM configuration.
 
     :param priority_str: YAML string containing priority configuration.
-    :return: Parsed priority dictionary mapping node to priority or None if parsing fails.
+    :return: Parsed priority dictionary mapping node to priority or ``None`` if parsing fails.
     """
     try:
         priority_parsed = yaml.safe_load(priority_str)
@@ -188,7 +190,7 @@ def build_backup_mongo_spec(
         credentials_path=form.credentials_path or None,
     )
 
-    requirements = "packaging\nPyYAML"
+    requirements = _BASE_REQUIREMENTS
     payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
     meta = {

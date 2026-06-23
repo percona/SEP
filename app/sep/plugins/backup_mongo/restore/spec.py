@@ -42,6 +42,7 @@ from app.sep.plugins.backup_mongo.restore.models import (
 from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
 RESTORE_CONFIG_PAYLOAD_MARKER = "pbm_restore_config_payload"
+_BASE_REQUIREMENTS = "packaging\nPyYAML"
 
 
 def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
@@ -81,7 +82,7 @@ def _build_restore_config_leg(
         name=payload.task_name,
         payload_name=RESTORE_CONFIG_PAYLOAD_MARKER,
         target=payload.hostname,
-        requirements="packaging\nPyYAML",
+        requirements=_BASE_REQUIREMENTS,
         config_yaml=yaml.dump(
             restore_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
             default_flow_style=False,
@@ -108,7 +109,7 @@ def _build_restore_leg(payload: RestoreLegPayloadModel) -> RestoreTaskLegModel:
         name=f"{payload.task_name}-{payload.backup_type}",
         payload_name=payload.payload_script_name(),
         target=payload.hostname,
-        requirements="packaging\nPyYAML",
+        requirements=_BASE_REQUIREMENTS,
         config_yaml=yaml.dump(
             restore_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
             default_flow_style=False,
