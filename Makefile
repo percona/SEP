@@ -82,6 +82,12 @@ ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
 
+# Opt-in, local-only static type checking (Astral ty). Deliberately NOT part of `lint`,
+# pre-commit, or CI: a non-zero exit from the existing type-error backlog is expected and
+# must not gate any automated check.
+typecheck: venv
+	@"${VENV_BIN}"/ty check app
+
 djlint: venv
 	@"${VENV_BIN}"/djlint .
 	@"${VENV_BIN}"/djlint . --check
@@ -243,4 +249,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
