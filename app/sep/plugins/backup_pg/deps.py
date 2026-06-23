@@ -19,7 +19,7 @@ import logging
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Body, Depends, Form
+from fastapi import Depends, Form, Request
 
 from app.core.exceptions import HTTPConflictException
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
@@ -100,28 +100,40 @@ CheckConnectivityFlag = Annotated[bool, Depends(get_check_connectivity_flag)]
 
 
 async def check_create_has_no_conflicted_running_tasks(
-    form: Annotated[BackupPgForm, Body()], tasks_api: TaskAPI
+    request: Request,
+    tasks_api: TaskAPI,
 ) -> None:
     """Reject backup_pg JSON create if an in-flight task already exists by name.
 
     Mirrors :func:`app.sep.deps.check_for_conflicted_running_tasks`, but reads
-    the candidate task name from the request body instead of a path parameter so
-    it can run as a create-route guard before the task is posted. The body
-    parameter is named ``form`` and marked ``Body()`` to match the framework's
-    create-payload dependency, so FastAPI dedups the two into one bare JSON body
-    rather than nesting them under distinct keys.
+    the candidate task name from the raw request JSON instead of a path parameter
+    so it can run as a create-route guard before the task is posted. Invalid or
+    incomplete request bodies are ignored here so the create model remains the
+    single source of ``422`` validation errors.
 
-    :param form: The validated create request body.
+    :param request: The incoming request carrying the JSON create body.
     :param tasks_api: The TaskAPI instance used to query running/pending history.
     :raises HTTPConflictException: When a RUNNING or PENDING task already
-        exists for ``form.task_name``.
+        exists for the candidate task name.
     """
+    try:
+        payload = await request.json()
+    except ValueError:
+        return
+
+    if not isinstance(payload, dict):
+        return
+    task_name = payload.get("task_name")
+    if not isinstance(task_name, str) or not task_name:
+        return
+
     for history_status in (
         TaskHistoryStatusEnum.RUNNING,
         TaskHistoryStatusEnum.PENDING,
     ):
         response = await tasks_api.get(
-            f"/{form.task_name}/history/", params={"status": history_status}
+            f"/{task_name}/history/",
+            params={"status": history_status},
         )
         if response["items"]:
             raise HTTPConflictException("Task is already running or pending.")

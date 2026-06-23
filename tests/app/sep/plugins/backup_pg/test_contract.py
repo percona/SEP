@@ -95,6 +95,24 @@ class TestBackupPgContract(DerivedRouterContractTests):
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
+    def test_create_missing_required_field_reports_single_error(
+        self, contract_client
+    ) -> None:
+        """Assert a missing required create field yields one validation entry."""
+        body = build_valid_create_body(self.app_def)
+        body.pop("stanza")
+        base = app_base_url(self.app_def)
+
+        response = post_create_body(contract_client, f"{base}/", self.app_def, body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        stanza_errors = [
+            error
+            for error in response.json()["detail"]
+            if error.get("loc") == ["body", "stanza"]
+        ]
+        assert len(stanza_errors) == 1
+
 
 def test_update_protected_task_returns_409(regular_user: CasdoorUser) -> None:
     """Assert the derived PUT rejects a protected task with 409 via the update guard."""
