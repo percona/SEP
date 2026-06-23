@@ -130,7 +130,7 @@ async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
     ]
 
 
-@router.put("/{app_key}/state")
+@router.put("/{app_key:path}/state")
 async def update_app_state(
     app_key: ToggleableAppKeyDep,
     body: AppStateWrite,
@@ -193,7 +193,7 @@ async def update_app_state(
     )
 
 
-@router.post("/{app_key}/force-disable")
+@router.post("/{app_key:path}/force-disable")
 async def force_disable_app(
     app_key: ToggleableAppKeyDep,
     session: SessionDep,

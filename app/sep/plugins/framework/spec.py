@@ -22,7 +22,7 @@ form plus resolved entities into a :class:`RunCommandSpec` / :class:`RunPythonSp
 (a pure function), and :func:`assemble_envelope` maps a spec plus the resolved
 service to a :class:`~app.tasks.models.TaskWrite` whose ``data`` dict is
 byte-uniform with the canonical hand-written envelopes in
-``checksums/deps.py`` (run-command) and ``backup_pg/deps.py`` (run-python).
+``checksums/deps.py`` (run-command) and ``backup_pg/spec.py`` (run-python).
 """
 
 import shlex

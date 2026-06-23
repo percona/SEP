@@ -51,13 +51,6 @@ from app.sep.plugins.framework.form_dsl import (
     derive_plugin_schema,
     FormLayout,
 )
-from app.sep.plugins.framework.payload import (
-    assemble_envelope,
-    EnvelopeSpec,
-    resolve_refs,
-    ResolvedEntities,
-    validate_arg_formats,
-)
 from app.sep.plugins.framework.responses import (
     BaseTaskResponse,
     build_default_task_response,
@@ -72,6 +65,13 @@ from app.sep.plugins.framework.schema import (
     PluginSchema,
 )
 from app.sep.plugins.framework.script_source import ScriptSource
+from app.sep.plugins.framework.spec import (
+    assemble_envelope,
+    EnvelopeSpec,
+    resolve_refs,
+    ResolvedEntities,
+    validate_arg_formats,
+)
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
 
 __all__ = [
@@ -299,6 +299,11 @@ class TaskExecutionApp(BaseApp):
         update guard (for example a protected-task check). Requires
         ``capabilities.update`` and is rejected alongside a full ``update_handler``.
         Defaults to ``()``.
+    :param delete_guard: Extra route dependencies (guards) appended after the auth
+        guard on the *derived* DELETE — the handler-less escape hatch for a
+        per-plugin delete guard (for example a running-task conflict check).
+        Requires ``capabilities.delete`` and is rejected alongside a full
+        ``delete_handler``. Defaults to ``()``.
     :param description: The plugin description threaded into the derived
         ``GET /schema`` (``PluginSchema.description``). Defaults to ``None``.
     :param static_mounts: Authenticated static mounts for the app's payload
@@ -340,6 +345,7 @@ class TaskExecutionApp(BaseApp):
     create_extra_deps: tuple[params.Depends, ...] = ()
     create_response_builder: SkipValidation[TaskResponseBuilder | None] = None
     update_guard: tuple[params.Depends, ...] = ()
+    delete_guard: tuple[params.Depends, ...] = ()
     description: str | None = None
     static_mounts: tuple[StaticMount, ...] = ()
 
@@ -540,6 +546,17 @@ class TaskExecutionApp(BaseApp):
                 "update_handler must declare its own dependencies — drop update_guard "
                 "or the update_handler"
             )
+        if self.delete_guard and not self.capabilities.delete:
+            raise ValueError(
+                "TaskExecutionApp: delete_guard guards the derived DELETE; enable "
+                "capabilities.delete or drop delete_guard"
+            )
+        if self.delete_guard and self.delete_handler is not None:
+            raise ValueError(
+                "TaskExecutionApp: delete_guard guards the derived DELETE; a full "
+                "delete_handler must declare its own dependencies — drop delete_guard "
+                "or the delete_handler"
+            )
         derives_update = self.capabilities.update and self.update_handler is None
         if derives_update and not self.capabilities.create:
             raise ValueError(
@@ -590,7 +607,7 @@ class TaskExecutionApp(BaseApp):
         """Reject a create-model ``ArgFormat`` template the assembler would silently drop.
 
         Delegate to
-        :func:`~app.sep.plugins.framework.payload.validate_arg_formats` for a
+        :func:`~app.sep.plugins.framework.spec.validate_arg_formats` for a
         model-first app so a typo'd placeholder or a flag template on a non-``bool``
         field fails fast at construction rather than dropping the argument at
         task-creation time. Skip a ``schema=`` passthrough app, which has no
@@ -672,11 +689,12 @@ class TaskExecutionApp(BaseApp):
             update_extra_deps=self.update_guard,
             delete_enabled=self.capabilities.delete,
             delete_handler=self.delete_handler,
+            delete_extra_deps=self.delete_guard,
         )
         router.include_router(crud)
 
         if self.capabilities.execute:
-            execute_models: dict[str, type[BaseModel]] = {}
+            execute_models = {}
             if self.execute_write_model is not None:
                 execute_models["write_model"] = self.execute_write_model
             if self.execute_response_model is not None:

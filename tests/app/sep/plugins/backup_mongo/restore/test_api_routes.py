@@ -26,7 +26,7 @@ from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.sep.inventory import CreatedService
 from app.sep.plugins.backup_mongo.models import BackupType
-from app.sep.plugins.backup_mongo.restore.deps import RESTORE_CONFIG_PAYLOAD_MARKER
+from app.sep.plugins.backup_mongo.restore.spec import RESTORE_CONFIG_PAYLOAD_MARKER
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import TaskFactory
 

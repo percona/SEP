@@ -49,6 +49,7 @@ from app.sep.plugins.framework.rules import (
     contains,
     Equals,
     evaluate_conditional_rules,
+    extract_forbidden_field_gate_plan,
     F,
     FailRule,
     Falsy,
@@ -68,6 +69,7 @@ from app.sep.plugins.framework.rules import (
     present,
     Truthy,
     truthy,
+    value_is_present,
     Xor,
     xor_,
 )
@@ -1409,6 +1411,105 @@ class TestMultiEntityRulePlan:
 
         with pytest.raises(ValidationError, match="x"):
             Body(x="", y="y")
+
+
+class TestValueIsPresent:
+    """Direct coverage of the shared presence predicate.
+
+    ``value_is_present`` is the single source of truth used by both runtime
+    gate evaluation and authoring-time guards, so its boundaries are pinned
+    here — a regression silently changes whether forbidden gates fire.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [None, False, "", b"", [], (), set(), frozenset(), {}],
+        ids=[
+            "none",
+            "false",
+            "empty_str",
+            "empty_bytes",
+            "empty_list",
+            "empty_tuple",
+            "empty_set",
+            "empty_frozenset",
+            "empty_dict",
+        ],
+    )
+    def test_absent_values(self, value: object) -> None:
+        """``None``, ``False`` and empty containers count as absent."""
+        assert value_is_present(value) is False
+
+    @pytest.mark.parametrize(
+        "value",
+        [0, 0.0, "0", " ", "x", b"x", [0], (0,), {0}, {"k": "v"}, True],
+        ids=[
+            "zero_int",
+            "zero_float",
+            "str_zero",
+            "whitespace",
+            "str",
+            "bytes",
+            "list",
+            "tuple",
+            "set",
+            "dict",
+            "true",
+        ],
+    )
+    def test_present_values(self, value: object) -> None:
+        """Non-empty values — including falsy ``0`` and whitespace — are present."""
+        assert value_is_present(value) is True
+
+    def test_zero_present_but_false_absent(self) -> None:
+        """Pin the ``0`` (present) vs ``False`` (absent) asymmetry explicitly."""
+        false_value = False
+        assert value_is_present(0) is True
+        assert value_is_present(false_value) is False
+
+
+class TestExtractForbiddenFieldGatePlan:
+    """``extract_forbidden_field_gate_plan`` isolates only forbidden gates."""
+
+    def test_returns_only_forbidden_gates(self) -> None:
+        """Requires gates, cardinality and fail rules are filtered out."""
+        schema = _build_schema(
+            StringField(
+                name="x",
+                label="X",
+                requires=[FieldGate(when=truthy("y"))],
+                forbidden=[FieldGate(when=truthy("z"))],
+            ),
+            extra_fields=[
+                StringField(name="y", label="Y"),
+                StringField(name="z", label="Z"),
+            ],
+            section_cardinality=[
+                CardinalityRule(when=truthy("y"), fields=["x"], min=1)
+            ],
+            schema_fail=[FailRule(fail_when=truthy("z"), error_fields=["z"])],
+        )
+
+        plan = extract_forbidden_field_gate_plan(schema)
+
+        assert len(plan.rules) == 1
+        assert all(r.kind == "field_gate_forbidden" for r in plan.rules)
+
+    def test_gateless_schema_yields_empty_plan(self) -> None:
+        """A schema with no forbidden gates produces an empty plan."""
+        schema = _build_schema(StringField(name="x", label="X"))
+
+        assert extract_forbidden_field_gate_plan(schema).rules == ()
+
+    def test_scopes_forbidden_gates_to_named_entity(self) -> None:
+        """The ``entity_name`` argument is honoured for multi-entity schemas."""
+        schema = _multi_entity_two_alpha_beta_schema()
+
+        # alpha declares only a requires gate, so its forbidden plan is empty.
+        assert (
+            extract_forbidden_field_gate_plan(schema, entity_name="alpha").rules == ()
+        )
+        assert extract_forbidden_field_gate_plan(schema, entity_name="beta").rules == ()
 
 
 class TestResolveField:

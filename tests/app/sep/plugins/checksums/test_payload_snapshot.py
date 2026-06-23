@@ -33,8 +33,8 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
 from app.sep.plugins.checksums.deps import build_checksums_task_payload
 from app.sep.plugins.checksums.models import ChecksumsCreate, ChecksumsForm
-from app.sep.plugins.checksums.payload import build_checksums_spec
-from app.sep.plugins.framework.payload import assemble_envelope, ResolvedEntities
+from app.sep.plugins.checksums.spec import build_checksums_spec
+from app.sep.plugins.framework.spec import assemble_envelope, ResolvedEntities
 from app.tasks.models import TaskOwner
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 from tests.app.sep.snapshot_utils import assert_or_update, canonical_json, SNAPSHOTS_DIR

@@ -18,8 +18,13 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from starlette.status import HTTP_303_SEE_OTHER
+from starlette.status import (
+    HTTP_303_SEE_OTHER,
+    HTTP_404_NOT_FOUND,
+    HTTP_500_INTERNAL_SERVER_ERROR,
+)
 
 from app.core.requests import RemoteAPI
 from app.sep.deps import (
@@ -160,3 +165,56 @@ class TestStopTaskExecution:
 
         assert response.status_code == HTTP_303_SEE_OTHER
         assert response.headers["location"] == "/"
+
+    def test_upstream_error_redirects_gracefully(
+        self, stop_task_client, task_history_response
+    ):
+        """Assert an upstream Tasks API error surfaces as a flash + redirect."""
+        client, mock_api = stop_task_client
+        mock_api.post.side_effect = HTTPException(
+            status_code=HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+        response = client.post(
+            f"/stop-task/{task_history_response.id}",
+            headers={"referer": "/tasks"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/tasks"
+        mock_api.post.assert_awaited_once_with(
+            f"/history/{task_history_response.id}/stop/"
+        )
+
+    def test_not_found_from_tasks_api_redirects_to_login(
+        self, stop_task_client, task_history_response
+    ):
+        """Assert a 404 from the Tasks API routes through the 404 handler to login.
+
+        Unlike a 500 (which the default handler turns into a flash + redirect to
+        the referer), an ``HTTPException(404)`` is caught by the dedicated
+        ``custom_404_handler`` in ``app/sep/main.py``. That handler re-runs the
+        real ``get_current_user`` — the route's DI override does not apply inside
+        exception handlers — which raises ``LoginRedirectException`` for the
+        unauthenticated test request, so the response redirects to the login
+        page rather than back to ``/tasks``.
+        """
+        client, mock_api = stop_task_client
+        mock_api.post.side_effect = HTTPException(status_code=HTTP_404_NOT_FOUND)
+
+        response = client.post(
+            f"/stop-task/{task_history_response.id}",
+            headers={"referer": "/tasks"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == HTTP_303_SEE_OTHER
+        assert response.headers["location"].startswith("/login")
+        assert (
+            f"next=/stop-task/{task_history_response.id}"
+            in response.headers["location"]
+        )
+        mock_api.post.assert_awaited_once_with(
+            f"/history/{task_history_response.id}/stop/"
+        )

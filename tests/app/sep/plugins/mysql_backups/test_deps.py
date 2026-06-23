@@ -85,7 +85,7 @@ async def test_build_backup_task_payload(
     depending on the backup_type, encryption, and other fields.
     """
     mocker.patch(
-        "app.sep.plugins.mysql_backups.deps.get_created_entity",
+        "app.sep.plugins.framework.spec.get_created_entity",
         return_value=created_service,
     )
     created_service.node = CreatedNode(
@@ -150,7 +150,7 @@ async def test_build_backup_task_payload_raises_for_invalid_backup_type(
 ):
     """Test that passing an invalid BackupType raises ValueError."""
     mocker.patch(
-        "app.sep.plugins.mysql_backups.deps.get_created_entity",
+        "app.sep.plugins.framework.spec.get_created_entity",
         return_value=created_service,
     )
 
@@ -296,7 +296,7 @@ class TestParseBackupTaskDataXtrabackupQuiet:
         assert result["xtrabackup_quiet"] == expected
 
     def test_missing_all_servers_section_returns_none(self):
-        """When ``ALL_SERVERS`` is absent, ``xtrabackup_quiet`` is ``None``.
+        """Return ``None`` for ``xtrabackup_quiet`` when ``ALL_SERVERS`` is absent.
 
         Guards the legacy-task path where the config YAML pre-dates the
         ``ALL_SERVERS`` section entirely.
@@ -379,7 +379,7 @@ class TestParseBackupTaskDataUploadQuiet:
         assert result["upload_quiet"] == expected
 
     def test_missing_all_servers_section_returns_none(self):
-        """When ``ALL_SERVERS`` is absent, ``upload_quiet`` is ``None``.
+        """Return ``None`` for ``upload_quiet`` when ``ALL_SERVERS`` is absent.
 
         Guards the legacy-task path where the config YAML pre-dates the
         ``ALL_SERVERS`` section entirely.
