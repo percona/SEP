@@ -13,13 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the JSON API request and response models for the Snippets plugin.
+"""Define the JSON API response models for the Snippets plugin.
 
 The shape is snippet-centric: the list endpoint returns snippet entities,
 not tasks. Execution is a verb applied to a single snippet
-(``POST /{filename}/execute``) and produces a task in the tasks API; the
-response surfaces only the resulting task identifier so the FE can navigate
-to the task-history view backed by ``app/sep/routes/stream_logs.py``.
+(``POST /snippet/execute``) and produces a task in the tasks API via the
+framework's :class:`~app.sep.plugins.framework.script_source.ScriptSource` seam;
+the request/response bodies for that route are the framework's
+``ScriptExecuteWrite`` / ``ScriptExecutionResponse``.
 """
 
 __all__ = [
@@ -28,19 +29,19 @@ __all__ = [
     "RefreshResponse",
     "ScriptPreviewResponse",
     "SnippetBatchApproveRequest",
-    "SnippetExecutionRequest",
-    "SnippetExecutionResponse",
     "SnippetResponse",
     "SnippetsCapabilitiesResponse",
+    "build_snippet_response",
 ]
 
 from datetime import datetime
-from typing import Any
 
 from pydantic import BaseModel, computed_field, Field
 
 from app.core.utils.fields import NonEmptyStr, UniqueList
 from app.sep.plugins.framework.schema import PluginDeploymentCapabilities
+from app.sep.snippets.config import SnippetSudoOption
+from app.sep.snippets.models.snippet import Snippet
 
 
 class SnippetResponse(BaseModel):
@@ -107,46 +108,27 @@ class SnippetResponse(BaseModel):
     updated_at: datetime | None = None
 
 
-class SnippetExecutionRequest(BaseModel):
-    """Define the JSON body for ``POST /api/plugins/snippets/{filename}/execute``.
-
-    Per-parameter values defined in the snippet's YAML frontmatter go into
-    ``args`` and are validated server-side via the snippet's dynamic
-    execution model.
-
-    :param executor_host: The hostname of the executor that will run the
-        snippet.
-    :type executor_host: NonEmptyStr
-    :param sudo: Whether to invoke the snippet with sudo. Ignored unless
-        the snippet's sudo option is configured as optional.
-    :type sudo: bool
-    :param args: Per-parameter arguments keyed by parameter name. Validated
-        against the snippet's dynamic execution model.
-    :type args: dict[str, Any]
-    """
-
-    executor_host: NonEmptyStr
-    sudo: bool = False
-    args: dict[str, Any] = {}
-
-
-class SnippetExecutionResponse(BaseModel):
-    """Represent the response returned from the execute endpoint.
-
-    :param task_name: The task name the snippet was executed under (varies
-        based on the snippet's interpreter and pip requirements).
-    :type task_name: NonEmptyStr
-    :param task_id: The id of the task-history row created by the tasks
-        API, when the upstream response includes one.
-    :type task_id: int | None
-    :param snippet_filename: The filename of the snippet that was
-        executed.
-    :type snippet_filename: NonEmptyStr
-    """
-
-    task_name: NonEmptyStr
-    task_id: int | None = None
-    snippet_filename: NonEmptyStr
+def build_snippet_response(snippet: Snippet) -> SnippetResponse:
+    """Project a :class:`Snippet` into its API response shape."""
+    return SnippetResponse(
+        filename=snippet.filename,
+        title=snippet.title,
+        description=snippet.description,
+        size=snippet.size,
+        md5_digest=snippet.md5_digest,
+        is_approved=snippet.is_approved,
+        approved_at=snippet.approved_at,
+        updated_by=snippet.updated_by,
+        reason=snippet.reason,
+        requires_sudo=(
+            snippet.sudo == SnippetSudoOption.ALWAYS or snippet.sudo.is_optional
+        ),
+        sudo_optional=snippet.sudo.is_optional,
+        sudo_default=snippet.sudo.sudo_default,
+        interpreter=snippet.execution_interpreter,
+        created_at=snippet.created_at,
+        updated_at=snippet.updated_at,
+    )
 
 
 class ScriptPreviewResponse(BaseModel):

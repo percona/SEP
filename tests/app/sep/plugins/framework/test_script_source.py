@@ -178,7 +178,10 @@ def _extra_router() -> APIRouter:
 
 
 def _make_source(
-    scripts_dir: Path, *, static_schema: PluginSchema | None = None
+    scripts_dir: Path,
+    *,
+    static_schema: PluginSchema | None = None,
+    list_response_model: type[BaseModel] | None = None,
 ) -> ScriptSource:
     """Build a ``ScriptSource`` whose hooks read the fixture script directory."""
     registry = {
@@ -205,6 +208,7 @@ def _make_source(
         build_execution_meta=_build_execution_meta,
         list_response=_list_row,
         static_schema=static_schema,
+        list_response_model=list_response_model,
     )
 
 
@@ -329,6 +333,32 @@ class TestDerivedRouteSurface:
         schema = _plugin_schema()
         app_def = _script_app(_make_source(scripts_dir, static_schema=schema))
         assert ("/schema", "GET") in _routes(app_def)
+
+    def test_list_response_model_types_the_derived_list_route(
+        self, scripts_dir: Path, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the derived ``GET /`` 200 is typed ``array<list_response_model>`` when set."""
+        source = _make_source(scripts_dir, list_response_model=_ListRow)
+        client = _client(_script_app(source), _make_tasks_api(), regular_user)
+        spec = client.get("/openapi.json").json()
+        list_schema = spec["paths"][f"{_BASE}/"]["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        assert list_schema["type"] == "array"
+        assert list_schema["items"]["$ref"].rsplit("/", 1)[-1] == "_ListRow"
+
+    def test_derived_list_route_untyped_without_response_model(
+        self, scripts_dir: Path, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the derived ``GET /`` 200 stays untyped without a ``list_response_model``."""
+        client = _client(
+            _script_app(_make_source(scripts_dir)), _make_tasks_api(), regular_user
+        )
+        spec = client.get("/openapi.json").json()
+        list_schema = spec["paths"][f"{_BASE}/"]["get"]["responses"]["200"]["content"][
+            "application/json"
+        ]["schema"]
+        assert list_schema.get("type") != "array"
 
 
 class TestDerivedRouteHTTP:

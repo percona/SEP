@@ -59,11 +59,7 @@ default:
         MODULE_NAME: inventory
         URI_PATH: /inventory
         CSS_CLASS: inventory
-      - NAME: Snippet Manager
-        MODULE_NAME: snippets
-        URI_PATH: /snippets
-        CSS_CLASS: snippets
-        NAV_ORDER: 2
+      - MODULE_NAME: snippets
       - NAME: Collect Diagnostic Data
         MODULE_NAME: atw
         URI_PATH: /atw
