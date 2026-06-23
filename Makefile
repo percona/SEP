@@ -33,6 +33,7 @@ PYTEST_WORKERS?=auto
 # the coverage instrumentation tax; CI and coverage-main keep the default COV=1.
 COV?=1
 PYTEST_PATHS?=tests/
+PYTEST_MARKERS?=
 
 # WeasyPrint loads native libs (libgobject-2.0, libpango, libcairo) at import
 # time. Homebrew installs them under /opt/homebrew/lib (Apple Silicon) or
@@ -172,7 +173,7 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) ${PYTEST_PATHS}
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
 
 changelog-add:
 ifndef TICKET

@@ -18,12 +18,14 @@
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import Column, Integer, JSON, MetaData, Table, Text
+import pytest_asyncio
+from sqlalchemy import Column, Integer, JSON, MetaData, select, Table, Text
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.sql import column
 from sqlmodel import col
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.utils import (
     compare_type,
@@ -31,7 +33,9 @@ from app.core.db.utils import (
     get_async_session_maker_from_engine,
     idempotent_insert,
 )
-from app.tasks.models import TaskExecutionRequestJSON, TaskHistory
+from app.tasks.crud import TaskHistoryManager, TaskManager
+from app.tasks.models import TaskExecutionRequestJSON, TaskHistory, TaskWrite
+from tests.app.factories import build_task_history, TaskFactory
 
 
 @pytest.mark.asyncio
@@ -162,9 +166,9 @@ def test_func_json_extract_postgresql_text_column_nested_path_wraps_in_cast():
 
 
 def test_func_json_extract_postgresql_jsonb_column_does_not_wrap_in_cast():
-    """Keep ``jsonb`` columns unwrapped so the SEP-818 expression indexes match.
+    """Keep ``jsonb`` columns unwrapped so the functional expression indexes match.
 
-    ``taskhistory.execution_request`` is ``jsonb`` post SEP-988 and carries
+    ``taskhistory.execution_request`` is ``jsonb`` and carries
     functional expression indexes on ``(execution_request ->> 'task')`` etc.
     Adding a ``CAST`` wrapper would change the expression shape and stop the
     planner from matching those indexes — this test pins that contract.
@@ -335,7 +339,7 @@ def test_compare_type_suppresses_diff_for_task_execution_request_json_against_js
 
     Pin the contract that flipping ``TaskExecutionRequestJSON`` to inherit
     from ``AutoJSON`` keeps autogeneration quiet against the ``jsonb`` column
-    that PostgreSQL exposes after the SEP-988 migration runs.
+    that PostgreSQL exposes after the migration runs.
     """
     result = compare_type(
         context=MagicMock(),
@@ -345,3 +349,144 @@ def test_compare_type_suppresses_diff_for_task_execution_request_json_against_js
         metadata_type=TaskExecutionRequestJSON(),
     )
     assert result is False
+
+
+_PROBE_METADATA = MetaData()
+_json_probe = Table(
+    "json_extract_probe",
+    _PROBE_METADATA,
+    Column("id", Integer, primary_key=True),
+    Column("payload_json", JSON),
+    Column("payload_jsonb", JSONB),
+    Column("payload_text", Text),
+)
+
+
+@pytest_asyncio.fixture
+async def json_probe_session(postgres_engine: AsyncEngine) -> AsyncSession:
+    """Create the module-local JSON probe table on real PG and yield a session.
+
+    Layered on the shared ``postgres_engine`` so cells 1-3 exercise
+    ``func_json_extract`` against ``json``/``jsonb``/``text`` columns without
+    depending on the tasks-service schema.
+    """
+    async with postgres_engine.begin() as conn:
+        await conn.run_sync(_PROBE_METADATA.create_all)
+    async_session_maker = get_async_session_maker_from_engine(postgres_engine)
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        async with postgres_engine.begin() as conn:
+            await conn.run_sync(_PROBE_METADATA.drop_all)
+
+
+class TestFuncJsonExtractOnRealPostgres:
+    """Execute ``func_json_extract`` end-to-end against a real PostgreSQL engine.
+
+    Siblings to the compile-only render tests above: those pin the emitted SQL
+    *shape*, these prove the SQL the helper emits actually executes on PostgreSQL
+    and returns the expected scalar. SQLite cannot substitute — its
+    ``json_extract`` accepts ``text``, so the ``text``-to-``CAST`` branch (the
+    text-column regression surface) is untestable there.
+    """
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_json_column_extracts_single_key_scalar(
+        self, json_probe_session: AsyncSession
+    ):
+        """Execute a single-element arrow path against a real ``json`` column."""
+        name = json_probe_session.get_bind().name
+        await json_probe_session.exec(
+            _json_probe.insert().values(id=1, payload_json={"task": "mysqldump"})
+        )
+        await json_probe_session.commit()
+
+        result = await json_probe_session.exec(
+            select(func_json_extract(name, _json_probe.c.payload_json, "task"))
+        )
+        assert result.scalar_one() == "mysqldump"
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_json_column_extracts_nested_key_scalar(
+        self, json_probe_session: AsyncSession
+    ):
+        """Execute a nested arrow chain (``-> ... ->>``) against a real ``json`` column."""
+        name = json_probe_session.get_bind().name
+        await json_probe_session.exec(
+            _json_probe.insert().values(id=1, payload_json={"meta": {"key": "v"}})
+        )
+        await json_probe_session.commit()
+
+        result = await json_probe_session.exec(
+            select(func_json_extract(name, _json_probe.c.payload_json, "meta", "key"))
+        )
+        assert result.scalar_one() == "v"
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_jsonb_column_extracts_scalar(self, json_probe_session: AsyncSession):
+        """Execute the arrow chain against a real ``jsonb`` column."""
+        name = json_probe_session.get_bind().name
+        await json_probe_session.exec(
+            _json_probe.insert().values(id=1, payload_jsonb={"task": "restore-weekly"})
+        )
+        await json_probe_session.commit()
+
+        result = await json_probe_session.exec(
+            select(func_json_extract(name, _json_probe.c.payload_jsonb, "task"))
+        )
+        assert result.scalar_one() == "restore-weekly"
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_text_column_casts_to_json_before_extract(
+        self, json_probe_session: AsyncSession
+    ):
+        """Execute ``CAST(text AS JSON) ->> key`` so the text-column regression bites.
+
+        Without the cast PostgreSQL raises ``operator does not exist: text ->>
+        unknown`` at execution time — the exact failure that shipped in production
+        for ``celery_periodictask.kwargs``. Asserting on the returned scalar turns
+        that execution-time error into a test failure, which the compile-only
+        siblings cannot.
+        """
+        name = json_probe_session.get_bind().name
+        await json_probe_session.exec(
+            _json_probe.insert().values(
+                id=1, payload_text='{"task_name": "backup-daily"}'
+            )
+        )
+        await json_probe_session.commit()
+
+        result = await json_probe_session.exec(
+            select(func_json_extract(name, _json_probe.c.payload_text, "task_name"))
+        )
+        assert result.scalar_one() == "backup-daily"
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_auto_json_column_extracts_scalar(
+        self, postgres_session: AsyncSession
+    ):
+        """Execute the arrow chain against a real ``AutoJSON`` (``jsonb``) column.
+
+        ``TaskHistory.execution_request`` is ``TaskExecutionRequestJSON``, an
+        ``AutoJSON`` ``TypeDecorator`` that resolves to ``jsonb`` on PostgreSQL.
+        The helper must unwrap the decorator and emit the index-compatible arrow
+        chain with no spurious ``CAST``; executing it against a stored row proves
+        the unwrap is correct end-to-end.
+        """
+        task = await TaskManager.create(
+            postgres_session,
+            TaskWrite.model_validate(TaskFactory.build(name="mysqldump")),
+        )
+        await TaskHistoryManager.save(postgres_session, build_task_history(task))
+        name = postgres_session.get_bind().name
+
+        result = await postgres_session.exec(
+            select(func_json_extract(name, col(TaskHistory.execution_request), "task"))
+        )
+        assert result.scalar_one() == "mysqldump"

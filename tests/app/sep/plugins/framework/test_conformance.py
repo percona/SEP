@@ -57,7 +57,6 @@ from app.sep.plugins.framework.form_dsl import (
 from app.sep.plugins.framework.form_dsl import (
     check_form_conformance as _form_dsl_check_form_conformance,
 )
-from app.sep.plugins.framework.payload import ResolvedEntities, RunCommandSpec
 from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.plugins.framework.schema import (
     Capabilities,
@@ -67,6 +66,7 @@ from app.sep.plugins.framework.schema import (
     DetailView,
     ListView,
 )
+from app.sep.plugins.framework.spec import ResolvedEntities, RunCommandSpec
 from app.tasks.models import TaskHistoryStatusEnum, TaskOwner
 from tests.app.sep import snapshot_utils as su
 from tests.app.sep.plugins.framework.contract_suite import build_contract_client

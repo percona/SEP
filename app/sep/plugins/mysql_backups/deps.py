@@ -21,6 +21,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
+from app.sep.connectivity import get_check_connectivity_flag
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -29,13 +30,13 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.framework import build_default_task_response, make_task_dep
-from app.sep.plugins.framework.payload import assemble_envelope, resolve_refs
+from app.sep.plugins.framework.spec import assemble_envelope, resolve_refs
 from app.sep.plugins.mysql_backups.models import (
     BackupCreate,
     BackupResponse,
     BackupType,
 )
-from app.sep.plugins.mysql_backups.payload import build_backup_spec
+from app.sep.plugins.mysql_backups.spec import build_backup_spec
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ async def build_backup_task_payload(
 
     The legacy Jinja form path's payload dependency. Resolves the form's
     reference fields and feeds the shared pure
-    :func:`~app.sep.plugins.mysql_backups.payload.build_backup_spec` through the
+    :func:`~app.sep.plugins.mysql_backups.spec.build_backup_spec` through the
     framework's ``assemble_envelope``, the same pair the model-first JSON create
     route uses — so a form-created task's Nomad payload stays byte-identical to a
     JSON-created one.
@@ -253,3 +254,7 @@ async def get_backups_index_context(
         TaskOwner.BACKUPS,
         alert_on_fail_default=True,
     )
+
+
+BackupsIndexContext = Annotated[dict[str, Any], Depends(get_backups_index_context)]
+CheckConnectivityFlag = Annotated[bool, Depends(get_check_connectivity_flag)]

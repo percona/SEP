@@ -22,7 +22,10 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.mysql_backups.models import BackupType
-from app.sep.plugins.mysql_backups.restore.deps import build_restore_task_payload
+from app.sep.plugins.mysql_backups.restore.deps import (
+    build_restore_task_payload,
+    resolve_restore_entities,
+)
 from app.sep.plugins.mysql_backups.restore.models import RestoreCreate
 from app.tasks.models import TaskOwner, TaskWrite
 
@@ -86,6 +89,38 @@ async def test_build_restore_task_payload_omits_service_name_when_service_id_uns
 
     assert "_service_name" not in task_payload.data["meta"]
     get_created_entity.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolve_restore_entities_mydumper_splits_address_and_resolves_schema(
+    mocker,
+    mock_remote_api,
+    created_service: CreatedService,
+):
+    """Resolve the MyDumper service address split and the schema name."""
+    node = created_service.node.model_copy(update={"address": "10.0.0.5"})
+    service = created_service.model_copy(update={"node": node, "port": 3307})
+    schema = service.model_copy(update={"name": "shop"})
+    mocker.patch(
+        "app.sep.plugins.mysql_backups.restore.deps.get_created_entity",
+        side_effect=[service, schema],
+    )
+
+    form = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        service_id=str(service.id),
+        schema_id="42",
+        backup_type=BackupType.MYDUMPER,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+    )
+    resolved = await resolve_restore_entities(form, mock_remote_api)
+
+    assert resolved.service_name == service.name
+    assert resolved.dest_host == node.address
+    assert resolved.dest_port == service.port
+    assert resolved.database == schema.name
 
 
 @pytest.mark.asyncio
