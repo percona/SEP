@@ -85,7 +85,7 @@ async def test_build_backup_task_payload(
     depending on the backup_type, encryption, and other fields.
     """
     mocker.patch(
-        "app.sep.plugins.framework.payload.get_created_entity",
+        "app.sep.plugins.framework.spec.get_created_entity",
         return_value=created_service,
     )
     created_service.node = CreatedNode(
@@ -150,7 +150,7 @@ async def test_build_backup_task_payload_raises_for_invalid_backup_type(
 ):
     """Test that passing an invalid BackupType raises ValueError."""
     mocker.patch(
-        "app.sep.plugins.framework.payload.get_created_entity",
+        "app.sep.plugins.framework.spec.get_created_entity",
         return_value=created_service,
     )
 
