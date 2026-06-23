@@ -311,6 +311,26 @@ class TestUpdateAppState:
             is AppLifecycleEnum.DISABLING
         )
 
+    async def test_scoped_key_resolves_through_path_param(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Toggle a scoped app key containing ``/`` through the ``:path`` route param."""
+        override_session.add(
+            AppRunningTask(app_key="mysql_backups/restore", celery_task_id="running")
+        )
+        await override_session.commit()
+
+        response = api_admin_client.put(
+            "/api/admin/apps/mysql_backups/restore/state",
+            json={"lifecycle_state": AppLifecycleEnum.DISABLING},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "app_key": "mysql_backups/restore",
+            "enabled": False,
+            "lifecycle_state": AppLifecycleEnum.DISABLING,
+        }
+
     async def test_missing_row_disabled_target_returns_409(
         self, api_admin_client: TestClient, override_session: AsyncSession
     ) -> None:

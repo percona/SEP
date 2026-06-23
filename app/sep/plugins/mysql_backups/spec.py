@@ -28,7 +28,7 @@ from pathlib import Path
 import yaml
 from fastapi.encoders import jsonable_encoder
 
-from app.sep.plugins.framework.payload import ResolvedEntities, RunPythonSpec
+from app.sep.plugins.framework.spec import ResolvedEntities, RunPythonSpec
 from app.sep.plugins.mysql_backups.models import (
     BackupConfig,
     BackupConfigAll,
@@ -76,9 +76,9 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
         # XtraBackup must run on the database host itself
         "host": (
             "localhost"
-            if form.backup_type == "X"
+            if form.backup_type == BackupType.XTRABACKUP
             else form.binlog_alternative_host
-            if form.backup_type == "B" and form.binlog_alternative_host
+            if form.backup_type == BackupType.BINLOG and form.binlog_alternative_host
             else service.node.address
         ),
         "port": service.port,

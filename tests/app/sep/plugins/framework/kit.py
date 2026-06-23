@@ -47,9 +47,9 @@ from app.sep.plugins.framework.form_dsl import (
     ServiceRef,
     Ui,
 )
-from app.sep.plugins.framework.payload import ResolvedEntities, RunCommandSpec
 from app.sep.plugins.framework.responses import build_default_task_response
 from app.sep.plugins.framework.schema import Capabilities, Column, ListView
+from app.sep.plugins.framework.spec import ResolvedEntities, RunCommandSpec
 from app.sep.plugins.framework.task_status import batch_get_latest_statuses
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner
 from tests.app.factories import (
