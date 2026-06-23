@@ -34,6 +34,8 @@ const app = (app_key: string, enabled: boolean): EnabledApp => ({
   uri_path: `/${app_key}`,
   display_name: app_key.charAt(0).toUpperCase() + app_key.slice(1),
   custom_ui: false,
+  group: null,
+  nav_order: null,
 });
 
 /** Flatten leaf titles (parents + children) for assertion convenience. */
@@ -85,12 +87,13 @@ describe('NavigationProvider', () => {
     expect(titles).not.toContain('Snippets');
   });
 
-  it('renders the full nav optimistically while the query is unresolved', () => {
+  it('renders only the static entries on a cold load or error', () => {
     useEnabledApps.mockReturnValue({ data: undefined });
     const titles = renderProvider();
 
     expect(titles).toContain('Dashboard');
-    expect(titles).toContain('Snippets');
-    expect(titles).toContain('Tasks');
+    expect(titles).toContain('Inventory');
+    expect(titles).not.toContain('Snippets');
+    expect(titles).not.toContain('Tasks');
   });
 });

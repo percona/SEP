@@ -20,7 +20,7 @@ construction and ``--recursion-method=dsn=…`` expansion) shared by the model-f
 JSON path (:func:`build_checksums_spec` fed to the framework's three-phase create)
 and the legacy Jinja form path (``deps._assemble_checksum_payload``); the
 declarative value/flag args come from the framework's
-:func:`~app.sep.plugins.framework.payload.build_command_args` driven by the form's
+:func:`~app.sep.plugins.framework.spec.build_command_args` driven by the form's
 ``ArgFormat`` markers, so a checksum task's Nomad payload is byte-identical
 regardless of the call origin. The framework's ``assemble_envelope`` supplies the
 executor ``target``, ``_service_name``, and the connectivity meta keys,
@@ -32,7 +32,7 @@ from collections.abc import Iterable
 
 from app.sep.inventory import CreatedService
 from app.sep.plugins.checksums.models import ChecksumsForm
-from app.sep.plugins.framework.payload import (
+from app.sep.plugins.framework.spec import (
     build_command_args,
     ResolvedEntities,
     RunCommandSpec,
@@ -56,7 +56,7 @@ def build_checksums_arg_prefix(
     ``dsn`` (on a local copy, never mutating caller arguments), and any pre-parsed
     extra args the legacy form path threads through. The declarative value/flag
     args follow via
-    :func:`~app.sep.plugins.framework.payload.build_command_args`.
+    :func:`~app.sep.plugins.framework.spec.build_command_args`.
 
     :param service: The resolved inventory service (drives the DSN host/port).
     :param recursion_method: The replica-discovery method (e.g. ``"processlist"``).

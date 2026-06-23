@@ -26,6 +26,10 @@ export interface EnabledApp {
   uri_path: string;
   display_name: string;
   custom_ui: boolean;
+  /** Nav group key this app nests under; ``null`` renders it top-level. */
+  group: string | null;
+  /** Sort position within the sidebar; ``null`` sorts last. */
+  nav_order: number | null;
 }
 
 export const ENABLED_APPS_QUERY_KEY = ['apps'] as const;

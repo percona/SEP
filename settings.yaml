@@ -63,22 +63,25 @@ default:
         MODULE_NAME: snippets
         URI_PATH: /snippets
         CSS_CLASS: snippets
+        NAV_ORDER: 2
       - NAME: Collect Diagnostic Data
         MODULE_NAME: atw
         URI_PATH: /atw
         CSS_CLASS: atw
+        NAV_ORDER: 3
       - NAME: Schema Change
         MODULE_NAME: alters
         URI_PATH: /alters
         CSS_CLASS: alters
+        GROUP: schema_change
+        NAV_ORDER: 6
       - NAME: Archive
         MODULE_NAME: archives
         URI_PATH: /archives
         CSS_CLASS: archive
-      - NAME: MySQL Backups
-        MODULE_NAME: mysql_backups
-        URI_PATH: /mysql_backups
-        CSS_CLASS: mysql_backups
+        NAV_ORDER: 11
+      - MODULE_NAME: mysql_backups
+      - MODULE_NAME: mysql_backups.restore
       - NAME: Checksums
         MODULE_NAME: checksums
         URI_PATH: /checksums
@@ -87,14 +90,19 @@ default:
         MODULE_NAME: backup_mongo
         URI_PATH: /backup_mongo
         CSS_CLASS: backup_mongo
+        GROUP: backups
+        NAV_ORDER: 9
       - NAME: PostgreSQL Backups
         MODULE_NAME: backup_pg
         URI_PATH: /backup_pg
         CSS_CLASS: backup_pg
+        GROUP: backups
+        NAV_ORDER: 10
       - NAME: Dipper Data Collection
         MODULE_NAME: dipper
         URI_PATH: /dipper
         CSS_CLASS: dipper
+        NAV_ORDER: 12
       - NAME: Alert Templates
         MODULE_NAME: alerts
         URI_PATH: /alerts
@@ -103,6 +111,8 @@ default:
         MODULE_NAME: alert_troubleshooting
         URI_PATH: /alert-troubleshooting
         CSS_CLASS: alert-troubleshooting
+        GROUP: alerts
+        NAV_ORDER: 5
       - NAME: Health & Security Report
         MODULE_NAME: report
         URI_PATH: /report
@@ -223,6 +233,7 @@ development:
         MODULE_NAME: tasks
         URI_PATH: /tasks
         CSS_CLASS: tasks
+        NAV_ORDER: 1
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer

@@ -21,14 +21,17 @@ reject callers that pass an instance whose deferred
 ``execution_request`` column is still unloaded (SEP-1017).
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import SecretStr
 from sqlalchemy.orm import undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import PMMSettings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pmm import _background_tasks, await_annotation, schedule_annotation
+from app.core.requests.remote_api import RemoteAPI
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.models import (
     TaskExecutionRequest,
@@ -100,6 +103,71 @@ class TestScheduleAnnotationDetachedInstance:
             tags=["sep", "backup_data", "started"],
             service_names=["svc1"],
         )
+
+    @pytest.mark.asyncio
+    async def test_pmm_failure_is_contained_to_background_task(
+        self, session: AsyncSession
+    ):
+        """Assert a PMM-client failure does not escape ``schedule_annotation``.
+
+        ``schedule_annotation`` is fire-and-forget *and*
+        :func:`create_pmm_annotation` is best-effort: it catches every
+        exception raised by the PMM client and logs it, never re-raising. So a
+        real upstream failure — here the annotation ``POST`` raising — must
+        leave the scheduled background task completing cleanly, with the error
+        confined to the log. Patch the real boundary (the PMM client returned by
+        ``settings.get_remote_api``) rather than ``create_pmm_annotation``
+        itself, so the genuine swallow-and-log branch is exercised instead of a
+        leak that production cannot produce.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="backup_data")),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task="backup_data",
+                target="node-1",
+                meta={"_service_names": ["svc1"]},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        saved = await TaskHistoryManager.save(session, history)
+        await session.refresh(saved, attribute_names=["execution_request"])
+
+        pmm_settings = MagicMock(spec=PMMSettings)
+        pmm_settings.annotations_enabled = True
+        pmm_settings.endpoint = "https://pmm.example.com"
+        pmm_settings.api_key = SecretStr("test-api-key")
+        pmm_settings.verify_ssl = True
+        pmm_settings.annotations_timeout = 5
+
+        failing_api = MagicMock(spec=RemoteAPI)
+        failing_api.post = AsyncMock(side_effect=RuntimeError("PMM unavailable"))
+        failing_api.auth.return_value.__enter__ = MagicMock(return_value=failing_api)
+        failing_api.auth.return_value.__exit__ = MagicMock(return_value=False)
+
+        _background_tasks.clear()
+        with patch("app.core.pmm.settings") as mock_settings:
+            mock_settings.PMM = pmm_settings
+            mock_settings.get_remote_api = AsyncMock(return_value=failing_api)
+
+            # Fire-and-forget: scheduling itself must not raise.
+            schedule_annotation(saved, "STARTED")
+
+            bg_tasks = list(_background_tasks)
+            assert len(bg_tasks) == 1
+
+            # The background task swallows the PMM failure: awaiting it must
+            # complete normally rather than re-raising the upstream error.
+            with patch("app.core.pmm.logger.exception") as mock_log_exc:
+                await bg_tasks[0]
+
+        failing_api.post.assert_awaited_once()
+        mock_log_exc.assert_called_once()
+        assert "Failed to create PMM annotation" in mock_log_exc.call_args.args[0]
 
 
 class TestScheduleAnnotationPrecondition:
@@ -192,6 +260,17 @@ class _SuccessAfterRunExecutor(ConcreteExecutor):
         return queue_item
 
 
+class _StillRunningExecutor(ConcreteExecutor):
+    """Minimal executor that leaves the task history in RUNNING (non-terminal)."""
+
+    async def _sync_task_history(
+        self,
+        queue_item: TaskHistory,
+        writer_session: AsyncSession | None = None,
+    ) -> TaskHistory:
+        return queue_item
+
+
 class TestSyncTaskHistoryPmmRegressionSep1021:
     """Test terminal PMM on a detached TaskHistory with a separate writer session."""
 
@@ -263,6 +342,96 @@ class TestSyncTaskHistoryPmmRegressionSep1021:
             tags=["sep", task.name, "completed"],
             service_names=["svc1"],
         )
+
+    @pytest.mark.asyncio
+    async def test_terminal_pmm_with_empty_service_names(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert the terminal annotation fires with an empty service-name batch.
+
+        When ``meta`` carries no ``_service_names``, the annotation must still
+        fire on a terminal status, with ``service_names`` defaulting to ``[]``.
+        """
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(TaskFactory.build(name="sep1021-empty-batch")),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-z",
+                meta={},
+                tracking={},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        saved = await TaskHistoryManager.save(session, history)
+        await session.commit()
+
+        engine = session.bind
+        if engine is None:
+            raise RuntimeError("expected AsyncSession.bind to be set")
+        maker = get_async_session_maker_from_engine(engine)
+        async with maker() as load_session:
+            loaded = await TaskHistoryManager.get_or_404(
+                load_session,
+                select_related=[TaskHistory.task],
+                query_options=[undefer(TaskHistory.execution_request)],
+                id=saved.id,
+            )
+
+        async with maker() as writer_session:
+            executor = _SuccessAfterRunExecutor()
+            with patch(
+                "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+            ) as mock_create:
+                await executor.sync_task_history(
+                    loaded, writer_session=writer_session, await_annotations=True
+                )
+
+        mock_create.assert_awaited_once_with(
+            text=f"SEP {task.name} - COMPLETED",
+            node_name="node-z",
+            tags=["sep", task.name, "completed"],
+            service_names=[],
+        )
+
+    @pytest.mark.asyncio
+    async def test_non_terminal_status_skips_annotation(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a non-terminal sync result schedules no PMM annotation."""
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="sep1021-running", alert_on_fail=False)
+            ),
+        )
+        history = TaskHistory(
+            task_id=task.id,
+            task=task,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target="node-z",
+                meta={"_service_names": ["svc1"]},
+                tracking={},
+            ),
+            status=TaskHistoryStatusEnum.RUNNING,
+        )
+        saved = await TaskHistoryManager.save(session, history)
+
+        executor = _StillRunningExecutor()
+        with patch(
+            "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
+        ) as mock_create:
+            await executor.sync_task_history(
+                saved, writer_session=session, await_annotations=True
+            )
+
+        assert saved.status == TaskHistoryStatusEnum.RUNNING
+        mock_create.assert_not_awaited()
 
 
 class TestAwaitAnnotation:

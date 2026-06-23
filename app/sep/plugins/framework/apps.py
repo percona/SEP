@@ -51,13 +51,6 @@ from app.sep.plugins.framework.form_dsl import (
     derive_plugin_schema,
     FormLayout,
 )
-from app.sep.plugins.framework.payload import (
-    assemble_envelope,
-    EnvelopeSpec,
-    resolve_refs,
-    ResolvedEntities,
-    validate_arg_formats,
-)
 from app.sep.plugins.framework.responses import (
     BaseTaskResponse,
     build_default_task_response,
@@ -72,6 +65,13 @@ from app.sep.plugins.framework.schema import (
     PluginSchema,
 )
 from app.sep.plugins.framework.script_source import ScriptSource
+from app.sep.plugins.framework.spec import (
+    assemble_envelope,
+    EnvelopeSpec,
+    resolve_refs,
+    ResolvedEntities,
+    validate_arg_formats,
+)
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
 
 __all__ = [
@@ -590,7 +590,7 @@ class TaskExecutionApp(BaseApp):
         """Reject a create-model ``ArgFormat`` template the assembler would silently drop.
 
         Delegate to
-        :func:`~app.sep.plugins.framework.payload.validate_arg_formats` for a
+        :func:`~app.sep.plugins.framework.spec.validate_arg_formats` for a
         model-first app so a typo'd placeholder or a flag template on a non-``bool``
         field fails fast at construction rather than dropping the argument at
         task-creation time. Skip a ``schema=`` passthrough app, which has no
@@ -676,7 +676,7 @@ class TaskExecutionApp(BaseApp):
         router.include_router(crud)
 
         if self.capabilities.execute:
-            execute_models: dict[str, type[BaseModel]] = {}
+            execute_models = {}
             if self.execute_write_model is not None:
                 execute_models["write_model"] = self.execute_write_model
             if self.execute_response_model is not None:
