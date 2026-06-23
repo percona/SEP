@@ -43,9 +43,8 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
-    TaskWrite,
 )
-from tests.app.factories import TaskFactory
+from tests.app.factories import GeneratedTaskFactory, TaskFactory
 
 
 @pytest.fixture
@@ -287,6 +286,8 @@ def test_archives_create_rejects_dest_port_with_dest_service_id(
     forbidden gate. HTML form routes surface validation failures as a flash +
     redirect back to the Referer, so the task is never created.
     """
+    # Posted as a raw form dict (not ArchivesCreateFactory) because ArchivesCreate
+    # refuses to construct a dest_service_id + dest_port payload in the first place.
     payload = {
         "alias": "arch_dest_port_conflict",
         "hostname": "source_db",
@@ -320,6 +321,8 @@ def test_archives_update_rejects_dest_port_with_dest_service_id(
     forbidden gate rejects the service-plus-port combination on edit; the form
     route redirects back to the Referer and never updates the task.
     """
+    # Posted as a raw form dict (not ArchivesCreateFactory) because ArchivesCreate
+    # refuses to construct a dest_service_id + dest_port payload in the first place.
     payload = {
         "alias": "arch_update_dest_port_conflict",
         "hostname": "source_db",
@@ -489,7 +492,7 @@ def test_archives_create_skips_connectivity_check_when_opted_out(
     """POST /archives/ skips the connectivity check when the checkbox is unchecked."""
     clear_connectivity_caches()
 
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.ARCHIVER,
