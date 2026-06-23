@@ -247,7 +247,7 @@ class TestDispatchQueueItem:
 
     @pytest.mark.asyncio
     async def test_await_annotations_flag_propagated_to_internal(self):
-        """Assert ``await_annotations=True`` reaches ``_dispatch_queue_item`` (SEP-1204)."""
+        """Assert ``await_annotations=True`` reaches ``_dispatch_queue_item``."""
         queue_item = _make_history()
         session = _make_session_mock()
         expected = _make_history(status=TaskHistoryStatusEnum.RUNNING)
@@ -607,8 +607,8 @@ class TestRaiseIfIdenticalTaskConflict:
     async def test_pg_bool_scalar_is_type_strict(self):
         """Assert PG bool scalar is rendered as jsonb ``true``, not Python ``"True"``.
 
-        Pin the latent-bug fix documented in the SEP-988 Breaking Changes
-        CHANGELOG entry: the previous text-equality path compared
+        Pin the latent-bug fix for the bool-meta dedup path: the previous
+        text-equality path compared
         ``->>`` output against ``str(True) == "True"``, which never matched
         jsonb's lowercase ``true`` text form, leaving bool-meta dispatches
         un-deduplicated.
@@ -2279,9 +2279,9 @@ class TestExecuteTaskByName:
 
 
 class TestExecuteTaskByNamePeriodicAnnotationRegression:
-    """Regression suite for SEP-1204 — periodic dispatch ``STARTED`` annotation.
+    """Regression suite for the periodic dispatch ``STARTED`` annotation.
 
-    Before SEP-1204, ``_dispatch_queue_item`` posted the ``STARTED`` annotation
+    Before this fix, ``_dispatch_queue_item`` posted the ``STARTED`` annotation
     via ``schedule_annotation`` (fire-and-forget ``asyncio.create_task``). When
     called from the Celery worker (``execute_task_by_name`` →
     ``celery.loop.run_until_complete(dispatch_queue_item(...))``), the inner
@@ -2298,7 +2298,7 @@ class TestExecuteTaskByNamePeriodicAnnotationRegression:
     """
 
     def test_started_annotation_reaches_pmm_for_periodic_dispatch(self, mocker):
-        """Assert ``annotate_task_event`` is awaited with ``STARTED`` (SEP-1204)."""
+        """Assert ``annotate_task_event`` is awaited with ``STARTED``."""
         with _sync_db_harness(mocker) as (test_loop, async_session_maker):
             test_loop.run_until_complete(
                 _seed_task(async_session_maker, name="backup_data", alert_on_fail=False)
@@ -2353,11 +2353,11 @@ def _noop_async_session_maker():
 
 
 class TestInternalDispatchQueueItemRegression:
-    """Regression suite for SEP-1017 — real-session ``_dispatch_queue_item``.
+    """Regression suite for the real-session ``_dispatch_queue_item``.
 
     ``TaskHistoryManager.save`` re-defers the ``execution_request``
     ``column_property`` via its internal ``session.refresh(instance)``.
-    Before SEP-1017, ``schedule_annotation(result, "STARTED")`` then
+    Before this fix, ``schedule_annotation(result, "STARTED")`` then
     touched that deferred attribute synchronously and crashed with
     ``MissingGreenlet`` on async drivers (asyncpg, aiosqlite).
 
@@ -2498,14 +2498,14 @@ class _SharedSessionContextManager:
 
 
 class TestSyncQueueItemRegression:
-    """Regression suite for SEP-1017 — real-session ``sync_queue_item``.
+    """Regression suite for the real-session ``sync_queue_item``.
 
     After ``TaskHistoryManager.save`` inside the ``async with
     async_session()`` block, ``saved.execution_request`` is re-deferred
     by the save's internal ``session.refresh(instance)``. Chain-dispatch
     logic reads ``saved.execution_request.meta`` twice **after** the
     ``async with`` exits, at which point ``saved`` is also detached.
-    Before SEP-1017, that read raised ``DetachedInstanceError`` on sync
+    Before this fix, that read raised ``DetachedInstanceError`` on sync
     drivers or ``MissingGreenlet`` on async drivers.
     """
 
@@ -2787,12 +2787,15 @@ class TestCheckNomadCertExpiry:
 
     @pytest.mark.asyncio
     async def test_missing_file_warns_and_skips(self, mocker, tmp_path: Path) -> None:
-        """Assert a missing PEM path logs a warning and does not call the alert service."""
-        mock_nomad = MagicMock()
-        mock_nomad.ssl_cafile = tmp_path / "missing.pem"
-        mock_nomad.ssl_certfile = None
-        mock_nomad.cert_expiry_warn_days = 7
-        mocker.patch("app.tasks.celery.tasks_settings", MagicMock(NOMAD=mock_nomad))
+        """Assert a PEM path missing at read time logs a warning and skips alerting."""
+        ca = tmp_path / "ca.pem"
+        _write_self_signed_pem(
+            ca, not_valid_after=ANCHOR + timedelta(days=30), common_name="ca"
+        )
+        nomad = _nomad_config_for_paths(ca=ca, cert=None, warn_days=7)
+        # Exists at config-load (passes path validation) but gone by read time.
+        ca.unlink()
+        mocker.patch("app.tasks.celery.tasks_settings", MagicMock(NOMAD=nomad))
         mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
         mock_alert = MagicMock()
         mock_alert.trigger = AsyncMock()

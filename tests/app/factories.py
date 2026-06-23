@@ -39,6 +39,8 @@ from app.sep.plugins.archives.models import ArchivesCreate
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
+    TaskExecutionRequest,
+    TaskHistory,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskResponse,
@@ -51,6 +53,27 @@ MOCK_CREATED_SCHEMA_ID = 1
 MOCK_CREATED_TABLE_ID = 1
 MOCK_DESTINATION_TABLE_ID = 2
 MOCK_OBSERVED_AT = datetime(2026, 6, 1, 12, 0, 0, tzinfo=UTC)
+
+
+def build_task_history(task: Task) -> TaskHistory:
+    """Build an unsaved ``TaskHistory`` for ``task`` with a SUCCESS execution request.
+
+    ``execution_request.task`` mirrors ``task.name`` so JSON-extraction tests can
+    assert the stored scalar round-trips. Callers persist it via
+    ``TaskHistoryManager.save``.
+    """
+    return TaskHistory(
+        task_id=task.id,
+        task=task,
+        execution_request=TaskExecutionRequest(
+            task=task.name,
+            target="node1",
+            meta={"target": "node1"},
+            tracking={"evaluation_id": "", "allocation_id": None},
+        ),
+        status=TaskHistoryStatusEnum.SUCCESS,
+        executed_by="test-user",
+    )
 
 
 class CasdoorSDKFactory(ModelFactory[CasdoorSDK]):

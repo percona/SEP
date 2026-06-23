@@ -26,9 +26,9 @@ machine-independent (both the old builder and the new spec compute the same
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
-from app.sep.plugins.framework.payload import assemble_envelope, ResolvedEntities
+from app.sep.plugins.framework.spec import assemble_envelope, ResolvedEntities
 from app.sep.plugins.mysql_backups.models import BackupCreate
-from app.sep.plugins.mysql_backups.payload import build_backup_spec
+from app.sep.plugins.mysql_backups.spec import build_backup_spec
 from app.tasks.models import TaskOwner
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 from tests.app.sep.snapshot_utils import assert_or_update, canonical_json, SNAPSHOTS_DIR

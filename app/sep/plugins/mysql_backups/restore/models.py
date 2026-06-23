@@ -16,15 +16,48 @@
 """Define models for the Restore plugin."""
 
 from enum import StrEnum
+from typing import Annotated
 
 from pydantic import Field, field_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.framework import BaseTaskResponse
+from app.sep.plugins.framework.form_dsl import (
+    AppFormModel,
+    Choices,
+    HostRef,
+    SchemaRef,
+    ServiceRef,
+    Ui,
+)
 from app.sep.plugins.mysql_backups.models import BackupType
 
 BACKUP_SOURCE_SHELLBACKTICK = "`"
 BACKUP_SOURCE_SHELL_FORBIDDEN = frozenset("$;|&()" + BACKUP_SOURCE_SHELLBACKTICK)
+
+
+def _validate_backup_source_shell_safe(value: str) -> str:
+    """Reject shell metacharacters in a backup-source path (defense in depth).
+
+    Shared by every model carrying ``backup_source`` so the create form and the
+    YAML-serialization config model enforce the same rule from one place.
+
+    :param value: The submitted backup-source path.
+    :return: The validated value, unchanged.
+    :raises ValueError: When ``value`` contains a newline or a shell metacharacter.
+    """
+    if not value:
+        return value
+    if "\n" in value or "\r" in value:
+        raise ValueError("backup_source must not contain newline characters")
+    if BACKUP_SOURCE_SHELL_FORBIDDEN.intersection(value):
+        raise ValueError(
+            "backup_source contains disallowed shell metacharacters; "
+            "remove special characters from the backup source field"
+        )
+    return value
 
 
 class S3Tool(EnumFieldMixin, StrEnum):
@@ -194,16 +227,7 @@ class BaseRestoreConfigServer(BaseCaseInsensitiveModel):
     @classmethod
     def validate_backup_source_shell_safe(cls, value: str) -> str:
         """Reject shell metacharacters in backup source (defense in depth)."""
-        if not value:
-            return value
-        if "\n" in value or "\r" in value:
-            raise ValueError("backup_source must not contain newline characters")
-        if BACKUP_SOURCE_SHELL_FORBIDDEN.intersection(value):
-            raise ValueError(
-                "backup_source contains disallowed shell metacharacters; "
-                "remove special characters from the backup source field"
-            )
-        return value
+        return _validate_backup_source_shell_safe(value)
 
 
 class RestoreConfigServer(BaseRestoreConfigServer):
@@ -243,22 +267,199 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     server_list: list[RestoreConfigServer]
 
 
-class RestoreCreate(RestoreConfigAll, BaseRestoreConfigServer):
-    """Model for creating a restore task.
+class RestoreCreate(AppFormModel):
+    """Declare the model-first create/update body and ``GET /schema`` source for Restores.
 
-    Inherits from RestoreConfigAll and BaseRestoreConfigServer, adding task and service identifiers.
+    Declares every restore form field once, in section order (Task, General,
+    Mydumper, XtraBackup, Binlog), with the DSL markers driving the derived
+    schema. The previously-inherited config models (:class:`RestoreConfigAll` and
+    :class:`BaseRestoreConfigServer`) stay the YAML-serialization targets the
+    payload builder populates via ``extract_model_from_instance``; this model
+    re-declares their fields directly so it can also carry presentation metadata.
 
-    :param hostname: The hostname of the machine to back up.
-    :type hostname: NonEmptyStr
-    :param task_name: Name of the restore task.
-    :type task_name: NonEmptyStr
-    :param service_id: Service identifier for the restore task.
-    :type service_id: NonEmptyStr | EmptyStrToNone = None
-    :param schema_id: Schema identifier for restore.
-    :type schema_id: NonEmptyStr | EmptyStrToNone
+    The per-``backup_type`` section visibility is expressed in the view layout
+    (``restore/views.py``), not as field-level gates: several mode-specific config
+    fields carry non-``None`` defaults (``myloader_threads``, ``xb_parallel``,
+    ``master_port``), so a field-level ``Forbidden`` gate would reject those
+    defaults on a cross-mode restore. Keeping the model permissive preserves the
+    legacy payload contract byte-for-byte.
+
+    ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
+    the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
+    markers drive only the ``GET /schema`` widgets, while the conditional,
+    404-tolerant resolution lives in ``deps.resolve_restore_entities``.
     """
 
-    hostname: NonEmptyStr
-    task_name: NonEmptyStr
-    service_id: NonEmptyStr | EmptyStrToNone = None
-    schema_id: NonEmptyStr | EmptyStrToNone = None
+    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
+    hostname: Annotated[
+        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
+    ]
+    backup_type: Annotated[
+        BackupType,
+        Choices((("M", "Mydumper"), ("X", "XtraBackup"), ("B", "Binlog"))),
+        Ui(label="Backup Type", section="Task"),
+    ]
+
+    backup_source: Annotated[NonEmptyStr, Ui(label="Backup Source", section="General")]
+    logging_dir: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Logging directory", section="General")
+    ] = None
+    port: Annotated[int | None, Ui(label="Port", section="General")] = None
+    custom_mysql_init_command: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="Custom MySQL init command", section="General"),
+    ] = None
+    ssh_user: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="SSH user", section="General")
+    ] = Field(default="percona")
+    ssh_port: Annotated[
+        int | EmptyStrToNone, Ui(label="SSH port", section="General")
+    ] = Field(default=22)
+    ssh_key: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="SSH key name", section="General")
+    ] = None
+    s3_tool: Annotated[S3Tool, Ui(label="S3 tool", section="General")] = S3Tool.S3CMD
+    gpg_password_file: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="GPG password file", section="General"),
+    ] = None
+
+    service_id: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), allow_custom=True),
+        Ui(label="Database Host", section="Mydumper"),
+    ] = None
+    schema_id: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        SchemaRef(allow_custom=True),
+        Ui(label="Database", section="Mydumper", depends_on="service_id"),
+    ] = None
+    local_path: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Local path", section="Mydumper")
+    ] = None
+    overwrite_tables: Annotated[
+        bool, Ui(label="Overwrite tables", section="Mydumper")
+    ] = False
+    myloader_threads: Annotated[
+        int | EmptyStrToNone, Ui(label="Myloader threads", section="Mydumper")
+    ] = Field(default=4)
+    myloader_extra_args: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="Myloader extra args", section="Mydumper"),
+    ] = None
+    skip_databases: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Skip databases", section="Mydumper")
+    ] = None
+    include_databases: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="Include databases", section="Mydumper"),
+    ] = None
+    pre_script: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Pre-script", section="Mydumper")
+    ] = None
+    post_script: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Post-script", section="Mydumper")
+    ] = None
+
+    skip_incrementals: Annotated[
+        bool, Ui(label="Skip incrementals", section="XtraBackup")
+    ] = False
+    datadir: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Data directory", section="XtraBackup")
+    ] = None
+    kill_mysql: Annotated[bool, Ui(label="Kill MySQL", section="XtraBackup")] = False
+    xb_prepare_memory: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="XtraBackup prepare memory", section="XtraBackup"),
+    ] = None
+    xb_parallel: Annotated[
+        int | EmptyStrToNone, Ui(label="XtraBackup parallel", section="XtraBackup")
+    ] = Field(default=4)
+    xtrabackup_bin_cmd: Annotated[
+        XtraBackupTool | EmptyStrToNone,
+        Ui(label="XtraBackup binary", section="XtraBackup"),
+    ] = None
+    restore_mycnf: Annotated[bool, Ui(label="Restore my.cnf", section="XtraBackup")] = (
+        False
+    )
+    incremental_dest_path: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="Incremental destination path", section="XtraBackup"),
+    ] = None
+    xtrabackup_restore_args: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="XtraBackup restore args", section="XtraBackup"),
+    ] = None
+    keyring_file_data: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="Keyring file data", section="XtraBackup"),
+    ] = None
+    xtrabackup_aes256_keyfile: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="XtraBackup AES-256 keyfile", section="XtraBackup"),
+    ] = None
+    slave_from_master: Annotated[
+        bool, Ui(label="Slave from master", section="XtraBackup")
+    ] = False
+    wait_for_catchup: Annotated[
+        bool, Ui(label="Wait for catchup", section="XtraBackup")
+    ] = False
+    master_ip: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Master IP", section="XtraBackup")
+    ] = None
+    master_port: Annotated[
+        int | EmptyStrToNone, Ui(label="Master port", section="XtraBackup")
+    ] = Field(default=3306)
+    master_user: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Master user", section="XtraBackup")
+    ] = None
+    master_password: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="Master password", section="XtraBackup"),
+    ] = None
+
+    start_file: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Start file", section="Binlog")
+    ] = None
+    start_position: Annotated[
+        int | EmptyStrToNone, Ui(label="Start position", section="Binlog")
+    ] = None
+    stop_file: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Stop file", section="Binlog")
+    ] = None
+    stop_position: Annotated[
+        int | EmptyStrToNone, Ui(label="Stop position", section="Binlog")
+    ] = None
+    use_sql_file: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Use SQL file", section="Binlog")
+    ] = None
+    binlog_restore_extra_args: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="Binlog restore extra args", section="Binlog"),
+    ] = None
+
+    @field_validator("backup_source")
+    @classmethod
+    def validate_backup_source_shell_safe(cls, value: str) -> str:
+        """Reject shell metacharacters in backup source (defense in depth)."""
+        return _validate_backup_source_shell_safe(value)
+
+
+class RestoresResponse(BaseTaskResponse):
+    """Represent a restore task API response.
+
+    Extend the standard task-response surface with the restore-specific
+    destination facts the detail view renders; the shared task identity,
+    status, audit, and anonymization fields come from
+    :class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.
+
+    :param backup_type: The backup type recorded in task config.
+    :param hostname: The executor hostname target.
+    :param host: The destination host recorded in task config.
+    :param port: The destination port recorded in task config.
+    """
+
+    backup_type: BackupType | None = None
+    hostname: str | None = None
+    host: str | None = None
+    port: int | None = None

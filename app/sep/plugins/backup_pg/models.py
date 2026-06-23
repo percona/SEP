@@ -19,10 +19,25 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, FutureDatetime, StringConstraints
+from annotated_types import Ge
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    FutureDatetime,
+    model_validator,
+    StringConstraints,
+)
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.framework.form_dsl import (
+    AppFormModel,
+    Choices,
+    HostRef,
+    ServiceRef,
+    Ui,
+)
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
@@ -68,33 +83,13 @@ class BackupConfigServer(BaseCaseInsensitiveModel):
     """Represent an individual server configuration.
 
     :param alias: A unique alias for the server.
-    :type alias: NonEmptyStr
     :param backup_type: The type of the backup.
-    :type backup_type: BackupType
     :param host: The hostname or address of the server.
-    :type host: NonEmptyStr
-    :param port: The port number used to connect to the host.
-    :type port: int | None
-    :param upload: A unique list of upload providers to use for the backup, if any.
-    :type upload: UniqueList[UploadProvider] | None
-    :param dir_encrypt_config: Specific configuration for the backup encryption.
-    :type dir_encrypt_config: DirEncryptConfig | None
     """
 
     alias: NonEmptyStr
     backup_type: str
     host: NonEmptyStr
-
-
-class BackupCreate(BackupConfigAll):
-    """Represent a Backup creation form with proper case-insensitive fields."""
-
-    task_name: NonEmptyStr
-    hostname: NonEmptyStr
-    service_id: int
-    backup_type: BackupType
-    stanza: SafeStanza
-    alert_on_fail: bool = False
 
 
 class BackupConfig(BaseCaseInsensitiveModel):
@@ -110,58 +105,129 @@ class BackupConfig(BaseCaseInsensitiveModel):
     server_list: list[BackupConfigServer]
 
 
-class BackupTaskWrite(BaseModel):
-    """Represent a JSON request body for creating a pgBackRest backup task.
+class BackupPgForm(AppFormModel):
+    """Define the model-first create/update body and schema source for backup_pg.
 
-    Mirrors :class:`BackupCreate` minus ``backup_type``, which the API handler
-    always sets to :attr:`BackupType.PGBACKREST` on create.
+    The single source of the JSON request body (the field types and defaults the
+    server validates) *and* the derived ``GET /schema`` form (driven by the
+    :class:`Ui` / reference / :class:`Choices` markers). Field set, types, and
+    model defaults match the JSON create contract; the form-display defaults that
+    differ from the model default (the pgBackRest tool paths, the default backup
+    type) are carried on ``Ui(default=...)`` so the runtime payload stays
+    unchanged while the schema renders those form defaults.
 
-    :param task_name: The name of the task to be created.
-    :type task_name: NonEmptyStr
-    :param hostname: The target Nomad executor host.
-    :type hostname: NonEmptyStr
-    :param service_id: The Inventory ID of the PostgreSQL service.
-    :type service_id: int
-    :param stanza: pgBackRest stanza name from pgbackrest.conf on the host (for example, ``sep-test``). Passed as ``--stanza`` to pgbackrest commands.
-    :type stanza: SafeStanza
-    :param alert_on_fail: If True, fire a PMM alert on task failure.
-    :type alert_on_fail: bool
-    :param logging_dir: Optional directory used by the payload for logs.
-    :type logging_dir: str | None
-    :param backup_dir: Required pgBackRest backup directory.
-    :type backup_dir: NonEmptyStr
-    :param pgbackrest_bin: Absolute path to the ``pgbackrest`` binary.
-    :type pgbackrest_bin: str | None
-    :param pgbackrest_config_file: Path to ``pgbackrest.conf`` on the host.
-    :type pgbackrest_config_file: str | None
-    :param pgbackrest_backup_type: ``incr`` or ``diff``.
-    :type pgbackrest_backup_type: PgBackRestBackupType | None
-    :param pgbackrest_datadir: Postgres data directory.
-    :type pgbackrest_datadir: str | None
-    :param pgbackrest_retention_full: Number of full backups to retain.
-    :type pgbackrest_retention_full: int | None
-    :param pgbackrest_retention_archive: Number of WAL archives to retain.
-    :type pgbackrest_retention_archive: int | None
-    :param pgbackrest_incremental_cycle: Cadence value for the INCR/FULL cycle.
-    :type pgbackrest_incremental_cycle: int | str | None
+    Field declaration order is load-bearing: it drives the derived form's
+    section and field order. ``backup_type`` is not a form field — the spec
+    builder injects :attr:`BackupType.PGBACKREST`. The ``alert_on_fail``
+    capability control is inherited from :class:`AppFormModel` (``Hidden``,
+    off-schema). ``extra="forbid"`` rejects unknown fields (for example a stale
+    FE submitting ``host`` / ``port``, which the payload pins itself).
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    task_name: NonEmptyStr
-    hostname: NonEmptyStr
-    service_id: int
-    stanza: SafeStanza
-    alert_on_fail: bool = False
-    logging_dir: str | None = None
-    backup_dir: NonEmptyStr
-    pgbackrest_bin: str | None = None
-    pgbackrest_config_file: str | None = None
-    pgbackrest_backup_type: PgBackRestBackupType | None = None
-    pgbackrest_datadir: str | None = None
-    pgbackrest_retention_full: int | None = None
-    pgbackrest_retention_archive: int | None = None
-    pgbackrest_incremental_cycle: int | str | None = None
+    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
+    hostname: Annotated[
+        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
+    ]
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=(ServiceTypeEnum.POSTGRESQL,)),
+        Ui(label="Database Service", section="Task"),
+    ]
+    stanza: Annotated[
+        SafeStanza,
+        Ui(
+            label="Stanza",
+            section="pgBackRest",
+            description=(
+                "pgBackRest stanza name as defined in pgbackrest.conf on the "
+                "host (e.g. ``sep-test``). Passed verbatim as ``--stanza`` to "
+                "every pgbackrest invocation."
+            ),
+        ),
+    ]
+    pgbackrest_backup_type: Annotated[
+        PgBackRestBackupType | None,
+        Choices(
+            (
+                (PgBackRestBackupType.INCR, "Incremental"),
+                (PgBackRestBackupType.DIFF, "Differential"),
+            )
+        ),
+        Ui(
+            label="pgBackRest Backup Type",
+            section="pgBackRest",
+            default=PgBackRestBackupType.INCR.value,
+        ),
+    ] = None
+    pgbackrest_bin: Annotated[
+        str | None,
+        Ui(
+            label="pgBackRest Binary",
+            section="pgBackRest",
+            default="/usr/bin/pgbackrest",
+            description="Absolute path to the pgbackrest binary on the host.",
+        ),
+    ] = None
+    pgbackrest_config_file: Annotated[
+        str | None,
+        Ui(
+            label="pgBackRest Config File",
+            section="pgBackRest",
+            default="/etc/pgbackrest.conf",
+            description="Path to the pgbackrest.conf used by the task.",
+        ),
+    ] = None
+    pgbackrest_datadir: Annotated[
+        str | None,
+        Ui(label="Postgres Data Directory", section="pgBackRest"),
+    ] = None
+    pgbackrest_retention_full: Annotated[
+        int | None,
+        Ge(0),
+        Ui(label="Full Backup Retention", section="pgBackRest"),
+    ] = None
+    pgbackrest_retention_archive: Annotated[
+        int | None,
+        Ge(0),
+        Ui(label="Archive Retention", section="pgBackRest"),
+    ] = None
+    pgbackrest_incremental_cycle: Annotated[
+        str | int | None,
+        Ui(
+            label="Incremental Cycle",
+            section="pgBackRest",
+            description=(
+                "Number of days, ``daily``, or a weekday name controlling "
+                "the FULL/INCR cycle window."
+            ),
+        ),
+    ] = None
+    logging_dir: Annotated[
+        str | None,
+        Ui(label="Logging Directory", section="pgBackRest"),
+    ] = None
+    backup_dir: Annotated[
+        NonEmptyStr,
+        Ui(label="Backup Directory", section="pgBackRest"),
+    ]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _blank_to_none(cls, data: Any) -> Any:
+        """Coerce empty-string submissions to ``None`` before field validation.
+
+        HTML form bodies submit ``""`` for unset optional fields where the JSON
+        API sends ``null``; normalising ``""`` to ``None`` lets this single model
+        validate both the JSON path and the legacy Jinja form path identically (a
+        blank required field still fails as ``None``).
+        """
+        if isinstance(data, dict):
+            return {
+                key: (None if value == "" else value) for key, value in data.items()
+            }
+        return data
 
 
 class BackupTaskBase(BaseModel):

@@ -79,6 +79,7 @@
           "description": "pgBackRest stanza name as defined in pgbackrest.conf on the host (e.g. ``sep-test``). Passed verbatim as ``--stanza`` to every pgbackrest invocation.",
           "label": "Stanza",
           "name": "stanza",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
           "required": true,
           "type": "string"
         },

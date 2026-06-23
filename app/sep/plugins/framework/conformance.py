@@ -33,6 +33,8 @@ from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from typing import Any, TYPE_CHECKING
 
+from pydantic import BaseModel
+
 from app.sep.plugins.framework.form_dsl import (
     check_form_conformance,
     derive_form_sections,
@@ -174,17 +176,41 @@ def _root_segment(path: str) -> str:
     return path.split(".", 1)[0].split("[", 1)[0]
 
 
+def _detail_response_model(app: "TaskExecutionApp") -> type[BaseModel]:
+    """Return the model the detail view renders against.
+
+    The detail route renders the explicit ``detail_response_model`` when set, else
+    the model inferred from a ``detail_response_builder``'s return annotation, else
+    the shared ``response_model`` — so a plugin whose detail response is richer than
+    its list response validates its detail-view paths against the richer model.
+
+    :param app: The migrated app whose detail surface is resolved.
+    :return: The response model the detail view's field paths resolve against.
+    """
+    if app.detail_response_model is not None:
+        return app.detail_response_model
+    if app.detail_response_builder is not None:
+        annotation = getattr(app.detail_response_builder, "__annotations__", {}).get(
+            "return"
+        )
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            return annotation
+    return app.response_model
+
+
 def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str]:
     """Return violations where a detail-view path's root is not a response field.
 
     Validate the root segment (before the first ``.``, stripped of any ``[N]``) of
-    every ``detail_view`` field path against ``app.response_model.model_fields``,
+    every ``detail_view`` field path against the detail model's ``model_fields``
+    (the explicit ``detail_response_model``, the detail builder's inferred model,
+    or the shared ``response_model`` — see :func:`_detail_response_model`),
     exempting paths rooted at ``data`` (the opaque task-payload dict whose
     sub-paths are free-form). ``list_view`` column keys are enforced at
     ``TaskExecutionApp`` construction instead, so they are not checked here.
 
     :param app: The migrated app whose detail-view paths are checked against its
-        response model.
+        detail response model.
     :return: One message per unknown root segment; empty when all resolve or when
         the app is a script-source app (it derives no model-first detail view).
     """
@@ -192,7 +218,8 @@ def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str
         return []
     if app.views.detail_view is None:
         return []
-    response_fields = set(app.response_model.model_fields)
+    detail_model = _detail_response_model(app)
+    response_fields = set(detail_model.model_fields)
     paths = [
         field.path
         for section in app.views.detail_view.sections
@@ -200,7 +227,7 @@ def check_view_fields_reference_real_fields(app: "TaskExecutionApp") -> list[str
     ]
     return [
         f"detail_view field {path!r} references {_root_segment(path)!r}, absent from "
-        f"{app.response_model.__name__}"
+        f"{detail_model.__name__}"
         for path in paths
         if _root_segment(path) != "data" and _root_segment(path) not in response_fields
     ]

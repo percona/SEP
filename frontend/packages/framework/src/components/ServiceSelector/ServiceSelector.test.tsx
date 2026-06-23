@@ -131,4 +131,75 @@ describe('ServiceSelector', () => {
     );
     await screen.findByText('No services available');
   });
+
+  describe('allow_custom (free-solo)', () => {
+    function CustomProbe() {
+      const methods = useForm<{ service: unknown }>({ defaultValues: { service: null } });
+      return (
+        <FormProvider {...methods}>
+          <ServiceSelector name="service" label="Service" allowCustom />
+          <output data-testid="service-value">{JSON.stringify(methods.watch('service'))}</output>
+        </FormProvider>
+      );
+    }
+
+    const value = () => screen.getByTestId('service-value').textContent;
+
+    it('commits the inventory id when a service is picked', async () => {
+      mocked.get.mockResolvedValueOnce(
+        makePage([
+          { id: 1, name: 'mysql-prod', type: 'mysql' },
+          { id: 2, name: 'pg-prod', type: 'postgresql' },
+        ]),
+      );
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.click(screen.getByLabelText('Service'));
+      await user.click(await screen.findByText('mysql-prod (mysql)'));
+      expect(value()).toBe('1');
+    });
+
+    it('commits a typed value as a string', async () => {
+      mocked.get.mockResolvedValueOnce(makePage([{ id: 1, name: 'mysql-prod', type: 'mysql' }]));
+      const client = makeClient();
+      const user = userEvent.setup();
+      render(
+        <Wrapper client={client}>
+          <CustomProbe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.type(screen.getByLabelText('Service'), 'external-svc');
+      expect(value()).toBe('"external-svc"');
+    });
+
+    it('back-compat: without allowCustom a typed value is not committed', async () => {
+      mocked.get.mockResolvedValueOnce(makePage([{ id: 1, name: 'mysql-prod', type: 'mysql' }]));
+      const client = makeClient();
+      const user = userEvent.setup();
+      function Probe() {
+        const methods = useForm<{ service: unknown }>({ defaultValues: { service: null } });
+        return (
+          <FormProvider {...methods}>
+            <ServiceSelector name="service" label="Service" />
+            <output data-testid="bc-value">{JSON.stringify(methods.watch('service'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      await waitFor(() => expect(mocked.get).toHaveBeenCalled());
+      await user.type(screen.getByLabelText('Service'), 'external-svc');
+      expect(screen.getByTestId('bc-value').textContent).toBe('null');
+    });
+  });
 });
