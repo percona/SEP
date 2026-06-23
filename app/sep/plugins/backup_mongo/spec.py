@@ -41,6 +41,7 @@ from app.sep.plugins.backup_mongo.models import (
     BackupConfigPITR,
     BackupConfigStorage,
     BackupCreate,
+    CompressionAlgorithm,
 )
 from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
@@ -66,7 +67,7 @@ def _build_pitr_config(form: BackupCreate) -> dict[str, Any]:
     return {
         "enabled": form.pitr_enabled,
         "oplogSpanMin": form.pitr_oplog_span_min,
-        "compression": form.pitr_compression,
+        "compression": form.pitr_compression or CompressionAlgorithm.GZIP.value,
     }
 
 

@@ -17,7 +17,11 @@
 
 import yaml
 
-from app.sep.plugins.backup_mongo.models import BackupCreate, BackupType
+from app.sep.plugins.backup_mongo.models import (
+    BackupCreate,
+    BackupType,
+    CompressionAlgorithm,
+)
 from app.sep.plugins.backup_mongo.spec import (
     BackupMongoResolved,
     build_backup_mongo_spec,
@@ -34,12 +38,13 @@ def _config(task: TaskWrite) -> dict:
 
 def _s3_form(**overrides: object) -> BackupCreate:
     """Build an S3-storage BackupCreate with the given field overrides."""
+    pitr_compression = overrides.pop("pitr_compression", "gzip")
     return BackupCreate(
         task_name="mongo-backup",
         hostname="mongo-host",
         service_id=1,
         backup_type=BackupType.PBM_CONFIG,
-        pitr_compression="gzip",
+        pitr_compression=pitr_compression,
         storage_type="s3",
         storage_s3_region="eu-west-1",
         storage_s3_bucket="backups",
@@ -97,6 +102,18 @@ def test_build_spec_s3_storage():
     assert config["storage"]["s3"]["bucket"] == "backups"
     assert config["storage"]["s3"]["endpointUrl"] == "https://s3.example.com"
     assert "filesystem" not in config["storage"]
+
+
+def test_build_spec_defaults_pitr_compression_when_omitted():
+    """Default PITR compression to gzip when pitr_compression is omitted."""
+    config = _config(
+        build_backup_mongo_spec(
+            _s3_form(pitr_compression=None),
+            BackupMongoResolved(),
+        )
+    )
+
+    assert config["pitr"]["compression"] == CompressionAlgorithm.GZIP.value
 
 
 def test_build_spec_omits_backup_block_when_no_options():
