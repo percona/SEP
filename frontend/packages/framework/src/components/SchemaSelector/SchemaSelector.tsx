@@ -65,19 +65,21 @@ export function SchemaSelector({
     | string
     | null
     | undefined;
-  const serviceId = extractId(parent);
+  const parentText = typeof parent === 'string' ? parent.trim() : '';
+  const parentIsCustom = Boolean(allowCustom) && parentText !== '';
+  const serviceId = parentIsCustom ? null : extractId(parent);
   // A parent that resolves to no inventory id but holds a non-empty string is a
   // free-typed (custom) parent value, not an absent one. A free-solo child can
   // still accept a typed value in that case (it just has no options to offer).
-  const parentIsCustom = serviceId === null && typeof parent === 'string' && parent.trim() !== '';
+  const parentResetKey = parentIsCustom ? `custom:${parentText}` : `id:${serviceId ?? 'none'}`;
 
-  const prevIdRef = useRef<number | null>(serviceId);
+  const prevParentKeyRef = useRef(parentResetKey);
   useEffect(() => {
-    if (prevIdRef.current !== serviceId) {
-      prevIdRef.current = serviceId;
+    if (prevParentKeyRef.current !== parentResetKey) {
+      prevParentKeyRef.current = parentResetKey;
       setValue(name, null, { shouldDirty: true, shouldValidate: false });
     }
-  }, [serviceId, name, setValue]);
+  }, [parentResetKey, name, setValue]);
 
   const { data: schemas = EMPTY_OPTIONS, isLoading, isError, error } = useSchemas({ serviceId });
 

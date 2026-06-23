@@ -241,6 +241,62 @@ describe('SchemaSelector', () => {
       await user.type(input, 'custom_schema');
       expect(screen.getByTestId('schema-value').textContent).toBe('"custom_schema"');
     });
+
+    it('treats a numeric custom parent string as custom (not an inventory id)', async () => {
+      const client = makeClient();
+      const user = userEvent.setup();
+      function NumericCustomParentProbe() {
+        const methods = useForm<{ service: unknown; schema: unknown }>({
+          defaultValues: { service: '42', schema: null },
+        });
+        return (
+          <FormProvider {...methods}>
+            <SchemaSelector name="schema" label="Schema" dependsOn="service" allowCustom />
+            <output data-testid="schema-value">{JSON.stringify(methods.watch('schema'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <NumericCustomParentProbe />
+        </Wrapper>,
+      );
+      const input = screen.getByLabelText('Schema');
+      expect(input).not.toBeDisabled();
+      expect(mocked.get).not.toHaveBeenCalled();
+      await user.type(input, 'custom_schema');
+      expect(screen.getByTestId('schema-value').textContent).toBe('"custom_schema"');
+    });
+
+    it('clears child value when parent custom value changes', async () => {
+      const client = makeClient();
+      const setServiceRef: { current: ((value: unknown) => void) | null } = { current: null };
+      function CustomParentChangeProbe() {
+        const methods = useForm<{ service: unknown; schema: unknown }>({
+          defaultValues: { service: 'custom-svc-a', schema: 'child-schema' },
+        });
+        setServiceRef.current = (value) => methods.setValue('service', value);
+        return (
+          <FormProvider {...methods}>
+            <SchemaSelector name="schema" label="Schema" dependsOn="service" allowCustom />
+            <output data-testid="schema-value">{JSON.stringify(methods.watch('schema'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <CustomParentChangeProbe />
+        </Wrapper>,
+      );
+      expect(screen.getByTestId('schema-value').textContent).toBe('"child-schema"');
+      await act(async () => {
+        setServiceRef.current?.('custom-svc-b');
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('schema-value').textContent).toBe('null');
+      });
+      expect(mocked.get).not.toHaveBeenCalled();
+    });
   });
 
   it('back-compat: without allowCustom a typed value is not committed', async () => {

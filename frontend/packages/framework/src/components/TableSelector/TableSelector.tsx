@@ -65,19 +65,21 @@ export function TableSelector({
     | string
     | null
     | undefined;
-  const schemaId = extractId(parent);
+  const parentText = typeof parent === 'string' ? parent.trim() : '';
+  const parentIsCustom = Boolean(allowCustom) && parentText !== '';
+  const schemaId = parentIsCustom ? null : extractId(parent);
   // A parent that resolves to no inventory id but holds a non-empty string is a
   // free-typed (custom) parent value, not an absent one. A free-solo child can
   // still accept a typed value in that case (it just has no options to offer).
-  const parentIsCustom = schemaId === null && typeof parent === 'string' && parent.trim() !== '';
+  const parentResetKey = parentIsCustom ? `custom:${parentText}` : `id:${schemaId ?? 'none'}`;
 
-  const prevIdRef = useRef<number | null>(schemaId);
+  const prevParentKeyRef = useRef(parentResetKey);
   useEffect(() => {
-    if (prevIdRef.current !== schemaId) {
-      prevIdRef.current = schemaId;
+    if (prevParentKeyRef.current !== parentResetKey) {
+      prevParentKeyRef.current = parentResetKey;
       setValue(name, null, { shouldDirty: true, shouldValidate: false });
     }
-  }, [schemaId, name, setValue]);
+  }, [parentResetKey, name, setValue]);
 
   const { data: tables = EMPTY_OPTIONS, isLoading, isError, error } = useTables({ schemaId });
 

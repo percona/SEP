@@ -243,6 +243,62 @@ describe('TableSelector', () => {
       await user.type(input, 'custom_table');
       expect(screen.getByTestId('table-value').textContent).toBe('"custom_table"');
     });
+
+    it('treats a numeric custom parent string as custom (not an inventory id)', async () => {
+      const client = makeClient();
+      const user = userEvent.setup();
+      function NumericCustomParentProbe() {
+        const methods = useForm<{ schema: unknown; table: unknown }>({
+          defaultValues: { schema: '42', table: null },
+        });
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="table" label="Table" dependsOn="schema" allowCustom />
+            <output data-testid="table-value">{JSON.stringify(methods.watch('table'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <NumericCustomParentProbe />
+        </Wrapper>,
+      );
+      const input = screen.getByLabelText('Table');
+      expect(input).not.toBeDisabled();
+      expect(mocked.get).not.toHaveBeenCalled();
+      await user.type(input, 'custom_table');
+      expect(screen.getByTestId('table-value').textContent).toBe('"custom_table"');
+    });
+
+    it('clears child value when parent custom value changes', async () => {
+      const client = makeClient();
+      const setSchemaRef: { current: ((value: unknown) => void) | null } = { current: null };
+      function CustomParentChangeProbe() {
+        const methods = useForm<{ schema: unknown; table: unknown }>({
+          defaultValues: { schema: 'custom-schema-a', table: 'child-table' },
+        });
+        setSchemaRef.current = (value) => methods.setValue('schema', value);
+        return (
+          <FormProvider {...methods}>
+            <TableSelector name="table" label="Table" dependsOn="schema" allowCustom />
+            <output data-testid="table-value">{JSON.stringify(methods.watch('table'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <CustomParentChangeProbe />
+        </Wrapper>,
+      );
+      expect(screen.getByTestId('table-value').textContent).toBe('"child-table"');
+      await act(async () => {
+        setSchemaRef.current?.('custom-schema-b');
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('table-value').textContent).toBe('null');
+      });
+      expect(mocked.get).not.toHaveBeenCalled();
+    });
   });
 
   it('back-compat: without allowCustom a typed value is not committed', async () => {
