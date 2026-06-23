@@ -211,8 +211,13 @@ class Plugin(BaseCaseInsensitiveModel):
         """
         if "api_router_path" in self.model_fields_set:
             return self
-        basename = self.module_name.rsplit(".", 1)[-1]
-        candidate_file = Path(__file__).parent / "plugins" / basename / "api_routes.py"
+        relative = self.module_name.removeprefix("app.sep.plugins.")
+        candidate_file = (
+            Path(__file__).parent
+            / "plugins"
+            / Path(*relative.split("."))
+            / "api_routes.py"
+        )
         if candidate_file.is_file():
             self.api_router_path = f"{self.module_name}.api_routes.router"
         return self
