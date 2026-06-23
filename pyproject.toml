@@ -326,6 +326,7 @@ env = [
 
 [tool.coverage.run]
 relative_files = true
+branch = true
 source = ["app"]
 omit = [
     "__init__.py",
