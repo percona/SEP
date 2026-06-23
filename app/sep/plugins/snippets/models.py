@@ -109,7 +109,11 @@ class SnippetResponse(BaseModel):
 
 
 def build_snippet_response(snippet: Snippet) -> SnippetResponse:
-    """Project a :class:`Snippet` into its API response shape."""
+    """Project a :class:`Snippet` into its API response shape.
+
+    :param snippet: The snippet ORM row to transform.
+    :return: The API response model mapped from ``snippet``.
+    """
     return SnippetResponse(
         filename=snippet.filename,
         title=snippet.title,
