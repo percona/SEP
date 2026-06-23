@@ -17,7 +17,7 @@
 
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, call, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import ClientResponse, ClientResponseError
@@ -72,6 +72,28 @@ def mock_get_version(mocker) -> AsyncMock:
     return mocker.patch(
         "app.sep.clients.pmm.PMMRemoteAPI.get_version", new_callable=AsyncMock
     )
+
+
+@pytest.fixture
+def captured_requests(mocker) -> tuple[list[dict], MagicMock]:
+    """Patch ``PMMRemoteAPI._request`` to capture calls at the HTTP boundary.
+
+    :return: A ``(captured, response)`` tuple where ``captured`` accumulates one
+        ``{"method", "path", "kwargs"}`` record per ``_request`` call and ``response``
+        is the shared :class:`ClientResponse` mock each call yields.
+    :rtype: tuple[list[dict], MagicMock]
+    """
+    captured: list[dict] = []
+    mock_response = MagicMock(spec=ClientResponse)
+    mock_response.raise_for_status = MagicMock()
+
+    @asynccontextmanager
+    async def fake_request(self_arg, method: str, path: str, **kwargs):
+        captured.append({"method": method, "path": path, "kwargs": kwargs})
+        yield mock_response
+
+    mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+    return captured, mock_response
 
 
 class TestAlertingHeaders:
@@ -551,24 +573,23 @@ class TestUpdateRule:
 
     @pytest.mark.asyncio
     async def test_update_rule_calls_delete_then_create_in_order(
-        self, mocker, pmm_remote_api: PMMRemoteAPI
+        self,
+        captured_requests: tuple[list[dict], MagicMock],
+        mock_get_version: AsyncMock,
+        pmm_remote_api: PMMRemoteAPI,
     ) -> None:
         """Test update_rule deletes the old rule then creates the new one, in order."""
-        expected_rule = AlertRule(
-            uid="new-uid",
-            title="Updated Rule",
-            labels={},
-            annotations={},
-            data=[],
+        captured, mock_response = captured_requests
+        mock_get_version.return_value = "3.0.0"
+        mock_response.json = AsyncMock(
+            return_value={
+                "uid": "new-uid",
+                "title": "Updated Rule",
+                "labels": {},
+                "annotations": {},
+                "data": [],
+            }
         )
-        manager = MagicMock()
-        delete_mock = AsyncMock()
-        create_mock = AsyncMock(return_value=expected_rule)
-        manager.attach_mock(delete_mock, "delete_rule")
-        manager.attach_mock(create_mock, "create_rule")
-
-        mocker.patch.object(PMMRemoteAPI, "delete_rule", delete_mock)
-        mocker.patch.object(PMMRemoteAPI, "create_rule", create_mock)
 
         result = await pmm_remote_api.update_rule(
             uid="old-uid",
@@ -581,39 +602,38 @@ class TestUpdateRule:
 
         assert isinstance(result, AlertRule)
         assert result.uid == "new-uid"
-        assert manager.mock_calls == [
-            call.delete_rule("old-uid"),
-            call.create_rule(
-                name="Updated Rule",
-                template_name="tmpl",
-                folder_uid="folder-1",
-                for_duration="10m",
-                group="group-1",
-                labels=None,
-                params=None,
-            ),
-        ]
+
+        # The delete-then-create ordering invariant is derived from the ordered
+        # sequence of real ``_request`` calls, not from patched subject methods.
+        expected_request_count = 2
+        assert len(captured) == expected_request_count
+
+        assert captured[0]["method"] == "DELETE"
+        assert captured[0]["path"] == "/graph/api/v1/provisioning/alert-rules/old-uid"
+        assert captured[0]["kwargs"].get("headers") == ALERTING_HEADERS
+
+        assert captured[1]["method"] == "POST"
+        assert captured[1]["path"] == "/v1/alerting/rules"
+        assert captured[1]["kwargs"].get("headers") == ALERTING_HEADERS
+        assert captured[1]["kwargs"].get("json") == {
+            "name": "Updated Rule",
+            "template_name": "tmpl",
+            "folder_uid": "folder-1",
+            "for": "10m",
+            "group": "group-1",
+        }
 
     @pytest.mark.asyncio
     async def test_update_rule_returns_none_when_recreate_yields_empty(
         self,
-        mocker,
-        mock_request: AsyncMock,
+        captured_requests: tuple[list[dict], MagicMock],
         mock_get_version: AsyncMock,
         pmm_remote_api: PMMRemoteAPI,
     ) -> None:
         """Test update_rule returns ``None`` when the recreate step gets no data."""
+        captured, mock_response = captured_requests
         mock_get_version.return_value = "3.0.0"
-        mock_request.return_value = {}
-
-        mock_response = MagicMock(spec=ClientResponse)
-        mock_response.raise_for_status = MagicMock()
-
-        @asynccontextmanager
-        async def fake_request(self_arg, method: str, path: str, **kwargs):
-            yield mock_response
-
-        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+        mock_response.json = AsyncMock(return_value={})
 
         result = await pmm_remote_api.update_rule(
             uid="old-uid",
@@ -808,19 +828,12 @@ class TestUpdateContactPoint:
 
     @pytest.mark.asyncio
     async def test_update_contact_point_puts_to_provisioning_endpoint(
-        self, mocker, pmm_remote_api: PMMRemoteAPI
+        self,
+        captured_requests: tuple[list[dict], MagicMock],
+        pmm_remote_api: PMMRemoteAPI,
     ) -> None:
         """Test update_contact_point sends a PUT with uid and alerting headers."""
-        mock_response = MagicMock(spec=ClientResponse)
-        mock_response.raise_for_status = MagicMock()
-        captured = []
-
-        @asynccontextmanager
-        async def fake_request(self_arg, method: str, path: str, **kwargs):
-            captured.append({"method": method, "path": path, "kwargs": kwargs})
-            yield mock_response
-
-        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
+        captured, mock_response = captured_requests
 
         await pmm_remote_api.update_contact_point(
             uid="cp-123",
@@ -843,20 +856,16 @@ class TestUpdateContactPoint:
 
     @pytest.mark.asyncio
     async def test_update_contact_point_raises_http_exception_on_error(
-        self, mocker, pmm_remote_api: PMMRemoteAPI
+        self,
+        captured_requests: tuple[list[dict], MagicMock],
+        pmm_remote_api: PMMRemoteAPI,
     ) -> None:
         """Test update_contact_point maps an upstream error to ``HTTPException``."""
         error_status = HTTP_409_CONFLICT
-        mock_response = MagicMock(spec=ClientResponse)
+        _captured, mock_response = captured_requests
         mock_response.raise_for_status = MagicMock(
             side_effect=_client_response_error(error_status)
         )
-
-        @asynccontextmanager
-        async def fake_request(self_arg, method: str, path: str, **kwargs):
-            yield mock_response
-
-        mocker.patch.object(PMMRemoteAPI, "_request", fake_request)
 
         with pytest.raises(HTTPException) as exc_info:
             await pmm_remote_api.update_contact_point(
