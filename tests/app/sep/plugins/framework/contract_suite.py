@@ -752,6 +752,23 @@ class DerivedRouterContractTests:
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
+    def test_delete_guard_409(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert a ``delete_guard`` dependency rejects the derived DELETE with 409.
+
+        Seed the *target* task RUNNING so the guard fires whether it checks the
+        single task (a per-task conflict guard) or any owned task.
+        """
+        if not getattr(self.app_def, "delete_guard", ()):
+            pytest.skip("no delete guard")
+        mock_task_api.seed_running(SEEDED_TASK_NAME, owner=self.app_def.owner)
+        base = app_base_url(self.app_def)
+
+        response = contract_client.delete(f"{base}/{SEEDED_TASK_NAME}")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
     def test_delete_204(self, contract_client: TestClient) -> None:
         """Assert ``DELETE /{detail}`` returns 204 and the task is gone afterward."""
         if not self.app_def.capabilities.delete:

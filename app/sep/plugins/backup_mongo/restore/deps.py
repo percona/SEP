@@ -17,13 +17,16 @@
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, HTTPException, status
 
-from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPInternalServerErrorException,
+    HTTPNotFoundException,
+)
 from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
@@ -39,19 +42,16 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.deps import _gathered_task_status
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.models import (
-    PbmForceResyncPayloadModel,
-    PbmListPayloadModel,
-    restore_leg_payload_models_from_form,
-    RestoreConfig,
-    RestoreConfigPayloadModel,
     RestoreCreate,
     RestoreDerivedTaskSummary,
-    RestoreLegPayloadModel,
     RestoreTaskDetailResponse,
     RestoreTaskGroupPayloads,
-    RestoreTaskLegModel,
     RestoreTaskResponse,
     RestoreTaskWrite,
+)
+from app.sep.plugins.backup_mongo.restore.spec import (
+    build_force_resync_payload,
+    build_restore_payloads,
 )
 from app.sep.plugins.framework import (
     batch_get_latest_statuses,
@@ -64,125 +64,12 @@ from app.sep.plugins.framework.cascade import (
 )
 from app.tasks.models import (
     Task,
-    TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
 
 logger = logging.getLogger(__name__)
-
-RESTORE_CONFIG_PAYLOAD_MARKER = "pbm_restore_config_payload"
-
-
-def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
-    """Build TaskWrite from typed leg descriptor."""
-    meta = {
-        "target": leg.target,
-        "config": leg.config_yaml,
-        "requirements": leg.requirements,
-    }
-    if leg.service_name is not None:
-        meta["_service_name"] = leg.service_name
-    data = {
-        "task": "run-python",
-        "meta": meta,
-        "payload": f"file://{Path(__file__).parent / leg.payload_name}",
-        **({"parent": leg.parent} if leg.parent is not None else {}),
-    }
-    return TaskWrite(
-        name=leg.name,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.RESTORE_MONGO,
-        data=data,
-    )
-
-
-def _build_restore_config_leg(
-    payload: RestoreConfigPayloadModel,
-) -> RestoreTaskLegModel:
-    """Build typed task leg for restore-config task."""
-    restore_config = RestoreConfig(
-        restore=payload.restore,
-        backup_source=payload.backup_source,
-        backup_type=payload.backup_type,
-        credentials_path=payload.credentials_path,
-    )
-    return RestoreTaskLegModel(
-        name=payload.task_name,
-        payload_name=RESTORE_CONFIG_PAYLOAD_MARKER,
-        target=payload.hostname,
-        requirements="packaging\nPyYAML",
-        config_yaml=yaml.dump(
-            restore_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
-            default_flow_style=False,
-            allow_unicode=True,
-        ),
-        service_name=payload.service_name,
-    )
-
-
-def _build_restore_leg(payload: RestoreLegPayloadModel) -> RestoreTaskLegModel:
-    """Build typed task leg for restore execution task."""
-    restore_config = RestoreConfig(
-        restore=None,  # Restore options already synced by config leg.
-        backup_source=payload.backup_source,
-        backup_type=payload.backup_type,
-        credentials_path=payload.credentials_path,
-    )
-    return RestoreTaskLegModel(
-        name=f"{payload.task_name}-{payload.backup_type}",
-        payload_name=payload.payload_script_name(),
-        target=payload.hostname,
-        requirements="packaging\nPyYAML",
-        config_yaml=yaml.dump(
-            restore_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
-            default_flow_style=False,
-            allow_unicode=True,
-        ),
-        parent=payload.task_name,
-        service_name=payload.service_name,
-    )
-
-
-def _build_pbm_list_leg(payload: PbmListPayloadModel) -> RestoreTaskLegModel:
-    """Build typed task leg for pbm-list helper task."""
-    config_dict = (
-        {"credentials_path": payload.credentials_path}
-        if payload.credentials_path
-        else {}
-    )
-    return RestoreTaskLegModel(
-        name=f"{payload.task_name}-pbm-list",
-        payload_name="pbm_list_payload",
-        target=payload.hostname,
-        config_yaml=yaml.dump(config_dict, default_flow_style=False)
-        if config_dict
-        else "",
-        parent=payload.task_name,
-        service_name=payload.service_name,
-    )
-
-
-def _build_pbm_force_resync_leg(
-    payload: PbmForceResyncPayloadModel,
-) -> RestoreTaskLegModel:
-    """Build typed task leg for pbm-force-resync helper task."""
-    config_dict = (
-        {"credentials_path": payload.credentials_path}
-        if payload.credentials_path
-        else {}
-    )
-    return RestoreTaskLegModel(
-        name=f"{payload.task_name}-pbm-force-resync",
-        payload_name="pbm_force_resync_payload",
-        target=payload.hostname,
-        config_yaml=yaml.dump(config_dict, default_flow_style=False)
-        if config_dict
-        else "",
-        parent=payload.task_name,
-        service_name=payload.service_name,
-    )
 
 
 async def _resolve_service_name(
@@ -225,29 +112,6 @@ async def _resolve_service_name(
     return service.name
 
 
-def build_restore_payloads(
-    form: RestoreCreate,
-    service_name: str | None,
-) -> RestoreTaskGroupPayloads:
-    """Build restore config, restore, list and optional force-resync payloads."""
-    leg_models = restore_leg_payload_models_from_form(form, service_name)
-
-    config_task = _task_write_from_leg(_build_restore_config_leg(leg_models.config))
-    restore_task = _task_write_from_leg(_build_restore_leg(leg_models.restore))
-    pbm_list_task = _task_write_from_leg(_build_pbm_list_leg(leg_models.pbm_list))
-    force_resync_task = (
-        _task_write_from_leg(_build_pbm_force_resync_leg(leg_models.force_resync))
-        if leg_models.force_resync is not None
-        else None
-    )
-    return RestoreTaskGroupPayloads(
-        config_task=config_task,
-        restore_task=restore_task,
-        pbm_list_task=pbm_list_task,
-        force_resync_task=force_resync_task,
-    )
-
-
 async def build_restore_config_task_payload(
     form: Annotated[RestoreCreate, Form()],
     inventory_api: InventoryAPI,
@@ -281,8 +145,7 @@ async def build_pbm_force_resync_task_payload(
 ) -> TaskWrite:
     """Build task payload for pbm config --force-resync command (physical restores only)."""
     service_name = await _resolve_service_name(form, inventory_api)
-    payload = PbmForceResyncPayloadModel.from_form(form, service_name)
-    return _task_write_from_leg(_build_pbm_force_resync_leg(payload))
+    return build_force_resync_payload(form, service_name)
 
 
 def _parse_restore_config_options(restore_config: dict[str, Any]) -> dict[str, Any]:
@@ -731,7 +594,7 @@ async def build_restore_mongo_api_detail_response(
     )
     parent_status = _gathered_task_status(gather_results[0])
     child_results = gather_results[1:]
-    derived_tasks: list[RestoreDerivedTaskSummary] = []
+    derived_tasks = []
 
     for child_detail in child_results:
         if isinstance(child_detail, BaseException) or child_detail is None:
@@ -840,9 +703,8 @@ async def delete_restore_task_group(
         failed = [
             (failure.task_name, str(failure.exception)) for failure in result.failures
         ]
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Partial delete failure; orphaned tasks: {failed}",
+        raise HTTPInternalServerErrorException(
+            detail=f"Partial delete failure; orphaned tasks: {failed}"
         )
 
 

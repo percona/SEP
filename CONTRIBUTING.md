@@ -93,6 +93,10 @@ This ensures that your code adheres to our linting and formatting standards befo
 
 We enforce code style guidelines using [Ruff](https://docs.astral.sh/ruff/). The rules are defined in the [pyproject.toml](https://github.com/percona/SEP/blob/main/pyproject.toml) file.
 
+- **Type checking** (opt-in):
+
+Because the project is fully type-annotated, you can check the annotations locally with [`ty`](https://github.com/astral-sh/ty) (Astral's type checker) by running `make typecheck`. It is **not** enforced in CI or pre-commit yet, so it is safe to run on demand and will currently report a backlog of existing diagnostics.
+
 - **Docstrings**:
 
 Use [reStructuredText (rST) docstrings](https://peps.python.org/pep-0287/) compatible with [Sphinx](https://www.sphinx-doc.org/en/master/usage/domains/python.html) for documentation.

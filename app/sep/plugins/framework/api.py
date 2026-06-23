@@ -721,17 +721,21 @@ def _register_delete_route(
     *,
     get_task: Callable[..., Awaitable[Task]],
     detail_path: str,
+    extra_deps: Sequence[params.Depends] = (),
 ) -> None:
     """Register the derived ``DELETE /{detail}`` route (``204``) on ``router``.
 
     The handler resolves the task by name (404 on unknown / wrong owner) and
     deletes it upstream — the plain cascade-free delete shared by the standard
     task plugins. A plugin needing cascade semantics supplies a full
-    ``delete_handler`` override instead.
+    ``delete_handler`` override instead; a plugin needing only a guard (for
+    example a running-task conflict check) passes it via ``extra_deps``.
 
     :param router: The plugin router to register the delete route on.
     :param get_task: The task-by-name dependency owning the path parameter.
     :param detail_path: The ``/{detail}`` route template the DELETE mounts on.
+    :param extra_deps: Extra route dependencies (guards) appended after the auth
+        guard, never replacing it.
     """
 
     async def _delete(
@@ -746,7 +750,7 @@ def _register_delete_route(
         summary="Delete",
         status_code=status.HTTP_204_NO_CONTENT,
         response_model_by_alias=True,
-        dependencies=[IsApiAuthenticated],
+        dependencies=[IsApiAuthenticated, *extra_deps],
     )
 
 
@@ -767,12 +771,14 @@ def _register_mutation_routes(
     update_extra_deps: Sequence[params.Depends],
     delete_enabled: bool,
     delete_handler: Callable[..., Awaitable[Any]] | None,
+    delete_extra_deps: Sequence[params.Depends],
 ) -> None:
     """Register the ``PUT`` / ``DELETE`` routes, derived or handler-overridden.
 
     A supplied handler always wins (the cascade escape hatch); otherwise the
     capability flag drives the standard derived default — the create-mirroring PUT
-    (guarded by ``update_extra_deps``) and the plain fetch-then-delete DELETE.
+    (guarded by ``update_extra_deps``) and the plain fetch-then-delete DELETE
+    (guarded by ``delete_extra_deps``).
 
     :param router: The plugin router to register the mutation routes on.
     :param plugin_schema: The schema seeding any auto-derived model name.
@@ -790,10 +796,23 @@ def _register_mutation_routes(
     :param update_extra_deps: Guards appended to the derived PUT after the auth guard.
     :param delete_enabled: Whether to derive the default DELETE when no handler is set.
     :param delete_handler: A full DELETE override, or ``None`` for the derived default.
-    :raises ValueError: If ``update_extra_deps`` are supplied alongside a full
-        ``update_handler`` or without the update capability; or if the derived PUT
-        is enabled without a ``create_payload`` to rebuild the body.
+    :param delete_extra_deps: Guards appended to the derived DELETE after the auth guard.
+    :raises ValueError: If ``update_extra_deps`` / ``delete_extra_deps`` are supplied
+        alongside a full ``update_handler`` / ``delete_handler`` or without the matching
+        capability; or if the derived PUT is enabled without a ``create_payload`` to
+        rebuild the body.
     """
+    if delete_extra_deps and delete_handler is not None:
+        raise ValueError(
+            "derive_crud_routes: delete_extra_deps attach to the derived DELETE; a "
+            "full delete_handler must declare its own signature dependencies instead — "
+            "drop delete_extra_deps or the delete_handler"
+        )
+    if delete_extra_deps and not delete_enabled:
+        raise ValueError(
+            "derive_crud_routes: delete_extra_deps need a derived DELETE to attach to; "
+            "enable the delete capability or drop delete_extra_deps"
+        )
     if update_extra_deps and update_handler is not None:
         raise ValueError(
             "derive_crud_routes: update_extra_deps attach to the derived PUT; a full "
@@ -845,7 +864,12 @@ def _register_mutation_routes(
             dependencies=[IsApiAuthenticated],
         )
     elif delete_enabled:
-        _register_delete_route(router, get_task=get_task, detail_path=detail_path)
+        _register_delete_route(
+            router,
+            get_task=get_task,
+            detail_path=detail_path,
+            extra_deps=delete_extra_deps,
+        )
 
 
 def _resolve_detail_target(
@@ -1003,6 +1027,7 @@ def derive_crud_routes(
     update_extra_deps: Sequence[params.Depends] = (),
     delete_enabled: bool = False,
     delete_handler: Callable[..., Awaitable[Any]] | None = None,
+    delete_extra_deps: Sequence[params.Depends] = (),
 ) -> APIRouter:
     """Build a plugin router with the standard schema + CRUD routes.
 
@@ -1223,6 +1248,7 @@ def derive_crud_routes(
         update_extra_deps=update_extra_deps,
         delete_enabled=delete_enabled,
         delete_handler=delete_handler,
+        delete_extra_deps=delete_extra_deps,
     )
 
     return router

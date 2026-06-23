@@ -19,6 +19,7 @@ import json
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
@@ -30,14 +31,22 @@ from app.tasks.periodic.crud import PeriodicTaskManager
 CELERY_TASK_NAME = "app.tasks.celery.execute_task_by_name"
 
 
-@pytest_asyncio.fixture
-async def periodic_tasks(celery_beat_session: AsyncSession) -> list[PeriodicTask]:
-    """Create multiple periodic tasks for testing."""
-    schedule = IntervalSchedule(every=10, period=Period.MINUTES)
-    celery_beat_session.add(schedule)
-    await celery_beat_session.flush()
+async def _seed_periodic_tasks(
+    session: AsyncSession, *, other_task: str
+) -> list[PeriodicTask]:
+    """Seed two SEP-managed periodic tasks plus one unmanaged row; return the managed rows.
 
-    tasks = []
+    The managed rows carry ``task_name`` values ``backup-daily`` / ``restore-weekly``;
+    the unmanaged row carries ``task_name`` ``unrelated``. ``other_task`` sets the
+    unmanaged row's ``task`` column: the filter-query tests need it distinct from
+    ``CELERY_TASK_NAME`` so the task filter excludes it, while the real-PG
+    where-clause test needs it equal so only the ``kwargs`` predicate excludes it.
+    """
+    schedule = IntervalSchedule(every=10, period=Period.MINUTES)
+    session.add(schedule)
+    await session.flush()
+
+    managed = []
     for name in ("backup-daily", "restore-weekly"):
         task = PeriodicTask(
             name=f"periodic-{name}",
@@ -47,20 +56,29 @@ async def periodic_tasks(celery_beat_session: AsyncSession) -> list[PeriodicTask
             description=f"Test {name}",
             schedule_model=schedule,
         )
-        celery_beat_session.add(task)
-        tasks.append(task)
+        session.add(task)
+        managed.append(task)
 
-    other_task = PeriodicTask(
-        name="other-celery-task",
-        task="some.other.celery.task",
-        kwargs=json.dumps({"task_name": "unrelated"}),
-        enabled=True,
-        description="Not managed by SEP",
-        schedule_model=schedule,
+    session.add(
+        PeriodicTask(
+            name="other-celery-task",
+            task=other_task,
+            kwargs=json.dumps({"task_name": "unrelated"}),
+            enabled=True,
+            description="Not managed by SEP",
+            schedule_model=schedule,
+        )
     )
-    celery_beat_session.add(other_task)
+    await session.commit()
+    return managed
 
-    await celery_beat_session.commit()
+
+@pytest_asyncio.fixture
+async def periodic_tasks(celery_beat_session: AsyncSession) -> list[PeriodicTask]:
+    """Create multiple periodic tasks for testing."""
+    tasks = await _seed_periodic_tasks(
+        celery_beat_session, other_task="some.other.celery.task"
+    )
     for task in tasks:
         await celery_beat_session.refresh(task)
     return tasks
@@ -178,3 +196,34 @@ class TestPeriodicTaskManagerBuildWhereClause:
         assert "->>" in rendered
         assert "'task_name'" in rendered
         assert "IN (" in rendered.upper()
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_build_where_clause_executes_on_real_postgres(
+        self, postgres_celery_beat_session, mocker
+    ):
+        """Execute ``CAST(kwargs AS JSON) ->> 'task_name' IN (...)`` on real PostgreSQL.
+
+        Real-engine sibling of ``test_renders_cast_on_postgres``. Two things must
+        both hold: the helper dispatches on ``settings.CELERY.beat_dburi`` (not the
+        session bind), so ``beat_dburi`` is patched to a ``postgresql://`` URL; and
+        the clause must execute against the real PG engine. ``PeriodicTask.kwargs``
+        is a ``sa.Text()`` column, so the ``text``-to-``CAST``-to-``->>`` path runs
+        — the text-column regression surface — and only the matching rows come back.
+        """
+        mocker.patch.object(
+            settings.CELERY, "beat_dburi", "postgresql://user:pass@localhost/db"
+        )
+        await _seed_periodic_tasks(
+            postgres_celery_beat_session, other_task=CELERY_TASK_NAME
+        )
+
+        clause = PeriodicTaskManager.build_where_clause_by_task_names(
+            "backup-daily", "restore-weekly"
+        )
+        result = await postgres_celery_beat_session.exec(
+            select(PeriodicTask).where(clause)
+        )
+
+        names = {task.name for task in result.scalars().all()}
+        assert names == {"periodic-backup-daily", "periodic-restore-weekly"}

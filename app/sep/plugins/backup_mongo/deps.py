@@ -18,7 +18,6 @@
 import asyncio
 import json
 import logging
-from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
@@ -38,10 +37,6 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import (
-    BackupConfig,
-    BackupConfigBackup,
-    BackupConfigPITR,
-    BackupConfigStorage,
     BackupCreate,
     BackupDerivedTaskSummary,
     BackupTaskDetailResponse,
@@ -50,6 +45,10 @@ from app.sep.plugins.backup_mongo.models import (
     BackupType,
 )
 from app.sep.plugins.backup_mongo.schema import BACKUP_MONGO_DERIVED
+from app.sep.plugins.backup_mongo.spec import (
+    BackupMongoResolved,
+    build_backup_mongo_spec,
+)
 from app.sep.plugins.framework import (
     batch_get_latest_statuses,
     build_default_task_response,
@@ -59,7 +58,6 @@ from app.sep.plugins.framework import (
 )
 from app.tasks.models import (
     Task,
-    TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskOwner,
@@ -70,111 +68,6 @@ logger = logging.getLogger(__name__)
 
 PBM_LATEST_STATUS_TAIL_BYTES = 4096
 BACKUP_DERIVED_SUFFIXES = tuple(spec.name_suffix for spec in BACKUP_MONGO_DERIVED)
-
-
-def _build_pitr_config(form: BackupCreate) -> dict[str, Any]:
-    """Build PITR configuration from form data."""
-    return {
-        "enabled": form.pitr_enabled,
-        "oplogSpanMin": form.pitr_oplog_span_min,
-        "compression": form.pitr_compression,
-    }
-
-
-def _build_storage_config(form: BackupCreate) -> dict[str, Any]:
-    """Build storage configuration from form data."""
-    storage_config = {}
-    if form.storage_type == "s3":
-        storage_config = {
-            "region": form.storage_s3_region,
-            "bucket": form.storage_s3_bucket,
-            "prefix": form.storage_s3_prefix,
-            "endpointUrl": form.storage_s3_endpoint_url,
-        }
-    elif form.storage_type == "filesystem":
-        storage_config = {"path": form.storage_filesystem_path}
-
-    return {"type": form.storage_type, form.storage_type: storage_config}
-
-
-def _parse_backup_priority(priority_str: str) -> dict[str, float] | None:
-    """Parse backup priority YAML string and return as dictionary.
-
-    Parses YAML input (dict format) and returns it as a dictionary
-    mapping node addresses to priority values for PBM configuration.
-
-    :param priority_str: YAML string containing priority configuration.
-    :type priority_str: str
-    :return: Parsed priority dictionary mapping node to priority or None if parsing fails.
-    :rtype: dict[str, float] | None
-    """
-    try:
-        priority_parsed = yaml.safe_load(priority_str)
-    except yaml.YAMLError:
-        logger.warning("Failed to parse backup priority YAML: %s", priority_str)
-        return None
-    else:
-        if priority_parsed is None:
-            return None
-        if isinstance(priority_parsed, dict):
-            return {str(k): float(v) for k, v in priority_parsed.items()}
-        logger.warning(
-            "Priority must be a dictionary/mapping, got: %s", type(priority_parsed)
-        )
-        return None
-
-
-def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
-    """Build backup configuration dictionary from form data.
-
-    :param form: The form data containing backup configuration fields.
-    :type form: BackupCreate
-    :return: A dictionary containing backup configuration settings such as priority,
-        compression, compression level, timeouts, oplog span, and parallel collections.
-        Returns an empty dictionary if no backup configuration fields are provided.
-    :rtype: dict[str, Any]
-    """
-    has_backup_config = any(
-        (
-            form.backup_priority,
-            form.backup_compression,
-            form.backup_compression_level is not None,
-            form.backup_timeouts_starting_status is not None,
-            form.backup_oplog_span_min is not None,
-            form.backup_num_parallel_collections is not None,
-        )
-    )
-
-    if not has_backup_config:
-        return {}
-
-    backup_config_dict = {}
-
-    if form.backup_priority:
-        priority_parsed = _parse_backup_priority(form.backup_priority)
-        if priority_parsed is not None:
-            backup_config_dict["priority"] = priority_parsed
-
-    if form.backup_compression:
-        backup_config_dict["compression"] = form.backup_compression
-
-    if form.backup_compression_level is not None:
-        backup_config_dict["compressionLevel"] = form.backup_compression_level
-
-    if form.backup_timeouts_starting_status is not None:
-        backup_config_dict["timeouts"] = {
-            "startingStatus": form.backup_timeouts_starting_status
-        }
-
-    if form.backup_oplog_span_min is not None:
-        backup_config_dict["oplogSpanMin"] = form.backup_oplog_span_min
-
-    if form.backup_num_parallel_collections is not None:
-        backup_config_dict["numParallelCollections"] = (
-            form.backup_num_parallel_collections
-        )
-
-    return backup_config_dict
 
 
 def backup_derived_task_names(parent_name: str) -> list[str]:
@@ -240,47 +133,10 @@ async def build_backup_task_payload(
             raise
         service = None
 
-    pitr = _build_pitr_config(form)
-    storage = _build_storage_config(form)
-    backup_config_dict = _build_backup_config_dict(form)
-
-    backup_config = BackupConfig(
-        storage=BackupConfigStorage.model_validate(storage),
-        pitr=BackupConfigPITR.model_validate(pitr),
-        backup=BackupConfigBackup.model_validate(backup_config_dict)
-        if backup_config_dict
-        else None,
-        credentials_path=form.credentials_path or None,
+    resolved = BackupMongoResolved(
+        service_name=service.name if service is not None else None
     )
-
-    requirements = "packaging\nPyYAML"
-
-    payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
-
-    meta = {
-        "config": yaml.dump(
-            backup_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
-            default_flow_style=False,
-            allow_unicode=True,
-        ),
-        "target": form.hostname,
-        "requirements": requirements,
-    }
-    if service is not None:
-        meta["_service_name"] = service.name
-
-    return TaskWrite(
-        name=form.task_name,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUP_MONGO,
-        data={
-            "task": "run-python",
-            "meta": meta,
-            "payload": f"file://{payload_path}",
-            "backup_type": form.backup_type,
-        },
-        alert_on_fail=form.alert_on_fail,
-    )
+    return build_backup_mongo_spec(form, resolved)
 
 
 async def build_backup_task_payload_from_form(
@@ -505,8 +361,8 @@ async def build_backup_mongo_api_detail_response(
     )
     parent_status = _gathered_task_status(gather_results[0])
     derived_results = gather_results[1:]
-    derived_tasks: list[BackupDerivedTaskSummary] = []
-    latest_pbm_status: str | None = None
+    derived_tasks = []
+    latest_pbm_status = None
 
     for derived_detail in derived_results:
         if isinstance(derived_detail, BaseException) or derived_detail is None:

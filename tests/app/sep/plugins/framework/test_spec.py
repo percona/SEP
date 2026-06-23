@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Cover the three-phase task-payload decomposition in ``framework/payload.py``.
+"""Cover the three-phase task-payload decomposition in ``framework/spec.py``.
 
 The envelope golden tests assert byte-uniformity with the canonical hand-written
 envelopes in ``checksums/deps.py`` (run-command) and ``backup_pg/deps.py``
@@ -44,7 +44,7 @@ from app.sep.plugins.framework.form_dsl import (
     ServiceRef,
     Ui,
 )
-from app.sep.plugins.framework.payload import (
+from app.sep.plugins.framework.spec import (
     assemble_envelope,
     build_command_args,
     resolve_refs,
