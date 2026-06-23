@@ -316,6 +316,50 @@ class TestDefinitionCollection:
         assert app.nav_order is None
 
 
+class TestScopedKeyDerivation:
+    """Tests for the module-path-derived scoped app key and its override."""
+
+    @staticmethod
+    def _patch_definition(mocker: MockerFixture, definition: BaseApp) -> None:
+        """Make ``import_module`` return a stub module exporting ``definition``."""
+        mocker.patch(
+            "app.sep.plugins.framework.registry.import_module",
+            return_value=SimpleNamespace(app=definition),
+        )
+
+    def test_nested_module_derives_scoped_key(self, mocker: MockerFixture) -> None:
+        """Derive a ``/``-joined scoped key from a nested ``MODULE_NAME``."""
+        self._patch_definition(
+            mocker, BaseApp(name="internal", uri_path="/mysql_backups/restores")
+        )
+        registry = build_app_registry([Plugin(module_name="mysql_backups.restore")])
+        assert registry.keys() == ["mysql_backups/restore"]
+
+    def test_top_level_module_keeps_single_segment_key(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Keep a top-level ``MODULE_NAME`` single-segment key unchanged."""
+        self._patch_definition(mocker, BaseApp(name="internal", uri_path="/checksums"))
+        registry = build_app_registry([Plugin(module_name="checksums")])
+        assert registry.keys() == ["checksums"]
+
+    def test_explicit_definition_key_overrides_derivation(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Honor an explicit ``key`` on the definition over the derived key."""
+        self._patch_definition(
+            mocker,
+            BaseApp(
+                key="mysql_backups/restores",
+                name="internal",
+                uri_path="/mysql_backups/restores",
+            ),
+        )
+        registry = build_app_registry([Plugin(module_name="mysql_backups.restore")])
+        assert registry.get("mysql_backups/restores") is not None
+        assert registry.get("mysql_backups/restore") is None
+
+
 class TestGetAppRegistry:
     """Tests for the lazy cached accessor over ``sep_settings.PLUGINS``."""
 
@@ -323,7 +367,10 @@ class TestGetAppRegistry:
         """The accessor builds a registry covering every configured plugin."""
         registry = get_app_registry()
         assert isinstance(registry, AppRegistry)
-        expected = [p.module_name.split(".")[-1] for p in sep_settings.PLUGINS]
+        expected = [
+            p.module_name.removeprefix("app.sep.plugins.").replace(".", "/")
+            for p in sep_settings.PLUGINS
+        ]
         assert registry.keys() == expected
 
     def test_result_is_cached(self) -> None:

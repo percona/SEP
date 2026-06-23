@@ -78,7 +78,22 @@ class AppRegistry:
         return self._by_key.get(key)
 
 
-def _synthesize_legacy_app(plugin: Plugin, key: str) -> BaseApp:
+def _derive_app_key(module_name: str) -> str:
+    """Derive the scoped app key from a plugin's full module path.
+
+    Strip the shared ``app.sep.plugins.`` package prefix and map the remaining
+    dotted path to a ``/``-joined key. Top-level modules stay single-segment
+    (``…mysql_backups`` -> ``mysql_backups``); nested sub-apps become scoped
+    (``…mysql_backups.restore`` -> ``mysql_backups/restore``), so the JSON mount
+    and admin toggle address the sub-app under its own namespace.
+
+    :param module_name: The plugin's full import path.
+    :return: The auto-derived scoped app key.
+    """
+    return module_name.removeprefix("app.sep.plugins.").replace(".", "/")
+
+
+def _synthesize_legacy_app(plugin: Plugin, auto_key: str) -> BaseApp:
     """Wrap a legacy ``Plugin`` settings entry as an implicit ``BaseApp``.
 
     Preserve the fail-fast ``TypeError`` that ``build_plugins_router`` raised
@@ -86,8 +101,7 @@ def _synthesize_legacy_app(plugin: Plugin, key: str) -> BaseApp:
 
     :param plugin: The legacy plugin settings entry.
     :type plugin: Plugin
-    :param key: The module basename used as the app key.
-    :type key: str
+    :param auto_key: The scoped app key derived from the module path.
     :return: The synthesized app.
     :rtype: BaseApp
     :raises TypeError: When ``api_router_path`` resolves to a non-``APIRouter``.
@@ -95,14 +109,14 @@ def _synthesize_legacy_app(plugin: Plugin, key: str) -> BaseApp:
     api_router = import_var(plugin.api_router_path) if plugin.api_router_path else None
     if api_router is not None and not isinstance(api_router, APIRouter):
         raise TypeError(
-            f"Plugin '{key}': '{plugin.api_router_path}' must resolve to an"
+            f"Plugin '{auto_key}': '{plugin.api_router_path}' must resolve to an"
             f" APIRouter, got {type(api_router).__name__}"
         )
     return BaseApp(
-        key=key,
-        name=plugin.name or key,
-        uri_path=str(plugin.uri_path) if plugin.uri_path else f"/{key}",
-        css_class=plugin.css_class or key,
+        key=auto_key,
+        name=plugin.name or auto_key,
+        uri_path=str(plugin.uri_path) if plugin.uri_path else f"/{auto_key}",
+        css_class=plugin.css_class or auto_key,
         sidebar=plugin.sidebar,
         group=plugin.group,
         nav_order=plugin.nav_order,
@@ -112,23 +126,24 @@ def _synthesize_legacy_app(plugin: Plugin, key: str) -> BaseApp:
     )
 
 
-def _bind_definition(definition: BaseApp, plugin: Plugin, key: str) -> BaseApp:
+def _bind_definition(definition: BaseApp, plugin: Plugin, auto_key: str) -> BaseApp:
     """Bind an exported ``BaseApp`` definition to its activation entry.
 
     Stamp the activation-list facts (``key``, ``enabled``) and let explicit
     legacy ``Plugin`` keys override the definition's descriptive metadata, so an
-    un-migrated ``settings.yaml`` entry keeps controlling the transition.
+    un-migrated ``settings.yaml`` entry keeps controlling the transition. A
+    definition that sets its own ``key`` keeps it; otherwise the module-derived
+    scoped key is stamped.
 
     :param definition: The app definition exported by the module.
     :type definition: BaseApp
     :param plugin: The activation entry for the module.
     :type plugin: Plugin
-    :param key: The module basename used as the app key.
-    :type key: str
+    :param auto_key: The scoped app key derived from the module path.
     :return: The bound app.
     :rtype: BaseApp
     """
-    overrides = {"key": key, "enabled": plugin.enabled}
+    overrides = {"key": definition.key or auto_key, "enabled": plugin.enabled}
     if plugin.name:
         overrides["name"] = plugin.name
         if definition.display_name == definition.name:
@@ -160,12 +175,12 @@ def build_app_registry(plugins: Iterable[Plugin]) -> AppRegistry:
     """
     apps = []
     for plugin in plugins:
-        key = plugin.module_name.split(".")[-1]
+        auto_key = _derive_app_key(plugin.module_name)
         definition = getattr(import_module(plugin.module_name), "app", None)
         if isinstance(definition, BaseApp):
-            apps.append(_bind_definition(definition, plugin, key))
+            apps.append(_bind_definition(definition, plugin, auto_key))
         else:
-            apps.append(_synthesize_legacy_app(plugin, key))
+            apps.append(_synthesize_legacy_app(plugin, auto_key))
     return AppRegistry(apps)
 
 

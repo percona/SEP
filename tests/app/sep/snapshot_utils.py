@@ -17,6 +17,7 @@
 
 import json
 import os
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -70,7 +71,9 @@ def collect_schema_refs(node: Any, found: set[str]) -> None:
             collect_schema_refs(item, found)
 
 
-def slice_openapi_subtree(openapi: dict[str, Any], prefix: str) -> dict[str, Any]:
+def slice_openapi_subtree(
+    openapi: dict[str, Any], prefix: str, child_prefixes: Iterable[str] = ()
+) -> dict[str, Any]:
     """Return the ``{paths, components.schemas}`` subtree for one plugin ``prefix``.
 
     Select every path equal to ``prefix`` or nested under ``prefix + "/"``,
@@ -78,17 +81,28 @@ def slice_openapi_subtree(openapi: dict[str, Any], prefix: str) -> dict[str, Any
     schema set is self-contained. The ``resolved`` set keeps the walk
     cycle-safe for self-referential or mutually-recursive models.
 
+    Exclude any path owned by a more-specific nested sub-app listed in
+    ``child_prefixes`` so a parent app whose URL prefix is a prefix of a scoped
+    sub-app's does not over-capture it (``/api/plugins/mysql_backups`` must not
+    absorb the ``/api/plugins/mysql_backups/restore/…`` routes that belong to
+    the separately keyed ``mysql_backups/restore`` app).
+
     :param openapi: The full OpenAPI document to slice.
     :type openapi: dict[str, Any]
     :param prefix: The ``/api/plugins/{key}`` path prefix to select.
     :type prefix: str
+    :param child_prefixes: ``/api/plugins/{key}`` prefixes of nested sub-apps to
+        exclude from this slice.
+    :type child_prefixes: Iterable[str]
     :return: A subtree holding the selected ``paths`` and their referenced schemas.
     :rtype: dict[str, Any]
     """
+    children = tuple(child_prefixes)
     paths = {
         path: item
         for path, item in openapi.get("paths", {}).items()
-        if path == prefix or path.startswith(prefix + "/")
+        if (path == prefix or path.startswith(prefix + "/"))
+        and not any(path == c or path.startswith(c + "/") for c in children)
     }
     all_schemas = openapi.get("components", {}).get("schemas", {})
     needed = set[str]()

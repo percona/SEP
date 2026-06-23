@@ -81,6 +81,7 @@ default:
         CSS_CLASS: archive
         NAV_ORDER: 11
       - MODULE_NAME: mysql_backups
+      - MODULE_NAME: mysql_backups.restore
       - NAME: Checksums
         MODULE_NAME: checksums
         URI_PATH: /checksums

@@ -61,7 +61,6 @@ from app.core.utils.fields import (
     RelativeDirectoryPathField,
     StrHttpUrl,
     StrImportableAttribute,
-    StrImportableModule,
     TimedeltaSeconds,
     UniqueList,
     URIPath,
@@ -87,7 +86,6 @@ class Plugin(BaseCaseInsensitiveModel):
     :type name: str | None
     :param module_name: The name of the module associated with the plugin. This field is
         automatically prefixed with ``app.sep.plugins.`` during validation.
-    :type module_name: StrImportableModule
     :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
@@ -122,7 +120,7 @@ class Plugin(BaseCaseInsensitiveModel):
     """
 
     name: str | None = None
-    module_name: StrImportableModule
+    module_name: str
     uri_path: HttpUrl | URIPath = ""
     css_class: str = ""
     sidebar: bool = True
@@ -163,6 +161,28 @@ class Plugin(BaseCaseInsensitiveModel):
             v = "mysql_backups"
         return f"app.sep.plugins.{v}"
 
+    @field_validator("module_name")
+    @classmethod
+    def validate_module_exists(cls, v: str) -> str:
+        """Confirm the plugin module exists on disk without importing its parent.
+
+        ``importlib`` resolution executes the parent package's ``__init__``, which
+        imports the plugin route/model graph. For a nested module
+        (``mysql_backups.restore``) that both cycles back through ``app.sep.deps``
+        and registers cross-track models on the shared metadata while settings are
+        still constructing. A filesystem probe keeps construction import-free; the
+        real import happens when the registry is built, after settings are ready.
+
+        :param v: The resolved ``app.sep.plugins.``-prefixed module path.
+        :return: The validated module path.
+        :raises ValueError: When no module file or package exists at the path.
+        """
+        relative = v.removeprefix("app.sep.plugins.")
+        target = Path(__file__).parent / "plugins" / Path(*relative.split("."))
+        if (target / "__init__.py").is_file() or target.with_suffix(".py").is_file():
+            return v
+        raise ValueError(f"No module named {v}")
+
     @model_validator(mode="before")
     @classmethod
     def _set_default_from_name(cls, data: Any) -> Any:
@@ -191,8 +211,13 @@ class Plugin(BaseCaseInsensitiveModel):
         """
         if "api_router_path" in self.model_fields_set:
             return self
-        basename = self.module_name.rsplit(".", 1)[-1]
-        candidate_file = Path(__file__).parent / "plugins" / basename / "api_routes.py"
+        relative = self.module_name.removeprefix("app.sep.plugins.")
+        candidate_file = (
+            Path(__file__).parent
+            / "plugins"
+            / Path(*relative.split("."))
+            / "api_routes.py"
+        )
         if candidate_file.is_file():
             self.api_router_path = f"{self.module_name}.api_routes.router"
         return self

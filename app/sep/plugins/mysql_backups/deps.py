@@ -21,6 +21,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
+from app.sep.connectivity import get_check_connectivity_flag
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -253,3 +254,7 @@ async def get_backups_index_context(
         TaskOwner.BACKUPS,
         alert_on_fail_default=True,
     )
+
+
+BackupsIndexContext = Annotated[dict[str, Any], Depends(get_backups_index_context)]
+CheckConnectivityFlag = Annotated[bool, Depends(get_check_connectivity_flag)]
