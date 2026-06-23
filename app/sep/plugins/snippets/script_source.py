@@ -215,7 +215,10 @@ def _build_execution_meta(
     replaced them with the model's *coerced* dump (keyed by Python attribute name,
     ``executor_host`` excluded), so the full engine model is rebuilt with
     ``model_construct`` — never re-validated, whose alias-keyed fields would reject
-    the attribute-keyed dump.
+    the attribute-keyed dump. When the snippet's sudo option is optional, the user's
+    ``ScriptExecuteWrite.sudo`` choice is applied directly: the execution model keys
+    sudo on its ``-sudo-`` alias, which the plain ``sudo`` form input never
+    satisfies, so honouring the toggle requires setting the attribute by name.
 
     :param script: The script whose execution meta is being assembled.
     :param body: The validated execute request, ``args`` carrying the coerced dump.
@@ -234,8 +237,11 @@ def _build_execution_meta(
         raise HTTPForbiddenException(
             detail=f"Snippet {snippet.filename!r} cannot be executed.",
         )
+    construct_args = dict(body.args)
+    if snippet.sudo.is_optional:
+        construct_args[BaseSnippetArgs.sudo_field] = body.sudo
     execution_args = snippet.get_execution_model().model_construct(
-        executor_host=body.executor_host, **body.args
+        executor_host=body.executor_host, **construct_args
     )
     gate_failures = evaluate_visibility_gates(snippet, execution_args)
     if gate_failures:

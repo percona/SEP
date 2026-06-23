@@ -213,7 +213,7 @@ class TestBuildExecutionMeta:
         assert hook_meta.model_dump() == legacy_meta.model_dump()
 
     @pytest.mark.parametrize("requested_sudo", [True, False])
-    async def test_meta_matches_legacy_path_for_optional_sudo(
+    async def test_optional_sudo_toggle_is_honored(
         self,
         request_less_session: AsyncSession,
         create_snippet: Callable[..., Awaitable[Snippet]],
@@ -221,12 +221,12 @@ class TestBuildExecutionMeta:
         *,
         requested_sudo: bool,
     ) -> None:
-        """Apply the optional-sudo toggle identically to the legacy execute path.
+        """Apply the user's sudo toggle on an optional-sudo snippet.
 
-        The dynamic model keys ``sudo`` on the ``-sudo-`` alias with no
-        ``populate_by_name``, so a ``"sudo"`` arg is ignored and ``sudo_default``
-        is applied in both the legacy ``model_validate`` and the migrated
-        ``model_construct`` path — the migration must reproduce that exactly.
+        The execution model keys sudo on its ``-sudo-`` alias (no
+        ``populate_by_name``), so the plain ``ScriptExecuteWrite.sudo`` input is
+        re-attached by attribute name; the interpreter gains its ``sudo`` prefix
+        only when the caller opted in.
         """
         monkeypatch.setattr(
             snippets_settings, "SNIPPETS_BASE_URL", URL("https://sep.example")
@@ -239,13 +239,10 @@ class TestBuildExecutionMeta:
         )
         script = await snippet_source.load_script("sudo.sh")
         assert script.snippet.sudo.is_optional
-        body = ScriptExecuteWrite(
-            executor_host="host1", sudo=requested_sudo, args={"sudo": requested_sudo}
-        )
+        body = ScriptExecuteWrite(executor_host="host1", sudo=requested_sudo, args={})
 
-        hook_meta = snippet_source.build_execution_meta(
+        meta = snippet_source.build_execution_meta(
             script, _framework_processed_body(script, body)
         )
-        legacy_meta = _legacy_execution_meta(script.snippet, body)
 
-        assert hook_meta.model_dump() == legacy_meta.model_dump()
+        assert meta.interpreter.startswith("sudo ") == requested_sudo
