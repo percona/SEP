@@ -15,14 +15,12 @@
 
 """Define models for the Backups plugin."""
 
-import re
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any
 
 from annotated_types import Ge
 from pydantic import (
-    AfterValidator,
     BaseModel,
     ConfigDict,
     FutureDatetime,
@@ -56,35 +54,13 @@ class PgBackRestBackupType(EnumFieldMixin, StrEnum):
     DIFF = "diff"
 
 
-_STANZA_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]*$"
-
-
-def _validate_safe_stanza(value: str) -> str:
-    """Reject a stanza name that is not a safe pgBackRest identifier.
-
-    The pattern check rides on an :class:`AfterValidator` rather than a
-    :class:`StringConstraints` ``pattern`` so it does not surface as a
-    ``pattern`` on the derived ``GET /schema`` field (the form-DSL derivation
-    reads ``pattern`` off string constraints but not off validators), while the
-    JSON body still rejects an unsafe stanza exactly as before.
-
-    :param value: The submitted stanza name (already stripped, non-empty).
-    :return: The validated stanza name.
-    :raises ValueError: When the stanza is not an alphanumeric-led token of
-        letters, digits, hyphens, and underscores.
-    """
-    if not re.fullmatch(_STANZA_PATTERN, value):
-        raise ValueError(
-            "stanza must start with a letter or digit and contain only letters, "
-            "digits, hyphens, and underscores"
-        )
-    return value
-
-
 SafeStanza = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-    AfterValidator(_validate_safe_stanza),
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+    ),
 ]
 """Define a safe pgBackRest stanza name."""
 

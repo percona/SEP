@@ -17,8 +17,10 @@
 
 This definition replaces the hand-written JSON API router and schema: the
 registry discovers the exported ``app`` and mounts its derived router, which
-serves the byte-identical schema, list, detail, create, execute, and delete
-surfaces, plus a net-new ``PUT /{task_name}`` update route. Create and update are
+serves the schema, list, detail, create, execute, and delete surfaces, plus a
+net-new ``PUT /{task_name}`` update route. The derived ``GET /schema`` matches
+the legacy one except that it now surfaces the stanza name validation pattern,
+which the legacy hand-written schema enforced server-side only. Create and update are
 derived from the model-first
 :class:`~app.sep.plugins.backup_pg.models.BackupPgForm` through the ``run-python``
 pgBackRest spec builder, with the YAML-config-derived
