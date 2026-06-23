@@ -78,10 +78,10 @@ def mock_get_version(mocker) -> AsyncMock:
 def captured_requests(mocker) -> tuple[list[dict], MagicMock]:
     """Patch ``PMMRemoteAPI._request`` to capture calls at the HTTP boundary.
 
+    :param mocker: Pytest-mock fixture used to patch ``PMMRemoteAPI._request``.
     :return: A ``(captured, response)`` tuple where ``captured`` accumulates one
         ``{"method", "path", "kwargs"}`` record per ``_request`` call and ``response``
         is the shared :class:`ClientResponse` mock each call yields.
-    :rtype: tuple[list[dict], MagicMock]
     """
     captured: list[dict] = []
     mock_response = MagicMock(spec=ClientResponse)
