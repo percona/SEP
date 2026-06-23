@@ -15,21 +15,12 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { TableSelector } from '../../TableSelector';
-import type { TableField as TableFieldType } from '../types';
-
-interface TableFieldProps {
-  field: TableFieldType;
-}
-
-export function TableField({ field }: TableFieldProps) {
-  return (
-    <TableSelector
-      name={field.name}
-      label={field.label}
-      required={field.required}
-      dependsOn={field.depends_on}
-      allowCustom={field.allow_custom}
-    />
-  );
-}
+export { FreeSoloSelect } from './FreeSoloSelect';
+export type { FreeSoloSelectProps } from './FreeSoloSelect';
+export {
+  toDisplayValue,
+  normalizeChange,
+  type ReferenceOption,
+  type FreeSoloDisplayValue,
+  type FreeSoloCommittedValue,
+} from './freeSoloValue';

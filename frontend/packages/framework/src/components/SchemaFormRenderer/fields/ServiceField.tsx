@@ -30,6 +30,7 @@ export function ServiceField({ field }: ServiceFieldProps) {
       label={field.label}
       required={field.required}
       serviceTypes={field.service_types as readonly ServiceType[]}
+      allowCustom={field.allow_custom}
     />
   );
 }
