@@ -153,22 +153,6 @@ class BackupPgForm(AppFormModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @model_validator(mode="before")
-    @classmethod
-    def _blank_to_none(cls, data: Any) -> Any:
-        """Coerce empty-string submissions to ``None`` before field validation.
-
-        HTML form bodies submit ``""`` for unset optional fields where the JSON
-        API sends ``null``; normalising ``""`` to ``None`` lets this single model
-        validate both the JSON path and the legacy Jinja form path identically (a
-        blank required field still fails as ``None``).
-        """
-        if isinstance(data, dict):
-            return {
-                key: (None if value == "" else value) for key, value in data.items()
-            }
-        return data
-
     task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
     hostname: Annotated[
         NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
@@ -255,6 +239,22 @@ class BackupPgForm(AppFormModel):
         NonEmptyStr,
         Ui(label="Backup Directory", section="pgBackRest"),
     ]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _blank_to_none(cls, data: Any) -> Any:
+        """Coerce empty-string submissions to ``None`` before field validation.
+
+        HTML form bodies submit ``""`` for unset optional fields where the JSON
+        API sends ``null``; normalising ``""`` to ``None`` lets this single model
+        validate both the JSON path and the legacy Jinja form path identically (a
+        blank required field still fails as ``None``).
+        """
+        if isinstance(data, dict):
+            return {
+                key: (None if value == "" else value) for key, value in data.items()
+            }
+        return data
 
 
 class BackupTaskBase(BaseModel):
