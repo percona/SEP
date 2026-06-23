@@ -147,6 +147,14 @@ export default function AdminAppsPage() {
   const setAppState = useSetAppState();
   const forceDisable = useForceDisableApp();
   const { showError } = useNotification();
+  // Every app key with a transition mutation currently in flight. Tracking all
+  // pending mutations (not just the latest) keeps each row locked while its own
+  // request runs, even when several apps are toggled concurrently. Called
+  // unconditionally — before the admin guard — to keep the hook order stable.
+  const pendingKeys = useMutationState({
+    filters: { mutationKey: ADMIN_APP_MUTATION_KEY, status: 'pending' },
+    select: (mutation) => (mutation.state.variables as { appKey?: string } | undefined)?.appKey,
+  });
 
   if (!isAdmin) {
     return (
@@ -198,13 +206,6 @@ export default function AdminAppsPage() {
   };
 
   const apps = appsQuery.data ?? [];
-  // Every app key with a transition mutation currently in flight. Tracking all
-  // pending mutations (not just the latest) keeps each row locked while its own
-  // request runs, even when several apps are toggled concurrently.
-  const pendingKeys = useMutationState({
-    filters: { mutationKey: ADMIN_APP_MUTATION_KEY, status: 'pending' },
-    select: (mutation) => (mutation.state.variables as { appKey?: string } | undefined)?.appKey,
-  });
 
   return (
     <>
