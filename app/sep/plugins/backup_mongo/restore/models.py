@@ -17,7 +17,7 @@
 
 import logging
 from datetime import datetime
-from typing import Any, NamedTuple, Self
+from typing import Annotated, Any, NamedTuple, Self
 
 import yaml
 from pydantic import (
@@ -31,7 +31,16 @@ from pydantic import (
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
+from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.backup_mongo.models import BackupType
+from app.sep.plugins.framework.form_dsl import (
+    AppFormModel,
+    Choices,
+    FieldWidget,
+    HostRef,
+    ServiceRef,
+    Ui,
+)
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
@@ -290,6 +299,81 @@ def restore_config_restore_from_form(
     if not restore_config_dict:
         return None
     return RestoreConfigRestore.model_validate(restore_config_dict)
+
+
+class RestoreForm(AppFormModel):
+    """Define the model-first schema source for the MongoDB Restores ``GET /schema``.
+
+    The single source the derived ``GET /schema`` form renders from, driven by the
+    :class:`Ui` / reference / :class:`Choices` markers. It is *not* the JSON request
+    body — :class:`RestoreTaskWrite` is — and is never validated as one;
+    field-declaration order reproduces the schema's section and field order (Task,
+    Restore Options). The ``alert_on_fail`` capability control is inherited from
+    :class:`AppFormModel` (``Hidden``, off-schema).
+    """
+
+    task_name: Annotated[str, Ui(label="Task Name", section="Task")]
+    hostname: Annotated[str, HostRef(), Ui(label="Executor Host", section="Task")]
+    service_id: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MONGODB,)),
+        Ui(label="Database Service", section="Task"),
+    ] = None
+    backup_type: Annotated[
+        str,
+        Choices(
+            (
+                (BackupType.PBM_LOGICAL.value, "Logical"),
+                (BackupType.PBM_PHYSICAL.value, "Physical"),
+            )
+        ),
+        Ui(label="Backup Type", section="Task"),
+    ]
+    backup_source: Annotated[
+        str,
+        Ui(
+            label="Backup Source",
+            section="Task",
+            description="Backup name or timestamp (e.g. 2025-12-15T19:04:05Z)",
+        ),
+    ]
+    credentials_path: Annotated[
+        str | None,
+        Ui(
+            label="Credentials Path",
+            section="Task",
+            description="Optional path to MongoDB URI credentials on the Nomad node",
+        ),
+    ] = None
+    restore_batch_size: Annotated[
+        int | None, Ui(label="Batch Size", section="RestoreOptions")
+    ] = None
+    restore_num_insertion_workers: Annotated[
+        int | None, Ui(label="Insertion Workers", section="RestoreOptions")
+    ] = None
+    restore_num_parallel_collections: Annotated[
+        int | None, Ui(label="Parallel Collections", section="RestoreOptions")
+    ] = None
+    restore_num_download_workers: Annotated[
+        int | None, Ui(label="Download Workers", section="RestoreOptions")
+    ] = None
+    restore_max_download_buffer_mb: Annotated[
+        int | None, Ui(label="Max Download Buffer (MB)", section="RestoreOptions")
+    ] = None
+    restore_download_chunk_mb: Annotated[
+        float | None, Ui(label="Download Chunk Size (MB)", section="RestoreOptions")
+    ] = None
+    restore_mongod_location: Annotated[
+        str | None, Ui(label="Mongod Location", section="RestoreOptions")
+    ] = None
+    restore_mongod_location_map: Annotated[
+        str | None,
+        Ui(
+            label="Mongod Location Map (YAML)",
+            section="RestoreOptions",
+            widget=FieldWidget.TEXTAREA,
+        ),
+    ] = None
 
 
 class RestoreTaskWrite(BaseModel):
