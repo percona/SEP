@@ -41,6 +41,8 @@ export { SchemaSelector } from './components/SchemaSelector';
 export type { SchemaSelectorProps } from './components/SchemaSelector';
 export { TableSelector } from './components/TableSelector';
 export type { TableSelectorProps } from './components/TableSelector';
+export { FreeSoloSelect } from './components/FreeSoloSelect';
+export type { FreeSoloSelectProps } from './components/FreeSoloSelect';
 export { HostSelector, StandaloneHostSelector } from './components/HostSelector';
 export type { StandaloneHostSelectorProps } from './components/HostSelector';
 export {
@@ -70,6 +72,17 @@ export { ChainBuilder } from './components/ChainBuilder';
 export type { ChainBuilderProps, ChainValue, AvailableTask } from './components/ChainBuilder';
 export { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from './components/AlertOnFailField';
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
+export {
+  describePeriod,
+  formatRelativeTime,
+  formatAbsoluteTime,
+  selectSchedule,
+} from './components/ScheduledTasksPanel';
+export type { PeriodDescription } from './components/ScheduledTasksPanel';
+export { ScheduleCell } from './components/ScheduleCell';
+export type { ScheduleCellProps } from './components/ScheduleCell';
+export { ScheduleSummary } from './components/ScheduleSummary';
+export type { ScheduleSummaryProps } from './components/ScheduleSummary';
 export {
   useScheduledTasksForPlugin,
   useCreateScheduledTask,

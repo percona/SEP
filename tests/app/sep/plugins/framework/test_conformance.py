@@ -51,14 +51,12 @@ from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     derive_plugin_schema,
     FormLayout,
-    Hidden,
     SectionLayout,
     Ui,
 )
 from app.sep.plugins.framework.form_dsl import (
     check_form_conformance as _form_dsl_check_form_conformance,
 )
-from app.sep.plugins.framework.payload import ResolvedEntities, RunCommandSpec
 from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.plugins.framework.schema import (
     Capabilities,
@@ -68,6 +66,7 @@ from app.sep.plugins.framework.schema import (
     DetailView,
     ListView,
 )
+from app.sep.plugins.framework.spec import ResolvedEntities, RunCommandSpec
 from app.tasks.models import TaskHistoryStatusEnum, TaskOwner
 from tests.app.sep import snapshot_utils as su
 from tests.app.sep.plugins.framework.contract_suite import build_contract_client
@@ -99,6 +98,17 @@ class _CleanResponse(BaseModel):
 
     name: str
     status: TaskHistoryStatusEnum | None = None
+
+
+class _DetailResponse(_CleanResponse):
+    """Represent a detail response richer than the list response."""
+
+    host: str | None = None
+
+
+def _detail_builder(task: object, *, status: object = None) -> _DetailResponse:
+    """Return a synthetic detail response; the detector never invokes it."""
+    return _DetailResponse(name="x")
 
 
 class _BadSectionForm(AppFormModel):
@@ -223,10 +233,9 @@ def test_no_duplicate_control_silent_on_real_derived_schema_without_capability()
 
 
 class _HiddenControlForm(AppFormModel):
-    """Represent a create model that excludes the capability-rendered control."""
+    """Represent a create model that inherits the excluded capability-rendered control."""
 
     task_name: Annotated[str, Ui(label="Name", section="main")]
-    alert_on_fail: Annotated[bool, Hidden()] = False
 
 
 def test_no_duplicate_control_silent_when_control_excluded_from_schema():
@@ -332,16 +341,28 @@ def test_view_fields_clean_app():
     assert check_view_fields_reference_real_fields(_build_app()) == []
 
 
-def test_view_fields_flags_unknown_list_column():
-    """Assert a list column whose root segment is not a response field fires."""
+def test_view_fields_exempts_data_detail_paths():
+    """Assert a detail path rooted at the opaque ``data`` dict is exempt.
+
+    List-column keys are enforced at ``TaskExecutionApp`` construction now; the
+    detector only checks detail-view paths and leaves ``data.*`` sub-paths
+    free-form because ``data`` is an opaque task-payload dict.
+    """
     app = _build_app(
         views=Views(
             layout=_LAYOUT,
-            list_view=ListView(columns=[Column(key="ghost", label="Ghost")]),
-            detail_view=_DETAIL_VIEW,
+            list_view=_LIST_VIEW,
+            detail_view=DetailView(
+                sections=[
+                    DetailSection(
+                        title="X",
+                        fields=[DetailField(path="data.meta.command", label="C")],
+                    )
+                ]
+            ),
         )
     )
-    assert any("ghost" in w for w in check_view_fields_reference_real_fields(app))
+    assert check_view_fields_reference_real_fields(app) == []
 
 
 def test_view_fields_flags_unknown_detail_path():
@@ -377,6 +398,27 @@ def test_view_fields_validates_root_segment_only():
             ),
         )
     )
+    assert check_view_fields_reference_real_fields(app) == []
+
+
+def test_view_fields_resolve_against_detail_response_model():
+    """Resolve a detail-only field against the richer detail model."""
+    app = _build_app(
+        detail_response_builder=_detail_builder,
+        detail_response_model=_DetailResponse,
+        views=Views(
+            layout=_LAYOUT,
+            list_view=_LIST_VIEW,
+            detail_view=DetailView(
+                sections=[
+                    DetailSection(
+                        title="X", fields=[DetailField(path="host", label="H")]
+                    )
+                ]
+            ),
+        ),
+    )
+
     assert check_view_fields_reference_real_fields(app) == []
 
 

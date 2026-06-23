@@ -722,42 +722,50 @@ def _runtime_form_fields(model: type["AppFormModel"]) -> list[BaseField | OneOfG
 def derive_form_sections(
     model: type["AppFormModel"], layout: FormLayout
 ) -> list[FormSection]:
-    """Return the form sections derived from ``model`` grouped by ``layout``.
+    """Return the form sections derived from ``model``, ordered by ``model``.
 
-    Fields are grouped by :attr:`Ui.section`, ordered within a section by
-    :attr:`Ui.order` then declaration order, and the sections are ordered by
-    ``layout``. Section-scoped rules from the model's ``__form_rules__`` attach
-    to the matching section; a layout section's ``forbidden`` gates copy onto
+    Sections appear in the order each section's first field is declared on the
+    model; the matching ``layout`` entry supplies a section's title and non-order
+    metadata (``collapsible``, ``forbidden``, ...) by ``key``, but the layout's
+    tuple order is not authoritative. Fields are grouped by :attr:`Ui.section` and
+    ordered within a section by :attr:`Ui.order` then declaration order.
+    Section-scoped rules from the model's ``__form_rules__`` attach to the matching
+    section; a layout section's ``forbidden`` gates copy onto
     :attr:`~app.sep.plugins.framework.schema.FormSection.forbidden`.
 
     :param model: The create model carrying the field markers.
-    :param layout: The section layout naming and ordering the sections.
-    :return: The derived form sections in layout order.
+    :param layout: The section layout supplying each section's title and metadata.
+    :return: The derived form sections in field-declaration order.
     :raises ValueError: When a field names a section absent from ``layout``, or a
         layout section has no fields.
     """
     specs = _derive_field_specs(model)
-    layout_keys = {section.key for section in layout.sections}
+    layout_by_key = {section.key: section for section in layout.sections}
     for spec in specs:
-        if spec.section not in layout_keys:
+        if spec.section not in layout_by_key:
             raise ValueError(
                 f"field {spec.base_field.name!r} names section {spec.section!r}, "
-                f"which is absent from the form layout (known: {sorted(layout_keys)})"
+                f"which is absent from the form layout (known: {sorted(layout_by_key)})"
             )
 
-    rules = getattr(model, "__form_rules__", FormRules())
-    sections = []
+    section_order = list(dict.fromkeys(spec.section for spec in specs))
+    claimed_sections = set(section_order)
     for section_layout in layout.sections:
-        members = sorted(
-            (spec for spec in specs if spec.section == section_layout.key),
-            key=lambda spec: (spec.order, spec.index),
-        )
-        if not members:
+        if section_layout.key not in claimed_sections:
             raise ValueError(
                 f"layout section {section_layout.key!r} has no fields; remove it or "
                 "assign a field to it"
             )
-        section_rules = rules.sections.get(section_layout.key, SectionRules())
+
+    rules = getattr(model, "__form_rules__", FormRules())
+    sections = []
+    for section_key in section_order:
+        section_layout = layout_by_key[section_key]
+        members = sorted(
+            (spec for spec in specs if spec.section == section_key),
+            key=lambda spec: (spec.order, spec.index),
+        )
+        section_rules = rules.sections.get(section_key, SectionRules())
         sections.append(
             FormSection(
                 title=section_layout.title,

@@ -33,6 +33,7 @@ PYTEST_WORKERS?=auto
 # the coverage instrumentation tax; CI and coverage-main keep the default COV=1.
 COV?=1
 PYTEST_PATHS?=tests/
+PYTEST_MARKERS?=
 
 # WeasyPrint loads native libs (libgobject-2.0, libpango, libcairo) at import
 # time. Homebrew installs them under /opt/homebrew/lib (Apple Silicon) or
@@ -80,6 +81,12 @@ format: venv
 ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
+
+# Opt-in, local-only static type checking (Astral ty). Deliberately NOT part of `lint`,
+# pre-commit, or CI: a non-zero exit from the existing type-error backlog is expected and
+# must not gate any automated check.
+typecheck: venv
+	@"${VENV_BIN}"/ty check app
 
 djlint: venv
 	@"${VENV_BIN}"/djlint .
@@ -166,7 +173,7 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) ${PYTEST_PATHS}
+	@$(DARWIN_DYLD) "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
 
 changelog-add:
 ifndef TICKET
@@ -242,4 +249,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list

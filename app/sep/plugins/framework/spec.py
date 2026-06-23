@@ -22,11 +22,13 @@ form plus resolved entities into a :class:`RunCommandSpec` / :class:`RunPythonSp
 (a pure function), and :func:`assemble_envelope` maps a spec plus the resolved
 service to a :class:`~app.tasks.models.TaskWrite` whose ``data`` dict is
 byte-uniform with the canonical hand-written envelopes in
-``checksums/deps.py`` (run-command) and ``backup_pg/deps.py`` (run-python).
+``checksums/deps.py`` (run-command) and ``backup_pg/spec.py`` (run-python).
 """
 
+import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from string import Template
 from typing import Any, cast, Protocol
 
 from app.core.exceptions import HTTPBadRequestException
@@ -42,6 +44,7 @@ from app.sep.inventory import CreatedEntity, CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
+    ArgFormat,
     find_ref_marker,
     HostRef,
     SchemaRef,
@@ -56,7 +59,9 @@ __all__ = [
     "RunCommandSpec",
     "RunPythonSpec",
     "assemble_envelope",
+    "build_command_args",
     "resolve_refs",
+    "validate_arg_formats",
 ]
 
 _REF_ENTITY_TYPES = {
@@ -346,3 +351,114 @@ def assemble_envelope(
         data=data,
         alert_on_fail=alert_on_fail,
     )
+
+
+def _find_arg_format(name: str, metadata: list[Any]) -> ArgFormat | None:
+    """Return the field's single :class:`ArgFormat` marker, or ``None``.
+
+    :param name: The field name, used in the error message.
+    :param metadata: The field's ``FieldInfo.metadata`` list.
+    :return: The ``ArgFormat`` marker, or ``None`` when the field declares none.
+    :raises ValueError: When the field declares more than one ``ArgFormat`` marker.
+    """
+    found = [item for item in metadata if isinstance(item, ArgFormat)]
+    if len(found) > 1:
+        raise ValueError(
+            f"field {name!r} declares {len(found)} ArgFormat markers; at most one "
+            "is allowed per field"
+        )
+    return found[0] if found else None
+
+
+def _resolve_arg_template(name: str, annotation: Any, marker: ArgFormat) -> str:
+    """Return the field's explicit ``ArgFormat`` template, or derive it from the name.
+
+    A templateless marker (``template is None``) derives the conventional shape from
+    the field name and type: a non-``bool`` field becomes the value arg
+    ``--<kebab-field-name>=${value}`` and a ``bool`` field becomes the flag
+    ``--<kebab-field-name>``. A field declares an explicit template only when its CLI
+    spelling diverges from its name.
+
+    :param name: The field name, kebab-cased for the derived template.
+    :param annotation: The field's resolved type, selecting the value-vs-flag shape.
+    :param marker: The field's ``ArgFormat`` marker.
+    :return: The explicit template, or the derived default when none was given.
+    """
+    if marker.template is not None:
+        return marker.template
+    flag = "--" + name.replace("_", "-")
+    return flag if annotation is bool else f"{flag}=${{value}}"
+
+
+def build_command_args(form: AppFormModel) -> list[str]:
+    """Assemble the run-command argument list from the form's ``ArgFormat`` markers.
+
+    Walk the form's fields in declaration order and emit all value args before all
+    flag args, each group in field-declaration order. A value arg (template
+    containing ``${value}``) is emitted only when its field value is truthy, with
+    the value stringified, ``shlex.quote``'d, and substituted into the template; a
+    flag arg (template without ``${value}``) is emitted verbatim only when its
+    field value is ``True``. The ``shlex.quote`` → ``safe_substitute`` →
+    ``shlex.split`` round-trip keeps a whitespace-bearing value a single token. A
+    templateless ``ArgFormat`` derives ``--<kebab-field-name>=${value}`` for a
+    non-``bool`` field and ``--<kebab-field-name>`` for a ``bool`` field.
+
+    :param form: The validated create form whose fields carry the ``ArgFormat``
+        markers.
+    :return: The ordered argument list (value args then flag args), ready to follow
+        any per-app prefix and be ``shlex.join``'d into ``meta.args``.
+    """
+    value_args = []
+    flag_args = []
+    for name, field_info in type(form).model_fields.items():
+        marker = _find_arg_format(name, field_info.metadata)
+        if marker is None:
+            continue
+        value = getattr(form, name)
+        resolved = _resolve_arg_template(name, field_info.annotation, marker)
+        template = Template(resolved)
+        if "value" in template.get_identifiers():
+            if value:
+                substituted = template.safe_substitute(value=shlex.quote(str(value)))
+                value_args.extend(shlex.split(substituted))
+        elif value is True:
+            flag_args.extend(shlex.split(resolved))
+    return value_args + flag_args
+
+
+def validate_arg_formats(model: type[AppFormModel]) -> None:
+    """Reject an ``ArgFormat`` template :func:`build_command_args` would silently drop.
+
+    Check each field's :class:`ArgFormat` marker against the value-vs-flag contract
+    the assembler enforces: a template may carry only the ``${value}`` placeholder,
+    and a flag template (no placeholder) must sit on a ``bool`` field. A typo'd
+    placeholder or a flag template on a non-``bool`` field would otherwise fall
+    through to the flag branch and be emitted only when the value is ``True`` —
+    dropping the argument with no error — so this surfaces the misconfiguration at
+    app construction instead of silently at task-creation time. A templateless
+    marker derives its template from the field name and type, so it is always
+    well-formed; only an explicit template can violate the contract.
+
+    :param model: The create model whose fields' ``ArgFormat`` markers are validated.
+    :raises ValueError: When a template carries a placeholder other than ``value``,
+        or when a flag template is declared on a non-``bool`` field.
+    """
+    for name, field_info in model.model_fields.items():
+        marker = _find_arg_format(name, field_info.metadata)
+        if marker is None:
+            continue
+        template = _resolve_arg_template(name, field_info.annotation, marker)
+        identifiers = set(Template(template).get_identifiers())
+        unsupported = identifiers - {"value"}
+        if unsupported:
+            raise ValueError(
+                f"field {name!r} ArgFormat template {template!r} uses "
+                f"unsupported placeholder(s) {sorted(unsupported)}; a value arg uses "
+                f"exactly ${{value}} and a flag uses none"
+            )
+        if not identifiers and field_info.annotation is not bool:
+            raise ValueError(
+                f"field {name!r} ArgFormat template {template!r} declares no "
+                "value placeholder, so it is a flag emitted only when the field is "
+                "True; a flag arg requires a bool field"
+            )

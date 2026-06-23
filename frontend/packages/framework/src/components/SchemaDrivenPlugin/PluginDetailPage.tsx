@@ -52,6 +52,7 @@ import {
 import { resolvePath } from '../../utils/resolvePath';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
+import { ScheduleSummary } from '../ScheduleSummary';
 import { useExecuteTask, useTaskHistoryByNames } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
@@ -256,6 +257,10 @@ interface OverviewTabProps {
   schema: PluginSchema;
   task: Record<string, unknown>;
   hiddenFields?: string[];
+  /** Owning plugin name; enables the generic schedule summary. */
+  pluginName?: string;
+  /** Route to the plugin's Schedules screen (the add-a-schedule target). */
+  scheduleHref?: string;
   children?: ReactNode;
 }
 
@@ -289,8 +294,16 @@ function DetailViewSectionCard({
   );
 }
 
-function OverviewTab({ schema, task, hiddenFields = [], children }: OverviewTabProps) {
+function OverviewTab({
+  schema,
+  task,
+  hiddenFields = [],
+  pluginName,
+  scheduleHref,
+  children,
+}: OverviewTabProps) {
   const connectivityWarning = task.connectivity_warning;
+  const taskName = typeof task.name === 'string' && task.name.trim() ? task.name.trim() : undefined;
   const columns = schema.list_view!.columns;
   const schemaHiddenFields = schema.list_view?.overview_hidden_fields;
 
@@ -328,6 +341,10 @@ function OverviewTab({ schema, task, hiddenFields = [], children }: OverviewTabP
           <TaskOverviewDetailField key={key} label={formatLabel(key)} value={value} />
         ))}
       </SectionCard>
+
+      {schema.capabilities?.scheduling && pluginName && taskName && scheduleHref && (
+        <ScheduleSummary pluginName={pluginName} taskName={taskName} scheduleHref={scheduleHref} />
+      )}
 
       {schema.capabilities?.stats && (
         <StatsCard
@@ -886,7 +903,13 @@ export function PluginDetailPage({
         <Route
           index
           element={
-            <OverviewTab schema={schema} task={task} hiddenFields={suppressDetailKeys}>
+            <OverviewTab
+              schema={schema}
+              task={task}
+              hiddenFields={suppressDetailKeys}
+              pluginName={pluginName}
+              scheduleHref={`${routeBase}/schedule`}
+            >
               {renderTaskDetailChildren?.({
                 task: task as Record<string, unknown>,
                 pluginName,

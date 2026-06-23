@@ -80,7 +80,7 @@ jobs:
       - name: Install test dependencies
         run: poetry sync --no-root --with syncmysql
       - name: Run tests
-        run: make test
+        run: make test PYTEST_MARKERS='not postgres'
       - name: Generate coverage comment data
         id: coverage_comment
         if: matrix.python == '3.11.9' && github.event_name == 'pull_request'
@@ -93,6 +93,35 @@ jobs:
         with:
           name: python-coverage-comment-action
           path: python-coverage-comment-action.txt
+
+  test_postgres:
+    name: test (postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sep
+          POSTGRES_PASSWORD: sep
+          POSTGRES_DB: sep_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    env:
+      SEP_TEST_POSTGRES_DSN: postgresql+asyncpg://sep:sep@localhost:5432/sep_test
+    steps:
+      - name: Checkout codebase
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Setup Python
+        uses: ./.github/actions/setup-python-job
+        with:
+          python-version: "3.11.9"
+          cache: poetry
+      - name: Install test dependencies
+        run: poetry sync --no-root --with syncmysql,postgresql
+      - name: Run PostgreSQL tests
+        run: make test PYTEST_MARKERS='postgres' PYTEST_WORKERS=0 COV=0
 
   build:
     strategy:

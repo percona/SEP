@@ -1186,3 +1186,75 @@ class TestTaskHistoryLogManagerStreamKeysAndReverse:
             ("run-script", TaskLogType.STDERR, "stderr"),
             ("run-script", TaskLogType.STDOUT, "stdout"),
         ]
+
+
+class TestTaskHistoryLogManagerStderrTailChunks:
+    """Test ``TaskHistoryLogManager.get_stderr_tail_chunks``."""
+
+    async def _append_stderr(
+        self,
+        session: AsyncSession,
+        task_history_id: int,
+        payload: bytes,
+        producer_offset_after: int,
+    ) -> None:
+        """Append a STDERR chunk via the writer."""
+        await TaskHistoryLogWriter.append(
+            session,
+            task_history_id,
+            source="run-script",
+            stream=TaskLogType.STDERR,
+            new_bytes=payload,
+            force_flush=True,
+            producer_offset_after=producer_offset_after,
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_chunk_contents_newest_first(
+        self, session: AsyncSession
+    ) -> None:
+        """Return STDERR chunk contents ordered newest-first by insertion id.
+
+        Callers reconstruct chronological order by reversing; the manager only
+        guarantees newest-first ordering of the raw chunk contents.
+        """
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await self._append_stderr(session, history.id, b"first error", 11)
+        await self._append_stderr(session, history.id, b"last error", 21)
+
+        chunks = await TaskHistoryLogManager.get_stderr_tail_chunks(session, history.id)
+        assert chunks == ["last error", "first error"]
+
+    @pytest.mark.asyncio
+    async def test_respects_limit(self, session: AsyncSession) -> None:
+        """Return only the newest ``limit`` STDERR chunks."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await self._append_stderr(session, history.id, b"c1", 2)
+        await self._append_stderr(session, history.id, b"c2", 4)
+        await self._append_stderr(session, history.id, b"c3", 6)
+
+        chunks = await TaskHistoryLogManager.get_stderr_tail_chunks(
+            session, history.id, limit=2
+        )
+        assert chunks == ["c3", "c2"]
+
+    @pytest.mark.asyncio
+    async def test_ignores_stdout_chunks(self, session: AsyncSession) -> None:
+        """Consider only STDERR chunks; ignore STDOUT."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _seed_chunk(session, history.id, payload=b"stdout only")
+
+        chunks = await TaskHistoryLogManager.get_stderr_tail_chunks(session, history.id)
+        assert chunks == []
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_chunks(self, session: AsyncSession) -> None:
+        """Return an empty list when the task history has no chunks at all."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+
+        chunks = await TaskHistoryLogManager.get_stderr_tail_chunks(session, history.id)
+        assert chunks == []

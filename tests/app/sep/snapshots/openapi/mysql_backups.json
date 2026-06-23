@@ -2,14 +2,14 @@
   "components": {
     "schemas": {
       "BackupCreate": {
-        "description": "Represent a Backup creation form with proper case-insensitive fields.\n\n:param hardlink: Whether to use hardlinks for full backups to save space.\n:type hardlink: bool\n:param compress: Whether to enable compression for backup data.\n:type compress: bool\n:param check_disk_space: Whether to check disk space before starting the backup.\n:type check_disk_space: bool\n:param encrypt: Whether to enable encryption for backup data.\n:type encrypt: bool\n:param encrypt_using_tmpdir: Whether to use a temporary directory for encryption operations.\n:type encrypt_using_tmpdir: bool\n:param post_run_encrypt: Whether to encrypt backup right after completion.\n:type post_run_encrypt: bool\n:param only_if_running_replica: Only perform backup if the server is a replica.\n:type only_if_running_replica: bool\n:param only_if_read_only: Only perform backup if the server is in read-only mode.\n:type only_if_read_only: bool\n:param logging_dir: Directory where logs are stored.\n:type logging_dir: NonEmptyStr | EmptyStrToNone\n:param backup_dir: Directory where backups are stored.\n:type backup_dir: NonEmptyStr | EmptyStrToNone\n:param defaults_file: Path to the MySQL defaults file.\n:type defaults_file: NonEmptyStr | EmptyStrToNone\n:param compression_algorithm: Compression algorithm to use.\n:type compression_algorithm: CompressionAlgorithm | EmptyStrToNone\n:param mydumper_daily_purge: Number of days to keep daily mydumper backups.\n:type mydumper_daily_purge: int | EmptyStrToNone\n:param mydumper_weekly_purge: Number of weeks to keep weekly mydumper backups.\n:type mydumper_weekly_purge: int | EmptyStrToNone\n:param mydumper_dump_triggers: Whether to include database triggers with mydumper.\n:type mydumper_dump_triggers: bool\n:param mydumper_desync_pxc: Whether to desynchronize PXC node before mydumper backup.\n:type mydumper_desync_pxc: bool\n:param mydumper_use_numa: Whether to enable NUMA support during mydumper backup.\n:type mydumper_use_numa: bool\n:param mydumper_extra_args: Additional command-line arguments for mydumper.\n:type mydumper_extra_args: str | EmptyStrToNone\n:param mydumper_verbose: mydumper log verbosity level (0 silent … 3 info).\n    Unset falls back to the payload default of ``3``.\n:type mydumper_verbose: int | EmptyStrToNone\n:param use_ftwrl_guardian: Whether to use FTWRL guardian to manage locks during backup.\n:type use_ftwrl_guardian: bool\n:param xtrabackup_copies: Number of backup copies for xtrabackup.\n:type xtrabackup_copies: int | EmptyStrToNone\n:param xtrabackup_kill_queries: Whether to terminate long-running queries.\n:type xtrabackup_kill_queries: bool\n:param xtrabackup_kill_queries_timeout: Maximum time (in seconds) to wait before terminating queries.\n:type xtrabackup_kill_queries_timeout: int | EmptyStrToNone\n:param xtrabackup_kill_query_type: Type of queries to avoid backup interruptions (select or all).\n:type xtrabackup_kill_query_type: Literal[\"select\", \"all\"] | EmptyStrToNone\n:param xtrabackup_verify: Whether to verify backup after creation.\n:type xtrabackup_verify: bool\n:param xtrabackup_prepare: Whether to prepare the backup for restore.\n:type xtrabackup_prepare: bool\n:param xtrabackup_prepare_memory: Amount of memory allocated during prepare phase.\n:type xtrabackup_prepare_memory: NonEmptyStr | EmptyStrToNone\n:param xtrabackup_desync_pxc: Whether to desynchronize PXC node during xtrabackup.\n:type xtrabackup_desync_pxc: bool\n:param xtrabackup_rsync: Whether to use rsync for file copying in xtrabackup.\n:type xtrabackup_rsync: bool\n:param xtrabackup_replica_info: Whether to include replica info in xtrabackup.\n:type xtrabackup_replica_info: bool\n:param xtrabackup_defaults_file: Path to the defaults file for xtrabackup.\n:type xtrabackup_defaults_file: NonEmptyStr | EmptyStrToNone\n:param xtrabackup_extra_args: Additional command-line arguments passed to xtrabackup.\n:type xtrabackup_extra_args: NonEmptyStr | EmptyStrToNone\n:param xtrabackup_incremental_method: Method used for incremental backup.\n:type xtrabackup_incremental_method: Literal[\"less_space\", \"fast_restore\"] | EmptyStrToNone\n:param xtrabackup_incremental_cycle: Frequency of incremental backups.\n:type xtrabackup_incremental_cycle: Literal[\"daily\", \"weekly\", \"2\", \"3\", \"4\", \"5\", \"6\", \"7\"] | EmptyStrToNone\n:param xtrabackup_local_ssh_destination: SSH destination for storing backups remotely.\n:type xtrabackup_local_ssh_destination: NonEmptyStr | EmptyStrToNone\n:param xtrabackup_aes256_keyfile: Path to AES-256 encryption key file.\n:type xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone\n:param xtrabackup_stop_replica: Whether to stop the replica before xtrabackup.\n:type xtrabackup_stop_replica: bool\n:param xtrabackup_lock_ddl: Whether to lock DDL operations during backup.\n:type xtrabackup_lock_ddl: bool\n:param xtrabackup_quiet: Whether to drop per-file copy progress lines from the backup log.\n:type xtrabackup_quiet: bool\n:param xtrabackup_bin_cmd: Backup tool to use.\n:type xtrabackup_bin_cmd: Literal[\"xtrabackup\", \"mariadb-backup\", \"innobackupex\"] | EmptyStrToNone\n:param binlog_prefix: Prefix used in binlog backup naming.\n:type binlog_prefix: NonEmptyStr | EmptyStrToNone\n:param binlog_purge_days: Number of days to retain binlogs before purging.\n:type binlog_purge_days: int | EmptyStrToNone\n:param binlog_extra_args: Extra arguments for binlog backup command.\n:type binlog_extra_args: NonEmptyStr | EmptyStrToNone\n:param binlog_compress_cmd: Command used to compress binlog backups.\n:type binlog_compress_cmd: NonEmptyStr | EmptyStrToNone\n:param binlog_cmd: Command used to create binlog backups.\n:type binlog_cmd: NonEmptyStr | EmptyStrToNone\n:param binlog_run_all: Whether to run all binlog backup types.\n:type binlog_run_all: bool\n:param s3_bucket: S3 bucket where backups will be stored.\n:type s3_bucket: NonEmptyStr | EmptyStrToNone\n:param s3_storage_class: S3 storage class (e.g., STANDARD, GLACIER).\n:type s3_storage_class: NonEmptyStr | EmptyStrToNone\n:param skip_s3_safety_check: Whether to disable safety checks before uploading to S3.\n:type skip_s3_safety_check: bool\n:param upload_quiet: Whether to suppress per-file upload log entries. Errors are always logged.\n:type upload_quiet: bool\n:param awscli_s3_upload_extra_args: Extra arguments to pass to AWS S3 upload (ExtraArgs dict).\n    Example: \"ChecksumAlgorithm=CRC32C\".\n:type awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone\n:param rsync_path: Remote destination path for Rsync transfers.\n:type rsync_path: NonEmptyStr | EmptyStrToNone\n:param task_name: The name of the backup task.\n:type task_name: NonEmptyStr\n:param hostname: The hostname of the machine to back up.\n:type hostname: NonEmptyStr\n:param service_id: The identifier of the related service.\n:type service_id: int\n:param backup_type: The type of backup to perform.\n:type backup_type: BackupType\n:param encryption_recipient: The recipient used for encryption.\n:type encryption_recipient: NonEmptyStr | EmptyStrToNone\n:param binlog_alternative_host: Optional alternative host for binlog operations.\n:type binlog_alternative_host: NonEmptyStr | EmptyStrToNone\n:param alias: Optional alias for the server in the SERVERS_LIST section.\n:type alias: NonEmptyStr | EmptyStrToNone\n:param alert_on_fail: If True, send an alert if the task fails. Defaults to False.\n:type alert_on_fail: bool\n:param upload: Selected upload providers for backup artifacts.\n:type upload: list[UploadProvider]",
+        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the order here reproduces the hand-written schema\nbyte-for-byte. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption requires/forbidden pair, and the per-mode bool ``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
         "properties": {
-          "ALERT_ON_FAIL": {
+          "alert_on_fail": {
             "default": false,
             "title": "Alert On Fail",
             "type": "boolean"
           },
-          "ALIAS": {
+          "alias": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -21,7 +21,7 @@
             ],
             "title": "Alias"
           },
-          "AWSCLI_S3_UPLOAD_EXTRA_ARGS": {
+          "awscli_s3_upload_extra_args": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -33,7 +33,7 @@
             ],
             "title": "Awscli S3 Upload Extra Args"
           },
-          "BACKUP_DIR": {
+          "backup_dir": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -45,10 +45,10 @@
             ],
             "title": "Backup Dir"
           },
-          "BACKUP_TYPE": {
+          "backup_type": {
             "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupType"
           },
-          "BINLOG_ALTERNATIVE_HOST": {
+          "binlog_alternative_host": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -60,7 +60,7 @@
             ],
             "title": "Binlog Alternative Host"
           },
-          "BINLOG_CMD": {
+          "binlog_cmd": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -72,7 +72,7 @@
             ],
             "title": "Binlog Cmd"
           },
-          "BINLOG_COMPRESS_CMD": {
+          "binlog_compress_cmd": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -84,7 +84,7 @@
             ],
             "title": "Binlog Compress Cmd"
           },
-          "BINLOG_EXTRA_ARGS": {
+          "binlog_extra_args": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -96,7 +96,7 @@
             ],
             "title": "Binlog Extra Args"
           },
-          "BINLOG_PREFIX": {
+          "binlog_prefix": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -108,7 +108,7 @@
             ],
             "title": "Binlog Prefix"
           },
-          "BINLOG_PURGE_DAYS": {
+          "binlog_purge_days": {
             "anyOf": [
               {
                 "type": "integer"
@@ -119,22 +119,22 @@
             ],
             "title": "Binlog Purge Days"
           },
-          "BINLOG_RUN_ALL": {
+          "binlog_run_all": {
             "default": true,
             "title": "Binlog Run All",
             "type": "boolean"
           },
-          "CHECK_DISK_SPACE": {
+          "check_disk_space": {
             "default": false,
             "title": "Check Disk Space",
             "type": "boolean"
           },
-          "COMPRESS": {
+          "compress": {
             "default": false,
             "title": "Compress",
             "type": "boolean"
           },
-          "COMPRESSION_ALGORITHM": {
+          "compression_algorithm": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__CompressionAlgorithm"
@@ -145,7 +145,7 @@
             ],
             "title": "Compression Algorithm"
           },
-          "DEFAULTS_FILE": {
+          "defaults_file": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -157,12 +157,17 @@
             ],
             "title": "Defaults File"
           },
-          "ENCRYPT": {
+          "encrypt": {
             "default": false,
             "title": "Encrypt",
             "type": "boolean"
           },
-          "ENCRYPTION_RECIPIENT": {
+          "encrypt_using_tmpdir": {
+            "default": false,
+            "title": "Encrypt Using Tmpdir",
+            "type": "boolean"
+          },
+          "encryption_recipient": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -174,12 +179,7 @@
             ],
             "title": "Encryption Recipient"
           },
-          "ENCRYPT_USING_TMPDIR": {
-            "default": false,
-            "title": "Encrypt Using Tmpdir",
-            "type": "boolean"
-          },
-          "GS_BUCKET": {
+          "gs_bucket": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -191,17 +191,17 @@
             ],
             "title": "Gs Bucket"
           },
-          "HARDLINK": {
+          "hardlink": {
             "default": false,
             "title": "Hardlink",
             "type": "boolean"
           },
-          "HOSTNAME": {
+          "hostname": {
             "minLength": 1,
             "title": "Hostname",
             "type": "string"
           },
-          "LOGGING_DIR": {
+          "logging_dir": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -213,7 +213,7 @@
             ],
             "title": "Logging Dir"
           },
-          "MYDUMPER_DAILY_PURGE": {
+          "mydumper_daily_purge": {
             "anyOf": [
               {
                 "type": "integer"
@@ -224,17 +224,17 @@
             ],
             "title": "Mydumper Daily Purge"
           },
-          "MYDUMPER_DESYNC_PXC": {
+          "mydumper_desync_pxc": {
             "default": false,
             "title": "Mydumper Desync Pxc",
             "type": "boolean"
           },
-          "MYDUMPER_DUMP_TRIGGERS": {
+          "mydumper_dump_triggers": {
             "default": false,
             "title": "Mydumper Dump Triggers",
             "type": "boolean"
           },
-          "MYDUMPER_EXTRA_ARGS": {
+          "mydumper_extra_args": {
             "anyOf": [
               {
                 "type": "string"
@@ -245,12 +245,12 @@
             ],
             "title": "Mydumper Extra Args"
           },
-          "MYDUMPER_USE_NUMA": {
+          "mydumper_use_numa": {
             "default": false,
             "title": "Mydumper Use Numa",
             "type": "boolean"
           },
-          "MYDUMPER_VERBOSE": {
+          "mydumper_verbose": {
             "anyOf": [
               {
                 "maximum": 3.0,
@@ -263,7 +263,7 @@
             ],
             "title": "Mydumper Verbose"
           },
-          "MYDUMPER_WEEKLY_PURGE": {
+          "mydumper_weekly_purge": {
             "anyOf": [
               {
                 "type": "integer"
@@ -274,22 +274,22 @@
             ],
             "title": "Mydumper Weekly Purge"
           },
-          "ONLY_IF_READ_ONLY": {
+          "only_if_read_only": {
             "default": false,
             "title": "Only If Read Only",
             "type": "boolean"
           },
-          "ONLY_IF_RUNNING_REPLICA": {
+          "only_if_running_replica": {
             "default": false,
             "title": "Only If Running Replica",
             "type": "boolean"
           },
-          "POST_RUN_ENCRYPT": {
+          "post_run_encrypt": {
             "default": false,
             "title": "Post Run Encrypt",
             "type": "boolean"
           },
-          "RSYNC_PATH": {
+          "rsync_path": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -301,7 +301,7 @@
             ],
             "title": "Rsync Path"
           },
-          "S3_BUCKET": {
+          "s3_bucket": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -313,7 +313,7 @@
             ],
             "title": "S3 Bucket"
           },
-          "S3_STORAGE_CLASS": {
+          "s3_storage_class": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -325,21 +325,21 @@
             ],
             "title": "S3 Storage Class"
           },
-          "SERVICE_ID": {
+          "service_id": {
             "title": "Service Id",
             "type": "integer"
           },
-          "SKIP_S3_SAFETY_CHECK": {
+          "skip_s3_safety_check": {
             "default": false,
             "title": "Skip S3 Safety Check",
             "type": "boolean"
           },
-          "TASK_NAME": {
+          "task_name": {
             "minLength": 1,
             "title": "Task Name",
             "type": "string"
           },
-          "UPLOAD": {
+          "upload": {
             "items": {
               "$ref": "#/components/schemas/UploadProvider"
             },
@@ -347,17 +347,17 @@
             "title": "Upload",
             "type": "array"
           },
-          "UPLOAD_QUIET": {
+          "upload_quiet": {
             "default": false,
             "title": "Upload Quiet",
             "type": "boolean"
           },
-          "USE_FTWRL_GUARDIAN": {
+          "use_ftwrl_guardian": {
             "default": false,
             "title": "Use Ftwrl Guardian",
             "type": "boolean"
           },
-          "XTRABACKUP_AES256_KEYFILE": {
+          "xtrabackup_aes256_keyfile": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -369,7 +369,7 @@
             ],
             "title": "Xtrabackup Aes256 Keyfile"
           },
-          "XTRABACKUP_BIN_CMD": {
+          "xtrabackup_bin_cmd": {
             "anyOf": [
               {
                 "enum": [
@@ -385,7 +385,7 @@
             ],
             "title": "Xtrabackup Bin Cmd"
           },
-          "XTRABACKUP_COPIES": {
+          "xtrabackup_copies": {
             "anyOf": [
               {
                 "type": "integer"
@@ -396,7 +396,7 @@
             ],
             "title": "Xtrabackup Copies"
           },
-          "XTRABACKUP_DEFAULTS_FILE": {
+          "xtrabackup_defaults_file": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -408,12 +408,12 @@
             ],
             "title": "Xtrabackup Defaults File"
           },
-          "XTRABACKUP_DESYNC_PXC": {
+          "xtrabackup_desync_pxc": {
             "default": false,
             "title": "Xtrabackup Desync Pxc",
             "type": "boolean"
           },
-          "XTRABACKUP_EXTRA_ARGS": {
+          "xtrabackup_extra_args": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -425,7 +425,7 @@
             ],
             "title": "Xtrabackup Extra Args"
           },
-          "XTRABACKUP_INCREMENTAL_CYCLE": {
+          "xtrabackup_incremental_cycle": {
             "anyOf": [
               {
                 "enum": [
@@ -446,7 +446,7 @@
             ],
             "title": "Xtrabackup Incremental Cycle"
           },
-          "XTRABACKUP_INCREMENTAL_METHOD": {
+          "xtrabackup_incremental_method": {
             "anyOf": [
               {
                 "enum": [
@@ -461,12 +461,12 @@
             ],
             "title": "Xtrabackup Incremental Method"
           },
-          "XTRABACKUP_KILL_QUERIES": {
+          "xtrabackup_kill_queries": {
             "default": false,
             "title": "Xtrabackup Kill Queries",
             "type": "boolean"
           },
-          "XTRABACKUP_KILL_QUERIES_TIMEOUT": {
+          "xtrabackup_kill_queries_timeout": {
             "anyOf": [
               {
                 "type": "integer"
@@ -477,7 +477,7 @@
             ],
             "title": "Xtrabackup Kill Queries Timeout"
           },
-          "XTRABACKUP_KILL_QUERY_TYPE": {
+          "xtrabackup_kill_query_type": {
             "anyOf": [
               {
                 "enum": [
@@ -492,7 +492,7 @@
             ],
             "title": "Xtrabackup Kill Query Type"
           },
-          "XTRABACKUP_LOCAL_SSH_DESTINATION": {
+          "xtrabackup_local_ssh_destination": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -504,17 +504,17 @@
             ],
             "title": "Xtrabackup Local Ssh Destination"
           },
-          "XTRABACKUP_LOCK_DDL": {
+          "xtrabackup_lock_ddl": {
             "default": false,
             "title": "Xtrabackup Lock Ddl",
             "type": "boolean"
           },
-          "XTRABACKUP_PREPARE": {
+          "xtrabackup_prepare": {
             "default": false,
             "title": "Xtrabackup Prepare",
             "type": "boolean"
           },
-          "XTRABACKUP_PREPARE_MEMORY": {
+          "xtrabackup_prepare_memory": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -526,38 +526,38 @@
             ],
             "title": "Xtrabackup Prepare Memory"
           },
-          "XTRABACKUP_QUIET": {
+          "xtrabackup_quiet": {
             "default": false,
             "title": "Xtrabackup Quiet",
             "type": "boolean"
           },
-          "XTRABACKUP_REPLICA_INFO": {
+          "xtrabackup_replica_info": {
             "default": false,
             "title": "Xtrabackup Replica Info",
             "type": "boolean"
           },
-          "XTRABACKUP_RSYNC": {
+          "xtrabackup_rsync": {
             "default": false,
             "title": "Xtrabackup Rsync",
             "type": "boolean"
           },
-          "XTRABACKUP_STOP_REPLICA": {
+          "xtrabackup_stop_replica": {
             "default": false,
             "title": "Xtrabackup Stop Replica",
             "type": "boolean"
           },
-          "XTRABACKUP_VERIFY": {
+          "xtrabackup_verify": {
             "default": false,
             "title": "Xtrabackup Verify",
             "type": "boolean"
           }
         },
         "required": [
-          "TASK_NAME",
-          "HOSTNAME",
-          "SERVICE_ID",
-          "BACKUP_TYPE",
-          "UPLOAD"
+          "task_name",
+          "hostname",
+          "service_id",
+          "backup_type",
+          "upload"
         ],
         "title": "BackupCreate",
         "type": "object"
@@ -1088,7 +1088,7 @@
         "type": "object"
       },
       "ColumnFormat": {
-        "description": "Enumerate the supported list-view column formatting hints.\n\n:cvar TEXT: Render the column value as plain text.\n:vartype TEXT: str\n:cvar CHIP: Render the column value as a Material UI chip.\n:vartype CHIP: str\n:cvar STATUS: Render the column value as a colour-coded status badge.\n:vartype STATUS: str\n:cvar DATE: Render the column value as an absolute date.\n:vartype DATE: str\n:cvar RELATIVE: Render the column value as a relative time (for example,\n    \"2 hours ago\").\n:vartype RELATIVE: str\n:cvar CODE: Render the column value in a monospaced code font.\n:vartype CODE: str\n:cvar ACTIONS: Row actions (for example delete); not bound to row data.\n    Use with a synthetic column key such as ``_actions``.\n:vartype ACTIONS: str",
+        "description": "Enumerate the supported list-view column formatting hints.\n\n:cvar TEXT: Render the column value as plain text.\n:vartype TEXT: str\n:cvar CHIP: Render the column value as a Material UI chip.\n:vartype CHIP: str\n:cvar STATUS: Render the column value as a colour-coded status badge.\n:vartype STATUS: str\n:cvar DATE: Render the column value as an absolute date.\n:vartype DATE: str\n:cvar RELATIVE: Render the column value as a relative time (for example,\n    \"2 hours ago\").\n:vartype RELATIVE: str\n:cvar CODE: Render the column value in a monospaced code font.\n:vartype CODE: str\n:cvar ACTIONS: Row actions (for example delete); not bound to row data.\n    Use with a synthetic column key such as ``_actions``.\n:vartype ACTIONS: str\n:cvar SCHEDULE: Render a generic schedule cell for the row's task. The\n    frontend joins the row to its periodic task by name and shows the next\n    run (relative, with the absolute timestamp on hover) plus a periodicity\n    popover, or a muted \"Not scheduled\" chip when the task has no schedule.\n    Not bound to the column's own cell value.\n:vartype SCHEDULE: str",
         "enum": [
           "text",
           "chip",
@@ -1096,10 +1096,35 @@
           "date",
           "relative",
           "code",
-          "actions"
+          "actions",
+          "schedule"
         ],
         "title": "ColumnFormat",
         "type": "string"
+      },
+      "ConnectivityWarning": {
+        "description": "Represent a connectivity-check failure on a JSON API task-creation response.\n\n:param target: The Nomad node the task targets.\n:type target: str\n:param service_type: The lowercase database service type (e.g. ``mysql``).\n:type service_type: str\n:param message: A human-readable description of the failure.\n:type message: str",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "service_type": {
+            "title": "Service Type",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "service_type",
+          "message"
+        ],
+        "title": "ConnectivityWarning",
+        "type": "object"
       },
       "DateTimeField": {
         "additionalProperties": false,
@@ -2119,6 +2144,140 @@
         "title": "MultiChoiceField",
         "type": "object"
       },
+      "MysqlBackupsCreateResponse": {
+        "properties": {
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "backup_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackupType-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated By"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/TaskOwner"
+          },
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backend",
+          "data",
+          "protected",
+          "alert_on_fail"
+        ],
+        "title": "MysqlBackupsCreateResponse",
+        "type": "object"
+      },
       "OneOfBranch": {
         "additionalProperties": false,
         "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:param label: The human-readable label for the segmented-control option.\n:param fields: The leaf fields revealed when this branch is active.",
@@ -3136,6 +3295,75 @@
         "title": "TaskBackendEnum",
         "type": "string"
       },
+      "TaskExecuteWrite": {
+        "description": "Represent the default JSON request body for executing a task.\n\n:param eta: Optional future datetime to schedule execution.\n:param chain_task_names: Optional list of task names to chain after this one.\n:param chain_on_failure: Whether to run chained tasks even on failure.",
+        "properties": {
+          "chain_on_failure": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain On Failure"
+          },
+          "chain_task_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain Task Names"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          }
+        },
+        "title": "TaskExecuteWrite",
+        "type": "object"
+      },
+      "TaskExecutionResponse": {
+        "description": "Represent the default response from a task execute route.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
+        "properties": {
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_name": {
+            "title": "Task Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_name"
+        ],
+        "title": "TaskExecutionResponse",
+        "type": "object"
+      },
       "TaskHistoryStatusEnum": {
         "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:vartype FAILED: str\n:cvar PENDING: Enum value for pending tasks.\n:vartype PENDING: str\n:cvar RUNNING: Enum value for running tasks.\n:vartype RUNNING: str\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:vartype SUCCESS: str\n:cvar STOPPED: Enum value for stopped tasks.\n:vartype STOPPED: str\n:cvar LOST: Enum value for tasks that are lost.\n:vartype LOST: str\n:cvar STALE: Enum value for tasks skipped because Nomad placement\n    exceeded the configured staleness threshold.\n:vartype STALE: str",
         "enum": [
@@ -3436,75 +3664,6 @@
         "title": "YamlField",
         "type": "object"
       },
-      "app__sep__plugins__mysql_backups__models__BackupExecuteWrite": {
-        "description": "Represent a JSON request body for executing a backup task.\n\nFields default to ``None`` so the API route can serialize the body\nwith ``exclude_none=True`` and omit unset values when forwarding to\nthe Tasks API, which then applies its own defaults\n(``chain_on_failure`` defaults to ``False`` in ``TaskExecutionRequest``).\n\n:param eta: Optional future datetime at which to schedule execution.\n:type eta: FutureDatetime | None\n:param chain_task_names: Optional list of task names to chain after this one.\n:type chain_task_names: list[str] | None\n:param chain_on_failure: Whether chained tasks run even on failure. ``None``\n    means \"don't send\"; the Tasks API treats an omitted value as ``False``.\n:type chain_on_failure: bool | None",
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "BackupExecuteWrite",
-        "type": "object"
-      },
-      "app__sep__plugins__mysql_backups__models__BackupExecutionResponse": {
-        "description": "Carry the response payload from ``POST /api/plugins/mysql_backups/{task_name}/execute``.\n\n:param task_name: The name of the task that was executed.\n:type task_name: str\n:param task_id: The id of the task-history row created by the tasks API.\n:type task_id: int | None",
-        "properties": {
-          "task_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Id"
-          },
-          "task_name": {
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name"
-        ],
-        "title": "BackupExecutionResponse",
-        "type": "object"
-      },
       "app__sep__plugins__mysql_backups__models__BackupType": {
         "description": "Backup types.",
         "enum": [
@@ -3531,25 +3690,8 @@
   "paths": {
     "/api/plugins/mysql_backups/": {
       "get": {
-        "description": "List MySQL backup tasks.\n\n``limit`` is capped to keep the page size bounded; latest statuses for the\npage are resolved in a single batched round-trip to the Tasks API.",
-        "operationId": "mysql_backups_mysql_backups_api_list_api_plugins_mysql_backups__get",
+        "operationId": "mysql_backups__list_paginated_api_plugins_mysql_backups__get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
           {
             "in": "query",
             "name": "offset",
@@ -3571,6 +3713,22 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
             }
           }
         ],
@@ -3596,14 +3754,25 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Mysql Backups Api List",
+        "summary": "List",
         "tags": [
           "mysql_backups"
         ]
       },
       "post": {
-        "description": "Create a MySQL backup task from a JSON request body.",
-        "operationId": "mysql_backups_mysql_backups_api_create_api_plugins_mysql_backups__post",
+        "operationId": "mysql_backups__create_api_plugins_mysql_backups__post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "check_connectivity",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Check Connectivity",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3619,7 +3788,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BackupResponse"
+                  "$ref": "#/components/schemas/MysqlBackupsCreateResponse"
                 }
               }
             },
@@ -3636,7 +3805,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Mysql Backups Api Create",
+        "summary": "Create",
         "tags": [
           "mysql_backups"
         ]
@@ -3666,8 +3835,7 @@
     },
     "/api/plugins/mysql_backups/{task_name}": {
       "delete": {
-        "description": "Delete a MySQL backup task.",
-        "operationId": "mysql_backups_mysql_backups_api_delete_api_plugins_mysql_backups__task_name__delete",
+        "operationId": "mysql_backups__delete_api_plugins_mysql_backups__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -3694,14 +3862,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Mysql Backups Api Delete",
+        "summary": "Delete",
         "tags": [
           "mysql_backups"
         ]
       },
       "get": {
-        "description": "Retrieve a single MySQL backup task.",
-        "operationId": "mysql_backups_mysql_backups_api_detail_api_plugins_mysql_backups__task_name__get",
+        "operationId": "mysql_backups__detail_api_plugins_mysql_backups__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3735,7 +3902,67 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Mysql Backups Api Detail",
+        "summary": "Detail",
+        "tags": [
+          "mysql_backups"
+        ]
+      },
+      "put": {
+        "operationId": "mysql_backups__update_api_plugins_mysql_backups__task_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "check_connectivity",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Check Connectivity",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MysqlBackupsCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update",
         "tags": [
           "mysql_backups"
         ]
@@ -3743,7 +3970,7 @@
     },
     "/api/plugins/mysql_backups/{task_name}/execute": {
       "post": {
-        "description": "Execute a MySQL backup task.",
+        "description": "Resolve, dispatch, and wrap a standard task execution.",
         "operationId": "mysql_backups_mysql_backups_api_execute_api_plugins_mysql_backups__task_name__execute_post",
         "parameters": [
           {
@@ -3760,7 +3987,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupExecuteWrite"
+                "$ref": "#/components/schemas/TaskExecuteWrite"
               }
             }
           },
@@ -3771,7 +3998,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupExecutionResponse"
+                  "$ref": "#/components/schemas/TaskExecutionResponse"
                 }
               }
             },

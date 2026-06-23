@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Cover the three-phase task-payload decomposition in ``framework/payload.py``.
+"""Cover the three-phase task-payload decomposition in ``framework/spec.py``.
 
 The envelope golden tests assert byte-uniformity with the canonical hand-written
 envelopes in ``checksums/deps.py`` (run-command) and ``backup_pg/deps.py``
@@ -38,17 +38,20 @@ from app.sep.connectivity import (
 )
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
+    ArgFormat,
     HostRef,
     SchemaRef,
     ServiceRef,
     Ui,
 )
-from app.sep.plugins.framework.payload import (
+from app.sep.plugins.framework.spec import (
     assemble_envelope,
+    build_command_args,
     resolve_refs,
     ResolvedEntities,
     RunCommandSpec,
     RunPythonSpec,
+    validate_arg_formats,
 )
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import (
@@ -476,3 +479,148 @@ class TestResolveRefs:
 
         with pytest.raises(HTTPBadRequestException):
             await resolve_refs(_MultiTypeForm(service_id=1), inventory)
+
+
+class _ArgForm(AppFormModel):
+    """Carry value-arg, flag-arg, and unmapped fields for build_command_args tests."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    databases: Annotated[
+        str, ArgFormat("--databases=${value}"), Ui(label="DB", section="main")
+    ] = ""
+    set_vars: Annotated[
+        str, ArgFormat("--set-vars=${value}"), Ui(label="Vars", section="main")
+    ] = ""
+    binary_index: Annotated[
+        bool, ArgFormat("--binary-index"), Ui(label="Binary", section="main")
+    ] = False
+    explain_arg: Annotated[
+        bool, ArgFormat("--explain"), Ui(label="Explain", section="main")
+    ] = False
+
+
+class TestBuildCommandArgs:
+    """Cover the declarative ``ArgFormat`` assembler in ``build_command_args``."""
+
+    def test_value_args_precede_flag_args(self) -> None:
+        """Emit all value args (field order) before all flag args (field order)."""
+        args = build_command_args(
+            _ArgForm(
+                databases="db1",
+                set_vars="v=1",
+                binary_index=True,
+                explain_arg=True,
+            )
+        )
+
+        assert args == [
+            "--databases=db1",
+            "--set-vars=v=1",
+            "--binary-index",
+            "--explain",
+        ]
+
+    def test_empty_value_arg_is_skipped(self) -> None:
+        """Skip a value arg whose field value is an empty string."""
+        args = build_command_args(_ArgForm(databases="", set_vars="v=1"))
+
+        assert args == ["--set-vars=v=1"]
+
+    def test_flag_emitted_only_when_true(self) -> None:
+        """Emit a flag arg only when its boolean field is ``True``."""
+        args = build_command_args(_ArgForm(binary_index=False, explain_arg=True))
+
+        assert args == ["--explain"]
+
+    def test_spaced_value_is_a_single_quoted_round_trip_token(self) -> None:
+        """Keep a whitespace-bearing value as one token through the quote round-trip."""
+        args = build_command_args(_ArgForm(databases="reporting db"))
+
+        assert args == ["--databases=reporting db"]
+
+    def test_field_without_arg_format_is_ignored(self) -> None:
+        """Ignore a field that declares no ``ArgFormat`` marker."""
+        args = build_command_args(_ArgForm(task_name="my-task"))
+
+        assert args == []
+
+
+class _TypoPlaceholderForm(AppFormModel):
+    """Carry a value-arg template whose placeholder is misspelled."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    databases: Annotated[
+        str, ArgFormat("--databases=${vale}"), Ui(label="DB", section="main")
+    ] = ""
+
+
+class _FlagOnNonBoolForm(AppFormModel):
+    """Carry a no-placeholder (flag) template on a non-bool field."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    explain_arg: Annotated[
+        str, ArgFormat("--explain"), Ui(label="Explain", section="main")
+    ] = ""
+
+
+class TestValidateArgFormats:
+    """Cover the construction-time ``ArgFormat`` validation in ``validate_arg_formats``."""
+
+    def test_well_formed_markers_pass(self) -> None:
+        """Accept exact ``${value}`` value templates and flag templates on bool fields."""
+        validate_arg_formats(_ArgForm)
+
+    def test_unsupported_placeholder_raises(self) -> None:
+        """Reject a value template whose placeholder is not ``value`` (a typo footgun)."""
+        with pytest.raises(ValueError, match="unsupported placeholder"):
+            validate_arg_formats(_TypoPlaceholderForm)
+
+    def test_flag_template_on_non_bool_field_raises(self) -> None:
+        """Reject a no-placeholder template on a field that is not ``bool``."""
+        with pytest.raises(ValueError, match="bool field"):
+            validate_arg_formats(_FlagOnNonBoolForm)
+
+
+class _DefaultArgForm(AppFormModel):
+    """Carry templateless ``ArgFormat`` markers that derive from field name and type."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    max_load: Annotated[str, ArgFormat(), Ui(label="Load", section="main")] = ""
+    binary_index: Annotated[bool, ArgFormat(), Ui(label="Binary", section="main")] = (
+        False
+    )
+    explain_arg: Annotated[
+        bool, ArgFormat("--explain"), Ui(label="Explain", section="main")
+    ] = False
+
+
+class TestDerivedArgFormat:
+    """Cover the templateless ``ArgFormat`` default derivation."""
+
+    def test_value_arg_derives_kebab_name(self) -> None:
+        """Derive ``--<kebab-name>=${value}`` for a non-bool field with no template."""
+        args = build_command_args(_DefaultArgForm(max_load="Threads_running=50"))
+
+        assert args == ["--max-load=Threads_running=50"]
+
+    def test_flag_derives_kebab_name(self) -> None:
+        """Derive ``--<kebab-name>`` for a bool field with no template."""
+        args = build_command_args(_DefaultArgForm(binary_index=True))
+
+        assert args == ["--binary-index"]
+
+    def test_explicit_template_overrides_derived_default(self) -> None:
+        """Keep an explicit template when the CLI spelling diverges from the name."""
+        args = build_command_args(_DefaultArgForm(explain_arg=True))
+
+        assert args == ["--explain"]
+
+    def test_derived_value_arg_skipped_when_empty(self) -> None:
+        """Skip a derived value arg whose field value is empty, like an explicit one."""
+        args = build_command_args(_DefaultArgForm())
+
+        assert args == []
+
+    def test_validate_accepts_templateless_markers(self) -> None:
+        """Accept templateless markers on both bool and non-bool fields."""
+        validate_arg_formats(_DefaultArgForm)

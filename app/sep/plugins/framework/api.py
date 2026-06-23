@@ -35,8 +35,9 @@ from dataclasses import dataclass
 from typing import Annotated, Any, cast, TypeVar
 
 from fastapi import APIRouter, Depends, params, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.pagination import PaginatedResponse, Pagination, PaginationDependency
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
@@ -52,6 +53,12 @@ from app.sep.plugins.framework.responses import (
     TaskResponseBuilder,
 )
 from app.sep.plugins.framework.schema import PluginSchema
+from app.sep.plugins.framework.script_source import (
+    make_script_dep,
+    ScriptExecuteWrite,
+    ScriptExecutionResponse,
+    ScriptSource,
+)
 from app.sep.plugins.framework.task_status import get_task_latest_status
 from app.tasks.models import (
     Task,
@@ -66,6 +73,7 @@ __all__ = [
     "capabilities_endpoint",
     "derive_crud_routes",
     "derive_execute_route",
+    "derive_script_routes",
     "make_list_filter_dep",
     "schema_endpoint",
 ]
@@ -713,17 +721,21 @@ def _register_delete_route(
     *,
     get_task: Callable[..., Awaitable[Task]],
     detail_path: str,
+    extra_deps: Sequence[params.Depends] = (),
 ) -> None:
     """Register the derived ``DELETE /{detail}`` route (``204``) on ``router``.
 
     The handler resolves the task by name (404 on unknown / wrong owner) and
     deletes it upstream — the plain cascade-free delete shared by the standard
     task plugins. A plugin needing cascade semantics supplies a full
-    ``delete_handler`` override instead.
+    ``delete_handler`` override instead; a plugin needing only a guard (for
+    example a running-task conflict check) passes it via ``extra_deps``.
 
     :param router: The plugin router to register the delete route on.
     :param get_task: The task-by-name dependency owning the path parameter.
     :param detail_path: The ``/{detail}`` route template the DELETE mounts on.
+    :param extra_deps: Extra route dependencies (guards) appended after the auth
+        guard, never replacing it.
     """
 
     async def _delete(
@@ -738,7 +750,7 @@ def _register_delete_route(
         summary="Delete",
         status_code=status.HTTP_204_NO_CONTENT,
         response_model_by_alias=True,
-        dependencies=[IsApiAuthenticated],
+        dependencies=[IsApiAuthenticated, *extra_deps],
     )
 
 
@@ -759,12 +771,14 @@ def _register_mutation_routes(
     update_extra_deps: Sequence[params.Depends],
     delete_enabled: bool,
     delete_handler: Callable[..., Awaitable[Any]] | None,
+    delete_extra_deps: Sequence[params.Depends],
 ) -> None:
     """Register the ``PUT`` / ``DELETE`` routes, derived or handler-overridden.
 
     A supplied handler always wins (the cascade escape hatch); otherwise the
     capability flag drives the standard derived default — the create-mirroring PUT
-    (guarded by ``update_extra_deps``) and the plain fetch-then-delete DELETE.
+    (guarded by ``update_extra_deps``) and the plain fetch-then-delete DELETE
+    (guarded by ``delete_extra_deps``).
 
     :param router: The plugin router to register the mutation routes on.
     :param plugin_schema: The schema seeding any auto-derived model name.
@@ -782,10 +796,23 @@ def _register_mutation_routes(
     :param update_extra_deps: Guards appended to the derived PUT after the auth guard.
     :param delete_enabled: Whether to derive the default DELETE when no handler is set.
     :param delete_handler: A full DELETE override, or ``None`` for the derived default.
-    :raises ValueError: If ``update_extra_deps`` are supplied alongside a full
-        ``update_handler`` or without the update capability; or if the derived PUT
-        is enabled without a ``create_payload`` to rebuild the body.
+    :param delete_extra_deps: Guards appended to the derived DELETE after the auth guard.
+    :raises ValueError: If ``update_extra_deps`` / ``delete_extra_deps`` are supplied
+        alongside a full ``update_handler`` / ``delete_handler`` or without the matching
+        capability; or if the derived PUT is enabled without a ``create_payload`` to
+        rebuild the body.
     """
+    if delete_extra_deps and delete_handler is not None:
+        raise ValueError(
+            "derive_crud_routes: delete_extra_deps attach to the derived DELETE; a "
+            "full delete_handler must declare its own signature dependencies instead — "
+            "drop delete_extra_deps or the delete_handler"
+        )
+    if delete_extra_deps and not delete_enabled:
+        raise ValueError(
+            "derive_crud_routes: delete_extra_deps need a derived DELETE to attach to; "
+            "enable the delete capability or drop delete_extra_deps"
+        )
     if update_extra_deps and update_handler is not None:
         raise ValueError(
             "derive_crud_routes: update_extra_deps attach to the derived PUT; a full "
@@ -837,7 +864,12 @@ def _register_mutation_routes(
             dependencies=[IsApiAuthenticated],
         )
     elif delete_enabled:
-        _register_delete_route(router, get_task=get_task, detail_path=detail_path)
+        _register_delete_route(
+            router,
+            get_task=get_task,
+            detail_path=detail_path,
+            extra_deps=delete_extra_deps,
+        )
 
 
 def _resolve_detail_target(
@@ -995,6 +1027,7 @@ def derive_crud_routes(
     update_extra_deps: Sequence[params.Depends] = (),
     delete_enabled: bool = False,
     delete_handler: Callable[..., Awaitable[Any]] | None = None,
+    delete_extra_deps: Sequence[params.Depends] = (),
 ) -> APIRouter:
     """Build a plugin router with the standard schema + CRUD routes.
 
@@ -1215,6 +1248,7 @@ def derive_crud_routes(
         update_extra_deps=update_extra_deps,
         delete_enabled=delete_enabled,
         delete_handler=delete_handler,
+        delete_extra_deps=delete_extra_deps,
     )
 
     return router
@@ -1333,3 +1367,107 @@ def derive_execute_route(
         response_model_by_alias=True,
         dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks, *extra_deps],
     )
+
+
+def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
+    """Build a plugin router carrying a script source's derived surface.
+
+    Register the script-centric surface a script-backed task app exposes, mirroring
+    the working ``snippets`` JSON API: owner-agnostic listing (``GET /``), per-script
+    form schema (``GET /snippet/schema``), execute delegation
+    (``POST /snippet/execute``, ``201``), execution history
+    (``GET /snippet/history``), and — only when ``source.static_schema`` is set — the
+    plugin-level ``GET /schema``. All routes carry ``IsApiAuthenticated``.
+
+    Per-script routes carry the script filename in a ``snippet_filename`` query
+    parameter under the ``/snippet/`` sub-prefix (never a path segment), so a greedy
+    detail route cannot shadow ``GET /`` or ``GET /schema``. The execute route
+    validates the request ``args`` against the script's dynamic execution model
+    (``422`` on failure), delegates meta assembly to ``source.build_execution_meta``
+    with the model's *coerced* ``args`` (so a consumer never sees the raw,
+    unnormalised values the dynamic model may have type-cast), and posts
+    ``{"meta": ...}`` to ``/execute/{script.execution_task_name}`` — a distinct
+    endpoint and body from the model-first three-phase create envelope.
+
+    :param source: The script source supplying the listing, form-synthesis,
+        execution-meta, list-row, and optional static-schema hooks.
+    :param name: The app name seeding each derived route's name (and OpenAPI
+        ``operationId``), so two script apps never collide on a generic route name.
+    :return: A plugin ``APIRouter`` carrying the derived script surface.
+    """
+    router = APIRouter()
+    if source.static_schema is not None:
+        schema_endpoint(router, source.static_schema)
+
+    script_param = Annotated[Any, Depends(make_script_dep(source))]
+
+    @router.get(
+        "/",
+        name=f"{name}_api_list",
+        summary="List",
+        response_model=None,
+        dependencies=[IsApiAuthenticated],
+    )
+    async def list_scripts() -> list[BaseModel]:
+        """List every discovered script as its list-row projection."""
+        scripts = await source.list_scripts()
+        return [source.list_response(script) for script in scripts]
+
+    @router.get(
+        "/snippet/schema",
+        name=f"{name}_api_script_schema",
+        summary="Script schema",
+        response_model_by_alias=True,
+        response_model_exclude_none=True,
+        dependencies=[IsApiAuthenticated],
+    )
+    async def script_schema(script: script_param) -> PluginSchema:
+        """Return the per-script form schema synthesised from its parameters."""
+        return source.build_form_schema(script)
+
+    @router.get(
+        "/snippet/history",
+        name=f"{name}_api_script_history",
+        summary="Script history",
+        dependencies=[IsApiAuthenticated],
+    )
+    async def script_history(
+        script: script_param, tasks_api: TaskAPI
+    ) -> dict[str, Any]:
+        """Proxy the per-script execution history from the Tasks API by filename."""
+        return await tasks_api.get(
+            f"/{script.execution_task_name}/history/",
+            params={"snippet_filename": script.filename},
+        )
+
+    @router.post(
+        "/snippet/execute",
+        name=f"{name}_api_script_execute",
+        summary="Execute script",
+        status_code=status.HTTP_201_CREATED,
+        dependencies=[IsApiAuthenticated],
+    )
+    async def script_execute(
+        script: script_param,
+        body: ScriptExecuteWrite,
+        tasks_api: TaskAPI,
+    ) -> ScriptExecutionResponse:
+        """Validate the args, assemble the meta, and dispatch the execution."""
+        try:
+            validated = script.get_execution_model().model_validate(body.args)
+        except ValidationError as exc:
+            raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
+        meta = source.build_execution_meta(
+            script, body.model_copy(update={"args": validated.model_dump()})
+        )
+        created = await tasks_api.post(
+            f"/execute/{script.execution_task_name}",
+            json={"meta": meta.model_dump(by_alias=True, exclude_none=True)},
+        )
+        return ScriptExecutionResponse(
+            task_name=script.execution_task_name,
+            task_id=created.get("id") if isinstance(created, dict) else None,
+            snippet_filename=script.filename,
+        )
+
+    return router

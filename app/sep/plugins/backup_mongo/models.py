@@ -23,6 +23,17 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, FutureDatetime
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.framework.form_dsl import (
+    AppFormModel,
+    Choices,
+    FieldWidget,
+    Forbidden,
+    HostRef,
+    ServiceRef,
+    Ui,
+)
+from app.sep.plugins.framework.rules import F
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
@@ -284,6 +295,101 @@ class BackupCreate(BaseCaseInsensitiveModel):
     backup_num_parallel_collections: int | EmptyStrToNone = None
     # Path to MongoDB URI credentials file on the Nomad node (passed as task meta, used by payloads).
     credentials_path: NonEmptyStr | EmptyStrToNone = None
+
+
+_NOT_S3_STORAGE = Forbidden(when=F("storage_type") != StorageType.S3.value)
+_NOT_FILESYSTEM_STORAGE = Forbidden(
+    when=F("storage_type") != StorageType.FILESYSTEM.value
+)
+_COMPRESSION_CHOICES = Choices(
+    tuple((algorithm.value, algorithm.value) for algorithm in CompressionAlgorithm)
+)
+
+
+class BackupForm(AppFormModel):
+    """Define the model-first schema source for the MongoDB Backups ``GET /schema``.
+
+    The single source the derived ``GET /schema`` form renders from, driven by the
+    :class:`Ui` / reference / :class:`Choices` / :class:`Forbidden` markers. It is
+    *not* the JSON request body — :class:`BackupTaskWrite` is — and is never validated
+    as one; field-declaration order reproduces the schema's section and field order
+    (Task, Storage, Point-in-Time Recovery, Backup Options). The ``alert_on_fail``
+    capability control is inherited from :class:`AppFormModel` (``Hidden``, off-schema).
+    """
+
+    task_name: Annotated[str, Ui(label="Task Name", section="Task")]
+    hostname: Annotated[str, HostRef(), Ui(label="Executor Host", section="Task")]
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=(ServiceTypeEnum.MONGODB,)),
+        Ui(label="Database Service", section="Task"),
+    ]
+    credentials_path: Annotated[
+        str | None,
+        Ui(
+            label="Credentials Path",
+            section="Task",
+            description="Optional path to MongoDB URI credentials on the Nomad node",
+        ),
+    ] = None
+    storage_type: Annotated[
+        str,
+        Choices((("s3", "S3-compatible"), ("filesystem", "Filesystem"))),
+        Ui(label="Storage Type", section="Storage"),
+    ] = StorageType.S3.value
+    storage_s3_region: Annotated[
+        str | None, _NOT_S3_STORAGE, Ui(label="S3 Region", section="Storage")
+    ] = None
+    storage_s3_bucket: Annotated[
+        str | None, _NOT_S3_STORAGE, Ui(label="S3 Bucket", section="Storage")
+    ] = None
+    storage_s3_prefix: Annotated[
+        str | None, _NOT_S3_STORAGE, Ui(label="S3 Prefix", section="Storage")
+    ] = None
+    storage_s3_endpoint_url: Annotated[
+        str | None, _NOT_S3_STORAGE, Ui(label="S3 Endpoint URL", section="Storage")
+    ] = None
+    storage_filesystem_path: Annotated[
+        str, _NOT_FILESYSTEM_STORAGE, Ui(label="Filesystem Path", section="Storage")
+    ]
+    pitr_enabled: Annotated[bool, Ui(label="Enable PITR", section="PITR")] = False
+    pitr_oplog_span_min: Annotated[
+        int | None, Ui(label="Oplog Span (minutes)", section="PITR")
+    ] = None
+    pitr_compression: Annotated[
+        str, _COMPRESSION_CHOICES, Ui(label="PITR Compression", section="PITR")
+    ] = CompressionAlgorithm.GZIP.value
+    backup_priority: Annotated[
+        str | None,
+        Ui(
+            label="Node Priority (YAML)",
+            section="BackupOptions",
+            widget=FieldWidget.TEXTAREA,
+            description="YAML mapping of mongod addresses to backup priority",
+        ),
+    ] = None
+    backup_compression: Annotated[
+        str,
+        _COMPRESSION_CHOICES,
+        Ui(
+            label="Backup Compression",
+            section="BackupOptions",
+            description="Compression method for backup snapshots. Default: s2",
+        ),
+    ] = CompressionAlgorithm.S2.value
+    backup_compression_level: Annotated[
+        int | None, Ui(label="Compression Level", section="BackupOptions")
+    ] = None
+    backup_timeouts_starting_status: Annotated[
+        int | None,
+        Ui(label="Starting Status Timeout (seconds)", section="BackupOptions"),
+    ] = None
+    backup_oplog_span_min: Annotated[
+        float | None, Ui(label="Backup Oplog Span (minutes)", section="BackupOptions")
+    ] = None
+    backup_num_parallel_collections: Annotated[
+        int | None, Ui(label="Parallel Collections", section="BackupOptions")
+    ] = None
 
 
 class BackupTaskWrite(BaseModel):

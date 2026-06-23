@@ -47,6 +47,8 @@ from typing import Any, ClassVar, Self, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from pydantic_core import core_schema
 
+from app.core.utils.fields import value_is_present
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
@@ -95,11 +97,13 @@ __all__ = [
     "apply_conditional_rules",
     "contains",
     "evaluate_conditional_rules",
+    "extract_forbidden_field_gate_plan",
     "falsy",
     "none_present",
     "not_",
     "present",
     "truthy",
+    "value_is_present",
     "xor_",
 ]
 
@@ -245,26 +249,13 @@ def _resolve_field(instance: Any, path: str) -> Any:
 def _field_is_present(instance: Any, name: str) -> bool:
     """Return ``True`` iff ``instance.<name>`` is set and non-empty.
 
-    Treats ``None``, ``False``, and empty strings/bytes/lists/tuples/sets/dicts
-    as absent. ``0`` counts as present (numeric, just falsy). ``False`` is
-    treated as the unset bool default so ``forbidden=`` :class:`FieldGate`
-    entries on :class:`BoolField` fire only on an explicit ``True`` toggle,
-    matching the convention used by :class:`FailRule` ``truthy(name)`` checks.
+    Delegates the value-level classification to :func:`value_is_present`.
 
     :param instance: The model instance being evaluated.
-    :type instance: Any
     :param name: The field name to check.
-    :type name: str
     :return: Whether the field is considered present.
-    :rtype: bool
     """
-    value = _resolve_field(instance, name)
-    if value is None or value is False:
-        return False
-    return not (
-        isinstance(value, str | bytes | list | tuple | set | frozenset | dict)
-        and not value
-    )
+    return value_is_present(_resolve_field(instance, name))
 
 
 def _field_is_truthy(instance: Any, name: str) -> bool:
@@ -1522,6 +1513,31 @@ def _extract_rule_plan(
         )
 
     return RulePlan(rules=tuple(prepared))
+
+
+def extract_forbidden_field_gate_plan(
+    schema: PluginSchema, *, entity_name: str | None = None
+) -> RulePlan:
+    """Return a :class:`RulePlan` of only the schema's forbidden field gates.
+
+    A public, supported entry point for callers (such as the snippets plugin's
+    server-side visibility enforcement) that need just the
+    ``forbidden=[FieldGate(...)]`` rules lowered onto a schema, without
+    depending on the private extraction internals. The returned plan is
+    evaluable with :func:`evaluate_conditional_rules`.
+
+    :param schema: The plugin schema to extract forbidden field gates from.
+    :param entity_name: For multi-entity schemas, the entity segment whose
+        rules to extract; must be ``None`` for task-style schemas. See
+        :func:`_extract_rule_plan`.
+    :return: A frozen plan holding only the ``field_gate_forbidden`` rules.
+    """
+    plan = _extract_rule_plan(schema, entity_name=entity_name)
+    return RulePlan(
+        rules=tuple(
+            rule for rule in plan.rules if rule.kind is _RuleKind.FIELD_GATE_FORBIDDEN
+        )
+    )
 
 
 def _prepare_cardinality_rules(
