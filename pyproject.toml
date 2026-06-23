@@ -294,6 +294,7 @@ line-ending = "lf"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "syncmysql: require syncmysql dependencies",
+    "postgres: require a real PostgreSQL service (SEP_TEST_POSTGRES_DSN)",
 ]
 env = [
     "CASDOOR__CLIENT_ID=test-client-id",
