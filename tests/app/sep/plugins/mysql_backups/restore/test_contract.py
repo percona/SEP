@@ -39,6 +39,8 @@ from tests.app.sep.plugins.framework.contract_suite import (
 from tests.app.sep.plugins.framework.kit import (
     SEEDED_TASK_NAME,
     SYNTH_EXECUTOR_HOST,
+    SYNTH_SERVICE_HOST,
+    SYNTH_SERVICE_PORT,
 )
 
 _NEW_TASK_NAME = "contract-new-restore"
@@ -91,7 +93,7 @@ class TestRestoreContract(DerivedRouterContractTests):
         assert mock_task_api.create_count == 1
 
     def test_detail_stamps_extras(self, contract_client: Any) -> None:
-        """Assert the detail response-builder stamps ``backup_type`` / ``hostname``."""
+        """Assert the detail builder stamps ``backup_type`` / ``hostname`` / ``host`` / ``port``."""
         base = app_base_url(self.app_def)
         contract_client.post(f"{base}/", json=_valid_restore_body())
 
@@ -101,6 +103,8 @@ class TestRestoreContract(DerivedRouterContractTests):
         body = response.json()
         assert body["backup_type"] == BackupType.MYDUMPER.value
         assert body["hostname"] == SYNTH_EXECUTOR_HOST
+        assert body["host"] == SYNTH_SERVICE_HOST
+        assert body["port"] == SYNTH_SERVICE_PORT
 
     def test_create_422(self, contract_client: Any, mock_task_api: Any) -> None:
         """Reject a body missing the required ``backup_type`` with 422, before any POST."""
