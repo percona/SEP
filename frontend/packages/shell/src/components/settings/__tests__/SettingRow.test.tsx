@@ -139,7 +139,7 @@ describe('SettingRow', () => {
         value: { a: 1 },
       }),
     );
-    expect(screen.getByText(/nested editing not yet supported/)).toBeInTheDocument();
+    expect(screen.getByText(/nested submodel set via settings\.yaml/)).toBeInTheDocument();
     // The value appears once (Current column), not duplicated in the edit column.
     expect(screen.getAllByText('{"a":1}')).toHaveLength(1);
   });
