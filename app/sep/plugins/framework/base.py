@@ -29,10 +29,14 @@ class BaseApp(BaseModel):
     Authored directly by a declarative app (``app = BaseApp(...)``) or
     synthesized by :func:`app.sep.plugins.framework.registry.build_app_registry`
     from a legacy ``Plugin`` settings entry, so legacy and definition-based apps
-    share one shape. ``key`` and ``enabled`` are activation-list facts stamped by
-    the registry rather than author-set; ``display_name`` defaults to ``name``.
+    share one shape. ``enabled`` is an activation-list fact stamped by the
+    registry rather than author-set; ``display_name`` defaults to ``name``.
+    ``key`` is stamped from the module path (scoped for nested sub-apps) when
+    the definition leaves it unset, but an author may set it explicitly to
+    override the derivation.
 
-    :param key: The module basename; stamped by the registry.
+    :param key: The scoped app key. Left unset, the registry stamps the
+        module-path-derived key; set explicitly, the author's value wins.
     :type key: str
     :param name: The app's internal name.
     :type name: str

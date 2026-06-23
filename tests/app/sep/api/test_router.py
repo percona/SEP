@@ -21,6 +21,7 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from starlette.routing import Match
 
 from app.sep.api.router import api_router, build_plugins_router, plugins_router
 from app.sep.config import Plugin, sep_settings
@@ -581,8 +582,18 @@ class TestApiRouterConfigDrivenLoop:
             for app in build_app_registry(sep_settings.PLUGINS)
             if app.api_router is not None
         }
+
+        def owning_key(route_path: str) -> str | None:
+            rest = route_path.removeprefix("/plugins/")
+            candidates = [
+                key
+                for key in expected_keys
+                if rest == key or rest.startswith(key + "/")
+            ]
+            return max(candidates, key=len) if candidates else None
+
         seen_prefixes = {
-            r.path.split("/")[2]
+            owning_key(r.path)
             for r in plugins_router.routes
             if hasattr(r, "path") and r.path.startswith("/plugins/")
         }
@@ -611,3 +622,41 @@ class TestApiRouterConfigDrivenLoopIntegration:
         """Assert a plugin key with no settings entry returns 404."""
         response = test_client.get("/api/plugins/not-a-real-plugin/schema")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("GET", "/api/plugins/mysql_backups/restore/"),
+            ("POST", "/api/plugins/mysql_backups/restore/"),
+            ("GET", "/api/plugins/mysql_backups/restore/schema"),
+            ("GET", "/api/plugins/mysql_backups/restore/some-task"),
+            ("GET", "/mysql_backups/restores/"),
+            ("GET", "/mysql_backups/restores/some-task"),
+        ],
+    )
+    def test_scoped_restore_routes_not_shadowed_by_parent(
+        self, method: str, path: str
+    ) -> None:
+        """Assert the nested restore app's canonical routes win over the parent's.
+
+        The restore app mounts after ``mysql_backups`` and the parent exposes a
+        greedy ``/{task_name}`` route; this guards that a request to a canonical
+        restore URL resolves to a route under the ``mysql_backups/restore``
+        prefix rather than being captured as a parent backup task.
+        """
+        scope = {"type": "http", "method": method, "path": path, "headers": []}
+        matched = next(
+            (
+                route.path
+                for route in sep_app.router.routes
+                if route.matches(scope)[0] == Match.FULL
+            ),
+            None,
+        )
+        assert matched is not None
+        prefix = (
+            "/api/plugins/mysql_backups/restore"
+            if path.startswith("/api")
+            else ("/mysql_backups/restores")
+        )
+        assert matched.startswith(prefix), f"{path} resolved to {matched}"

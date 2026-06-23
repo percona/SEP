@@ -25,8 +25,10 @@ delete surfaces. Create and update are derived from the model-first
 stamping ``backup_type`` / ``hostname`` on list, detail, and create; delete is
 the framework's plain default. The display fields (``display_name`` / ``uri_path``
 / ``css_class``) are supplied here because ``settings.yaml`` no longer carries
-them. The Jinja UI router (including the ``/restores`` sub-router) is threaded
-explicitly as ``jinja_router``; the registry does not.
+them. The Jinja UI router is threaded explicitly as ``jinja_router``; the
+registry does not. The restore subpackage is its own registered
+``TaskExecutionApp`` (``mysql_backups.restore``), so it is no longer mounted as a
+sub-router here.
 """
 
 from app.core.pagination.deps import make_pagination_dep
