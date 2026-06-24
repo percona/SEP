@@ -30,7 +30,7 @@ export interface SettingsSearchBarProps {
   settingClasses: string[];
 }
 
-/** Search box plus class / reload / override-present filter controls. */
+/** Search box plus class / reload / override-present / advanced filter controls. */
 export default function SettingsSearchBar({
   filters,
   onChange,
@@ -107,6 +107,19 @@ export default function SettingsSearchBar({
         <MenuItem value="all">All</MenuItem>
         <MenuItem value="yes">Override present</MenuItem>
         <MenuItem value="no">No override</MenuItem>
+      </TextField>
+
+      <TextField
+        select
+        size="small"
+        label="Advanced"
+        value={filters.advanced}
+        onChange={(e) => update({ advanced: e.target.value as SettingsFilters['advanced'] })}
+        sx={{ minWidth: 160 }}
+        slotProps={{ htmlInput: { 'aria-label': 'Filter by advanced' } }}
+      >
+        <MenuItem value="hidden">Hidden</MenuItem>
+        <MenuItem value="shown">Shown</MenuItem>
       </TextField>
     </Stack>
   );
