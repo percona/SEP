@@ -16,6 +16,7 @@
 """DB-backed settings override layer (HOT-only)."""
 
 __all__ = [
+    "NESTED_VALUE_MISSING",
     "CallbackRegistry",
     "FieldMetadata",
     "Materializer",
@@ -37,7 +38,6 @@ __all__ = [
     "is_hot_reloadable",
     "is_nested_overridable_parent",
     "iter_class_fields",
-    "materialize_fingerprint",
     "materialize_override_value",
     "materialize_template",
     "materialize_via_owning_model",
@@ -75,7 +75,6 @@ from app.core.settings_override.registry import (
     is_hot_reloadable,
     is_nested_overridable_parent,
     iter_class_fields,
-    materialize_fingerprint,
     materialize_override_value,
     materialize_template,
     materialize_via_owning_model,
@@ -83,6 +82,7 @@ from app.core.settings_override.registry import (
     MaterializerContext,
     nested_overridable_field,
     nested_overridable_field_names,
+    NESTED_VALUE_MISSING,
     not_overridable_field,
     ReloadClassification,
     resolve_nested_field,

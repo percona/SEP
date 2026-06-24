@@ -384,32 +384,33 @@ class TestSyncRunningItemsRespectsOverriddenTtl:
 
 
 class TestCheckNomadCertExpiryWithOverride:
-    """Test ``_check_nomad_cert_expiry`` tolerates a NOMAD fingerprint-dict override."""
+    """Test ``_check_nomad_cert_expiry`` with nested NOMAD leaf overrides."""
 
     @pytest.mark.asyncio
-    async def test_normalizes_fingerprint_dict_override(
+    async def test_applies_nested_leaf_overrides(
         self,
         override_session_maker: async_sessionmaker,
         mocker,
         tmp_path,
     ) -> None:
-        """Normalize a NOMAD override fingerprint dict so the cert task does not crash."""
+        """Apply NOMAD leaf overrides so the cert task can read the certificate."""
         ca = tmp_path / "ca.pem"
         _write_cert(ca, not_valid_after=ANCHOR + timedelta(days=30))
-        nomad_config = NomadExecutor(
-            endpoint="http://127.0.0.1:4646",
-            verify_ssl=False,
-            ssl_cafile=ca,
-            cert_expiry_warn_days=7,
-        ).model_dump(mode="json")
         await _seed_override(
             override_session_maker,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
-            key="NOMAD",
-            value=nomad_config,
+            key="NOMAD__ssl_cafile",
+            value=str(ca),
+        )
+        await _seed_override(
+            override_session_maker,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key="NOMAD__cert_expiry_warn_days",
+            value=7,
         )
         await refresh_all(lambda: override_session_maker, _tasks_proxies())
-        assert isinstance(tasks_settings.NOMAD, dict)
+        assert isinstance(tasks_settings.NOMAD, NomadExecutor)
+        assert tasks_settings.NOMAD.ssl_cafile == ca
 
         mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
         mock_alert = MagicMock()
