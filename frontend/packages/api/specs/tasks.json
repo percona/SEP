@@ -1530,7 +1530,7 @@
   "info": {
     "description": "Percona Services Enablement Platform — task execution, history, periodic jobs, connectivity.",
     "title": "SEP Tasks API",
-    "version": "v0.14.0.dev0"
+    "version": "v1.0.0.dev0"
   },
   "openapi": "3.1.0",
   "paths": {
