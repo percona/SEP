@@ -15,8 +15,6 @@
 
 """Define tests for the app.sep.plugins.tasks.routes module."""
 
-from unittest.mock import AsyncMock
-
 import pytest
 from fastapi import status
 
@@ -24,10 +22,7 @@ from app.sep.deps import get_task_by_name
 from app.sep.main import sep_app
 from app.tasks.models import (
     Task,
-    TaskBackendEnum,
-    TaskExecuteRequest,
     TaskHistoryStatusEnum,
-    TaskOwner,
 )
 from tests.app.factories import TaskFactory
 
@@ -73,46 +68,6 @@ def test_tasks_list(
 
 
 @pytest.mark.usefixtures("_mock_task_dep")
-def test_task_create(
-    test_client,
-    mock_task_api_dep,
-):
-    """Test creating a new task."""
-    transform_return = {"transformed": "data"}
-    mock_task_api_dep.post.side_effect = [
-        transform_return,  # for /transform/
-        {"created": "task"},  # for /
-    ]
-
-    transform_data = {
-        "payload": "fake-payload",
-        "fmt": "hcl",
-    }
-
-    task_data = {
-        "name": "new-task",
-        "backend": TaskBackendEnum.NOMAD,
-        "owner": TaskOwner.ANY,
-        "alert_on_fail": False,
-    }
-
-    form_data = transform_data | task_data
-
-    response = test_client.post("/tasks/", data=form_data, follow_redirects=False)
-    assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert (
-        response.headers["location"]
-        == f"{test_client.base_url}/tasks/{task_data['name']}"
-    )
-    mock_task_api_dep.post.assert_any_await(
-        "/transform/", json=transform_data, params={"backend": TaskBackendEnum.NOMAD}
-    )
-    mock_task_api_dep.post.assert_awaited_with(
-        "/", json=task_data | {"data": transform_return}
-    )
-
-
-@pytest.mark.usefixtures("_mock_task_dep")
 def test_task_detail(
     test_client,
     created_task,
@@ -123,7 +78,6 @@ def test_task_detail(
     mock_task_api_dep.get.return_value = []
     mock_task_api_dep.get.side_effect = [
         {"address1": "host1", "address2": "host2"},  # for /hosts/ (dependency)
-        [],  # for /{task_name}/periodic/
         {
             "items": [],
             "total": 0,
@@ -141,8 +95,9 @@ def test_task_detail(
     response = test_client.get(f"/tasks/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
+    assert f"/tasks/{created_task.name}/delete" not in response.text
+    assert "new-periodic-task-form" not in response.text
     mock_task_api_dep.get.assert_any_await("/hosts/")
-    mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/periodic/")
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
         f"/{created_task.name}/history/",
@@ -150,40 +105,27 @@ def test_task_detail(
     )
 
 
-@pytest.mark.usefixtures("_mock_task_dep")
-def test_task_execute(
-    test_client,
-    created_task,
-    mock_task_api_dep,
-):
-    """Test executing a task."""
-    mock_task_api_dep.post.return_value = AsyncMock()
+def test_mutating_routes_removed(test_client, created_task):
+    """Assert the generic create/execute/delete routes no longer exist.
 
-    execute_data = TaskExecuteRequest().model_dump()
-
-    response = test_client.post(f"/tasks/{created_task.name}", follow_redirects=False)
-    assert response.status_code == status.HTTP_303_SEE_OTHER
+    The tasks plugin is read-only; creating, running, and deleting a task
+    stay on the owning plugins. ``POST /tasks/`` and ``POST /tasks/{name}``
+    keep only their ``GET`` handlers (405). ``POST /tasks/{name}/delete`` is
+    gone: the old handler 303-redirected to ``/tasks``, so its absence is
+    confirmed by the request no longer landing on that location (it falls
+    through to the catch-all 404 handler instead).
+    """
     assert (
-        response.headers["location"]
-        == f"{test_client.base_url}/tasks/{created_task.name}"
+        test_client.post("/tasks/", follow_redirects=False).status_code
+        == status.HTTP_405_METHOD_NOT_ALLOWED
     )
-    mock_task_api_dep.post.assert_awaited_once_with(
-        f"/execute/{created_task.name}", json=execute_data
+    assert (
+        test_client.post(
+            f"/tasks/{created_task.name}", follow_redirects=False
+        ).status_code
+        == status.HTTP_405_METHOD_NOT_ALLOWED
     )
-
-
-@pytest.mark.usefixtures("_mock_task_dep")
-def test_tasks_delete(
-    test_client,
-    created_task,
-    mock_task_api_dep,
-):
-    """Test deleting a task."""
-    mock_task_api_dep.delete.return_value = AsyncMock()
-
-    response = test_client.post(
+    delete_response = test_client.post(
         f"/tasks/{created_task.name}/delete", follow_redirects=False
     )
-    assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == "/tasks"
-    mock_task_api_dep.delete.assert_awaited_once_with(f"/{created_task.name}")
+    assert delete_response.headers.get("location") != "/tasks"
