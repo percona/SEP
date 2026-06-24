@@ -35,7 +35,6 @@ class AppInfo(BaseModel):
 
     :param footer_text: The rendered sidebar footer text (application summary
         and version by default).
-    :type footer_text: str
     """
 
     footer_text: str
@@ -52,6 +51,5 @@ async def get_app_info() -> AppInfo:
     gated by the router-level ``IsApiAuthenticated`` dependency.
 
     :return: The rendered footer text.
-    :rtype: AppInfo
     """
     return AppInfo(footer_text=render_footer_text())
