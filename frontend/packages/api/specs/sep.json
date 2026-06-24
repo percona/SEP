@@ -17582,25 +17582,6 @@
         ]
       }
     },
-    "/atw/": {
-      "get": {
-        "description": "Homepage of plugin.",
-        "operationId": "app_index_atw__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "App Index"
-      }
-    },
     "/backup_mongo/": {
       "get": {
         "description": "Homepage of PBM backup mongo plugin.",
