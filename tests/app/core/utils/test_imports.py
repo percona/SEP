@@ -37,6 +37,7 @@ def temp_module(monkeypatch):
     """
     module_name = "temp_module"
     spec = util.spec_from_loader(module_name, loader=None)
+    assert spec is not None
     module = util.module_from_spec(spec)
     module.test_var = 42
     monkeypatch.setitem(sys.modules, module_name, module)
