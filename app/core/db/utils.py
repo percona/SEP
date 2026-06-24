@@ -25,7 +25,6 @@ from sqlalchemy import (
     Column,
     ColumnClause,
     ColumnElement,
-    Connection,
     func,
     inspect,
     JSON,
@@ -36,6 +35,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
 from sqlalchemy.sql.dml import Insert as GenericInsert
