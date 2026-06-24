@@ -28,7 +28,7 @@
 | app/core/db/crud.py                                                                                             |      285 |       22 |       82 |        9 |     90% |194, 246-\>248, 248-\>250, 250-\>252, 259-\>275, 310-327, 345, 350, 367, 481-484, 850-854, 1118-1119 |
 | app/core/db/models.py                                                                                           |       14 |        0 |        0 |        0 |    100% |           |
 | app/core/db/sql\_types.py                                                                                       |       37 |        0 |       12 |        0 |    100% |           |
-| app/core/db/utils.py                                                                                            |       54 |        4 |       22 |        4 |     89% |76, 191, 220, 223 |
+| app/core/db/utils.py                                                                                            |       66 |        5 |       26 |        5 |     89% |81, 196, 225, 228, 246 |
 | app/core/exceptions.py                                                                                          |       32 |        0 |        0 |        0 |    100% |           |
 | app/core/log.py                                                                                                 |       21 |        0 |        8 |        0 |    100% |           |
 | app/core/middleware/log\_context.py                                                                             |       26 |        0 |        2 |        0 |    100% |           |
@@ -44,6 +44,7 @@
 | app/core/settings\_override/api/models.py                                                                       |       13 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/api/routes.py                                                                       |      238 |       27 |       74 |        7 |     88% |277, 378, 401, 531-538, 561-568, 577-586, 726-733, 763-764, 819, 821-822, 890, 892, 915, 1045-\>1062, 1049-1061 |
 | app/core/settings\_override/cache.py                                                                            |      118 |       13 |       46 |        6 |     86% |192-197, 210-215, 297, 360, 401, 405-412 |
+| app/core/settings\_override/constants.py                                                                        |        1 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/lifecycle.py                                                                        |       69 |        1 |       14 |        0 |     99% |       267 |
 | app/core/settings\_override/manager.py                                                                          |        5 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/models.py                                                                           |       22 |        0 |        0 |        0 |    100% |           |
@@ -114,14 +115,14 @@
 | app/sep/migrations/versions/2024\_10\_08\_2047-eeac2926bbea\_remove\_task\_history\_id\_field.py                |       12 |        1 |        0 |        0 |     92% |        45 |
 | app/sep/migrations/versions/2025\_08\_08\_1005-9307f0f5ee54\_create\_snippet\_table.py                          |       16 |        3 |        0 |        0 |     81% |     59-61 |
 | app/sep/migrations/versions/2026\_03\_02\_1612-810c31754b54\_add\_index\_for\_syncinstance\_syncer.py           |       12 |        1 |        0 |        0 |     92% |        45 |
-| app/sep/migrations/versions/2026\_05\_18\_2014-ed97b99eef38\_add\_setting\_override\_table.py                   |       18 |        4 |        0 |        0 |     78% |     81-86 |
+| app/sep/migrations/versions/2026\_05\_18\_2014-ed97b99eef38\_add\_setting\_override\_table.py                   |       28 |        9 |        4 |        1 |     62% | 44, 87-96 |
 | app/sep/migrations/versions/2026\_06\_01\_1530-e5c224619161\_add\_appstate\_table.py                            |       14 |        2 |        0 |        0 |     86% |     53-54 |
-| app/sep/migrations/versions/2026\_06\_02\_1512-378c0872642f\_extend\_setting\_class\_enum\_settings\_alert.py   |       13 |        3 |        0 |        0 |     77% |     68-73 |
+| app/sep/migrations/versions/2026\_06\_02\_1512-378c0872642f\_extend\_setting\_class\_enum\_settings\_alert.py   |       23 |        8 |        4 |        1 |     59% | 47, 77-91 |
 | app/sep/migrations/versions/2026\_06\_15\_1725-64f10ead74f6\_add\_seppluginperiodictask.py                      |       16 |        3 |        0 |        0 |     81% |     55-57 |
 | app/sep/migrations/versions/2026\_06\_16\_1200-a7c4e9f1b2d3\_add\_lifecycle\_state\_to\_app\_state.py           |       26 |        0 |        0 |        0 |    100% |           |
 | app/sep/migrations/versions/2026\_06\_16\_1600-b8d5f2a9c1e4\_add\_apprunningtask\_table.py                      |       16 |        3 |        0 |        0 |     81% |     54-56 |
 | app/sep/migrations/versions/2026\_06\_22\_1223-410eedfc5b43\_merge\_heads.py                                    |        7 |        0 |        0 |        0 |    100% |           |
-| app/sep/migrations/versions/2026\_06\_22\_1400-c97e7e47c935\_extend\_setting\_class\_enum\_anonymizer.py        |       13 |        3 |        0 |        0 |     77% |     71-75 |
+| app/sep/migrations/versions/2026\_06\_22\_1400-c97e7e47c935\_extend\_setting\_class\_enum\_anonymizer.py        |       23 |        8 |        4 |        1 |     59% | 47, 80-93 |
 | app/sep/models.py                                                                                               |       66 |        1 |        2 |        1 |     97% |       247 |
 | app/sep/periodic\_tasks.py                                                                                      |       41 |        0 |       12 |        0 |    100% |           |
 | app/sep/plugins/alert\_troubleshooting/api\_routes.py                                                           |       23 |        4 |        2 |        0 |     76% |64-65, 73-80 |
@@ -324,11 +325,11 @@
 | app/tasks/migrations/versions/2026\_04\_14\_1752-9ebd648709e8\_add\_execution\_request\_json\_indexes.py        |       27 |       12 |       12 |        2 |     44% |64-69, 73-\>exit, 85-94 |
 | app/tasks/migrations/versions/2026\_04\_14\_2218-89e80a316a28\_convert\_execution\_request\_to\_jsonb.py        |       18 |        7 |        4 |        1 |     55% |62-67, 74-78 |
 | app/tasks/migrations/versions/2026\_04\_21\_1701-e42ce8324da7\_add\_stale\_to\_taskhistory\_status\_enum.py     |       13 |        2 |        0 |        0 |     85% |     55-56 |
-| app/tasks/migrations/versions/2026\_05\_18\_2014-fafdb0445092\_add\_setting\_override\_table.py                 |       18 |        4 |        0 |        0 |     78% |     81-86 |
+| app/tasks/migrations/versions/2026\_05\_18\_2014-fafdb0445092\_add\_setting\_override\_table.py                 |       28 |        9 |        4 |        1 |     62% | 44, 87-96 |
 | app/tasks/migrations/versions/2026\_05\_20\_1500-7d1232c0e3ce\_coerce\_alters\_recursion\_method\_host.py       |       37 |       15 |       10 |        1 |     49% |     75-91 |
-| app/tasks/migrations/versions/2026\_06\_02\_1512-6d4cfd37bd3a\_extend\_setting\_class\_enum\_settings\_alert.py |       13 |        3 |        0 |        0 |     77% |     68-73 |
+| app/tasks/migrations/versions/2026\_06\_02\_1512-6d4cfd37bd3a\_extend\_setting\_class\_enum\_settings\_alert.py |       23 |        8 |        4 |        1 |     59% | 47, 77-91 |
 | app/tasks/migrations/versions/2026\_06\_22\_1223-2f5a00236369\_merge\_heads.py                                  |        7 |        0 |        0 |        0 |    100% |           |
-| app/tasks/migrations/versions/2026\_06\_22\_1400-abc65df0318a\_extend\_setting\_class\_enum\_anonymizer.py      |       13 |        3 |        0 |        0 |     77% |     71-75 |
+| app/tasks/migrations/versions/2026\_06\_22\_1400-abc65df0318a\_extend\_setting\_class\_enum\_anonymizer.py      |       23 |        8 |        4 |        1 |     59% | 47, 80-93 |
 | app/tasks/migrations/versions/2026\_06\_22\_1830-c4e8f0a3b1d2\_add\_alert\_detail\_builder\_to\_task.py         |       14 |        1 |        0 |        0 |     93% |        60 |
 | app/tasks/models.py                                                                                             |      306 |        3 |       64 |        5 |     98% |616-\>619, 623, 638-\>644, 1050-\>1052, 1062-\>1064, 1087-1088 |
 | app/tasks/periodic/crud.py                                                                                      |       26 |        0 |        0 |        0 |    100% |           |
@@ -337,7 +338,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       56 |        4 |       12 |        3 |     90% |64-68, 111-\>113, 133-136 |
 | app/tasks/routes.py                                                                                             |      227 |       28 |       44 |        2 |     87% |139-143, 200, 221-227, 260, 316, 323, 367-368, 394, 434, 453, 593, 617, 630-631, 639-642, 665, 672, 678, 694-695 |
 | app/tasks/settings/routes.py                                                                                    |       10 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **22243** | **2587** | **5158** |  **495** | **86%** |           |
+| **TOTAL**                                                                                                       | **22316** | **2618** | **5186** |  **502** | **86%** |           |
 
 
 ## Setup coverage badge
