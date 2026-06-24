@@ -60,11 +60,7 @@ default:
         URI_PATH: /inventory
         CSS_CLASS: inventory
       - MODULE_NAME: snippets
-      - NAME: Collect Diagnostic Data
-        MODULE_NAME: atw
-        URI_PATH: /atw
-        CSS_CLASS: atw
-        NAV_ORDER: 3
+      - MODULE_NAME: atw
       - NAME: Schema Change
         MODULE_NAME: alters
         URI_PATH: /alters
