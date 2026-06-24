@@ -4614,11 +4614,7 @@ export interface paths {
      */
     get: operations['tasks_list_tasks__get'];
     put?: never;
-    /**
-     * Task Create
-     * @description Create task.
-     */
-    post: operations['task_create_tasks__post'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -4638,31 +4634,7 @@ export interface paths {
      */
     get: operations['tasks_detail_tasks__task_name__get'];
     put?: never;
-    /**
-     * Tasks Execute
-     * @description Execute task.
-     */
-    post: operations['tasks_execute_tasks__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/tasks/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Tasks Delete
-     * @description Delete task.
-     */
-    post: operations['tasks_delete_tasks__task_name__delete_post'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -9774,42 +9746,6 @@ export interface components {
      */
     TaskBackendEnum: 'nomad' | 'proxy' | 'celery';
     /**
-     * TaskCreateRequest
-     * @description Create a new task with the specified parameters.
-     *
-     *     :param name: The unique name of the task.
-     *     :type name: NonEmptyStr
-     *     :param payload: The payload for the task.
-     *     :type payload: NonEmptyStr
-     *     :param fmt: The format of the payload. Supported formats are "hcl", "json", and
-     *         "yaml".
-     *     :type fmt: Literal["hcl", "json", "yaml"]
-     *     :param backend: The backend system to use for task execution.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The owner of the task.
-     *     :type owner: TaskOwner
-     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-     *     :type alert_on_fail: bool
-     */
-    TaskCreateRequest: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      backend: components['schemas']['TaskBackendEnum'];
-      /**
-       * Fmt
-       * @enum {string}
-       */
-      fmt: 'hcl' | 'json' | 'yaml';
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      /** Payload */
-      payload: string;
-    };
-    /**
      * TaskDetailResponse
      * @description Represent the aggregate payload for ``GET /api/plugins/tasks/{task_name}``.
      *
@@ -9836,48 +9772,6 @@ export interface components {
       /** Periodic Summary */
       periodic_summary?: components['schemas']['PeriodicTaskSummary'][];
       task: components['schemas']['TaskResponse'];
-    };
-    /**
-     * TaskExecuteRequest
-     * @description Represent a request to execute a task with additional metadata and payload.
-     *
-     *     :param meta: A dictionary of meta variables for the task execution.
-     *         Defaults to an empty dictionary.
-     *     :type meta: dict[str, Any]
-     *     :param payload: Optional payload data or file path for the task execution.
-     *         Defaults to None.
-     *     :type payload: str | None
-     *     :param eta: The earliest time the task can be executed. Defaults to None, meaning
-     *         it will be executed as soon as possible.
-     *     :type eta: datetime | None
-     *     :param anonymize_mask: Bitmask of PII entities to anonymize. Defaults to None.
-     *     :type anonymize_mask: int | None
-     *     :param chain_task_names: Ordered list of task names to execute sequentially after
-     *         this one completes. Defaults to None.
-     *     :type chain_task_names: list[str] | None
-     *     :param chain_on_failure: Whether the chain should continue when a task fails,
-     *         stops, or is lost. Defaults to False (chain only on success).
-     *     :type chain_on_failure: bool
-     */
-    TaskExecuteRequest: {
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /**
-       * Chain On Failure
-       * @default false
-       */
-      chain_on_failure: boolean;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-      /**
-       * Meta
-       * @default {}
-       */
-      meta: Record<string, never>;
-      /** Payload */
-      payload?: string | null;
     };
     /**
      * TaskExecuteWrite
@@ -17886,39 +17780,6 @@ export interface operations {
       };
     };
   };
-  task_create_tasks__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['TaskCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   tasks_detail_tasks__task_name__get: {
     parameters: {
       query?: {
@@ -17939,76 +17800,6 @@ export interface operations {
         };
         content: {
           'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_execute_tasks__task_name__post: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['TaskExecuteRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_delete_tasks__task_name__delete_post: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
         };
       };
       /** @description Validation Error */

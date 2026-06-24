@@ -384,32 +384,48 @@ class TestSyncRunningItemsRespectsOverriddenTtl:
 
 
 class TestCheckNomadCertExpiryWithOverride:
-    """Test ``_check_nomad_cert_expiry`` tolerates a NOMAD fingerprint-dict override."""
+    """Test ``_check_nomad_cert_expiry`` with nested NOMAD leaf overrides."""
 
     @pytest.mark.asyncio
-    async def test_normalizes_fingerprint_dict_override(
+    async def test_applies_nested_leaf_overrides(
         self,
         override_session_maker: async_sessionmaker,
         mocker,
         tmp_path,
     ) -> None:
-        """Normalize a NOMAD override fingerprint dict so the cert task does not crash."""
+        """Apply NOMAD CA and client leaf overrides so the cert task reads them.
+
+        Both cert paths are overridden to controlled ``tmp_path`` certs;
+        leaving ``ssl_certfile`` at its configured default would resolve to a
+        real on-disk dev cert (present locally, absent in CI) and add a stray
+        ``resolve`` call.
+        """
         ca = tmp_path / "ca.pem"
+        client = tmp_path / "client.pem"
         _write_cert(ca, not_valid_after=ANCHOR + timedelta(days=30))
-        nomad_config = NomadExecutor(
-            endpoint="http://127.0.0.1:4646",
-            verify_ssl=False,
-            ssl_cafile=ca,
-            cert_expiry_warn_days=7,
-        ).model_dump(mode="json")
+        _write_cert(client, not_valid_after=ANCHOR + timedelta(days=30))
         await _seed_override(
             override_session_maker,
             setting_class=SettingClassEnum.TASKS_SETTINGS,
-            key="NOMAD",
-            value=nomad_config,
+            key="NOMAD__ssl_cafile",
+            value=str(ca),
+        )
+        await _seed_override(
+            override_session_maker,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key="NOMAD__ssl_certfile",
+            value=str(client),
+        )
+        await _seed_override(
+            override_session_maker,
+            setting_class=SettingClassEnum.TASKS_SETTINGS,
+            key="NOMAD__cert_expiry_warn_days",
+            value=7,
         )
         await refresh_all(lambda: override_session_maker, _tasks_proxies())
-        assert isinstance(tasks_settings.NOMAD, dict)
+        assert isinstance(tasks_settings.NOMAD, NomadExecutor)
+        assert tasks_settings.NOMAD.ssl_cafile == ca
+        assert tasks_settings.NOMAD.ssl_certfile == client
 
         mocker.patch("app.core.utils.utc_now", return_value=ANCHOR)
         mock_alert = MagicMock()
@@ -419,5 +435,9 @@ class TestCheckNomadCertExpiryWithOverride:
 
         await celery_module._check_nomad_cert_expiry()
 
-        mock_alert.resolve.assert_awaited_once_with(f"nomad-cert-expiry:{ca.name}")
+        awaited_keys = {c.args[0] for c in mock_alert.resolve.await_args_list}
+        assert awaited_keys == {
+            f"nomad-cert-expiry:{ca.name}",
+            f"nomad-cert-expiry:{client.name}",
+        }
         mock_alert.trigger.assert_not_called()

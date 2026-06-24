@@ -13,7 +13,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.sep.plugins.tasks.app import app
-from app.sep.plugins.tasks.routes import router
+"""Define constants shared by settings-override modules."""
 
-__all__ = ["app", "router"]
+# Stable, app-chosen advisory-lock key shared by every settingoverride migration
+# so they serialize against each other on a shared PostgreSQL database. Any fixed
+# bigint unused elsewhere works; no other advisory lock exists in the repo.
+SETTINGOVERRIDE_MIGRATION_LOCK_KEY = 0x5E770438

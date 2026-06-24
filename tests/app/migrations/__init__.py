@@ -12,8 +12,3 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-from app.sep.plugins.tasks.app import app
-from app.sep.plugins.tasks.routes import router
-
-__all__ = ["app", "router"]

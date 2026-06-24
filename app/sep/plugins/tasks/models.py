@@ -15,38 +15,12 @@
 
 """Define models for the Tasks plugin."""
 
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.core.utils.fields import NonEmptyStr, UTCDatetime
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskResponse
-
-
-class TaskCreateRequest(BaseModel):
-    """Create a new task with the specified parameters.
-
-    :param name: The unique name of the task.
-    :type name: NonEmptyStr
-    :param payload: The payload for the task.
-    :type payload: NonEmptyStr
-    :param fmt: The format of the payload. Supported formats are "hcl", "json", and
-        "yaml".
-    :type fmt: Literal["hcl", "json", "yaml"]
-    :param backend: The backend system to use for task execution.
-    :type backend: TaskBackendEnum
-    :param owner: The owner of the task.
-    :type owner: TaskOwner
-    :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-    :type alert_on_fail: bool
-    """
-
-    name: NonEmptyStr
-    payload: NonEmptyStr  # TODO: Validate trying to parse  # noqa: TD002, TD003
-    fmt: Literal["hcl", "json", "yaml"]
-    backend: TaskBackendEnum
-    owner: TaskOwner
-    alert_on_fail: bool = False
+from app.core.utils.fields import UTCDatetime
+from app.tasks.models import TaskBackendEnum, TaskResponse
 
 
 class TaskListResponse(BaseModel):

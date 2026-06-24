@@ -506,6 +506,8 @@ def test_archives_detail(
     response = test_client.get(f"/archives/{created_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert created_task.name in response.text
+    assert f"/archives/{created_task.name}/delete" in response.text
+    assert f"/tasks/{created_task.name}/delete" not in response.text
     assert 'name="disable_bulk_insert"' in response.text
     # Render guard only (see test_archives_index); does not exercise the
     # inline-JS gating.
