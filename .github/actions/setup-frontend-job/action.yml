@@ -4,7 +4,7 @@ inputs:
   pnpm-version:
     description: Version of pnpm to install
     required: false
-    default: "11.1.2"
+    default: "11.1.3"
   node-version:
     description: Version of Node.js to use
     required: false

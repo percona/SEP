@@ -255,7 +255,6 @@ jobs:
     # `lint-fmt-only`: audit-group deps not in the production image.
     if: >-
       ${{
-        always() &&
         github.event.pull_request.draft == false &&
         needs.label-gate.result == 'success' &&
         needs.changes.result == 'success' &&
