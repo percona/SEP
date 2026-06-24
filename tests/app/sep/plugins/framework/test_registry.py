@@ -66,19 +66,19 @@ class TestLegacyWrapping:
 
     def test_module_name_only_derives_metadata(self) -> None:
         """A MODULE_NAME-only entry derives name/uri/css/display from the key."""
-        registry = build_app_registry([Plugin(module_name="dipper")])
-        app = registry.get("dipper")
-        assert app.name == "dipper"
-        assert app.uri_path == "/dipper"
-        assert app.css_class == "dipper"
-        assert app.display_name == "dipper"
+        registry = build_app_registry([Plugin(module_name="alters")])
+        app = registry.get("alters")
+        assert app.name == "alters"
+        assert app.uri_path == "/alters"
+        assert app.css_class == "alters"
+        assert app.display_name == "alters"
 
     def test_api_router_is_none_when_opted_out(self) -> None:
         """A plugin opting out of the API mount carries ``api_router is None``."""
         registry = build_app_registry(
-            [Plugin(name="Dipper", module_name="dipper", api_router_path=None)]
+            [Plugin(name="Alters", module_name="alters", api_router_path=None)]
         )
-        assert registry.get("dipper").api_router is None
+        assert registry.get("alters").api_router is None
 
     def test_legacy_plugin_carries_group_and_nav_order(self) -> None:
         """Carry ``group``/``nav_order`` onto the synthesized app from the plugin entry."""
@@ -99,8 +99,8 @@ class TestLegacyWrapping:
 
     def test_legacy_plugin_without_grouping_is_ungrouped(self) -> None:
         """Carry ``None`` for ``group``/``nav_order`` when the plugin omits them."""
-        registry = build_app_registry([Plugin(name="Dipper", module_name="dipper")])
-        app = registry.get("dipper")
+        registry = build_app_registry([Plugin(name="Alters", module_name="alters")])
+        app = registry.get("alters")
         assert app.group is None
         assert app.nav_order is None
 
@@ -111,22 +111,22 @@ class TestFailFast:
     def test_non_router_attribute_raises_type_error(self) -> None:
         """An ``api_router_path`` resolving to a non-``APIRouter`` raises ``TypeError``."""
         plugin = Plugin(
-            name="Dipper",
-            module_name="dipper",
+            name="Alters",
+            module_name="alters",
             api_router_path="app.sep.config.Plugin",
         )
-        with pytest.raises(TypeError, match="dipper"):
+        with pytest.raises(TypeError, match="alters"):
             build_app_registry([plugin])
 
     def test_empty_string_api_router_path_is_no_mount(self) -> None:
         """An empty-string ``api_router_path`` yields ``api_router is None``."""
         plugin = Plugin.model_construct(
             name="Ghost",
-            module_name="app.sep.plugins.dipper",
+            module_name="app.sep.plugins.alters",
             api_router_path="",
         )
         registry = build_app_registry([plugin])
-        assert registry.get("dipper").api_router is None
+        assert registry.get("alters").api_router is None
 
 
 class TestOrderAndLookup:
@@ -379,11 +379,11 @@ class TestGetAppRegistry:
         assert get_app_registry() is get_app_registry()
 
 
-BESPOKE_BASE_APP_PLUGINS = ["alerts", "inventory", "report"]
+BESPOKE_BASE_APP_PLUGINS = ["alerts", "dipper", "inventory", "report"]
 
 
 class TestBespokeBaseAppDefinitions:
-    """Tests for the alerts/inventory/report ``BaseApp`` definition wiring."""
+    """Cover the alerts/dipper/inventory/report ``BaseApp`` definition wiring."""
 
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
     def test_module_exports_bare_base_app(self, plugin: str) -> None:
@@ -405,9 +405,9 @@ class TestBespokeBaseAppDefinitions:
         """Carry ``inventory_schema`` on the inventory definition's ``app_schema``."""
         assert get_app_registry().get("inventory").app_schema is inventory_schema
 
-    @pytest.mark.parametrize("plugin", ["alerts", "report"])
+    @pytest.mark.parametrize("plugin", ["alerts", "dipper", "report"])
     def test_schemaless_plugins_have_no_app_schema(self, plugin: str) -> None:
-        """Register the alerts and report definitions without a schema."""
+        """Register the alerts, dipper, and report definitions without a schema."""
         assert get_app_registry().get(plugin).app_schema is None
 
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
