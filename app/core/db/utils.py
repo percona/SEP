@@ -258,7 +258,7 @@ def check_constraint_lists_members(
     column_name: str,
     members: Iterable[str],
 ) -> bool:
-    """Return True when the CHECK constraint on ``column_name`` lists every member.
+    """Return ``True`` when the CHECK constraint on ``column_name`` lists every member.
 
     The ``setting_class`` column uses ``native_enum=False``, so its allowed
     values live in a ``CHECK`` constraint rather than a PostgreSQL ``TYPE``. This
