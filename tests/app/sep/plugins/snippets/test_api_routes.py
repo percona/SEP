@@ -23,7 +23,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.sep.plugins.snippets.api_routes as snippets_api_routes
+import app.sep.plugins.snippets.extra_routes as snippets_extra_routes
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
     get_api_authenticated_user,
@@ -39,6 +39,7 @@ from app.sep.plugins.snippets.models import (
     SnippetResponse,
     SnippetsCapabilitiesResponse,
 )
+from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
@@ -68,7 +69,7 @@ def enable_manual_sync(mocker):
 
     def _patch_enable(*, value: bool) -> None:
         mocker.patch.object(
-            snippets_api_routes.snippets_settings,
+            snippets_settings,
             "ENABLE_MANUAL_SYNC",
             new=value,
         )
@@ -86,14 +87,6 @@ class TestSnippetsApprovalApiReviewContracts:
         assert "SnippetApprovalResponse" not in snippets_models.__all__
         assert not hasattr(snippets_models, "SnippetApprovalResponse")
         assert "updated_by" in SnippetResponse.model_fields
-
-    def test_api_routes_module_docstring_lists_approval_routes(self):
-        """The module route inventory includes all approval endpoints."""
-        docstring = snippets_api_routes.__doc__ or ""
-
-        assert "PUT /snippet/approval?snippet_filename=..." in docstring
-        assert "DELETE /snippet/approval?snippet_filename=..." in docstring
-        assert "PATCH /approvals" in docstring
 
     def test_batch_approve_base_is_not_exported(self):
         """``SnippetBatchApproveBase`` is gone; callers use ``SnippetBatchApproveRequest``."""
@@ -1173,7 +1166,7 @@ class TestSnippetsApiRefresh:
         """Admin happy path: 200 with ISO ``refreshed_at`` and one call."""
         enable_manual_sync(value=True)
         update_mock = mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(return_value=None),
         )
@@ -1196,9 +1189,9 @@ class TestSnippetsApiRefresh:
         """The refresh wraps the sync in ``track_app_task`` for the snippets app."""
         enable_manual_sync(value=True)
         mocker.patch.object(
-            snippets_api_routes, "update_snippets", new=AsyncMock(return_value=None)
+            snippets_extra_routes, "update_snippets", new=AsyncMock(return_value=None)
         )
-        spy = mocker.spy(snippets_api_routes, "track_app_task")
+        spy = mocker.spy(snippets_extra_routes, "track_app_task")
 
         response = api_admin_client.post(self.URL)
 
@@ -1212,7 +1205,7 @@ class TestSnippetsApiRefresh:
         """Disabled deployment: 403 with structured detail; no work done."""
         enable_manual_sync(value=False)
         update_mock = mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(return_value=None),
         )
@@ -1231,7 +1224,7 @@ class TestSnippetsApiRefresh:
         """Non-admin caller: 403; no refresh work done."""
         enable_manual_sync(value=True)
         update_mock = mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(return_value=None),
         )
@@ -1247,7 +1240,7 @@ class TestSnippetsApiRefresh:
         """No auth: 401; no refresh work done."""
         enable_manual_sync(value=True)
         update_mock = mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(return_value=None),
         )
@@ -1267,7 +1260,7 @@ class TestSnippetsApiRefresh:
         """
         enable_manual_sync(value=True)
         update_mock = mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(return_value=None),
         )
@@ -1331,7 +1324,7 @@ class TestSnippetsApiRefresh:
         """Backend errors are not silently swallowed (500 to caller)."""
         enable_manual_sync(value=True)
         mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(side_effect=RuntimeError("disk walk failed")),
         )

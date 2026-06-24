@@ -381,19 +381,19 @@ class TestApiRouterConfigDrivenLoop:
     def test_plugin_with_api_router_path_is_mounted(self) -> None:
         """Assert a plugin with ``api_router_path`` set produces mounted routes."""
         plugin = Plugin(
-            name="Snippets",
-            module_name="snippets",
-            api_router_path="app.sep.plugins.snippets.api_routes.router",
+            name="Dipper Data Collection",
+            module_name="dipper",
+            api_router_path="app.sep.plugins.dipper.api_routes.router",
         )
         router = build_plugins_router(build_app_registry([plugin]))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
-        assert any(p.startswith("/plugins/snippets/") for p in paths)
+        assert any(p.startswith("/plugins/dipper/") for p in paths)
 
     def test_plugin_without_api_router_path_is_not_mounted(self) -> None:
         """Assert a plugin with ``api_router_path=None`` contributes no routes."""
         plugin = Plugin(
-            name="Snippets",
-            module_name="snippets",
+            name="Dipper Data Collection",
+            module_name="dipper",
             api_router_path=None,
         )
         router = build_plugins_router(build_app_registry([plugin]))
@@ -437,8 +437,8 @@ class TestApiRouterConfigDrivenLoop:
         """Assert pointing at a missing attribute fails fast at construction."""
         plugin = Plugin(
             name="Ghost",
-            module_name="snippets",
-            api_router_path="app.sep.plugins.snippets.api_routes.does_not_exist",
+            module_name="dipper",
+            api_router_path="app.sep.plugins.dipper.api_routes.does_not_exist",
         )
         with pytest.raises(AttributeError):
             build_plugins_router(build_app_registry([plugin]))
@@ -451,8 +451,8 @@ class TestApiRouterConfigDrivenLoop:
         """
         plugin = Plugin(
             name="Bad",
-            module_name="snippets",
-            api_router_path="app.sep.plugins.snippets.api_routes:router",
+            module_name="dipper",
+            api_router_path="app.sep.plugins.dipper.api_routes:router",
         )
         with pytest.raises((ImportError, AttributeError, ModuleNotFoundError)):
             build_plugins_router(build_app_registry([plugin]))
@@ -464,7 +464,6 @@ class TestApiRouterConfigDrivenLoop:
         for module, expected in (
             ("archives", "app.sep.plugins.archives.api_routes.router"),
             ("dipper", "app.sep.plugins.dipper.api_routes.router"),
-            ("snippets", "app.sep.plugins.snippets.api_routes.router"),
         ):
             plugin = Plugin(name=module.title(), module_name=module)
             assert plugin.api_router_path == expected
@@ -541,7 +540,7 @@ class TestApiRouterConfigDrivenLoop:
         """
         plugin = Plugin.model_construct(
             name="Ghost",
-            module_name="app.sep.plugins.snippets",
+            module_name="app.sep.plugins.dipper",
             api_router_path="",
         )
         router = build_plugins_router(build_app_registry([plugin]))
@@ -555,11 +554,11 @@ class TestApiRouterConfigDrivenLoop:
         ``include_router``.
         """
         plugin = Plugin(
-            name="Snippets",
-            module_name="snippets",
+            name="Dipper Data Collection",
+            module_name="dipper",
             api_router_path="app.sep.config.Plugin",
         )
-        with pytest.raises(TypeError, match="snippets"):
+        with pytest.raises(TypeError, match="dipper"):
             build_plugins_router(build_app_registry([plugin]))
 
     def test_plugin_api_router_path_rejects_bad_module_at_parse(self) -> None:
