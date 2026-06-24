@@ -21,7 +21,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import NonEmptyStr
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.framework import (
@@ -318,10 +318,10 @@ class ArchivesCreate(AppFormModel):
         Forbidden(when=F("swap_drop") == SwapDropEnum.SWAP_DROP),
     ] = None
     use_index: Annotated[
-        NonEmptyStr | None, Ui(label="Use Index", section="Advanced")
+        NonEmptyStr | EmptyStrToNone, Ui(label="Use Index", section="Advanced")
     ] = None
     extra_args: Annotated[
-        NonEmptyStr | None, Ui(label="Extra Args", section="Advanced")
+        NonEmptyStr | EmptyStrToNone, Ui(label="Extra Args", section="Advanced")
     ] = None
     limit: Annotated[int | None, Field(ge=1), Ui(label="Limit", section="Advanced")] = (
         None
