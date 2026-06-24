@@ -23,6 +23,7 @@ from fastapi import APIRouter
 from pytest_mock import MockerFixture
 
 from app.sep.config import Plugin, sep_settings
+from app.sep.plugins.atw.schema import atw_schema
 from app.sep.plugins.framework.apps import TaskExecutionApp
 from app.sep.plugins.framework.base import BaseApp
 from app.sep.plugins.framework.registry import (
@@ -415,3 +416,32 @@ class TestBespokeBaseAppDefinitions:
         package = importlib.import_module(f"app.sep.plugins.{plugin}")
         routes = importlib.import_module(f"app.sep.plugins.{plugin}.routes")
         assert package.router is routes.router
+
+
+class TestAtwDefinition:
+    """Cover the atw ``BaseApp`` definition (no Jinja router, no legacy re-export).
+
+    atw is kept out of ``BESPOKE_BASE_APP_PLUGINS`` because it ships no
+    ``routes.py`` Jinja router and no legacy ``router`` re-export, so the
+    parametrized router/re-export assertions there do not apply.
+    """
+
+    def test_module_exports_bare_base_app(self) -> None:
+        """Assert atw exports a bare ``BaseApp``, not a ``TaskExecutionApp``."""
+        app = importlib.import_module("app.sep.plugins.atw").app
+        assert isinstance(app, BaseApp)
+        assert not isinstance(app, TaskExecutionApp)
+
+    def test_registry_binds_api_router_without_jinja(self) -> None:
+        """Bind atw's API router by identity and mount no Jinja router."""
+        api_routes = importlib.import_module("app.sep.plugins.atw.api_routes")
+        app = get_app_registry().get("atw")
+        assert app.api_router is api_routes.router
+        assert app.jinja_router is None
+
+    def test_definition_carries_schema_and_nav_metadata(self) -> None:
+        """Carry ``atw_schema``, ``custom_ui``, and the shared snippets group."""
+        app = get_app_registry().get("atw")
+        assert app.app_schema is atw_schema
+        assert app.custom_ui is True
+        assert app.group == "snippets"

@@ -3070,26 +3070,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/atw/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * App Index
-     * @description Homepage of plugin.
-     */
-    get: operations['app_index_atw__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/backup_mongo/': {
     parameters: {
       query?: never;
@@ -15286,26 +15266,6 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  app_index_atw__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
         };
       };
     };
