@@ -7184,7 +7184,7 @@ export interface components {
     };
     /**
      * DestByFile
-     * @description Destination is a file path.
+     * @description Represent a file destination.
      *
      *     :param mode: The one-of discriminator (``"file"``).
      *     :param dest_file: The file path the archived rows are written to.
@@ -7200,7 +7200,7 @@ export interface components {
     };
     /**
      * DestByTable
-     * @description Destination is a table (collapsed free-solo references).
+     * @description Represent a table destination (collapsed free-solo references).
      *
      *     :param mode: The one-of discriminator (``"table"``).
      *     :param dest_db: The destination schema — an inventory id, a free-typed name, or
@@ -7672,7 +7672,7 @@ export interface components {
     };
     /**
      * HostByService
-     * @description Destination host taken from an inventory service.
+     * @description Represent a destination host taken from an inventory service.
      *
      *     :param mode: The one-of discriminator (``"service"``).
      *     :param dest_service: The inventory id of the destination MySQL service; its
@@ -7732,7 +7732,7 @@ export interface components {
     };
     /**
      * HostManual
-     * @description Destination host entered manually.
+     * @description Represent a manually-entered destination host.
      *
      *     :param mode: The one-of discriminator (``"manual"``).
      *     :param dest_host: The destination host address.
@@ -9715,7 +9715,7 @@ export interface components {
     };
     /**
      * SourceByQuery
-     * @description Source rows selected by a custom query.
+     * @description Represent a custom-query source selection.
      *
      *     :param mode: The one-of discriminator (``"query"``).
      *     :param source_query: The query defining the rows to archive.
@@ -9731,7 +9731,7 @@ export interface components {
     };
     /**
      * SourceByTable
-     * @description Source rows selected by schema + table (collapsed free-solo references).
+     * @description Represent a schema+table source selection (collapsed free-solo references).
      *
      *     :param mode: The one-of discriminator (``"table"``).
      *     :param source_db: The source schema — an inventory id or a free-typed name.

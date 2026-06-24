@@ -4136,7 +4136,7 @@
         "type": "object"
       },
       "DestByFile": {
-        "description": "Destination is a file path.\n\n:param mode: The one-of discriminator (``\"file\"``).\n:param dest_file: The file path the archived rows are written to.",
+        "description": "Represent a file destination.\n\n:param mode: The one-of discriminator (``\"file\"``).\n:param dest_file: The file path the archived rows are written to.",
         "properties": {
           "dest_file": {
             "minLength": 1,
@@ -4160,7 +4160,7 @@
         "type": "object"
       },
       "DestByTable": {
-        "description": "Destination is a table (collapsed free-solo references).\n\n:param mode: The one-of discriminator (``\"table\"``).\n:param dest_db: The destination schema — an inventory id, a free-typed name, or\n    ``None`` to reuse the source schema.\n:param dest_table: The destination table — an inventory id or a free-typed name.",
+        "description": "Represent a table destination (collapsed free-solo references).\n\n:param mode: The one-of discriminator (``\"table\"``).\n:param dest_db: The destination schema — an inventory id, a free-typed name, or\n    ``None`` to reuse the source schema.\n:param dest_table: The destination table — an inventory id or a free-typed name.",
         "properties": {
           "dest_db": {
             "anyOf": [
@@ -4980,7 +4980,7 @@
         "type": "object"
       },
       "HostByService": {
-        "description": "Destination host taken from an inventory service.\n\n:param mode: The one-of discriminator (``\"service\"``).\n:param dest_service: The inventory id of the destination MySQL service; its\n    node address and port supply the destination host and port.",
+        "description": "Represent a destination host taken from an inventory service.\n\n:param mode: The one-of discriminator (``\"service\"``).\n:param dest_service: The inventory id of the destination MySQL service; its\n    node address and port supply the destination host and port.",
         "properties": {
           "dest_service": {
             "title": "Dest Service",
@@ -5100,7 +5100,7 @@
         "type": "object"
       },
       "HostManual": {
-        "description": "Destination host entered manually.\n\n:param mode: The one-of discriminator (``\"manual\"``).\n:param dest_host: The destination host address.\n:param dest_port: The destination port (1-65535); defaults to the MySQL port.",
+        "description": "Represent a manually-entered destination host.\n\n:param mode: The one-of discriminator (``\"manual\"``).\n:param dest_host: The destination host address.\n:param dest_port: The destination port (1-65535); defaults to the MySQL port.",
         "properties": {
           "dest_host": {
             "title": "Dest Host",
@@ -8677,7 +8677,7 @@
         "type": "object"
       },
       "SourceByQuery": {
-        "description": "Source rows selected by a custom query.\n\n:param mode: The one-of discriminator (``\"query\"``).\n:param source_query: The query defining the rows to archive.",
+        "description": "Represent a custom-query source selection.\n\n:param mode: The one-of discriminator (``\"query\"``).\n:param source_query: The query defining the rows to archive.",
         "properties": {
           "mode": {
             "const": "query",
@@ -8701,7 +8701,7 @@
         "type": "object"
       },
       "SourceByTable": {
-        "description": "Source rows selected by schema + table (collapsed free-solo references).\n\n:param mode: The one-of discriminator (``\"table\"``).\n:param source_db: The source schema — an inventory id or a free-typed name.\n:param source_table: The source table — an inventory id or a free-typed name.",
+        "description": "Represent a schema+table source selection (collapsed free-solo references).\n\n:param mode: The one-of discriminator (``\"table\"``).\n:param source_db: The source schema — an inventory id or a free-typed name.\n:param source_table: The source table — an inventory id or a free-typed name.",
         "properties": {
           "mode": {
             "const": "table",
