@@ -1,5 +1,5 @@
 {
-  "description": "View task definitions, execution history, and running task logs in one place. Task creation and execution remain on owning plugins and /tasks/.",
+  "description": "View task definitions, execution history, and running task logs in one place. Task creation and execution remain on the owning plugins.",
   "display_name": "Task Manager",
   "forms": [],
   "list_view": {
