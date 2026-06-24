@@ -70,6 +70,7 @@ function InventoryNodesList({
         listOnly={false}
         hideCreate
         hideEntityTabs
+        hideScheduleButton
         entityNameOverride="nodes"
         rowClickHref={(row) => `${pathname}/${String(row.id)}`}
         allowListEntityDelete={allowListEntityDelete}

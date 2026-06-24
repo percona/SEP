@@ -40,7 +40,7 @@ import GitHubIcon from '@mui/icons-material/GitHub';
 import { useAppInfo } from '@sep/api';
 import { useNavigation, type NavItem } from '../contexts/navigation';
 
-const DRAWER_WIDTH_EXPANDED = 260;
+const DRAWER_WIDTH_EXPANDED = 270;
 const DRAWER_WIDTH_COLLAPSED = 64;
 
 const PMM_URL = import.meta.env.VITE_PMM_URL;
