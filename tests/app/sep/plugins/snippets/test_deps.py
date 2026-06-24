@@ -35,7 +35,101 @@ from app.sep.plugins.snippets.deps import (
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import (
     EXECUTOR_HOSTS_INPUT_NAME,
+    Snippet,
 )
+
+
+class _AsyncForm:
+    """Mimic the async context manager returned by ``Request.form()``."""
+
+    def __init__(self, data: dict):
+        self._data = data
+
+    async def __aenter__(self) -> dict:
+        return self._data
+
+    async def __aexit__(self, *exc) -> bool:
+        return False
+
+
+def _gated_snippet() -> Snippet:
+    """Return an unpersisted snippet with a ``start`` field hidden when ``list``."""
+    snippet = Snippet(filename="gated.sh", size=20, md5_digest="a" * 32)
+    snippet.meta = {
+        **snippet.meta,
+        "parameters": [
+            {"name": "list", "type": "bool", "label": "List"},
+            {
+                "name": "start",
+                "type": "str",
+                "label": "Start",
+                "visible_when_not": "list",
+            },
+        ],
+    }
+    return snippet
+
+
+@pytest.mark.asyncio
+async def test_get_validated_execution_args_rejects_gated_hidden_value(mocker):
+    """The legacy form path flashes + redirects when a gated gate fires."""
+    snippet = _gated_snippet()
+    request = MagicMock()
+    request.form.return_value = _AsyncForm(
+        {EXECUTOR_HOSTS_INPUT_NAME: "host1", "list": "1", "start": "2020"}
+    )
+    mock_messages = mocker.patch.object(snippets_deps, "messages")
+    mocker.patch.object(
+        snippets_deps,
+        "_get_snippet_redirect_exc",
+        return_value=RuntimeError("redirect"),
+    )
+
+    with pytest.raises(RuntimeError, match="redirect"):
+        await snippets_deps.get_validated_execution_args(request, snippet, referer=None)
+
+    mock_messages.error.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_validated_execution_args_allows_when_gate_not_fired(mocker):
+    """When the gate does not fire, the legacy path returns the validated args."""
+    snippet = _gated_snippet()
+    request = MagicMock()
+    # ``list`` omitted -> defaults falsy -> gate does not fire; ``start`` allowed.
+    request.form.return_value = _AsyncForm(
+        {EXECUTOR_HOSTS_INPUT_NAME: "host1", "start": "2020"}
+    )
+    mock_messages = mocker.patch.object(snippets_deps, "messages")
+
+    result = await snippets_deps.get_validated_execution_args(
+        request, snippet, referer=None
+    )
+
+    assert result.executor_host == "host1"
+    mock_messages.error.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_validated_execution_args_gateless_unchanged(mocker):
+    """A gateless snippet validates and returns without gate evaluation effects."""
+    snippet = Snippet(filename="plain.sh", size=20, md5_digest="a" * 32)
+    snippet.meta = {
+        **snippet.meta,
+        "parameters": [{"name": "name", "type": "str", "label": "Name"}],
+    }
+    request = MagicMock()
+    request.form.return_value = _AsyncForm(
+        {EXECUTOR_HOSTS_INPUT_NAME: "host1", "name": "x"}
+    )
+    mock_messages = mocker.patch.object(snippets_deps, "messages")
+
+    result = await snippets_deps.get_validated_execution_args(
+        request, snippet, referer=None
+    )
+
+    assert result.executor_host == "host1"
+    mock_messages.error.assert_not_called()
 
 
 @pytest.mark.asyncio

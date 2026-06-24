@@ -41,9 +41,9 @@ from app.sep.deps import (
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.checksums.models import ChecksumsCreate, ChecksumsForm
-from app.sep.plugins.checksums.payload import build_checksums_arg_prefix
+from app.sep.plugins.checksums.spec import build_checksums_arg_prefix
 from app.sep.plugins.framework import make_task_dep
-from app.sep.plugins.framework.payload import build_command_args
+from app.sep.plugins.framework.spec import build_command_args
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -160,7 +160,7 @@ def _assemble_checksum_payload(
 
     The legacy Jinja form path's envelope builder. Builds the CLI argument string
     from the shared
-    :func:`~app.sep.plugins.checksums.payload.build_checksums_arg_prefix` plus the
+    :func:`~app.sep.plugins.checksums.spec.build_checksums_arg_prefix` plus the
     framework's declarative ``build_command_args`` (over a ``ChecksumsForm`` rebuilt
     from the resolved values) — the same pair the model-first JSON spec builder
     uses — and assembles the ``TaskWrite`` meta, so a form-created task's Nomad

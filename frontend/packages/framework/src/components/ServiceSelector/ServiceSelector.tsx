@@ -18,11 +18,16 @@
 import { useFormContext } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useServices, type ServiceOption, type ServiceType } from '../../hooks/useServices';
+import { FreeSoloSelect } from '../FreeSoloSelect';
 
 const EMPTY_OPTIONS: ServiceOption[] = [];
 
 export interface ServiceSelectorProps {
-  /** react-hook-form field name. Stores a `ServiceOption | null`. */
+  /**
+   * react-hook-form field name. Without `allowCustom`, stores a
+   * `ServiceOption | null`; with `allowCustom`, stores the committed
+   * `number | string | null` (inventory id, free-typed value, or unset).
+   */
   name: string;
   label: string;
   required?: boolean;
@@ -30,10 +35,17 @@ export interface ServiceSelectorProps {
   serviceTypes?: readonly ServiceType[];
   disabled?: boolean;
   helperText?: string;
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allowCustom?: boolean;
 }
 
 const getOptionLabel = (opt: ServiceOption | string) =>
   typeof opt === 'string' ? opt : `${opt.name} (${opt.type})`;
+// Used by the free-solo path. Because the label is `name (type)`, the
+// typed-text-to-id resolution only fires if the user types that exact form;
+// in practice a free-typed service almost always commits as a custom string,
+// while inventory picks resolve to an id through the option-click path.
+const getServiceOptionLabel = (opt: ServiceOption) => `${opt.name} (${opt.type})`;
 
 const isOptionEqualToValue = (a: ServiceOption, b: ServiceOption) => a.id === b.id;
 
@@ -44,6 +56,7 @@ export function ServiceSelector({
   serviceTypes,
   disabled,
   helperText,
+  allowCustom,
 }: ServiceSelectorProps) {
   const { control } = useFormContext();
 
@@ -61,6 +74,23 @@ export function ServiceSelector({
     : empty
       ? 'No services available'
       : helperText;
+
+  if (allowCustom) {
+    return (
+      <FreeSoloSelect<ServiceOption>
+        name={name}
+        label={label}
+        options={services}
+        getOptionLabel={getServiceOptionLabel}
+        required={required}
+        disabled={disabled || isError}
+        loading={isLoading}
+        helperText={text}
+        error={isError}
+        noOptionsText={isLoading ? 'Loading services…' : 'No services available'}
+      />
+    );
+  }
 
   return (
     <AutoCompleteInput<ServiceOption>

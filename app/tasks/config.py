@@ -17,8 +17,9 @@
 
 from datetime import timedelta
 from enum import StrEnum
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
+from annotated_types import Gt
 from pydantic import PositiveInt
 
 from app.core.config import BaseYamlAppSettings
@@ -67,8 +68,8 @@ class TasksSettings(BaseYamlAppSettings):
     :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
         Use ``False`` to disable the middleware completely.
     :type SECURITY_HEADERS: SecurityHeadersOptions | None
-    :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Defaults to 5
-        minutes.
+    :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Must be a
+        positive duration. Defaults to 5 minutes.
     :type SYNC_LOCK_TTL: timedelta
     :param PRE_EXECUTION_CONNECTIVITY_CHECK: The mode for pre-execution connectivity
         checks. Defaults to ``PreExecutionCheckMode.WARN``.
@@ -86,7 +87,9 @@ class TasksSettings(BaseYamlAppSettings):
     SECURITY_HEADERS: SecurityHeadersOptions | None = nested_overridable_field(
         SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
     )
-    SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
+    SYNC_LOCK_TTL: Annotated[timedelta, Gt(timedelta(0))] = hot_field(
+        timedelta(minutes=5)
+    )
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = hot_field(
         PreExecutionCheckMode.WARN
     )

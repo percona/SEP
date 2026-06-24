@@ -112,6 +112,7 @@ class TestSyntheticDerivedCrudContract(DerivedRouterContractTests):
     app_def = synth_app(
         capabilities=AppCapabilities(update=True, delete=True),
         update_guard=(synth_update_guard,),
+        delete_guard=(synth_update_guard,),
     )
 
 

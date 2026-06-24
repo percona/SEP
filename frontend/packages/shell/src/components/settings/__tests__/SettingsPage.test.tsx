@@ -155,6 +155,23 @@ describe('SettingsPage', () => {
     expect(screen.getByTestId('setting-row-STALENESS_THRESHOLD_SECONDS')).toBeInTheDocument();
   });
 
+  it('hides advanced and non-hot rows by default, revealing advanced on demand', async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId('setting-row-SYNC_REFRESH_TIME')).toBeInTheDocument(),
+    );
+
+    // Advanced hidden by default → FOOTER_TEMPLATE absent.
+    expect(screen.queryByTestId('setting-row-FOOTER_TEMPLATE')).not.toBeInTheDocument();
+    // Reload defaults to Hot → not_overridable STATIC_DIR absent.
+    expect(screen.queryByTestId('setting-row-STATIC_DIR')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText('Filter by advanced'));
+    await userEvent.click(await screen.findByRole('option', { name: 'Shown' }));
+
+    expect(await screen.findByTestId('setting-row-FOOTER_TEMPLATE')).toBeInTheDocument();
+  });
+
   it('renders the redacted secret value but never inside the input', async () => {
     renderPage();
     const row = await screen.findByTestId('setting-row-API_SECRET');

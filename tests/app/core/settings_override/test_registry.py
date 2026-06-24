@@ -147,9 +147,13 @@ def test_hot_field_names_sep_settings() -> None:
 
 
 def test_hot_field_names_tasks_settings() -> None:
-    """``TasksSettings`` HOT fields exclude ``NOMAD`` after its NESTED_ONLY reclassification."""
+    """``TasksSettings`` HOT fields exclude ``NOMAD`` but include ``SYNC_LOCK_TTL``."""
     assert hot_field_names(TasksSettings) == frozenset(
-        {"PRE_EXECUTION_CONNECTIVITY_CHECK", "STALENESS_THRESHOLD_SECONDS"}
+        {
+            "PRE_EXECUTION_CONNECTIVITY_CHECK",
+            "STALENESS_THRESHOLD_SECONDS",
+            "SYNC_LOCK_TTL",
+        }
     )
 
 

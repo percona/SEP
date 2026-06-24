@@ -32,8 +32,8 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import get_username_mapping, HasNoConflictedRunningTasks
 from app.sep.plugins.checksums.deps import get_unprotected_checksums_task
 from app.sep.plugins.checksums.models import ChecksumsForm
-from app.sep.plugins.checksums.payload import build_checksums_spec
 from app.sep.plugins.checksums.routes import router as jinja_router
+from app.sep.plugins.checksums.spec import build_checksums_spec
 from app.sep.plugins.checksums.views import checksums_views
 from app.sep.plugins.framework.apps import AppCapabilities, TaskExecutionApp
 from app.tasks.models import TaskOwner
@@ -42,6 +42,7 @@ app = TaskExecutionApp(
     name="checksums",
     display_name="Checksums",
     uri_path="/checksums",
+    nav_order=7,
     description="Run pt-table-checksum to verify MySQL replication consistency.",
     owner=TaskOwner.CHECKSUMS,
     create_model=ChecksumsForm,

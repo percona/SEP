@@ -1979,6 +1979,63 @@
         "title": "SchemaField",
         "type": "object"
       },
+      "ScriptExecuteWrite": {
+        "description": "Define the JSON body for ``POST .../snippet/execute``.\n\nThe per-script frontmatter arguments go in ``args`` and are validated against\nthe script's dynamic execution model, while ``executor_host`` and ``sudo`` are\nexecution-level inputs the consumer's ``build_execution_meta`` reads.\n\n:param executor_host: The hostname of the executor that will run the script.\n:param sudo: Whether to invoke the script with sudo. The consumer's\n    ``build_execution_meta`` decides whether the script honours it.\n:param args: Per-parameter arguments keyed by parameter name, validated\n    against the script's dynamic execution model.",
+        "properties": {
+          "args": {
+            "default": {},
+            "title": "Args",
+            "type": "object"
+          },
+          "executor_host": {
+            "minLength": 1,
+            "title": "Executor Host",
+            "type": "string"
+          },
+          "sudo": {
+            "default": false,
+            "title": "Sudo",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "executor_host"
+        ],
+        "title": "ScriptExecuteWrite",
+        "type": "object"
+      },
+      "ScriptExecutionResponse": {
+        "description": "Represent the response from the script execute endpoint.\n\n:param task_name: The Tasks-API task name the script executed under.\n:param task_id: The id of the task-history row the Tasks API created, when the\n    upstream response carries one.\n:param snippet_filename: The filename of the executed script.",
+        "properties": {
+          "snippet_filename": {
+            "minLength": 1,
+            "title": "Snippet Filename",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_name": {
+            "minLength": 1,
+            "title": "Task Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_name",
+          "snippet_filename"
+        ],
+        "title": "ScriptExecutionResponse",
+        "type": "object"
+      },
       "ScriptPreviewField": {
         "additionalProperties": false,
         "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
@@ -2251,63 +2308,6 @@
           "filenames"
         ],
         "title": "SnippetBatchApproveRequest",
-        "type": "object"
-      },
-      "SnippetExecutionRequest": {
-        "description": "Define the JSON body for ``POST /api/plugins/snippets/{filename}/execute``.\n\nPer-parameter values defined in the snippet's YAML frontmatter go into\n``args`` and are validated server-side via the snippet's dynamic\nexecution model.\n\n:param executor_host: The hostname of the executor that will run the\n    snippet.\n:type executor_host: NonEmptyStr\n:param sudo: Whether to invoke the snippet with sudo. Ignored unless\n    the snippet's sudo option is configured as optional.\n:type sudo: bool\n:param args: Per-parameter arguments keyed by parameter name. Validated\n    against the snippet's dynamic execution model.\n:type args: dict[str, Any]",
-        "properties": {
-          "args": {
-            "default": {},
-            "title": "Args",
-            "type": "object"
-          },
-          "executor_host": {
-            "minLength": 1,
-            "title": "Executor Host",
-            "type": "string"
-          },
-          "sudo": {
-            "default": false,
-            "title": "Sudo",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "executor_host"
-        ],
-        "title": "SnippetExecutionRequest",
-        "type": "object"
-      },
-      "SnippetExecutionResponse": {
-        "description": "Represent the response returned from the execute endpoint.\n\n:param task_name: The task name the snippet was executed under (varies\n    based on the snippet's interpreter and pip requirements).\n:type task_name: NonEmptyStr\n:param task_id: The id of the task-history row created by the tasks\n    API, when the upstream response includes one.\n:type task_id: int | None\n:param snippet_filename: The filename of the snippet that was\n    executed.\n:type snippet_filename: NonEmptyStr",
-        "properties": {
-          "snippet_filename": {
-            "minLength": 1,
-            "title": "Snippet Filename",
-            "type": "string"
-          },
-          "task_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Id"
-          },
-          "task_name": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name",
-          "snippet_filename"
-        ],
-        "title": "SnippetExecutionResponse",
         "type": "object"
       },
       "SnippetResponse": {
@@ -2939,7 +2939,7 @@
   "paths": {
     "/api/plugins/snippets/": {
       "get": {
-        "description": "List every currently-discovered snippet entity.\n\n:return: One :class:`SnippetResponse` per snippet row in the database.\n:rtype: list[SnippetResponse]",
+        "description": "List every discovered script as its list-row projection.",
         "operationId": "snippets_snippets_api_list_api_plugins_snippets__get",
         "responses": {
           "200": {
@@ -2957,7 +2957,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Snippets Api List",
+        "summary": "List",
         "tags": [
           "snippets"
         ]
@@ -3007,7 +3007,7 @@
     },
     "/api/plugins/snippets/capabilities": {
       "get": {
-        "description": "Return per-deployment capability flags for the snippets plugin.\n\nRead live from ``snippets_settings`` so a deployment-config hot\nreload between two requests is reflected on the next response.\n\n:return: Capability flags reflecting the current deployment config.\n:rtype: SnippetsCapabilitiesResponse",
+        "description": "Return per-deployment capability flags for the snippets plugin.\n\nRead live from ``snippets_settings`` so a deployment-config hot reload between\ntwo requests is reflected on the next response.\n\n:return: Capability flags reflecting the current deployment config.",
         "operationId": "snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get",
         "responses": {
           "200": {
@@ -3197,16 +3197,16 @@
     },
     "/api/plugins/snippets/snippet/execute": {
       "post": {
-        "description": "Execute a snippet against the tasks API.\n\nMirrors the legacy Jinja2 ``POST /snippets/execute?snippet_filename=...``\nroute, but accepts a JSON body and returns a structured response pointing at\nthe created task.\n\n:param snippet: The snippet being executed.\n:type snippet: Snippet\n:param body: The validated JSON request body.\n:type body: SnippetExecutionRequest\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: RemoteAPI\n:param snippet_source: Signed URL the executor uses to download the\n    snippet artifact.\n:type snippet_source: str\n:return: The structured response describing the created task.\n:rtype: SnippetExecutionResponse\n:raises HTTPUnprocessableEntityException: When the per-snippet args\n    fail dynamic validation.",
-        "operationId": "snippets_snippets_api_execute_api_plugins_snippets_snippet_execute_post",
+        "description": "Validate the args, assemble the meta, and dispatch the execution.",
+        "operationId": "snippets_snippets_api_script_execute_api_plugins_snippets_snippet_execute_post",
         "parameters": [
           {
-            "description": "Snippet filename (relative path under snippets root).",
+            "description": "Script filename (relative path under the script dir).",
             "in": "query",
             "name": "snippet_filename",
             "required": true,
             "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
+              "description": "Script filename (relative path under the script dir).",
               "title": "Snippet Filename",
               "type": "string"
             }
@@ -3216,7 +3216,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SnippetExecutionRequest"
+                "$ref": "#/components/schemas/ScriptExecuteWrite"
               }
             }
           },
@@ -3227,7 +3227,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SnippetExecutionResponse"
+                  "$ref": "#/components/schemas/ScriptExecutionResponse"
                 }
               }
             },
@@ -3244,7 +3244,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Snippets Api Execute",
+        "summary": "Execute script",
         "tags": [
           "snippets"
         ]
@@ -3252,16 +3252,16 @@
     },
     "/api/plugins/snippets/snippet/history": {
       "get": {
-        "description": "Return the paginated execution history rows for a single snippet.\n\nFilters the canonical task-history endpoint by ``snippet_filename`` so\nthe React detail page can pass the result straight into the shared\n``TaskHistoryTable`` component without re-projecting fields.\n\n:param snippet: The snippet whose history is requested.\n:type snippet: Snippet\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: RemoteAPI\n:return: The upstream paginated task-history response (``items``,\n    ``total``, ``offset``, ``limit``).\n:rtype: dict[str, Any]",
-        "operationId": "snippets_snippets_api_history_api_plugins_snippets_snippet_history_get",
+        "description": "Proxy the per-script execution history from the Tasks API by filename.",
+        "operationId": "snippets_snippets_api_script_history_api_plugins_snippets_snippet_history_get",
         "parameters": [
           {
-            "description": "Snippet filename (relative path under snippets root).",
+            "description": "Script filename (relative path under the script dir).",
             "in": "query",
             "name": "snippet_filename",
             "required": true,
             "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
+              "description": "Script filename (relative path under the script dir).",
               "title": "Snippet Filename",
               "type": "string"
             }
@@ -3272,7 +3272,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Snippets Snippets Api History Api Plugins Snippets Snippet History Get",
+                  "title": "Response Snippets Snippets Api Script History Api Plugins Snippets Snippet History Get",
                   "type": "object"
                 }
               }
@@ -3290,7 +3290,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Snippets Api History",
+        "summary": "Script history",
         "tags": [
           "snippets"
         ]
@@ -3343,16 +3343,16 @@
     },
     "/api/plugins/snippets/snippet/schema": {
       "get": {
-        "description": "Return the per-snippet form schema synthesised from snippet metadata.\n\n:param snippet: The snippet whose schema is requested.\n:type snippet: Snippet\n:return: The validated per-snippet plugin schema.\n:rtype: PluginSchema",
-        "operationId": "snippets_snippets_api_per_snippet_schema_api_plugins_snippets_snippet_schema_get",
+        "description": "Return the per-script form schema synthesised from its parameters.",
+        "operationId": "snippets_snippets_api_script_schema_api_plugins_snippets_snippet_schema_get",
         "parameters": [
           {
-            "description": "Snippet filename (relative path under snippets root).",
+            "description": "Script filename (relative path under the script dir).",
             "in": "query",
             "name": "snippet_filename",
             "required": true,
             "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
+              "description": "Script filename (relative path under the script dir).",
               "title": "Snippet Filename",
               "type": "string"
             }
@@ -3380,7 +3380,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Snippets Api Per Snippet Schema",
+        "summary": "Script schema",
         "tags": [
           "snippets"
         ]

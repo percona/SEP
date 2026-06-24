@@ -21,6 +21,7 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from starlette.routing import Match
 
 from app.sep.api.router import api_router, build_plugins_router, plugins_router
 from app.sep.config import Plugin, sep_settings
@@ -380,19 +381,19 @@ class TestApiRouterConfigDrivenLoop:
     def test_plugin_with_api_router_path_is_mounted(self) -> None:
         """Assert a plugin with ``api_router_path`` set produces mounted routes."""
         plugin = Plugin(
-            name="Snippets",
-            module_name="snippets",
-            api_router_path="app.sep.plugins.snippets.api_routes.router",
+            name="Dipper Data Collection",
+            module_name="dipper",
+            api_router_path="app.sep.plugins.dipper.api_routes.router",
         )
         router = build_plugins_router(build_app_registry([plugin]))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
-        assert any(p.startswith("/plugins/snippets/") for p in paths)
+        assert any(p.startswith("/plugins/dipper/") for p in paths)
 
     def test_plugin_without_api_router_path_is_not_mounted(self) -> None:
         """Assert a plugin with ``api_router_path=None`` contributes no routes."""
         plugin = Plugin(
-            name="Snippets",
-            module_name="snippets",
+            name="Dipper Data Collection",
+            module_name="dipper",
             api_router_path=None,
         )
         router = build_plugins_router(build_app_registry([plugin]))
@@ -436,8 +437,8 @@ class TestApiRouterConfigDrivenLoop:
         """Assert pointing at a missing attribute fails fast at construction."""
         plugin = Plugin(
             name="Ghost",
-            module_name="snippets",
-            api_router_path="app.sep.plugins.snippets.api_routes.does_not_exist",
+            module_name="dipper",
+            api_router_path="app.sep.plugins.dipper.api_routes.does_not_exist",
         )
         with pytest.raises(AttributeError):
             build_plugins_router(build_app_registry([plugin]))
@@ -450,8 +451,8 @@ class TestApiRouterConfigDrivenLoop:
         """
         plugin = Plugin(
             name="Bad",
-            module_name="snippets",
-            api_router_path="app.sep.plugins.snippets.api_routes:router",
+            module_name="dipper",
+            api_router_path="app.sep.plugins.dipper.api_routes:router",
         )
         with pytest.raises((ImportError, AttributeError, ModuleNotFoundError)):
             build_plugins_router(build_app_registry([plugin]))
@@ -463,7 +464,6 @@ class TestApiRouterConfigDrivenLoop:
         for module, expected in (
             ("archives", "app.sep.plugins.archives.api_routes.router"),
             ("dipper", "app.sep.plugins.dipper.api_routes.router"),
-            ("snippets", "app.sep.plugins.snippets.api_routes.router"),
         ):
             plugin = Plugin(name=module.title(), module_name=module)
             assert plugin.api_router_path == expected
@@ -540,7 +540,7 @@ class TestApiRouterConfigDrivenLoop:
         """
         plugin = Plugin.model_construct(
             name="Ghost",
-            module_name="app.sep.plugins.snippets",
+            module_name="app.sep.plugins.dipper",
             api_router_path="",
         )
         router = build_plugins_router(build_app_registry([plugin]))
@@ -554,11 +554,11 @@ class TestApiRouterConfigDrivenLoop:
         ``include_router``.
         """
         plugin = Plugin(
-            name="Snippets",
-            module_name="snippets",
+            name="Dipper Data Collection",
+            module_name="dipper",
             api_router_path="app.sep.config.Plugin",
         )
-        with pytest.raises(TypeError, match="snippets"):
+        with pytest.raises(TypeError, match="dipper"):
             build_plugins_router(build_app_registry([plugin]))
 
     def test_plugin_api_router_path_rejects_bad_module_at_parse(self) -> None:
@@ -581,8 +581,18 @@ class TestApiRouterConfigDrivenLoop:
             for app in build_app_registry(sep_settings.PLUGINS)
             if app.api_router is not None
         }
+
+        def owning_key(route_path: str) -> str | None:
+            rest = route_path.removeprefix("/plugins/")
+            candidates = [
+                key
+                for key in expected_keys
+                if rest == key or rest.startswith(key + "/")
+            ]
+            return max(candidates, key=len) if candidates else None
+
         seen_prefixes = {
-            r.path.split("/")[2]
+            owning_key(r.path)
             for r in plugins_router.routes
             if hasattr(r, "path") and r.path.startswith("/plugins/")
         }
@@ -611,3 +621,41 @@ class TestApiRouterConfigDrivenLoopIntegration:
         """Assert a plugin key with no settings entry returns 404."""
         response = test_client.get("/api/plugins/not-a-real-plugin/schema")
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [
+            ("GET", "/api/plugins/mysql_backups/restore/"),
+            ("POST", "/api/plugins/mysql_backups/restore/"),
+            ("GET", "/api/plugins/mysql_backups/restore/schema"),
+            ("GET", "/api/plugins/mysql_backups/restore/some-task"),
+            ("GET", "/mysql_backups/restores/"),
+            ("GET", "/mysql_backups/restores/some-task"),
+        ],
+    )
+    def test_scoped_restore_routes_not_shadowed_by_parent(
+        self, method: str, path: str
+    ) -> None:
+        """Assert the nested restore app's canonical routes win over the parent's.
+
+        The restore app mounts after ``mysql_backups`` and the parent exposes a
+        greedy ``/{task_name}`` route; this guards that a request to a canonical
+        restore URL resolves to a route under the ``mysql_backups/restore``
+        prefix rather than being captured as a parent backup task.
+        """
+        scope = {"type": "http", "method": method, "path": path, "headers": []}
+        matched = next(
+            (
+                route.path
+                for route in sep_app.router.routes
+                if route.matches(scope)[0] == Match.FULL
+            ),
+            None,
+        )
+        assert matched is not None
+        prefix = (
+            "/api/plugins/mysql_backups/restore"
+            if path.startswith("/api")
+            else ("/mysql_backups/restores")
+        )
+        assert matched.startswith(prefix), f"{path} resolved to {matched}"
