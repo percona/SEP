@@ -20,6 +20,7 @@ import re
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import IntervalSchedule
@@ -349,7 +350,7 @@ class TestSyncIntervalHotField:
     def test_invalid_override_rejected(self, bad: Any) -> None:
         """Non-positive or unparseable overrides fail coercion (caller logs+skips)."""
         field_info = SnippetsSettings.model_fields["SYNC_INTERVAL"]
-        with pytest.raises((ValueError, Exception)):
+        with pytest.raises((ValidationError, ValueError)):
             materialize_override_value(
                 SnippetsSettings, "SYNC_INTERVAL", field_info, bad
             )
