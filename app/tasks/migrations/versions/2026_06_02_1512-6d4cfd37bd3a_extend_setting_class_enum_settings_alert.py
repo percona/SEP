@@ -24,6 +24,12 @@ Create Date: 2026-06-02 15:12:00.000000
 import sqlalchemy as sa
 from alembic import op
 
+from app.core.db.utils import (
+    acquire_pg_advisory_xact_lock,
+    check_constraint_lists_members,
+)
+from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
+
 # revision identifiers, used by Alembic.
 revision = "6d4cfd37bd3a"
 down_revision = "fafdb0445092"
@@ -33,6 +39,12 @@ depends_on = None
 
 def upgrade() -> None:
     """Add ``SETTINGS`` and ``ALERT_SETTINGS`` to the setting_class constraint."""
+    bind = op.get_bind()
+    acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    if check_constraint_lists_members(
+        bind, "settingoverride", "setting_class", ("SETTINGS", "ALERT_SETTINGS")
+    ):
+        return
     with op.batch_alter_table("settingoverride", schema=None) as batch_op:
         batch_op.alter_column(
             "setting_class",
@@ -62,6 +74,12 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Remove ``SETTINGS`` and ``ALERT_SETTINGS`` from the setting_class constraint."""
+    bind = op.get_bind()
+    acquire_pg_advisory_xact_lock(bind, SETTINGOVERRIDE_MIGRATION_LOCK_KEY)
+    if not check_constraint_lists_members(
+        bind, "settingoverride", "setting_class", ("SETTINGS", "ALERT_SETTINGS")
+    ):
+        return
     # Discard override rows using the removed members first; otherwise the
     # narrowed CHECK constraint rejects the existing data and the ALTER fails.
     # Rolling this migration back intentionally drops the overrides it enabled.
