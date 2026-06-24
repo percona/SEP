@@ -190,7 +190,6 @@ describe('InventoryPlugin', () => {
 
     const scheduleButtons = screen.getAllByRole('button', { name: /Schedules/i });
     expect(scheduleButtons).toHaveLength(1);
-    // The working custom button is rendered; the generic one is suppressed.
     expect(screen.getByTestId('inv-schedule-link')).toBeInTheDocument();
     expect(screen.queryByTestId('plugin-schedule-link')).not.toBeInTheDocument();
   });
