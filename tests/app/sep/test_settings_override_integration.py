@@ -16,15 +16,19 @@
 """End-to-end-ish integration tests for the SEP-side override layer."""
 
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy_celery_beat.models import PeriodicTask
 from sqlmodel import SQLModel
 from sqlmodel.pool import StaticPool
 
 from app import main as main_module
+from app.core.celery.crud import BasePeriodicTaskManager
+from app.core.celery.models import IntervalSchedule
 from app.core.config import settings as core_settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
@@ -32,9 +36,13 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.utils import json_serializer
 from app.sep.config import sep_settings, SEPSettings
+from app.sep.main import _reseed_system_periodic_tasks
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.middleware.messages.models import MessageLevel
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
+
+SNIPPETS_TASK = "sep__sync_snippets"
+OVERRIDE_EVERY_MINUTES = 30
 
 
 @pytest_asyncio.fixture(name="override_session_maker")
@@ -266,3 +274,175 @@ async def test_main_lifespan_starts_sep_overrides_refresher(
         sep_settings._set_snapshot({})
         snippets_settings._set_snapshot({})
         messages_settings._set_snapshot({})
+
+
+@pytest_asyncio.fixture(name="beat_session_maker")
+async def _beat_session_maker() -> async_sessionmaker:
+    """Provide an in-memory SQLite session maker for the celery-beat schedule DB."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    engine = engine.execution_options(schema_translate_map={"celery_schema": None})
+    async with engine.begin() as conn:
+        await conn.run_sync(PeriodicTask.__table__.metadata.create_all)
+    return get_async_session_maker_from_engine(engine)
+
+
+async def _seed_snippets_task(
+    beat_session_maker: async_sessionmaker, *, every: int, enabled: bool
+) -> None:
+    """Seed a ``sep__sync_snippets`` beat row at the given interval/gating state."""
+    from sqlalchemy_celery_beat.models import IntervalSchedule as BeatInterval
+    from sqlalchemy_celery_beat.models import Period
+
+    async with beat_session_maker() as session:
+        schedule = BeatInterval(every=every, period=Period.HOURS)
+        session.add(schedule)
+        await session.flush()
+        session.add(
+            PeriodicTask(
+                name=SNIPPETS_TASK,
+                task="app.sep.celery.sync_snippets",
+                enabled=enabled,
+                schedule_model=schedule,
+            )
+        )
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_sync_interval_override_reseeds_beat_schedule_live(
+    override_session_maker: async_sessionmaker,
+    beat_session_maker: async_sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``SYNC_INTERVAL`` override re-seeds the live ``sep__sync_snippets`` beat row.
+
+    Insert the override, run one refresh cycle with the SEP callbacks wired, and
+    assert the beat-schedule row now carries the new interval. Beat applies it on
+    its next scheduler tick (driven by the ``PeriodicTaskChanged.last_update``
+    bump), not instantly -- this asserts the DB state the scheduler will reload,
+    not in-process beat behavior.
+    """
+    # Gated OFF so we can prove the re-seed preserves the ``enabled`` flag.
+    await _seed_snippets_task(beat_session_maker, every=1, enabled=False)
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                key="SYNC_INTERVAL",
+                value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
+            ),
+        )
+
+    # ``init_periodic_tasks_db`` resolves its beat session via
+    # ``app.core.celery.utils.get_async_session_maker`` -- point it at our beat DB.
+    monkeypatch.setattr(
+        "app.core.celery.utils.get_async_session_maker",
+        lambda: beat_session_maker,
+    )
+    callbacks = {
+        (
+            SettingClassEnum.SNIPPETS_SETTINGS,
+            "SYNC_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+    }
+
+    await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
+
+    # Proxy reflects the override...
+    assert (
+        IntervalSchedule(every=OVERRIDE_EVERY_MINUTES, period="minutes")
+        == snippets_settings.SYNC_INTERVAL
+    )
+    # ...and the live beat row was re-seeded, gating state preserved.
+    async with beat_session_maker() as session:
+        task = await BasePeriodicTaskManager.first(session, name=SNIPPETS_TASK)
+    assert task is not None
+    from sqlalchemy_celery_beat.models import Period
+
+    assert task.schedule_model.every == OVERRIDE_EVERY_MINUTES
+    assert task.schedule_model.period == Period.MINUTES
+    assert task.enabled is False  # gating survived the re-seed (AC #4)
+
+
+@pytest.mark.asyncio
+async def test_invalid_sync_interval_override_keeps_default_and_skips_reseed(
+    override_session_maker: async_sessionmaker,
+    beat_session_maker: async_sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An invalid override is logged+skipped: proxy keeps default, no re-seed fires.
+
+    A non-positive ``every`` fails coercion in ``build_snapshot``; the snapshot is
+    unchanged, so ``fire_change_callbacks`` never invokes the re-seed and the
+    refresh cycle does not raise.
+    """
+    yaml_default = snippets_settings.SYNC_INTERVAL
+    await _seed_snippets_task(beat_session_maker, every=1, enabled=True)
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                key="SYNC_INTERVAL",
+                value={"every": 0, "period": "minutes"},
+            ),
+        )
+
+    reseed_spy = AsyncMock()
+    callbacks = {(SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"): reseed_spy}
+
+    await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
+
+    assert yaml_default == snippets_settings.SYNC_INTERVAL
+    reseed_spy.assert_not_awaited()
+    # The beat row is untouched.
+    async with beat_session_maker() as session:
+        task = await BasePeriodicTaskManager.first(session, name=SNIPPETS_TASK)
+    assert task.schedule_model.every == 1
+
+
+@pytest.mark.asyncio
+async def test_reseed_callback_failure_does_not_break_refresh_cycle(
+    override_session_maker: async_sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failing re-seed callback is isolated; other proxies still refresh.
+
+    ``fire_change_callbacks`` wraps each callback in try/except, so a raising
+    re-seed neither aborts the cycle nor blocks an unrelated override on a
+    different proxy.
+    """
+    sep_override = not sep_settings.CONNECTIVITY_CHECK_DEFAULT
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                key="SYNC_INTERVAL",
+                value={"every": 30, "period": "minutes"},
+            ),
+        )
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SEP_SETTINGS,
+                key="CONNECTIVITY_CHECK_DEFAULT",
+                value=sep_override,
+            ),
+        )
+
+    failing = AsyncMock(side_effect=RuntimeError("beat DB unreachable"))
+    callbacks = {(SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"): failing}
+
+    # Must not raise despite the callback blowing up.
+    await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
+
+    failing.assert_awaited_once()
+    # The unrelated SEP override still took effect.
+    assert sep_settings.CONNECTIVITY_CHECK_DEFAULT is sep_override
