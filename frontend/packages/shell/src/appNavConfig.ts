@@ -16,12 +16,13 @@
  */
 
 /**
- * Shell sidebar layout and React route metadata per ``app_key``.
+ * Shell sidebar chrome and React route metadata per ``app_key``.
  *
- * ``GET /api/apps/`` supplies per-app state and labels (``display_name``,
- * ``enabled``, ``sidebar``). This module holds what the API does not carry —
- * nav tree shape, icons, React route paths, and router patterns — and
- * ``buildNavigationItems()`` merges both into sidebar ``NavItem``s.
+ * ``GET /api/apps/`` supplies per-app state, labels, and placement
+ * (``display_name``, ``enabled``, ``sidebar``, ``group``, ``nav_order``).
+ * ``buildNavigationItems()`` derives the sidebar tree from that data; this
+ * module holds only what the API does not carry — group labels/icons, per-app
+ * icons, the static (non-app) entries, and React route paths/patterns.
  */
 
 import type { EnabledApp } from '@sep/api';
@@ -40,6 +41,7 @@ import ArchiveIcon from '@mui/icons-material/Archive';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import ScienceIcon from '@mui/icons-material/Science';
+import ExtensionIcon from '@mui/icons-material/Extension';
 import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
 import { ROUTES } from '@sep/shared';
 import type { SvgIconComponent } from '@mui/icons-material';
@@ -58,30 +60,6 @@ export interface AppRouteMeta {
   /** ``SchemaDrivenPlugin`` list/detail prefix when not ``/plugins/{appKey}``. */
   routeBase?: string;
 }
-
-type NavLeafSkeleton = {
-  kind: 'leaf';
-  appKey: string;
-  icon: NavIcon;
-  /** Optimistic sidebar label before ``GET /api/apps/`` resolves. */
-  fallbackTitle: string;
-};
-
-type NavGroupSkeleton = {
-  kind: 'group';
-  title: string;
-  icon: NavIcon;
-  children: NavLeafSkeleton[];
-};
-
-type NavStaticSkeleton = {
-  kind: 'static';
-  title: string;
-  icon: NavIcon;
-  to: string;
-};
-
-type NavSkeletonNode = NavStaticSkeleton | NavGroupSkeleton | NavLeafSkeleton;
 
 function toRoutePattern(reactRoute: string): string {
   const trimmed = reactRoute.replace(/^\//, '');
@@ -124,176 +102,123 @@ export function getAppRouteMeta(appKey: string): AppRouteMeta | undefined {
   return APP_ROUTE_BY_KEY[appKey];
 }
 
-const NAV_SKELETON: NavSkeletonNode[] = [
-  { kind: 'static', title: 'Dashboard', icon: DashboardIcon, to: ROUTES.dashboard },
-  { kind: 'static', title: 'Inventory', icon: DnsIcon, to: ROUTES.inventory },
-  {
-    kind: 'leaf',
-    appKey: 'tasks',
-    icon: AssignmentIcon,
-    fallbackTitle: 'Tasks',
-  },
-  {
-    kind: 'leaf',
-    appKey: 'snippets',
-    icon: CodeIcon,
-    fallbackTitle: 'Snippets',
-  },
-  {
-    kind: 'leaf',
-    appKey: 'atw',
-    icon: SupportAgentIcon,
-    fallbackTitle: 'Collect Diagnostic Data',
-  },
-  {
-    kind: 'group',
-    title: 'Alerts',
-    icon: NotificationsActiveIcon,
-    children: [
-      {
-        kind: 'leaf',
-        appKey: 'alerts',
-        icon: DescriptionIcon,
-        fallbackTitle: 'Templates',
-      },
-      {
-        kind: 'leaf',
-        appKey: 'alert_troubleshooting',
-        icon: TroubleshootIcon,
-        fallbackTitle: 'Troubleshooting',
-      },
-    ],
-  },
-  {
-    kind: 'group',
-    title: 'Schema Change',
-    icon: StorageIcon,
-    children: [
-      {
-        kind: 'leaf',
-        appKey: 'alters',
-        icon: TableChartIcon,
-        fallbackTitle: 'Alters',
-      },
-    ],
-  },
-  {
-    kind: 'leaf',
-    appKey: 'checksums',
-    icon: CheckCircleIcon,
-    fallbackTitle: 'Checksums',
-  },
-  {
-    kind: 'group',
-    title: 'Backups',
-    icon: BackupIcon,
-    children: [
-      {
-        kind: 'leaf',
-        appKey: 'mysql_backups',
-        icon: MySqlIcon,
-        fallbackTitle: 'MySQL',
-      },
-      {
-        kind: 'leaf',
-        appKey: 'backup_mongo',
-        icon: MongoIcon,
-        fallbackTitle: 'MongoDB',
-      },
-      {
-        kind: 'leaf',
-        appKey: 'backup_pg',
-        icon: PostgreSqlIcon,
-        fallbackTitle: 'PostgreSQL',
-      },
-    ],
-  },
-  {
-    kind: 'leaf',
-    appKey: 'archives',
-    icon: ArchiveIcon,
-    fallbackTitle: 'Archive',
-  },
-  {
-    kind: 'leaf',
-    appKey: 'dipper',
-    icon: ScienceIcon,
-    fallbackTitle: 'Dipper Data Collection',
-  },
-  {
-    kind: 'leaf',
-    appKey: 'report',
-    icon: BarChartIcon,
-    fallbackTitle: 'Reports',
-  },
+/** Label and icon per backend group key (``app.group``). */
+const NAV_GROUPS: Record<string, { label: string; icon: NavIcon }> = {
+  backups: { label: 'Backups', icon: BackupIcon },
+  alerts: { label: 'Alerts', icon: NotificationsActiveIcon },
+  schema_change: { label: 'Schema Change', icon: StorageIcon },
+  snippets: { label: 'Snippets', icon: CodeIcon },
+};
+
+const DEFAULT_APP_ICON: NavIcon = ExtensionIcon;
+
+/** Sidebar icon per ``app_key``; falls back to ``DEFAULT_APP_ICON``. */
+const APP_NAV_ICONS: Record<string, NavIcon> = {
+  tasks: AssignmentIcon,
+  snippets: CodeIcon,
+  atw: SupportAgentIcon,
+  alerts: DescriptionIcon,
+  alert_troubleshooting: TroubleshootIcon,
+  alters: TableChartIcon,
+  checksums: CheckCircleIcon,
+  mysql_backups: MySqlIcon,
+  backup_mongo: MongoIcon,
+  backup_pg: PostgreSqlIcon,
+  archives: ArchiveIcon,
+  dipper: ScienceIcon,
+  report: BarChartIcon,
+};
+
+/** Always-on non-app destinations, prepended ahead of the derived app tree. */
+const STATIC_NAV_ENTRIES: NavItem[] = [
+  { title: 'Dashboard', icon: DashboardIcon, to: ROUTES.dashboard },
+  { title: 'Inventory', icon: DnsIcon, to: ROUTES.inventory },
 ];
 
-function leafToNavItem(
-  leaf: NavLeafSkeleton,
-  appsByKey: Map<string, EnabledApp> | undefined,
-): NavItem | null {
-  const route = getAppRouteMeta(leaf.appKey);
-  const to = route?.reactRoute;
-  if (!to) {
-    return null;
-  }
+/** App keys handled by static chrome above; excluded from the derived tree. */
+const STATIC_APP_KEYS = new Set(['inventory']);
 
-  if (appsByKey) {
-    const app = appsByKey.get(leaf.appKey);
-    if (!app?.enabled || !app.sidebar) {
-      return null;
-    }
-    return {
-      title: app.display_name,
-      icon: leaf.icon,
-      to,
-      appKey: leaf.appKey,
-    };
-  }
+type TopLevelEntry = { order: number | null; key: string; item: NavItem };
 
+/** Compare by ``nav_order`` (``null`` last), then by key for a stable tie-break. */
+function byOrderThenKey(
+  a: { order: number | null; key: string },
+  b: { order: number | null; key: string },
+): number {
+  const aOrder = a.order ?? Number.POSITIVE_INFINITY;
+  const bOrder = b.order ?? Number.POSITIVE_INFINITY;
+  if (aOrder !== bOrder) {
+    return aOrder - bOrder;
+  }
+  return a.key.localeCompare(b.key);
+}
+
+function leafNavItem(app: EnabledApp): NavItem {
   return {
-    title: leaf.fallbackTitle,
-    icon: leaf.icon,
-    to,
-    appKey: leaf.appKey,
+    title: app.display_name,
+    icon: APP_NAV_ICONS[app.app_key] ?? DEFAULT_APP_ICON,
+    to: getAppRouteMeta(app.app_key)?.reactRoute,
+    appKey: app.app_key,
   };
 }
 
-function skeletonToNavItems(
-  nodes: NavSkeletonNode[],
-  appsByKey: Map<string, EnabledApp> | undefined,
-): NavItem[] {
-  return nodes.reduce<NavItem[]>((acc, node) => {
-    if (node.kind === 'static') {
-      acc.push({ title: node.title, icon: node.icon, to: node.to });
-      return acc;
-    }
-
-    if (node.kind === 'leaf') {
-      const item = leafToNavItem(node, appsByKey);
-      if (item) {
-        acc.push(item);
-      }
-      return acc;
-    }
-
-    const children = skeletonToNavItems(node.children, appsByKey);
-    if (children.length > 0) {
-      acc.push({ title: node.title, icon: node.icon, children });
-    }
-    return acc;
-  }, []);
-}
-
 /**
- * Build sidebar navigation from the static layout skeleton and optional API apps.
+ * Derive sidebar navigation items from the API's per-app placement data.
  *
- * When ``apps`` is undefined (query loading or failed), every skeleton entry
- * renders optimistically with ``fallbackTitle`` labels. Once loaded, entries
- * are hidden when ``enabled`` or ``sidebar`` is false and leaf labels come
- * from ``display_name``.
+ * When ``apps`` is undefined (a cold first load or a cold first-load error,
+ * with no React Query cache to fall back on) only the static Dashboard +
+ * Inventory entries render. After a successful load, React Query retains the
+ * last-good data across transient errors, so the full derived tree stays.
+ *
+ * Visible apps (``enabled``, ``sidebar``, with a known route, excluding the
+ * statically-handled keys) are partitioned into groups and ungrouped leaves;
+ * each group sorts by its lowest child ``nav_order`` and is hidden when it has
+ * no visible children.
  */
 export function buildNavigationItems(apps: EnabledApp[] | undefined): NavItem[] {
-  const appsByKey = apps ? new Map(apps.map((app) => [app.app_key, app])) : undefined;
-  return skeletonToNavItems(NAV_SKELETON, appsByKey);
+  if (!apps) {
+    return [...STATIC_NAV_ENTRIES];
+  }
+
+  const visible = apps.filter(
+    (app) =>
+      app.enabled &&
+      app.sidebar &&
+      !STATIC_APP_KEYS.has(app.app_key) &&
+      getAppRouteMeta(app.app_key) !== undefined,
+  );
+
+  const grouped = new Map<string, EnabledApp[]>();
+  const topLevel: TopLevelEntry[] = [];
+
+  for (const app of visible) {
+    const groupKey = app.group && NAV_GROUPS[app.group] ? app.group : undefined;
+    if (groupKey) {
+      const members = grouped.get(groupKey) ?? [];
+      members.push(app);
+      grouped.set(groupKey, members);
+    } else {
+      topLevel.push({ order: app.nav_order, key: app.app_key, item: leafNavItem(app) });
+    }
+  }
+
+  for (const [groupKey, members] of grouped) {
+    const sortedMembers = [...members].sort((a, b) =>
+      byOrderThenKey(
+        { order: a.nav_order, key: a.app_key },
+        { order: b.nav_order, key: b.app_key },
+      ),
+    );
+    const minOrder = sortedMembers[0].nav_order;
+    const { label, icon } = NAV_GROUPS[groupKey];
+    topLevel.push({
+      order: minOrder,
+      key: groupKey,
+      item: { title: label, icon, children: sortedMembers.map(leafNavItem) },
+    });
+  }
+
+  topLevel.sort(byOrderThenKey);
+
+  return [...STATIC_NAV_ENTRIES, ...topLevel.map((entry) => entry.item)];
 }

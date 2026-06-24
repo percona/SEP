@@ -3,7 +3,7 @@
  * Do not edit by hand — regenerate from the source OpenAPI spec.
  */
 export interface paths {
-  '/tasks/': {
+  '/': {
     parameters: {
       query?: never;
       header?: never;
@@ -11,1451 +11,12 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Tasks List
-     * @description Homepage of Tasks Plugin.
+     * Read Root
+     * @description Homepage route.
      */
-    get: operations['tasks_list_tasks__get'];
-    put?: never;
-    /**
-     * Task Create
-     * @description Create task.
-     */
-    post: operations['task_create_tasks__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/tasks/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Tasks Detail
-     * @description Retrieve task.
-     */
-    get: operations['tasks_detail_tasks__task_name__get'];
-    put?: never;
-    /**
-     * Tasks Execute
-     * @description Execute task.
-     */
-    post: operations['tasks_execute_tasks__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/tasks/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Tasks Delete
-     * @description Delete task.
-     */
-    post: operations['tasks_delete_tasks__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Node List
-     * @description List Nodes.
-     */
-    get: operations['node_list_inventory__get'];
-    put?: never;
-    /**
-     * Node Create
-     * @description Create Node.
-     */
-    post: operations['node_create_inventory__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/sync/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Sync Inventory
-     * @deprecated
-     * @description Start inventory sync as a background task.
-     *
-     *     Deprecated in favour of the React sync control at
-     *     ``POST /api/plugins/inventory/sync/``; functional until Wave 3.
-     */
-    post: operations['sync_inventory_inventory_sync__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/schedule/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Schedule Create
-     * @deprecated
-     * @description Attach a periodic schedule to the inventory-sync task.
-     *
-     *     Deprecated in favour of the React schedule UI (SEP-1058); functional until
-     *     Wave 3 when the Jinja2 path is retired.
-     *
-     *     Validate the optional ``syncer`` field and the interval/crontab shape at
-     *     form-submit time using ``filter_syncers_by_name`` and explicit checks so
-     *     invalid input fails fast with a friendly redirect rather than silently
-     *     misfiring inside the worker. When ``syncer`` is unset the schedule runs
-     *     every configured syncer; when set it targets only that syncer.
-     *
-     *     :param syncers: The configured syncers from ``SyncersDep``.
-     *     :type syncers: SyncersDep
-     *     :param tasks_api: The Tasks API client.
-     *     :type tasks_api: TaskAPI
-     *     :param schedule: The submitted attach form.
-     *     :type schedule: InventorySyncScheduleCreateForm
-     *     :param referer: The originating page used for the redirect on success.
-     *     :type referer: str
-     *     :return: A 303 redirect back to the originating page.
-     *     :rtype: RedirectResponse
-     *     :raises HTTPBadRequestException: If ``SEP_INTERNAL_TOKEN`` is not
-     *         configured, the syncer name is unknown, or both / neither schedule
-     *         mode is supplied.
-     */
-    post: operations['schedule_create_inventory_schedule__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/{node_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Node Detail
-     * @description Retrieve Node Details.
-     */
-    get: operations['node_detail_inventory__node_id__get'];
+    get: operations['read_root__get'];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/{node_id}/sync/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Sync Node
-     * @description Start node sync as a background task.
-     */
-    post: operations['sync_node_inventory__node_id__sync__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/{node_id}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Node Delete
-     * @description Delete Node.
-     */
-    post: operations['node_delete_inventory__node_id__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/services/{service_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Service Detail
-     * @description Retrieve Service Details.
-     */
-    get: operations['service_detail_inventory_services__service_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/services/{service_id}/sync/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Sync Service
-     * @description Start service sync as a background task.
-     */
-    post: operations['sync_service_inventory_services__service_id__sync__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/services/{service_id}/check-connectivity/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Check Service Connectivity
-     * @description Check database connectivity for a service via Nomad.
-     */
-    post: operations['check_service_connectivity_inventory_services__service_id__check_connectivity__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/{node_id}/services/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Service Create For Node
-     * @description Create Service for Node.
-     */
-    post: operations['service_create_for_node_inventory__node_id__services__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/services/{service_id}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Service Delete
-     * @description Delete Service.
-     */
-    post: operations['service_delete_inventory_services__service_id__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/schemas/{schema_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Schema Detail
-     * @description Retrieve Schema Details.
-     */
-    get: operations['schema_detail_inventory_schemas__schema_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/schemas/{schema_id}/sync/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Sync Schema
-     * @description Start schema sync as a background task.
-     */
-    post: operations['sync_schema_inventory_schemas__schema_id__sync__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/services/{service_id}/schemas/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Schema Create For Service
-     * @description Create Schema for Service.
-     */
-    post: operations['schema_create_for_service_inventory_services__service_id__schemas__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/schemas/{schema_id}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Schema Delete
-     * @description Delete Schema.
-     */
-    post: operations['schema_delete_inventory_schemas__schema_id__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/schemas/{schema_id}/tables/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Table Create For Schema
-     * @description Create Table for Schema.
-     */
-    post: operations['table_create_for_schema_inventory_schemas__schema_id__tables__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/tables/{table_id}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Table Delete
-     * @description Delete Table.
-     */
-    post: operations['table_delete_inventory_tables__table_id__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Snippets Index
-     * @description Homepage of snippets plugin.
-     */
-    get: operations['snippets_index_snippets__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/approve': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Approve
-     * @description Approve a snippet.
-     */
-    post: operations['snippets_approve_snippets_approve_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/remove-approval': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Remove Approval
-     * @description Remove the approval of a snippet.
-     */
-    post: operations['snippets_remove_approval_snippets_remove_approval_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/refresh': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Refresh
-     * @description Refresh the snippets.
-     */
-    post: operations['snippets_refresh_snippets_refresh_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/approve-batch': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Approve Batch
-     * @description Approve multiple snippets in a single atomic bulk operation.
-     *
-     *     Reject the whole batch if any requested filename is unknown, its file is
-     *     missing on disk, or it is already approved. On success, flash a summary and
-     *     redirect back to the snippets index.
-     *
-     *     :param request: The HTTP request object.
-     *     :type request: Request
-     *     :param user: The admin performing the action.
-     *     :type user: User
-     *     :param session: The active database session.
-     *     :type session: AsyncSession
-     *     :param body: The validated request body containing the filenames to approve.
-     *     :type body: SnippetBatchApproveForm
-     *     :return: A 303 redirect back to the snippets index.
-     *     :rtype: RedirectResponse
-     */
-    post: operations['snippets_approve_batch_snippets_approve_batch_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/execute': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Execute
-     * @description Execute a snippet.
-     */
-    post: operations['snippets_execute_snippets_execute_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/detail': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Snippets Detail
-     * @description Retrieve and display information about a snippet.
-     */
-    get: operations['snippets_detail_snippets_detail_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/atw/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * App Index
-     * @description Homepage of plugin.
-     */
-    get: operations['app_index_atw__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alters/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Alters Index
-     * @description Homepage of alters plugin.
-     */
-    get: operations['alters_index_alters__get'];
-    put?: never;
-    /**
-     * Alters Create
-     * @description Create alter tasks - one for execution and one for dry run.
-     */
-    post: operations['alters_create_alters__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alters/table/{table_id}/details': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Table Details
-     * @description Get table details including create statement and keys.
-     */
-    get: operations['get_table_details_alters_table__table_id__details_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alters/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Alters Detail
-     * @description Retrieve alters task.
-     */
-    get: operations['alters_detail_alters__task_name__get'];
-    put?: never;
-    /**
-     * Alters Execute
-     * @description Execute alters task.
-     */
-    post: operations['alters_execute_alters__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alters/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Alters Update
-     * @description Update alters task.
-     */
-    post: operations['alters_update_alters__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alters/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Alters Delete
-     * @description Delete alters tasks.
-     */
-    post: operations['alters_delete_alters__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/archives/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Archives Index
-     * @description Homepage of archives plugin.
-     */
-    get: operations['archives_index_archives__get'];
-    put?: never;
-    /**
-     * Archives Create
-     * @description Create new archives task.
-     */
-    post: operations['archives_create_archives__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/archives/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Archives Detail
-     * @description Retrieve archives task.
-     */
-    get: operations['archives_detail_archives__task_name__get'];
-    put?: never;
-    /**
-     * Archives Execute
-     * @description Execute archives task.
-     */
-    post: operations['archives_execute_archives__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/archives/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Archives Update
-     * @description Update archives task.
-     */
-    post: operations['archives_update_archives__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/archives/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Archives Delete
-     * @description Delete archives task.
-     */
-    post: operations['archives_delete_archives__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/restores/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Restores Index
-     * @description Homepage of restores plugin.
-     */
-    get: operations['restores_restores_index_mysql_backups_restores__get'];
-    put?: never;
-    /**
-     * Restores Create
-     * @description Create new restores task.
-     */
-    post: operations['restores_restores_create_mysql_backups_restores__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/restores/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Restores Detail
-     * @description Retrieve restores task.
-     */
-    get: operations['restores_restores_detail_mysql_backups_restores__task_name__get'];
-    put?: never;
-    /**
-     * Restores Execute
-     * @description Execute restores task.
-     */
-    post: operations['restores_restores_execute_mysql_backups_restores__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/restores/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Restores Update
-     * @description Update restores task.
-     */
-    post: operations['restores_restores_update_mysql_backups_restores__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/restores/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Restores Delete
-     * @description Delete restores task.
-     */
-    post: operations['restores_restores_delete_mysql_backups_restores__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Mysql Backups Index
-     * @description Homepage of backups plugin.
-     */
-    get: operations['mysql_backups_index_mysql_backups__get'];
-    put?: never;
-    /**
-     * Mysql Backups Create
-     * @description Create new backups task.
-     */
-    post: operations['mysql_backups_create_mysql_backups__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/docs': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Mysql Backups Docs
-     * @description Standalone documentation page for backup configuration.
-     */
-    get: operations['mysql_backups_docs_mysql_backups_docs_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Mysql Backups Detail
-     * @description Retrieve backups task.
-     */
-    get: operations['mysql_backups_detail_mysql_backups__task_name__get'];
-    put?: never;
-    /**
-     * Mysql Backups Execute
-     * @description Execute backups task.
-     */
-    post: operations['mysql_backups_execute_mysql_backups__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Mysql Backups Update
-     * @description Update backups task.
-     */
-    post: operations['mysql_backups_update_mysql_backups__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Mysql Backups Delete
-     * @description Delete backups task.
-     */
-    post: operations['mysql_backups_delete_mysql_backups__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/checksums/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Checksums Index
-     * @description Homepage of checksums plugin.
-     */
-    get: operations['checksums_index_checksums__get'];
-    put?: never;
-    /**
-     * Checksums Create
-     * @description Create an checksum task.
-     */
-    post: operations['checksums_create_checksums__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/checksums/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Checksums Detail
-     * @description Retrieve checksums task.
-     */
-    get: operations['checksums_detail_checksums__task_name__get'];
-    put?: never;
-    /**
-     * Checksums Execute
-     * @description Execute checksums task.
-     */
-    post: operations['checksums_execute_checksums__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/checksums/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Checksums Update
-     * @description Update checksums task.
-     */
-    post: operations['checksums_update_checksums__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/checksums/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Checksums Delete
-     * @description Delete checksums task.
-     */
-    post: operations['checksums_delete_checksums__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/restores/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Pbm Restores Index
-     * @description Homepage of restores plugin.
-     */
-    get: operations['restores_pbm_restores_index_backup_mongo_restores__get'];
-    put?: never;
-    /**
-     * Pbm Restores Create
-     * @description Create new restores task.
-     */
-    post: operations['restores_pbm_restores_create_backup_mongo_restores__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/restores/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Pbm Restores Detail
-     * @description Retrieve restores task.
-     */
-    get: operations['restores_pbm_restores_detail_backup_mongo_restores__task_name__get'];
-    put?: never;
-    /**
-     * Pbm Restores Execute
-     * @description Execute restores task.
-     */
-    post: operations['restores_pbm_restores_execute_backup_mongo_restores__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/restores/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pbm Restores Update
-     * @description Update restores task.
-     */
-    post: operations['restores_pbm_restores_update_backup_mongo_restores__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/restores/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pbm Restores Delete
-     * @description Delete restores task.
-     */
-    post: operations['restores_pbm_restores_delete_backup_mongo_restores__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Pbm Backups Index
-     * @description Homepage of PBM backup mongo plugin.
-     */
-    get: operations['pbm_backups_index_backup_mongo__get'];
-    put?: never;
-    /**
-     * Pbm Backups Create
-     * @description Create new backups task.
-     */
-    post: operations['pbm_backups_create_backup_mongo__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Pbm Backups Detail
-     * @description Retrieve backups task.
-     */
-    get: operations['pbm_backups_detail_backup_mongo__task_name__get'];
-    put?: never;
-    /**
-     * Pbm Backups Execute
-     * @description Execute backups task.
-     */
-    post: operations['pbm_backups_execute_backup_mongo__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pbm Backups Delete
-     * @description Delete backups task.
-     */
-    post: operations['pbm_backups_delete_backup_mongo__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/dipper/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Dipper Index
-     * @description Render the Dipper page with service selection and execution history.
-     */
-    get: operations['dipper_index_dipper__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/dipper/execute': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Dipper Execute
-     * @description Dispatch a dipper task for the selected service.
-     */
-    post: operations['dipper_execute_dipper_execute_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Alerts Index
-     * @deprecated
-     * @description Render the alert templates list page.
-     */
-    get: operations['alerts_index_alerts__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/restore': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Alerts Restore
-     * @deprecated
-     * @description Restore alert configuration from a selected backup.
-     *
-     *     :param pmm_api: The PMM API client, or ``None`` when PMM is not configured.
-     *     :type pmm_api: PMMRemoteAPI | None
-     *     :param session: The async database session.
-     *     :type session: AsyncSession
-     *     :param backup_id: The ID of the backup to restore from.
-     *     :type backup_id: int
-     *     :return: JSON with restore results on success or an error envelope on failure.
-     *     :rtype: JSONResponse
-     */
-    post: operations['alerts_restore_alerts_restore_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/backups/{backup_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Alerts Backup Detail
-     * @deprecated
-     * @description Return a summary of a single backup's contents.
-     *
-     *     :param session: The async database session.
-     *     :type session: AsyncSession
-     *     :param backup_id: The ID of the backup to retrieve.
-     *     :type backup_id: int
-     *     :return: JSON with categorized backup contents.
-     *     :rtype: JSONResponse
-     */
-    get: operations['alerts_backup_detail_alerts_backups__backup_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/pagerduty': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pagerduty Save
-     * @deprecated
-     * @description Create or update the PagerDuty contact point and notification policy.
-     *
-     *     :param pmm_api: The PMM API client dependency.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param integration_key: The PagerDuty integration key from the form.
-     *     :type integration_key: NonEmptyStr
-     *     :return: JSON with ``status``.
-     *     :rtype: JSONResponse
-     */
-    post: operations['pagerduty_save_alerts_pagerduty_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/pagerduty/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pagerduty Delete
-     * @deprecated
-     * @description Delete the PagerDuty contact point and remove its notification route.
-     *
-     *     :param pmm_api: The PMM API client dependency.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :return: JSON with ``status`` set to ``"deleted"``.
-     *     :rtype: JSONResponse
-     */
-    post: operations['pagerduty_delete_alerts_pagerduty_delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/push': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Alerts Push
-     * @deprecated
-     * @description Push selected alert templates to PMM as rules.
-     *
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param alert_templates: Alert templates grouped by service type.
-     *     :type alert_templates: AlertTemplatesDep
-     *     :param folder: The PMM alert folder.
-     *     :type folder: Folder
-     *     :param present_names: Set of template names present in PMM, or ``None``
-     *         when PMM is unreachable.
-     *     :type present_names: set[str] | None
-     *     :param selected: List of template names selected by the user.
-     *     :type selected: list[str]
-     *     :return: JSON response with per-template push results.
-     *     :rtype: JSONResponse
-     */
-    post: operations['alerts_push_alerts_push_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1588,7 +149,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/report/': {
+  '/alerts/': {
     parameters: {
       query?: never;
       header?: never;
@@ -1596,10 +157,11 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Report Index
-     * @description Render the report plugin landing page.
+     * Alerts Index
+     * @deprecated
+     * @description Render the alert templates list page.
      */
-    get: operations['report_index_report__get'];
+    get: operations['alerts_index_alerts__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1608,44 +170,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/report/generate': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Report Generate
-     * @description Generate a report and render the HTML result page.
-     *
-     *     :param request: The incoming HTTP request.
-     *     :type request: Request
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param context: Template context.
-     *     :type context: ReportIndexContext
-     *     :param since: Relative start of the report period.
-     *     :type since: str
-     *     :param until: Relative end of the report period.
-     *     :type until: str
-     *     :param full: Include all check results and full backup history.
-     *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
-     *     :type refresh: bool
-     *     :return: Rendered HTML report.
-     *     :rtype: HTMLResponse
-     */
-    post: operations['report_generate_report_generate_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/report/generate/json': {
+  '/alerts/backups/{backup_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -1653,25 +178,18 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Report Generate Json
-     * @description Generate a report and return as JSON.
+     * Alerts Backup Detail
+     * @deprecated
+     * @description Return a summary of a single backup's contents.
      *
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param since: Relative start of the report period.
-     *     :type since: str
-     *     :param until: Relative end of the report period.
-     *     :type until: str
-     *     :param full: Include all check results and full backup history.
-     *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
-     *     :type refresh: bool
-     *     :param sections: Optional list of sections to include.
-     *     :type sections: list[str] | None
-     *     :return: JSON response with the full report data.
+     *     :param session: The async database session.
+     *     :type session: AsyncSession
+     *     :param backup_id: The ID of the backup to retrieve.
+     *     :type backup_id: int
+     *     :return: JSON with categorized backup contents.
      *     :rtype: JSONResponse
      */
-    get: operations['report_generate_json_report_generate_json_get'];
+    get: operations['alerts_backup_detail_alerts_backups__backup_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1680,7 +198,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/report/generate/pdf': {
+  '/alerts/pagerduty': {
     parameters: {
       query?: never;
       header?: never;
@@ -1690,203 +208,25 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Report Generate Pdf
-     * @description Generate a report and return it as a downloadable PDF.
+     * Pagerduty Save
+     * @deprecated
+     * @description Create or update the PagerDuty contact point and notification policy.
      *
-     *     :param pmm_api: The PMM API client.
+     *     :param pmm_api: The PMM API client dependency.
      *     :type pmm_api: PMMRemoteAPI
-     *     :param since: Relative start of the report period.
-     *     :type since: str
-     *     :param until: Relative end of the report period.
-     *     :type until: str
-     *     :param full: Include all check results and full backup history.
-     *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
-     *     :type refresh: bool
-     *     :return: PDF file response.
-     *     :rtype: Response
-     */
-    post: operations['report_generate_pdf_report_generate_pdf_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/report/upload': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Report Upload
-     * @description Generate a report, convert to PDF, and upload to ServiceNow.
-     *
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param since: Relative start of the report period.
-     *     :type since: str
-     *     :param until: Relative end of the report period.
-     *     :type until: str
-     *     :param full: Include all check results and full backup history.
-     *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
-     *     :type refresh: bool
-     *     :return: JSON response with the upload result.
+     *     :param integration_key: The PagerDuty integration key from the form.
+     *     :type integration_key: NonEmptyStr
+     *     :return: JSON with ``status``.
      *     :rtype: JSONResponse
      */
-    post: operations['report_upload_report_upload_post'];
+    post: operations['pagerduty_save_alerts_pagerduty_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/inventory-api/services/{service_id}/schemas': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Schemas
-     * @description Return schemas for a service as JSON for AJAX dropdowns.
-     */
-    get: operations['sep_list_schemas_inventory_api_services__service_id__schemas_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory-api/schemas/{schema_id}/tables': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Tables
-     * @description Return tables for a schema as JSON for AJAX dropdowns.
-     */
-    get: operations['sep_list_tables_inventory_api_schemas__schema_id__tables_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/stream-logs/{task_history_id}/execution-events': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Task Execution Events Stream
-     * @description Stream task execution events as server-sent events.
-     */
-    get: operations['sep_task_execution_events_stream_stream_logs__task_history_id__execution_events_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/stream-logs/{task_history_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Task Logs Event Stream
-     * @description Stream a task history's logs as server-sent events.
-     */
-    get: operations['sep_task_logs_event_stream_stream_logs__task_history_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/files/{task_history_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Task History Files
-     * @description Return files available for the given task history.
-     */
-    get: operations['sep_list_task_history_files_files__task_history_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/files/{task_history_id}/download': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Download Task History File
-     * @description Stream a task history's archived file as a binary download.
-     */
-    get: operations['sep_download_task_history_file_files__task_history_id__download_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/execution-events/{task_history_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Task Execution Events
-     * @description Return executor tracking events for a task history (Tasks API proxy).
-     */
-    get: operations['sep_list_task_execution_events_execution_events__task_history_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/stop-task/{task_history_id}': {
+  '/alerts/pagerduty/delete': {
     parameters: {
       query?: never;
       header?: never;
@@ -1896,17 +236,23 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Stop Task Execution
-     * @description Stop a task history.
+     * Pagerduty Delete
+     * @deprecated
+     * @description Delete the PagerDuty contact point and remove its notification route.
+     *
+     *     :param pmm_api: The PMM API client dependency.
+     *     :type pmm_api: PMMRemoteAPI
+     *     :return: JSON with ``status`` set to ``"deleted"``.
+     *     :rtype: JSONResponse
      */
-    post: operations['sep_stop_task_execution_stop_task__task_history_id__post'];
+    post: operations['pagerduty_delete_alerts_pagerduty_delete_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/periodic/': {
+  '/alerts/push': {
     parameters: {
       query?: never;
       header?: never;
@@ -1916,17 +262,32 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Periodic Task Create
-     * @description Create periodic task.
+     * Alerts Push
+     * @deprecated
+     * @description Push selected alert templates to PMM as rules.
+     *
+     *     :param pmm_api: The PMM API client.
+     *     :type pmm_api: PMMRemoteAPI
+     *     :param alert_templates: Alert templates grouped by service type.
+     *     :type alert_templates: AlertTemplatesDep
+     *     :param folder: The PMM alert folder.
+     *     :type folder: Folder
+     *     :param present_names: Set of template names present in PMM, or ``None``
+     *         when PMM is unreachable.
+     *     :type present_names: set[str] | None
+     *     :param selected: List of template names selected by the user.
+     *     :type selected: list[str]
+     *     :return: JSON response with per-template push results.
+     *     :rtype: JSONResponse
      */
-    post: operations['sep_periodic_task_create_periodic__post'];
+    post: operations['alerts_push_alerts_push_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/periodic/{periodic_task_id}/delete': {
+  '/alerts/restore': {
     parameters: {
       query?: never;
       header?: never;
@@ -1936,17 +297,95 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Periodic Task Delete
-     * @description Delete Periodic task.
+     * Alerts Restore
+     * @deprecated
+     * @description Restore alert configuration from a selected backup.
+     *
+     *     :param pmm_api: The PMM API client, or ``None`` when PMM is not configured.
+     *     :type pmm_api: PMMRemoteAPI | None
+     *     :param session: The async database session.
+     *     :type session: AsyncSession
+     *     :param backup_id: The ID of the backup to restore from.
+     *     :type backup_id: int
+     *     :return: JSON with restore results on success or an error envelope on failure.
+     *     :rtype: JSONResponse
      */
-    post: operations['sep_periodic_task_delete_periodic__periodic_task_id__delete_post'];
+    post: operations['alerts_restore_alerts_restore_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/periodic/{periodic_task_id}/update': {
+  '/alters/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Alters Index
+     * @description Homepage of alters plugin.
+     */
+    get: operations['alters_index_alters__get'];
+    put?: never;
+    /**
+     * Alters Create
+     * @description Create the alters task group and chain pre-checks into the parent run task.
+     */
+    post: operations['alters_create_alters__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/alters/table/{table_id}/details': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Table Details
+     * @description Get table details including create statement and keys.
+     */
+    get: operations['get_table_details_alters_table__table_id__details_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/alters/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Alters Detail
+     * @description Retrieve alters task.
+     */
+    get: operations['alters_detail_alters__task_name__get'];
+    put?: never;
+    /**
+     * Alters Execute
+     * @description Execute alters task.
+     */
+    post: operations['alters_execute_alters__task_name__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/alters/{task_name}/delete': {
     parameters: {
       query?: never;
       header?: never;
@@ -1956,145 +395,17 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Periodic Task Update
-     * @description Update periodic task.
+     * Alters Delete
+     * @description Delete the alters task group.
      */
-    post: operations['sep_periodic_task_update_periodic__periodic_task_id__update_post'];
+    post: operations['alters_delete_alters__task_name__delete_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/artifacts/download/{token}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Download Artifact
-     * @description Serve an artifact file identified by a signed, time-limited token.
-     *
-     *     :param token: A signed token encoding the artifact type, filename, and MD5 digest.
-     *     :type token: str
-     *     :return: The artifact file as a streaming response.
-     *     :rtype: FileResponse
-     *     :raises HTTPBadRequestException: If the token is expired, tampered, or references
-     *         an invalid artifact type or a path outside the permitted base directory.
-     *     :raises HTTPNotFoundException: If the resolved file does not exist.
-     */
-    get: operations['sep_download_artifact_artifacts_download__token__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/tasks/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     *     :rtype: PluginSchema
-     */
-    get: operations['tasks_get_schema_api_plugins_tasks_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/tasks/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Tasks Api List
-     * @description List task definitions for the read-only plugin UI.
-     *
-     *     :param tasks_api: Async client for the tasks sub-app.
-     *     :type tasks_api: TaskAPI
-     *     :return: Task rows for the schema-driven list view.
-     *     :rtype: list[TaskListResponse]
-     */
-    get: operations['tasks_tasks_api_list_api_plugins_tasks__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/tasks/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Tasks Api Detail
-     * @description Return the per-task detail bundle for the read-only plugin UI.
-     *
-     *     :param task: The task definition resolved by name.
-     *     :type task: Task
-     *     :param tasks_api: Async client for the tasks sub-app.
-     *     :type tasks_api: TaskAPI
-     *     :param executor_hosts_ctx: Executor hosts enriched with inventory labels.
-     *     :type executor_hosts_ctx: ExecutorHostsCtx
-     *     :return: Task definition, history, periodic schedules, and executor hosts.
-     *     :rtype: TaskDetailResponse
-     */
-    get: operations['tasks_tasks_api_detail_api_plugins_tasks__task_name__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/inventory/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     *     :rtype: PluginSchema
-     */
-    get: operations['inventory_get_schema_api_plugins_inventory_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/inventory/sync/': {
+  '/alters/{task_name}/update': {
     parameters: {
       query?: never;
       header?: never;
@@ -2104,37 +415,17 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Inventory Sync Trigger
-     * @description Schedule an ad-hoc inventory sync as a background task.
-     *
-     *     Mirrors the Jinja2 ``POST /inventory/sync/`` handler but accepts an
-     *     optional JSON body ``{"syncer": "<qualified_name>"}``. When ``syncer``
-     *     is absent, ``None``, or empty, every configured syncer runs in
-     *     declaration order; otherwise only the named syncer is forwarded. An
-     *     unknown or inapplicable syncer raises HTTP 400 — never a silent no-op.
-     *
-     *     :param user: Current API-authenticated user; the access token is
-     *         forwarded to the background task.
-     *     :type user: ApiCurrentUser
-     *     :param syncers: Configured syncers from ``SyncersDep``.
-     *     :type syncers: SyncersDep
-     *     :param background_tasks: FastAPI's background task scheduler.
-     *     :type background_tasks: BackgroundTasks
-     *     :param body: Optional trigger body.
-     *     :type body: InventorySyncTriggerWrite | None
-     *     :return: Empty 202 Accepted response.
-     *     :rtype: Response
-     *     :raises HTTPBadRequestException: When ``body.syncer`` is set but does
-     *         not match any configured syncer that can sync inventory.
+     * Alters Update
+     * @description Update the alters task group.
      */
-    post: operations['inventory_inventory_sync_trigger_api_plugins_inventory_sync__post'];
+    post: operations['alters_update_alters__task_name__update_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/sync/status/': {
+  '/api/admin/apps/': {
     parameters: {
       query?: never;
       header?: never;
@@ -2142,19 +433,21 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Inventory Sync Status
-     * @description Return whether an inventory-wide sync is currently running.
+     * List Apps
+     * @description List every configured app with its current enabled state.
      *
-     *     Replaces the server-rendered ``sync_is_running`` template variable
-     *     used by the Jinja2 inventory page so the React control can poll the
-     *     same state without scraping HTML.
+     *     Returns one entry per ``SEP.PLUGINS`` entry, in declaration order. Apps with
+     *     no row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);
+     *     protected apps (``inventory``) are forced to ``ENABLED`` and reported with
+     *     ``toggleable=False``. The list is non-paginated: app cardinality is bounded
+     *     (<20).
      *
-     *     :param session: SQLModel async session.
+     *     :param session: The database session.
      *     :type session: SessionDep
-     *     :return: ``{"is_running": <bool>}``.
-     *     :rtype: InventorySyncStatusResponse
+     *     :return: The per-app info list.
+     *     :rtype: list[AppInfoResponse]
      */
-    get: operations['inventory_inventory_sync_status_api_plugins_inventory_sync_status__get'];
+    get: operations['admin_list_apps_api_admin_apps__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2163,48 +456,111 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/': {
+  '/api/admin/apps/{app_key}/force-disable': {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
+    get?: never;
+    put?: never;
     /**
-     * Inventory Plugin Tasks
-     * @description Return the list of periodic task names for the Inventory plugin.
+     * Force Disable App
+     * @description Force a draining app straight to ``DISABLED``, terminating its tasks.
      *
-     *     Hard-coded because the Inventory plugin has exactly one periodic task
-     *     (``inventory-sync``). The shape matches what the React
-     *     ``usePluginTasks('inventory')`` hook expects: a list of objects with at
-     *     minimum a ``name`` key.
-     */
-    get: operations['inventory_inventory_plugin_tasks_api_plugins_inventory__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/inventory/available-syncers/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Available Syncers
-     * @description Return syncers capable of syncing inventory.
+     *     The emergency escape hatch when a cooperative drain stalls: it terminates
+     *     each of the app's in-flight tasks with ``revoke(..., terminate=True)``
+     *     (SIGTERM), deletes their :class:`app.sep.models.AppRunningTask` rows, and
+     *     transitions the app to ``DISABLED``. Requires the app to already be
+     *     ``DISABLING`` (else 409); the default toggle path (``PUT .../state``) never
+     *     issues a terminating revoke. No periodic re-gating is needed — the owned
+     *     schedules were already gated off at the ``DISABLING`` write.
      *
-     *     :param available_syncers: Filtered syncer list from ``InventoryAvailableSyncersDep``.
-     *     :type available_syncers: list[AvailableSyncer]
-     *     :return: Filtered list of syncers that can sync inventory.
-     *     :rtype: list[AvailableSyncer]
+     *     :param app_key: The app to force-disable.
+     *     :param session: The SEP database session.
+     *     :return: The resulting ``DISABLED`` app-state response.
+     *     :raises HTTPConflictException: When the app is not currently ``DISABLING``.
      */
-    get: operations['inventory_inventory_available_syncers_api_plugins_inventory_available_syncers__get'];
+    post: operations['admin_force_disable_app_api_admin_apps__app_key__force_disable_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/admin/apps/{app_key}/state': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Update App State
+     * @description Transition an app to a new lifecycle state.
+     *
+     *     Validates the requested edge against the allowed transitions
+     *     (``ENABLED`` -> ``DISABLING``, ``DISABLED`` -> ``ENABLING``,
+     *     ``DISABLING`` -> ``DISABLED``, ``ENABLING`` -> ``ENABLED``); an illegal edge
+     *     returns 409. Returns 409 for protected apps (``inventory``) and 404 if the
+     *     key does not match any configured plugin. A configured app with no row yet is
+     *     treated as ``ENABLED`` for the gate and gets its row created with the
+     *     requested state. Returns the updated row as an :class:`AppStateResponse`
+     *     (the return annotation drives FastAPI's response schema).
+     *
+     *     After the ``AppState`` write commits, the app's owned periodic schedules are
+     *     re-gated via :func:`app.sep.periodic_tasks.apply_effective_enabled` so a
+     *     non-``ENABLED`` app also stops its Celery beat tasks (and a return to
+     *     ``ENABLED`` resumes them, subject to each schedule's ``user_enabled``
+     *     override).
+     *
+     *     A ``DISABLING`` transition on an app with no in-flight tasks drains
+     *     immediately: :func:`app.sep.app_drain.finalize_drain_if_complete` flips it
+     *     straight to ``DISABLED`` (no ``task_postrun`` event will ever fire for an idle
+     *     app), and the response reflects that resulting ``DISABLED`` state.
+     *
+     *     :param app_key: The app key to transition.
+     *     :type app_key: str
+     *     :param body: The requested target lifecycle state.
+     *     :type body: AppStateWrite
+     *     :param session: The SEP database session.
+     *     :type session: SessionDep
+     *     :param celery_beat_session: The celery-beat database session.
+     *     :return: The updated app-state response payload.
+     *     :rtype: AppStateResponse
+     *     :raises HTTPConflictException: When the requested transition edge is illegal.
+     */
+    put: operations['admin_update_app_state_api_admin_apps__app_key__state_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Apps For Navigation
+     * @description Return per-app state for the current user's navigation.
+     *
+     *     Protected apps are always reported ``enabled=True``. Non-protected apps
+     *     reflect their DB state (a missing row -> ``enabled=True``: a configured
+     *     plugin is active until explicitly disabled).
+     *
+     *     :param session: The database session.
+     *     :type session: SessionDep
+     *     :return: The per-app navigation list.
+     *     :rtype: list[AppKeyResponse]
+     */
+    get: operations['apps_list_apps_for_navigation_api_apps__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2213,7 +569,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/{entity}/': {
+  '/api/plugins/alert_troubleshooting/': {
     parameters: {
       query?: never;
       header?: never;
@@ -2221,51 +577,24 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Inventory List Entity
-     * @description List inventory nodes, services, schemas, or tables.
+     * Alert Troubleshooting Api List
+     * @description Return alerts grouped by service type.
+     *
+     *     :param session: The database session.
+     *     :type session: SessionDep
+     *     :return: A list of alert groups, each containing alerts for a service type.
+     *     :rtype: list[AlertGroup]
      */
-    get: operations['inventory_inventory_list_entity_api_plugins_inventory__entity___get'];
+    get: operations['alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get'];
     put?: never;
-    /**
-     * Inventory Create Entity
-     * @description Create an inventory node, service, schema, or table.
-     */
-    post: operations['inventory_inventory_create_entity_api_plugins_inventory__entity___post'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/{entity}/{item_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Inventory Get Entity
-     * @description Retrieve a single inventory node, service, schema, or table.
-     */
-    get: operations['inventory_inventory_get_entity_api_plugins_inventory__entity___item_id__get'];
-    /**
-     * Inventory Update Entity
-     * @description Update an inventory node, service, schema, or table.
-     */
-    put: operations['inventory_inventory_update_entity_api_plugins_inventory__entity___item_id__put'];
-    post?: never;
-    /**
-     * Inventory Delete Entity
-     * @description Delete an inventory node, service, schema, or table.
-     */
-    delete: operations['inventory_inventory_delete_entity_api_plugins_inventory__entity___item_id__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/snippets/schema': {
+  '/api/plugins/alert_troubleshooting/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -2277,9 +606,8 @@ export interface paths {
      * @description Return the plugin schema captured at registration time.
      *
      *     :return: The plugin schema instance.
-     *     :rtype: PluginSchema
      */
-    get: operations['snippets_get_schema_api_plugins_snippets_schema_get'];
+    get: operations['alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2288,7 +616,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/capabilities': {
+  '/api/plugins/alert_troubleshooting/{service_type}/{alert_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -2296,16 +624,20 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Snippets Capabilities Provider
-     * @description Return per-deployment capability flags for the snippets plugin.
+     * Alert Troubleshooting Api Detail
+     * @description Return alert info and associated snippets for a specific alert.
      *
-     *     Read live from ``snippets_settings`` so a deployment-config hot
-     *     reload between two requests is reflected on the next response.
-     *
-     *     :return: Capability flags reflecting the current deployment config.
-     *     :rtype: SnippetsCapabilitiesResponse
+     *     :param service_type: The service type of the alert.
+     *     :type service_type: AlertServiceType
+     *     :param alert_name: The alert name identifier.
+     *     :type alert_name: str
+     *     :param session: The database session.
+     *     :type session: SessionDep
+     *     :return: Alert info and associated snippets.
+     *     :rtype: AlertDetailResponse
+     *     :raises HTTPNotFoundException: If no snippets match the alert.
      */
-    get: operations['snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get'];
+    get: operations['alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2314,35 +646,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/refresh': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Api Refresh
-     * @description Refresh the snippets cache from disk.
-     *
-     *     Admin-only and additionally gated by manual sync being enabled.
-     *     Mirrors the legacy Jinja2 ``POST /snippets/refresh`` route.
-     *
-     *     :param user: The authenticated admin performing the refresh.
-     *     :type user: User
-     *     :return: A response carrying the UTC timestamp of the refresh.
-     *     :rtype: RefreshResponse
-     */
-    post: operations['snippets_snippets_api_refresh_api_plugins_snippets_refresh_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/snippets/': {
+  '/api/plugins/alerts/': {
     parameters: {
       query?: never;
       header?: never;
@@ -2350,914 +654,32 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Snippets Api List
-     * @description List every currently-discovered snippet entity.
+     * Alerts Api Index
+     * @description Return everything the React list page needs in a single call.
      *
-     *     :return: One :class:`SnippetResponse` per snippet row in the database.
-     *     :rtype: list[SnippetResponse]
-     */
-    get: operations['snippets_snippets_api_list_api_plugins_snippets__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/snippets/snippet/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Snippets Api Per Snippet Schema
-     * @description Return the per-snippet form schema synthesised from snippet metadata.
+     *     Mirror the data assembled for the deprecated Jinja index view
+     *     (:func:`app.sep.plugins.alerts.deps.get_alerts_index_context`) as JSON:
+     *     alert templates grouped by service type, PMM connectivity, the PagerDuty
+     *     contact-point status, and the most recent backups.
      *
-     *     :param snippet: The snippet whose schema is requested.
-     *     :type snippet: Snippet
-     *     :return: The validated per-snippet plugin schema.
-     *     :rtype: PluginSchema
-     */
-    get: operations['snippets_snippets_api_per_snippet_schema_api_plugins_snippets_snippet_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/snippets/snippet/preview': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Snippets Api Script Preview
-     * @description Return the snippet's preview content with a highlighter language hint.
+     *     ``present_names`` is ``None`` when PMM is unconfigured or unreachable, which
+     *     is the same signal used to drive ``pmm_connected`` and per-template
+     *     ``in_pmm`` flags so the UI degrades gracefully.
      *
-     *     :param snippet: The snippet whose preview is requested.
-     *     :type snippet: Snippet
-     *     :return: The preview content alongside metadata about it.
-     *     :rtype: ScriptPreviewResponse
-     *     :raises HTTPUnprocessableEntityException: When the snippet contains
-     *         bytes that cannot be decoded as UTF-8.
+     *     :param alert_templates: Local alert templates grouped by service type.
+     *     :type alert_templates: AlertTemplatesDep
+     *     :param present_names: Template names already present in PMM, or ``None`` when
+     *         PMM is unreachable.
+     *     :type present_names: set[str] | None
+     *     :param recent_backups: The most recent alert backups, newest first.
+     *     :type recent_backups: list[AlertBackup]
+     *     :param pagerduty_status: PagerDuty contact-point status, or ``None`` when PMM
+     *         is unreachable.
+     *     :type pagerduty_status: dict[str, Any] | None
+     *     :return: The aggregated index payload.
+     *     :rtype: IndexResponse
      */
-    get: operations['snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/snippets/snippet/download': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Snippets Api Download
-     * @description Stream the raw snippet file as a download attachment.
-     *
-     *     Returns the on-disk source verbatim — full bash/Python body plus its
-     *     YAML frontmatter — so end users can save the file locally without
-     *     being capped by the preview truncation limits. The
-     *     ``SnippetDep`` dependency already validates both the DB row and the
-     *     on-disk file, so a missing snippet or missing file surfaces as 404.
-     *
-     *     :param snippet: The snippet whose raw file is requested.
-     *     :type snippet: Snippet
-     *     :return: The snippet file streamed as ``attachment; filename=...``
-     *         with a MIME type guessed from the on-disk path.
-     *     :rtype: FileResponse
-     */
-    get: operations['snippets_snippets_api_download_api_plugins_snippets_snippet_download_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/snippets/snippet/history': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Snippets Api History
-     * @description Return the paginated execution history rows for a single snippet.
-     *
-     *     Filters the canonical task-history endpoint by ``snippet_filename`` so
-     *     the React detail page can pass the result straight into the shared
-     *     ``TaskHistoryTable`` component without re-projecting fields.
-     *
-     *     :param snippet: The snippet whose history is requested.
-     *     :type snippet: Snippet
-     *     :param tasks_api: Async client for the tasks sub-app.
-     *     :type tasks_api: RemoteAPI
-     *     :return: The upstream paginated task-history response (``items``,
-     *         ``total``, ``offset``, ``limit``).
-     *     :rtype: dict[str, Any]
-     */
-    get: operations['snippets_snippets_api_history_api_plugins_snippets_snippet_history_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/snippets/snippet/execute': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Api Execute
-     * @description Execute a snippet against the tasks API.
-     *
-     *     Mirrors the legacy Jinja2 ``POST /snippets/execute?snippet_filename=...``
-     *     route, but accepts a JSON body and returns a structured response pointing at
-     *     the created task.
-     *
-     *     :param snippet: The snippet being executed.
-     *     :type snippet: Snippet
-     *     :param body: The validated JSON request body.
-     *     :type body: SnippetExecutionRequest
-     *     :param tasks_api: Async client for the tasks sub-app.
-     *     :type tasks_api: RemoteAPI
-     *     :param snippet_source: Signed URL the executor uses to download the
-     *         snippet artifact.
-     *     :type snippet_source: str
-     *     :return: The structured response describing the created task.
-     *     :rtype: SnippetExecutionResponse
-     *     :raises HTTPUnprocessableEntityException: When the per-snippet args
-     *         fail dynamic validation.
-     */
-    post: operations['snippets_snippets_api_execute_api_plugins_snippets_snippet_execute_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/snippets/snippet/approval': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /**
-     * Snippets Api Approve
-     * @description Approve a single snippet (idempotent).
-     *
-     *     Re-approving an already-approved snippet returns ``200`` with the
-     *     current state — ``approved_at`` is *not* overwritten so the audit
-     *     trail is preserved.
-     *
-     *     :param snippet: The snippet whose approval is being set.
-     *     :type snippet: Snippet
-     *     :param user: The authenticated admin performing the action.
-     *     :type user: User
-     *     :param session: The active database session.
-     *     :type session: AsyncSession
-     *     :return: The snippet entity after the call, including approval state.
-     *     :rtype: SnippetResponse
-     */
-    put: operations['snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put'];
-    post?: never;
-    /**
-     * Snippets Api Remove Approval
-     * @description Remove approval from a single snippet (idempotent).
-     *
-     *     Removing an approval that doesn't exist is a no-op ``204``. The
-     *     snippet missing → ``404`` (handled by ``SnippetDep``); approval
-     *     missing → ``204``.
-     *
-     *     :param snippet: The snippet whose approval is being cleared.
-     *     :type snippet: Snippet
-     *     :param user: The authenticated admin performing the action.
-     *     :type user: User
-     *     :param session: The active database session.
-     *     :type session: AsyncSession
-     *     :return: An empty 204 response.
-     *     :rtype: Response
-     */
-    delete: operations['snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/snippets/approvals': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /**
-     * Snippets Api Batch Approve
-     * @description Approve a set of snippets atomically (idempotent partial-update).
-     *
-     *     Reject the whole batch with ``400`` and a
-     *     :class:`BatchApprovalErrorResponse` payload when any filename has no
-     *     DB row or its file is missing on disk. Filenames that are already
-     *     approved when the call starts are reported in
-     *     ``skipped_already_approved`` — not as errors. The atomic write uses
-     *     ``approved_at IS NULL`` as a CAS filter so two concurrent admins
-     *     cannot double-approve.
-     *
-     *     :param existence: Pre-validated batch existence result from the dependency.
-     *     :type existence: SnippetBatchExistenceResult
-     *     :param user: The authenticated admin performing the action.
-     *     :type user: User
-     *     :param session: The active database session.
-     *     :type session: AsyncSession
-     *     :return: The success payload listing approved + skipped filenames.
-     *     :rtype: BatchApprovalResponse
-     *     :raises HTTPBadRequestException: On hard-error precheck failures with
-     *         a :class:`BatchApprovalErrorResponse` body.
-     */
-    patch: operations['snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch'];
-    trace?: never;
-  };
-  '/api/plugins/atw/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     *     :rtype: PluginSchema
-     */
-    get: operations['atw_get_schema_api_plugins_atw_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/atw/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Atw Api List
-     * @description List ATW-tagged snippets grouped by category.
-     *
-     *     Categories with no matching snippets are omitted to keep the payload small;
-     *     the ATW enum still defines the full taxonomy for validation (plugin schema).
-     */
-    get: operations['atw_atw_api_list_api_plugins_atw__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/archives/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     *     :rtype: PluginSchema
-     */
-    get: operations['archives_get_schema_api_plugins_archives_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/archives/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Archives Api List
-     * @description List archive tasks.
-     */
-    get: operations['archives_archives_api_list_api_plugins_archives__get'];
-    put?: never;
-    /**
-     * Archives Api Create
-     * @description Create an archive task from a JSON payload request body.
-     *
-     *     :param check_connectivity: Whether to verify the target database is
-     *         reachable after task creation. Defaults to ``True`` so callers that
-     *         omit the parameter still get a connectivity round-trip; pass
-     *         ``check_connectivity=false`` to opt out. Mirrors the asymmetric
-     *         default used by the checksums create flow (the Form path defaults
-     *         to ``False`` because HTML checkboxes omit the field when unchecked).
-     *     :type check_connectivity: bool
-     */
-    post: operations['archives_archives_api_create_api_plugins_archives__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/archives/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Archives Api Detail
-     * @description Retrieve a single archive task.
-     */
-    get: operations['archives_archives_api_detail_api_plugins_archives__task_name__get'];
-    put?: never;
-    post?: never;
-    /**
-     * Archives Api Delete
-     * @description Delete an archive task.
-     */
-    delete: operations['archives_archives_api_delete_api_plugins_archives__task_name__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/mysql_backups/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     *     :rtype: PluginSchema
-     */
-    get: operations['mysql_backups_get_schema_api_plugins_mysql_backups_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/mysql_backups/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Mysql Backups Api List
-     * @description List MySQL backup tasks.
-     *
-     *     ``limit`` is capped because each listed task triggers a follow-up history
-     *     fetch in ``get_mysql_backups_api_task_responses``; an unbounded ``limit``
-     *     would amplify fan-out to the Tasks API.
-     */
-    get: operations['mysql_backups_mysql_backups_api_list_api_plugins_mysql_backups__get'];
-    put?: never;
-    /**
-     * Mysql Backups Api Create
-     * @description Create a MySQL backup task from a JSON request body.
-     */
-    post: operations['mysql_backups_mysql_backups_api_create_api_plugins_mysql_backups__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/mysql_backups/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Mysql Backups Api Detail
-     * @description Retrieve a single MySQL backup task.
-     */
-    get: operations['mysql_backups_mysql_backups_api_detail_api_plugins_mysql_backups__task_name__get'];
-    put?: never;
-    post?: never;
-    /**
-     * Mysql Backups Api Delete
-     * @description Delete a MySQL backup task.
-     */
-    delete: operations['mysql_backups_mysql_backups_api_delete_api_plugins_mysql_backups__task_name__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/mysql_backups/{task_name}/execute': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Mysql Backups Api Execute
-     * @description Execute a MySQL backup task.
-     */
-    post: operations['mysql_backups_mysql_backups_api_execute_api_plugins_mysql_backups__task_name__execute_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/checksums/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     *     :rtype: PluginSchema
-     */
-    get: operations['checksums_get_schema_api_plugins_checksums_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/checksums/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Checksums Api List
-     * @description List checksum tasks.
-     */
-    get: operations['checksums_checksums_api_list_api_plugins_checksums__get'];
-    put?: never;
-    /**
-     * Checksums Api Create
-     * @description Create a checksum task from a JSON payload request body.
-     *
-     *     :param check_connectivity: Whether to verify the target database is
-     *         reachable after task creation. Defaults to ``True`` so callers that
-     *         omit the parameter still get a connectivity round-trip; pass
-     *         ``check_connectivity=false`` to opt out. Note that the form flow
-     *         defaults to ``False`` (HTML checkbox semantics — an unchecked box
-     *         submits no field); this asymmetry is intentional.
-     *     :type check_connectivity: bool
-     */
-    post: operations['checksums_checksums_api_create_api_plugins_checksums__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/checksums/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Checksums Api Detail
-     * @description Retrieve a single checksum task.
-     */
-    get: operations['checksums_checksums_api_detail_api_plugins_checksums__task_name__get'];
-    /**
-     * Checksums Api Update
-     * @description Update a checksum task from a JSON payload request body.
-     *
-     *     :param check_connectivity: Whether to verify the target database is
-     *         reachable after the update. Defaults to ``True``; pass
-     *         ``check_connectivity=false`` to opt out. Note that the form flow
-     *         defaults to ``False`` (HTML checkbox semantics); this asymmetry is
-     *         intentional.
-     *     :type check_connectivity: bool
-     */
-    put: operations['checksums_checksums_api_update_api_plugins_checksums__task_name__put'];
-    post?: never;
-    /**
-     * Checksums Api Delete
-     * @description Delete a checksum task.
-     */
-    delete: operations['checksums_checksums_api_delete_api_plugins_checksums__task_name__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/checksums/{task_name}/execute': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Checksums Api Execute
-     * @description Execute a checksum task.
-     */
-    post: operations['checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/backup_mongo/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     *     :rtype: PluginSchema
-     */
-    get: operations['backup_mongo_get_schema_api_plugins_backup_mongo_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/backup_mongo/restores/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     *     :rtype: PluginSchema
-     */
-    get: operations['backup_mongo_get_schema_api_plugins_backup_mongo_restores_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/backup_mongo/restores/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Restore Mongo Api List
-     * @description List parent PBM restore config tasks.
-     */
-    get: operations['backup_mongo_restore_mongo_api_list_api_plugins_backup_mongo_restores__get'];
-    put?: never;
-    /**
-     * Restore Mongo Api Create
-     * @description Create a restore task group from a JSON payload request body.
-     *
-     *     POSTs the parent config task, restore leg, pbm-list helper, and optional
-     *     force-resync child for physical restores. Rolls back on any failure.
-     */
-    post: operations['backup_mongo_restore_mongo_api_create_api_plugins_backup_mongo_restores__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/backup_mongo/restores/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Restore Mongo Api Detail
-     * @description Retrieve a single parent restore task with child task status.
-     */
-    get: operations['backup_mongo_restore_mongo_api_detail_api_plugins_backup_mongo_restores__task_name__get'];
-    /**
-     * Restore Mongo Api Update
-     * @description Update a restore task from a JSON payload request body.
-     *
-     *     PUTs the parent config payload to the config task name and refreshes each
-     *     child leg (restore, pbm-list, optional force-resync) in place.
-     */
-    put: operations['backup_mongo_restore_mongo_api_update_api_plugins_backup_mongo_restores__task_name__put'];
-    post?: never;
-    /**
-     * Restore Mongo Api Delete
-     * @description Delete a restore task group.
-     */
-    delete: operations['backup_mongo_restore_mongo_api_delete_api_plugins_backup_mongo_restores__task_name__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/backup_mongo/restores/{task_name}/execute': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Restore Mongo Api Execute
-     * @description Execute a restore task.
-     */
-    post: operations['backup_mongo_restore_mongo_api_execute_api_plugins_backup_mongo_restores__task_name__execute_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/backup_mongo/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Backup Mongo Api List
-     * @description List parent PBM backup config tasks.
-     */
-    get: operations['backup_mongo_backup_mongo_api_list_api_plugins_backup_mongo__get'];
-    put?: never;
-    /**
-     * Backup Mongo Api Create
-     * @description Create a backup task group from a JSON payload request body.
-     *
-     *     POSTs the parent ``pbm_config`` task, then derived ``pbm_logical``,
-     *     ``pbm_physical``, and ``pbm_status`` siblings via
-     *     :func:`~app.sep.plugins.framework.cascade.cascade_create_tasks`.
-     */
-    post: operations['backup_mongo_backup_mongo_api_create_api_plugins_backup_mongo__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/backup_mongo/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Backup Mongo Api Detail
-     * @description Retrieve a single parent backup task with derived sibling status.
-     */
-    get: operations['backup_mongo_backup_mongo_api_detail_api_plugins_backup_mongo__task_name__get'];
-    put?: never;
-    post?: never;
-    /**
-     * Backup Mongo Api Delete
-     * @description Delete a backup task group.
-     */
-    delete: operations['backup_mongo_backup_mongo_api_delete_api_plugins_backup_mongo__task_name__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/backup_mongo/{task_name}/execute': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Backup Mongo Api Execute
-     * @description Execute a backup task.
-     */
-    post: operations['backup_mongo_backup_mongo_api_execute_api_plugins_backup_mongo__task_name__execute_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/dipper/schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Schema
-     * @description Return the plugin schema captured at registration time.
-     *
-     *     :return: The plugin schema instance.
-     *     :rtype: PluginSchema
-     */
-    get: operations['dipper_get_schema_api_plugins_dipper_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/dipper/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Dipper Api List
-     * @description Return Dipper execution history rows.
-     *
-     *     :param tasks_api: Async client for the tasks sub-app.
-     *     :type tasks_api: RemoteAPI
-     *     :return: Paginated task-history response filtered to Dipper runs.
-     *     :rtype: dict[str, Any]
-     */
-    get: operations['dipper_dipper_api_list_api_plugins_dipper__get'];
-    put?: never;
-    /**
-     * Dipper Api Execute
-     * @description Execute a Dipper collector script against a database service.
-     *
-     *     Delegates all script resolution, PMM defaults merging, argument
-     *     validation, and metadata assembly to ``build_dipper_execution_meta``.
-     *
-     *     :param request: The HTTP request (used to derive the artifact download URL).
-     *     :type request: Request
-     *     :param body: Validated JSON request body.
-     *     :type body: DipperExecuteWrite
-     *     :param inventory_api: Async client for the inventory sub-app.
-     *     :type inventory_api: RemoteAPI
-     *     :param tasks_api: Async client for the tasks sub-app.
-     *     :type tasks_api: RemoteAPI
-     *     :return: Execution response with the created task identifier.
-     *     :rtype: DipperExecutionResponse
-     *     :raises HTTPNotFoundException: When the service does not exist.
-     *     :raises HTTPUnprocessableEntityException: When the script/args are invalid.
-     */
-    post: operations['dipper_dipper_api_execute_api_plugins_dipper__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/dipper/form-schema': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Dipper Api Form Schema
-     * @description Return the selected Dipper payload's dynamic execution schema.
-     *
-     *     :param service_id: Inventory ID of the database service.
-     *     :type service_id: int
-     *     :param collector_type: Which collector variant to render.
-     *     :type collector_type: CollectorTypeEnum
-     *     :param inventory_api: Async client for the inventory sub-app.
-     *     :type inventory_api: RemoteAPI
-     *     :param executor_hosts: Available executor hosts keyed by hostname.
-     *     :type executor_hosts: dict
-     *     :return: Context-specific schema including payload parameters.
-     *     :rtype: PluginSchema
-     */
-    get: operations['dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/dipper/script-preview': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Dipper Api Script Preview
-     * @description Return a preview of the collector script for the given service.
-     *
-     *     :param service_id: Inventory ID of the database service.
-     *     :type service_id: int
-     *     :param collector_type: Which collector variant to preview.
-     *     :type collector_type: CollectorTypeEnum
-     *     :param inventory_api: Async client for the inventory sub-app.
-     *     :type inventory_api: RemoteAPI
-     *     :return: Preview content alongside language and truncation metadata.
-     *     :rtype: ScriptPreviewResponse
-     *     :raises HTTPNotFoundException: When the service does not exist.
-     *     :raises HTTPUnprocessableEntityException: When no script is available for
-     *         the service/collector combination, or when the script contains
-     *         non-UTF-8 bytes.
-     */
-    get: operations['dipper_dipper_api_script_preview_api_plugins_dipper_script_preview_get'];
+    get: operations['alerts_alerts_api_index_api_plugins_alerts__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3279,11 +701,8 @@ export interface paths {
      *
      *     :param session: The async database session.
      *     :type session: SessionDep
-     *     :param offset: Zero-based starting offset. Rejected with HTTP 422 if negative.
-     *     :type offset: int
-     *     :param limit: Maximum number of backups to return. Validated to the
-     *         range ``[1, 100]``; out-of-range values are rejected with HTTP 422.
-     *     :type limit: int
+     *     :param pagination: Validated offset/limit query parameters (``limit`` capped at 100).
+     *     :type pagination: Pagination
      *     :return: A paginated envelope of backup summaries ordered by
      *         ``created_at`` descending.
      *     :rtype: PaginatedResponse[BackupSummary]
@@ -3319,38 +738,6 @@ export interface paths {
     get: operations['alerts_alerts_api_get_backup_api_plugins_alerts_backups__backup_id__get'];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/plugins/alerts/restore': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Alerts Api Restore
-     * @description Restore alert configuration from a backup snapshot.
-     *
-     *     :param payload: Restore request body identifying the backup to apply.
-     *     :type payload: RestoreRequest
-     *     :param pmm_api: The PMM API client. Raises 503 if PMM is not configured.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param session: The async database session.
-     *     :type session: SessionDep
-     *     :return: A ``RestoreResponse`` with the per-section restore counts.
-     *     :rtype: RestoreResponse
-     *     :raises HTTPNotFoundException: If the backup is not found.
-     *     :raises HTTPBadGatewayException: If the PMM upstream call fails with
-     *         ``OSError``.
-     */
-    post: operations['alerts_alerts_api_restore_api_plugins_alerts_restore_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -3453,7 +840,75 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alert_troubleshooting/schema': {
+  '/api/plugins/alerts/restore': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Alerts Api Restore
+     * @description Restore alert configuration from a backup snapshot.
+     *
+     *     :param payload: Restore request body identifying the backup to apply.
+     *     :type payload: RestoreRequest
+     *     :param pmm_api: The PMM API client. Raises 503 if PMM is not configured.
+     *     :type pmm_api: PMMRemoteAPI
+     *     :param session: The async database session.
+     *     :type session: SessionDep
+     *     :return: A ``RestoreResponse`` with the per-section restore counts.
+     *     :rtype: RestoreResponse
+     *     :raises HTTPNotFoundException: If the backup is not found.
+     *     :raises HTTPBadGatewayException: If the PMM upstream call fails with
+     *         ``OSError``.
+     */
+    post: operations['alerts_alerts_api_restore_api_plugins_alerts_restore_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/alters/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Alters Api List
+     * @description List parent alters execute tasks.
+     */
+    get: operations['alters_alters_api_list_api_plugins_alters__get'];
+    put?: never;
+    /**
+     * Alters Api Create
+     * @description Create an alters task group from a JSON payload request body.
+     *
+     *     POSTs the parent execute task, dry-run derived sibling, pre-checks
+     *     predecessor, and fires ``POST /execute/{name}-pre-checks`` to chain into
+     *     the parent run task.
+     *
+     *     :param check_connectivity: Whether to verify the target database is
+     *         reachable after task creation. Defaults to ``True`` so callers that
+     *         omit the parameter still get a connectivity round-trip; pass
+     *         ``check_connectivity=false`` to opt out. Note that the form flow
+     *         defaults to ``False`` (HTML checkbox semantics — an unchecked box
+     *         submits no field); this asymmetry is intentional.
+     *     :type check_connectivity: bool
+     */
+    post: operations['alters_alters_api_create_api_plugins_alters__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/alters/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -3465,9 +920,617 @@ export interface paths {
      * @description Return the plugin schema captured at registration time.
      *
      *     :return: The plugin schema instance.
+     */
+    get: operations['alters_get_schema_api_plugins_alters_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/alters/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Alters Api Detail
+     * @description Retrieve a single parent alters task.
+     */
+    get: operations['alters_alters_api_detail_api_plugins_alters__task_name__get'];
+    /**
+     * Alters Api Update
+     * @description Update an alters task group from a JSON payload request body.
+     *
+     *     :param check_connectivity: Whether to verify the target database is
+     *         reachable after the update. Defaults to ``True``; pass
+     *         ``check_connectivity=false`` to opt out. Note that the form flow
+     *         defaults to ``False`` (HTML checkbox semantics); this asymmetry is
+     *         intentional.
+     *     :type check_connectivity: bool
+     */
+    put: operations['alters_alters_api_update_api_plugins_alters__task_name__put'];
+    post?: never;
+    /**
+     * Alters Api Delete
+     * @description Delete an alters task group.
+     */
+    delete: operations['alters_alters_api_delete_api_plugins_alters__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/alters/{task_name}/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Alters Api Execute
+     * @description Execute an alters task (parent, dry-run, or pre-checks).
+     */
+    post: operations['alters_alters_api_execute_api_plugins_alters__task_name__execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/archives/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Archives Api List
+     * @description List archive tasks.
+     */
+    get: operations['archives_archives_api_list_api_plugins_archives__get'];
+    put?: never;
+    /**
+     * Archives Api Create
+     * @description Create an archive task from a JSON payload request body.
+     *
+     *     :param check_connectivity: Whether to verify the target database is
+     *         reachable after task creation. Defaults to ``True`` so callers that
+     *         omit the parameter still get a connectivity round-trip; pass
+     *         ``check_connectivity=false`` to opt out. Mirrors the asymmetric
+     *         default used by the checksums create flow (the Form path defaults
+     *         to ``False`` because HTML checkboxes omit the field when unchecked).
+     *     :type check_connectivity: bool
+     */
+    post: operations['archives_archives_api_create_api_plugins_archives__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/archives/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['archives_get_schema_api_plugins_archives_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/archives/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Archives Api Detail
+     * @description Retrieve a single archive task.
+     */
+    get: operations['archives_archives_api_detail_api_plugins_archives__task_name__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Archives Api Delete
+     * @description Delete an archive task.
+     */
+    delete: operations['archives_archives_api_delete_api_plugins_archives__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/atw/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Atw Api List
+     * @description List ATW-tagged snippets grouped by category.
+     *
+     *     Categories with no matching snippets are omitted to keep the payload small;
+     *     the ATW enum still defines the full taxonomy for validation (plugin schema).
+     */
+    get: operations['atw_atw_api_list_api_plugins_atw__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/atw/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['atw_get_schema_api_plugins_atw_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_mongo/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Backup Mongo Api List
+     * @description List parent PBM backup config tasks.
+     */
+    get: operations['backup_mongo_backup_mongo_api_list_api_plugins_backup_mongo__get'];
+    put?: never;
+    /**
+     * Backup Mongo Api Create
+     * @description Create a backup task group from a JSON payload request body.
+     *
+     *     POSTs the parent ``pbm_config`` task, then derived ``pbm_logical``,
+     *     ``pbm_physical``, and ``pbm_status`` siblings via
+     *     :func:`~app.sep.plugins.framework.cascade.cascade_create_tasks`.
+     */
+    post: operations['backup_mongo_backup_mongo_api_create_api_plugins_backup_mongo__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_mongo/restores/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Restore Mongo Api List
+     * @description List parent PBM restore config tasks.
+     */
+    get: operations['backup_mongo_restore_mongo_api_list_api_plugins_backup_mongo_restores__get'];
+    put?: never;
+    /**
+     * Restore Mongo Api Create
+     * @description Create a restore task group from a JSON payload request body.
+     *
+     *     POSTs the parent config task, restore leg, pbm-list helper, and optional
+     *     force-resync child for physical restores. Rolls back on any failure.
+     */
+    post: operations['backup_mongo_restore_mongo_api_create_api_plugins_backup_mongo_restores__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_mongo/restores/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['backup_mongo_get_schema_api_plugins_backup_mongo_restores_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_mongo/restores/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Restore Mongo Api Detail
+     * @description Retrieve a single parent restore task with child task status.
+     */
+    get: operations['backup_mongo_restore_mongo_api_detail_api_plugins_backup_mongo_restores__task_name__get'];
+    /**
+     * Restore Mongo Api Update
+     * @description Update a restore task from a JSON payload request body.
+     *
+     *     PUTs the parent config payload to the config task name and refreshes each
+     *     child leg (restore, pbm-list, optional force-resync) in place.
+     */
+    put: operations['backup_mongo_restore_mongo_api_update_api_plugins_backup_mongo_restores__task_name__put'];
+    post?: never;
+    /**
+     * Restore Mongo Api Delete
+     * @description Delete a restore task group.
+     */
+    delete: operations['backup_mongo_restore_mongo_api_delete_api_plugins_backup_mongo_restores__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_mongo/restores/{task_name}/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Restore Mongo Api Execute
+     * @description Execute a restore task.
+     */
+    post: operations['backup_mongo_restore_mongo_api_execute_api_plugins_backup_mongo_restores__task_name__execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_mongo/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['backup_mongo_get_schema_api_plugins_backup_mongo_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_mongo/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Backup Mongo Api Detail
+     * @description Retrieve a single parent backup task with derived sibling status.
+     */
+    get: operations['backup_mongo_backup_mongo_api_detail_api_plugins_backup_mongo__task_name__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Backup Mongo Api Delete
+     * @description Delete a backup task group.
+     */
+    delete: operations['backup_mongo_backup_mongo_api_delete_api_plugins_backup_mongo__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_mongo/{task_name}/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Backup Mongo Api Execute
+     * @description Execute a backup task.
+     */
+    post: operations['backup_mongo_backup_mongo_api_execute_api_plugins_backup_mongo__task_name__execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_pg/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List */
+    get: operations['backup_pg__list_paginated_api_plugins_backup_pg__get'];
+    put?: never;
+    /** Create */
+    post: operations['backup_pg__create_api_plugins_backup_pg__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_pg/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['backup_pg_get_schema_api_plugins_backup_pg_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_pg/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Detail */
+    get: operations['backup_pg__detail_api_plugins_backup_pg__task_name__get'];
+    /** Update */
+    put: operations['backup_pg__update_api_plugins_backup_pg__task_name__put'];
+    post?: never;
+    /** Delete */
+    delete: operations['backup_pg__delete_api_plugins_backup_pg__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/backup_pg/{task_name}/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Backup Pg Api Execute
+     * @description Resolve, dispatch, and wrap a standard task execution.
+     */
+    post: operations['backup_pg_backup_pg_api_execute_api_plugins_backup_pg__task_name__execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/checksums/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List */
+    get: operations['checksums__list_api_plugins_checksums__get'];
+    put?: never;
+    /** Create */
+    post: operations['checksums__create_api_plugins_checksums__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/checksums/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['checksums_get_schema_api_plugins_checksums_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/checksums/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Detail */
+    get: operations['checksums__detail_api_plugins_checksums__task_name__get'];
+    /** Update */
+    put: operations['checksums__update_api_plugins_checksums__task_name__put'];
+    post?: never;
+    /** Delete */
+    delete: operations['checksums__delete_api_plugins_checksums__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/checksums/{task_name}/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Checksums Api Execute
+     * @description Resolve, dispatch, and wrap a standard task execution.
+     */
+    post: operations['checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/dipper/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Dipper Api List
+     * @description Return Dipper execution history rows.
+     *
+     *     :param tasks_api: Async client for the tasks sub-app.
+     *     :type tasks_api: RemoteAPI
+     *     :return: Paginated task-history response filtered to Dipper runs.
+     *     :rtype: dict[str, Any]
+     */
+    get: operations['dipper_dipper_api_list_api_plugins_dipper__get'];
+    put?: never;
+    /**
+     * Dipper Api Execute
+     * @description Execute a Dipper collector script against a database service.
+     *
+     *     Delegates all script resolution, PMM defaults merging, argument
+     *     validation, and metadata assembly to ``build_dipper_execution_meta``.
+     *
+     *     :param request: The HTTP request (used to derive the artifact download URL).
+     *     :type request: Request
+     *     :param body: Validated JSON request body.
+     *     :type body: DipperExecuteWrite
+     *     :param inventory_api: Async client for the inventory sub-app.
+     *     :type inventory_api: RemoteAPI
+     *     :param tasks_api: Async client for the tasks sub-app.
+     *     :type tasks_api: RemoteAPI
+     *     :return: Execution response with the created task identifier.
+     *     :rtype: DipperExecutionResponse
+     *     :raises HTTPNotFoundException: When the service does not exist.
+     *     :raises HTTPUnprocessableEntityException: When the script/args are invalid.
+     */
+    post: operations['dipper_dipper_api_execute_api_plugins_dipper__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/dipper/form-schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Dipper Api Form Schema
+     * @description Return the selected Dipper payload's dynamic execution schema.
+     *
+     *     :param service_id: Inventory ID of the database service.
+     *     :type service_id: int
+     *     :param collector_type: Which collector variant to render.
+     *     :type collector_type: CollectorTypeEnum
+     *     :param inventory_api: Async client for the inventory sub-app.
+     *     :type inventory_api: RemoteAPI
+     *     :param executor_hosts: Available executor hosts keyed by hostname.
+     *     :type executor_hosts: dict
+     *     :param pmm_api: The configured PMM API client, or ``None`` when PMM is not
+     *         configured (injected via ``PMMAPIDep``).
+     *     :type pmm_api: PMMRemoteAPI | None
+     *     :return: Context-specific schema including payload parameters.
      *     :rtype: PluginSchema
      */
-    get: operations['alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get'];
+    get: operations['dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3476,7 +1539,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alert_troubleshooting/': {
+  '/api/plugins/dipper/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -3484,15 +1547,12 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Alert Troubleshooting Api List
-     * @description Return alerts grouped by service type.
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
      *
-     *     :param session: The database session.
-     *     :type session: SessionDep
-     *     :return: A list of alert groups, each containing alerts for a service type.
-     *     :rtype: list[AlertGroup]
+     *     :return: The plugin schema instance.
      */
-    get: operations['alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get'];
+    get: operations['dipper_get_schema_api_plugins_dipper_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3501,7 +1561,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alert_troubleshooting/{service_type}/{alert_name}': {
+  '/api/plugins/dipper/script-preview': {
     parameters: {
       query?: never;
       header?: never;
@@ -3509,23 +1569,1130 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Alert Troubleshooting Api Detail
-     * @description Return alert info and associated snippets for a specific alert.
+     * Dipper Api Script Preview
+     * @description Return a preview of the collector script for the given service.
      *
-     *     :param service_type: The service type of the alert.
-     *     :type service_type: AlertServiceType
-     *     :param alert_name: The alert name identifier.
-     *     :type alert_name: str
-     *     :param session: The database session.
-     *     :type session: SessionDep
-     *     :return: Alert info and associated snippets.
-     *     :rtype: AlertDetailResponse
-     *     :raises HTTPNotFoundException: If no snippets match the alert.
+     *     :param service_id: Inventory ID of the database service.
+     *     :type service_id: int
+     *     :param collector_type: Which collector variant to preview.
+     *     :type collector_type: CollectorTypeEnum
+     *     :param inventory_api: Async client for the inventory sub-app.
+     *     :type inventory_api: RemoteAPI
+     *     :return: Preview content alongside language and truncation metadata.
+     *     :rtype: ScriptPreviewResponse
+     *     :raises HTTPNotFoundException: When the service does not exist.
+     *     :raises HTTPUnprocessableEntityException: When no script is available for
+     *         the service/collector combination, or when the script contains
+     *         non-UTF-8 bytes.
      */
-    get: operations['alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get'];
+    get: operations['dipper_dipper_api_script_preview_api_plugins_dipper_script_preview_get'];
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory Plugin Tasks
+     * @description Return the list of periodic task names for the Inventory plugin.
+     *
+     *     Hard-coded because the Inventory plugin has exactly one periodic task
+     *     (``inventory-sync``). The shape matches what the React
+     *     ``usePluginTasks('inventory')`` hook expects: a list of objects with at
+     *     minimum a ``name`` key.
+     */
+    get: operations['inventory_inventory_plugin_tasks_api_plugins_inventory__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/available-syncers/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory Available Syncers
+     * @description Return syncers capable of syncing inventory.
+     *
+     *     :param available_syncers: Filtered syncer list from ``InventoryAvailableSyncersDep``.
+     *     :type available_syncers: list[AvailableSyncer]
+     *     :return: Filtered list of syncers that can sync inventory.
+     *     :rtype: list[AvailableSyncer]
+     */
+    get: operations['inventory_inventory_available_syncers_api_plugins_inventory_available_syncers__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/nodes/{node_id}/system-observation': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory Node System Observation
+     * @description Proxy the host-level system observation for a node (read-only).
+     *
+     *     Forwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``
+     *     endpoint via ``InventoryAPI``. This three-segment literal path cannot
+     *     collide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An
+     *     upstream HTTP 404 — the "not collected yet" signal — propagates unchanged
+     *     for the React panel to render as an empty state.
+     *
+     *     :param node_id: Primary key of the node.
+     *     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
+     *     :return: The host-level system observation payload.
+     */
+    get: operations['inventory_inventory_node_system_observation_api_plugins_inventory_nodes__node_id__system_observation_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['inventory_get_schema_api_plugins_inventory_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/services/{service_id}/system-observation': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory Service System Observation
+     * @description Proxy the service-level system observation for a service (read-only).
+     *
+     *     Forwards to the inventory sub-app's
+     *     ``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.
+     *     An upstream HTTP 404 propagates unchanged so the React panel renders its
+     *     "not collected yet" empty state.
+     *
+     *     :param service_id: Primary key of the service.
+     *     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
+     *     :return: The service-level system observation payload.
+     */
+    get: operations['inventory_inventory_service_system_observation_api_plugins_inventory_services__service_id__system_observation_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/sync/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Inventory Sync Trigger
+     * @description Schedule an ad-hoc inventory sync as a background task.
+     *
+     *     Mirrors the Jinja2 ``POST /inventory/sync/`` handler but accepts an
+     *     optional JSON body ``{"syncer": "<qualified_name>"}``. When ``syncer``
+     *     is absent, ``None``, or empty, every configured syncer runs in
+     *     declaration order; otherwise only the named syncer is forwarded. An
+     *     unknown or inapplicable syncer raises HTTP 400 — never a silent no-op.
+     *
+     *     Authentication is enforced by the parent ``api_router``'s
+     *     ``IsApiAuthenticated`` dependency, so this handler needs no auth parameter.
+     *
+     *     :param syncers: Configured syncers from ``SyncersDep``.
+     *     :type syncers: SyncersDep
+     *     :param background_tasks: FastAPI's background task scheduler.
+     *     :type background_tasks: BackgroundTasks
+     *     :param internal_token: SEP-internal service token injected by
+     *         ``InternalTokenDep`` and forwarded to the background sync task.
+     *     :param body: Optional trigger body.
+     *     :type body: InventorySyncTriggerWrite | None
+     *     :return: Empty 202 Accepted response.
+     *     :rtype: Response
+     *     :raises HTTPBadRequestException: When ``body.syncer`` is set but does
+     *         not match any configured syncer that can sync inventory.
+     */
+    post: operations['inventory_inventory_sync_trigger_api_plugins_inventory_sync__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/sync/status/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory Sync Status
+     * @description Return whether an inventory-wide sync is currently running.
+     *
+     *     Replaces the server-rendered ``sync_is_running`` template variable
+     *     used by the Jinja2 inventory page so the React control can poll the
+     *     same state without scraping HTML.
+     *
+     *     :param session: SQLModel async session.
+     *     :type session: SessionDep
+     *     :return: ``{"is_running": <bool>}``.
+     *     :rtype: InventorySyncStatusResponse
+     */
+    get: operations['inventory_inventory_sync_status_api_plugins_inventory_sync_status__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/{entity}/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory List Entity
+     * @description List inventory nodes, services, schemas, or tables.
+     */
+    get: operations['inventory_inventory_list_entity_api_plugins_inventory__entity___get'];
+    put?: never;
+    /**
+     * Inventory Create Entity
+     * @description Create an inventory node, service, schema, or table.
+     */
+    post: operations['inventory_inventory_create_entity_api_plugins_inventory__entity___post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/inventory/{entity}/{item_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Inventory Get Entity
+     * @description Retrieve a single inventory node, service, schema, or table.
+     */
+    get: operations['inventory_inventory_get_entity_api_plugins_inventory__entity___item_id__get'];
+    /**
+     * Inventory Update Entity
+     * @description Update an inventory node, service, schema, or table.
+     */
+    put: operations['inventory_inventory_update_entity_api_plugins_inventory__entity___item_id__put'];
+    post?: never;
+    /**
+     * Inventory Delete Entity
+     * @description Delete an inventory node, service, schema, or table.
+     */
+    delete: operations['inventory_inventory_delete_entity_api_plugins_inventory__entity___item_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/mysql_backups/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List */
+    get: operations['mysql_backups__list_paginated_api_plugins_mysql_backups__get'];
+    put?: never;
+    /** Create */
+    post: operations['mysql_backups__create_api_plugins_mysql_backups__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/mysql_backups/restore/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List */
+    get: operations['mysql_backups_restore__list_paginated_api_plugins_mysql_backups_restore__get'];
+    put?: never;
+    /** Create */
+    post: operations['mysql_backups_restore__create_api_plugins_mysql_backups_restore__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/mysql_backups/restore/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['mysql_backups_restore_get_schema_api_plugins_mysql_backups_restore_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/mysql_backups/restore/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Detail */
+    get: operations['mysql_backups_restore__detail_api_plugins_mysql_backups_restore__task_name__get'];
+    /** Update */
+    put: operations['mysql_backups_restore__update_api_plugins_mysql_backups_restore__task_name__put'];
+    post?: never;
+    /** Delete */
+    delete: operations['mysql_backups_restore__delete_api_plugins_mysql_backups_restore__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/mysql_backups/restore/{task_name}/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Mysql Backups Restores Api Execute
+     * @description Resolve, dispatch, and wrap a standard task execution.
+     */
+    post: operations['mysql_backups_restore_mysql_backups_restores_api_execute_api_plugins_mysql_backups_restore__task_name__execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/mysql_backups/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['mysql_backups_get_schema_api_plugins_mysql_backups_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/mysql_backups/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Detail */
+    get: operations['mysql_backups__detail_api_plugins_mysql_backups__task_name__get'];
+    /** Update */
+    put: operations['mysql_backups__update_api_plugins_mysql_backups__task_name__put'];
+    post?: never;
+    /** Delete */
+    delete: operations['mysql_backups__delete_api_plugins_mysql_backups__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/mysql_backups/{task_name}/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Mysql Backups Api Execute
+     * @description Resolve, dispatch, and wrap a standard task execution.
+     */
+    post: operations['mysql_backups_mysql_backups_api_execute_api_plugins_mysql_backups__task_name__execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/report/config': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Report Config
+     * @description Return upload configuration status.
+     *
+     *     :return: JSON with ``upload_disabled_reasons`` — empty list means upload is ready.
+     *     :rtype: JSONResponse
+     */
+    get: operations['report_report_config_api_plugins_report_config_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/report/generate/json': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Report Generate Json Api
+     * @description Generate a report and return as JSON.
+     *
+     *     :param pmm_api: The PMM API client.
+     *     :type pmm_api: PMMRemoteAPI
+     *     :param since: Relative start of the report period.
+     *     :type since: str
+     *     :param until: Relative end of the report period.
+     *     :type until: str
+     *     :param full: Include all check results and full backup history.
+     *     :type full: bool
+     *     :param refresh: Force a refresh of advisor checks before fetching results.
+     *     :type refresh: bool
+     *     :param sections: Optional list of sections to include.
+     *     :type sections: list[str] | None
+     *     :return: JSON response with the full report data.
+     *     :rtype: JSONResponse
+     */
+    get: operations['report_report_generate_json_api_api_plugins_report_generate_json_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/report/generate/pdf': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Report Generate Pdf Api
+     * @description Generate a report and return it as a downloadable PDF.
+     *
+     *     :param pmm_api: The PMM API client.
+     *     :type pmm_api: PMMRemoteAPI
+     *     :param since: Relative start of the report period.
+     *     :type since: str
+     *     :param until: Relative end of the report period.
+     *     :type until: str
+     *     :param full: Include all check results and full backup history.
+     *     :type full: bool
+     *     :param refresh: Force a refresh of advisor checks before fetching results.
+     *     :type refresh: bool
+     *     :return: PDF file response.
+     *     :rtype: Response
+     */
+    post: operations['report_report_generate_pdf_api_api_plugins_report_generate_pdf_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/report/upload': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Report Upload Api
+     * @description Generate a report, convert to PDF, and upload to ServiceNow.
+     *
+     *     :param pmm_api: The PMM API client.
+     *     :type pmm_api: PMMRemoteAPI
+     *     :param since: Relative start of the report period.
+     *     :type since: str
+     *     :param until: Relative end of the report period.
+     *     :type until: str
+     *     :param full: Include all check results and full backup history.
+     *     :type full: bool
+     *     :param refresh: Force a refresh of advisor checks before fetching results.
+     *     :type refresh: bool
+     *     :return: JSON response with the upload result.
+     *     :rtype: JSONResponse
+     */
+    post: operations['report_report_upload_api_api_plugins_report_upload_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List
+     * @description List every discovered script as its list-row projection.
+     */
+    get: operations['snippets_snippets_api_list_api_plugins_snippets__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/approvals': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Snippets Api Batch Approve
+     * @description Approve a set of snippets atomically (idempotent partial-update).
+     *
+     *     Reject the whole batch with ``400`` and a
+     *     :class:`BatchApprovalErrorResponse` payload when any filename has no
+     *     DB row or its file is missing on disk. Filenames that are already
+     *     approved when the call starts are reported in
+     *     ``skipped_already_approved`` — not as errors. The atomic write uses
+     *     ``approved_at IS NULL`` as a CAS filter so two concurrent admins
+     *     cannot double-approve.
+     *
+     *     :param existence: Pre-validated batch existence result from the dependency.
+     *     :type existence: SnippetBatchExistenceResult
+     *     :param user: The authenticated admin performing the action.
+     *     :type user: User
+     *     :param session: The active database session.
+     *     :type session: AsyncSession
+     *     :return: The success payload listing approved + skipped filenames.
+     *     :rtype: BatchApprovalResponse
+     *     :raises HTTPBadRequestException: On hard-error precheck failures with
+     *         a :class:`BatchApprovalErrorResponse` body.
+     */
+    patch: operations['snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch'];
+    trace?: never;
+  };
+  '/api/plugins/snippets/capabilities': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Capabilities Provider
+     * @description Return per-deployment capability flags for the snippets plugin.
+     *
+     *     Read live from ``snippets_settings`` so a deployment-config hot reload between
+     *     two requests is reflected on the next response.
+     *
+     *     :return: Capability flags reflecting the current deployment config.
+     */
+    get: operations['snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/refresh': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Snippets Api Refresh
+     * @description Refresh the snippets cache from disk.
+     *
+     *     Admin-only and additionally gated by manual sync being enabled.
+     *     Mirrors the legacy Jinja2 ``POST /snippets/refresh`` route.
+     *
+     *     :param user: The authenticated admin performing the refresh.
+     *     :type user: User
+     *     :param session: The SEP database session.
+     *     :return: A response carrying the UTC timestamp of the refresh.
+     *     :rtype: RefreshResponse
+     */
+    post: operations['snippets_snippets_api_refresh_api_plugins_snippets_refresh_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['snippets_get_schema_api_plugins_snippets_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/approval': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Snippets Api Approve
+     * @description Approve a single snippet (idempotent).
+     *
+     *     Re-approving an already-approved snippet returns ``200`` with the
+     *     current state — ``approved_at`` is *not* overwritten so the audit
+     *     trail is preserved.
+     *
+     *     :param snippet: The snippet whose approval is being set.
+     *     :type snippet: Snippet
+     *     :param user: The authenticated admin performing the action.
+     *     :type user: User
+     *     :param session: The active database session.
+     *     :type session: AsyncSession
+     *     :return: The snippet entity after the call, including approval state.
+     *     :rtype: SnippetResponse
+     */
+    put: operations['snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put'];
+    post?: never;
+    /**
+     * Snippets Api Remove Approval
+     * @description Remove approval from a single snippet (idempotent).
+     *
+     *     Removing an approval that doesn't exist is a no-op ``204``. The
+     *     snippet missing → ``404`` (handled by ``SnippetDep``); approval
+     *     missing → ``204``.
+     *
+     *     :param snippet: The snippet whose approval is being cleared.
+     *     :type snippet: Snippet
+     *     :param user: The authenticated admin performing the action.
+     *     :type user: User
+     *     :param session: The active database session.
+     *     :type session: AsyncSession
+     *     :return: An empty 204 response.
+     *     :rtype: Response
+     */
+    delete: operations['snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/download': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api Download
+     * @description Stream the raw snippet file as a download attachment.
+     *
+     *     Returns the on-disk source verbatim — full bash/Python body plus its
+     *     YAML frontmatter — so end users can save the file locally without
+     *     being capped by the preview truncation limits. The
+     *     ``SnippetDep`` dependency already validates both the DB row and the
+     *     on-disk file, so a missing snippet or missing file surfaces as 404.
+     *
+     *     :param snippet: The snippet whose raw file is requested.
+     *     :type snippet: Snippet
+     *     :return: The snippet file streamed as ``attachment; filename=...``
+     *         with a MIME type guessed from the on-disk path.
+     *     :rtype: FileResponse
+     */
+    get: operations['snippets_snippets_api_download_api_plugins_snippets_snippet_download_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Execute script
+     * @description Validate the args, assemble the meta, and dispatch the execution.
+     */
+    post: operations['snippets_snippets_api_script_execute_api_plugins_snippets_snippet_execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/history': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Script history
+     * @description Proxy the per-script execution history from the Tasks API by filename.
+     */
+    get: operations['snippets_snippets_api_script_history_api_plugins_snippets_snippet_history_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/preview': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Api Script Preview
+     * @description Return the snippet's preview content with a highlighter language hint.
+     *
+     *     :param snippet: The snippet whose preview is requested.
+     *     :type snippet: Snippet
+     *     :return: The preview content alongside metadata about it.
+     *     :rtype: ScriptPreviewResponse
+     *     :raises HTTPUnprocessableEntityException: When the snippet contains
+     *         bytes that cannot be decoded as UTF-8.
+     */
+    get: operations['snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/snippets/snippet/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Script schema
+     * @description Return the per-script form schema synthesised from its parameters.
+     */
+    get: operations['snippets_snippets_api_script_schema_api_plugins_snippets_snippet_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/tasks/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Tasks Api List
+     * @description List task definitions for the read-only plugin UI.
+     *
+     *     :param tasks_api: Async client for the tasks sub-app.
+     *     :type tasks_api: TaskAPI
+     *     :return: Task rows for the schema-driven list view.
+     *     :rtype: list[TaskListResponse]
+     */
+    get: operations['tasks_tasks_api_list_api_plugins_tasks__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/tasks/schema': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Schema
+     * @description Return the plugin schema captured at registration time.
+     *
+     *     :return: The plugin schema instance.
+     */
+    get: operations['tasks_get_schema_api_plugins_tasks_schema_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/tasks/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Tasks Api Detail
+     * @description Return the per-task detail bundle for the read-only plugin UI.
+     *
+     *     :param task: The task definition resolved by name.
+     *     :type task: Task
+     *     :param tasks_api: Async client for the tasks sub-app.
+     *     :type tasks_api: TaskAPI
+     *     :param executor_hosts_ctx: Executor hosts enriched with inventory labels.
+     *     :type executor_hosts_ctx: ExecutorHostsCtx
+     *     :return: Task definition, history, periodic schedules, and executor hosts.
+     *     :rtype: TaskDetailResponse
+     */
+    get: operations['tasks_tasks_api_detail_api_plugins_tasks__task_name__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/admin/settings/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Settings
+     * @description List every exposed settings class with current values and metadata.
+     *
+     *     Local classes are read from their config singletons; remote classes
+     *     (``remote_classes``) are fetched server-side from their owning sub-app
+     *     and appended in declaration order. A failed remote fetch fails the whole
+     *     request with ``502`` -- the LIST never silently drops a remote group.
+     *
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :return: Grouped responses, one group per configured settings class.
+     */
+    get: operations['sep_list_settings_api_sep_admin_settings__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/admin/settings/export': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Export Settings
+     * @description Return the merged effective configuration as a YAML attachment.
+     *
+     *     Aggregates the three SEP-wired settings classes locally and fans out to
+     *     ``GET /admin/settings/`` on the Tasks API for ``TasksSettings``. Values
+     *     use the same dump path as the settings LIST endpoints. On upstream failure,
+     *     re-raise as :class:`~app.core.exceptions.HTTPBadGatewayException` — no
+     *     partial export.
+     *
+     *     When ``keys`` is omitted the full merged export is returned exactly as
+     *     before. When provided, each entry is a fully-qualified selector
+     *     (``Class.KEY`` or a bare ``Class``); the response is narrowed to only the
+     *     requested classes/keys. Class names and SEP keys are validated with no
+     *     upstream call; the Tasks fan-out is skipped entirely unless a selector
+     *     targets ``TasksSettings``, and Tasks keys are validated against the fetched
+     *     block. Output blocks always follow the canonical declaration order
+     *     (``SEP_ADMIN_SETTINGS_CLASSES`` then ``TasksSettings``), independent of
+     *     selector order.
+     *
+     *     :param session: The active database session for SEP override queries.
+     *     :type session: AsyncSession
+     *     :param tasks_api: The Tasks API client used to fetch ``TasksSettings``.
+     *     :type tasks_api: TaskAPI
+     *     :param keys: Optional, repeatable selectors restricting the export to a
+     *         subset of classes/keys. ``None`` (omitted) means the full export.
+     *     :type keys: list[str] | None
+     *     :return: YAML bytes with ``Content-Disposition`` set for download.
+     *     :rtype: Response
+     *     :raises HTTPBadRequestException: If a selector is blank, malformed, names an
+     *         unwired class, or names a key that does not exist on its class.
+     *     :raises HTTPBadGatewayException: If the Tasks settings LIST call fails
+     *         with an ``HTTPException`` (e.g. an upstream non-2xx response), an
+     *         ``OSError`` (e.g. a connection failure), an unexpected payload shape,
+     *         or a missing ``TasksSettings`` group.
+     */
+    get: operations['sep_export_settings_api_sep_admin_settings_export_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/admin/settings/{setting_class}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Patch Settings
+     * @description Apply a batch of overrides for one settings class atomically.
+     *
+     *     For a remote class the batch is forwarded to the owning sub-app, which
+     *     owns the validation and persistence; the upstream's per-field ``422``
+     *     (and its ``detail``) is preserved so the UI can render inline messages.
+     *
+     *     For a local class: Phase A validates every key in ``body`` (existence on
+     *     the class, HOT classification, type/constraint coercion) and collects
+     *     per-key errors. If any key fails, the whole batch is rejected with a
+     *     structured 422 and nothing is written. Phase B persists every valid entry
+     *     in a single transaction, refreshes the proxy snapshot once, then fires
+     *     the rebind callbacks for any changed keys so a HOT target rebinds without
+     *     waiting for the next background refresh cycle.
+     *
+     *     :param request: The incoming request; its ``app.state`` carries the
+     *         sub-app's rebind-callback registry.
+     *     :param setting_class: The settings class the override targets.
+     *     :param body: The batch of ``{key: value, ...}`` overrides.
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :return: One :class:`SettingResponse` per applied key, in input order.
+     *     :raises HTTPNotFoundException: If the class isn't exposed.
+     *     :raises HTTPUnprocessableEntityException: If any key fails validation;
+     *         no rows are written.
+     */
+    patch: operations['sep_patch_settings_api_sep_admin_settings__setting_class__patch'];
+    trace?: never;
+  };
+  '/api/sep/admin/settings/{setting_class}/{key}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Setting
+     * @description Return one field's metadata and current value.
+     *
+     *     :param setting_class: The settings class the field belongs to.
+     *     :param key: The field name on the settings class.
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :return: The structured response for the field.
+     *     :raises HTTPNotFoundException: If the class isn't exposed or the key
+     *         doesn't exist on the class.
+     */
+    get: operations['sep_get_setting_api_sep_admin_settings__setting_class___key__get'];
+    put?: never;
+    post?: never;
+    /**
+     * Delete Setting
+     * @description Revert one override row to the field's declared default.
+     *
+     *     For a remote class the DELETE is forwarded to the owning sub-app, which
+     *     owns the idempotency and ``NOT_OVERRIDABLE`` semantics; its status and
+     *     ``detail`` are preserved through the proxy.
+     *
+     *     For a local class: idempotent -- deleting a (class, key) pair that has no
+     *     override row succeeds with 204. Attempting to delete a NOT_OVERRIDABLE
+     *     field responds 409 -- the field cannot have an override row in the first
+     *     place, so the operator's intent is unsatisfiable.
+     *
+     *     After republishing the snapshot, fires the rebind callbacks for the
+     *     reverted key so a HOT target rebinds to its restored value without
+     *     waiting for the next background refresh cycle.
+     *
+     *     :param request: The incoming request; its ``app.state`` carries the
+     *         sub-app's rebind-callback registry.
+     *     :param setting_class: The settings class the field belongs to.
+     *     :param key: The field name on the settings class.
+     *     :param session: The sub-app's database session.
+     *     :param remote_api: The client for remote settings classes (``None`` when
+     *         the router wires none).
+     *     :raises HTTPNotFoundException: If the class isn't exposed or the key
+     *         doesn't exist on the class.
+     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
+     *     :raises HTTPUnprocessableEntityException: If ``key`` names a
+     *         ``NESTED_ONLY`` parent (the whole parent cannot be overridden;
+     *         target an individual ``parent__leaf`` instead).
+     *     :raises HTTPBadGatewayException: For a remote class, when the owning
+     *         sub-app returns a server error (status >= 500) or is unreachable.
+     */
+    delete: operations['sep_delete_setting_api_sep_admin_settings__setting_class___key__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -3545,7 +2712,7 @@ export interface paths {
      *     Sources (each degrades to ``0`` on failure):
      *
      *     * ``nodes`` — ``GET /summary/`` on the Inventory API.
-     *     * ``tasks`` — ``GET /`` on the Tasks API (``limit=0``; reads ``total``).
+     *     * ``tasks`` — ``GET /`` on the Tasks API (``limit=1``; reads ``total``).
      *     * ``snippets`` — :meth:`SnippetManager.count` on the SEP database.
      *     * ``targets`` — ``GET /hosts/`` on the Tasks API; count of returned items.
      *
@@ -3615,6 +2782,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sep/schemas/{schema_id}/tables': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Schema Tables
+     * @description Return tables for a schema via the SEP gateway.
+     *
+     *     Proxies Inventory ``GET /schemas/{schema_id}/tables/`` for React
+     *     ``TableSelector`` components. Returns an empty list only when Inventory
+     *     responds with 404 (missing schema); other HTTP errors propagate to the
+     *     global handler (matches legacy AJAX empty-selector UX for not-found only).
+     *
+     *     :param schema_id: The inventory schema ID whose tables are listed.
+     *     :type schema_id: int
+     *     :param inventory_api: The Inventory API client used to proxy the request.
+     *     :type inventory_api: InventoryAPI
+     *     :param search: Optional substring filter forwarded to inventory.
+     *     :type search: str | None
+     *     :return: Minimal id/name options for each table in the schema.
+     *     :rtype: list[InventorySelectorOption]
+     */
+    get: operations['sep_list_schema_tables_api_sep_schemas__schema_id__tables_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sep/services/': {
     parameters: {
       query?: never;
@@ -3630,10 +2831,8 @@ export interface paths {
      *     :type inventory_api: InventoryAPI
      *     :param service_type: Optional service type filter forwarded to inventory.
      *     :type service_type: ServiceTypeEnum | None
-     *     :param offset: Pagination offset; must be non-negative.
-     *     :type offset: int
-     *     :param limit: Pagination limit; must be non-negative.
-     *     :type limit: int
+     *     :param pagination: Validated pagination window for this request.
+     *     :type pagination: Pagination
      *     :return: Paginated services payload.
      *     :rtype: PaginatedResponse[ServiceResponse]
      */
@@ -3646,7 +2845,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/admin/settings/': {
+  '/api/sep/services/{service_id}/schemas': {
     parameters: {
       query?: never;
       header?: never;
@@ -3654,15 +2853,24 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * List Settings
-     * @description List every exposed settings class with current values and metadata.
+     * List Service Schemas
+     * @description Return schemas for a service via the SEP gateway.
      *
-     *     :param session: The sub-app's database session.
-     *     :type session: AsyncSession
-     *     :return: Grouped responses, one group per configured settings class.
-     *     :rtype: SettingsListResponse
+     *     Proxies Inventory ``GET /services/{service_id}/schemas/`` for React
+     *     ``SchemaSelector`` components. Returns an empty list only when Inventory
+     *     responds with 404 (missing service); other HTTP errors propagate to the
+     *     global handler (matches legacy AJAX empty-selector UX for not-found only).
+     *
+     *     :param service_id: The inventory service ID whose schemas are listed.
+     *     :type service_id: int
+     *     :param inventory_api: The Inventory API client used to proxy the request.
+     *     :type inventory_api: InventoryAPI
+     *     :param search: Optional substring filter forwarded to inventory.
+     *     :type search: str | None
+     *     :return: Minimal id/name options for each schema on the service.
+     *     :rtype: list[InventorySelectorOption]
      */
-    get: operations['sep_list_settings_api_sep_admin_settings__get'];
+    get: operations['sep_list_service_schemas_api_sep_services__service_id__schemas_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3671,7 +2879,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/admin/settings/{setting_class}/{key}': {
+  '/api/sep/task-history/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3679,84 +2887,33 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Get Setting
-     * @description Return one field's metadata and current value.
+     * List Merged Task History
+     * @description Return merged execution history for one or more task names.
      *
-     *     :param setting_class: The settings class the field belongs to.
-     *     :type setting_class: SettingClassEnum
-     *     :param key: The field name on the settings class.
-     *     :type key: str
-     *     :param session: The sub-app's database session.
-     *     :type session: AsyncSession
-     *     :return: The structured response for the field.
-     *     :rtype: SettingResponse
-     *     :raises HTTPNotFoundException: If the class isn't exposed or the key
-     *         doesn't exist on the class.
+     *     Each ``task_names`` value is queried independently against the Tasks API
+     *     with the same ``status`` filter and a widened upstream window starting at
+     *     ``offset=0``; the SEP layer merges, sorts newest-first, then applies the
+     *     client ``offset`` and ``limit`` globally before responding.
+     *
+     *     :param tasks_api: The Tasks API client used to fetch upstream history.
+     *     :type tasks_api: TaskAPI
+     *     :param task_names: One or more task names (repeat the query param).
+     *     :type task_names: list[str]
+     *     :param task_status: Optional exact status filter forwarded upstream.
+     *     :type task_status: TaskHistoryStatusEnum | None
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :type pagination: Pagination
+     *     :return: Merged paginated task history across all requested names.
+     *     :rtype: PaginatedResponse[TaskHistoryResponse]
+     *     :raises HTTPException: When every supplied task name is empty after trimming.
      */
-    get: operations['sep_get_setting_api_sep_admin_settings__setting_class___key__get'];
-    put?: never;
-    post?: never;
-    /**
-     * Delete Setting
-     * @description Revert one override row to the field's declared default.
-     *
-     *     Idempotent: deleting a (class, key) pair that has no override row
-     *     succeeds with 204. Attempting to delete a NOT_OVERRIDABLE field
-     *     responds 409 -- the field cannot have an override row in the first
-     *     place, so the operator's intent is unsatisfiable.
-     *
-     *     :param setting_class: The settings class the field belongs to.
-     *     :type setting_class: SettingClassEnum
-     *     :param key: The field name on the settings class.
-     *     :type key: str
-     *     :param session: The sub-app's database session.
-     *     :type session: AsyncSession
-     *     :raises HTTPNotFoundException: If the class isn't exposed or the key
-     *         doesn't exist on the class.
-     *     :raises HTTPConflictException: If the field is NOT_OVERRIDABLE.
-     */
-    delete: operations['sep_delete_setting_api_sep_admin_settings__setting_class___key__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/sep/admin/settings/{setting_class}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
+    get: operations['sep_list_merged_task_history_api_sep_task_history__get'];
     put?: never;
     post?: never;
     delete?: never;
     options?: never;
     head?: never;
-    /**
-     * Patch Settings
-     * @description Apply a batch of overrides for one settings class atomically.
-     *
-     *     Phase A validates every key in ``body`` (existence on the class, HOT
-     *     classification, type/constraint coercion) and collects per-key errors.
-     *     If any key fails, the whole batch is rejected with a structured 422
-     *     and nothing is written. Phase B persists every valid entry in a single
-     *     transaction, then refreshes the proxy snapshot once.
-     *
-     *     :param setting_class: The settings class the override targets.
-     *     :type setting_class: SettingClassEnum
-     *     :param body: The batch of ``{key: value, ...}`` overrides.
-     *     :type body: SettingsPatch
-     *     :param session: The sub-app's database session.
-     *     :type session: AsyncSession
-     *     :return: One :class:`SettingResponse` per applied key, in input order.
-     *     :rtype: list[SettingResponse]
-     *     :raises HTTPNotFoundException: If the class isn't exposed.
-     *     :raises HTTPUnprocessableEntityException: If any key fails validation;
-     *         no rows are written.
-     */
-    patch: operations['sep_patch_settings_api_sep_admin_settings__setting_class__patch'];
+    patch?: never;
     trace?: never;
   };
   '/api/sep/task-stats/{task_name}': {
@@ -3797,7 +2954,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/sep/task-history/': {
+  '/archives/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3805,31 +2962,955 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * List Merged Task History
-     * @description Return merged execution history for one or more task names.
-     *
-     *     Each ``task_names`` value is queried independently against the Tasks API
-     *     with the same ``status`` filter and a widened upstream window starting at
-     *     ``offset=0``; the SEP layer merges, sorts newest-first, then applies the
-     *     client ``offset`` and ``limit`` globally before responding.
-     *
-     *     :param tasks_api: The Tasks API client used to fetch upstream history.
-     *     :type tasks_api: TaskAPI
-     *     :param task_names: One or more task names (repeat the query param).
-     *     :type task_names: list[str]
-     *     :param task_status: Optional exact status filter forwarded upstream.
-     *     :type task_status: TaskHistoryStatusEnum | None
-     *     :param offset: Zero-based offset into the merged, sorted result.
-     *     :type offset: int
-     *     :param limit: Page size applied after the global merge sort.
-     *     :type limit: int
-     *     :return: Merged paginated task history across all requested names.
-     *     :rtype: PaginatedResponse[TaskHistoryResponse]
-     *     :raises HTTPException: When every supplied task name is empty after trimming.
+     * Archives Index
+     * @description Homepage of archives plugin.
      */
-    get: operations['sep_list_merged_task_history_api_sep_task_history__get'];
+    get: operations['archives_index_archives__get'];
+    put?: never;
+    /**
+     * Archives Create
+     * @description Create new archives task.
+     */
+    post: operations['archives_create_archives__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/archives/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Archives Detail
+     * @description Retrieve archives task.
+     */
+    get: operations['archives_detail_archives__task_name__get'];
+    put?: never;
+    /**
+     * Archives Execute
+     * @description Execute archives task.
+     */
+    post: operations['archives_execute_archives__task_name__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/archives/{task_name}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Archives Delete
+     * @description Delete archives task.
+     */
+    post: operations['archives_delete_archives__task_name__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/archives/{task_name}/update': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Archives Update
+     * @description Update archives task.
+     */
+    post: operations['archives_update_archives__task_name__update_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/artifacts/download/{token}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Download Artifact
+     * @description Serve an artifact file identified by a signed, time-limited token.
+     *
+     *     :param token: A signed token encoding the artifact type, filename, and MD5 digest.
+     *     :type token: str
+     *     :return: The artifact file as a streaming response.
+     *     :rtype: FileResponse
+     *     :raises HTTPBadRequestException: If the token is expired, tampered, or references
+     *         an invalid artifact type or a path outside the permitted base directory.
+     *     :raises HTTPNotFoundException: If the resolved file does not exist.
+     */
+    get: operations['sep_download_artifact_artifacts_download__token__get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backup_mongo/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Pbm Backups Index
+     * @description Homepage of PBM backup mongo plugin.
+     */
+    get: operations['pbm_backups_index_backup_mongo__get'];
+    put?: never;
+    /**
+     * Pbm Backups Create
+     * @description Create new backups task.
+     */
+    post: operations['pbm_backups_create_backup_mongo__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backup_mongo/restores/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Pbm Restores Index
+     * @description Homepage of restores plugin.
+     */
+    get: operations['restores_pbm_restores_index_backup_mongo_restores__get'];
+    put?: never;
+    /**
+     * Pbm Restores Create
+     * @description Create new restores task.
+     */
+    post: operations['restores_pbm_restores_create_backup_mongo_restores__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backup_mongo/restores/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Pbm Restores Detail
+     * @description Retrieve restores task.
+     */
+    get: operations['restores_pbm_restores_detail_backup_mongo_restores__task_name__get'];
+    put?: never;
+    /**
+     * Pbm Restores Execute
+     * @description Execute restores task.
+     */
+    post: operations['restores_pbm_restores_execute_backup_mongo_restores__task_name__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backup_mongo/restores/{task_name}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Pbm Restores Delete
+     * @description Delete restores task.
+     */
+    post: operations['restores_pbm_restores_delete_backup_mongo_restores__task_name__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backup_mongo/restores/{task_name}/update': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Pbm Restores Update
+     * @description Update restores task.
+     */
+    post: operations['restores_pbm_restores_update_backup_mongo_restores__task_name__update_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backup_mongo/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Pbm Backups Detail
+     * @description Retrieve backups task.
+     */
+    get: operations['pbm_backups_detail_backup_mongo__task_name__get'];
+    put?: never;
+    /**
+     * Pbm Backups Execute
+     * @description Execute backups task.
+     */
+    post: operations['pbm_backups_execute_backup_mongo__task_name__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backup_mongo/{task_name}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Pbm Backups Delete
+     * @description Delete backups task.
+     */
+    post: operations['pbm_backups_delete_backup_mongo__task_name__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backup_pg/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Pg Backups Index
+     * @deprecated
+     * @description Render the PG backups plugin index page.
+     *
+     *     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+     */
+    get: operations['pg_backups_index_backup_pg__get'];
+    put?: never;
+    /**
+     * Pg Backups Create
+     * @deprecated
+     * @description Create new backups task.
+     *
+     *     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+     */
+    post: operations['pg_backups_create_backup_pg__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backup_pg/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Pg Backups Detail
+     * @deprecated
+     * @description Retrieve backups task.
+     *
+     *     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+     */
+    get: operations['pg_backups_detail_backup_pg__task_name__get'];
+    put?: never;
+    /**
+     * Pg Backups Execute
+     * @deprecated
+     * @description Execute backups task.
+     *
+     *     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+     */
+    post: operations['pg_backups_execute_backup_pg__task_name__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/backup_pg/{task_name}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Pg Backups Delete
+     * @deprecated
+     * @description Delete backups task.
+     *
+     *     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
+     *
+     *     :param task: The PG backups task to delete, resolved by the
+     *         ``BackupsTask`` dependency from the ``task_name`` path param.
+     *     :type task: BackupsTask
+     *     :param tasks_api: The tasks-API client used to issue the delete call.
+     *     :type tasks_api: TaskAPI
+     *     :return: HTTP 303 redirect to the plugin index.
+     *     :rtype: RedirectResponse
+     */
+    post: operations['pg_backups_delete_backup_pg__task_name__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/checksums/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Checksums Index
+     * @description Homepage of checksums plugin.
+     */
+    get: operations['checksums_index_checksums__get'];
+    put?: never;
+    /**
+     * Checksums Create
+     * @description Create an checksum task.
+     */
+    post: operations['checksums_create_checksums__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/checksums/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Checksums Detail
+     * @description Retrieve checksums task.
+     */
+    get: operations['checksums_detail_checksums__task_name__get'];
+    put?: never;
+    /**
+     * Checksums Execute
+     * @description Execute checksums task.
+     */
+    post: operations['checksums_execute_checksums__task_name__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/checksums/{task_name}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Checksums Delete
+     * @description Delete checksums task.
+     */
+    post: operations['checksums_delete_checksums__task_name__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/checksums/{task_name}/update': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Checksums Update
+     * @description Update checksums task.
+     */
+    post: operations['checksums_update_checksums__task_name__update_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/dipper/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Dipper Index
+     * @description Render the Dipper page with service selection and execution history.
+     */
+    get: operations['dipper_index_dipper__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/dipper/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Dipper Execute
+     * @description Dispatch a dipper task for the selected service.
+     */
+    post: operations['dipper_execute_dipper_execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/execution-events/{task_history_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Task Execution Events
+     * @description Return executor tracking events for a task history (Tasks API proxy).
+     */
+    get: operations['sep_list_task_execution_events_execution_events__task_history_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/files/{task_history_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Task History Files
+     * @description Return files available for the given task history.
+     */
+    get: operations['sep_list_task_history_files_files__task_history_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/files/{task_history_id}/download': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Download Task History File
+     * @description Stream a task history's archived file as a binary download.
+     */
+    get: operations['sep_download_task_history_file_files__task_history_id__download_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory-api/schemas/{schema_id}/tables': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Tables
+     * @description Return tables for a schema as JSON for AJAX dropdowns.
+     */
+    get: operations['sep_list_tables_inventory_api_schemas__schema_id__tables_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory-api/services/{service_id}/schemas': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Schemas
+     * @description Return schemas for a service as JSON for AJAX dropdowns.
+     */
+    get: operations['sep_list_schemas_inventory_api_services__service_id__schemas_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Node List
+     * @description List Nodes.
+     */
+    get: operations['node_list_inventory__get'];
+    put?: never;
+    /**
+     * Node Create
+     * @description Create Node.
+     */
+    post: operations['node_create_inventory__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/schedule/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Schedule Create
+     * @deprecated
+     * @description Attach a periodic schedule to the inventory-sync task.
+     *
+     *     Deprecated in favour of the React schedule UI; functional until
+     *     Wave 3 when the Jinja2 path is retired.
+     *
+     *     Validate the optional ``syncer`` field and the interval/crontab shape at
+     *     form-submit time using ``filter_syncers_by_name`` and explicit checks so
+     *     invalid input fails fast with a friendly redirect rather than silently
+     *     misfiring inside the worker. When ``syncer`` is unset the schedule runs
+     *     every configured syncer; when set it targets only that syncer.
+     *
+     *     :param syncers: The configured syncers from ``SyncersDep``.
+     *     :type syncers: SyncersDep
+     *     :param tasks_api: The Tasks API client.
+     *     :type tasks_api: TaskAPI
+     *     :param schedule: The submitted attach form.
+     *     :type schedule: InventorySyncScheduleCreateForm
+     *     :param referer: The originating page used for the redirect on success.
+     *     :type referer: str
+     *     :return: A 303 redirect back to the originating page.
+     *     :rtype: RedirectResponse
+     *     :raises HTTPBadRequestException: If ``SEP_INTERNAL_TOKEN`` is not
+     *         configured, the syncer name is unknown, or both / neither schedule
+     *         mode is supplied.
+     */
+    post: operations['schedule_create_inventory_schedule__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/schemas/{schema_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Schema Detail
+     * @description Retrieve Schema Details.
+     */
+    get: operations['schema_detail_inventory_schemas__schema_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/schemas/{schema_id}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Schema Delete
+     * @description Delete Schema.
+     */
+    post: operations['schema_delete_inventory_schemas__schema_id__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/schemas/{schema_id}/sync/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Sync Schema
+     * @description Start schema sync as a background task.
+     */
+    post: operations['sync_schema_inventory_schemas__schema_id__sync__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/schemas/{schema_id}/tables/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Table Create For Schema
+     * @description Create Table for Schema.
+     */
+    post: operations['table_create_for_schema_inventory_schemas__schema_id__tables__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/services/{service_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Service Detail
+     * @description Retrieve Service Details.
+     */
+    get: operations['service_detail_inventory_services__service_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/services/{service_id}/check-connectivity/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Check Service Connectivity
+     * @description Check database connectivity for a service via Nomad.
+     */
+    post: operations['check_service_connectivity_inventory_services__service_id__check_connectivity__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/services/{service_id}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Service Delete
+     * @description Delete Service.
+     */
+    post: operations['service_delete_inventory_services__service_id__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/services/{service_id}/schemas/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Schema Create For Service
+     * @description Create Schema for Service.
+     */
+    post: operations['schema_create_for_service_inventory_services__service_id__schemas__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/services/{service_id}/sync/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Sync Service
+     * @description Start service sync as a background task.
+     */
+    post: operations['sync_service_inventory_services__service_id__sync__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/sync/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Sync Inventory
+     * @deprecated
+     * @description Start inventory sync as a background task.
+     *
+     *     Deprecated in favour of the React sync control at
+     *     ``POST /api/plugins/inventory/sync/``; functional until Wave 3.
+     */
+    post: operations['sync_inventory_inventory_sync__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/tables/{table_id}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Table Delete
+     * @description Delete Table.
+     */
+    post: operations['table_delete_inventory_tables__table_id__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/{node_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Node Detail
+     * @description Retrieve Node Details.
+     */
+    get: operations['node_detail_inventory__node_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/{node_id}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Node Delete
+     * @description Delete Node.
+     */
+    post: operations['node_delete_inventory__node_id__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/{node_id}/services/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Service Create For Node
+     * @description Create Service for Node.
+     */
+    post: operations['service_create_for_node_inventory__node_id__services__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/inventory/{node_id}/sync/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Sync Node
+     * @description Start node sync as a background task.
+     */
+    post: operations['sync_node_inventory__node_id__sync__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -3880,7 +3961,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/': {
+  '/mysql_backups/': {
     parameters: {
       query?: never;
       header?: never;
@@ -3888,12 +3969,694 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Read Root
-     * @description Homepage route.
+     * Mysql Backups Index
+     * @description Homepage of backups plugin.
      */
-    get: operations['read_root__get'];
+    get: operations['mysql_backups_index_mysql_backups__get'];
+    put?: never;
+    /**
+     * Mysql Backups Create
+     * @description Create new backups task.
+     */
+    post: operations['mysql_backups_create_mysql_backups__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/mysql_backups/docs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Mysql Backups Docs
+     * @description Standalone documentation page for backup configuration.
+     */
+    get: operations['mysql_backups_docs_mysql_backups_docs_get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/mysql_backups/restores/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Restores Index
+     * @description Homepage of restores plugin.
+     */
+    get: operations['restores_index_mysql_backups_restores__get'];
+    put?: never;
+    /**
+     * Restores Create
+     * @description Create new restores task.
+     */
+    post: operations['restores_create_mysql_backups_restores__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/mysql_backups/restores/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Restores Detail
+     * @description Retrieve restores task.
+     */
+    get: operations['restores_detail_mysql_backups_restores__task_name__get'];
+    put?: never;
+    /**
+     * Restores Execute
+     * @description Execute restores task.
+     */
+    post: operations['restores_execute_mysql_backups_restores__task_name__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/mysql_backups/restores/{task_name}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Restores Delete
+     * @description Delete restores task.
+     */
+    post: operations['restores_delete_mysql_backups_restores__task_name__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/mysql_backups/restores/{task_name}/update': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Restores Update
+     * @description Update restores task.
+     */
+    post: operations['restores_update_mysql_backups_restores__task_name__update_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/mysql_backups/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Mysql Backups Detail
+     * @description Retrieve backups task.
+     */
+    get: operations['mysql_backups_detail_mysql_backups__task_name__get'];
+    put?: never;
+    /**
+     * Mysql Backups Execute
+     * @description Execute backups task.
+     */
+    post: operations['mysql_backups_execute_mysql_backups__task_name__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/mysql_backups/{task_name}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Mysql Backups Delete
+     * @description Delete backups task.
+     */
+    post: operations['mysql_backups_delete_mysql_backups__task_name__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/mysql_backups/{task_name}/update': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Mysql Backups Update
+     * @description Update backups task.
+     */
+    post: operations['mysql_backups_update_mysql_backups__task_name__update_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/periodic/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Periodic Task Create
+     * @description Create periodic task.
+     */
+    post: operations['sep_periodic_task_create_periodic__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/periodic/{periodic_task_id}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Periodic Task Delete
+     * @description Delete Periodic task.
+     */
+    post: operations['sep_periodic_task_delete_periodic__periodic_task_id__delete_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/periodic/{periodic_task_id}/update': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Periodic Task Update
+     * @description Update periodic task.
+     */
+    post: operations['sep_periodic_task_update_periodic__periodic_task_id__update_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/report/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Report Index
+     * @deprecated
+     * @description Render the report plugin landing page.
+     */
+    get: operations['report_index_report__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/report/generate': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Report Generate
+     * @deprecated
+     * @description Generate a report and render the HTML result page.
+     *
+     *     :param request: The incoming HTTP request.
+     *     :type request: Request
+     *     :param pmm_api: The PMM API client.
+     *     :type pmm_api: PMMRemoteAPI
+     *     :param context: Template context.
+     *     :type context: ReportIndexContext
+     *     :param since: Relative start of the report period.
+     *     :type since: str
+     *     :param until: Relative end of the report period.
+     *     :type until: str
+     *     :param full: Include all check results and full backup history.
+     *     :type full: bool
+     *     :param refresh: Force a refresh of advisor checks before fetching results.
+     *     :type refresh: bool
+     *     :return: Rendered HTML report.
+     *     :rtype: HTMLResponse
+     */
+    post: operations['report_generate_report_generate_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/report/generate/json': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Report Generate Json
+     * @deprecated
+     * @description Generate a report and return as JSON.
+     *
+     *     :param pmm_api: The PMM API client.
+     *     :type pmm_api: PMMRemoteAPI
+     *     :param since: Relative start of the report period.
+     *     :type since: str
+     *     :param until: Relative end of the report period.
+     *     :type until: str
+     *     :param full: Include all check results and full backup history.
+     *     :type full: bool
+     *     :param refresh: Force a refresh of advisor checks before fetching results.
+     *     :type refresh: bool
+     *     :param sections: Optional list of sections to include.
+     *     :type sections: list[str] | None
+     *     :return: JSON response with the full report data.
+     *     :rtype: JSONResponse
+     */
+    get: operations['report_generate_json_report_generate_json_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/report/generate/pdf': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Report Generate Pdf
+     * @deprecated
+     * @description Generate a report and return it as a downloadable PDF.
+     *
+     *     :param pmm_api: The PMM API client.
+     *     :type pmm_api: PMMRemoteAPI
+     *     :param since: Relative start of the report period.
+     *     :type since: str
+     *     :param until: Relative end of the report period.
+     *     :type until: str
+     *     :param full: Include all check results and full backup history.
+     *     :type full: bool
+     *     :param refresh: Force a refresh of advisor checks before fetching results.
+     *     :type refresh: bool
+     *     :return: PDF file response.
+     *     :rtype: Response
+     */
+    post: operations['report_generate_pdf_report_generate_pdf_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/report/upload': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Report Upload
+     * @deprecated
+     * @description Generate a report, convert to PDF, and upload to ServiceNow.
+     *
+     *     :param pmm_api: The PMM API client.
+     *     :type pmm_api: PMMRemoteAPI
+     *     :param since: Relative start of the report period.
+     *     :type since: str
+     *     :param until: Relative end of the report period.
+     *     :type until: str
+     *     :param full: Include all check results and full backup history.
+     *     :type full: bool
+     *     :param refresh: Force a refresh of advisor checks before fetching results.
+     *     :type refresh: bool
+     *     :return: JSON response with the upload result.
+     *     :rtype: JSONResponse
+     */
+    post: operations['report_upload_report_upload_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/snippets/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Index
+     * @description Homepage of snippets plugin.
+     */
+    get: operations['snippets_index_snippets__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/snippets/approve': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Snippets Approve
+     * @description Approve a snippet.
+     */
+    post: operations['snippets_approve_snippets_approve_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/snippets/approve-batch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Snippets Approve Batch
+     * @description Approve multiple snippets in a single atomic bulk operation.
+     *
+     *     Reject the whole batch if any requested filename is unknown, its file is
+     *     missing on disk, or it is already approved. On success, flash a summary and
+     *     redirect back to the snippets index.
+     *
+     *     :param request: The HTTP request object.
+     *     :type request: Request
+     *     :param user: The admin performing the action.
+     *     :type user: User
+     *     :param session: The active database session.
+     *     :type session: AsyncSession
+     *     :param body: The validated request body containing the filenames to approve.
+     *     :type body: SnippetBatchApproveForm
+     *     :return: A 303 redirect back to the snippets index.
+     *     :rtype: RedirectResponse
+     */
+    post: operations['snippets_approve_batch_snippets_approve_batch_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/snippets/detail': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Snippets Detail
+     * @description Retrieve and display information about a snippet.
+     */
+    get: operations['snippets_detail_snippets_detail_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/snippets/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Snippets Execute
+     * @description Execute a snippet.
+     */
+    post: operations['snippets_execute_snippets_execute_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/snippets/refresh': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Snippets Refresh
+     * @description Refresh the snippets.
+     */
+    post: operations['snippets_refresh_snippets_refresh_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/snippets/remove-approval': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Snippets Remove Approval
+     * @description Remove the approval of a snippet.
+     */
+    post: operations['snippets_remove_approval_snippets_remove_approval_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/stop-task/{task_history_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Stop Task Execution
+     * @description Stop a task history.
+     */
+    post: operations['sep_stop_task_execution_stop_task__task_history_id__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/stream-logs/{task_history_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Task Logs Event Stream
+     * @description Stream a task history's logs as server-sent events.
+     */
+    get: operations['sep_task_logs_event_stream_stream_logs__task_history_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/stream-logs/{task_history_id}/execution-events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Task Execution Events Stream
+     * @description Stream task execution events as server-sent events.
+     */
+    get: operations['sep_task_execution_events_stream_stream_logs__task_history_id__execution_events_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/tasks/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Tasks List
+     * @description Homepage of Tasks Plugin.
+     */
+    get: operations['tasks_list_tasks__get'];
+    put?: never;
+    /**
+     * Task Create
+     * @description Create task.
+     */
+    post: operations['task_create_tasks__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/tasks/{task_name}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Tasks Detail
+     * @description Retrieve task.
+     */
+    get: operations['tasks_detail_tasks__task_name__get'];
+    put?: never;
+    /**
+     * Tasks Execute
+     * @description Execute task.
+     */
+    post: operations['tasks_execute_tasks__task_name__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/tasks/{task_name}/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Tasks Delete
+     * @description Delete task.
+     */
+    post: operations['tasks_delete_tasks__task_name__delete_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -3924,16 +4687,16 @@ export interface components {
      *     :type snippets: list[ATWSnippetSummary]
      */
     ATWCategoryListing: {
+      /** Category */
+      category: string;
+      /** Category Label */
+      category_label: string;
       /** Category Root */
       category_root: string;
       /** Parent Category */
       parent_category: string;
       /** Parent Category Label */
       parent_category_label: string;
-      /** Category */
-      category: string;
-      /** Category Label */
-      category_label: string;
       /** Snippet Count */
       snippet_count: number;
       /** Snippets */
@@ -3951,12 +4714,12 @@ export interface components {
      *     :type description: str
      */
     ATWSnippetSummary: {
+      /** Description */
+      description: string;
       /** Name */
       name: string;
       /** Title */
       title: string;
-      /** Description */
-      description: string;
     };
     /**
      * AlertDetailResponse
@@ -3984,11 +4747,11 @@ export interface components {
      *     :type alerts: list[AlertSummary]
      */
     AlertGroup: {
-      service_type: components['schemas']['AlertServiceType'];
-      /** Label */
-      label: string;
       /** Alerts */
       alerts: components['schemas']['AlertSummary'][];
+      /** Label */
+      label: string;
+      service_type: components['schemas']['AlertServiceType'];
     };
     /**
      * AlertInfo
@@ -4009,10 +4772,10 @@ export interface components {
      *     :type service_type: AlertServiceType | None
      */
     AlertInfo: {
-      /** Name */
-      name: string;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
       service_type?: components['schemas']['AlertServiceType'] | null;
     };
     /**
@@ -4040,10 +4803,10 @@ export interface components {
      *     :type label: str
      */
     AlertSummary: {
-      /** Name */
-      name: string;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
     };
     /**
      * AltersCreate
@@ -4056,9 +4819,13 @@ export interface components {
      *     :param service_id: The Inventory ID of the database service to connect to.
      *     :type service_id: int
      *     :param schema_id: The database schema ID on which the task will operate.
-     *     :type schema_id: int
+     *     :type schema_id: int | None
      *     :param table_id: The table ID within the schema to be altered.
-     *     :type table_id: int
+     *     :type table_id: int | None
+     *     :param schema_name: Manual schema name when ``schema_id`` is not set.
+     *     :type schema_name: str
+     *     :param table_name: Manual table name when ``table_id`` is not set.
+     *     :type table_name: str
      *     :param recursion_method: The method for handling recursion.
      *     :type recursion_method: NonEmptyStr
      *     :param alter: The specific alter command to be executed.
@@ -4095,6 +4862,8 @@ export interface components {
      *     :type chunk_time: str
      *     :param max_lag: Pause the data copy until all replicas lag is less than this value.
      *     :type max_lag: str
+     *     :param max_flow_ctl: Pause when PXC flow control exceeds this value.
+     *     :type max_flow_ctl: str
      *     :param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.
      *     :type extra_args: str
      *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
@@ -4103,47 +4872,384 @@ export interface components {
      *         (user/password): pre-checks always use this path; execute/dry-run use pt-osc's
      *         default ~/.my.cnf unless this is set to another path, then --defaults-file is added.
      *     :type pre_checks_mysql_config_file: str
+     *     :param continue_on_pre_check_failure: When True, continue to the run task even if
+     *         pre-checks fail (overrides the schema's default ``on_failure="halt"`` policy).
+     *     :type continue_on_pre_check_failure: bool
      */
     AltersCreate: {
-      /** Task Name */
-      task_name: string;
-      /** Hostname */
-      hostname: string;
-      /** Service Id */
-      service_id: number;
-      /** Schema Id */
-      schema_id?: number | null;
-      /** Table Id */
-      table_id?: number | null;
       /**
-       * Schema Name
-       * @default
+       * Alert On Fail
+       * @default false
        */
-      schema_name: string;
-      /**
-       * Table Name
-       * @default
-       */
-      table_name: string;
-      /** Recursion Method */
-      recursion_method: string;
+      alert_on_fail: boolean;
       /** Alter */
       alter: string;
+      /**
+       * Chunk Time
+       * @default
+       */
+      chunk_time: string;
+      /**
+       * Continue On Pre Check Failure
+       * @default false
+       */
+      continue_on_pre_check_failure: boolean;
+      /**
+       * Critical Load
+       * @default
+       */
+      critical_load: string;
       /**
        * Dsn Table
        * @default
        */
       dsn_table: string;
       /**
-       * Pause File
+       * Extra Args
        * @default
        */
-      pause_file: string;
+      extra_args: string;
+      /** Hostname */
+      hostname: string;
+      /**
+       * Max Flow Ctl
+       * @default
+       */
+      max_flow_ctl: string;
+      /**
+       * Max Lag
+       * @default
+       */
+      max_lag: string;
+      /**
+       * Max Load
+       * @default
+       */
+      max_load: string;
       /**
        * New Table Name
        * @default
        */
       new_table_name: string;
+      /**
+       * No Drop New Table
+       * @default false
+       */
+      no_drop_new_table: boolean;
+      /**
+       * No Drop Old Table
+       * @default false
+       */
+      no_drop_old_table: boolean;
+      /**
+       * No Drop Triggers
+       * @default false
+       */
+      no_drop_triggers: boolean;
+      /**
+       * No Swap Tables
+       * @default false
+       */
+      no_swap_tables: boolean;
+      /**
+       * Pause File
+       * @default
+       */
+      pause_file: string;
+      /**
+       * Pre Checks Mysql Config File
+       * @default ~/.my.cnf
+       */
+      pre_checks_mysql_config_file: string;
+      /**
+       * Print Arg
+       * @default false
+       */
+      print_arg: boolean;
+      /**
+       * Progress
+       * @default
+       */
+      progress: string;
+      /** Recursion Method */
+      recursion_method: string;
+      /** Schema Id */
+      schema_id?: number | null;
+      /**
+       * Schema Name
+       * @default
+       */
+      schema_name: string;
+      /** Service Id */
+      service_id: number;
+      /**
+       * Set Vars
+       * @default
+       */
+      set_vars: string;
+      /** Table Id */
+      table_id?: number | null;
+      /**
+       * Table Name
+       * @default
+       */
+      table_name: string;
+      /** Task Name */
+      task_name: string;
+      /**
+       * Tries
+       * @default
+       */
+      tries: string;
+    };
+    /**
+     * AltersExecuteWrite
+     * @description Represent a JSON request body for executing an alters task.
+     *
+     *     :param eta: Optional future datetime to schedule execution.
+     *     :type eta: FutureDatetime | None
+     *     :param chain_task_names: Optional list of task names to chain after this one.
+     *     :type chain_task_names: list[str] | None
+     *     :param chain_on_failure: Whether to run chained tasks even on failure.
+     *     :type chain_on_failure: bool | None
+     */
+    AltersExecuteWrite: {
+      /** Chain On Failure */
+      chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
+    };
+    /**
+     * AltersExecutionResponse
+     * @description Represent the response from POST /api/plugins/alters/{task_name}/execute.
+     *
+     *     :param task_name: The name of the task that was executed.
+     *     :type task_name: str
+     *     :param task_id: The id of the task-history row created by the tasks API.
+     *     :type task_id: int | None
+     */
+    AltersExecutionResponse: {
+      /** Task Id */
+      task_id?: number | null;
+      /** Task Name */
+      task_name: string;
+    };
+    /**
+     * AltersTaskResponse
+     * @description Represent an alters task API response.
+     *
+     *     :param id: The unique identifier for the alters task.
+     *     :type id: int | None
+     *     :param backend: The backend worker/engine executing the task.
+     *     :type backend: TaskBackendEnum
+     *     :param data: The raw configuration and parameters used for the alter execution.
+     *     :type data: dict[str, Any]
+     *     :param protected: Whether the task is protected from deletion or modification.
+     *     :type protected: bool
+     *     :param alert_on_fail: If True, notifications are sent upon task failure.
+     *     :type alert_on_fail: bool
+     *     :param created_at: The timestamp when the task was first created.
+     *     :type created_at: datetime | None
+     *     :param updated_at: The timestamp of the last modification to the task.
+     *     :type updated_at: datetime | None
+     *     :param created_by: The user who initiated the task.
+     *     :type created_by: str | None
+     *     :param last_updated_by: The user who last modified the task record.
+     *     :type last_updated_by: str | None
+     *     :param connectivity_warning: A warning surfaced when the post-creation
+     *         database connectivity check fails. ``None`` when the check passes,
+     *         is opted out, or the task meta lacks the connectivity keys.
+     *     :type connectivity_warning: ConnectivityWarning | None
+     *     :param pre_checks_auto_fire_warning: A warning when the task group was
+     *         created but the automatic pre-checks execute call failed.
+     *     :type pre_checks_auto_fire_warning: str | None
+     */
+    AltersTaskResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Pre Checks Auto Fire Warning */
+      pre_checks_auto_fire_warning?: string | null;
+      /** Protected */
+      protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * AltersTaskWrite
+     * @description Represent a JSON request body for creating or updating an alters task group.
+     *
+     *     Mirrors :class:`AltersCreate` and is validated against ``alters_schema``
+     *     conditional rules (for example, ``dsn_table`` required when
+     *     ``recursion_method`` is ``"dsn"``).
+     *
+     *     :param task_name: The name of the task to be created.
+     *     :type task_name: NonEmptyStr
+     *     :param hostname: The target hostname for the task execution.
+     *     :type hostname: NonEmptyStr
+     *     :param service_id: The Inventory ID of the MySQL service to connect to.
+     *     :type service_id: int
+     *     :param schema_id: The inventory schema ID, when not using manual names.
+     *     :type schema_id: int | None
+     *     :param table_id: The inventory table ID, when not using manual names.
+     *     :type table_id: int | None
+     *     :param schema_name: Manual schema name when ``schema_id`` is not set.
+     *     :type schema_name: str
+     *     :param table_name: Manual table name when ``table_id`` is not set.
+     *     :type table_name: str
+     *     :param recursion_method: The method for handling replica discovery.
+     *     :type recursion_method: NonEmptyStr
+     *     :param alter: The specific alter command to be executed.
+     *     :type alter: NonEmptyStr
+     *     :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``. When
+     *         recursion is ``"dsn"`` and this field is omitted or empty, it defaults to
+     *         ``D=percona,t=dsns`` (Percona Toolkit convention), matching ``alters_schema``.
+     *     :type dsn_table: str
+     *     :param pause_file: Execution pauses while this file exists.
+     *     :type pause_file: str
+     *     :param new_table_name: New table name before swap.
+     *     :type new_table_name: str
+     *     :param print_arg: Print SQL statements to STDOUT.
+     *     :type print_arg: bool
+     *     :param progress: Print progress reports to STDERR.
+     *     :type progress: str
+     *     :param no_swap_tables: Simulate without swapping tables.
+     *     :type no_swap_tables: bool
+     *     :param no_drop_old_table: Keep the original table after rename.
+     *     :type no_drop_old_table: bool
+     *     :param no_drop_new_table: Keep the new table if copy fails.
+     *     :type no_drop_new_table: bool
+     *     :param no_drop_triggers: Do not drop triggers on the old table.
+     *     :type no_drop_triggers: bool
+     *     :param tries: Retries and wait times for critical operations.
+     *     :type tries: str
+     *     :param set_vars: MySQL variables to set (comma-separated key=value pairs).
+     *     :type set_vars: str
+     *     :param critical_load: Abort when GLOBAL STATUS exceeds thresholds.
+     *     :type critical_load: str
+     *     :param max_load: Pause when GLOBAL STATUS exceeds thresholds.
+     *     :type max_load: str
+     *     :param chunk_time: Target execution time per chunk.
+     *     :type chunk_time: str
+     *     :param max_lag: Pause until replica lag falls below this value.
+     *     :type max_lag: str
+     *     :param max_flow_ctl: Pause when PXC flow control exceeds this value.
+     *     :type max_flow_ctl: str
+     *     :param extra_args: Additional pt-online-schema-change arguments.
+     *     :type extra_args: str
+     *     :param alert_on_fail: Send an alert if the task fails.
+     *     :type alert_on_fail: bool
+     *     :param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor
+     *         (user/password): pre-checks always use this path; execute/dry-run use pt-osc's
+     *         default ~/.my.cnf unless this is set to another path, then --defaults-file is added.
+     *     :type pre_checks_mysql_config_file: str
+     *     :param continue_on_pre_check_failure: When True, continue to the run task even if
+     *         pre-checks fail (overrides the schema's default ``on_failure="halt"`` policy).
+     *     :type continue_on_pre_check_failure: bool
+     */
+    AltersTaskWrite: {
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /** Alter */
+      alter: string;
+      /**
+       * Chunk Time
+       * @default
+       */
+      chunk_time: string;
+      /**
+       * Continue On Pre Check Failure
+       * @default false
+       */
+      continue_on_pre_check_failure: boolean;
+      /**
+       * Critical Load
+       * @default
+       */
+      critical_load: string;
+      /**
+       * Dsn Table
+       * @default
+       */
+      dsn_table: string;
+      /**
+       * Extra Args
+       * @default
+       */
+      extra_args: string;
+      /** Hostname */
+      hostname: string;
+      /**
+       * Max Flow Ctl
+       * @default
+       */
+      max_flow_ctl: string;
+      /**
+       * Max Lag
+       * @default
+       */
+      max_lag: string;
+      /**
+       * Max Load
+       * @default
+       */
+      max_load: string;
+      /**
+       * New Table Name
+       * @default
+       */
+      new_table_name: string;
+      /**
+       * No Drop New Table
+       * @default false
+       */
+      no_drop_new_table: boolean;
+      /**
+       * No Drop Old Table
+       * @default false
+       */
+      no_drop_old_table: boolean;
+      /**
+       * No Drop Triggers
+       * @default false
+       */
+      no_drop_triggers: boolean;
+      /**
+       * No Swap Tables
+       * @default false
+       */
+      no_swap_tables: boolean;
+      /**
+       * Pause File
+       * @default
+       */
+      pause_file: string;
+      /**
+       * Pre Checks Mysql Config File
+       * @default ~/.my.cnf
+       */
+      pre_checks_mysql_config_file: string;
       /**
        * Print Arg
        * @default false
@@ -4155,75 +5261,157 @@ export interface components {
        */
       progress: string;
       /**
-       * No Swap Tables
-       * @default false
+       * Recursion Method
+       * @default processlist
        */
-      no_swap_tables: boolean;
+      recursion_method: string;
+      /** Schema Id */
+      schema_id?: number | null;
       /**
-       * No Drop Old Table
-       * @default false
-       */
-      no_drop_old_table: boolean;
-      /**
-       * No Drop New Table
-       * @default false
-       */
-      no_drop_new_table: boolean;
-      /**
-       * No Drop Triggers
-       * @default false
-       */
-      no_drop_triggers: boolean;
-      /**
-       * Tries
+       * Schema Name
        * @default
        */
-      tries: string;
+      schema_name: string;
+      /** Service Id */
+      service_id: number;
       /**
        * Set Vars
        * @default
        */
       set_vars: string;
+      /** Table Id */
+      table_id?: number | null;
       /**
-       * Critical Load
+       * Table Name
        * @default
        */
-      critical_load: string;
+      table_name: string;
+      /** Task Name */
+      task_name: string;
       /**
-       * Max Load
+       * Tries
        * @default
        */
-      max_load: string;
-      /**
-       * Chunk Time
-       * @default
-       */
-      chunk_time: string;
-      /**
-       * Max Lag
-       * @default
-       */
-      max_lag: string;
-      /**
-       * Max Flow Ctl
-       * @default
-       */
-      max_flow_ctl: string;
-      /**
-       * Extra Args
-       * @default
-       */
-      extra_args: string;
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      /**
-       * Pre Checks Mysql Config File
-       * @default ~/.my.cnf
-       */
-      pre_checks_mysql_config_file: string;
+      tries: string;
+    };
+    /**
+     * AppInfoResponse
+     * @description Represent a per-app info entry returned by ``GET /``.
+     *
+     *     :param app_key: The plugin module key.
+     *     :type app_key: str
+     *     :param name: The human-readable plugin name.
+     *     :type name: str
+     *     :param enabled: Whether the app is fully enabled (derived; deprecated).
+     *     :type enabled: bool
+     *     :param lifecycle_state: The app's runtime lifecycle state.
+     *     :param toggleable: Whether the app may be toggled (``False`` for protected).
+     *     :type toggleable: bool
+     *     :param uri_path: The plugin's mount URI path.
+     *     :type uri_path: str
+     *     :param css_class: The plugin's CSS class.
+     *     :type css_class: str
+     *     :param sidebar: Whether the plugin appears in the sidebar.
+     *     :type sidebar: bool
+     *     :param has_api_router: Whether the plugin exposes a JSON API router.
+     *     :type has_api_router: bool
+     */
+    AppInfoResponse: {
+      /** App Key */
+      app_key: string;
+      /** Css Class */
+      css_class: string;
+      /** Enabled */
+      enabled: boolean;
+      /** Has Api Router */
+      has_api_router: boolean;
+      lifecycle_state: components['schemas']['AppLifecycleEnum'];
+      /** Name */
+      name: string;
+      /** Sidebar */
+      sidebar: boolean;
+      /** Toggleable */
+      toggleable: boolean;
+      /** Uri Path */
+      uri_path: string;
+    };
+    /**
+     * AppKeyResponse
+     * @description Represent a minimal per-app entry for the navigation shell.
+     *
+     *     :param app_key: The plugin module key.
+     *     :type app_key: str
+     *     :param enabled: Whether the app is currently enabled.
+     *     :type enabled: bool
+     *     :param sidebar: Whether the plugin appears in the sidebar.
+     *     :type sidebar: bool
+     *     :param uri_path: The plugin's mount URI path.
+     *     :type uri_path: str
+     *     :param display_name: The human-facing label for the app.
+     *     :type display_name: str
+     *     :param custom_ui: Whether the app ships a bespoke React UI.
+     *     :type custom_ui: bool
+     *     :param group: The nav group key this app nests under; ``None`` when the app
+     *         renders as a top-level sidebar entry.
+     *     :param nav_order: The app's sort position within the sidebar; ``None`` when
+     *         unset.
+     */
+    AppKeyResponse: {
+      /** App Key */
+      app_key: string;
+      /** Custom Ui */
+      custom_ui: boolean;
+      /** Display Name */
+      display_name: string;
+      /** Enabled */
+      enabled: boolean;
+      /** Group */
+      group: string | null;
+      /** Nav Order */
+      nav_order: number | null;
+      /** Sidebar */
+      sidebar: boolean;
+      /** Uri Path */
+      uri_path: string;
+    };
+    /**
+     * AppLifecycleEnum
+     * @description Enumerate the runtime lifecycle states of an app.
+     *
+     *     Member names equal their values, so the DB column, its CHECK constraint, the
+     *     API wire value, and any operator SQL all share one uppercase token. The
+     *     transitional states ``ENABLING`` and ``DISABLING`` expose an observable
+     *     window for future machinery to finish in-flight work before an app goes
+     *     fully offline; the request guard treats every state other than ``ENABLED``
+     *     as unreachable.
+     * @enum {string}
+     */
+    AppLifecycleEnum: 'ENABLED' | 'DISABLED' | 'ENABLING' | 'DISABLING';
+    /**
+     * AppStateResponse
+     * @description Represent the toggle endpoint's response.
+     *
+     *     :param app_key: The toggled app's key.
+     *     :type app_key: str
+     *     :param enabled: The resulting enabled flag (derived; deprecated).
+     *     :type enabled: bool
+     *     :param lifecycle_state: The resulting lifecycle state.
+     */
+    AppStateResponse: {
+      /** App Key */
+      app_key: string;
+      /** Enabled */
+      enabled: boolean;
+      lifecycle_state: components['schemas']['AppLifecycleEnum'];
+    };
+    /**
+     * AppStateWrite
+     * @description Define the write payload for the app-state toggle endpoint.
+     *
+     *     :param lifecycle_state: The requested target lifecycle state.
+     */
+    AppStateWrite: {
+      lifecycle_state: components['schemas']['AppLifecycleEnum'];
     };
     /**
      * ArchivesCreate
@@ -4303,30 +5491,33 @@ export interface components {
      *     :type alert_on_fail: bool
      */
     ArchivesCreate: {
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      ALERT_ON_FAIL: boolean;
       /** Alias */
       ALIAS: string;
-      /** Hostname */
-      HOSTNAME: string;
-      /** Service Id */
-      SERVICE_ID: number;
-      /** Source Db Id */
-      SOURCE_DB_ID?: number | null;
       /**
-       * Source Db Name
+       * Delete Without Archiving
+       * @description Delete source rows without writing them to any destination; the destination table/file fields must be left unset.
+       */
+      DELETE_DATA?: number | null;
+      /** Dest Db Id */
+      DEST_DB_ID?: number | null;
+      /**
+       * Dest Db Name
        * @default
        */
-      SOURCE_DB_NAME: string;
-      /** Source Table Id */
-      SOURCE_TABLE_ID?: number | null;
-      /**
-       * Source Table Name
-       * @default
-       */
-      SOURCE_TABLE_NAME: string;
-      /** Source Query */
-      SOURCE_QUERY?: string | null;
-      /** Where */
-      WHERE?: string | null;
+      DEST_DB_NAME: string;
+      /** Dest File */
+      DEST_FILE?: string | null;
+      /** Dest Host */
+      DEST_HOST?: string | null;
+      /** Dest Port */
+      DEST_PORT?: number | null;
+      /** Dest Service Id */
+      DEST_SERVICE_ID?: number | null;
       /** Dest Table Id */
       DEST_TABLE_ID?: number | null;
       /**
@@ -4334,20 +5525,6 @@ export interface components {
        * @default
        */
       DEST_TABLE_NAME: string;
-      /** Dest File */
-      DEST_FILE?: string | null;
-      /** Swap Drop */
-      SWAP_DROP: number;
-      /** Swp Table Suffix */
-      SWP_TABLE_SUFFIX?: string | null;
-      /** Use Index */
-      USE_INDEX?: string | null;
-      /** Extra Args */
-      EXTRA_ARGS?: string | null;
-      /** Limit */
-      LIMIT?: number | null;
-      /** Sleep */
-      SLEEP?: number | null;
       /**
        * Disable Binlog
        * @description Optional flag to disable binary logging.
@@ -4358,29 +5535,40 @@ export interface components {
        * @description Optional flag to disable bulk insert.
        */
       DISABLE_BULK_INSERT?: number | null;
+      /** Extra Args */
+      EXTRA_ARGS?: string | null;
+      /** Hostname */
+      HOSTNAME: string;
+      /** Limit */
+      LIMIT?: number | null;
+      /** Service Id */
+      SERVICE_ID: number;
+      /** Sleep */
+      SLEEP?: number | null;
+      /** Source Db Id */
+      SOURCE_DB_ID?: number | null;
       /**
-       * Delete Without Archiving
-       * @description Delete source rows without writing them to any destination; the destination table/file fields must be left unset.
-       */
-      DELETE_DATA?: number | null;
-      /** Dest Service Id */
-      DEST_SERVICE_ID?: number | null;
-      /** Dest Host */
-      DEST_HOST?: string | null;
-      /** Dest Port */
-      DEST_PORT?: number | null;
-      /** Dest Db Id */
-      DEST_DB_ID?: number | null;
-      /**
-       * Dest Db Name
+       * Source Db Name
        * @default
        */
-      DEST_DB_NAME: string;
+      SOURCE_DB_NAME: string;
+      /** Source Query */
+      SOURCE_QUERY?: string | null;
+      /** Source Table Id */
+      SOURCE_TABLE_ID?: number | null;
       /**
-       * Alert On Fail
-       * @default false
+       * Source Table Name
+       * @default
        */
-      ALERT_ON_FAIL: boolean;
+      SOURCE_TABLE_NAME: string;
+      /** Swap Drop */
+      SWAP_DROP: number;
+      /** Swp Table Suffix */
+      SWP_TABLE_SUFFIX?: string | null;
+      /** Use Index */
+      USE_INDEX?: string | null;
+      /** Where */
+      WHERE?: string | null;
     };
     /**
      * ArchivesCreateResponse
@@ -4394,40 +5582,40 @@ export interface components {
      *     :type connectivity_warning: ConnectivityWarning | None
      */
     ArchivesCreateResponse: {
-      /** Id */
-      id?: number | null;
-      /** Name */
-      name: string;
-      backend: components['schemas']['TaskBackendEnum'];
-      owner: components['schemas']['TaskOwner'];
-      /** Data */
-      data: Record<string, never>;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
       /**
        * Alert On Fail
        * @default false
        */
       alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
-      /** Updated At */
-      updated_at?: string | null;
       /** Created By */
       created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Id */
+      id?: number | null;
+      /**
+       * Is Template
+       * @default false
+       */
+      is_template: boolean;
       /** Last Updated By */
       last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /**
+       * Protected
+       * @default false
+       */
+      protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * ArchivesTaskResponse
@@ -4468,39 +5656,39 @@ export interface components {
      *     :type status: TaskHistoryStatusEnum | None
      */
     ArchivesTaskResponse: {
-      /** Id */
-      id?: number | null;
-      /** Name */
-      name: string;
-      backend: components['schemas']['TaskBackendEnum'];
-      owner: components['schemas']['TaskOwner'];
-      /** Data */
-      data: Record<string, never>;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
       /**
        * Alert On Fail
        * @default false
        */
       alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
       /** Created At */
       created_at?: string | null;
-      /** Updated At */
-      updated_at?: string | null;
       /** Created By */
       created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Id */
+      id?: number | null;
+      /**
+       * Is Template
+       * @default false
+       */
+      is_template: boolean;
       /** Last Updated By */
       last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /**
+       * Protected
+       * @default false
+       */
+      protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * AvailableSyncer
@@ -4516,10 +5704,10 @@ export interface components {
      *     :type display_name: str
      */
     AvailableSyncer: {
-      /** Name */
-      name: string;
       /** Display Name */
       display_name: string;
+      /** Name */
+      name: string;
     };
     /**
      * BackupDerivedTaskSummary
@@ -4533,10 +5721,10 @@ export interface components {
      *     :type status: TaskHistoryStatusEnum | None
      */
     BackupDerivedTaskSummary: {
-      /** Name */
-      name: string;
       /** Backup Type */
       backup_type: string;
+      /** Name */
+      name: string;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
     };
     /**
@@ -4560,23 +5748,23 @@ export interface components {
      *     :type notification_policy_receiver: str | None
      */
     BackupDetail: {
-      /** Id */
-      id: number;
+      /** Contact Points */
+      contact_points: components['schemas']['BackupDetailContactPoint'][];
       /**
        * Created At
        * Format: date-time
        */
       created_at: string;
-      /** Templates */
-      templates: components['schemas']['BackupDetailTemplate'][];
-      /** Rules */
-      rules: components['schemas']['BackupDetailRule'][];
-      /** Contact Points */
-      contact_points: components['schemas']['BackupDetailContactPoint'][];
       /** Folders */
       folders: components['schemas']['BackupDetailFolder'][];
+      /** Id */
+      id: number;
       /** Notification Policy Receiver */
       notification_policy_receiver: string | null;
+      /** Rules */
+      rules: components['schemas']['BackupDetailRule'][];
+      /** Templates */
+      templates: components['schemas']['BackupDetailTemplate'][];
     };
     /**
      * BackupDetailContactPoint
@@ -4630,6 +5818,90 @@ export interface components {
       /** Summary */
       summary: string;
     };
+    /** BackupPgCreateResponse */
+    BackupPgCreateResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Backup Type */
+      backup_type: string;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Host */
+      host?: string | null;
+      /** Hostname */
+      hostname?: string | null;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Port */
+      port?: number | null;
+      /** Protected */
+      protected: boolean;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * BackupPgForm
+     * @description Define the model-first create/update body and schema source for backup_pg.
+     *
+     *     The single source of the JSON request body (the field types and defaults the
+     *     server validates) *and* the derived ``GET /schema`` form (driven by the
+     *     :class:`Ui` / reference / :class:`Choices` markers). Field set, types, and
+     *     model defaults match the JSON create contract; the form-display defaults that
+     *     differ from the model default (the pgBackRest tool paths, the default backup
+     *     type) are carried on ``Ui(default=...)`` so the runtime payload stays
+     *     unchanged while the schema renders those form defaults.
+     *
+     *     Field declaration order is load-bearing: it drives the derived form's
+     *     section and field order. ``backup_type`` is not a form field — the spec
+     *     builder injects :attr:`BackupType.PGBACKREST`. The ``alert_on_fail``
+     *     capability control is inherited from :class:`AppFormModel` (``Hidden``,
+     *     off-schema). ``extra="forbid"`` rejects unknown fields (for example a stale
+     *     FE submitting ``host`` / ``port``, which the payload pins itself).
+     */
+    BackupPgForm: {
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /** Backup Dir */
+      backup_dir: string;
+      /** Hostname */
+      hostname: string;
+      /** Logging Dir */
+      logging_dir?: string | null;
+      pgbackrest_backup_type?: components['schemas']['PgBackRestBackupType'] | null;
+      /** Pgbackrest Bin */
+      pgbackrest_bin?: string | null;
+      /** Pgbackrest Config File */
+      pgbackrest_config_file?: string | null;
+      /** Pgbackrest Datadir */
+      pgbackrest_datadir?: string | null;
+      /** Pgbackrest Incremental Cycle */
+      pgbackrest_incremental_cycle?: string | number | null;
+      /** Pgbackrest Retention Archive */
+      pgbackrest_retention_archive?: number | null;
+      /** Pgbackrest Retention Full */
+      pgbackrest_retention_full?: number | null;
+      /** Service Id */
+      service_id: number;
+      /** Stanza */
+      stanza: string;
+      /** Task Name */
+      task_name: string;
+    };
     /**
      * BackupResponse
      * @description Represent a backup task API response.
@@ -4656,30 +5928,30 @@ export interface components {
      *     :type last_updated_by: str | None
      */
     BackupResponse: {
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      backup_type?: components['schemas']['BackupType-Output'] | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Id */
-      id?: number | null;
+      /** Alert On Fail */
+      alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
+      backup_type?: components['schemas']['BackupType-Output'] | null;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
       /** Data */
       data: Record<string, never>;
       /** Hostname */
       hostname?: string | null;
-      /** Protected */
-      protected: boolean;
-      /** Alert On Fail */
-      alert_on_fail: boolean;
-      /** Created At */
-      created_at?: string | null;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
+      /** Id */
+      id?: number | null;
       /** Last Updated By */
       last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Protected */
+      protected: boolean;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * BackupSummary
@@ -4693,109 +5965,15 @@ export interface components {
      *     :type metadata: dict[str, Any]
      */
     BackupSummary: {
-      /** Id */
-      id: number;
       /**
        * Created At
        * Format: date-time
        */
       created_at: string;
+      /** Id */
+      id: number;
       /** Metadata */
       metadata: Record<string, never>;
-    };
-    /**
-     * BackupTaskDetailResponse
-     * @description Represent a backup task detail API response.
-     *
-     *     :param derived_tasks: Latest status for each derived logical, physical, and
-     *         status sibling.
-     *     :type derived_tasks: list[BackupDerivedTaskSummary]
-     *     :param latest_pbm_status: Tail of the latest PBM status task stdout, if
-     *         available.
-     *     :type latest_pbm_status: str | None
-     */
-    BackupTaskDetailResponse: {
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      /** Hostname */
-      hostname?: string | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Id */
-      id?: number | null;
-      backend: components['schemas']['TaskBackendEnum'];
-      /** Backup Type */
-      backup_type: string;
-      /** Data */
-      data: Record<string, never>;
-      /** Protected */
-      protected: boolean;
-      /** Alert On Fail */
-      alert_on_fail: boolean;
-      /** Created At */
-      created_at?: string | null;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Last Updated By */
-      last_updated_by?: string | null;
-      /** Derived Tasks */
-      derived_tasks?: components['schemas']['BackupDerivedTaskSummary'][];
-      /** Latest Pbm Status */
-      latest_pbm_status?: string | null;
-    };
-    /**
-     * BackupTaskResponse
-     * @description Represent a backup task API response.
-     *
-     *     :param id: The unique identifier for the backup task.
-     *     :type id: int | None
-     *     :param backend: The backend worker/engine executing the task.
-     *     :type backend: TaskBackendEnum
-     *     :param backup_type: The PBM backup type stored on the task.
-     *     :type backup_type: str
-     *     :param data: The raw configuration and parameters for the backup execution.
-     *     :type data: dict[str, Any]
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
-     *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: The timestamp when the task was first created.
-     *     :type created_at: datetime | None
-     *     :param updated_at: The timestamp of the last modification to the task.
-     *     :type updated_at: datetime | None
-     *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
-     */
-    BackupTaskResponse: {
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      /** Hostname */
-      hostname?: string | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Id */
-      id?: number | null;
-      backend: components['schemas']['TaskBackendEnum'];
-      /** Backup Type */
-      backup_type: string;
-      /** Data */
-      data: Record<string, never>;
-      /** Protected */
-      protected: boolean;
-      /** Alert On Fail */
-      alert_on_fail: boolean;
-      /** Created At */
-      created_at?: string | null;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Last Updated By */
-      last_updated_by?: string | null;
     };
     /**
      * BackupTaskWrite
@@ -4848,53 +6026,53 @@ export interface components {
      *     :type credentials_path: str | None
      */
     BackupTaskWrite: {
-      /** Task Name */
-      task_name: string;
-      /** Hostname */
-      hostname: string;
-      /** Service Id */
-      service_id: number;
       /**
        * Alert On Fail
        * @default false
        */
       alert_on_fail: boolean;
-      /** Pitr Oplog Span Min */
-      pitr_oplog_span_min?: number | null;
-      /**
-       * Pitr Enabled
-       * @default false
-       */
-      pitr_enabled: boolean;
-      /** Pitr Compression */
-      pitr_compression?: string | null;
-      /** Storage Type */
-      storage_type?: string | null;
-      /** Storage S3 Region */
-      storage_s3_region?: string | null;
-      /** Storage S3 Bucket */
-      storage_s3_bucket?: string | null;
-      /** Storage S3 Prefix */
-      storage_s3_prefix?: string | null;
-      /** Storage S3 Endpoint Url */
-      storage_s3_endpoint_url?: string | null;
-      /** Storage Filesystem Path */
-      storage_filesystem_path?: string | null;
-      /** Backup Priority */
-      backup_priority?: string | null;
       backup_compression?:
         | components['schemas']['app__sep__plugins__backup_mongo__models__CompressionAlgorithm']
         | null;
       /** Backup Compression Level */
       backup_compression_level?: number | null;
-      /** Backup Timeouts Starting Status */
-      backup_timeouts_starting_status?: number | null;
-      /** Backup Oplog Span Min */
-      backup_oplog_span_min?: number | null;
       /** Backup Num Parallel Collections */
       backup_num_parallel_collections?: number | null;
+      /** Backup Oplog Span Min */
+      backup_oplog_span_min?: number | null;
+      /** Backup Priority */
+      backup_priority?: string | null;
+      /** Backup Timeouts Starting Status */
+      backup_timeouts_starting_status?: number | null;
       /** Credentials Path */
       credentials_path?: string | null;
+      /** Hostname */
+      hostname: string;
+      /** Pitr Compression */
+      pitr_compression?: string | null;
+      /**
+       * Pitr Enabled
+       * @default false
+       */
+      pitr_enabled: boolean;
+      /** Pitr Oplog Span Min */
+      pitr_oplog_span_min?: number | null;
+      /** Service Id */
+      service_id: number;
+      /** Storage Filesystem Path */
+      storage_filesystem_path?: string | null;
+      /** Storage S3 Bucket */
+      storage_s3_bucket?: string | null;
+      /** Storage S3 Endpoint Url */
+      storage_s3_endpoint_url?: string | null;
+      /** Storage S3 Prefix */
+      storage_s3_prefix?: string | null;
+      /** Storage S3 Region */
+      storage_s3_region?: string | null;
+      /** Storage Type */
+      storage_type?: string | null;
+      /** Task Name */
+      task_name: string;
     };
     /**
      * BackupType
@@ -4902,6 +6080,75 @@ export interface components {
      * @enum {string}
      */
     'BackupType-Output': 'M' | 'X' | 'B';
+    /**
+     * BaseTaskResponse
+     * @description Represent the universal task-response surface for standard task apps.
+     *
+     *     Carry the fields shared by every standard ``TaskExecutionApp`` response:
+     *     the task identity and ownership, the resolved execution status, the stored
+     *     configuration, and the audit/anonymization metadata. A standard app whose
+     *     response has no app-specific fields uses this model directly; an app with
+     *     extras subclasses it. The model is parametrized by the task ``owner``, which
+     *     drives the ``anonymized_entities`` default-entity lookup.
+     *
+     *     :param name: The task name.
+     *     :param owner: The entity or user that owns the task.
+     *     :param service_type: The database service type, stamped by the builder;
+     *         ``None`` for an app without a fixed service type.
+     *     :param status: The latest known execution status; ``None`` until the task
+     *         runs.
+     *     :param id: The task's unique identifier.
+     *     :param backend: The backend worker/engine executing the task.
+     *     :param data: The raw configuration and parameters used for execution.
+     *     :param protected: Whether the task is protected from deletion or modification.
+     *     :param alert_on_fail: Whether a notification is sent on task failure.
+     *     :param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls
+     *         back to the owner's configured defaults.
+     *     :param created_at: The timestamp when the task was first created.
+     *     :param updated_at: The timestamp of the last modification to the task.
+     *     :param created_by: Display name for the user who initiated the task (Casdoor
+     *         username when resolvable, otherwise the stored user id).
+     *     :param last_updated_by: Display name for the user who last modified the task
+     *         record (Casdoor username when resolvable, otherwise the stored user id).
+     *     :param connectivity_warning: A warning surfaced when the post-creation
+     *         database connectivity check fails. ``None`` when the check passes, is
+     *         opted out, or the task meta lacks the connectivity keys.
+     *     :param anonymized_entities: Sorted PII entity names derived from
+     *         ``anonymize_mask`` (or from the owner's configured defaults when the mask
+     *         is ``None``). Read-only; computed on serialisation.
+     */
+    BaseTaskResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
+      backend: components['schemas']['TaskBackendEnum'];
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Protected */
+      protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
     /**
      * BatchApprovalResponse
      * @description Successful response for the batch-approve endpoint.
@@ -4917,8 +6164,6 @@ export interface components {
     BatchApprovalResponse: {
       /** Approved */
       approved: string[];
-      /** Skipped Already Approved */
-      skipped_already_approved: string[];
       /**
        * Count
        * @description Return the number of newly approved snippets.
@@ -4927,6 +6172,8 @@ export interface components {
        *     :rtype: int
        */
       readonly count: number;
+      /** Skipped Already Approved */
+      skipped_already_approved: string[];
     };
     /** Body_alerts_push_alerts_push_post */
     Body_alerts_push_alerts_push_post: {
@@ -4940,37 +6187,42 @@ export interface components {
     };
     /** Body_alters_execute_alters__task_name__post */
     Body_alters_execute_alters__task_name__post: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
     };
     /** Body_archives_execute_archives__task_name__post */
     Body_archives_execute_archives__task_name__post: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
     };
     /** Body_checksums_execute_checksums__task_name__post */
     Body_checksums_execute_checksums__task_name__post: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
     };
     /** Body_login_login_post */
     Body_login_login_post: {
+      /** Client Id */
+      client_id?: string | null;
+      /**
+       * Client Secret
+       * Format: password
+       */
+      client_secret?: string | null;
       /** Grant Type */
       grant_type?: string | null;
-      /** Username */
-      username: string;
       /**
        * Password
        * Format: password
@@ -4981,22 +6233,17 @@ export interface components {
        * @default
        */
       scope: string;
-      /** Client Id */
-      client_id?: string | null;
-      /**
-       * Client Secret
-       * Format: password
-       */
-      client_secret?: string | null;
+      /** Username */
+      username: string;
     };
     /** Body_mysql_backups_execute_mysql_backups__task_name__post */
     Body_mysql_backups_execute_mysql_backups__task_name__post: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
     };
     /** Body_pagerduty_save_alerts_pagerduty_post */
     Body_pagerduty_save_alerts_pagerduty_post: {
@@ -5005,26 +6252,25 @@ export interface components {
     };
     /** Body_pbm_backups_execute_backup_mongo__task_name__post */
     Body_pbm_backups_execute_backup_mongo__task_name__post: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
+    };
+    /** Body_pg_backups_execute_backup_pg__task_name__post */
+    Body_pg_backups_execute_backup_pg__task_name__post: {
+      /** Chain On Failure */
+      chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
     };
     /** Body_report_generate_pdf_report_generate_pdf_post */
     Body_report_generate_pdf_report_generate_pdf_post: {
       /**
-       * Since
-       * @default now-7d
-       */
-      since: string;
-      /**
-       * Until
-       * @default now
-       */
-      until: string;
-      /**
        * Full
        * @default true
        */
@@ -5034,10 +6280,30 @@ export interface components {
        * @default false
        */
       refresh: boolean;
+      /**
+       * Since
+       * @default now-7d
+       */
+      since: string;
+      /**
+       * Until
+       * @default now
+       */
+      until: string;
     };
     /** Body_report_generate_report_generate_post */
     Body_report_generate_report_generate_post: {
       /**
+       * Full
+       * @default true
+       */
+      full: boolean;
+      /**
+       * Refresh
+       * @default false
+       */
+      refresh: boolean;
+      /**
        * Since
        * @default now-7d
        */
@@ -5047,6 +6313,9 @@ export interface components {
        * @default now
        */
       until: string;
+    };
+    /** Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post */
+    Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post: {
       /**
        * Full
        * @default true
@@ -5057,20 +6326,43 @@ export interface components {
        * @default false
        */
       refresh: boolean;
+      /**
+       * Since
+       * @default now-7d
+       */
+      since: string;
+      /**
+       * Until
+       * @default now
+       */
+      until: string;
+    };
+    /** Body_report_report_upload_api_api_plugins_report_upload_post */
+    Body_report_report_upload_api_api_plugins_report_upload_post: {
+      /**
+       * Full
+       * @default true
+       */
+      full: boolean;
+      /**
+       * Refresh
+       * @default false
+       */
+      refresh: boolean;
+      /**
+       * Since
+       * @default now-7d
+       */
+      since: string;
+      /**
+       * Until
+       * @default now
+       */
+      until: string;
     };
     /** Body_report_upload_report_upload_post */
     Body_report_upload_report_upload_post: {
       /**
-       * Since
-       * @default now-7d
-       */
-      since: string;
-      /**
-       * Until
-       * @default now
-       */
-      until: string;
-      /**
        * Full
        * @default true
        */
@@ -5080,24 +6372,34 @@ export interface components {
        * @default false
        */
       refresh: boolean;
+      /**
+       * Since
+       * @default now-7d
+       */
+      since: string;
+      /**
+       * Until
+       * @default now
+       */
+      until: string;
+    };
+    /** Body_restores_execute_mysql_backups_restores__task_name__post */
+    Body_restores_execute_mysql_backups_restores__task_name__post: {
+      /** Chain On Failure */
+      chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
     };
     /** Body_restores_pbm_restores_execute_backup_mongo_restores__task_name__post */
     Body_restores_pbm_restores_execute_backup_mongo_restores__task_name__post: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
-    };
-    /** Body_restores_restores_execute_mysql_backups_restores__task_name__post */
-    Body_restores_restores_execute_mysql_backups_restores__task_name__post: {
-      /** Eta */
-      eta?: string | null;
       /** Chain Task Names */
       chain_task_names?: string[] | null;
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
+      /** Eta */
+      eta?: string | null;
     };
     /** Body_sync_inventory_inventory_sync__post */
     Body_sync_inventory_inventory_sync__post: {
@@ -5128,27 +6430,25 @@ export interface components {
      *     :type field_type: Literal["bool"]
      */
     BoolField: {
-      /** Name */
-      name: string;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Type
-       * @default bool
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'bool';
@@ -5180,15 +6480,20 @@ export interface components {
      */
     Capabilities: {
       /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /**
        * Chaining
        * @default false
        */
       chaining: boolean;
       /**
-       * Alert On Fail
+       * Pii Anonymization
        * @default false
        */
-      alert_on_fail: boolean;
+      pii_anonymization: boolean;
       /**
        * Scheduling
        * @default false
@@ -5199,11 +6504,6 @@ export interface components {
        * @default false
        */
       stats: boolean;
-      /**
-       * Pii Anonymization
-       * @default false
-       */
-      pii_anonymization: boolean;
     };
     /**
      * CardinalityRule
@@ -5228,18 +6528,18 @@ export interface components {
      *     :type message: str | None
      */
     CardinalityRule: {
-      /** When */
-      when?: {
-        [key: string]: unknown;
-      } | null;
       /** Fields */
       fields: string[];
-      /** Min */
-      min?: number | null;
       /** Max */
       max?: number | null;
       /** Message */
       message?: string | null;
+      /** Min */
+      min?: number | null;
+      /** When */
+      when?: {
+        [key: string]: unknown;
+      } | null;
     };
     /**
      * ChainedPredecessor
@@ -5283,235 +6583,6 @@ export interface components {
        * @default true
        */
       parent_link: boolean;
-    };
-    /**
-     * ChecksumExecuteWrite
-     * @description Represent a JSON request body for executing a checksum task.
-     *
-     *     :param eta: Optional future datetime to schedule execution.
-     *     :type eta: FutureDatetime | None
-     *     :param chain_task_names: Optional list of task names to chain after this one.
-     *     :type chain_task_names: list[str] | None
-     *     :param chain_on_failure: Whether to run chained tasks even on failure.
-     *     :type chain_on_failure: bool | None
-     */
-    ChecksumExecuteWrite: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-    };
-    /**
-     * ChecksumExecutionResponse
-     * @description Represent the response from POST /api/plugins/checksums/{task_name}/execute.
-     *
-     *     :param task_name: The name of the task that was executed.
-     *     :type task_name: str
-     *     :param task_id: The id of the task-history row created by the tasks API.
-     *     :type task_id: int | None
-     */
-    ChecksumExecutionResponse: {
-      /** Task Name */
-      task_name: string;
-      /** Task Id */
-      task_id?: number | null;
-    };
-    /**
-     * ChecksumTaskResponse
-     * @description Represent a checksum task API response.
-     *
-     *     :param id: The unique identifier for the checksum task.
-     *     :type id: int | None
-     *     :param backend: The backend worker/engine executing the task.
-     *     :type backend: TaskBackendEnum
-     *     :param data: The raw configuration and parameters used for the checksum execution.
-     *     :type data: dict[str, Any]
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
-     *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :type alert_on_fail: bool
-     *     :param anonymize_mask: Bitmask of PII entities to anonymize. Defaults to None.
-     *     :type anonymize_mask: int | None
-     *     :param created_at: The timestamp when the task was first created.
-     *     :type created_at: datetime | None
-     *     :param updated_at: The timestamp of the last modification to the task.
-     *     :type updated_at: datetime | None
-     *     :param created_by: Display name for the user who initiated the task
-     *         (Casdoor username when resolvable, otherwise the stored user id).
-     *     :type created_by: str | None
-     *     :param last_updated_by: Display name for the user who last modified the task record
-     *         (Casdoor username when resolvable, otherwise the stored user id).
-     *     :type last_updated_by: str | None
-     *     :param connectivity_warning: A warning surfaced when the post-creation
-     *         database connectivity check fails. ``None`` when the check passes,
-     *         is opted out, or the task meta lacks the connectivity keys.
-     *     :type connectivity_warning: ConnectivityWarning | None
-     *     :param anonymized_entities: Sorted list of PII entity names derived from
-     *         ``anonymize_mask`` (or from the owner's configured defaults when the
-     *         mask is ``None``). Read-only; computed on serialisation.
-     *     :type anonymized_entities: list[str]
-     */
-    ChecksumTaskResponse: {
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Id */
-      id?: number | null;
-      backend: components['schemas']['TaskBackendEnum'];
-      /** Data */
-      data: Record<string, never>;
-      /** Protected */
-      protected: boolean;
-      /** Alert On Fail */
-      alert_on_fail: boolean;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /** Created At */
-      created_at?: string | null;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Last Updated By */
-      last_updated_by?: string | null;
-      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
-      /**
-       * Anonymized Entities
-       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
-       */
-      readonly anonymized_entities: string[];
-    };
-    /**
-     * ChecksumTaskWrite
-     * @description Represent a JSON request body for creating a checksum task.
-     *
-     *     Mirrors :class:`ChecksumsCreate` minus the form-only resolution fields
-     *     (``schema_id``, ``table_id``, ``extra_args``). The caller is responsible
-     *     for pre-resolving database and table names before submitting.
-     *
-     *     :param task_name: The name of the task to be created.
-     *     :type task_name: NonEmptyStr
-     *     :param hostname: The target hostname for the task execution.
-     *     :type hostname: NonEmptyStr
-     *     :param service_id: The Inventory ID of the MySQL service to connect to.
-     *     :type service_id: int
-     *     :param databases: Comma-separated database names.
-     *     :type databases: str
-     *     :param tables: Comma-separated table names (``schema.table`` format).
-     *     :type tables: str
-     *     :param recursion_method: The method for handling replica discovery.
-     *     :type recursion_method: str
-     *     :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``.
-     *     :type dsn_table: str
-     *     :param pause_file: Execution pauses while this file exists.
-     *     :type pause_file: str
-     *     :param binary_index: Use BLOB type for replicate-table boundary columns.
-     *     :type binary_index: bool
-     *     :param explain_arg: Show but do not execute checksum queries.
-     *     :type explain_arg: bool
-     *     :param fail_on_stopped_replication: Fail if replication is stopped.
-     *     :type fail_on_stopped_replication: bool
-     *     :param truncate_replicate_table: Truncate the replicate table before starting.
-     *     :type truncate_replicate_table: bool
-     *     :param progress: Print progress reports to STDERR.
-     *     :type progress: str
-     *     :param set_vars: MySQL variables to set (comma-separated key=value pairs).
-     *     :type set_vars: str
-     *     :param max_load: Pause when any GLOBAL STATUS variable exceeds this threshold.
-     *     :type max_load: str
-     *     :param chunk_time: Target execution time per chunk.
-     *     :type chunk_time: str
-     *     :param max_lag: Pause until replica lag falls below this value.
-     *     :type max_lag: str
-     *     :param alert_on_fail: Send an alert if the task fails.
-     *     :type alert_on_fail: bool
-     */
-    ChecksumTaskWrite: {
-      /** Task Name */
-      task_name: string;
-      /** Hostname */
-      hostname: string;
-      /** Service Id */
-      service_id: number;
-      /**
-       * Databases
-       * @default
-       */
-      databases: string;
-      /**
-       * Tables
-       * @default
-       */
-      tables: string;
-      /**
-       * Recursion Method
-       * @default processlist
-       */
-      recursion_method: string;
-      /**
-       * Dsn Table
-       * @default
-       */
-      dsn_table: string;
-      /**
-       * Pause File
-       * @default
-       */
-      pause_file: string;
-      /**
-       * Binary Index
-       * @default false
-       */
-      binary_index: boolean;
-      /**
-       * Explain Arg
-       * @default false
-       */
-      explain_arg: boolean;
-      /**
-       * Fail On Stopped Replication
-       * @default false
-       */
-      fail_on_stopped_replication: boolean;
-      /**
-       * Truncate Replicate Table
-       * @default false
-       */
-      truncate_replicate_table: boolean;
-      /**
-       * Progress
-       * @default
-       */
-      progress: string;
-      /**
-       * Set Vars
-       * @default
-       */
-      set_vars: string;
-      /**
-       * Max Load
-       * @default
-       */
-      max_load: string;
-      /**
-       * Chunk Time
-       * @default
-       */
-      chunk_time: string;
-      /**
-       * Max Lag
-       * @default
-       */
-      max_lag: string;
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
     };
     /**
      * ChecksumsCreate
@@ -5562,19 +6633,79 @@ export interface components {
      *     :type alert_on_fail: bool
      */
     ChecksumsCreate: {
-      /** Task Name */
-      task_name: string;
-      /** Hostname */
-      hostname: string;
-      /** Service Id */
-      service_id: number;
-      /** Schema Id */
-      schema_id?: number[];
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /**
+       * Binary Index
+       * @default false
+       */
+      binary_index: boolean;
+      /**
+       * Chunk Time
+       * @default
+       */
+      chunk_time: string;
       /**
        * Databases
        * @default
        */
       databases: string;
+      /**
+       * Dsn Table
+       * @default
+       */
+      dsn_table: string;
+      /**
+       * Explain Arg
+       * @default false
+       */
+      explain_arg: boolean;
+      /**
+       * Extra Args
+       * @default
+       */
+      extra_args: string;
+      /**
+       * Fail On Stopped Replication
+       * @default false
+       */
+      fail_on_stopped_replication: boolean;
+      /** Hostname */
+      hostname: string;
+      /**
+       * Max Lag
+       * @default
+       */
+      max_lag: string;
+      /**
+       * Max Load
+       * @default
+       */
+      max_load: string;
+      /**
+       * Pause File
+       * @default
+       */
+      pause_file: string;
+      /**
+       * Progress
+       * @default
+       */
+      progress: string;
+      /** Recursion Method */
+      recursion_method: string;
+      /** Schema Id */
+      schema_id?: number[];
+      /** Service Id */
+      service_id: number;
+      /**
+       * Set Vars
+       * @default
+       */
+      set_vars: string;
       /** Table Id */
       table_id?: number[];
       /**
@@ -5582,23 +6713,60 @@ export interface components {
        * @default
        */
       tables: string;
-      /** Recursion Method */
-      recursion_method: string;
+      /** Task Name */
+      task_name: string;
       /**
-       * Dsn Table
-       * @default
+       * Truncate Replicate Table
+       * @default false
        */
-      dsn_table: string;
+      truncate_replicate_table: boolean;
+    };
+    /**
+     * ChecksumsForm
+     * @description Define the model-first create/update body and schema source for Checksums.
+     *
+     *     The single source of the JSON request body (the field types and defaults the
+     *     server validates) *and* the derived ``GET /schema`` form (driven by the
+     *     :class:`Ui` / reference / :class:`Choices` markers). Field set, types, and
+     *     model defaults match the previous hand-written request body; the form-display
+     *     defaults that differ from the model default are carried on ``Ui(default=...)``.
+     *
+     *     Field declaration order is load-bearing. The framework assembles the
+     *     ``pt-table-checksum`` CLI args as all ``ArgFormat`` value args (in field order)
+     *     followed by all flag args (in field order), and derives the form section order
+     *     (Task, Data, Recursion, Flags, Advanced) from each section's first field — so
+     *     the order here reproduces the historical arg string byte-for-byte. ``progress``
+     *     is declared last to land at the end of the value args, and ``Ui(order=...)``
+     *     pins the Advanced section's display order where it diverges from declaration
+     *     order. The ``alert_on_fail`` capability control is inherited from
+     *     :class:`AppFormModel` (``Hidden``, off-schema).
+     */
+    ChecksumsForm: {
       /**
-       * Pause File
-       * @default
+       * Alert On Fail
+       * @default false
        */
-      pause_file: string;
+      alert_on_fail: boolean;
       /**
        * Binary Index
        * @default false
        */
       binary_index: boolean;
+      /**
+       * Chunk Time
+       * @default
+       */
+      chunk_time: string;
+      /**
+       * Databases
+       * @default
+       */
+      databases: string;
+      /**
+       * Dsn Table
+       * @default
+       */
+      dsn_table: string;
       /**
        * Explain Arg
        * @default false
@@ -5609,46 +6777,52 @@ export interface components {
        * @default false
        */
       fail_on_stopped_replication: boolean;
-      /**
-       * Truncate Replicate Table
-       * @default false
-       */
-      truncate_replicate_table: boolean;
-      /**
-       * Progress
-       * @default
-       */
-      progress: string;
-      /**
-       * Set Vars
-       * @default
-       */
-      set_vars: string;
-      /**
-       * Max Load
-       * @default
-       */
-      max_load: string;
-      /**
-       * Chunk Time
-       * @default
-       */
-      chunk_time: string;
+      /** Hostname */
+      hostname: string;
       /**
        * Max Lag
        * @default
        */
       max_lag: string;
       /**
-       * Extra Args
+       * Max Load
        * @default
        */
-      extra_args: string;
+      max_load: string;
       /**
-       * Alert On Fail
+       * Pause File
+       * @default
+       */
+      pause_file: string;
+      /**
+       * Progress
+       * @default
+       */
+      progress: string;
+      /**
+       * Recursion Method
+       * @default processlist
+       */
+      recursion_method: string;
+      /** Service Id */
+      service_id: number;
+      /**
+       * Set Vars
+       * @default
+       */
+      set_vars: string;
+      /**
+       * Tables
+       * @default
+       */
+      tables: string;
+      /** Task Name */
+      task_name: string;
+      /**
+       * Truncate Replicate Table
        * @default false
        */
-      alert_on_fail: boolean;
+      truncate_replicate_table: boolean;
     };
     /**
      * Choice
@@ -5658,8 +6832,23 @@ export interface components {
      *     :type label: NonEmptyStr
      *     :param value: The value submitted when the choice is selected.
      *     :type value: NonEmptyStr
+     *     :param disabled: Whether the option is rendered non-selectable. Optional,
+     *         defaulting to ``None`` (selectable). Typed ``bool | None`` so the
+     *         discovery endpoint's ``exclude_none`` posture drops it from the wire
+     *         until a plugin opts in, keeping the addition byte-compatible with
+     *         existing schemas. UI hint only; enforcing rejection of a disabled
+     *         value is the consuming app's responsibility.
+     *     :type disabled: bool | None
+     *     :param disabled_reason: Optional explanatory text surfaced (for example,
+     *         in a tooltip) when the option is disabled. Defaults to ``None`` and
+     *         may only be set when ``disabled`` is ``True``.
+     *     :type disabled_reason: NonEmptyStr | None
      */
     Choice: {
+      /** Disabled */
+      disabled?: boolean | null;
+      /** Disabled Reason */
+      disabled_reason?: string | null;
       /** Label */
       label: string;
       /** Value */
@@ -5676,32 +6865,30 @@ export interface components {
      *     :type choices: list[Choice]
      */
     ChoiceField: {
-      /** Name */
-      name: string;
+      /** Choices */
+      choices: components['schemas']['Choice'][];
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Type
-       * @default choice
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'choice';
-      /** Choices */
-      choices: components['schemas']['Choice'][];
     };
     /**
      * CollectorTypeEnum
@@ -5726,6 +6913,7 @@ export interface components {
      *     :type format: ColumnFormat | None
      */
     Column: {
+      format?: components['schemas']['ColumnFormat'] | null;
       /** Key */
       key: string;
       /** Label */
@@ -5735,7 +6923,6 @@ export interface components {
        * @default false
        */
       sortable: boolean;
-      format?: components['schemas']['ColumnFormat'] | null;
     };
     /**
      * ColumnFormat
@@ -5757,9 +6944,23 @@ export interface components {
      *     :cvar ACTIONS: Row actions (for example delete); not bound to row data.
      *         Use with a synthetic column key such as ``_actions``.
      *     :vartype ACTIONS: str
+     *     :cvar SCHEDULE: Render a generic schedule cell for the row's task. The
+     *         frontend joins the row to its periodic task by name and shows the next
+     *         run (relative, with the absolute timestamp on hover) plus a periodicity
+     *         popover, or a muted "Not scheduled" chip when the task has no schedule.
+     *         Not bound to the column's own cell value.
+     *     :vartype SCHEDULE: str
      * @enum {string}
      */
-    ColumnFormat: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code' | 'actions';
+    ColumnFormat:
+      | 'text'
+      | 'chip'
+      | 'status'
+      | 'date'
+      | 'relative'
+      | 'code'
+      | 'actions'
+      | 'schedule';
     /**
      * ConnectivityWarning
      * @description Represent a connectivity-check failure on a JSON API task-creation response.
@@ -5772,12 +6973,12 @@ export interface components {
      *     :type message: str
      */
     ConnectivityWarning: {
-      /** Target */
-      target: string;
-      /** Service Type */
-      service_type: string;
       /** Message */
       message: string;
+      /** Service Type */
+      service_type: string;
+      /** Target */
+      target: string;
     };
     /**
      * CrontabSchedule
@@ -5802,25 +7003,25 @@ export interface components {
      */
     CrontabSchedule: {
       /**
-       * Minute
+       * Day Of Month
        * @default *
        */
-      minute: string;
-      /**
-       * Hour
-       * @default *
-       */
-      hour: string;
+      day_of_month: string;
       /**
        * Day Of Week
        * @default *
        */
       day_of_week: string;
       /**
-       * Day Of Month
+       * Hour
        * @default *
        */
-      day_of_month: string;
+      hour: string;
+      /**
+       * Minute
+       * @default *
+       */
+      minute: string;
       /**
        * Month Of Year
        * @default *
@@ -5848,12 +7049,12 @@ export interface components {
     DashboardStatsResponse: {
       /** Nodes */
       nodes: number;
-      /** Tasks */
-      tasks: number;
       /** Snippets */
       snippets: number;
       /** Targets */
       targets: number;
+      /** Tasks */
+      tasks: number;
     };
     /**
      * DateTimeField
@@ -5864,27 +7065,25 @@ export interface components {
      *     :type field_type: Literal["datetime"]
      */
     DateTimeField: {
-      /** Name */
-      name: string;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Type
-       * @default datetime
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'datetime';
@@ -5929,23 +7128,23 @@ export interface components {
      *     :type parent_link: bool
      */
     DerivedTask: {
-      /** Name Suffix */
-      name_suffix: string;
       /** Arg Substitutions */
       arg_substitutions?: {
         [key: string]: string;
       } | null;
-      /** Payload Substitutions */
-      payload_substitutions?: {
-        [key: string]: string;
-      } | null;
       /** Data Overrides */
       data_overrides?: Record<string, never> | null;
+      /** Name Suffix */
+      name_suffix: string;
       /**
        * Parent Link
        * @default true
        */
       parent_link: boolean;
+      /** Payload Substitutions */
+      payload_substitutions?: {
+        [key: string]: string;
+      } | null;
     };
     /**
      * DetailField
@@ -5961,18 +7160,18 @@ export interface components {
      *     :type highlight: DetailHighlightLanguage | None
      */
     DetailField: {
-      /** Path */
-      path: string;
+      highlight?: components['schemas']['DetailHighlightLanguage'] | null;
       /** Label */
       label: string;
-      highlight?: components['schemas']['DetailHighlightLanguage'] | null;
+      /** Path */
+      path: string;
     };
     /**
      * DetailHighlightLanguage
      * @description Enumerate supported syntax highlighters for detail fields.
      * @enum {string}
      */
-    DetailHighlightLanguage: 'sql' | 'json';
+    DetailHighlightLanguage: 'sql' | 'json' | 'bash';
     /**
      * DetailSection
      * @description Declare one titled section inside a :class:`DetailView`.
@@ -5985,10 +7184,10 @@ export interface components {
      *     :type fields: list[DetailField]
      */
     DetailSection: {
-      /** Title */
-      title: string;
       /** Fields */
       fields: components['schemas']['DetailField'][];
+      /** Title */
+      title: string;
     };
     /**
      * DetailView
@@ -6027,16 +7226,16 @@ export interface components {
      *     :type args: dict[str, Any]
      */
     DipperExecuteWrite: {
-      /** Service Id */
-      service_id: number;
+      /** Args */
+      args?: Record<string, never>;
       /** @default environment */
       collector_type: components['schemas']['CollectorTypeEnum'];
       /** Executor Host */
       executor_host: string;
+      /** Service Id */
+      service_id: number;
       /** Sudo */
       sudo?: boolean | null;
-      /** Args */
-      args?: Record<string, never>;
     };
     /**
      * DipperExecutionResponse
@@ -6054,15 +7253,15 @@ export interface components {
      *     :type collector_type: CollectorTypeEnum
      */
     DipperExecutionResponse: {
+      collector_type: components['schemas']['CollectorTypeEnum'];
+      /** Service Id */
+      service_id: number;
+      /** Snippet Filename */
+      snippet_filename: string;
       /** Task Id */
       task_id?: number | null;
       /** Task Name */
       task_name: string;
-      /** Snippet Filename */
-      snippet_filename: string;
-      /** Service Id */
-      service_id: number;
-      collector_type: components['schemas']['CollectorTypeEnum'];
     };
     /**
      * DipperScript
@@ -6071,12 +7270,12 @@ export interface components {
     DipperScript: {
       /** Filename */
       filename: string;
-      /** Size */
-      size: number;
       /** Md5 Digest */
       md5_digest: string;
       /** Meta */
       meta?: Record<string, never>;
+      /** Size */
+      size: number;
     };
     /**
      * EnhancedPeriodicTaskCreateRequest
@@ -6099,16 +7298,16 @@ export interface components {
      *     :type task: str
      */
     EnhancedPeriodicTaskCreateRequest: {
-      /** Start Time */
-      start_time?: string | null;
+      /** Crontab */
+      crontab?: components['schemas']['CrontabSchedule'] | null;
       /** Enabled */
       enabled?: boolean | null;
       /** Execute Request */
       execute_request?: components['schemas']['PeriodicTaskExecuteRequest'] | null;
       /** Interval */
       interval?: components['schemas']['IntervalSchedule'] | null;
-      /** Crontab */
-      crontab?: components['schemas']['CrontabSchedule'] | null;
+      /** Start Time */
+      start_time?: string | null;
       /** Task */
       task: string;
     };
@@ -6126,6 +7325,10 @@ export interface components {
      *     :type step: str | None
      */
     ExecutionEvent: {
+      /** Description */
+      description: string;
+      /** Step */
+      step?: string | null;
       /**
        * Timestamp
        * Format: date-time
@@ -6133,10 +7336,6 @@ export interface components {
       timestamp: string;
       /** Type */
       type: string;
-      /** Description */
-      description: string;
-      /** Step */
-      step?: string | null;
     };
     /**
      * ExecutorHostMetadata
@@ -6150,10 +7349,10 @@ export interface components {
      *     :type label: str
      */
     ExecutorHostMetadata: {
-      /** Value */
-      value: string;
       /** Label */
       label: string;
+      /** Value */
+      value: string;
     };
     /**
      * FailRule
@@ -6169,6 +7368,8 @@ export interface components {
      *     :type message: str | None
      */
     FailRule: {
+      /** Error Fields */
+      error_fields: string[];
       /**
        * Fail When
        * @description Predicate wire shape — a single-key object whose key is the operator name (equals, truthy, all, any, xor, not, etc.). See the plan for the full operator catalogue.
@@ -6176,8 +7377,6 @@ export interface components {
       fail_when: {
         [key: string]: unknown;
       };
-      /** Error Fields */
-      error_fields: string[];
       /** Message */
       message?: string | null;
     };
@@ -6195,6 +7394,8 @@ export interface components {
      *     :type message: str | None
      */
     FieldGate: {
+      /** Message */
+      message?: string | null;
       /**
        * When
        * @description Predicate wire shape — a single-key object whose key is the operator name (equals, truthy, all, any, xor, not, etc.). See the plan for the full operator catalogue.
@@ -6202,8 +7403,6 @@ export interface components {
       when: {
         [key: string]: unknown;
       };
-      /** Message */
-      message?: string | null;
     };
     /**
      * FileField
@@ -6218,32 +7417,30 @@ export interface components {
      *     :type accept: list[str] | None
      */
     FileField: {
-      /** Name */
-      name: string;
+      /** Accept */
+      accept?: string[] | null;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Type
-       * @default file
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'file';
-      /** Accept */
-      accept?: string[] | null;
     };
     /**
      * FileMetadata
@@ -6251,15 +7448,15 @@ export interface components {
      */
     FileMetadata: {
       /**
-       * Size
-       * @default 0
-       */
-      size: number;
-      /**
        * Is Dir
        * @default false
        */
       is_dir: boolean;
+      /**
+       * Size
+       * @default 0
+       */
+      size: number;
     };
     /**
      * FloatField
@@ -6279,36 +7476,34 @@ export interface components {
      *     :type step: float | None
      */
     FloatField: {
-      /** Name */
-      name: string;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Ge */
+      ge?: number | null;
       /** Label */
       label: string;
+      /** Le */
+      le?: number | null;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Step */
+      step?: number | null;
       /**
-       * Type
-       * @default float
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'float';
-      /** Ge */
-      ge?: number | null;
-      /** Le */
-      le?: number | null;
-      /** Step */
-      step?: number | null;
     };
     /**
      * FormSection
@@ -6319,7 +7514,8 @@ export interface components {
      *     :param description: Optional helper text rendered beneath the section
      *         heading. Defaults to ``None``.
      *     :type description: NonEmptyStr | None
-     *     :param fields: The list of fields belonging to this section.
+     *     :param fields: The list of fields belonging to this section. May include
+     *         :class:`OneOfGroup` containers alongside leaf fields.
      *     :type fields: list[AnyField]
      *     :param cardinality_rules: Optional cross-field cardinality constraints
      *         scoped to the fields in this section. Defaults to ``None``.
@@ -6352,10 +7548,22 @@ export interface components {
      *     :type forbidden: list[FieldGate] | None
      */
     FormSection: {
-      /** Title */
-      title: string;
+      /** Cardinality Rules */
+      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
+      /**
+       * Collapsed By Default
+       * @default false
+       */
+      collapsed_by_default: boolean;
+      /**
+       * Collapsible
+       * @default false
+       */
+      collapsible: boolean;
       /** Description */
       description?: string | null;
+      /** Fail When */
+      fail_when?: components['schemas']['FailRule'][] | null;
       /** Fields */
       fields: (
         | components['schemas']['BoolField']
@@ -6373,28 +7581,17 @@ export interface components {
         | components['schemas']['TableField']
         | components['schemas']['TextAreaField']
         | components['schemas']['YamlField']
+        | components['schemas']['OneOfGroup']
       )[];
-      /** Cardinality Rules */
-      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
-      /** Fail When */
-      fail_when?: components['schemas']['FailRule'][] | null;
-      /**
-       * Collapsible
-       * @default false
-       */
-      collapsible: boolean;
-      /**
-       * Collapsed By Default
-       * @default false
-       */
-      collapsed_by_default: boolean;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
        * Render After Submit
        * @default false
        */
       render_after_submit: boolean;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Title */
+      title: string;
     };
     /** HTTPValidationError */
     HTTPValidationError: {
@@ -6414,29 +7611,32 @@ export interface components {
      *     :param field_type: The discriminator literal; always ``"host"`` for this
      *         class. Serialised as the JSON key ``"type"``.
      *     :type field_type: Literal["host"]
+     *     :param allow_custom: When ``True``, the selector also accepts a free-typed
+     *         value alongside the inventory options. ``None`` (the default) omits the
+     *         key from the wire so plugins that do not opt in stay byte-identical.
      */
     HostField: {
-      /** Name */
-      name: string;
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Type
-       * @default host
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'host';
@@ -6455,12 +7655,133 @@ export interface components {
      *     :type address: str
      */
     HostResponse: {
+      /** Address */
+      address: string;
       /** Id */
       id: string;
       /** Name */
       name: string;
-      /** Address */
-      address: string;
+    };
+    /**
+     * IndexBackupSummary
+     * @description Represent a compact backup row for the index "recent backups" widget.
+     *
+     *     Leaner than :class:`BackupSummary` (no ``metadata``): the list page only
+     *     renders the id and timestamp, so the index payload omits the summary counts.
+     *
+     *     :param id: Primary key of the backup row.
+     *     :type id: int
+     *     :param created_at: UTC timestamp the backup was written.
+     *     :type created_at: datetime
+     */
+    IndexBackupSummary: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Id */
+      id: number;
+    };
+    /**
+     * IndexPagerDutyStatus
+     * @description Describe the PagerDuty contact-point status on the index page.
+     *
+     *     :param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.
+     *     :type configured: bool
+     *     :param uid: The contact point UID when configured, otherwise ``None``.
+     *     :type uid: str | None
+     */
+    IndexPagerDutyStatus: {
+      /** Configured */
+      configured: boolean;
+      /** Uid */
+      uid?: string | null;
+    };
+    /**
+     * IndexResponse
+     * @description Describe the response body for ``GET /api/plugins/alerts/``.
+     *
+     *     Aggregate everything the React list page needs in a single call: the alert
+     *     templates grouped by service type, whether PMM is reachable, the PagerDuty
+     *     contact-point status, and the most recent backups.
+     *
+     *     :param groups: Alert templates grouped by service type. Only service types
+     *         with at least one template are included.
+     *     :type groups: list[IndexTemplateGroup]
+     *     :param pmm_connected: ``True`` when PMM is configured and reachable.
+     *     :type pmm_connected: bool
+     *     :param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.
+     *     :type pagerduty: IndexPagerDutyStatus | None
+     *     :param recent_backups: The most recent alert backups, newest first.
+     *     :type recent_backups: list[IndexBackupSummary]
+     */
+    IndexResponse: {
+      /** Groups */
+      groups: components['schemas']['IndexTemplateGroup'][];
+      pagerduty: components['schemas']['IndexPagerDutyStatus'] | null;
+      /** Pmm Connected */
+      pmm_connected: boolean;
+      /** Recent Backups */
+      recent_backups: components['schemas']['IndexBackupSummary'][];
+    };
+    /**
+     * IndexTemplate
+     * @description Represent a single alert template row on the index page.
+     *
+     *     :param name: The display name of the alert template.
+     *     :type name: str
+     *     :param service_type: The service category this template applies to.
+     *     :type service_type: str
+     *     :param expression: The PromQL expression backing the alert.
+     *     :type expression: str
+     *     :param default_threshold: The default numeric threshold for the UI.
+     *     :type default_threshold: float
+     *     :param severity: The severity level (``"info"``, ``"warning"``, ``"critical"``).
+     *     :type severity: str
+     *     :param description: A human-readable description of the alert.
+     *     :type description: str
+     *     :param summary: A short summary template for notifications.
+     *     :type summary: str
+     *     :param in_pmm: ``True`` when a template of this name is already present in PMM.
+     *     :type in_pmm: bool
+     */
+    IndexTemplate: {
+      /** Default Threshold */
+      default_threshold: number;
+      /** Description */
+      description: string;
+      /** Expression */
+      expression: string;
+      /** In Pmm */
+      in_pmm: boolean;
+      /** Name */
+      name: string;
+      /** Service Type */
+      service_type: string;
+      /** Severity */
+      severity: string;
+      /** Summary */
+      summary: string;
+    };
+    /**
+     * IndexTemplateGroup
+     * @description Group index templates by service type.
+     *
+     *     :param service_type: The service type identifier (e.g. ``"mysql"``).
+     *     :type service_type: str
+     *     :param label: The human-readable service type label (e.g. ``"MySQL"``).
+     *     :type label: str
+     *     :param templates: The templates belonging to this service type.
+     *     :type templates: list[IndexTemplate]
+     */
+    IndexTemplateGroup: {
+      /** Label */
+      label: string;
+      /** Service Type */
+      service_type: string;
+      /** Templates */
+      templates: components['schemas']['IndexTemplate'][];
     };
     /**
      * IntegerField
@@ -6480,36 +7801,34 @@ export interface components {
      *     :type step: int | None
      */
     IntegerField: {
-      /** Name */
-      name: string;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Ge */
+      ge?: number | null;
       /** Label */
       label: string;
+      /** Le */
+      le?: number | null;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Step */
+      step?: number | null;
       /**
-       * Type
-       * @default integer
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'integer';
-      /** Ge */
-      ge?: number | null;
-      /** Le */
-      le?: number | null;
-      /** Step */
-      step?: number | null;
     };
     /**
      * IntervalSchedule
@@ -6524,6 +7843,21 @@ export interface components {
       /** Every */
       every: number;
       period: components['schemas']['Period'];
+    };
+    /**
+     * InventorySelectorOption
+     * @description Represent a minimal ``{id, name}`` option for inventory autocomplete selectors.
+     *
+     *     :param id: The inventory entity ID consumed by form payloads.
+     *     :type id: int
+     *     :param name: The human-readable display label.
+     *     :type name: str
+     */
+    InventorySelectorOption: {
+      /** Id */
+      id: number;
+      /** Name */
+      name: string;
     };
     /**
      * InventorySyncScheduleCreateForm
@@ -6553,16 +7887,16 @@ export interface components {
      *     :type start_time: UTCDatetime | EmptyStrToNone
      */
     InventorySyncScheduleCreateForm: {
-      /** Syncer */
-      syncer?: string | null;
+      /** Crontab */
+      crontab?: components['schemas']['CrontabSchedule'] | null;
       /** Enabled */
       enabled?: boolean | null;
       /** Interval */
       interval?: components['schemas']['IntervalSchedule'] | null;
-      /** Crontab */
-      crontab?: components['schemas']['CrontabSchedule'] | null;
       /** Start Time */
       start_time?: string | null;
+      /** Syncer */
+      syncer?: string | null;
     };
     /**
      * InventorySyncStatusResponse
@@ -6631,32 +7965,58 @@ export interface components {
      *     :type choices: list[Choice]
      */
     MultiChoiceField: {
-      /** Name */
-      name: string;
+      /** Choices */
+      choices: components['schemas']['Choice'][];
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Type
-       * @default multi_choice
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'multi_choice';
-      /** Choices */
-      choices: components['schemas']['Choice'][];
+    };
+    /** MysqlBackupsCreateResponse */
+    MysqlBackupsCreateResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      backup_type?: components['schemas']['BackupType-Output'] | null;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Hostname */
+      hostname?: string | null;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Protected */
+      protected: boolean;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * Node
@@ -6683,12 +8043,10 @@ export interface components {
     'Node-Input': {
       /** Address */
       address: string;
-      /** Node Name */
-      node_name: string;
       /** Node Id */
       node_id?: string | null;
-      /** Source */
-      source?: components['schemas']['SourceEnum'] | null;
+      /** Node Name */
+      node_name: string;
       /**
        * Node Type
        * @default generic
@@ -6699,6 +8057,8 @@ export interface components {
        * @default []
        */
       services: components['schemas']['Service'][];
+      /** Source */
+      source?: components['schemas']['SourceEnum'] | null;
     };
     /**
      * Node
@@ -6720,27 +8080,102 @@ export interface components {
      *     :type services: list[Service]
      */
     'Node-Output': {
-      /** Id */
-      id: number | null;
+      /** Address */
+      address: string;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Address */
-      address: string;
-      /** Name */
-      name: string;
       /** External Id */
       external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
        * @default generic
        */
       type: string;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * OneOfBranch
+     * @description Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.
+     *
+     *     :param value: The discriminator value that selects this branch.
+     *     :param label: The human-readable label for the segmented-control option.
+     *     :param fields: The leaf fields revealed when this branch is active.
+     */
+    OneOfBranch: {
+      /** Fields */
+      fields: (
+        | components['schemas']['BoolField']
+        | components['schemas']['ChoiceField']
+        | components['schemas']['DateTimeField']
+        | components['schemas']['FileField']
+        | components['schemas']['FloatField']
+        | components['schemas']['HostField']
+        | components['schemas']['IntegerField']
+        | components['schemas']['MultiChoiceField']
+        | components['schemas']['SchemaField']
+        | components['schemas']['ScriptPreviewField']
+        | components['schemas']['ServiceField']
+        | components['schemas']['StringField']
+        | components['schemas']['TableField']
+        | components['schemas']['TextAreaField']
+        | components['schemas']['YamlField']
+      )[];
+      /** Label */
+      label: string;
+      /** Value */
+      value: string;
+    };
+    /**
+     * OneOfGroup
+     * @description Represent a labelled either/or field group with a segmented mode switch.
+     *
+     *     The React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,
+     *     shows :attr:`description` as helper text, and renders only the active
+     *     branch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden
+     *     at validation time via rules synthesised from the group's branch contract.
+     *
+     *     :param field_type: The discriminator literal; always ``"one_of"`` for this
+     *         class. Serialised as the JSON key ``"type"``.
+     *     :param name: Stable group identifier used as the React list key. Not a
+     *         separate form value — :attr:`discriminator` names the mode field.
+     *     :param label: The human-readable group heading above the segmented control.
+     *     :param description: Optional helper text rendered beneath the group label.
+     *         Defaults to ``None``.
+     *     :param discriminator: Dotted path to the mode field (for example,
+     *         ``"source.mode"``) whose value selects the active branch.
+     *     :param default: Optional default branch :attr:`~OneOfBranch.value`. Must
+     *         match one of the declared branches when set. Defaults to ``None``.
+     *     :param branches: Two or more named branches, each owning its own field list.
+     */
+    OneOfGroup: {
+      /** Branches */
+      branches: components['schemas']['OneOfBranch'][];
+      /** Default */
+      default?: string | null;
+      /** Description */
+      description?: string | null;
+      /** Discriminator */
+      discriminator: string;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Type
+       * @default one_of
+       * @constant
+       * @enum {string}
+       */
+      type: 'one_of';
     };
     /**
      * PagerDutyRequest
@@ -6772,67 +8207,67 @@ export interface components {
     PaginatedResponse_BackupResponse_: {
       /** Items */
       items: components['schemas']['BackupResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[BackupSummary] */
     PaginatedResponse_BackupSummary_: {
       /** Items */
       items: components['schemas']['BackupSummary'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
-    };
-    /** PaginatedResponse[BackupTaskResponse] */
-    PaginatedResponse_BackupTaskResponse_: {
-      /** Items */
-      items: components['schemas']['BackupTaskResponse'][];
-      /** Total */
-      total: number;
       /** Offset */
       offset: number;
-      /** Limit */
-      limit: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[RestoreTaskResponse] */
     PaginatedResponse_RestoreTaskResponse_: {
       /** Items */
       items: components['schemas']['RestoreTaskResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[RestoresResponse] */
+    PaginatedResponse_RestoresResponse_: {
+      /** Items */
+      items: components['schemas']['RestoresResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[ServiceResponse] */
     PaginatedResponse_ServiceResponse_: {
       /** Items */
       items: components['schemas']['ServiceResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[TaskHistoryResponse] */
     PaginatedResponse_TaskHistoryResponse_: {
       /** Items */
       items: components['schemas']['TaskHistoryResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /**
      * Period
@@ -6854,6 +8289,17 @@ export interface components {
      *     :type eta: datetime | None
      */
     PeriodicTaskExecuteRequest: {
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Chain On Failure
+       * @default false
+       */
+      chain_on_failure: boolean;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
       /**
        * Meta
        * @default {}
@@ -6861,17 +8307,6 @@ export interface components {
       meta: Record<string, never>;
       /** Payload */
       payload?: string | null;
-      /** Eta */
-      eta?: string | null;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /**
-       * Chain On Failure
-       * @default false
-       */
-      chain_on_failure: boolean;
     };
     /**
      * PeriodicTaskRequest
@@ -6892,16 +8327,16 @@ export interface components {
      *     :type crontab: CrontabSchedule | EmptyStrToNone
      */
     PeriodicTaskRequest: {
-      /** Start Time */
-      start_time?: string | null;
+      /** Crontab */
+      crontab?: components['schemas']['CrontabSchedule'] | null;
       /** Enabled */
       enabled?: boolean | null;
       /** Execute Request */
       execute_request?: components['schemas']['PeriodicTaskExecuteRequest'] | null;
       /** Interval */
       interval?: components['schemas']['IntervalSchedule'] | null;
-      /** Crontab */
-      crontab?: components['schemas']['CrontabSchedule'] | null;
+      /** Start Time */
+      start_time?: string | null;
     };
     /**
      * PeriodicTaskSummary
@@ -6930,23 +8365,29 @@ export interface components {
      *     :type chain_task_names: list[str]
      */
     PeriodicTaskSummary: {
-      /** Id */
-      id: number;
-      /** Name */
-      name: string;
-      /** Enabled */
-      enabled: boolean;
-      /** Period */
-      period?: string | null;
-      /** Next Run At */
-      next_run_at?: string | null;
-      /** Last Run At */
-      last_run_at?: string | null;
-      /** Total Run Count */
-      total_run_count?: number | null;
       /** Chain Task Names */
       chain_task_names?: string[];
+      /** Enabled */
+      enabled: boolean;
+      /** Id */
+      id: number;
+      /** Last Run At */
+      last_run_at?: string | null;
+      /** Name */
+      name: string;
+      /** Next Run At */
+      next_run_at?: string | null;
+      /** Period */
+      period?: string | null;
+      /** Total Run Count */
+      total_run_count?: number | null;
     };
+    /**
+     * PgBackRestBackupType
+     * @description PgBackRest backup types.
+     * @enum {string}
+     */
+    PgBackRestBackupType: 'incr' | 'diff';
     /**
      * PluginEntitySchema
      * @description Describe one CRUD entity for a multi-entity schema-driven plugin.
@@ -6979,23 +8420,23 @@ export interface components {
      *     :type fail_when: list[FailRule] | None
      */
     PluginEntitySchema: {
-      /** Name */
-      name: string;
-      /** Display Name */
-      display_name: string;
+      /** Cardinality Rules */
+      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
       /** Description */
       description?: string | null;
-      /** Forms */
-      forms: components['schemas']['FormSection'][];
-      list_view: components['schemas']['ListView'];
       /** Detail Highlights */
       detail_highlights?: {
         [key: string]: components['schemas']['DetailHighlightLanguage'];
       };
-      /** Cardinality Rules */
-      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
+      /** Display Name */
+      display_name: string;
       /** Fail When */
       fail_when?: components['schemas']['FailRule'][] | null;
+      /** Forms */
+      forms: components['schemas']['FormSection'][];
+      list_view: components['schemas']['ListView'];
+      /** Name */
+      name: string;
     };
     /**
      * PluginSchema
@@ -7051,29 +8492,29 @@ export interface components {
      *     :type predecessors: list[ChainedPredecessor] | None
      */
     PluginSchema: {
-      /** Name */
-      name: string;
-      /** Display Name */
-      display_name: string;
-      /** Description */
-      description?: string | null;
-      /** Task Type */
-      task_type?: string | null;
-      /** Forms */
-      forms?: components['schemas']['FormSection'][];
       capabilities?: components['schemas']['Capabilities'] | null;
-      list_view?: components['schemas']['ListView'] | null;
-      detail_view?: components['schemas']['DetailView'] | null;
-      /** Entities */
-      entities?: components['schemas']['PluginEntitySchema'][] | null;
       /** Cardinality Rules */
       cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
-      /** Fail When */
-      fail_when?: components['schemas']['FailRule'][] | null;
       /** Derived */
       derived?: components['schemas']['DerivedTask'][] | null;
+      /** Description */
+      description?: string | null;
+      detail_view?: components['schemas']['DetailView'] | null;
+      /** Display Name */
+      display_name: string;
+      /** Entities */
+      entities?: components['schemas']['PluginEntitySchema'][] | null;
+      /** Fail When */
+      fail_when?: components['schemas']['FailRule'][] | null;
+      /** Forms */
+      forms?: components['schemas']['FormSection'][];
+      list_view?: components['schemas']['ListView'] | null;
+      /** Name */
+      name: string;
       /** Predecessors */
       predecessors?: components['schemas']['ChainedPredecessor'][] | null;
+      /** Task Type */
+      task_type?: string | null;
     };
     /**
      * PluginTaskResponse
@@ -7085,10 +8526,10 @@ export interface components {
      *     :type display_name: str
      */
     PluginTaskResponse: {
-      /** Name */
-      name: string;
       /** Display Name */
       display_name: string;
+      /** Name */
+      name: string;
     };
     /**
      * PushItemResult
@@ -7102,6 +8543,8 @@ export interface components {
      *     :type message: str
      */
     PushItemResult: {
+      /** Message */
+      message: string;
       /** Name */
       name: string;
       /**
@@ -7109,8 +8552,6 @@ export interface components {
        * @enum {string}
        */
       status: 'success' | 'skipped' | 'error';
-      /** Message */
-      message: string;
     };
     /**
      * PushRequest
@@ -7155,13 +8596,20 @@ export interface components {
      *
      *     :cvar HOT: Field can be overridden via a DB row and the new value takes
      *         effect on the next snapshot refresh, without restarting the service.
+     *         For a nested-model field, ``HOT`` permits both whole-object override
+     *         (``PATCH {parent: {...}}``) and per-child override (``parent__leaf``).
      *     :vartype HOT: str
+     *     :cvar NESTED_ONLY: Nested-model field whose children may be overridden
+     *         (``parent__leaf``) while the parent itself rejects whole-object
+     *         override (``PATCH {parent: {...}}`` → 422). Children default to
+     *         HOT-inherit unless explicitly marked :func:`not_overridable_field`.
+     *     :vartype NESTED_ONLY: str
      *     :cvar NOT_OVERRIDABLE: Field is not overridable from the database; YAML
      *         and environment variables remain the only sources of truth.
      *     :vartype NOT_OVERRIDABLE: str
      * @enum {string}
      */
-    ReloadClassification: 'hot' | 'not_overridable';
+    ReloadClassification: 'hot' | 'nested_only' | 'not_overridable';
     /**
      * RestoreDerivedTaskSummary
      * @description Represent one child task in a restore task group detail response.
@@ -7188,12 +8636,12 @@ export interface components {
      *     :type chain_on_failure: bool | None
      */
     RestoreExecuteWrite: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
     };
     /**
      * RestoreExecutionResponse
@@ -7205,10 +8653,10 @@ export interface components {
      *     :type task_id: int | None
      */
     RestoreExecutionResponse: {
-      /** Task Name */
-      task_name: string;
       /** Task Id */
       task_id?: number | null;
+      /** Task Name */
+      task_name: string;
     };
     /**
      * RestoreRequest
@@ -7233,14 +8681,14 @@ export interface components {
      *     :type details: dict[str, Any]
      */
     RestoreResponse: {
+      /** Details */
+      details: Record<string, never>;
       /**
        * Status
        * @constant
        * @enum {string}
        */
       status: 'success';
-      /** Details */
-      details: Record<string, never>;
     };
     /**
      * RestoreTaskDetailResponse
@@ -7250,35 +8698,35 @@ export interface components {
      *     :type derived_tasks: list[RestoreDerivedTaskSummary]
      */
     RestoreTaskDetailResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Backup Source */
+      backup_source: string;
+      /** Backup Type */
+      backup_type: string;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Derived Tasks */
+      derived_tasks?: components['schemas']['RestoreDerivedTaskSummary'][];
+      /** Hostname */
+      hostname?: string | null;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
       /** Name */
       name: string;
       owner: components['schemas']['TaskOwner'];
-      /** Hostname */
-      hostname?: string | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Backup Type */
-      backup_type: string;
-      /** Backup Source */
-      backup_source: string;
-      /** Id */
-      id?: number | null;
-      backend: components['schemas']['TaskBackendEnum'];
-      /** Data */
-      data: Record<string, never>;
       /** Protected */
       protected: boolean;
-      /** Alert On Fail */
-      alert_on_fail: boolean;
-      /** Created At */
-      created_at?: string | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Last Updated By */
-      last_updated_by?: string | null;
-      /** Derived Tasks */
-      derived_tasks?: components['schemas']['RestoreDerivedTaskSummary'][];
     };
     /**
      * RestoreTaskResponse
@@ -7304,40 +8752,46 @@ export interface components {
      *     :type last_updated_by: str | None
      */
     RestoreTaskResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Backup Source */
+      backup_source: string;
+      /** Backup Type */
+      backup_type: string;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Hostname */
+      hostname?: string | null;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
       /** Name */
       name: string;
       owner: components['schemas']['TaskOwner'];
-      /** Hostname */
-      hostname?: string | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Backup Type */
-      backup_type: string;
-      /** Backup Source */
-      backup_source: string;
-      /** Id */
-      id?: number | null;
-      backend: components['schemas']['TaskBackendEnum'];
-      /** Data */
-      data: Record<string, never>;
       /** Protected */
       protected: boolean;
-      /** Alert On Fail */
-      alert_on_fail: boolean;
-      /** Created At */
-      created_at?: string | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Last Updated By */
-      last_updated_by?: string | null;
     };
     /**
      * RestoreTaskWrite
      * @description Represent a JSON request body for creating a restore task group.
      *
-     *     Mirrors :class:`RestoreCreate`. POST always creates a parent config task plus
-     *     restore, pbm-list, and optional force-resync children.
+     *     Mirrors :class:`RestoreCreate` field-for-field with JSON-native types (notably
+     *     ``service_id: int | None``). Routes convert via
+     *     :func:`~app.sep.plugins.backup_mongo.restore.deps.restore_create_from_write`
+     *     before building task payloads. See :class:`RestoreCreate` for why both models
+     *     remain.
+     *
+     *     POST always creates a parent config task plus restore, pbm-list, and optional
+     *     force-resync children.
      *
      *     :param task_name: The name of the task to be created.
      *     :type task_name: NonEmptyStr
@@ -7369,33 +8823,86 @@ export interface components {
      *     :type credentials_path: str | None
      */
     RestoreTaskWrite: {
-      /** Task Name */
-      task_name: string;
-      /** Hostname */
-      hostname: string;
-      /** Service Id */
-      service_id?: number | null;
-      backup_type: components['schemas']['app__sep__plugins__backup_mongo__models__BackupType'];
       /** Backup Source */
       backup_source: string;
+      backup_type: components['schemas']['app__sep__plugins__backup_mongo__models__BackupType'];
+      /** Credentials Path */
+      credentials_path?: string | null;
+      /** Hostname */
+      hostname: string;
       /** Restore Batch Size */
       restore_batch_size?: number | null;
-      /** Restore Num Insertion Workers */
-      restore_num_insertion_workers?: number | null;
-      /** Restore Num Parallel Collections */
-      restore_num_parallel_collections?: number | null;
-      /** Restore Num Download Workers */
-      restore_num_download_workers?: number | null;
-      /** Restore Max Download Buffer Mb */
-      restore_max_download_buffer_mb?: number | null;
       /** Restore Download Chunk Mb */
       restore_download_chunk_mb?: number | null;
+      /** Restore Max Download Buffer Mb */
+      restore_max_download_buffer_mb?: number | null;
       /** Restore Mongod Location */
       restore_mongod_location?: string | null;
       /** Restore Mongod Location Map */
       restore_mongod_location_map?: string | null;
-      /** Credentials Path */
-      credentials_path?: string | null;
+      /** Restore Num Download Workers */
+      restore_num_download_workers?: number | null;
+      /** Restore Num Insertion Workers */
+      restore_num_insertion_workers?: number | null;
+      /** Restore Num Parallel Collections */
+      restore_num_parallel_collections?: number | null;
+      /** Service Id */
+      service_id?: number | null;
+      /** Task Name */
+      task_name: string;
+    };
+    /**
+     * RestoresResponse
+     * @description Represent a restore task API response.
+     *
+     *     Extend the standard task-response surface with the restore-specific
+     *     destination facts the detail view renders; the shared task identity,
+     *     status, audit, and anonymization fields come from
+     *     :class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.
+     *
+     *     :param backup_type: The backup type recorded in task config.
+     *     :param hostname: The executor hostname target.
+     *     :param host: The destination host recorded in task config.
+     *     :param port: The destination port recorded in task config.
+     */
+    RestoresResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
+      backend: components['schemas']['TaskBackendEnum'];
+      backup_type?: components['schemas']['BackupType-Output'] | null;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Host */
+      host?: string | null;
+      /** Hostname */
+      hostname?: string | null;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Port */
+      port?: number | null;
+      /** Protected */
+      protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * S3Tool
@@ -7448,17 +8955,17 @@ export interface components {
      *     :type tables: list[Table]
      */
     'Schema-Output': {
-      /** Name */
-      name: string;
-      /** Service Id */
-      service_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Service Id */
+      service_id: number;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -7477,34 +8984,88 @@ export interface components {
      *     :param depends_on: The name of the field whose value drives the list of
      *         available schemas.
      *     :type depends_on: NonEmptyStr
+     *     :param allow_custom: Opt-in capability flag declaring that a consuming
+     *         renderer may offer free-text (free-solo) entry in addition to the
+     *         cascaded inventory options. Optional, defaulting to ``None`` (options
+     *         only). Typed ``bool | None`` so the discovery endpoint's
+     *         ``exclude_none`` posture drops it from the wire until a plugin opts
+     *         in, keeping the addition byte-compatible with existing schemas. The
+     *         built-in SchemaFormRenderer does not yet consume the flag; the
+     *         free-solo widget that reads it ships with the consuming plugin.
+     *     :type allow_custom: bool | None
      */
     SchemaField: {
-      /** Name */
-      name: string;
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on: string;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Type
-       * @default schema
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'schema';
-      /** Depends On */
-      depends_on: string;
+    };
+    /**
+     * ScriptExecuteWrite
+     * @description Define the JSON body for ``POST .../snippet/execute``.
+     *
+     *     The per-script frontmatter arguments go in ``args`` and are validated against
+     *     the script's dynamic execution model, while ``executor_host`` and ``sudo`` are
+     *     execution-level inputs the consumer's ``build_execution_meta`` reads.
+     *
+     *     :param executor_host: The hostname of the executor that will run the script.
+     *     :param sudo: Whether to invoke the script with sudo. The consumer's
+     *         ``build_execution_meta`` decides whether the script honours it.
+     *     :param args: Per-parameter arguments keyed by parameter name, validated
+     *         against the script's dynamic execution model.
+     */
+    ScriptExecuteWrite: {
+      /**
+       * Args
+       * @default {}
+       */
+      args: Record<string, never>;
+      /** Executor Host */
+      executor_host: string;
+      /**
+       * Sudo
+       * @default false
+       */
+      sudo: boolean;
+    };
+    /**
+     * ScriptExecutionResponse
+     * @description Represent the response from the script execute endpoint.
+     *
+     *     :param task_name: The Tasks-API task name the script executed under.
+     *     :param task_id: The id of the task-history row the Tasks API created, when the
+     *         upstream response carries one.
+     *     :param snippet_filename: The filename of the executed script.
+     */
+    ScriptExecutionResponse: {
+      /** Snippet Filename */
+      snippet_filename: string;
+      /** Task Id */
+      task_id?: number | null;
+      /** Task Name */
+      task_name: string;
     };
     /**
      * ScriptPreviewField
@@ -7534,36 +9095,34 @@ export interface components {
      *     :type language: NonEmptyStr | None
      */
     ScriptPreviewField: {
-      /** Name */
-      name: string;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on?: string[];
+      /** Description */
+      description?: string | null;
+      /** Endpoint Url */
+      endpoint_url: string;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Language */
+      language?: string | null;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Type
-       * @default script_preview
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'script_preview';
-      /** Endpoint Url */
-      endpoint_url: string;
-      /** Depends On */
-      depends_on?: string[];
-      /** Language */
-      language?: string | null;
     };
     /**
      * ScriptPreviewResponse
@@ -7583,10 +9142,10 @@ export interface components {
     ScriptPreviewResponse: {
       /** Content */
       content: string;
-      /** Language */
-      language: string;
       /** Is Truncated */
       is_truncated: boolean;
+      /** Language */
+      language: string;
     };
     /**
      * Service
@@ -7618,26 +9177,26 @@ export interface components {
      *     :type schemas: list[Schema]
      */
     Service: {
-      /** Environment */
-      environment?: string | null;
       /** Cluster */
       cluster?: string | null;
-      /** Replication Set */
-      replication_set?: string | null;
       /** Custom Labels */
       custom_labels?: Record<string, never> | null;
-      /** Service Id */
-      service_id?: string | null;
-      /** Service Name */
-      service_name: string;
+      /** Environment */
+      environment?: string | null;
       /** Port */
       port?: number | null;
-      service_type: components['schemas']['ServiceTypeEnum'];
+      /** Replication Set */
+      replication_set?: string | null;
       /**
        * Schemas
        * @default []
        */
       schemas: components['schemas']['Schema-Input'][];
+      /** Service Id */
+      service_id?: string | null;
+      /** Service Name */
+      service_name: string;
+      service_type: components['schemas']['ServiceTypeEnum'];
     };
     /**
      * ServiceField
@@ -7649,34 +9208,43 @@ export interface components {
      *     :param service_types: The list of service types the selector should offer
      *         (for example, ``[ServiceTypeEnum.MYSQL]``).
      *     :type service_types: list[ServiceTypeEnum]
+     *     :param allow_custom: Opt-in capability flag declaring that a consuming
+     *         renderer may offer free-text (free-solo) entry in addition to the
+     *         inventory options. Optional, defaulting to ``None`` (options only).
+     *         Typed ``bool | None`` so the discovery endpoint's ``exclude_none``
+     *         posture drops it from the wire until a plugin opts in, keeping the
+     *         addition byte-compatible with existing schemas. The built-in
+     *         SchemaFormRenderer does not yet consume the flag; the free-solo
+     *         widget that reads it ships with the consuming plugin.
+     *     :type allow_custom: bool | None
      */
     ServiceField: {
-      /** Name */
-      name: string;
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Service Types */
+      service_types: components['schemas']['ServiceTypeEnum'][];
       /**
-       * Type
-       * @default service
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'service';
-      /** Service Types */
-      service_types: components['schemas']['ServiceTypeEnum'][];
     };
     /**
      * ServiceResponse
@@ -7714,39 +9282,39 @@ export interface components {
      *     :type node: Node
      */
     ServiceResponse: {
-      /** External Id */
-      external_id?: string | null;
-      /** Name */
-      name: string;
-      type: components['schemas']['ServiceTypeEnum'];
-      /** Port */
-      port?: number | null;
-      /** Environment */
-      environment?: string | null;
       /** Cluster */
       cluster?: string | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
-      /** Node Id */
-      node_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
+      /** Custom Labels */
+      custom_labels?: Record<string, never> | null;
+      /** Environment */
+      environment?: string | null;
+      /** External Id */
+      external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      node: components['schemas']['Node-Output'];
+      /** Node Id */
+      node_id: number;
+      /** Port */
+      port?: number | null;
+      /** Replication Set */
+      replication_set?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema-Output'][];
-      node: components['schemas']['Node-Output'];
+      type: components['schemas']['ServiceTypeEnum'];
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * ServiceTypeEnum
-     * @description Enumeration of supported service types.
+     * @description Enumerate the supported service types.
      *
      *     :cvar MYSQL: Represents the MySQL service type.
      *     :vartype MYSQL: str
@@ -7760,18 +9328,26 @@ export interface components {
      *     :vartype HAPROXY: str
      *     :cvar EXTERNAL: Represents an external service type.
      *     :vartype EXTERNAL: str
+     *     :cvar VALKEY: Represents the Valkey service type.
+     *     :vartype VALKEY: str
      * @enum {string}
      */
-    ServiceTypeEnum: 'mysql' | 'postgresql' | 'mongodb' | 'proxysql' | 'haproxy' | 'external';
+    ServiceTypeEnum:
+      | 'mysql'
+      | 'postgresql'
+      | 'mongodb'
+      | 'proxysql'
+      | 'haproxy'
+      | 'external'
+      | 'valkey';
     /**
      * SettingClassEnum
      * @description Enumerate settings classes that may have HOT override rows.
      *
-     *     Only classes whose proxy is actually wired in this ticket are listed:
-     *     ``SEPSettings``, ``TasksSettings``, ``SnippetsSettings`` and
-     *     ``MessagesSettings``. ``Settings``, ``InventorySettings``,
-     *     ``AlertSettings`` and ``AnonymizerSettings`` are intentionally NOT here
-     *     -- wrapping them is deferred to follow-up tickets.
+     *     The wired classes are ``SEPSettings``, ``TasksSettings``,
+     *     ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
+     *     ``AlertSettings`` and ``AnonymizerSettings``. ``InventorySettings`` is
+     *     intentionally NOT here -- wrapping it is deferred to a follow-up ticket.
      *
      *     To wire a new settings class:
      *
@@ -7787,7 +9363,14 @@ export interface components {
      *        lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
      * @enum {string}
      */
-    SettingClassEnum: 'SEPSettings' | 'TasksSettings' | 'SnippetsSettings' | 'MessagesSettings';
+    SettingClassEnum:
+      | 'SEPSettings'
+      | 'TasksSettings'
+      | 'SnippetsSettings'
+      | 'MessagesSettings'
+      | 'Settings'
+      | 'AlertSettings'
+      | 'AnonymizerSettings';
     /**
      * SettingClassGroup
      * @description One settings-class group in the LIST response.
@@ -7805,12 +9388,15 @@ export interface components {
     };
     /**
      * SettingResponse
-     * @description A single setting's metadata and current value.
+     * @description Represent a single setting's metadata and current value.
      *
      *     :param setting_class: The settings class the field belongs to.
      *     :type setting_class: SettingClassEnum
      *     :param key: The field name on the settings class.
      *     :type key: str
+     *     :param key_path: Carry the canonical key segments for ``key`` such that
+     *         ``"__".join(key_path) == key``.
+     *     :type key_path: list[str]
      *     :param value: The current value visible through the proxy, dumped to a
      *         JSON-safe shape via the field's annotation. ``SecretStr`` fields are
      *         redacted to ``"**********"``.
@@ -7836,37 +9422,35 @@ export interface components {
      *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
      *     :type has_override: bool
      *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
-     *         present it separately from everyday settings. Defaults to ``False`` so
-     *         the addition is purely additive and backward-compatible. Display-only:
+     *         present it separately from everyday settings. Display-only:
      *         it does not affect PATCH/DELETE eligibility.
-     *     :type is_advanced: bool
      */
     SettingResponse: {
-      setting_class: components['schemas']['SettingClassEnum'];
-      /** Key */
-      key: string;
-      /** Key Path */
-      key_path?: string[];
-      /** Value */
-      value: unknown;
       /** Default Value */
       default_value: unknown;
-      /** Type */
-      type: string;
-      reload: components['schemas']['ReloadClassification'];
       /** Description */
       description: string | null;
-      /** Is Secret */
-      is_secret: boolean;
-      /** Is Complex */
-      is_complex: boolean;
       /** Has Override */
       has_override: boolean;
       /**
        * Is Advanced
        * @default false
        */
-      is_advanced?: boolean;
+      is_advanced: boolean;
+      /** Is Complex */
+      is_complex: boolean;
+      /** Is Secret */
+      is_secret: boolean;
+      /** Key */
+      key: string;
+      /** Key Path */
+      key_path?: string[];
+      reload: components['schemas']['ReloadClassification'];
+      setting_class: components['schemas']['SettingClassEnum'];
+      /** Type */
+      type: string;
+      /** Value */
+      value: unknown;
     };
     /**
      * SettingsListResponse
@@ -7918,60 +9502,6 @@ export interface components {
       filenames: string[];
     };
     /**
-     * SnippetExecutionRequest
-     * @description Define the JSON body for ``POST /api/plugins/snippets/{filename}/execute``.
-     *
-     *     Per-parameter values defined in the snippet's YAML frontmatter go into
-     *     ``args`` and are validated server-side via the snippet's dynamic
-     *     execution model.
-     *
-     *     :param executor_host: The hostname of the executor that will run the
-     *         snippet.
-     *     :type executor_host: NonEmptyStr
-     *     :param sudo: Whether to invoke the snippet with sudo. Ignored unless
-     *         the snippet's sudo option is configured as optional.
-     *     :type sudo: bool
-     *     :param args: Per-parameter arguments keyed by parameter name. Validated
-     *         against the snippet's dynamic execution model.
-     *     :type args: dict[str, Any]
-     */
-    SnippetExecutionRequest: {
-      /** Executor Host */
-      executor_host: string;
-      /**
-       * Sudo
-       * @default false
-       */
-      sudo: boolean;
-      /**
-       * Args
-       * @default {}
-       */
-      args: Record<string, never>;
-    };
-    /**
-     * SnippetExecutionResponse
-     * @description Represent the response returned from the execute endpoint.
-     *
-     *     :param task_name: The task name the snippet was executed under (varies
-     *         based on the snippet's interpreter and pip requirements).
-     *     :type task_name: NonEmptyStr
-     *     :param task_id: The id of the task-history row created by the tasks
-     *         API, when the upstream response includes one.
-     *     :type task_id: int | None
-     *     :param snippet_filename: The filename of the snippet that was
-     *         executed.
-     *     :type snippet_filename: NonEmptyStr
-     */
-    SnippetExecutionResponse: {
-      /** Task Name */
-      task_name: string;
-      /** Task Id */
-      task_id?: number | null;
-      /** Snippet Filename */
-      snippet_filename: string;
-    };
-    /**
      * SnippetResponse
      * @description Represent a snippet entity as exposed by the JSON API.
      *
@@ -8019,39 +9549,39 @@ export interface components {
      *     :type updated_at: datetime | None
      */
     SnippetResponse: {
-      /** Filename */
-      filename: string;
-      /** Title */
-      title: string;
-      /** Description */
-      description: string;
-      /** Size */
-      size: number;
-      /** Md5 Digest */
-      md5_digest: string;
-      /** Is Approved */
-      is_approved: boolean;
       /** Approved At */
       approved_at?: string | null;
-      /** Updated By */
-      updated_by?: string | null;
-      /** Reason */
-      reason: string;
-      /** Requires Sudo */
-      requires_sudo: boolean;
-      /** Sudo Optional */
-      sudo_optional: boolean;
-      /** Sudo Default */
-      sudo_default: boolean;
-      /** Interpreter */
-      interpreter?: string | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at: string;
+      /** Description */
+      description: string;
+      /** Filename */
+      filename: string;
+      /** Interpreter */
+      interpreter?: string | null;
+      /** Is Approved */
+      is_approved: boolean;
+      /** Md5 Digest */
+      md5_digest: string;
+      /** Reason */
+      reason: string;
+      /** Requires Sudo */
+      requires_sudo: boolean;
+      /** Size */
+      size: number;
+      /** Sudo Default */
+      sudo_default: boolean;
+      /** Sudo Optional */
+      sudo_optional: boolean;
+      /** Title */
+      title: string;
       /** Updated At */
       updated_at?: string | null;
+      /** Updated By */
+      updated_by?: string | null;
     };
     /**
      * SnippetsCapabilitiesResponse
@@ -8106,38 +9636,36 @@ export interface components {
      *     :type placeholder: NonEmptyStr | None
      */
     StringField: {
-      /** Name */
-      name: string;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Max Length */
+      max_length?: number | null;
+      /** Min Length */
+      min_length?: number | null;
+      /** Name */
+      name: string;
+      /** Pattern */
+      pattern?: string | null;
+      /** Placeholder */
+      placeholder?: string | null;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Type
-       * @default string
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'string';
-      /** Min Length */
-      min_length?: number | null;
-      /** Max Length */
-      max_length?: number | null;
-      /** Pattern */
-      pattern?: string | null;
-      /** Placeholder */
-      placeholder?: string | null;
     };
     /**
      * Table
@@ -8154,12 +9682,12 @@ export interface components {
      *     :type keys: dict[str, Any]
      */
     Table: {
-      /** Name */
-      name: string;
       /** Create */
       create: string;
       /** Keys */
       keys?: Record<string, never>;
+      /** Name */
+      name: string;
     };
     /**
      * TableField
@@ -8176,34 +9704,43 @@ export interface components {
      *     :param depends_on: The name of the field whose value drives the list of
      *         available tables.
      *     :type depends_on: NonEmptyStr
+     *     :param allow_custom: Opt-in capability flag declaring that a consuming
+     *         renderer may offer free-text (free-solo) entry in addition to the
+     *         cascaded inventory options. Optional, defaulting to ``None`` (options
+     *         only). Typed ``bool | None`` so the discovery endpoint's
+     *         ``exclude_none`` posture drops it from the wire until a plugin opts
+     *         in, keeping the addition byte-compatible with existing schemas. The
+     *         built-in SchemaFormRenderer does not yet consume the flag; the
+     *         free-solo widget that reads it ships with the consuming plugin.
+     *     :type allow_custom: bool | None
      */
     TableField: {
-      /** Name */
-      name: string;
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on: string;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
       /**
-       * Type
-       * @default table
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'table';
-      /** Depends On */
-      depends_on: string;
     };
     /**
      * TaskBackendEnum
@@ -8237,22 +9774,22 @@ export interface components {
      *     :type alert_on_fail: bool
      */
     TaskCreateRequest: {
-      /** Name */
-      name: string;
-      /** Payload */
-      payload: string;
-      /**
-       * Fmt
-       * @enum {string}
-       */
-      fmt: 'hcl' | 'json' | 'yaml';
-      backend: components['schemas']['TaskBackendEnum'];
-      owner: components['schemas']['TaskOwner'];
       /**
        * Alert On Fail
        * @default false
        */
       alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      /**
+       * Fmt
+       * @enum {string}
+       */
+      fmt: 'hcl' | 'json' | 'yaml';
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Payload */
+      payload: string;
     };
     /**
      * TaskDetailResponse
@@ -8274,13 +9811,13 @@ export interface components {
      *     :type executor_hosts: list[ExecutorHostMetadata]
      */
     TaskDetailResponse: {
-      task: components['schemas']['TaskResponse'];
       /** Execution History */
       execution_history?: Record<string, never>;
-      /** Periodic Summary */
-      periodic_summary?: components['schemas']['PeriodicTaskSummary'][];
       /** Executor Hosts */
       executor_hosts?: components['schemas']['ExecutorHostMetadata'][];
+      /** Periodic Summary */
+      periodic_summary?: components['schemas']['PeriodicTaskSummary'][];
+      task: components['schemas']['TaskResponse'];
     };
     /**
      * TaskExecuteRequest
@@ -8305,6 +9842,17 @@ export interface components {
      *     :type chain_on_failure: bool
      */
     TaskExecuteRequest: {
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Chain On Failure
+       * @default false
+       */
+      chain_on_failure: boolean;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
       /**
        * Meta
        * @default {}
@@ -8312,17 +9860,22 @@ export interface components {
       meta: Record<string, never>;
       /** Payload */
       payload?: string | null;
-      /** Eta */
-      eta?: string | null;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
+    };
+    /**
+     * TaskExecuteWrite
+     * @description Represent the default JSON request body for executing a task.
+     *
+     *     :param eta: Optional future datetime to schedule execution.
+     *     :param chain_task_names: Optional list of task names to chain after this one.
+     *     :param chain_on_failure: Whether to run chained tasks even on failure.
+     */
+    TaskExecuteWrite: {
+      /** Chain On Failure */
+      chain_on_failure?: boolean | null;
       /** Chain Task Names */
       chain_task_names?: string[] | null;
-      /**
-       * Chain On Failure
-       * @default false
-       */
-      chain_on_failure: boolean;
+      /** Eta */
+      eta?: string | null;
     };
     /**
      * TaskExecutionRequest
@@ -8342,10 +9895,8 @@ export interface components {
      *     :type tracking: dict | None
      */
     TaskExecutionRequest: {
-      /** Task */
-      task: string;
-      /** Target */
-      target: string;
+      /** Eta */
+      eta?: string | null;
       /**
        * Meta
        * @default {}
@@ -8353,15 +9904,30 @@ export interface components {
       meta: Record<string, never> | null;
       /** Payload */
       payload?: string | null;
+      /** Target */
+      target: string;
+      /** Task */
+      task: string;
       /**
        * Tracking
        * @default {}
        */
       tracking: Record<string, never> | null;
-      /** Eta */
-      eta?: string | null;
     } & {
       [key: string]: unknown;
+    };
+    /**
+     * TaskExecutionResponse
+     * @description Represent the default response from a task execute route.
+     *
+     *     :param task_name: The name of the task that was executed.
+     *     :param task_id: The id of the task-history row created by the tasks API.
+     */
+    TaskExecutionResponse: {
+      /** Task Id */
+      task_id?: number | null;
+      /** Task Name */
+      task_name: string;
     };
     /**
      * TaskHistoryResponse
@@ -8389,32 +9955,13 @@ export interface components {
      *     :type has_logs: bool
      */
     TaskHistoryResponse: {
-      /** Id */
-      id: number | null;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
-      execution_request: components['schemas']['TaskExecutionRequest'];
-      /** @default pending */
-      status: components['schemas']['TaskHistoryStatusEnum'];
-      /** Started At */
-      started_at?: string | null;
-      /** Finished At */
-      finished_at?: string | null;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /** Executed By */
-      executed_by?: string | null;
-      task: components['schemas']['TaskResponse'];
-      /**
-       * Has Logs
-       * @default false
-       */
-      has_logs: boolean;
       /**
        * Duration
        * @description Return the duration of the task execution in seconds.
@@ -8423,6 +9970,25 @@ export interface components {
        *     :rtype: float | None
        */
       readonly duration: number | null;
+      /** Executed By */
+      executed_by?: string | null;
+      execution_request: components['schemas']['TaskExecutionRequest'];
+      /** Finished At */
+      finished_at?: string | null;
+      /**
+       * Has Logs
+       * @default false
+       */
+      has_logs: boolean;
+      /** Id */
+      id: number | null;
+      /** Started At */
+      started_at?: string | null;
+      /** @default pending */
+      status: components['schemas']['TaskHistoryStatusEnum'];
+      task: components['schemas']['TaskResponse'];
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * TaskHistoryStatusEnum
@@ -8472,8 +10038,6 @@ export interface components {
      *     :type last_updated_by: str | None
      */
     TaskListResponse: {
-      /** Name */
-      name: string;
       backend: components['schemas']['TaskBackendEnum'];
       /** Created At */
       created_at?: string | null;
@@ -8481,6 +10045,8 @@ export interface components {
       created_by?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
+      /** Name */
+      name: string;
     };
     /**
      * TaskOwner
@@ -8529,6 +10095,9 @@ export interface components {
      *     :param alert_on_fail: Whether to trigger an alert on task failure and
      *         auto-resolve it on subsequent success. Defaults to False.
      *     :type alert_on_fail: bool
+     *     :param alert_detail_builder: The ``"module:function"`` path of a plugin
+     *         callable that enriches this task's failure alert, or None.
+     *     :type alert_detail_builder: str | None
      *     :param deleted_at: The deletion timestamp, if applicable.
      *     :type deleted_at: UTCDatetime | None
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
@@ -8545,36 +10114,8 @@ export interface components {
      *     :type anonymized_entities: list[str]
      */
     TaskResponse: {
-      /** Id */
-      id: number | null;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Name */
-      name: string;
-      /** Data */
-      data: Record<string, never>;
-      /** @default nomad */
-      backend: components['schemas']['TaskBackendEnum'];
-      /**
-       * Owner
-       * @default ANY
-       */
-      owner: string;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
+      /** Alert Detail Builder */
+      alert_detail_builder?: string | null;
       /**
        * Alert On Fail
        * @default false
@@ -8582,17 +10123,47 @@ export interface components {
       alert_on_fail: boolean;
       /** Anonymize Mask */
       anonymize_mask?: number | null;
-      /** Deleted At */
-      deleted_at: string | null;
-      /** Created By */
-      created_by: string | null;
-      /** Last Updated By */
-      last_updated_by: string | null;
       /**
        * Anonymized Entities
        * @description Return sorted PII entity names decoded from ``anonymize_mask``.
        */
       readonly anonymized_entities: string[];
+      /** @default nomad */
+      backend: components['schemas']['TaskBackendEnum'];
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Created By */
+      created_by: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Deleted At */
+      deleted_at: string | null;
+      /** Id */
+      id: number | null;
+      /**
+       * Is Template
+       * @default false
+       */
+      is_template: boolean;
+      /** Last Updated By */
+      last_updated_by: string | null;
+      /** Name */
+      name: string;
+      /**
+       * Owner
+       * @default ANY
+       */
+      owner: string;
+      /**
+       * Protected
+       * @default false
+       */
+      protected: boolean;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * TextAreaField
@@ -8608,34 +10179,32 @@ export interface components {
      *     :type placeholder: NonEmptyStr | None
      */
     TextAreaField: {
-      /** Name */
-      name: string;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
+      /** Placeholder */
+      placeholder?: string | null;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Rows */
+      rows?: number | null;
       /**
-       * Type
-       * @default textarea
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'textarea';
-      /** Rows */
-      rows?: number | null;
-      /** Placeholder */
-      placeholder?: string | null;
     };
     /**
      * UploadProvider
@@ -8645,16 +10214,16 @@ export interface components {
     UploadProvider: 'rsync' | 's3' | 'gsutil';
     /** ValidationError */
     ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
       /** Location */
       loc: (string | number)[];
       /** Message */
       msg: string;
       /** Error Type */
       type: string;
-      /** Input */
-      input?: unknown;
-      /** Context */
-      ctx?: Record<string, never>;
     };
     /**
      * XtraBackupTool
@@ -8676,34 +10245,54 @@ export interface components {
      *     :type placeholder: NonEmptyStr | None
      */
     YamlField: {
-      /** Name */
-      name: string;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
       /** Label */
       label: string;
+      /** Name */
+      name: string;
+      /** Placeholder */
+      placeholder?: string | null;
       /**
        * Required
        * @default false
        */
       required: boolean;
-      /** Description */
-      description?: string | null;
-      /** Default */
-      default?: unknown | null;
       /** Requires */
       requires?: components['schemas']['FieldGate'][] | null;
-      /** Forbidden */
-      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Rows */
+      rows?: number | null;
       /**
-       * Type
-       * @default yaml
-       * @constant
+       * @description discriminator enum property added by openapi-typescript
        * @enum {string}
        */
       type: 'yaml';
-      /** Rows */
-      rows?: number | null;
-      /** Placeholder */
-      placeholder?: string | null;
+    };
+    /** PaginatedResponse[BackupTaskResponse] */
+    app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1: {
+      /** Items */
+      items: components['schemas']['app__sep__plugins__backup_mongo__models__BackupTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
+    /** PaginatedResponse[BackupTaskResponse] */
+    app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2: {
+      /** Items */
+      items: components['schemas']['app__sep__plugins__backup_pg__models__BackupTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /**
      * BackupCreate
@@ -8721,55 +10310,55 @@ export interface components {
      *     :type alert_on_fail: bool
      */
     app__sep__plugins__backup_mongo__models__BackupCreate: {
-      /** Task Name */
-      TASK_NAME: string;
-      /** Hostname */
-      HOSTNAME: string;
-      /** Service Id */
-      SERVICE_ID: number;
-      BACKUP_TYPE: components['schemas']['app__sep__plugins__backup_mongo__models__BackupType'];
       /**
        * Alert On Fail
        * @default false
        */
       ALERT_ON_FAIL: boolean;
-      /** Pitr Oplog Span Min */
-      PITR_OPLOG_SPAN_MIN?: number | null;
-      /**
-       * Pitr Enabled
-       * @default false
-       */
-      PITR_ENABLED: boolean;
-      /** Pitr Compression */
-      PITR_COMPRESSION?: string | null;
-      /** Storage Type */
-      STORAGE_TYPE?: string | null;
-      /** Storage S3 Region */
-      STORAGE_S3_REGION?: string | null;
-      /** Storage S3 Bucket */
-      STORAGE_S3_BUCKET?: string | null;
-      /** Storage S3 Prefix */
-      STORAGE_S3_PREFIX?: string | null;
-      /** Storage S3 Endpoint Url */
-      STORAGE_S3_ENDPOINT_URL?: string | null;
-      /** Storage Filesystem Path */
-      STORAGE_FILESYSTEM_PATH?: string | null;
-      /** Backup Priority */
-      BACKUP_PRIORITY?: string | null;
       /** Backup Compression */
       BACKUP_COMPRESSION?:
         | components['schemas']['app__sep__plugins__backup_mongo__models__CompressionAlgorithm']
         | null;
       /** Backup Compression Level */
       BACKUP_COMPRESSION_LEVEL?: number | null;
-      /** Backup Timeouts Starting Status */
-      BACKUP_TIMEOUTS_STARTING_STATUS?: number | null;
-      /** Backup Oplog Span Min */
-      BACKUP_OPLOG_SPAN_MIN?: number | null;
       /** Backup Num Parallel Collections */
       BACKUP_NUM_PARALLEL_COLLECTIONS?: number | null;
+      /** Backup Oplog Span Min */
+      BACKUP_OPLOG_SPAN_MIN?: number | null;
+      /** Backup Priority */
+      BACKUP_PRIORITY?: string | null;
+      /** Backup Timeouts Starting Status */
+      BACKUP_TIMEOUTS_STARTING_STATUS?: number | null;
+      BACKUP_TYPE: components['schemas']['app__sep__plugins__backup_mongo__models__BackupType'];
       /** Credentials Path */
       CREDENTIALS_PATH?: string | null;
+      /** Hostname */
+      HOSTNAME: string;
+      /** Pitr Compression */
+      PITR_COMPRESSION?: string | null;
+      /**
+       * Pitr Enabled
+       * @default false
+       */
+      PITR_ENABLED: boolean;
+      /** Pitr Oplog Span Min */
+      PITR_OPLOG_SPAN_MIN?: number | null;
+      /** Service Id */
+      SERVICE_ID: number;
+      /** Storage Filesystem Path */
+      STORAGE_FILESYSTEM_PATH?: string | null;
+      /** Storage S3 Bucket */
+      STORAGE_S3_BUCKET?: string | null;
+      /** Storage S3 Endpoint Url */
+      STORAGE_S3_ENDPOINT_URL?: string | null;
+      /** Storage S3 Prefix */
+      STORAGE_S3_PREFIX?: string | null;
+      /** Storage S3 Region */
+      STORAGE_S3_REGION?: string | null;
+      /** Storage Type */
+      STORAGE_TYPE?: string | null;
+      /** Task Name */
+      TASK_NAME: string;
     };
     /**
      * BackupExecuteWrite
@@ -8783,12 +10372,12 @@ export interface components {
      *     :type chain_on_failure: bool | None
      */
     app__sep__plugins__backup_mongo__models__BackupExecuteWrite: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
     };
     /**
      * BackupExecutionResponse
@@ -8800,10 +10389,104 @@ export interface components {
      *     :type task_id: int | None
      */
     app__sep__plugins__backup_mongo__models__BackupExecutionResponse: {
-      /** Task Name */
-      task_name: string;
       /** Task Id */
       task_id?: number | null;
+      /** Task Name */
+      task_name: string;
+    };
+    /**
+     * BackupTaskDetailResponse
+     * @description Represent a backup task detail API response.
+     *
+     *     :param derived_tasks: Latest status for each derived logical, physical, and
+     *         status sibling.
+     *     :type derived_tasks: list[BackupDerivedTaskSummary]
+     *     :param latest_pbm_status: Tail of the latest PBM status task stdout, if
+     *         available.
+     *     :type latest_pbm_status: str | None
+     */
+    app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Backup Type */
+      backup_type: string;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Derived Tasks */
+      derived_tasks?: components['schemas']['BackupDerivedTaskSummary'][];
+      /** Hostname */
+      hostname?: string | null;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Latest Pbm Status */
+      latest_pbm_status?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Protected */
+      protected: boolean;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * BackupTaskResponse
+     * @description Represent a backup task API response.
+     *
+     *     :param id: The unique identifier for the backup task.
+     *     :type id: int | None
+     *     :param backend: The backend worker/engine executing the task.
+     *     :type backend: TaskBackendEnum
+     *     :param backup_type: The PBM backup type stored on the task.
+     *     :type backup_type: str
+     *     :param data: The raw configuration and parameters for the backup execution.
+     *     :type data: dict[str, Any]
+     *     :param protected: Whether the task is protected from deletion or modification.
+     *     :type protected: bool
+     *     :param alert_on_fail: If True, notifications are sent upon task failure.
+     *     :type alert_on_fail: bool
+     *     :param created_at: The timestamp when the task was first created.
+     *     :type created_at: datetime | None
+     *     :param updated_at: The timestamp of the last modification to the task.
+     *     :type updated_at: datetime | None
+     *     :param created_by: The user who initiated the task.
+     *     :type created_by: str | None
+     *     :param last_updated_by: The user who last modified the task record.
+     *     :type last_updated_by: str | None
+     */
+    app__sep__plugins__backup_mongo__models__BackupTaskResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Backup Type */
+      backup_type: string;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Hostname */
+      hostname?: string | null;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Protected */
+      protected: boolean;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * BackupType
@@ -8830,7 +10513,13 @@ export interface components {
       | 'zstd';
     /**
      * RestoreCreate
-     * @description Model for creating a restore task.
+     * @description Represent a restore-task creation request (HTML form and shared payload input).
+     *
+     *     Kept alongside :class:`RestoreTaskWrite` because FastAPI form binding needs
+     *     ``service_id: NonEmptyStr | EmptyStrToNone`` (empty form field → ``None``) and
+     *     optional restore ints with ``EmptyStrToNone``, while the JSON API uses
+     *     ``service_id: int | None`` and plain optional ints. Collapsing to one model would
+     *     break empty-string form semantics unless a dedicated form adapter is proven.
      *
      *     :param hostname: The hostname of the machine to restore to.
      *     :type hostname: NonEmptyStr
@@ -8862,387 +10551,388 @@ export interface components {
      *     :type credentials_path: NonEmptyStr | EmptyStrToNone
      */
     app__sep__plugins__backup_mongo__restore__models__RestoreCreate: {
-      /** Hostname */
-      HOSTNAME: string;
-      /** Task Name */
-      TASK_NAME: string;
-      /** Service Id */
-      SERVICE_ID?: string | null;
-      BACKUP_TYPE: components['schemas']['app__sep__plugins__backup_mongo__models__BackupType'];
       /** Backup Source */
       BACKUP_SOURCE: string;
+      BACKUP_TYPE: components['schemas']['app__sep__plugins__backup_mongo__models__BackupType'];
+      /** Credentials Path */
+      CREDENTIALS_PATH?: string | null;
+      /** Hostname */
+      HOSTNAME: string;
       /** Restore Batch Size */
       RESTORE_BATCH_SIZE?: number | null;
-      /** Restore Num Insertion Workers */
-      RESTORE_NUM_INSERTION_WORKERS?: number | null;
-      /** Restore Num Parallel Collections */
-      RESTORE_NUM_PARALLEL_COLLECTIONS?: number | null;
-      /** Restore Num Download Workers */
-      RESTORE_NUM_DOWNLOAD_WORKERS?: number | null;
-      /** Restore Max Download Buffer Mb */
-      RESTORE_MAX_DOWNLOAD_BUFFER_MB?: number | null;
       /** Restore Download Chunk Mb */
       RESTORE_DOWNLOAD_CHUNK_MB?: number | null;
+      /** Restore Max Download Buffer Mb */
+      RESTORE_MAX_DOWNLOAD_BUFFER_MB?: number | null;
       /** Restore Mongod Location */
       RESTORE_MONGOD_LOCATION?: string | null;
       /** Restore Mongod Location Map */
       RESTORE_MONGOD_LOCATION_MAP?: string | null;
-      /** Credentials Path */
-      CREDENTIALS_PATH?: string | null;
-    };
-    /**
-     * BackupCreate
-     * @description Represent a Backup creation form with proper case-insensitive fields.
-     *
-     *     :param hardlink: Whether to use hardlinks for full backups to save space.
-     *     :type hardlink: bool
-     *     :param compress: Whether to enable compression for backup data.
-     *     :type compress: bool
-     *     :param check_disk_space: Whether to check disk space before starting the backup.
-     *     :type check_disk_space: bool
-     *     :param encrypt: Whether to enable encryption for backup data.
-     *     :type encrypt: bool
-     *     :param encrypt_using_tmpdir: Whether to use a temporary directory for encryption operations.
-     *     :type encrypt_using_tmpdir: bool
-     *     :param post_run_encrypt: Whether to encrypt backup right after completion.
-     *     :type post_run_encrypt: bool
-     *     :param only_if_running_replica: Only perform backup if the server is a replica.
-     *     :type only_if_running_replica: bool
-     *     :param only_if_read_only: Only perform backup if the server is in read-only mode.
-     *     :type only_if_read_only: bool
-     *     :param logging_dir: Directory where logs are stored.
-     *     :type logging_dir: NonEmptyStr | EmptyStrToNone
-     *     :param backup_dir: Directory where backups are stored.
-     *     :type backup_dir: NonEmptyStr | EmptyStrToNone
-     *     :param defaults_file: Path to the MySQL defaults file.
-     *     :type defaults_file: NonEmptyStr | EmptyStrToNone
-     *     :param compression_algorithm: Compression algorithm to use.
-     *     :type compression_algorithm: CompressionAlgorithm | EmptyStrToNone
-     *     :param mydumper_daily_purge: Number of days to keep daily mydumper backups.
-     *     :type mydumper_daily_purge: int | EmptyStrToNone
-     *     :param mydumper_weekly_purge: Number of weeks to keep weekly mydumper backups.
-     *     :type mydumper_weekly_purge: int | EmptyStrToNone
-     *     :param mydumper_dump_triggers: Whether to include database triggers with mydumper.
-     *     :type mydumper_dump_triggers: bool
-     *     :param mydumper_desync_pxc: Whether to desynchronize PXC node before mydumper backup.
-     *     :type mydumper_desync_pxc: bool
-     *     :param mydumper_use_numa: Whether to enable NUMA support during mydumper backup.
-     *     :type mydumper_use_numa: bool
-     *     :param mydumper_extra_args: Additional command-line arguments for mydumper.
-     *     :type mydumper_extra_args: str | EmptyStrToNone
-     *     :param use_ftwrl_guardian: Whether to use FTWRL guardian to manage locks during backup.
-     *     :type use_ftwrl_guardian: bool
-     *     :param xtrabackup_copies: Number of backup copies for xtrabackup.
-     *     :type xtrabackup_copies: int | EmptyStrToNone
-     *     :param xtrabackup_kill_queries: Whether to terminate long-running queries.
-     *     :type xtrabackup_kill_queries: bool
-     *     :param xtrabackup_kill_queries_timeout: Maximum time (in seconds) to wait before terminating queries.
-     *     :type xtrabackup_kill_queries_timeout: int | EmptyStrToNone
-     *     :param xtrabackup_kill_query_type: Type of queries to avoid backup interruptions (select or all).
-     *     :type xtrabackup_kill_query_type: Literal["select", "all"] | EmptyStrToNone
-     *     :param xtrabackup_verify: Whether to verify backup after creation.
-     *     :type xtrabackup_verify: bool
-     *     :param xtrabackup_prepare: Whether to prepare the backup for restore.
-     *     :type xtrabackup_prepare: bool
-     *     :param xtrabackup_prepare_memory: Amount of memory allocated during prepare phase.
-     *     :type xtrabackup_prepare_memory: NonEmptyStr | EmptyStrToNone
-     *     :param xtrabackup_desync_pxc: Whether to desynchronize PXC node during xtrabackup.
-     *     :type xtrabackup_desync_pxc: bool
-     *     :param xtrabackup_rsync: Whether to use rsync for file copying in xtrabackup.
-     *     :type xtrabackup_rsync: bool
-     *     :param xtrabackup_replica_info: Whether to include replica info in xtrabackup.
-     *     :type xtrabackup_replica_info: bool
-     *     :param xtrabackup_defaults_file: Path to the defaults file for xtrabackup.
-     *     :type xtrabackup_defaults_file: NonEmptyStr | EmptyStrToNone
-     *     :param xtrabackup_extra_args: Additional command-line arguments passed to xtrabackup.
-     *     :type xtrabackup_extra_args: NonEmptyStr | EmptyStrToNone
-     *     :param xtrabackup_incremental_method: Method used for incremental backup.
-     *     :type xtrabackup_incremental_method: Literal["less_space", "fast_restore"] | EmptyStrToNone
-     *     :param xtrabackup_incremental_cycle: Frequency of incremental backups.
-     *     :type xtrabackup_incremental_cycle: Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
-     *     :param xtrabackup_local_ssh_destination: SSH destination for storing backups remotely.
-     *     :type xtrabackup_local_ssh_destination: NonEmptyStr | EmptyStrToNone
-     *     :param xtrabackup_aes256_keyfile: Path to AES-256 encryption key file.
-     *     :type xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone
-     *     :param xtrabackup_stop_replica: Whether to stop the replica before xtrabackup.
-     *     :type xtrabackup_stop_replica: bool
-     *     :param xtrabackup_lock_ddl: Whether to lock DDL operations during backup.
-     *     :type xtrabackup_lock_ddl: bool
-     *     :param xtrabackup_bin_cmd: Backup tool to use.
-     *     :type xtrabackup_bin_cmd: Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
-     *     :param binlog_prefix: Prefix used in binlog backup naming.
-     *     :type binlog_prefix: NonEmptyStr | EmptyStrToNone
-     *     :param binlog_purge_days: Number of days to retain binlogs before purging.
-     *     :type binlog_purge_days: int | EmptyStrToNone
-     *     :param binlog_extra_args: Extra arguments for binlog backup command.
-     *     :type binlog_extra_args: NonEmptyStr | EmptyStrToNone
-     *     :param binlog_compress_cmd: Command used to compress binlog backups.
-     *     :type binlog_compress_cmd: NonEmptyStr | EmptyStrToNone
-     *     :param binlog_cmd: Command used to create binlog backups.
-     *     :type binlog_cmd: NonEmptyStr | EmptyStrToNone
-     *     :param binlog_run_all: Whether to run all binlog backup types.
-     *     :type binlog_run_all: bool
-     *     :param s3_bucket: S3 bucket where backups will be stored.
-     *     :type s3_bucket: NonEmptyStr | EmptyStrToNone
-     *     :param s3_storage_class: S3 storage class (e.g., STANDARD, GLACIER).
-     *     :type s3_storage_class: NonEmptyStr | EmptyStrToNone
-     *     :param skip_s3_safety_check: Whether to disable safety checks before uploading to S3.
-     *     :type skip_s3_safety_check: bool
-     *     :param awscli_s3_upload_extra_args: Extra arguments to pass to AWS S3 upload (ExtraArgs dict).
-     *         Example: "ChecksumAlgorithm=CRC32C".
-     *     :type awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone
-     *     :param rsync_path: Remote destination path for Rsync transfers.
-     *     :type rsync_path: NonEmptyStr | EmptyStrToNone
-     *     :param task_name: The name of the backup task.
-     *     :type task_name: NonEmptyStr
-     *     :param hostname: The hostname of the machine to back up.
-     *     :type hostname: NonEmptyStr
-     *     :param service_id: The identifier of the related service.
-     *     :type service_id: int
-     *     :param backup_type: The type of backup to perform.
-     *     :type backup_type: BackupType
-     *     :param encryption_recipient: The recipient used for encryption.
-     *     :type encryption_recipient: NonEmptyStr | EmptyStrToNone
-     *     :param binlog_alternative_host: Optional alternative host for binlog operations.
-     *     :type binlog_alternative_host: NonEmptyStr | EmptyStrToNone
-     *     :param alias: Optional alias for the server in the SERVERS_LIST section.
-     *     :type alias: NonEmptyStr | EmptyStrToNone
-     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-     *     :type alert_on_fail: bool
-     *     :param upload: Selected upload providers for backup artifacts.
-     *     :type upload: list[UploadProvider]
-     */
-    app__sep__plugins__mysql_backups__models__BackupCreate: {
-      /**
-       * Hardlink
-       * @default false
-       */
-      HARDLINK: boolean;
-      /**
-       * Compress
-       * @default false
-       */
-      COMPRESS: boolean;
-      /**
-       * Check Disk Space
-       * @default false
-       */
-      CHECK_DISK_SPACE: boolean;
-      /**
-       * Encrypt
-       * @default false
-       */
-      ENCRYPT: boolean;
-      /**
-       * Encrypt Using Tmpdir
-       * @default false
-       */
-      ENCRYPT_USING_TMPDIR: boolean;
-      /**
-       * Post Run Encrypt
-       * @default false
-       */
-      POST_RUN_ENCRYPT: boolean;
-      /**
-       * Only If Running Replica
-       * @default false
-       */
-      ONLY_IF_RUNNING_REPLICA: boolean;
-      /**
-       * Only If Read Only
-       * @default false
-       */
-      ONLY_IF_READ_ONLY: boolean;
-      /** Logging Dir */
-      LOGGING_DIR?: string | null;
-      /** Backup Dir */
-      BACKUP_DIR?: string | null;
-      /** Defaults File */
-      DEFAULTS_FILE?: string | null;
-      /** Compression Algorithm */
-      COMPRESSION_ALGORITHM?:
-        | components['schemas']['app__sep__plugins__mysql_backups__models__CompressionAlgorithm']
-        | null;
-      /** Mydumper Daily Purge */
-      MYDUMPER_DAILY_PURGE?: number | null;
-      /** Mydumper Weekly Purge */
-      MYDUMPER_WEEKLY_PURGE?: number | null;
-      /**
-       * Mydumper Dump Triggers
-       * @default false
-       */
-      MYDUMPER_DUMP_TRIGGERS: boolean;
-      /**
-       * Mydumper Desync Pxc
-       * @default false
-       */
-      MYDUMPER_DESYNC_PXC: boolean;
-      /**
-       * Mydumper Use Numa
-       * @default false
-       */
-      MYDUMPER_USE_NUMA: boolean;
-      /** Mydumper Extra Args */
-      MYDUMPER_EXTRA_ARGS?: string | null;
-      /**
-       * Use Ftwrl Guardian
-       * @default false
-       */
-      USE_FTWRL_GUARDIAN: boolean;
-      /** Xtrabackup Copies */
-      XTRABACKUP_COPIES?: number | null;
-      /**
-       * Xtrabackup Kill Queries
-       * @default false
-       */
-      XTRABACKUP_KILL_QUERIES: boolean;
-      /** Xtrabackup Kill Queries Timeout */
-      XTRABACKUP_KILL_QUERIES_TIMEOUT?: number | null;
-      /** Xtrabackup Kill Query Type */
-      XTRABACKUP_KILL_QUERY_TYPE?: ('select' | 'all') | null;
-      /**
-       * Xtrabackup Verify
-       * @default false
-       */
-      XTRABACKUP_VERIFY: boolean;
-      /**
-       * Xtrabackup Prepare
-       * @default false
-       */
-      XTRABACKUP_PREPARE: boolean;
-      /** Xtrabackup Prepare Memory */
-      XTRABACKUP_PREPARE_MEMORY?: string | null;
-      /**
-       * Xtrabackup Desync Pxc
-       * @default false
-       */
-      XTRABACKUP_DESYNC_PXC: boolean;
-      /**
-       * Xtrabackup Rsync
-       * @default false
-       */
-      XTRABACKUP_RSYNC: boolean;
-      /**
-       * Xtrabackup Replica Info
-       * @default false
-       */
-      XTRABACKUP_REPLICA_INFO: boolean;
-      /** Xtrabackup Defaults File */
-      XTRABACKUP_DEFAULTS_FILE?: string | null;
-      /** Xtrabackup Extra Args */
-      XTRABACKUP_EXTRA_ARGS?: string | null;
-      /** Xtrabackup Incremental Method */
-      XTRABACKUP_INCREMENTAL_METHOD?: ('less_space' | 'fast_restore') | null;
-      /** Xtrabackup Incremental Cycle */
-      XTRABACKUP_INCREMENTAL_CYCLE?:
-        | ('daily' | 'weekly' | '2' | '3' | '4' | '5' | '6' | '7')
-        | null;
-      /** Xtrabackup Local Ssh Destination */
-      XTRABACKUP_LOCAL_SSH_DESTINATION?: string | null;
-      /** Xtrabackup Aes256 Keyfile */
-      XTRABACKUP_AES256_KEYFILE?: string | null;
-      /**
-       * Xtrabackup Stop Replica
-       * @default false
-       */
-      XTRABACKUP_STOP_REPLICA: boolean;
-      /**
-       * Xtrabackup Lock Ddl
-       * @default false
-       */
-      XTRABACKUP_LOCK_DDL: boolean;
-      /** Xtrabackup Bin Cmd */
-      XTRABACKUP_BIN_CMD?: ('xtrabackup' | 'mariadb-backup' | 'innobackupex') | null;
-      /** Binlog Prefix */
-      BINLOG_PREFIX?: string | null;
-      /** Binlog Purge Days */
-      BINLOG_PURGE_DAYS?: number | null;
-      /** Binlog Extra Args */
-      BINLOG_EXTRA_ARGS?: string | null;
-      /** Binlog Compress Cmd */
-      BINLOG_COMPRESS_CMD?: string | null;
-      /** Binlog Cmd */
-      BINLOG_CMD?: string | null;
-      /**
-       * Binlog Run All
-       * @default true
-       */
-      BINLOG_RUN_ALL: boolean;
-      /** Binlog Alternative Host */
-      BINLOG_ALTERNATIVE_HOST?: string | null;
-      /** S3 Bucket */
-      S3_BUCKET?: string | null;
-      /** S3 Storage Class */
-      S3_STORAGE_CLASS?: string | null;
-      /**
-       * Skip S3 Safety Check
-       * @default false
-       */
-      SKIP_S3_SAFETY_CHECK: boolean;
-      /** Awscli S3 Upload Extra Args */
-      AWSCLI_S3_UPLOAD_EXTRA_ARGS?: string | null;
-      /** Gs Bucket */
-      GS_BUCKET?: string | null;
-      /** Rsync Path */
-      RSYNC_PATH?: string | null;
+      /** Restore Num Download Workers */
+      RESTORE_NUM_DOWNLOAD_WORKERS?: number | null;
+      /** Restore Num Insertion Workers */
+      RESTORE_NUM_INSERTION_WORKERS?: number | null;
+      /** Restore Num Parallel Collections */
+      RESTORE_NUM_PARALLEL_COLLECTIONS?: number | null;
+      /** Service Id */
+      SERVICE_ID?: string | null;
       /** Task Name */
       TASK_NAME: string;
-      /** Hostname */
-      HOSTNAME: string;
-      /** Service Id */
-      SERVICE_ID: number;
-      BACKUP_TYPE: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
-      /** Encryption Recipient */
-      ENCRYPTION_RECIPIENT?: string | null;
-      /** Alias */
-      ALIAS?: string | null;
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      ALERT_ON_FAIL: boolean;
-      /** Upload */
-      UPLOAD: components['schemas']['UploadProvider'][];
     };
     /**
      * BackupExecuteWrite
      * @description Represent a JSON request body for executing a backup task.
      *
-     *     Fields default to ``None`` so the API route can serialize the body
-     *     with ``exclude_none=True`` and omit unset values when forwarding to
-     *     the Tasks API, which then applies its own defaults
-     *     (``chain_on_failure`` defaults to ``False`` in ``TaskExecutionRequest``).
-     *
-     *     :param eta: Optional future datetime at which to schedule execution.
-     *     :type eta: FutureDatetime | None
-     *     :param chain_task_names: Optional list of task names to chain after this one.
+     *     :param eta: Optional datetime to schedule execution. Must be in the future;
+     *         a past value is rejected with a 422 validation error.
+     *     :param chain_task_names: Optional list of task names to chain after.
      *     :type chain_task_names: list[str] | None
-     *     :param chain_on_failure: Whether chained tasks run even on failure. ``None``
-     *         means "don't send"; the Tasks API treats an omitted value as ``False``.
+     *     :param chain_on_failure: Whether to run chained tasks even on failure.
      *     :type chain_on_failure: bool | None
      */
-    app__sep__plugins__mysql_backups__models__BackupExecuteWrite: {
-      /** Eta */
-      eta?: string | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
+    app__sep__plugins__backup_pg__models__BackupExecuteWrite: {
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
+      /** Chain Task Names */
+      chain_task_names?: string[] | null;
+      /** Eta */
+      eta?: string | null;
     };
     /**
      * BackupExecutionResponse
-     * @description Carry the response payload from ``POST /api/plugins/mysql_backups/{task_name}/execute``.
+     * @description Represent the response from the execute API endpoint.
      *
      *     :param task_name: The name of the task that was executed.
      *     :type task_name: str
      *     :param task_id: The id of the task-history row created by the tasks API.
      *     :type task_id: int | None
      */
-    app__sep__plugins__mysql_backups__models__BackupExecutionResponse: {
-      /** Task Name */
-      task_name: string;
+    app__sep__plugins__backup_pg__models__BackupExecutionResponse: {
       /** Task Id */
       task_id?: number | null;
+      /** Task Name */
+      task_name: string;
+    };
+    /**
+     * BackupTaskDetailResponse
+     * @description Represent a single pgBackRest backup task detail response.
+     *
+     *     Adds the executor host and port resolved from the task's YAML config so
+     *     the FE detail view can render them alongside the parity Overview block;
+     *     list rows omit these to keep the table response compact.
+     *
+     *     :param host: The PostgreSQL host the task connects to.
+     *     :type host: str | None
+     *     :param port: The PostgreSQL port the task connects to.
+     *     :type port: int | None
+     */
+    app__sep__plugins__backup_pg__models__BackupTaskDetailResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Backup Type */
+      backup_type: string;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Host */
+      host?: string | null;
+      /** Hostname */
+      hostname?: string | null;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Port */
+      port?: number | null;
+      /** Protected */
+      protected: boolean;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * BackupTaskResponse
+     * @description Represent a pgBackRest backup task API response.
+     *
+     *     :param id: The task identifier from the Tasks service, if assigned.
+     *     :type id: int | None
+     *     :param backend: The backend executing the task.
+     *     :type backend: TaskBackendEnum
+     *     :param backup_type: The ``backup_type`` discriminator stored on the task.
+     *     :type backup_type: str
+     *     :param data: The raw task ``data`` payload.
+     *     :type data: dict[str, Any]
+     *     :param protected: Whether the task is protected from deletion.
+     *     :type protected: bool
+     *     :param alert_on_fail: Whether PMM alerts fire when the task fails.
+     *     :type alert_on_fail: bool
+     *     :param created_at: Creation timestamp.
+     *     :type created_at: datetime | None
+     *     :param updated_at: Last-modification timestamp.
+     *     :type updated_at: datetime | None
+     *     :param created_by: User that created the task.
+     *     :type created_by: str | None
+     *     :param last_updated_by: User that last modified the task record.
+     *     :type last_updated_by: str | None
+     */
+    app__sep__plugins__backup_pg__models__BackupTaskResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Backup Type */
+      backup_type: string;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Hostname */
+      hostname?: string | null;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Protected */
+      protected: boolean;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * BackupCreate
+     * @description Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.
+     *
+     *     Declares each form field once, in section order (Task, General, Mydumper,
+     *     XtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the
+     *     derived schema. Field declaration order is load-bearing: the derived section
+     *     order follows each section's first field, and the within-section order follows
+     *     declaration order, so the order here reproduces the hand-written schema
+     *     byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
+     *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
+     *     encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
+     *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
+     *     into the conditional-rule plan at class definition, so no
+     *     ``@apply_conditional_rules`` decorator is needed. The config sub-models
+     *     (:class:`BackupConfigAll` and friends) stay the serialization target the
+     *     payload builder populates, not this model's base class.
+     *
+     *     :cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool
+     *         outside its mode fails validation with a per-field message.
+     */
+    app__sep__plugins__mysql_backups__models__BackupCreate: {
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /** Alias */
+      alias?: string | null;
+      /** Awscli S3 Upload Extra Args */
+      awscli_s3_upload_extra_args?: string | null;
+      /** Backup Dir */
+      backup_dir?: string | null;
+      backup_type: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      /** Binlog Alternative Host */
+      binlog_alternative_host?: string | null;
+      /** Binlog Cmd */
+      binlog_cmd?: string | null;
+      /** Binlog Compress Cmd */
+      binlog_compress_cmd?: string | null;
+      /** Binlog Extra Args */
+      binlog_extra_args?: string | null;
+      /** Binlog Prefix */
+      binlog_prefix?: string | null;
+      /** Binlog Purge Days */
+      binlog_purge_days?: number | null;
+      /**
+       * Binlog Run All
+       * @default true
+       */
+      binlog_run_all: boolean;
+      /**
+       * Check Disk Space
+       * @default false
+       */
+      check_disk_space: boolean;
+      /**
+       * Compress
+       * @default false
+       */
+      compress: boolean;
+      /** Compression Algorithm */
+      compression_algorithm?:
+        | components['schemas']['app__sep__plugins__mysql_backups__models__CompressionAlgorithm']
+        | null;
+      /** Defaults File */
+      defaults_file?: string | null;
+      /**
+       * Encrypt
+       * @default false
+       */
+      encrypt: boolean;
+      /**
+       * Encrypt Using Tmpdir
+       * @default false
+       */
+      encrypt_using_tmpdir: boolean;
+      /** Encryption Recipient */
+      encryption_recipient?: string | null;
+      /** Gs Bucket */
+      gs_bucket?: string | null;
+      /**
+       * Hardlink
+       * @default false
+       */
+      hardlink: boolean;
+      /** Hostname */
+      hostname: string;
+      /** Logging Dir */
+      logging_dir?: string | null;
+      /** Mydumper Daily Purge */
+      mydumper_daily_purge?: number | null;
+      /**
+       * Mydumper Desync Pxc
+       * @default false
+       */
+      mydumper_desync_pxc: boolean;
+      /**
+       * Mydumper Dump Triggers
+       * @default false
+       */
+      mydumper_dump_triggers: boolean;
+      /** Mydumper Extra Args */
+      mydumper_extra_args?: string | null;
+      /**
+       * Mydumper Use Numa
+       * @default false
+       */
+      mydumper_use_numa: boolean;
+      /** Mydumper Verbose */
+      mydumper_verbose?: number | null;
+      /** Mydumper Weekly Purge */
+      mydumper_weekly_purge?: number | null;
+      /**
+       * Only If Read Only
+       * @default false
+       */
+      only_if_read_only: boolean;
+      /**
+       * Only If Running Replica
+       * @default false
+       */
+      only_if_running_replica: boolean;
+      /**
+       * Post Run Encrypt
+       * @default false
+       */
+      post_run_encrypt: boolean;
+      /** Rsync Path */
+      rsync_path?: string | null;
+      /** S3 Bucket */
+      s3_bucket?: string | null;
+      /** S3 Storage Class */
+      s3_storage_class?: string | null;
+      /** Service Id */
+      service_id: number;
+      /**
+       * Skip S3 Safety Check
+       * @default false
+       */
+      skip_s3_safety_check: boolean;
+      /** Task Name */
+      task_name: string;
+      /** Upload */
+      upload: components['schemas']['UploadProvider'][];
+      /**
+       * Upload Quiet
+       * @default false
+       */
+      upload_quiet: boolean;
+      /**
+       * Use Ftwrl Guardian
+       * @default false
+       */
+      use_ftwrl_guardian: boolean;
+      /** Xtrabackup Aes256 Keyfile */
+      xtrabackup_aes256_keyfile?: string | null;
+      /** Xtrabackup Bin Cmd */
+      xtrabackup_bin_cmd?: ('xtrabackup' | 'mariadb-backup' | 'innobackupex') | null;
+      /** Xtrabackup Copies */
+      xtrabackup_copies?: number | null;
+      /** Xtrabackup Defaults File */
+      xtrabackup_defaults_file?: string | null;
+      /**
+       * Xtrabackup Desync Pxc
+       * @default false
+       */
+      xtrabackup_desync_pxc: boolean;
+      /** Xtrabackup Extra Args */
+      xtrabackup_extra_args?: string | null;
+      /** Xtrabackup Incremental Cycle */
+      xtrabackup_incremental_cycle?:
+        | ('daily' | 'weekly' | '2' | '3' | '4' | '5' | '6' | '7')
+        | null;
+      /** Xtrabackup Incremental Method */
+      xtrabackup_incremental_method?: ('less_space' | 'fast_restore') | null;
+      /**
+       * Xtrabackup Kill Queries
+       * @default false
+       */
+      xtrabackup_kill_queries: boolean;
+      /** Xtrabackup Kill Queries Timeout */
+      xtrabackup_kill_queries_timeout?: number | null;
+      /** Xtrabackup Kill Query Type */
+      xtrabackup_kill_query_type?: ('select' | 'all') | null;
+      /** Xtrabackup Local Ssh Destination */
+      xtrabackup_local_ssh_destination?: string | null;
+      /**
+       * Xtrabackup Lock Ddl
+       * @default false
+       */
+      xtrabackup_lock_ddl: boolean;
+      /**
+       * Xtrabackup Prepare
+       * @default false
+       */
+      xtrabackup_prepare: boolean;
+      /** Xtrabackup Prepare Memory */
+      xtrabackup_prepare_memory?: string | null;
+      /**
+       * Xtrabackup Quiet
+       * @default false
+       */
+      xtrabackup_quiet: boolean;
+      /**
+       * Xtrabackup Replica Info
+       * @default false
+       */
+      xtrabackup_replica_info: boolean;
+      /**
+       * Xtrabackup Rsync
+       * @default false
+       */
+      xtrabackup_rsync: boolean;
+      /**
+       * Xtrabackup Stop Replica
+       * @default false
+       */
+      xtrabackup_stop_replica: boolean;
+      /**
+       * Xtrabackup Verify
+       * @default false
+       */
+      xtrabackup_verify: boolean;
     };
     /**
      * BackupType
@@ -9262,142 +10952,155 @@ export interface components {
       | 'quicklz';
     /**
      * RestoreCreate
-     * @description Model for creating a restore task.
+     * @description Declare the model-first create/update body and ``GET /schema`` source for Restores.
      *
-     *     Inherits from RestoreConfigAll and BaseRestoreConfigServer, adding task and service identifiers.
+     *     Declares every restore form field once, in section order (Task, General,
+     *     Mydumper, XtraBackup, Binlog), with the DSL markers driving the derived
+     *     schema. The previously-inherited config models (:class:`RestoreConfigAll` and
+     *     :class:`BaseRestoreConfigServer`) stay the YAML-serialization targets the
+     *     payload builder populates via ``extract_model_from_instance``; this model
+     *     re-declares their fields directly so it can also carry presentation metadata.
      *
-     *     :param hostname: The hostname of the machine to back up.
-     *     :type hostname: NonEmptyStr
-     *     :param task_name: Name of the restore task.
-     *     :type task_name: NonEmptyStr
-     *     :param service_id: Service identifier for the restore task.
-     *     :type service_id: NonEmptyStr | EmptyStrToNone = None
-     *     :param schema_id: Schema identifier for restore.
-     *     :type schema_id: NonEmptyStr | EmptyStrToNone
+     *     The per-``backup_type`` section visibility is expressed in the view layout
+     *     (``restore/views.py``), not as field-level gates: several mode-specific config
+     *     fields carry non-``None`` defaults (``myloader_threads``, ``xb_parallel``,
+     *     ``master_port``), so a field-level ``Forbidden`` gate would reject those
+     *     defaults on a cross-mode restore. Keeping the model permissive preserves the
+     *     legacy payload contract byte-for-byte.
+     *
+     *     ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
+     *     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
+     *     markers drive only the ``GET /schema`` widgets, while the conditional,
+     *     404-tolerant resolution lives in ``deps.resolve_restore_entities``.
      */
     app__sep__plugins__mysql_backups__restore__models__RestoreCreate: {
-      BACKUP_TYPE: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
       /** Backup Source */
-      BACKUP_SOURCE: string;
-      /** Local Path */
-      LOCAL_PATH?: string | null;
-      /**
-       * Overwrite Tables
-       * @default false
-       */
-      OVERWRITE_TABLES: boolean;
-      /**
-       * Myloader Threads
-       * @default 4
-       */
-      MYLOADER_THREADS: number | null;
-      /** Myloader Extra Args */
-      MYLOADER_EXTRA_ARGS?: string | null;
-      /** Skip Databases */
-      SKIP_DATABASES?: string | null;
-      /** Include Databases */
-      INCLUDE_DATABASES?: string | null;
-      /** Pre Script */
-      PRE_SCRIPT?: string | null;
-      /** Post Script */
-      POST_SCRIPT?: string | null;
-      /**
-       * Skip Incrementals
-       * @default false
-       */
-      SKIP_INCREMENTALS: boolean;
+      backup_source: string;
+      backup_type: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      /** Binlog Restore Extra Args */
+      binlog_restore_extra_args?: string | null;
+      /** Custom Mysql Init Command */
+      custom_mysql_init_command?: string | null;
       /** Datadir */
-      DATADIR?: string | null;
+      datadir?: string | null;
+      /** Gpg Password File */
+      gpg_password_file?: string | null;
+      /** Hostname */
+      hostname: string;
+      /** Include Databases */
+      include_databases?: string | null;
+      /** Incremental Dest Path */
+      incremental_dest_path?: string | null;
+      /** Keyring File Data */
+      keyring_file_data?: string | null;
       /**
        * Kill Mysql
        * @default false
        */
-      KILL_MYSQL: boolean;
-      /** Xb Prepare Memory */
-      XB_PREPARE_MEMORY?: string | null;
-      /**
-       * Xb Parallel
-       * @default 4
-       */
-      XB_PARALLEL: number | null;
-      /** Xtrabackup Bin Cmd */
-      XTRABACKUP_BIN_CMD?: components['schemas']['XtraBackupTool'] | null;
-      /**
-       * Restore Mycnf
-       * @default false
-       */
-      RESTORE_MYCNF: boolean;
-      /** Incremental Dest Path */
-      INCREMENTAL_DEST_PATH?: string | null;
-      /** Xtrabackup Restore Args */
-      XTRABACKUP_RESTORE_ARGS?: string | null;
-      /** Keyring File Data */
-      KEYRING_FILE_DATA?: string | null;
-      /** Xtrabackup Aes256 Keyfile */
-      XTRABACKUP_AES256_KEYFILE?: string | null;
-      /**
-       * Slave From Master
-       * @default false
-       */
-      SLAVE_FROM_MASTER: boolean;
-      /**
-       * Wait For Catchup
-       * @default false
-       */
-      WAIT_FOR_CATCHUP: boolean;
+      kill_mysql: boolean;
+      /** Local Path */
+      local_path?: string | null;
+      /** Logging Dir */
+      logging_dir?: string | null;
       /** Master Ip */
-      MASTER_IP?: string | null;
+      master_ip?: string | null;
+      /** Master Password */
+      master_password?: string | null;
       /**
        * Master Port
        * @default 3306
        */
-      MASTER_PORT: number | null;
+      master_port: number | null;
       /** Master User */
-      MASTER_USER?: string | null;
-      /** Master Password */
-      MASTER_PASSWORD?: string | null;
-      /** Start File */
-      START_FILE?: string | null;
-      /** Start Position */
-      START_POSITION?: number | null;
-      /** Stop File */
-      STOP_FILE?: string | null;
-      /** Stop Position */
-      STOP_POSITION?: number | null;
-      /** Use Sql File */
-      USE_SQL_FILE?: string | null;
-      /** Binlog Restore Extra Args */
-      BINLOG_RESTORE_EXTRA_ARGS?: string | null;
-      /** Logging Dir */
-      LOGGING_DIR?: string | null;
-      /** Port */
-      PORT?: number | null;
-      /** Custom Mysql Init Command */
-      CUSTOM_MYSQL_INIT_COMMAND?: string | null;
+      master_user?: string | null;
+      /** Myloader Extra Args */
+      myloader_extra_args?: string | null;
       /**
-       * Ssh User
-       * @default percona
+       * Myloader Threads
+       * @default 4
        */
-      SSH_USER: string | null;
+      myloader_threads: number | null;
+      /**
+       * Overwrite Tables
+       * @default false
+       */
+      overwrite_tables: boolean;
+      /** Port */
+      port?: number | null;
+      /** Post Script */
+      post_script?: string | null;
+      /** Pre Script */
+      pre_script?: string | null;
+      /**
+       * Restore Mycnf
+       * @default false
+       */
+      restore_mycnf: boolean;
+      /** @default s3cmd */
+      s3_tool: components['schemas']['S3Tool'];
+      /** Schema Id */
+      schema_id?: string | null;
+      /** Service Id */
+      service_id?: string | null;
+      /** Skip Databases */
+      skip_databases?: string | null;
+      /**
+       * Skip Incrementals
+       * @default false
+       */
+      skip_incrementals: boolean;
+      /**
+       * Slave From Master
+       * @default false
+       */
+      slave_from_master: boolean;
+      /** Ssh Key */
+      ssh_key?: string | null;
       /**
        * Ssh Port
        * @default 22
        */
-      SSH_PORT: number | null;
-      /** Ssh Key */
-      SSH_KEY?: string | null;
-      /** @default s3cmd */
-      S3_TOOL: components['schemas']['S3Tool'];
-      /** Gpg Password File */
-      GPG_PASSWORD_FILE?: string | null;
-      /** Hostname */
-      HOSTNAME: string;
+      ssh_port: number | null;
+      /**
+       * Ssh User
+       * @default percona
+       */
+      ssh_user: string | null;
+      /** Start File */
+      start_file?: string | null;
+      /** Start Position */
+      start_position?: number | null;
+      /** Stop File */
+      stop_file?: string | null;
+      /** Stop Position */
+      stop_position?: number | null;
       /** Task Name */
-      TASK_NAME: string;
-      /** Service Id */
-      SERVICE_ID?: string | null;
-      /** Schema Id */
-      SCHEMA_ID?: string | null;
+      task_name: string;
+      /** Use Sql File */
+      use_sql_file?: string | null;
+      /**
+       * Wait For Catchup
+       * @default false
+       */
+      wait_for_catchup: boolean;
+      /**
+       * Xb Parallel
+       * @default 4
+       */
+      xb_parallel: number | null;
+      /** Xb Prepare Memory */
+      xb_prepare_memory?: string | null;
+      /** Xtrabackup Aes256 Keyfile */
+      xtrabackup_aes256_keyfile?: string | null;
+      /** Xtrabackup Bin Cmd */
+      xtrabackup_bin_cmd?: components['schemas']['XtraBackupTool'] | null;
+      /** Xtrabackup Restore Args */
+      xtrabackup_restore_args?: string | null;
     };
   };
   responses: never;
@@ -9408,7 +11111,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  tasks_list_tasks__get: {
+  read_root__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9428,143 +11131,7 @@ export interface operations {
       };
     };
   };
-  task_create_tasks__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['TaskCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_detail_tasks__task_name__get: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_execute_tasks__task_name__post: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['TaskExecuteRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_delete_tasks__task_name__delete_post: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  node_list_inventory__get: {
+  troubleshooting_index_alert_troubleshooting__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9584,741 +11151,7 @@ export interface operations {
       };
     };
   };
-  node_create_inventory__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Node-Input'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sync_inventory_inventory_sync__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_sync_inventory_inventory_sync__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schedule_create_inventory_schedule__post: {
-    parameters: {
-      query?: never;
-      header?: {
-        referer?: string;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['InventorySyncScheduleCreateForm'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  node_detail_inventory__node_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sync_node_inventory__node_id__sync__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_sync_node_inventory__node_id__sync__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  node_delete_inventory__node_id__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  service_detail_inventory_services__service_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sync_service_inventory_services__service_id__sync__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_sync_service_inventory_services__service_id__sync__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  check_service_connectivity_inventory_services__service_id__check_connectivity__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  service_create_for_node_inventory__node_id__services__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Service'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  service_delete_inventory_services__service_id__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schema_detail_inventory_schemas__schema_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sync_schema_inventory_schemas__schema_id__sync__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_sync_schema_inventory_schemas__schema_id__sync__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schema_create_for_service_inventory_services__service_id__schemas__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Schema-Input'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schema_delete_inventory_schemas__schema_id__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  table_create_for_schema_inventory_schemas__schema_id__tables__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Table'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  table_delete_inventory_tables__table_id__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        table_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_index_snippets__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  snippets_approve_snippets_approve_post: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: {
-        referer?: string | null;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_remove_approval_snippets_remove_approval_post: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: {
-        referer?: string | null;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_refresh_snippets_refresh_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-    };
-  };
-  snippets_approve_batch_snippets_approve_batch_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['SnippetBatchApproveForm'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_execute_snippets_execute_post: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: {
-        referer?: string | null;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_detail_snippets_detail_get: {
+  troubleshooting_execute_alert_troubleshooting_execute_post: {
     parameters: {
       query: {
         /** @description Snippet filename (relative path under snippets root). */
@@ -10336,6 +11169,69 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  troubleshooting_output_alert_troubleshooting_output__task_history_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  troubleshooting_detail_alert_troubleshooting__service_type___alert_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        alert_name: string;
+        service_type: components['schemas']['AlertServiceType'];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
           'text/html': string;
         };
       };
@@ -10350,7 +11246,7 @@ export interface operations {
       };
     };
   };
-  app_index_atw__get: {
+  alerts_index_alerts__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10366,6 +11262,156 @@ export interface operations {
         };
         content: {
           'text/html': string;
+        };
+      };
+    };
+  };
+  alerts_backup_detail_alerts_backups__backup_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        backup_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pagerduty_save_alerts_pagerduty_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_pagerduty_save_alerts_pagerduty_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pagerduty_delete_alerts_pagerduty_delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  alerts_push_alerts_push_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_alerts_push_alerts_push_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alerts_restore_alerts_restore_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_alerts_restore_alerts_restore_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -10520,6 +11566,35 @@ export interface operations {
       };
     };
   };
+  alters_delete_alters__task_name__delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   alters_update_alters__task_name__update_post: {
     parameters: {
       query?: never;
@@ -10553,7 +11628,474 @@ export interface operations {
       };
     };
   };
-  alters_delete_alters__task_name__delete_post: {
+  admin_list_apps_api_admin_apps__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AppInfoResponse'][];
+        };
+      };
+    };
+  };
+  admin_force_disable_app_api_admin_apps__app_key__force_disable_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        app_key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AppStateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  admin_update_app_state_api_admin_apps__app_key__state_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        app_key: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AppStateWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AppStateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  apps_list_apps_for_navigation_api_apps__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AppKeyResponse'][];
+        };
+      };
+    };
+  };
+  alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AlertGroup'][];
+        };
+      };
+    };
+  };
+  alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_type: components['schemas']['AlertServiceType'];
+        alert_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AlertDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alerts_alerts_api_index_api_plugins_alerts__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['IndexResponse'];
+        };
+      };
+    };
+  };
+  alerts_alerts_api_list_backups_api_plugins_alerts_backups_get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_BackupSummary_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alerts_alerts_api_get_backup_api_plugins_alerts_backups__backup_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        backup_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BackupDetail'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alerts_alerts_api_pagerduty_save_api_plugins_alerts_pagerduty_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PagerDutyRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PagerDutyResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alerts_alerts_api_pagerduty_delete_api_plugins_alerts_pagerduty_delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PagerDutyResponse'];
+        };
+      };
+    };
+  };
+  alerts_alerts_api_push_api_plugins_alerts_push_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PushRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PushResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alerts_alerts_api_restore_api_plugins_alerts_restore_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RestoreRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RestoreResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alters_alters_api_list_api_plugins_alters__get: {
+    parameters: {
+      query?: {
+        service_type?: components['schemas']['ServiceTypeEnum'] | null;
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AltersTaskResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alters_alters_api_create_api_plugins_alters__post: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AltersTaskWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AltersTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alters_get_schema_api_plugins_alters_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  alters_alters_api_detail_api_plugins_alters__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10565,7 +12107,75 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description Successful Response */
-      307: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AltersTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alters_alters_api_update_api_plugins_alters__task_name__put: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AltersTaskWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AltersTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alters_alters_api_delete_api_plugins_alters__task_name__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
         headers: {
           [name: string]: unknown;
         };
@@ -10578,6 +12188,2874 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  alters_alters_api_execute_api_plugins_alters__task_name__execute_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['AltersExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AltersExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  archives_archives_api_list_api_plugins_archives__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ArchivesTaskResponse'][];
+        };
+      };
+    };
+  };
+  archives_archives_api_create_api_plugins_archives__post: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ArchivesCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ArchivesCreateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  archives_get_schema_api_plugins_archives_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  archives_archives_api_detail_api_plugins_archives__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ArchivesTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  archives_archives_api_delete_api_plugins_archives__task_name__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  atw_atw_api_list_api_plugins_atw__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ATWCategoryListing'][];
+        };
+      };
+    };
+  };
+  atw_get_schema_api_plugins_atw_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  backup_mongo_backup_mongo_api_list_api_plugins_backup_mongo__get: {
+    parameters: {
+      query?: {
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_backup_mongo_api_create_api_plugins_backup_mongo__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BackupTaskWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_restore_mongo_api_list_api_plugins_backup_mongo_restores__get: {
+    parameters: {
+      query?: {
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_RestoreTaskResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_restore_mongo_api_create_api_plugins_backup_mongo_restores__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RestoreTaskWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RestoreTaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_get_schema_api_plugins_backup_mongo_restores_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  backup_mongo_restore_mongo_api_detail_api_plugins_backup_mongo_restores__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RestoreTaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_restore_mongo_api_update_api_plugins_backup_mongo_restores__task_name__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RestoreTaskWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RestoreTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_restore_mongo_api_delete_api_plugins_backup_mongo_restores__task_name__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_restore_mongo_api_execute_api_plugins_backup_mongo_restores__task_name__execute_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RestoreExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RestoreExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_get_schema_api_plugins_backup_mongo_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  backup_mongo_backup_mongo_api_detail_api_plugins_backup_mongo__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_backup_mongo_api_delete_api_plugins_backup_mongo__task_name__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_mongo_backup_mongo_api_execute_api_plugins_backup_mongo__task_name__execute_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_pg__list_paginated_api_plugins_backup_pg__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_pg__create_api_plugins_backup_pg__post: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BackupPgForm'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BackupPgCreateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_pg_get_schema_api_plugins_backup_pg_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  backup_pg__detail_api_plugins_backup_pg__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['app__sep__plugins__backup_pg__models__BackupTaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_pg__update_api_plugins_backup_pg__task_name__put: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['BackupPgForm'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BackupPgCreateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_pg__delete_api_plugins_backup_pg__task_name__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  backup_pg_backup_pg_api_execute_api_plugins_backup_pg__task_name__execute_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['app__sep__plugins__backup_pg__models__BackupExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['app__sep__plugins__backup_pg__models__BackupExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums__list_api_plugins_checksums__get: {
+    parameters: {
+      query?: {
+        service_type?: components['schemas']['ServiceTypeEnum'] | null;
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BaseTaskResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums__create_api_plugins_checksums__post: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChecksumsForm'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BaseTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums_get_schema_api_plugins_checksums_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  checksums__detail_api_plugins_checksums__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BaseTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums__update_api_plugins_checksums__task_name__put: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ChecksumsForm'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BaseTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums__delete_api_plugins_checksums__task_name__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TaskExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  dipper_dipper_api_list_api_plugins_dipper__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+    };
+  };
+  dipper_dipper_api_execute_api_plugins_dipper__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['DipperExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DipperExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get: {
+    parameters: {
+      query: {
+        service_id: number;
+        collector_type: components['schemas']['CollectorTypeEnum'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  dipper_get_schema_api_plugins_dipper_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  dipper_dipper_api_script_preview_api_plugins_dipper_script_preview_get: {
+    parameters: {
+      query: {
+        service_id: number;
+        collector_type: components['schemas']['CollectorTypeEnum'];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ScriptPreviewResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_plugin_tasks_api_plugins_inventory__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginTaskResponse'][];
+        };
+      };
+    };
+  };
+  inventory_inventory_available_syncers_api_plugins_inventory_available_syncers__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AvailableSyncer'][];
+        };
+      };
+    };
+  };
+  inventory_inventory_node_system_observation_api_plugins_inventory_nodes__node_id__system_observation_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_get_schema_api_plugins_inventory_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  inventory_inventory_service_system_observation_api_plugins_inventory_services__service_id__system_observation_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_sync_trigger_api_plugins_inventory_sync__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': components['schemas']['InventorySyncTriggerWrite'] | null;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_sync_status_api_plugins_inventory_sync_status__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InventorySyncStatusResponse'];
+        };
+      };
+    };
+  };
+  inventory_inventory_list_entity_api_plugins_inventory__entity___get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown[];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_create_entity_api_plugins_inventory__entity___post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_get_entity_api_plugins_inventory__entity___item_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+        item_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_update_entity_api_plugins_inventory__entity___item_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+        item_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  inventory_inventory_delete_entity_api_plugins_inventory__entity___item_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+        item_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups__list_paginated_api_plugins_mysql_backups__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_BackupResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups__create_api_plugins_mysql_backups__post: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MysqlBackupsCreateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_restore__list_paginated_api_plugins_mysql_backups_restore__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_RestoresResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_restore__create_api_plugins_mysql_backups_restore__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RestoresResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_restore_get_schema_api_plugins_mysql_backups_restore_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  mysql_backups_restore__detail_api_plugins_mysql_backups_restore__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RestoresResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_restore__update_api_plugins_mysql_backups_restore__task_name__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RestoresResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_restore__delete_api_plugins_mysql_backups_restore__task_name__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_restore_mysql_backups_restores_api_execute_api_plugins_mysql_backups_restore__task_name__execute_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TaskExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_get_schema_api_plugins_mysql_backups_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  mysql_backups__detail_api_plugins_mysql_backups__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BackupResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups__update_api_plugins_mysql_backups__task_name__put: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['MysqlBackupsCreateResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups__delete_api_plugins_mysql_backups__task_name__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_mysql_backups_api_execute_api_plugins_mysql_backups__task_name__execute_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TaskExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  report_report_config_api_plugins_report_config_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  report_report_generate_json_api_api_plugins_report_generate_json_get: {
+    parameters: {
+      query?: {
+        since?: string;
+        until?: string;
+        full?: boolean;
+        refresh?: boolean;
+        sections?: string[] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  report_report_generate_pdf_api_api_plugins_report_generate_pdf_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  report_report_upload_api_api_plugins_report_upload_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_report_report_upload_api_api_plugins_report_upload_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_list_api_plugins_snippets__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SnippetResponse'][];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SnippetBatchApproveRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BatchApprovalResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SnippetsCapabilitiesResponse'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_refresh_api_plugins_snippets_refresh_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RefreshResponse'];
+        };
+      };
+    };
+  };
+  snippets_get_schema_api_plugins_snippets_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SnippetResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_download_api_plugins_snippets_snippet_download_get: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_script_execute_api_plugins_snippets_snippet_execute_post: {
+    parameters: {
+      query: {
+        /** @description Script filename (relative path under the script dir). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ScriptExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ScriptExecutionResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_script_history_api_plugins_snippets_snippet_history_get: {
+    parameters: {
+      query: {
+        /** @description Script filename (relative path under the script dir). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ScriptPreviewResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_snippets_api_script_schema_api_plugins_snippets_snippet_schema_get: {
+    parameters: {
+      query: {
+        /** @description Script filename (relative path under the script dir). */
+        snippet_filename: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_tasks_api_list_api_plugins_tasks__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskListResponse'][];
+        };
+      };
+    };
+  };
+  tasks_get_schema_api_plugins_tasks_schema_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PluginSchema'];
+        };
+      };
+    };
+  };
+  tasks_tasks_api_detail_api_plugins_tasks__task_name__get: {
+    parameters: {
+      query?: {
+        owner?: components['schemas']['TaskOwner'] | null;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_list_settings_api_sep_admin_settings__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingsListResponse'];
+        };
+      };
+    };
+  };
+  sep_export_settings_api_sep_admin_settings_export_get: {
+    parameters: {
+      query?: {
+        keys?: string[] | null;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_patch_settings_api_sep_admin_settings__setting_class__patch: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SettingsPatch'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_get_setting_api_sep_admin_settings__setting_class___key__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SettingResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_delete_setting_api_sep_admin_settings__setting_class___key__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        setting_class: components['schemas']['SettingClassEnum'];
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_get_dashboard_stats_api_sep_dashboard__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['DashboardStatsResponse'];
+        };
+      };
+    };
+  };
+  sep_list_hosts_api_sep_hosts__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HostResponse'][];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_list_schema_tables_api_sep_schemas__schema_id__tables_get: {
+    parameters: {
+      query?: {
+        search?: string | null;
+      };
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InventorySelectorOption'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_list_services_api_sep_services__get: {
+    parameters: {
+      query?: {
+        service_type?: components['schemas']['ServiceTypeEnum'] | null;
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_ServiceResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_list_service_schemas_api_sep_services__service_id__schemas_get: {
+    parameters: {
+      query?: {
+        search?: string | null;
+      };
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['InventorySelectorOption'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_list_merged_task_history_api_sep_task_history__get: {
+    parameters: {
+      query: {
+        task_names: string[];
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_TaskHistoryResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_get_task_stats_api_sep_task_stats__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
         };
       };
     };
@@ -10699,6 +15177,35 @@ export interface operations {
       };
     };
   };
+  archives_delete_archives__task_name__delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
   archives_update_archives__task_name__update_post: {
     parameters: {
       query?: never;
@@ -10732,23 +15239,25 @@ export interface operations {
       };
     };
   };
-  archives_delete_archives__task_name__delete_post: {
+  sep_download_artifact_artifacts_download__token__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        task_name: string;
+        token: string;
       };
       cookie?: never;
     };
     requestBody?: never;
     responses: {
       /** @description Successful Response */
-      307: {
+      200: {
         headers: {
           [name: string]: unknown;
         };
-        content?: never;
+        content: {
+          'application/json': unknown;
+        };
       };
       /** @description Validation Error */
       422: {
@@ -10761,7 +15270,7 @@ export interface operations {
       };
     };
   };
-  restores_restores_index_mysql_backups_restores__get: {
+  pbm_backups_index_backup_mongo__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10781,7 +15290,7 @@ export interface operations {
       };
     };
   };
-  restores_restores_create_mysql_backups_restores__post: {
+  pbm_backups_create_backup_mongo__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10790,7 +15299,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup_mongo__models__BackupCreate'];
       };
     };
     responses: {
@@ -10814,7 +15323,60 @@ export interface operations {
       };
     };
   };
-  restores_restores_detail_mysql_backups_restores__task_name__get: {
+  restores_pbm_restores_index_backup_mongo_restores__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+    };
+  };
+  restores_pbm_restores_create_backup_mongo_restores__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup_mongo__restore__models__RestoreCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  restores_pbm_restores_detail_backup_mongo_restores__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10845,7 +15407,7 @@ export interface operations {
       };
     };
   };
-  restores_restores_execute_mysql_backups_restores__task_name__post: {
+  restores_pbm_restores_execute_backup_mongo_restores__task_name__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10856,7 +15418,7 @@ export interface operations {
     };
     requestBody?: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_restores_restores_execute_mysql_backups_restores__task_name__post'];
+        'application/x-www-form-urlencoded': components['schemas']['Body_restores_pbm_restores_execute_backup_mongo_restores__task_name__post'];
       };
     };
     responses: {
@@ -10878,7 +15440,36 @@ export interface operations {
       };
     };
   };
-  restores_restores_update_mysql_backups_restores__task_name__update_post: {
+  restores_pbm_restores_delete_backup_mongo_restores__task_name__delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  restores_pbm_restores_update_backup_mongo_restores__task_name__update_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10889,7 +15480,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup_mongo__restore__models__RestoreCreate'];
       };
     };
     responses: {
@@ -10911,109 +15502,7 @@ export interface operations {
       };
     };
   };
-  restores_restores_delete_mysql_backups_restores__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_index_mysql_backups__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  mysql_backups_create_mysql_backups__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_docs_mysql_backups_docs_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  mysql_backups_detail_mysql_backups__task_name__get: {
+  pbm_backups_detail_backup_mongo__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -11044,7 +15533,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_execute_mysql_backups__task_name__post: {
+  pbm_backups_execute_backup_mongo__task_name__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -11055,7 +15544,7 @@ export interface operations {
     };
     requestBody?: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_mysql_backups_execute_mysql_backups__task_name__post'];
+        'application/x-www-form-urlencoded': components['schemas']['Body_pbm_backups_execute_backup_mongo__task_name__post'];
       };
     };
     responses: {
@@ -11077,7 +15566,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_update_mysql_backups__task_name__update_post: {
+  pbm_backups_delete_backup_mongo__task_name__delete_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -11086,9 +15575,122 @@ export interface operations {
       };
       cookie?: never;
     };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pg_backups_index_backup_pg__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+    };
+  };
+  pg_backups_create_backup_pg__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['BackupPgForm'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pg_backups_detail_backup_pg__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  pg_backups_execute_backup_pg__task_name__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_pg_backups_execute_backup_pg__task_name__post'];
       };
     };
     responses: {
@@ -11110,7 +15712,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_delete_mysql_backups__task_name__delete_post: {
+  pg_backups_delete_backup_pg__task_name__delete_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -11256,39 +15858,6 @@ export interface operations {
       };
     };
   };
-  checksums_update_checksums__task_name__update_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['ChecksumsCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   checksums_delete_checksums__task_name__delete_post: {
     parameters: {
       query?: never;
@@ -11318,124 +15887,7 @@ export interface operations {
       };
     };
   };
-  restores_pbm_restores_index_backup_mongo_restores__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  restores_pbm_restores_create_backup_mongo_restores__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup_mongo__restore__models__RestoreCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_pbm_restores_detail_backup_mongo_restores__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_pbm_restores_execute_backup_mongo_restores__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_restores_pbm_restores_execute_backup_mongo_restores__task_name__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_pbm_restores_update_backup_mongo_restores__task_name__update_post: {
+  checksums_update_checksums__task_name__update_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -11446,184 +15898,9 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup_mongo__restore__models__RestoreCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['ChecksumsCreate'];
       };
     };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_pbm_restores_delete_backup_mongo_restores__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pbm_backups_index_backup_mongo__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  pbm_backups_create_backup_mongo__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup_mongo__models__BackupCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pbm_backups_detail_backup_mongo__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pbm_backups_execute_backup_mongo__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_pbm_backups_execute_backup_mongo__task_name__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pbm_backups_delete_backup_mongo__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
     responses: {
       /** @description Successful Response */
       307: {
@@ -11713,65 +15990,14 @@ export interface operations {
       };
     };
   };
-  alerts_index_alerts__get: {
+  sep_list_task_execution_events_execution_events__task_history_id__get: {
     parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
+      query?: {
+        owner?: components['schemas']['TaskOwner'] | null;
       };
-    };
-  };
-  alerts_restore_alerts_restore_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_alerts_restore_alerts_restore_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alerts_backup_detail_alerts_backups__backup_id__get: {
-    parameters: {
-      query?: never;
       header?: never;
       path: {
-        backup_id: number;
+        task_history_id: number;
       };
       cookie?: never;
     };
@@ -11783,7 +16009,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': unknown;
+          'application/json': components['schemas']['ExecutionEvent'][];
         };
       };
       /** @description Validation Error */
@@ -11797,18 +16023,18 @@ export interface operations {
       };
     };
   };
-  pagerduty_save_alerts_pagerduty_post: {
+  sep_list_task_history_files_files__task_history_id__get: {
     parameters: {
-      query?: never;
+      query?: {
+        owner?: components['schemas']['TaskOwner'] | null;
+      };
       header?: never;
-      path?: never;
+      path: {
+        task_history_id: number;
+      };
       cookie?: never;
     };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_pagerduty_save_alerts_pagerduty_post'];
-      };
-    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {
@@ -11816,7 +16042,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': unknown;
+          'application/json': {
+            [key: string]: components['schemas']['FileMetadata'];
+          };
         };
       };
       /** @description Validation Error */
@@ -11830,114 +16058,11 @@ export interface operations {
       };
     };
   };
-  pagerduty_delete_alerts_pagerduty_delete_post: {
+  sep_download_task_history_file_files__task_history_id__download_get: {
     parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
+      query?: {
+        owner?: components['schemas']['TaskOwner'] | null;
       };
-    };
-  };
-  alerts_push_alerts_push_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_alerts_push_alerts_push_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  troubleshooting_index_alert_troubleshooting__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  troubleshooting_execute_alert_troubleshooting_execute_post: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  troubleshooting_output_alert_troubleshooting_output__task_history_id__get: {
-    parameters: {
-      query?: never;
       header?: never;
       path: {
         task_history_id: number;
@@ -11966,13 +16091,166 @@ export interface operations {
       };
     };
   };
-  troubleshooting_detail_alert_troubleshooting__service_type___alert_name__get: {
+  sep_list_tables_inventory_api_schemas__schema_id__tables_get: {
+    parameters: {
+      query?: {
+        search?: string | null;
+      };
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_list_schemas_inventory_api_services__service_id__schemas_get: {
+    parameters: {
+      query?: {
+        search?: string | null;
+      };
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  node_list_inventory__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+    };
+  };
+  node_create_inventory__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Node-Input'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schedule_create_inventory_schedule__post: {
+    parameters: {
+      query?: never;
+      header?: {
+        referer?: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['InventorySyncScheduleCreateForm'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schema_detail_inventory_schemas__schema_id__get: {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        alert_name: string;
-        service_type: components['schemas']['AlertServiceType'];
+        schema_id: number;
       };
       cookie?: never;
     };
@@ -11985,6 +16263,1033 @@ export interface operations {
         };
         content: {
           'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schema_delete_inventory_schemas__schema_id__delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sync_schema_inventory_schemas__schema_id__sync__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_sync_schema_inventory_schemas__schema_id__sync__post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  table_create_for_schema_inventory_schemas__schema_id__tables__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Table'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  service_detail_inventory_services__service_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  check_service_connectivity_inventory_services__service_id__check_connectivity__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  service_delete_inventory_services__service_id__delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schema_create_for_service_inventory_services__service_id__schemas__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Schema-Input'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sync_service_inventory_services__service_id__sync__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_sync_service_inventory_services__service_id__sync__post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sync_inventory_inventory_sync__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_sync_inventory_inventory_sync__post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  table_delete_inventory_tables__table_id__delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        table_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  node_detail_inventory__node_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  node_delete_inventory__node_id__delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  service_create_for_node_inventory__node_id__services__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Service'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sync_node_inventory__node_id__sync__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_sync_node_inventory__node_id__sync__post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  login_form_login_get: {
+    parameters: {
+      query?: {
+        next?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  login_login_post: {
+    parameters: {
+      query?: {
+        next?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_login_login_post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  logout_logout_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  mysql_backups_index_mysql_backups__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+    };
+  };
+  mysql_backups_create_mysql_backups__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_docs_mysql_backups_docs_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+    };
+  };
+  restores_index_mysql_backups_restores__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+    };
+  };
+  restores_create_mysql_backups_restores__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  restores_detail_mysql_backups_restores__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  restores_execute_mysql_backups_restores__task_name__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_restores_execute_mysql_backups_restores__task_name__post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  restores_delete_mysql_backups_restores__task_name__delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  restores_update_mysql_backups_restores__task_name__update_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_detail_mysql_backups__task_name__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_execute_mysql_backups__task_name__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['Body_mysql_backups_execute_mysql_backups__task_name__post'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_delete_mysql_backups__task_name__delete_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups_update_mysql_backups__task_name__update_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_periodic_task_create_periodic__post: {
+    parameters: {
+      query?: never;
+      header?: {
+        referer?: string;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['EnhancedPeriodicTaskCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_periodic_task_delete_periodic__periodic_task_id__delete_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        referer?: string;
+      };
+      path: {
+        periodic_task_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      307: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_periodic_task_update_periodic__periodic_task_id__update_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        referer?: string;
+      };
+      path: {
+        periodic_task_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['PeriodicTaskRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
         };
       };
       /** @description Validation Error */
@@ -12152,15 +17457,36 @@ export interface operations {
       };
     };
   };
-  sep_list_schemas_inventory_api_services__service_id__schemas_get: {
+  snippets_index_snippets__get: {
     parameters: {
-      query?: {
-        search?: string | null;
-      };
+      query?: never;
       header?: never;
-      path: {
-        service_id: number;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
       };
+    };
+  };
+  snippets_approve_snippets_approve_post: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: {
+        referer?: string | null;
+      };
+      path?: never;
       cookie?: never;
     };
     requestBody?: never;
@@ -12185,15 +17511,81 @@ export interface operations {
       };
     };
   };
-  sep_list_tables_inventory_api_schemas__schema_id__tables_get: {
+  snippets_approve_batch_snippets_approve_batch_post: {
     parameters: {
-      query?: {
-        search?: string | null;
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['SnippetBatchApproveForm'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_detail_snippets_detail_get: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
       };
       header?: never;
-      path: {
-        schema_id: number;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
       };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  snippets_execute_snippets_execute_post: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: {
+        referer?: string | null;
+      };
+      path?: never;
       cookie?: never;
     };
     requestBody?: never;
@@ -12218,12 +17610,68 @@ export interface operations {
       };
     };
   };
-  sep_task_execution_events_stream_stream_logs__task_history_id__execution_events_get: {
+  snippets_refresh_snippets_refresh_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+    };
+  };
+  snippets_remove_approval_snippets_remove_approval_post: {
+    parameters: {
+      query: {
+        /** @description Snippet filename (relative path under snippets root). */
+        snippet_filename: string;
+      };
+      header?: {
+        referer?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_stop_task_execution_stop_task__task_history_id__post: {
     parameters: {
       query?: {
         owner?: components['schemas']['TaskOwner'] | null;
       };
-      header?: never;
+      header?: {
+        referer?: string;
+      };
       path: {
         task_history_id: number;
       };
@@ -12284,42 +17732,7 @@ export interface operations {
       };
     };
   };
-  sep_list_task_history_files_files__task_history_id__get: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            [key: string]: components['schemas']['FileMetadata'];
-          };
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_download_task_history_file_files__task_history_id__download_get: {
+  sep_task_execution_events_stream_stream_logs__task_history_id__execution_events_get: {
     parameters: {
       query?: {
         owner?: components['schemas']['TaskOwner'] | null;
@@ -12352,2616 +17765,7 @@ export interface operations {
       };
     };
   };
-  sep_list_task_execution_events_execution_events__task_history_id__get: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ExecutionEvent'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_stop_task_execution_stop_task__task_history_id__post: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: {
-        referer?: string;
-      };
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_periodic_task_create_periodic__post: {
-    parameters: {
-      query?: never;
-      header?: {
-        referer?: string;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['EnhancedPeriodicTaskCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_periodic_task_delete_periodic__periodic_task_id__delete_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        referer?: string;
-      };
-      path: {
-        periodic_task_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_periodic_task_update_periodic__periodic_task_id__update_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        referer?: string;
-      };
-      path: {
-        periodic_task_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['PeriodicTaskRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_download_artifact_artifacts_download__token__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        token: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_get_schema_api_plugins_tasks_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  tasks_tasks_api_list_api_plugins_tasks__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskListResponse'][];
-        };
-      };
-    };
-  };
-  tasks_tasks_api_detail_api_plugins_tasks__task_name__get: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['TaskDetailResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_get_schema_api_plugins_inventory_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  inventory_inventory_sync_trigger_api_plugins_inventory_sync__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/json': components['schemas']['InventorySyncTriggerWrite'] | null;
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_sync_status_api_plugins_inventory_sync_status__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['InventorySyncStatusResponse'];
-        };
-      };
-    };
-  };
-  inventory_inventory_plugin_tasks_api_plugins_inventory__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginTaskResponse'][];
-        };
-      };
-    };
-  };
-  inventory_inventory_available_syncers_api_plugins_inventory_available_syncers__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AvailableSyncer'][];
-        };
-      };
-    };
-  };
-  inventory_inventory_list_entity_api_plugins_inventory__entity___get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown[];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_create_entity_api_plugins_inventory__entity___post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_get_entity_api_plugins_inventory__entity___item_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_update_entity_api_plugins_inventory__entity___item_id__put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_delete_entity_api_plugins_inventory__entity___item_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_get_schema_api_plugins_snippets_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SnippetsCapabilitiesResponse'];
-        };
-      };
-    };
-  };
-  snippets_snippets_api_refresh_api_plugins_snippets_refresh_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RefreshResponse'];
-        };
-      };
-    };
-  };
-  snippets_snippets_api_list_api_plugins_snippets__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SnippetResponse'][];
-        };
-      };
-    };
-  };
-  snippets_snippets_api_per_snippet_schema_api_plugins_snippets_snippet_schema_get: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ScriptPreviewResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_snippets_api_download_api_plugins_snippets_snippet_download_get: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_snippets_api_history_api_plugins_snippets_snippet_history_get: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': Record<string, never>;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_snippets_api_execute_api_plugins_snippets_snippet_execute_post: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SnippetExecutionRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SnippetExecutionResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SnippetResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SnippetBatchApproveRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['BatchApprovalResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  atw_get_schema_api_plugins_atw_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  atw_atw_api_list_api_plugins_atw__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ATWCategoryListing'][];
-        };
-      };
-    };
-  };
-  archives_get_schema_api_plugins_archives_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  archives_archives_api_list_api_plugins_archives__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ArchivesTaskResponse'][];
-        };
-      };
-    };
-  };
-  archives_archives_api_create_api_plugins_archives__post: {
-    parameters: {
-      query?: {
-        check_connectivity?: boolean;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ArchivesCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ArchivesCreateResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  archives_archives_api_detail_api_plugins_archives__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ArchivesTaskResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  archives_archives_api_delete_api_plugins_archives__task_name__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_get_schema_api_plugins_mysql_backups_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  mysql_backups_mysql_backups_api_list_api_plugins_mysql_backups__get: {
-    parameters: {
-      query?: {
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-        offset?: number;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_BackupResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_mysql_backups_api_create_api_plugins_mysql_backups__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['BackupResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_mysql_backups_api_detail_api_plugins_mysql_backups__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['BackupResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_mysql_backups_api_delete_api_plugins_mysql_backups__task_name__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_mysql_backups_api_execute_api_plugins_mysql_backups__task_name__execute_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['app__sep__plugins__mysql_backups__models__BackupExecuteWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['app__sep__plugins__mysql_backups__models__BackupExecutionResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_get_schema_api_plugins_checksums_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  checksums_checksums_api_list_api_plugins_checksums__get: {
-    parameters: {
-      query?: {
-        service_type?: components['schemas']['ServiceTypeEnum'] | null;
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ChecksumTaskResponse'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_checksums_api_create_api_plugins_checksums__post: {
-    parameters: {
-      query?: {
-        check_connectivity?: boolean;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ChecksumTaskWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ChecksumTaskResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_checksums_api_detail_api_plugins_checksums__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ChecksumTaskResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_checksums_api_update_api_plugins_checksums__task_name__put: {
-    parameters: {
-      query?: {
-        check_connectivity?: boolean;
-      };
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ChecksumTaskWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ChecksumTaskResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_checksums_api_delete_api_plugins_checksums__task_name__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['ChecksumExecuteWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ChecksumExecutionResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_get_schema_api_plugins_backup_mongo_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  backup_mongo_get_schema_api_plugins_backup_mongo_restores_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  backup_mongo_restore_mongo_api_list_api_plugins_backup_mongo_restores__get: {
-    parameters: {
-      query?: {
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-        offset?: number;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_RestoreTaskResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_restore_mongo_api_create_api_plugins_backup_mongo_restores__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RestoreTaskWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RestoreTaskDetailResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_restore_mongo_api_detail_api_plugins_backup_mongo_restores__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RestoreTaskDetailResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_restore_mongo_api_update_api_plugins_backup_mongo_restores__task_name__put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RestoreTaskWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RestoreTaskResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_restore_mongo_api_delete_api_plugins_backup_mongo_restores__task_name__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_restore_mongo_api_execute_api_plugins_backup_mongo_restores__task_name__execute_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RestoreExecuteWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RestoreExecutionResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_backup_mongo_api_list_api_plugins_backup_mongo__get: {
-    parameters: {
-      query?: {
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-        offset?: number;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_BackupTaskResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_backup_mongo_api_create_api_plugins_backup_mongo__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['BackupTaskWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['BackupTaskDetailResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_backup_mongo_api_detail_api_plugins_backup_mongo__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['BackupTaskDetailResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_backup_mongo_api_delete_api_plugins_backup_mongo__task_name__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  backup_mongo_backup_mongo_api_execute_api_plugins_backup_mongo__task_name__execute_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupExecuteWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupExecutionResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  dipper_get_schema_api_plugins_dipper_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  dipper_dipper_api_list_api_plugins_dipper__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': Record<string, never>;
-        };
-      };
-    };
-  };
-  dipper_dipper_api_execute_api_plugins_dipper__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['DipperExecuteWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DipperExecutionResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get: {
-    parameters: {
-      query: {
-        service_id: number;
-        collector_type: components['schemas']['CollectorTypeEnum'];
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  dipper_dipper_api_script_preview_api_plugins_dipper_script_preview_get: {
-    parameters: {
-      query: {
-        service_id: number;
-        collector_type: components['schemas']['CollectorTypeEnum'];
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ScriptPreviewResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alerts_alerts_api_list_backups_api_plugins_alerts_backups_get: {
-    parameters: {
-      query?: {
-        offset?: number;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_BackupSummary_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alerts_alerts_api_get_backup_api_plugins_alerts_backups__backup_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        backup_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['BackupDetail'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alerts_alerts_api_restore_api_plugins_alerts_restore_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['RestoreRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['RestoreResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alerts_alerts_api_pagerduty_save_api_plugins_alerts_pagerduty_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['PagerDutyRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PagerDutyResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alerts_alerts_api_pagerduty_delete_api_plugins_alerts_pagerduty_delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PagerDutyResponse'];
-        };
-      };
-    };
-  };
-  alerts_alerts_api_push_api_plugins_alerts_push_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['PushRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PushResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PluginSchema'];
-        };
-      };
-    };
-  };
-  alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AlertGroup'][];
-        };
-      };
-    };
-  };
-  alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_type: components['schemas']['AlertServiceType'];
-        alert_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['AlertDetailResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_get_dashboard_stats_api_sep_dashboard__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['DashboardStatsResponse'];
-        };
-      };
-    };
-  };
-  sep_list_hosts_api_sep_hosts__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HostResponse'][];
-        };
-      };
-      /** @description Upstream Tasks API failure. */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            detail: string;
-          };
-        };
-      };
-    };
-  };
-  sep_list_services_api_sep_services__get: {
-    parameters: {
-      query?: {
-        service_type?: components['schemas']['ServiceTypeEnum'] | null;
-        offset?: number;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_ServiceResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_list_settings_api_sep_admin_settings__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SettingsListResponse'];
-        };
-      };
-    };
-  };
-  sep_get_setting_api_sep_admin_settings__setting_class___key__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        setting_class: components['schemas']['SettingClassEnum'];
-        key: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SettingResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_delete_setting_api_sep_admin_settings__setting_class___key__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        setting_class: components['schemas']['SettingClassEnum'];
-        key: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_patch_settings_api_sep_admin_settings__setting_class__patch: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        setting_class: components['schemas']['SettingClassEnum'];
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SettingsPatch'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SettingResponse'][];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_get_task_stats_api_sep_task_stats__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': Record<string, never>;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-      /** @description Upstream Tasks API failure. */
-      502: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            detail: string;
-          };
-        };
-      };
-    };
-  };
-  sep_list_merged_task_history_api_sep_task_history__get: {
-    parameters: {
-      query: {
-        task_names: string[];
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-        offset?: number;
-        limit?: number;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_TaskHistoryResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  login_form_login_get: {
-    parameters: {
-      query?: {
-        next?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  login_login_post: {
-    parameters: {
-      query?: {
-        next?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_login_login_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  logout_logout_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-    };
-  };
-  read_root__get: {
+  tasks_list_tasks__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -14977,6 +17781,142 @@ export interface operations {
         };
         content: {
           'text/html': string;
+        };
+      };
+    };
+  };
+  task_create_tasks__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['TaskCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_detail_tasks__task_name__get: {
+    parameters: {
+      query?: {
+        owner?: components['schemas']['TaskOwner'] | null;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'text/html': string;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_execute_tasks__task_name__post: {
+    parameters: {
+      query?: {
+        owner?: components['schemas']['TaskOwner'] | null;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/x-www-form-urlencoded': components['schemas']['TaskExecuteRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  tasks_delete_tasks__task_name__delete_post: {
+    parameters: {
+      query?: {
+        owner?: components['schemas']['TaskOwner'] | null;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

@@ -287,7 +287,7 @@ export interface ListColumn {
   key: string;
   label: string;
   sortable?: boolean;
-  format?: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code' | 'actions';
+  format?: 'text' | 'chip' | 'status' | 'date' | 'relative' | 'code' | 'actions' | 'schedule';
 }
 
 export interface ListView {

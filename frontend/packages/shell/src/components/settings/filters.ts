@@ -24,13 +24,20 @@ export interface SettingsFilters {
   settingClass: string;
   reload: 'all' | 'hot' | 'not_overridable';
   override: 'all' | 'yes' | 'no';
+  /**
+   * Whether settings flagged `is_advanced` are hidden (default) or revealed.
+   * Advanced settings are rarely changed and easy to misconfigure, so the
+   * everyday view keeps them out of sight.
+   */
+  advanced: 'hidden' | 'shown';
 }
 
 export const DEFAULT_SETTINGS_FILTERS: SettingsFilters = {
   search: '',
   settingClass: 'all',
-  reload: 'all',
+  reload: 'hot',
   override: 'all',
+  advanced: 'hidden',
 };
 
 /**
@@ -50,6 +57,9 @@ export function filterSettingsGroups(
       ...group,
       settings: group.settings.filter((setting) => {
         if (needle && !setting.key.toLowerCase().includes(needle)) {
+          return false;
+        }
+        if (filters.advanced === 'hidden' && setting.is_advanced) {
           return false;
         }
         if (filters.reload !== 'all' && setting.reload !== filters.reload) {

@@ -23,6 +23,7 @@ from fastapi import APIRouter
 from pytest_mock import MockerFixture
 
 from app.sep.config import Plugin, sep_settings
+from app.sep.plugins.atw.schema import atw_schema
 from app.sep.plugins.framework.apps import TaskExecutionApp
 from app.sep.plugins.framework.base import BaseApp
 from app.sep.plugins.framework.registry import (
@@ -65,19 +66,43 @@ class TestLegacyWrapping:
 
     def test_module_name_only_derives_metadata(self) -> None:
         """A MODULE_NAME-only entry derives name/uri/css/display from the key."""
-        registry = build_app_registry([Plugin(module_name="snippets")])
-        app = registry.get("snippets")
-        assert app.name == "snippets"
-        assert app.uri_path == "/snippets"
-        assert app.css_class == "snippets"
-        assert app.display_name == "snippets"
+        registry = build_app_registry([Plugin(module_name="dipper")])
+        app = registry.get("dipper")
+        assert app.name == "dipper"
+        assert app.uri_path == "/dipper"
+        assert app.css_class == "dipper"
+        assert app.display_name == "dipper"
 
     def test_api_router_is_none_when_opted_out(self) -> None:
         """A plugin opting out of the API mount carries ``api_router is None``."""
         registry = build_app_registry(
-            [Plugin(name="Snippets", module_name="snippets", api_router_path=None)]
+            [Plugin(name="Dipper", module_name="dipper", api_router_path=None)]
         )
-        assert registry.get("snippets").api_router is None
+        assert registry.get("dipper").api_router is None
+
+    def test_legacy_plugin_carries_group_and_nav_order(self) -> None:
+        """Carry ``group``/``nav_order`` onto the synthesized app from the plugin entry."""
+        nav_order = 5
+        registry = build_app_registry(
+            [
+                Plugin(
+                    name="Snippets",
+                    module_name="snippets",
+                    group="alerts",
+                    nav_order=nav_order,
+                )
+            ]
+        )
+        app = registry.get("snippets")
+        assert app.group == "alerts"
+        assert app.nav_order == nav_order
+
+    def test_legacy_plugin_without_grouping_is_ungrouped(self) -> None:
+        """Carry ``None`` for ``group``/``nav_order`` when the plugin omits them."""
+        registry = build_app_registry([Plugin(name="Dipper", module_name="dipper")])
+        app = registry.get("dipper")
+        assert app.group is None
+        assert app.nav_order is None
 
 
 class TestFailFast:
@@ -86,22 +111,22 @@ class TestFailFast:
     def test_non_router_attribute_raises_type_error(self) -> None:
         """An ``api_router_path`` resolving to a non-``APIRouter`` raises ``TypeError``."""
         plugin = Plugin(
-            name="Snippets",
-            module_name="snippets",
+            name="Dipper",
+            module_name="dipper",
             api_router_path="app.sep.config.Plugin",
         )
-        with pytest.raises(TypeError, match="snippets"):
+        with pytest.raises(TypeError, match="dipper"):
             build_app_registry([plugin])
 
     def test_empty_string_api_router_path_is_no_mount(self) -> None:
         """An empty-string ``api_router_path`` yields ``api_router is None``."""
         plugin = Plugin.model_construct(
             name="Ghost",
-            module_name="app.sep.plugins.snippets",
+            module_name="app.sep.plugins.dipper",
             api_router_path="",
         )
         registry = build_app_registry([plugin])
-        assert registry.get("snippets").api_router is None
+        assert registry.get("dipper").api_router is None
 
 
 class TestOrderAndLookup:
@@ -224,6 +249,117 @@ class TestDefinitionCollection:
         registry = build_app_registry([Plugin(module_name="checksums", enabled=False)])
         assert registry.get("checksums").enabled is False
 
+    def test_definition_grouping_used_when_yaml_silent(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Keep the definition's ``group``/``nav_order`` when YAML omits them."""
+        nav_order = 8
+        definition = BaseApp(
+            name="internal", uri_path="/def-path", group="backups", nav_order=nav_order
+        )
+        self._patch_definition(mocker, definition)
+
+        registry = build_app_registry([Plugin(module_name="checksums")])
+        app = registry.get("checksums")
+        assert app.group == "backups"
+        assert app.nav_order == nav_order
+
+    def test_explicit_yaml_grouping_binds_onto_absent_definition_grouping(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Bind explicit YAML ``GROUP``/``NAV_ORDER`` when the definition omits them."""
+        nav_order = 6
+        definition = BaseApp(name="internal", uri_path="/def-path")
+        self._patch_definition(mocker, definition)
+
+        registry = build_app_registry(
+            [
+                Plugin(
+                    module_name="checksums", group="schema_change", nav_order=nav_order
+                )
+            ]
+        )
+        app = registry.get("checksums")
+        assert app.group == "schema_change"
+        assert app.nav_order == nav_order
+
+    def test_omitted_yaml_grouping_does_not_override_definition(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Keep the definition's values when the YAML entry omits ``GROUP``/``NAV_ORDER``."""
+        nav_order = 8
+        definition = BaseApp(
+            name="internal", uri_path="/def-path", group="backups", nav_order=nav_order
+        )
+        self._patch_definition(mocker, definition)
+
+        registry = build_app_registry(
+            [Plugin(name="Yaml Override", module_name="checksums")]
+        )
+        app = registry.get("checksums")
+        assert app.group == "backups"
+        assert app.nav_order == nav_order
+
+    def test_explicit_null_yaml_grouping_forces_ungrouped(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Bind ``group``/``nav_order`` to ``None`` on an explicit YAML ``GROUP: null``."""
+        definition = BaseApp(
+            name="internal", uri_path="/def-path", group="backups", nav_order=8
+        )
+        self._patch_definition(mocker, definition)
+
+        registry = build_app_registry(
+            [Plugin(module_name="checksums", group=None, nav_order=None)]
+        )
+        app = registry.get("checksums")
+        assert app.group is None
+        assert app.nav_order is None
+
+
+class TestScopedKeyDerivation:
+    """Tests for the module-path-derived scoped app key and its override."""
+
+    @staticmethod
+    def _patch_definition(mocker: MockerFixture, definition: BaseApp) -> None:
+        """Make ``import_module`` return a stub module exporting ``definition``."""
+        mocker.patch(
+            "app.sep.plugins.framework.registry.import_module",
+            return_value=SimpleNamespace(app=definition),
+        )
+
+    def test_nested_module_derives_scoped_key(self, mocker: MockerFixture) -> None:
+        """Derive a ``/``-joined scoped key from a nested ``MODULE_NAME``."""
+        self._patch_definition(
+            mocker, BaseApp(name="internal", uri_path="/mysql_backups/restores")
+        )
+        registry = build_app_registry([Plugin(module_name="mysql_backups.restore")])
+        assert registry.keys() == ["mysql_backups/restore"]
+
+    def test_top_level_module_keeps_single_segment_key(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Keep a top-level ``MODULE_NAME`` single-segment key unchanged."""
+        self._patch_definition(mocker, BaseApp(name="internal", uri_path="/checksums"))
+        registry = build_app_registry([Plugin(module_name="checksums")])
+        assert registry.keys() == ["checksums"]
+
+    def test_explicit_definition_key_overrides_derivation(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Honor an explicit ``key`` on the definition over the derived key."""
+        self._patch_definition(
+            mocker,
+            BaseApp(
+                key="mysql_backups/restores",
+                name="internal",
+                uri_path="/mysql_backups/restores",
+            ),
+        )
+        registry = build_app_registry([Plugin(module_name="mysql_backups.restore")])
+        assert registry.get("mysql_backups/restores") is not None
+        assert registry.get("mysql_backups/restore") is None
+
 
 class TestGetAppRegistry:
     """Tests for the lazy cached accessor over ``sep_settings.PLUGINS``."""
@@ -232,7 +368,10 @@ class TestGetAppRegistry:
         """The accessor builds a registry covering every configured plugin."""
         registry = get_app_registry()
         assert isinstance(registry, AppRegistry)
-        expected = [p.module_name.split(".")[-1] for p in sep_settings.PLUGINS]
+        expected = [
+            p.module_name.removeprefix("app.sep.plugins.").replace(".", "/")
+            for p in sep_settings.PLUGINS
+        ]
         assert registry.keys() == expected
 
     def test_result_is_cached(self) -> None:
@@ -277,3 +416,32 @@ class TestBespokeBaseAppDefinitions:
         package = importlib.import_module(f"app.sep.plugins.{plugin}")
         routes = importlib.import_module(f"app.sep.plugins.{plugin}.routes")
         assert package.router is routes.router
+
+
+class TestAtwDefinition:
+    """Cover the atw ``BaseApp`` definition (no Jinja router, no legacy re-export).
+
+    atw is kept out of ``BESPOKE_BASE_APP_PLUGINS`` because it ships no
+    ``routes.py`` Jinja router and no legacy ``router`` re-export, so the
+    parametrized router/re-export assertions there do not apply.
+    """
+
+    def test_module_exports_bare_base_app(self) -> None:
+        """Assert atw exports a bare ``BaseApp``, not a ``TaskExecutionApp``."""
+        app = importlib.import_module("app.sep.plugins.atw").app
+        assert isinstance(app, BaseApp)
+        assert not isinstance(app, TaskExecutionApp)
+
+    def test_registry_binds_api_router_without_jinja(self) -> None:
+        """Bind atw's API router by identity and mount no Jinja router."""
+        api_routes = importlib.import_module("app.sep.plugins.atw.api_routes")
+        app = get_app_registry().get("atw")
+        assert app.api_router is api_routes.router
+        assert app.jinja_router is None
+
+    def test_definition_carries_schema_and_nav_metadata(self) -> None:
+        """Carry ``atw_schema``, ``custom_ui``, and the shared snippets group."""
+        app = get_app_registry().get("atw")
+        assert app.app_schema is atw_schema
+        assert app.custom_ui is True
+        assert app.group == "snippets"

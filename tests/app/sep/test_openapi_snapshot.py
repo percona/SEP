@@ -23,14 +23,25 @@ OPENAPI = su.build_plugins_openapi()
 KEYS = su.configured_plugin_keys()
 
 
+def _child_prefixes(key):
+    """Return the ``/api/plugins`` prefixes of scoped sub-apps nested under ``key``."""
+    return [
+        f"{su.PLUGIN_PREFIX}/{other}"
+        for other in KEYS
+        if other != key and other.startswith(key + "/")
+    ]
+
+
 @pytest.mark.parametrize("key", KEYS)
 def test_openapi_subtree_matches_snapshot(key):
     """Byte-compare the plugin's OpenAPI subtree against its committed golden."""
-    subtree = su.slice_openapi_subtree(OPENAPI, f"{su.PLUGIN_PREFIX}/{key}")
-    golden = su.SNAPSHOTS_DIR / "openapi" / f"{key}.json"
+    subtree = su.slice_openapi_subtree(
+        OPENAPI, f"{su.PLUGIN_PREFIX}/{key}", _child_prefixes(key)
+    )
+    golden = su.SNAPSHOTS_DIR / "openapi" / f"{key.replace('/', '__')}.json"
     su.assert_or_update(golden, su.canonical_json(subtree))
 
 
 def test_openapi_golden_set_is_complete():
     """Assert the committed OpenAPI goldens match the configured plugin set."""
-    su.assert_golden_set_matches("openapi", set(KEYS))
+    su.assert_golden_set_matches("openapi", {key.replace("/", "__") for key in KEYS})

@@ -186,10 +186,12 @@ export default function SettingRow({ setting }: SettingRowProps) {
             </Stack>
           </Stack>
         ) : setting.is_complex ? (
-          // Nested submodels aren't editable yet; value is shown in the Current
-          // column, so don't duplicate it here — just explain why it's read-only.
+          // A non-overridable nested submodel: its editable leaves (if any) are
+          // expanded into their own rows by the backend, so anything still
+          // flagged complex here cannot be overridden. Value is shown in the
+          // Current column, so don't duplicate it — just explain the state.
           <Typography variant="caption" color="text.secondary">
-            Read-only (nested editing not yet supported)
+            Read-only (nested submodel set via settings.yaml)
           </Typography>
         ) : (
           // NOT_OVERRIDABLE scalars get no edit affordance; value shown above.

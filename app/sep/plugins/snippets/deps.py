@@ -44,6 +44,7 @@ from app.sep.plugins.snippets.models import (
     BatchApprovalErrorResponse,
     SnippetBatchApproveRequest,
 )
+from app.sep.plugins.snippets.schema import evaluate_visibility_gates
 from app.sep.snippets.config import snippets_settings, SnippetSudoOption
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import (
@@ -316,6 +317,11 @@ async def get_validated_execution_args(
     :type referer: str | None
     :return: The validated execution arguments.
     :rtype: BaseSnippetArgs
+    :raises HTTPRedirectException: When dynamic validation fails, or a value is
+        submitted for a parameter whose conditional-visibility
+        (``visible_when`` / ``visible_when_not``) gate fires given the rest of
+        the submission — the value is rejected rather than silently stripped,
+        matching ``@apply_conditional_rules`` for hand-coded plugins.
     """
     execution_model = snippet.get_execution_model()
     async with request.form() as form:
@@ -324,7 +330,9 @@ async def get_validated_execution_args(
             "Validating execution args for snippet %r: %s", snippet.filename, form_data
         )
     try:
-        return execution_model.model_validate(remove_falsy_values_from_dict(form_data))
+        execution_args = execution_model.model_validate(
+            remove_falsy_values_from_dict(form_data)
+        )
     except ValidationError as exc:
         messages.from_validation_error(
             request,
@@ -334,6 +342,13 @@ async def get_validated_execution_args(
             exclude_types=("none_required",),
         )
         raise _get_snippet_redirect_exc(request, referer) from None
+
+    gate_failures = evaluate_visibility_gates(snippet, execution_args)
+    if gate_failures:
+        messages.error(request, "Error executing snippet: " + "; ".join(gate_failures))
+        raise _get_snippet_redirect_exc(request, referer)
+
+    return execution_args
 
 
 def build_snippet_execution_meta(

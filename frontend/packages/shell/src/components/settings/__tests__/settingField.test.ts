@@ -18,13 +18,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildSettingTree,
+  countLeaves,
+  countOverriddenLeaves,
+  groupNodeId,
   formatSettingValue,
   getFieldKind,
   isEditable,
   isSaveable,
   parseLiteralOptions,
+  segmentsOf,
   toInitialEditValue,
   toPatchValue,
+  type GroupNode,
 } from '../settingField';
 import { makeSetting } from './fixtures';
 
@@ -113,5 +119,120 @@ describe('isSaveable', () => {
   it('rejects unparseable numbers', () => {
     expect(isSaveable(makeSetting({ type: 'int' }), 'abc')).toBe(false);
     expect(isSaveable(makeSetting({ type: 'int' }), '12')).toBe(true);
+  });
+});
+
+describe('segmentsOf', () => {
+  it('uses the explicit key_path chain when present', () => {
+    expect(segmentsOf(makeSetting({ key: 'A__B', key_path: ['A', 'B'] }))).toEqual(['A', 'B']);
+  });
+
+  it('falls back to a single-segment chain when key_path is absent', () => {
+    expect(segmentsOf(makeSetting({ key: 'TOP', key_path: undefined }))).toEqual(['TOP']);
+  });
+
+  it('does not split key on __ (a segment may itself contain __)', () => {
+    // key_path is authoritative: one segment that happens to contain "__".
+    expect(segmentsOf(makeSetting({ key: 'WEIRD__SEG', key_path: ['WEIRD__SEG'] }))).toEqual([
+      'WEIRD__SEG',
+    ]);
+  });
+});
+
+describe('buildSettingTree', () => {
+  it('keeps top-level scalars as leaf nodes', () => {
+    const a = makeSetting({ key: 'A', key_path: ['A'] });
+    const b = makeSetting({ key: 'B', key_path: ['B'] });
+    const tree = buildSettingTree([a, b]);
+    expect(tree).toEqual([
+      { kind: 'leaf', setting: a },
+      { kind: 'leaf', setting: b },
+    ]);
+  });
+
+  it('groups one-level nested leaves under a synthesised parent', () => {
+    const child1 = makeSetting({ key: 'SESSION__MAX_AGE', key_path: ['SESSION', 'MAX_AGE'] });
+    const child2 = makeSetting({ key: 'SESSION__SECURE', key_path: ['SESSION', 'SECURE'] });
+    const tree = buildSettingTree([child1, child2]);
+    expect(tree).toHaveLength(1);
+    const group = tree[0] as GroupNode;
+    expect(group.kind).toBe('group');
+    expect(group.segment).toBe('SESSION');
+    expect(group.keyPrefix).toBe('SESSION');
+    expect(group.children).toEqual([
+      { kind: 'leaf', setting: child1 },
+      { kind: 'leaf', setting: child2 },
+    ]);
+  });
+
+  it('nests two levels for three-segment keys', () => {
+    const leaf = makeSetting({
+      key: 'SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE',
+      key_path: ['SECURITY_HEADERS', 'STRICT_TRANSPORT_SECURITY', 'MAX_AGE'],
+    });
+    const tree = buildSettingTree([leaf]);
+    const outer = tree[0] as GroupNode;
+    expect(outer.segment).toBe('SECURITY_HEADERS');
+    const inner = outer.children[0] as GroupNode;
+    expect(inner.kind).toBe('group');
+    expect(inner.segment).toBe('STRICT_TRANSPORT_SECURITY');
+    expect(inner.keyPrefix).toBe('SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY');
+    expect(inner.children).toEqual([{ kind: 'leaf', setting: leaf }]);
+  });
+
+  it('shares a parent group across sibling leaves and preserves order', () => {
+    const top = makeSetting({ key: 'TOP', key_path: ['TOP'] });
+    const n1 = makeSetting({ key: 'NOMAD__ENDPOINT', key_path: ['NOMAD', 'ENDPOINT'] });
+    const n2 = makeSetting({ key: 'NOMAD__TOKEN', key_path: ['NOMAD', 'TOKEN'] });
+    const tree = buildSettingTree([top, n1, n2]);
+    expect(tree).toHaveLength(2);
+    expect(tree[0]).toEqual({ kind: 'leaf', setting: top });
+    expect((tree[1] as GroupNode).children).toHaveLength(2);
+  });
+
+  it('does not merge distinct segment chains that join to the same string', () => {
+    // ['A__B'] and ['A', 'B'] both join to "A__B" but are different chains: a
+    // one-level group with a "__"-bearing first segment vs a two-level path.
+    const weird = makeSetting({ key: 'A__B__X', key_path: ['A__B', 'X'] });
+    const normal = makeSetting({ key: 'A__B__Y', key_path: ['A', 'B', 'Y'] });
+    const tree = buildSettingTree([weird, normal]);
+    // Two distinct top-level groups, not one merged group.
+    expect(tree).toHaveLength(2);
+    expect((tree[0] as GroupNode).segment).toBe('A__B');
+    expect((tree[1] as GroupNode).segment).toBe('A');
+    // Their keyPrefix collides, but their identity (keyPath) does not.
+    expect((tree[0] as GroupNode).keyPrefix).toBe('A__B');
+    expect((tree[1] as GroupNode).keyPath).toEqual(['A']);
+    expect(groupNodeId(tree[0] as GroupNode)).not.toBe(groupNodeId(tree[1] as GroupNode));
+  });
+
+  it('clamps anything deeper than two levels onto the level-two group', () => {
+    const deep = makeSetting({ key: 'A__B__C__D', key_path: ['A', 'B', 'C', 'D'] });
+    const a = buildSettingTree([deep])[0] as GroupNode;
+    expect(a.segment).toBe('A');
+    const b = a.children[0] as GroupNode;
+    expect(b.segment).toBe('B');
+    // No third group level: the leaf is filed directly under B.
+    expect(b.children).toEqual([{ kind: 'leaf', setting: deep }]);
+  });
+});
+
+describe('countLeaves', () => {
+  it('counts editable leaves under a node', () => {
+    const tree = buildSettingTree([
+      makeSetting({ key: 'NOMAD__ENDPOINT', key_path: ['NOMAD', 'ENDPOINT'] }),
+      makeSetting({ key: 'NOMAD__TOKEN', key_path: ['NOMAD', 'TOKEN'] }),
+    ]);
+    expect(countLeaves(tree[0])).toBe(2);
+  });
+});
+
+describe('countOverriddenLeaves', () => {
+  it('counts only the leaves carrying an override', () => {
+    const tree = buildSettingTree([
+      makeSetting({ key: 'NOMAD__ENDPOINT', key_path: ['NOMAD', 'ENDPOINT'], has_override: true }),
+      makeSetting({ key: 'NOMAD__TOKEN', key_path: ['NOMAD', 'TOKEN'], has_override: false }),
+    ]);
+    expect(countOverriddenLeaves(tree[0])).toBe(1);
   });
 });

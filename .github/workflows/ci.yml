@@ -70,6 +70,7 @@ jobs:
               - 'poetry.lock'
               - 'poetry.toml'
               - 'settings.yaml'
+              - 'frontend/packages/api/specs/**'
             precommit:
               - '.pre-commit-config.yaml'
             shell:

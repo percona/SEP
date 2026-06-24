@@ -60,14 +60,6 @@ from app.sep.plugins.framework.form_dsl import (
     TableRef,
     Ui,
 )
-from app.sep.plugins.framework.payload import (
-    assemble_envelope,
-    EnvelopeSpec,
-    resolve_refs,
-    ResolvedEntities,
-    RunCommandSpec,
-    RunPythonSpec,
-)
 from app.sep.plugins.framework.responses import (
     BaseTaskResponse,
     build_default_task_response,
@@ -104,6 +96,14 @@ from app.sep.plugins.framework.rules import (
     xor_,
 )
 from app.sep.plugins.framework.script_source import ScriptSource
+from app.sep.plugins.framework.spec import (
+    assemble_envelope,
+    EnvelopeSpec,
+    resolve_refs,
+    ResolvedEntities,
+    RunCommandSpec,
+    RunPythonSpec,
+)
 from app.sep.plugins.framework.task_status import (
     batch_get_latest_statuses,
     extract_latest_task_status,

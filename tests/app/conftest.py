@@ -16,26 +16,34 @@
 """Define test fixtures."""
 
 import inspect
+import os
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import aioresponses.core
 import pytest
+import pytest_asyncio
 from aiohttp import ClientResponse
 from faker import Faker
 from pytest_mock import MockerFixture
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import alert_settings
 from app.core.auth.models import OAuthToken
 from app.core.config import settings
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
+from app.core.utils import json_serializer
 from app.inventory.models import ServiceTypeEnum
 from app.models import CasdoorUser
 from app.sep.config import sep_settings
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.sep.middleware.messages.config import messages_settings
 from app.sep.snippets.config import snippets_settings
+from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.config import tasks_settings
 from tests.app.factories import (
     CasdoorUserFactory,
@@ -94,6 +102,7 @@ def _override_snapshot_cleared() -> None:
     snippets_settings._set_snapshot({})  # noqa: SLF001
     messages_settings._set_snapshot({})  # noqa: SLF001
     alert_settings._set_snapshot({})  # noqa: SLF001
+    anonymizer_settings._set_snapshot({})  # noqa: SLF001
 
 
 @pytest.fixture(scope="session")
@@ -213,8 +222,6 @@ def casdoor_mock(
         "app.core.auth.providers.casdoor.CasdoorSDK.delete_token",
         new=mocker.AsyncMock(return_value=True),
     )
-    from app.core.config import settings
-
     return mocker.patch.object(settings, "CASDOOR", settings.CASDOOR)
 
 
@@ -261,3 +268,73 @@ def created_table() -> CreatedTable:
 def mock_remote_api() -> AsyncMock:
     """Mock a RemoteAPI object."""
     return AsyncMock(spec=RemoteAPI)
+
+
+POSTGRES_DSN_ENV = "SEP_TEST_POSTGRES_DSN"
+
+
+def postgres_worker_schema() -> str:
+    """Return the per-xdist-worker schema name for real-PostgreSQL tests.
+
+    Each xdist worker gets its own schema so parallel workers never collide on
+    ``CREATE``/``DROP`` against a shared database.
+    """
+    return f"sep_test_{os.environ.get('PYTEST_XDIST_WORKER', 'main')}"
+
+
+@pytest_asyncio.fixture
+async def postgres_engine() -> AsyncEngine:
+    """Provide a real-PostgreSQL ``AsyncEngine`` for dialect-specific SQL tests.
+
+    Connect through the already-present ``asyncpg`` driver to the DSN in
+    ``$SEP_TEST_POSTGRES_DSN``. This is chosen over ``pytest-postgresql`` or
+    ``testcontainers`` because it adds no dependency and the CI
+    ``services: postgres`` container supplies the server. An unset env var skips
+    the test (local runs without PostgreSQL); a set env var must connect, so a
+    misconfigured CI service fails loudly instead of silently skipping — the
+    connect is deliberately not wrapped in a try/skip.
+
+    Function-scoped to match every other async fixture in the suite: the
+    session-default event-loop scope makes a session-scoped async fixture bind to
+    the wrong loop. Parallel-safe by construction — each xdist worker gets its own
+    schema via ``schema_translate_map``, so reuse under xdist needs no serial-run
+    convention.
+
+    Pair with ``postgres_session`` for a real-PG-bound ``AsyncSession`` — the
+    reusable seam for any code that dispatches on a real PostgreSQL bind.
+    """
+    dsn = os.environ.get(POSTGRES_DSN_ENV)
+    if not dsn:
+        pytest.skip(f"{POSTGRES_DSN_ENV} not set; skipping real-PostgreSQL tests")
+    schema = postgres_worker_schema()
+    base = create_async_engine(dsn, json_serializer=json_serializer)
+    try:
+        async with base.begin() as conn:
+            await conn.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+        yield base.execution_options(schema_translate_map={None: schema})
+    finally:
+        try:
+            async with base.begin() as conn:
+                await conn.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        finally:
+            await base.dispose()
+
+
+@pytest_asyncio.fixture
+async def postgres_session(postgres_engine: AsyncEngine) -> AsyncSession:
+    """Provide a real-PostgreSQL ``AsyncSession`` with the tasks-service tables.
+
+    Create every ``SQLModel`` table (including ``TaskHistory`` with its ``jsonb``
+    ``execution_request``) in the worker schema, yield a session, then drop the
+    tables on teardown. This is the seam reused by the ``func_json_extract``
+    AutoJSON cell and by any test whose subject dispatches on the session bind.
+    """
+    async with postgres_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    async_session_maker = get_async_session_maker_from_engine(postgres_engine)
+    try:
+        async with async_session_maker() as session:
+            yield session
+    finally:
+        async with postgres_engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.drop_all)

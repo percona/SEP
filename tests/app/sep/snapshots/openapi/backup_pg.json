@@ -1,6 +1,294 @@
 {
   "components": {
     "schemas": {
+      "BackupPgCreateResponse": {
+        "properties": {
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "backup_type": {
+            "title": "Backup Type",
+            "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated By"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/TaskOwner"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backend",
+          "backup_type",
+          "data",
+          "protected",
+          "alert_on_fail"
+        ],
+        "title": "BackupPgCreateResponse",
+        "type": "object"
+      },
+      "BackupPgForm": {
+        "additionalProperties": false,
+        "description": "Define the model-first create/update body and schema source for backup_pg.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the JSON create contract; the form-display defaults that\ndiffer from the model default (the pgBackRest tool paths, the default backup\ntype) are carried on ``Ui(default=...)`` so the runtime payload stays\nunchanged while the schema renders those form defaults.\n\nField declaration order is load-bearing: it drives the derived form's\nsection and field order. ``backup_type`` is not a form field — the spec\nbuilder injects :attr:`BackupType.PGBACKREST`. The ``alert_on_fail``\ncapability control is inherited from :class:`AppFormModel` (``Hidden``,\noff-schema). ``extra=\"forbid\"`` rejects unknown fields (for example a stale\nFE submitting ``host`` / ``port``, which the payload pins itself).",
+        "properties": {
+          "alert_on_fail": {
+            "default": false,
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backup_dir": {
+            "minLength": 1,
+            "title": "Backup Dir",
+            "type": "string"
+          },
+          "hostname": {
+            "minLength": 1,
+            "title": "Hostname",
+            "type": "string"
+          },
+          "logging_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logging Dir"
+          },
+          "pgbackrest_backup_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PgBackRestBackupType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pgbackrest_bin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Bin"
+          },
+          "pgbackrest_config_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Config File"
+          },
+          "pgbackrest_datadir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Datadir"
+          },
+          "pgbackrest_incremental_cycle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Incremental Cycle"
+          },
+          "pgbackrest_retention_archive": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Retention Archive"
+          },
+          "pgbackrest_retention_full": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgbackrest Retention Full"
+          },
+          "service_id": {
+            "title": "Service Id",
+            "type": "integer"
+          },
+          "stanza": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+            "title": "Stanza",
+            "type": "string"
+          },
+          "task_name": {
+            "minLength": 1,
+            "title": "Task Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_name",
+          "hostname",
+          "service_id",
+          "stanza",
+          "backup_dir"
+        ],
+        "title": "BackupPgForm",
+        "type": "object"
+      },
       "BoolField": {
         "additionalProperties": false,
         "description": "Represent a boolean toggle field.\n\n:param field_type: The discriminator literal; always ``\"bool\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"bool\"]",
@@ -392,7 +680,7 @@
         "type": "object"
       },
       "ColumnFormat": {
-        "description": "Enumerate the supported list-view column formatting hints.\n\n:cvar TEXT: Render the column value as plain text.\n:vartype TEXT: str\n:cvar CHIP: Render the column value as a Material UI chip.\n:vartype CHIP: str\n:cvar STATUS: Render the column value as a colour-coded status badge.\n:vartype STATUS: str\n:cvar DATE: Render the column value as an absolute date.\n:vartype DATE: str\n:cvar RELATIVE: Render the column value as a relative time (for example,\n    \"2 hours ago\").\n:vartype RELATIVE: str\n:cvar CODE: Render the column value in a monospaced code font.\n:vartype CODE: str\n:cvar ACTIONS: Row actions (for example delete); not bound to row data.\n    Use with a synthetic column key such as ``_actions``.\n:vartype ACTIONS: str",
+        "description": "Enumerate the supported list-view column formatting hints.\n\n:cvar TEXT: Render the column value as plain text.\n:vartype TEXT: str\n:cvar CHIP: Render the column value as a Material UI chip.\n:vartype CHIP: str\n:cvar STATUS: Render the column value as a colour-coded status badge.\n:vartype STATUS: str\n:cvar DATE: Render the column value as an absolute date.\n:vartype DATE: str\n:cvar RELATIVE: Render the column value as a relative time (for example,\n    \"2 hours ago\").\n:vartype RELATIVE: str\n:cvar CODE: Render the column value in a monospaced code font.\n:vartype CODE: str\n:cvar ACTIONS: Row actions (for example delete); not bound to row data.\n    Use with a synthetic column key such as ``_actions``.\n:vartype ACTIONS: str\n:cvar SCHEDULE: Render a generic schedule cell for the row's task. The\n    frontend joins the row to its periodic task by name and shows the next\n    run (relative, with the absolute timestamp on hover) plus a periodicity\n    popover, or a muted \"Not scheduled\" chip when the task has no schedule.\n    Not bound to the column's own cell value.\n:vartype SCHEDULE: str",
         "enum": [
           "text",
           "chip",
@@ -400,10 +688,35 @@
           "date",
           "relative",
           "code",
-          "actions"
+          "actions",
+          "schedule"
         ],
         "title": "ColumnFormat",
         "type": "string"
+      },
+      "ConnectivityWarning": {
+        "description": "Represent a connectivity-check failure on a JSON API task-creation response.\n\n:param target: The Nomad node the task targets.\n:type target: str\n:param service_type: The lowercase database service type (e.g. ``mysql``).\n:type service_type: str\n:param message: A human-readable description of the failure.\n:type message: str",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "service_type": {
+            "title": "Service Type",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "service_type",
+          "message"
+        ],
+        "title": "ConnectivityWarning",
+        "type": "object"
       },
       "DateTimeField": {
         "additionalProperties": false,
@@ -3069,166 +3382,14 @@
         ],
         "title": "BackupTaskResponse",
         "type": "object"
-      },
-      "app__sep__plugins__backup_pg__models__BackupTaskWrite": {
-        "additionalProperties": false,
-        "description": "Represent a JSON request body for creating a pgBackRest backup task.\n\nMirrors :class:`BackupCreate` minus ``backup_type``, which the API handler\nalways sets to :attr:`BackupType.PGBACKREST` on create.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target Nomad executor host.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the PostgreSQL service.\n:type service_id: int\n:param stanza: pgBackRest stanza name from pgbackrest.conf on the host (for example, ``sep-test``). Passed as ``--stanza`` to pgbackrest commands.\n:type stanza: SafeStanza\n:param alert_on_fail: If True, fire a PMM alert on task failure.\n:type alert_on_fail: bool\n:param logging_dir: Optional directory used by the payload for logs.\n:type logging_dir: str | None\n:param backup_dir: Required pgBackRest backup directory.\n:type backup_dir: NonEmptyStr\n:param pgbackrest_bin: Absolute path to the ``pgbackrest`` binary.\n:type pgbackrest_bin: str | None\n:param pgbackrest_config_file: Path to ``pgbackrest.conf`` on the host.\n:type pgbackrest_config_file: str | None\n:param pgbackrest_backup_type: ``incr`` or ``diff``.\n:type pgbackrest_backup_type: PgBackRestBackupType | None\n:param pgbackrest_datadir: Postgres data directory.\n:type pgbackrest_datadir: str | None\n:param pgbackrest_retention_full: Number of full backups to retain.\n:type pgbackrest_retention_full: int | None\n:param pgbackrest_retention_archive: Number of WAL archives to retain.\n:type pgbackrest_retention_archive: int | None\n:param pgbackrest_incremental_cycle: Cadence value for the INCR/FULL cycle.\n:type pgbackrest_incremental_cycle: int | str | None",
-        "properties": {
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "backup_dir": {
-            "minLength": 1,
-            "title": "Backup Dir",
-            "type": "string"
-          },
-          "hostname": {
-            "minLength": 1,
-            "title": "Hostname",
-            "type": "string"
-          },
-          "logging_dir": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Logging Dir"
-          },
-          "pgbackrest_backup_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PgBackRestBackupType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "pgbackrest_bin": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Bin"
-          },
-          "pgbackrest_config_file": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Config File"
-          },
-          "pgbackrest_datadir": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Datadir"
-          },
-          "pgbackrest_incremental_cycle": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Incremental Cycle"
-          },
-          "pgbackrest_retention_archive": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Retention Archive"
-          },
-          "pgbackrest_retention_full": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Retention Full"
-          },
-          "service_id": {
-            "title": "Service Id",
-            "type": "integer"
-          },
-          "stanza": {
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
-            "title": "Stanza",
-            "type": "string"
-          },
-          "task_name": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name",
-          "hostname",
-          "service_id",
-          "stanza",
-          "backup_dir"
-        ],
-        "title": "BackupTaskWrite",
-        "type": "object"
       }
     }
   },
   "paths": {
     "/api/plugins/backup_pg/": {
       "get": {
-        "description": "List pgBackRest backup tasks.\n\n``limit`` is capped to keep the page size bounded; latest statuses for the\npage are resolved in a single batched round-trip to the Tasks API.",
-        "operationId": "backup_pg_backup_pg_api_list_api_plugins_backup_pg__get",
+        "operationId": "backup_pg__list_paginated_api_plugins_backup_pg__get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
           {
             "in": "query",
             "name": "offset",
@@ -3250,6 +3411,22 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
             }
           }
         ],
@@ -3275,19 +3452,30 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Backup Pg Api List",
+        "summary": "List",
         "tags": [
           "backup_pg"
         ]
       },
       "post": {
-        "description": "Create a pgBackRest backup task from a JSON payload request body.\n\nPOSTs the task via :func:`~app.sep.plugins.framework.cascade.cascade_create_tasks`\nwith an empty derived list so any future derived-task wiring lands without\na route signature change.",
-        "operationId": "backup_pg_backup_pg_api_create_api_plugins_backup_pg__post",
+        "operationId": "backup_pg__create_api_plugins_backup_pg__post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "check_connectivity",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Check Connectivity",
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__backup_pg__models__BackupTaskWrite"
+                "$ref": "#/components/schemas/BackupPgForm"
               }
             }
           },
@@ -3298,7 +3486,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__sep__plugins__backup_pg__models__BackupTaskDetailResponse"
+                  "$ref": "#/components/schemas/BackupPgCreateResponse"
                 }
               }
             },
@@ -3315,7 +3503,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Backup Pg Api Create",
+        "summary": "Create",
         "tags": [
           "backup_pg"
         ]
@@ -3345,8 +3533,7 @@
     },
     "/api/plugins/backup_pg/{task_name}": {
       "delete": {
-        "description": "Delete a pgBackRest backup task.",
-        "operationId": "backup_pg_backup_pg_api_delete_api_plugins_backup_pg__task_name__delete",
+        "operationId": "backup_pg__delete_api_plugins_backup_pg__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -3373,14 +3560,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Backup Pg Api Delete",
+        "summary": "Delete",
         "tags": [
           "backup_pg"
         ]
       },
       "get": {
-        "description": "Retrieve a single pgBackRest backup task by name.",
-        "operationId": "backup_pg_backup_pg_api_detail_api_plugins_backup_pg__task_name__get",
+        "operationId": "backup_pg__detail_api_plugins_backup_pg__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3414,7 +3600,67 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Backup Pg Api Detail",
+        "summary": "Detail",
+        "tags": [
+          "backup_pg"
+        ]
+      },
+      "put": {
+        "operationId": "backup_pg__update_api_plugins_backup_pg__task_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "check_connectivity",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Check Connectivity",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupPgForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupPgCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update",
         "tags": [
           "backup_pg"
         ]
@@ -3422,7 +3668,7 @@
     },
     "/api/plugins/backup_pg/{task_name}/execute": {
       "post": {
-        "description": "Execute a pgBackRest backup task.",
+        "description": "Resolve, dispatch, and wrap a standard task execution.",
         "operationId": "backup_pg_backup_pg_api_execute_api_plugins_backup_pg__task_name__execute_post",
         "parameters": [
           {

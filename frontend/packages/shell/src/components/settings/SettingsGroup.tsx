@@ -25,11 +25,15 @@ import Typography from '@mui/material/Typography';
 import type { SettingResponse } from '@sep/api';
 
 import SettingRow from './SettingRow';
+import NestedSettingGroup from './NestedSettingGroup';
+import { buildSettingTree, groupNodeId } from './settingField';
 
 export interface SettingsGroupProps {
   settingClass: string;
   settings: SettingResponse[];
   defaultExpanded?: boolean;
+  /** Whether a key search is active (auto-expands nested groups). */
+  searchActive?: boolean;
 }
 
 /** One expandable section per `setting_class`, listing its setting rows. */
@@ -37,7 +41,9 @@ export default function SettingsGroup({
   settingClass,
   settings,
   defaultExpanded = true,
+  searchActive = false,
 }: SettingsGroupProps) {
+  const tree = buildSettingTree(settings);
   return (
     <Accordion defaultExpanded={defaultExpanded} data-testid={`settings-group-${settingClass}`}>
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -45,13 +51,24 @@ export default function SettingsGroup({
           <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
             {settingClass}
           </Typography>
-          <Chip size="small" label={settings.length} />
+          <Chip size="small" label={tree.length} />
         </Stack>
       </AccordionSummary>
       <AccordionDetails>
-        {settings.map((setting) => (
-          <SettingRow key={`${setting.setting_class}.${setting.key}`} setting={setting} />
-        ))}
+        {tree.map((node) =>
+          node.kind === 'group' ? (
+            <NestedSettingGroup
+              key={`group:${groupNodeId(node)}`}
+              node={node}
+              searchActive={searchActive}
+            />
+          ) : (
+            <SettingRow
+              key={`${node.setting.setting_class}.${node.setting.key}`}
+              setting={node.setting}
+            />
+          ),
+        )}
       </AccordionDetails>
     </Accordion>
   );

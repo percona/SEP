@@ -96,20 +96,53 @@ apply client-side case conversion.
 
 ## Codegen
 
+`pnpm --filter @sep/api codegen` reads the committed spec fixtures in
+`specs/{main,inventory,tasks,sep}.json` and writes one typed client per spec
+into `src/generated/`. No running backend is required by default.
+
 ```bash
-# Requires the backend running at http://localhost:8000 (override with
-# CODEGEN_BASE_URL=…).
+# Default: regenerate the clients from the committed specs/*.json fixtures.
 pnpm --filter @sep/api codegen
 ```
 
-The script (`scripts/codegen.ts`) iterates over a `SPECS` list and writes
-one `.ts` file per spec into `src/generated/`. If the backend ever merges
-to a single spec, collapse `SPECS` to one entry — nothing else changes.
+The specs are committed (and marked `linguist-generated`) so codegen, CI, and
+local builds never need a live backend.
 
-A CI check should regenerate and fail on drift:
+### Updating after a backend contract change
+
+The fixtures are committed, so a contract change is a two-step regen — dump the
+specs from the backend, then regenerate the clients:
+
+```bash
+# 1. From the repo root: dump the four whole-app OpenAPI specs (no server needed).
+python scripts/dump_openapi.py
+# 2. Regenerate the typed clients from the refreshed fixtures, then format them
+#    (CI compares against the formatted output).
+pnpm --filter @sep/api codegen
+pnpm --filter @sep/api exec oxfmt --write src/generated
+```
+
+To regenerate directly from a live backend instead of the fixtures, point
+codegen at it (format afterward, as the CI guard does):
+
+```bash
+CODEGEN_BASE_URL=http://localhost:8000 pnpm --filter @sep/api codegen
+pnpm --filter @sep/api exec oxfmt --write src/generated
+```
+
+### Freshness is enforced in CI
+
+Two guards keep the committed clients honest across the spec handoff:
+
+- A backend test (`tests/app/test_openapi_specs_fresh.py`) fails if the
+  committed `specs/*.json` drift from a fresh `python scripts/dump_openapi.py`
+  dump (the spec ↔ backend link).
+- The frontend `checks` job regenerates and formats the clients from the
+  committed specs and fails on any `src/generated/` diff (the TS ↔ spec link):
 
 ```bash
 pnpm --filter @sep/api codegen
+pnpm --filter @sep/api exec oxfmt --write src/generated
 git diff --exit-code -- packages/api/src/generated/
 ```
 
@@ -124,14 +157,16 @@ git diff --exit-code -- packages/api/src/generated/
 import { useQuery } from '@tanstack/react-query';
 import { sepApi, throwOnApiError, type SepComponents } from '@sep/api';
 
-type Task = SepComponents['schemas']['ChecksumTaskResponse'];
+type Task = SepComponents['schemas']['BaseTaskResponse'];
 
 export function useChecksumTask(name: string) {
   return useQuery<Task>({
     queryKey: ['checksums', name],
     queryFn: () =>
       throwOnApiError(
-        sepApi.GET('/checksums/{task_name}', { params: { path: { task_name: name } } }),
+        sepApi.GET('/api/plugins/checksums/{task_name}', {
+          params: { path: { task_name: name } },
+        }),
       ),
   });
 }

@@ -29,6 +29,7 @@ app = BaseApp(
     display_name="Health & Security Report",
     uri_path="/report",
     css_class="report",
+    nav_order=13,
     api_router=api_router,
     jinja_router=jinja_router,
 )

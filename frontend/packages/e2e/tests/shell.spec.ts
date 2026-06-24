@@ -173,9 +173,14 @@ test.describe('shell sanity smoke', () => {
 
     // Sidebar navigation items must be present (permanent drawer on desktop).
     // "Schema Change" only appears in the nav (not duplicated on the dashboard),
-    // so it uniquely identifies the sidebar.  "Snippet Manager" is the registry
-    // display_name for snippets; use getByRole('button') to target the nav entry.
+    // so it uniquely identifies the sidebar. "Snippets" is the collapsible group
+    // holding Snippet Manager + Collect Diagnostic Data; its child entries are
+    // unmounted until the group is expanded (Collapse uses unmountOnExit), so
+    // expand it before asserting the child nav entry renders.
     await expect(page.getByText('Schema Change')).toBeVisible();
+    const snippetsGroup = page.getByRole('button', { name: 'Snippets', exact: true });
+    await expect(snippetsGroup).toBeVisible();
+    await snippetsGroup.click();
     await expect(page.getByRole('button', { name: 'Snippet Manager' })).toBeVisible();
   });
 
