@@ -121,7 +121,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.includes('/tasks/history/')) {
+    if (pathname.includes('/sep/task-history/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',

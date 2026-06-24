@@ -19,7 +19,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import status
+from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
 from app.core.pagination import (
@@ -404,3 +404,154 @@ class TestSepTaskHistoryAuth:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
+
+
+class TestSepTaskHistoryListAll:
+    """``GET /api/sep/task-history/`` with no ``task_names`` proxies the upstream list."""
+
+    def test_passthrough_when_task_names_omitted(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Return the upstream history list directly when ``task_names`` is omitted."""
+        payload = {
+            "items": [
+                _history_item(
+                    item_id=7,
+                    started_at="2026-01-01T10:00:00+00:00",
+                    task_name="run-x",
+                )
+            ],
+            "total": 1,
+            "offset": DEFAULT_PAGINATION_OFFSET,
+            "limit": DEFAULT_PAGINATION_LIMIT,
+        }
+        mock_task_api_dep.get.return_value = payload
+        response = test_client.get("/api/sep/task-history/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert [item["id"] for item in body["items"]] == [7]
+        assert body["total"] == 1
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/history/",
+            params={
+                "offset": DEFAULT_PAGINATION_OFFSET,
+                "limit": DEFAULT_PAGINATION_LIMIT,
+            },
+        )
+
+    def test_forwards_status_and_pagination(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Forward the ``status`` filter and client pagination to the upstream list."""
+        mock_task_api_dep.get.return_value = {
+            "items": [],
+            "total": 0,
+            "offset": PROPAGATED_TEST_OFFSET,
+            "limit": PROPAGATED_TEST_LIMIT,
+        }
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[
+                ("status", "running"),
+                ("offset", str(PROPAGATED_TEST_OFFSET)),
+                ("limit", str(PROPAGATED_TEST_LIMIT)),
+            ],
+        )
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["offset"] == PROPAGATED_TEST_OFFSET
+        assert body["limit"] == PROPAGATED_TEST_LIMIT
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/history/",
+            params={
+                "offset": PROPAGATED_TEST_OFFSET,
+                "limit": PROPAGATED_TEST_LIMIT,
+                "status": "running",
+            },
+        )
+
+    def test_provided_but_blank_task_names_still_rejected(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Reject provided-but-all-blank ``task_names`` with 422, never list-all."""
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[("task_names", ""), ("task_names", "   ")],
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        mock_task_api_dep.get.assert_not_called()
+
+
+class TestSepStopTaskHistoryEndpoint:
+    """``POST /api/sep/task-history/{id}/stop/`` proxies the upstream stop call."""
+
+    def test_stop_proxies_and_returns_upstream_json(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Return the upstream stop JSON verbatim (not a redirect)."""
+        upstream = {"id": 42, "status": "stopped"}
+        mock_task_api_dep.post.return_value = upstream
+        response = test_client.post("/api/sep/task-history/42/stop/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == upstream
+        mock_task_api_dep.post.assert_awaited_once_with("/history/42/stop/")
+
+    @pytest.mark.parametrize(
+        "upstream_status",
+        [status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND],
+    )
+    def test_stop_passes_through_upstream_client_error(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        upstream_status: int,
+    ) -> None:
+        """Return an upstream client error (400 "not running", 404) unchanged with detail."""
+        mock_task_api_dep.post.side_effect = HTTPException(
+            status_code=upstream_status, detail="task is not running"
+        )
+        response = test_client.post("/api/sep/task-history/42/stop/")
+        assert response.status_code == upstream_status
+        assert response.json() == {"detail": "task is not running"}
+
+    def test_stop_upstream_5xx_becomes_502(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Fail the proxy with ``502`` on an upstream server error."""
+        mock_task_api_dep.post.side_effect = HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="boom"
+        )
+        response = test_client.post("/api/sep/task-history/42/stop/")
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "boom"}
+
+    def test_stop_upstream_oserror_becomes_502(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Fail the proxy with ``502`` on a connection-level ``OSError``."""
+        mock_task_api_dep.post.side_effect = OSError("connection refused")
+        response = test_client.post("/api/sep/task-history/42/stop/")
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "connection refused"}
+
+    def test_stop_cookie_only_unauthorized(
+        self,
+        api_admin_client_no_bearer: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Reject a cookie-only stop that lacks a Bearer token with 401."""
+        response = api_admin_client_no_bearer.post("/api/sep/task-history/42/stop/")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        mock_task_api_dep.post.assert_not_awaited()

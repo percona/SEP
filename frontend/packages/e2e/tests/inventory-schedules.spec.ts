@@ -130,7 +130,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Periodic task list
-    if (pathname.endsWith('/tasks/periodic/') && method === 'GET') {
+    if (pathname.endsWith('/sep/periodic-tasks/') && method === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -139,7 +139,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Periodic task create
-    if (pathname.endsWith(`/tasks/${TASK_NAME}/periodic/`) && method === 'POST') {
+    if (pathname.endsWith(`/sep/periodic-tasks/${TASK_NAME}/`) && method === 'POST') {
       const body = JSON.parse((await route.request().postData()) ?? '{}') as PeriodicTask;
       const created: PeriodicTask = {
         ...body,
@@ -163,7 +163,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Periodic task update / delete
-    const periodicMatch = pathname.match(/\/tasks\/periodic\/(\d+)$/);
+    const periodicMatch = pathname.match(/\/sep\/periodic-tasks\/(\d+)$/);
     if (periodicMatch) {
       const id = Number(periodicMatch[1]);
       const idx = schedules.findIndex((s) => s.id === id);

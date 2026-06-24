@@ -56,7 +56,7 @@ export function useScheduledTasksForPlugin(
   const periodicQuery = useQuery<PeriodicTaskResponse[], Error, PeriodicTaskResponse[]>({
     queryKey: PERIODIC_LIST_KEY,
     queryFn: async () => {
-      const { data } = await apiClient.get<PeriodicTaskResponse[]>('/tasks/periodic/');
+      const { data } = await apiClient.get<PeriodicTaskResponse[]>('/sep/periodic-tasks/');
       return data;
     },
     refetchInterval: disablePolling ? false : pollingIntervalMs,
@@ -92,7 +92,7 @@ export function useCreateScheduledTask() {
   return useMutation<PeriodicTaskResponse, Error, CreateVars>({
     mutationFn: async ({ taskName, body }) => {
       const { data } = await apiClient.post<PeriodicTaskResponse>(
-        `/tasks/${encodeURIComponent(taskName)}/periodic/`,
+        `/sep/periodic-tasks/${encodeURIComponent(taskName)}/`,
         body,
       );
       return data;
@@ -112,7 +112,7 @@ export function useUpdateScheduledTask() {
   const queryClient = useQueryClient();
   return useMutation<PeriodicTaskResponse, Error, UpdateVars>({
     mutationFn: async ({ id, body }) => {
-      const { data } = await apiClient.put<PeriodicTaskResponse>(`/tasks/periodic/${id}`, body);
+      const { data } = await apiClient.put<PeriodicTaskResponse>(`/sep/periodic-tasks/${id}`, body);
       return data;
     },
     onSuccess: () => {
@@ -125,7 +125,7 @@ export function useDeleteScheduledTask() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, number>({
     mutationFn: async (id) => {
-      await apiClient.delete(`/tasks/periodic/${id}`);
+      await apiClient.delete(`/sep/periodic-tasks/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: PERIODIC_LIST_KEY });
