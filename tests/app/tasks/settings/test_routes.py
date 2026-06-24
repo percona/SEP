@@ -31,7 +31,13 @@ from app.models import CasdoorUser
 from app.tasks.config import tasks_settings
 from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad import NomadExecutor
+from app.tasks.execution.nomad_lifecycle import normalize_nomad_config_value
 from app.tasks.main import tasks_app
+
+
+def _nomad_endpoint_value() -> str:
+    """Return the effective Nomad ``endpoint`` as a string."""
+    return str(normalize_nomad_config_value(tasks_settings.NOMAD).endpoint)
 
 
 @pytest.fixture(name="admin_test_client")
@@ -537,6 +543,97 @@ class TestTasksSettingsNestedOverrides:
             assert (
                 by_key["NOMAD__check_cert_expiry_interval__every"]["value"] is not None
             )
+        finally:
+            tasks_settings._set_snapshot({})
+
+
+def _nomad_snapshot_with_endpoint(full_url: str) -> dict[str, object]:
+    """Build a snapshot carrying only a ``NOMAD.endpoint`` override."""
+    return {"NOMAD": {"endpoint": full_url}}
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsCredentialUrlRedaction:
+    """Verify that LIST and DETAIL redact ``NOMAD__endpoint`` embedded URL passwords."""
+
+    _FULL_URL = "http://nomad-user:nomad-secret@nomad.internal:4646"
+
+    @pytest.fixture(autouse=True)
+    def _reset_snapshot(self) -> Iterator[None]:
+        """Clear override snapshots after each test."""
+        yield
+        tasks_settings._set_snapshot({})
+
+    async def test_list_redacts_nomad_endpoint_leaf(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """``GET /settings/`` masks ``NOMAD__endpoint`` password components."""
+        tasks_settings._set_snapshot(_nomad_snapshot_with_endpoint(self._FULL_URL))
+        response = admin_test_client.get("/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        settings = response.json()["groups"][0]["settings"]
+        by_key = {entry["key"]: entry for entry in settings}
+        value = by_key["NOMAD__endpoint"]["value"]
+        assert "nomad-secret" not in value
+        assert "****" in value
+        assert "nomad-user" in value
+
+    async def test_detail_redacts_nomad_endpoint_leaf(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """``GET /settings/{class}/{key}`` masks ``NOMAD__endpoint`` passwords."""
+        tasks_settings._set_snapshot(_nomad_snapshot_with_endpoint(self._FULL_URL))
+        response = admin_test_client.get(
+            "/admin/settings/TasksSettings/NOMAD__endpoint"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        value = response.json()["value"]
+        assert "nomad-secret" not in value
+        assert "****" in value
+        assert "nomad-user" in value
+
+
+@pytest.mark.asyncio
+class TestTasksSettingsCredentialUrlWriteback:
+    """Verify PATCH does not persist redacted URL display values over stored credentials."""
+
+    async def test_patch_redacted_nomad_leaf_preserves_password(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """Saving an unchanged redacted ``NOMAD__endpoint`` keeps the real password."""
+        full_url = "http://nomad-user:nomad-secret@nomad.internal:4646"
+        redacted_url = "http://nomad-user:****@nomad.internal:4646"
+        snapshot = _nomad_snapshot_with_endpoint(full_url)
+        try:
+            tasks_settings._set_snapshot(snapshot)
+            response = admin_test_client.patch(
+                "/admin/settings/TasksSettings",
+                json={"NOMAD__endpoint": redacted_url},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            endpoint = _nomad_endpoint_value()
+            assert "nomad-secret" in endpoint
+            assert "****" not in endpoint
+        finally:
+            tasks_settings._set_snapshot({})
+
+    async def test_patch_redacted_whole_nomad_preserves_password(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """Reject a whole ``NOMAD`` PATCH while preserving the stored endpoint password."""
+        full_url = "http://nomad-user:nomad-secret@nomad.internal:4646"
+        redacted_url = "http://nomad-user:****@nomad.internal:4646"
+        snapshot = _nomad_snapshot_with_endpoint(full_url)
+        try:
+            tasks_settings._set_snapshot(snapshot)
+            response = admin_test_client.patch(
+                "/admin/settings/TasksSettings",
+                json={"NOMAD": {"endpoint": redacted_url}},
+            )
+            assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+            endpoint = _nomad_endpoint_value()
+            assert "nomad-secret" in endpoint
+            assert "****" not in endpoint
         finally:
             tasks_settings._set_snapshot({})
 

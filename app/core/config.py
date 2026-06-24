@@ -70,6 +70,7 @@ from app.core.utils.fields import (
     LogLevel,
     NonEmptyStr,
     RelativeFilePathField,
+    StrCredentialHttpUrl,
     StrHttpUrl,
     StrImportableAttribute,
     TimedeltaSeconds,
@@ -271,7 +272,7 @@ class PMMSettings(BaseLowercaseModel):
     """Define core PMM connection and authentication configuration.
 
     :param endpoint: The PMM server URL.
-    :type endpoint: StrHttpUrl | None
+    :type endpoint: StrCredentialHttpUrl | None
     :param frontend: The PMM frontend URL.
     :type frontend: StrHttpUrl | None
     :param api_key: API key for PMM authentication.
@@ -287,7 +288,7 @@ class PMMSettings(BaseLowercaseModel):
     :type annotations_timeout: PositiveInt
     """
 
-    endpoint: StrHttpUrl | None = None
+    endpoint: StrCredentialHttpUrl | None = None
     frontend: StrHttpUrl | None = None
     api_key: SecretStr | None = None
     verify_ssl: bool = True

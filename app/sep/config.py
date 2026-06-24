@@ -58,7 +58,9 @@ from app.core.utils import (
     slugify,
 )
 from app.core.utils.fields import (
+    CredentialHttpUrl,
     RelativeDirectoryPathField,
+    StrCredentialHttpUrl,
     StrHttpUrl,
     StrImportableAttribute,
     TimedeltaSeconds,
@@ -271,7 +273,7 @@ class _DeprecatedPMMConfig(BaseLowercaseModel):
     so that env-var values are validated correctly by Pydantic.
 
     :param endpoint: The PMM server URL.
-    :type endpoint: StrHttpUrl | None
+    :type endpoint: StrCredentialHttpUrl | None
     :param frontend: The PMM frontend URL.
     :type frontend: StrHttpUrl | None
     :param api_key: API key for PMM authentication.
@@ -290,7 +292,7 @@ class _DeprecatedPMMConfig(BaseLowercaseModel):
     """
 
     model_config = ConfigDict(extra="allow")
-    endpoint: StrHttpUrl | None = None
+    endpoint: StrCredentialHttpUrl | None = None
     frontend: StrHttpUrl | None = None
     api_key: SecretStr | None = None
     verify_ssl: bool = True
@@ -521,9 +523,9 @@ class SEPSettings(BaseYamlAppSettings):
         inside the alerts plugin is used.
     :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
-    :type INVENTORY_ENDPOINT: HttpUrl
+    :type INVENTORY_ENDPOINT: CredentialHttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
-    :type TASKS_ENDPOINT: HttpUrl
+    :type TASKS_ENDPOINT: CredentialHttpUrl
     :param PLUGINS: A list of plugins used by SEP. Defaults to an empty list with
         duplicates removed.
     :type PLUGINS: UniqueList[Plugin]
@@ -579,8 +581,8 @@ class SEPSettings(BaseYamlAppSettings):
     TEMPLATES_DIR: RelativeDirectoryPathField = Path("templates")
     STATIC_DIR: RelativeDirectoryPathField = Path("static")
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
-    INVENTORY_ENDPOINT: HttpUrl = hot_field(..., advanced=True)
-    TASKS_ENDPOINT: HttpUrl = hot_field(..., advanced=True)
+    INVENTORY_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
+    TASKS_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
     PLUGINS: UniqueList[Plugin] = UniqueList()
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")

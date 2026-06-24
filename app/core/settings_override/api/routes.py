@@ -61,6 +61,7 @@ from app.core.settings_override.registry import (
     materialize_override_value,
     NESTED_VALUE_MISSING,
     override_keys_for_rows,
+    preserve_patch_credential_url_value,
     ReloadClassification,
     resolve_nested_field,
     resolve_nested_field_metadata,
@@ -413,6 +414,7 @@ def _format_annotation(annotation: Any) -> str:
 def _validate_patch_body(
     *,
     settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
     body: SettingsPatch,
 ) -> list[tuple[str, Any]]:
     """Validate every key/value in a PATCH body for one settings class.
@@ -428,6 +430,7 @@ def _validate_patch_body(
     value.
 
     :param settings_cls: The Pydantic settings class to validate against.
+    :param proxy: The proxy whose attribute access yields current field values.
     :param body: The PATCH payload as a :class:`SettingsPatch` root model.
     :return: The list of ``(key, coerced_value)`` tuples ready to persist.
     :raises HTTPUnprocessableEntityException: If any key fails validation;
@@ -440,6 +443,7 @@ def _validate_patch_body(
         if "__" in key:
             _validate_nested_key(
                 settings_cls=settings_cls,
+                proxy=proxy,
                 key=key,
                 raw_value=raw_value,
                 errors=errors,
@@ -466,9 +470,13 @@ def _validate_patch_body(
             )
             continue
         materializer = field_materializer(settings_cls, key)
+        current_value = getattr(proxy, key, None)
+        patch_value = preserve_patch_credential_url_value(
+            field_info, current_value, raw_value
+        )
         try:
             materialized = materialize_override_value(
-                settings_cls, key, field_info, raw_value
+                settings_cls, key, field_info, patch_value
             )
         except ValidationError as exc:
             errors.extend(
@@ -488,7 +496,7 @@ def _validate_patch_body(
         # Materializer-backed fields (PROVIDERS, FOOTER_TEMPLATE) produce values that are
         # not JSON-storable (a provider set, a Template); persist the raw JSON so
         # build_snapshot re-materializes on load.
-        to_apply.append((key, raw_value if materializer is not None else materialized))
+        to_apply.append((key, patch_value if materializer is not None else materialized))
 
     if errors:
         raise HTTPUnprocessableEntityException(detail=errors)
@@ -498,6 +506,7 @@ def _validate_patch_body(
 def _validate_nested_key(
     *,
     settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
     key: str,
     raw_value: Any,
     errors: list[dict[str, Any]],
@@ -513,6 +522,7 @@ def _validate_nested_key(
     (structured Pydantic error on failure).
 
     :param settings_cls: The Pydantic settings class to validate against.
+    :param proxy: The proxy whose attribute access yields current field values.
     :param key: The ``__``-delimited override key.
     :param raw_value: The raw value to coerce to the leaf type.
     :param errors: The running list of structured error entries, mutated in place.
@@ -560,7 +570,13 @@ def _validate_nested_key(
         )
         return
     try:
-        validated = coerce_field_value(leaf_info, raw_value)
+        _, current_value = resolve_nested_value(
+            settings_cls=settings_cls, proxy=proxy, key=key
+        )
+        patch_value = preserve_patch_credential_url_value(
+            leaf_info, current_value, raw_value
+        )
+        validated = coerce_field_value(leaf_info, patch_value)
     except ValidationError as exc:
         errors.extend(
             {
@@ -795,7 +811,9 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
                 remote_api, remote_lookup[setting_class], setting_class, body
             )
         settings_cls, proxy = _resolve(setting_class)
-        to_apply = _validate_patch_body(settings_cls=settings_cls, body=body)
+        to_apply = _validate_patch_body(
+            settings_cls=settings_cls, proxy=proxy, body=body
+        )
         await _persist_overrides(
             session=session,
             setting_class=setting_class,

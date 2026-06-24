@@ -36,13 +36,13 @@ from aiohttp import (
     TCPConnector,
 )
 from fastapi import HTTPException, status
-from pydantic import computed_field, Field, HttpUrl, PrivateAttr
+from pydantic import computed_field, Field, PrivateAttr
 
 from app.core.exceptions import HTTPGoneException
 from app.core.log import correlation_id_var
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils import json_serializer
-from app.core.utils.fields import NonEmptyStr, RelativeFilePathField
+from app.core.utils.fields import CredentialHttpUrl, NonEmptyStr, RelativeFilePathField
 
 # Maximum size of a single line yielded by RemoteAPI.stream(). aiohttp's default
 # StreamReader caps lines at ~128 KiB (2 * read_bufsize), which is too small for
@@ -123,7 +123,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     configurations, and managing request paths and headers.
 
     :param endpoint: The base URL for the external API endpoint.
-    :type endpoint: HttpUrl
+    :type endpoint: CredentialHttpUrl
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.
@@ -136,7 +136,7 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     :type logger_name: str
     """
 
-    endpoint: HttpUrl = Field(..., frozen=True)
+    endpoint: CredentialHttpUrl = Field(..., frozen=True)
     verify_ssl: bool = Field(default=True, frozen=True)
     ssl_cafile: RelativeFilePathField | None = Field(None, frozen=True)
     ssl_keyfile: RelativeFilePathField | None = Field(None, frozen=True)
@@ -561,7 +561,7 @@ class RemoteAPI(BaseRemoteAPI):
     parsed JSON, or ``None`` when the response has no body (for example HTTP 204).
 
     :param endpoint: The base URL for the external API endpoint.
-    :type endpoint: HttpUrl
+    :type endpoint: CredentialHttpUrl
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :type verify_ssl: bool
     :param ssl_cafile: Path to the SSL certificate authority file. Defaults to None.

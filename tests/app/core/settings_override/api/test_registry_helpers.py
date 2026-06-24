@@ -146,6 +146,23 @@ def test_dump_field_value_redacts_secret_str() -> None:
     assert dumped == "**********"
 
 
+def test_dump_field_value_redacts_credential_http_url() -> None:
+    """A credential-bearing URL is redacted by its field metadata serializer."""
+    from pydantic import TypeAdapter
+
+    from app.core.utils.fields import CredentialHttpUrl
+    from app.sep.config import SEPSettings
+
+    field = SEPSettings.model_fields["INVENTORY_ENDPOINT"]
+    url = TypeAdapter(CredentialHttpUrl).validate_python(
+        "http://inv-user:inv-secret@inventory.internal:8080"
+    )
+    dumped = dump_field_value(field, url)
+    assert "inv-secret" not in dumped
+    assert "****" in dumped
+    assert "inv-user" in dumped
+
+
 def test_dump_field_value_redacts_nested_secret() -> None:
     """A nested ``SecretStr`` inside a submodel is redacted in the dumped dict."""
     field = _FixtureSettings.model_fields["COLD_NESTED"]

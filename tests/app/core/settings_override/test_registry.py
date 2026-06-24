@@ -33,6 +33,7 @@ from app.core.settings_override.registry import (
     materialize_via_owning_model,
     MaterializerContext,
     nested_overridable_field_names,
+    preserve_patch_credential_url_value,
     ReloadClassification,
     resolve_nested_field_metadata,
 )
@@ -110,6 +111,23 @@ def test_materialize_template_rejects_non_string() -> None:
     """A non-string, non-``Template`` override is rejected instead of passed through."""
     with pytest.raises(ValueError, match="must be a string"):
         materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", 1))
+
+
+def test_preserve_patch_credential_url_value_for_scalar_field() -> None:
+    """Scalar credential URL PATCH values restore the stored password when redacted."""
+    field = SEPSettings.model_fields["INVENTORY_ENDPOINT"]
+    current = "http://inv-user:inv-secret@inventory.internal:8080"
+    incoming = "http://inv-user:****@inventory.internal:8080"
+    assert preserve_patch_credential_url_value(field, current, incoming) == current
+
+
+def test_preserve_patch_credential_url_value_for_materializer_payload() -> None:
+    """Whole-object materializer PATCH payloads preserve nested endpoint passwords."""
+    field = TasksSettings.model_fields["NOMAD"]
+    current = {"endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646"}
+    incoming = {"endpoint": "http://nomad-user:****@nomad.internal:4646"}
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved["endpoint"] == current["endpoint"]
 
 
 def test_is_hot_reloadable_true_for_marked_field() -> None:

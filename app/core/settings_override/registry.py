@@ -46,6 +46,7 @@ __all__ = [
     "nested_overridable_field_names",
     "not_overridable_field",
     "override_keys_for_rows",
+    "preserve_patch_credential_url_value",
     "resolve_nested_field",
     "resolve_nested_field_metadata",
     "resolve_nested_value",
@@ -60,12 +61,16 @@ from string import Template
 from types import UnionType
 from typing import Annotated, Any, NamedTuple, TYPE_CHECKING, Union
 
-from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter
+from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter, WrapSerializer
 from pydantic.errors import PydanticSchemaGenerationError
 from pydantic_core import PydanticUndefined
 
 from app.core.settings_override.models import SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.utils.fields import (
+    _credential_url_serializer,
+    preserve_credential_url_password,
+)
 from app.core.utils.pydantic import (
     annotation_pydantic_class,
     CustomFieldMetadata,
@@ -971,6 +976,74 @@ def _field_contains_secret(field_info: FieldInfo) -> bool:
     return False
 
 
+def _metadata_has_credential_url_serializer(metadata: tuple[Any, ...]) -> bool:
+    """Return whether ``metadata`` carries the credential URL JSON serializer."""
+    return any(
+        isinstance(item, WrapSerializer) and item.func is _credential_url_serializer
+        for item in metadata
+    )
+
+
+def is_credential_url_field(field_info: FieldInfo) -> bool:
+    """Return whether ``field_info`` serializes as a credential-bearing URL."""
+    if _metadata_has_credential_url_serializer(field_info.metadata):
+        return True
+    for arg in _iter_type_arguments(field_info.annotation):
+        if _metadata_has_credential_url_serializer(getattr(arg, "__metadata__", ())):
+            return True
+    return False
+
+
+def _read_mapping_or_model_attr(current: Any, name: str) -> Any:
+    """Read ``name`` from a live model or a materializer fingerprint mapping."""
+    if current is None:
+        return None
+    if isinstance(current, Mapping):
+        return current.get(name)
+    return getattr(current, name, None)
+
+
+def preserve_credential_urls_in_model_payload(
+    model_cls: type[BaseModel],
+    current: Any,
+    incoming: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Restore masked URL passwords inside a materializer PATCH payload."""
+    result = dict(incoming)
+    for name, field_info in model_cls.model_fields.items():
+        if name not in result:
+            continue
+        leaf_current = _read_mapping_or_model_attr(current, name)
+        if is_credential_url_field(field_info):
+            if isinstance(result[name], str) and leaf_current is not None:
+                result[name] = preserve_credential_url_password(
+                    str(leaf_current), result[name]
+                )
+            continue
+        nested_cls = annotation_pydantic_class(field_info.annotation)
+        if nested_cls and isinstance(result[name], Mapping):
+            result[name] = preserve_credential_urls_in_model_payload(
+                nested_cls, leaf_current, result[name]
+            )
+    return result
+
+
+def preserve_patch_credential_url_value(
+    field_info: FieldInfo,
+    current: Any,
+    incoming: Any,
+) -> Any:
+    """Restore masked URL passwords in a PATCH value before validation/persist."""
+    if is_credential_url_field(field_info):
+        if isinstance(incoming, str) and current is not None:
+            return preserve_credential_url_password(str(current), incoming)
+        return incoming
+    parent_cls = annotation_pydantic_class(field_info.annotation)
+    if parent_cls and isinstance(incoming, Mapping):
+        return preserve_credential_urls_in_model_payload(parent_cls, current, incoming)
+    return incoming
+
+
 def _field_is_complex(annotation: Any) -> bool:
     """Return whether ``annotation`` is or contains a Pydantic ``BaseModel`` subclass.
 
@@ -1146,9 +1219,10 @@ def _resolve_default(field_info: FieldInfo) -> Any:
 def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     """Return a JSON-safe representation of ``value`` for the response model.
 
-    Delegates to ``TypeAdapter(field.annotation).dump_python(value, mode='json')``
+    Delegates to ``TypeAdapter(_annotated_type(field_info)).dump_python(value, mode='json')``
     so nested Pydantic models, enums, timedeltas, URLs and paths all serialise
-    to their canonical JSON shape. :class:`pydantic.SecretStr` /
+    to their canonical JSON shape, including field metadata such as credential-URL
+    serializers and constraint annotations. :class:`pydantic.SecretStr` /
     :class:`pydantic.SecretBytes` instances inside the value are automatically
     redacted to ``"**********"`` by Pydantic's secret-aware JSON dump.
 
@@ -1172,6 +1246,6 @@ def dump_field_value(field_info: FieldInfo, value: Any) -> Any:
     if value is PydanticUndefined:
         return None
     try:
-        return TypeAdapter(field_info.annotation).dump_python(value, mode="json")
+        return TypeAdapter(_annotated_type(field_info)).dump_python(value, mode="json")
     except PydanticSchemaGenerationError:
         return None
