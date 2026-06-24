@@ -383,7 +383,7 @@ BESPOKE_BASE_APP_PLUGINS = ["alerts", "dipper", "inventory", "report"]
 
 
 class TestBespokeBaseAppDefinitions:
-    """Tests for the alerts/dipper/inventory/report ``BaseApp`` definition wiring."""
+    """Cover the alerts/dipper/inventory/report ``BaseApp`` definition wiring."""
 
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
     def test_module_exports_bare_base_app(self, plugin: str) -> None:
