@@ -202,7 +202,7 @@ test.describe('Inventory schedule management smoke', () => {
     await page.goto(NODES_ROUTE);
 
     // Exactly one Schedules button: inventory's working custom one. The generic
-    // PluginListPage button is suppressed via hideScheduleButton (SEP-1393).
+    // PluginListPage button is suppressed via hideScheduleButton.
     const scheduleButtons = page.getByRole('button', { name: /Schedules/i });
     await expect(scheduleButtons).toHaveCount(1);
 
