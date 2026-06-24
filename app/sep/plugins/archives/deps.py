@@ -33,7 +33,6 @@ from pydantic import Field, ValidationError
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
-from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -45,11 +44,11 @@ from app.sep.plugins.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     parse_archiver_purge_config,
 )
-from app.sep.plugins.archives.models import ArchivesCreate, ArchivesTaskResponse
+from app.sep.plugins.archives.models import ArchivesCreate
 from app.sep.plugins.archives.spec import build_archives_spec
-from app.sep.plugins.framework import build_default_task_response, make_task_dep
+from app.sep.plugins.framework import make_task_dep
 from app.sep.plugins.framework.spec import assemble_envelope, resolve_refs
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -234,24 +233,6 @@ ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload
 get_archives_task = make_task_dep(TaskOwner.ARCHIVER)
 
 ArchivesTask = Annotated[Task, Depends(get_archives_task)]
-
-
-def build_archives_api_task_response(
-    task: Task,
-    status: TaskHistoryStatusEnum | None = None,
-) -> ArchivesTaskResponse:
-    """Build an archive task response object for the derived JSON API.
-
-    :param task: The archive task retrieved from the Tasks API.
-    :param status: The latest known execution status for the task.
-    :return: A validated archive task API response object.
-    """
-    return build_default_task_response(
-        ArchivesTaskResponse,
-        task,
-        status,
-        extras={"service_type": ServiceTypeEnum.MYSQL},
-    )
 
 
 def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:

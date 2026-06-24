@@ -5602,54 +5602,6 @@ export interface components {
       WHERE?: string | null;
     };
     /**
-     * ArchivesTaskResponse
-     * @description Represent an Archives task in API responses.
-     *
-     *     Extend the standard task-response surface with the archives-specific
-     *     ``is_template`` flag; the shared task identity, status, audit, connectivity,
-     *     and anonymization fields come from
-     *     :class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.
-     *
-     *     :param is_template: Whether the task is a template definition.
-     */
-    ArchivesTaskResponse: {
-      /** Alert On Fail */
-      alert_on_fail: boolean;
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /**
-       * Anonymized Entities
-       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
-       */
-      readonly anonymized_entities: string[];
-      backend: components['schemas']['TaskBackendEnum'];
-      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
-      /** Created At */
-      created_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Data */
-      data: Record<string, never>;
-      /** Id */
-      id?: number | null;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /** Last Updated By */
-      last_updated_by?: string | null;
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      /** Protected */
-      protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Updated At */
-      updated_at?: string | null;
-    };
-    /**
      * AvailableSyncer
      * @description Provide template-facing metadata for an available syncer.
      *
@@ -12310,7 +12262,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesTaskResponse'][];
+          'application/json': components['schemas']['BaseTaskResponse'][];
         };
       };
       /** @description Validation Error */
@@ -12345,7 +12297,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesTaskResponse'];
+          'application/json': components['schemas']['BaseTaskResponse'];
         };
       };
       /** @description Validation Error */
@@ -12396,7 +12348,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesTaskResponse'];
+          'application/json': components['schemas']['BaseTaskResponse'];
         };
       };
       /** @description Validation Error */
@@ -12433,7 +12385,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesTaskResponse'];
+          'application/json': components['schemas']['BaseTaskResponse'];
         };
       };
       /** @description Validation Error */

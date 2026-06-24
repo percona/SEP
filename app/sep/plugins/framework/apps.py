@@ -408,7 +408,10 @@ class TaskExecutionApp(BaseApp):
         second would make the probe target ambiguous — and a model declaring two or
         more ``ServiceRef`` fields with none marked has no determinable primary. A
         single unmarked ``ServiceRef`` is valid: it is the sole primary and the app
-        does not probe.
+        does not probe. The two-or-more-unmarked rejection is about primary
+        disambiguation, not the probe: ``assemble_envelope`` unconditionally stamps
+        the primary service onto every task's connectivity host/port and
+        ``service_name``, so the primary must be unambiguous even when no probe runs.
 
         :raises ValueError: When more than one ``ServiceRef`` is marked
             ``check_connectivity``, or when two or more ``ServiceRef`` fields leave

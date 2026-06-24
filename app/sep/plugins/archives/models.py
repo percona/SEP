@@ -26,7 +26,6 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.framework import (
     AppFormModel,
-    BaseTaskResponse,
     Choices,
     Forbidden,
     FormRules,
@@ -483,17 +482,3 @@ class PurgeConfig(BaseCaseInsensitiveModel):
 
     all: PurgeConfigAll
     purge_list: list[PurgeConfigItem]
-
-
-class ArchivesTaskResponse(BaseTaskResponse):
-    """Represent an Archives task in API responses.
-
-    Extend the standard task-response surface with the archives-specific
-    ``is_template`` flag; the shared task identity, status, audit, connectivity,
-    and anonymization fields come from
-    :class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.
-
-    :param is_template: Whether the task is a template definition.
-    """
-
-    is_template: bool = False

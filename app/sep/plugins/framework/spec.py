@@ -271,11 +271,10 @@ def _select_primary_service(
         ``ServiceRef`` field, in declaration order.
     :return: The primary service, or ``None`` when none resolved.
     """
+    primary = None
     for ref, entity in candidates:
         if ref.check_connectivity:
             return entity
-    primary = None
-    for _ref, entity in candidates:
         if entity is not None:
             primary = entity
     return primary

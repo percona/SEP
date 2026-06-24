@@ -213,8 +213,8 @@
         "title": "ArchivesCreate",
         "type": "object"
       },
-      "ArchivesTaskResponse": {
-        "description": "Represent an Archives task in API responses.\n\nExtend the standard task-response surface with the archives-specific\n``is_template`` flag; the shared task identity, status, audit, connectivity,\nand anonymization fields come from\n:class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.\n\n:param is_template: Whether the task is a template definition.",
+      "BaseTaskResponse": {
+        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity and ownership, the resolved execution status, the stored\nconfiguration, and the audit/anonymization metadata. A standard app whose\nresponse has no app-specific fields uses this model directly; an app with\nextras subclasses it. The model is parametrized by the task ``owner``, which\ndrives the ``anonymized_entities`` default-entity lookup.\n\n:param name: The task name.\n:param owner: The entity or user that owns the task.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (Casdoor\n    username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (Casdoor username when resolvable, otherwise the stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -291,11 +291,6 @@
             ],
             "title": "Id"
           },
-          "is_template": {
-            "default": false,
-            "title": "Is Template",
-            "type": "boolean"
-          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -360,7 +355,7 @@
           "alert_on_fail",
           "anonymized_entities"
         ],
-        "title": "ArchivesTaskResponse",
+        "title": "BaseTaskResponse",
         "type": "object"
       },
       "BoolField": {
@@ -3383,7 +3378,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ArchivesTaskResponse"
+                    "$ref": "#/components/schemas/BaseTaskResponse"
                   },
                   "title": "Response Archives  List Api Plugins Archives  Get",
                   "type": "array"
@@ -3437,7 +3432,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ArchivesTaskResponse"
+                  "$ref": "#/components/schemas/BaseTaskResponse"
                 }
               }
             },
@@ -3534,7 +3529,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ArchivesTaskResponse"
+                  "$ref": "#/components/schemas/BaseTaskResponse"
                 }
               }
             },
@@ -3594,7 +3589,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ArchivesTaskResponse"
+                  "$ref": "#/components/schemas/BaseTaskResponse"
                 }
               }
             },
