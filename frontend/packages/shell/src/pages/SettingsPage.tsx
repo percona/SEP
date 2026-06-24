@@ -125,6 +125,7 @@ export default function SettingsPage() {
               key={group.setting_class}
               settingClass={group.setting_class}
               settings={group.settings}
+              searchActive={filters.search.trim() !== ''}
             />
           ))
         )}

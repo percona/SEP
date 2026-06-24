@@ -65,19 +65,19 @@ class TestLegacyWrapping:
 
     def test_module_name_only_derives_metadata(self) -> None:
         """A MODULE_NAME-only entry derives name/uri/css/display from the key."""
-        registry = build_app_registry([Plugin(module_name="snippets")])
-        app = registry.get("snippets")
-        assert app.name == "snippets"
-        assert app.uri_path == "/snippets"
-        assert app.css_class == "snippets"
-        assert app.display_name == "snippets"
+        registry = build_app_registry([Plugin(module_name="dipper")])
+        app = registry.get("dipper")
+        assert app.name == "dipper"
+        assert app.uri_path == "/dipper"
+        assert app.css_class == "dipper"
+        assert app.display_name == "dipper"
 
     def test_api_router_is_none_when_opted_out(self) -> None:
         """A plugin opting out of the API mount carries ``api_router is None``."""
         registry = build_app_registry(
-            [Plugin(name="Snippets", module_name="snippets", api_router_path=None)]
+            [Plugin(name="Dipper", module_name="dipper", api_router_path=None)]
         )
-        assert registry.get("snippets").api_router is None
+        assert registry.get("dipper").api_router is None
 
     def test_legacy_plugin_carries_group_and_nav_order(self) -> None:
         """Carry ``group``/``nav_order`` onto the synthesized app from the plugin entry."""
@@ -98,8 +98,8 @@ class TestLegacyWrapping:
 
     def test_legacy_plugin_without_grouping_is_ungrouped(self) -> None:
         """Carry ``None`` for ``group``/``nav_order`` when the plugin omits them."""
-        registry = build_app_registry([Plugin(name="Snippets", module_name="snippets")])
-        app = registry.get("snippets")
+        registry = build_app_registry([Plugin(name="Dipper", module_name="dipper")])
+        app = registry.get("dipper")
         assert app.group is None
         assert app.nav_order is None
 
@@ -110,22 +110,22 @@ class TestFailFast:
     def test_non_router_attribute_raises_type_error(self) -> None:
         """An ``api_router_path`` resolving to a non-``APIRouter`` raises ``TypeError``."""
         plugin = Plugin(
-            name="Snippets",
-            module_name="snippets",
+            name="Dipper",
+            module_name="dipper",
             api_router_path="app.sep.config.Plugin",
         )
-        with pytest.raises(TypeError, match="snippets"):
+        with pytest.raises(TypeError, match="dipper"):
             build_app_registry([plugin])
 
     def test_empty_string_api_router_path_is_no_mount(self) -> None:
         """An empty-string ``api_router_path`` yields ``api_router is None``."""
         plugin = Plugin.model_construct(
             name="Ghost",
-            module_name="app.sep.plugins.snippets",
+            module_name="app.sep.plugins.dipper",
             api_router_path="",
         )
         registry = build_app_registry([plugin])
-        assert registry.get("snippets").api_router is None
+        assert registry.get("dipper").api_router is None
 
 
 class TestOrderAndLookup:

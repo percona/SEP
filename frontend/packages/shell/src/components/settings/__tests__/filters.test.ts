@@ -27,6 +27,12 @@ const groups: SettingClassGroup[] = [
     settings: [
       makeSetting({ key: 'SYNC_REFRESH_TIME', reload: 'hot', has_override: true }),
       makeSetting({ key: 'STATIC_DIR', reload: 'not_overridable', has_override: false }),
+      // Advanced yet hot — only the Advanced control should hide it.
+      makeSetting({ key: 'FOOTER_TEMPLATE', reload: 'hot', is_advanced: true }),
+      // Advanced and not_overridable — both dimensions hide it independently.
+      makeSetting({ key: 'LEGACY_FLAG', reload: 'not_overridable', is_advanced: true }),
+      // is_advanced left undefined, mimicking older API responses that omit the field.
+      makeSetting({ key: 'PLAIN_FLAG', reload: 'hot', is_advanced: undefined }),
     ],
   },
   {
@@ -35,10 +41,48 @@ const groups: SettingClassGroup[] = [
   },
 ];
 
+const keysOf = (result: SettingClassGroup[]) => result.flatMap((g) => g.settings.map((s) => s.key));
+
 describe('filterSettingsGroups', () => {
-  it('returns all groups with default filters', () => {
+  it('keeps groups that still have matching settings under the default filters', () => {
     const result = filterSettingsGroups(groups, DEFAULT_SETTINGS_FILTERS);
     expect(result).toHaveLength(2);
+  });
+
+  it('defaults the reload filter to hot, hiding not_overridable settings', () => {
+    expect(DEFAULT_SETTINGS_FILTERS.reload).toBe('hot');
+    const result = filterSettingsGroups(groups, DEFAULT_SETTINGS_FILTERS);
+    expect(keysOf(result)).not.toContain('STATIC_DIR');
+  });
+
+  it('hides advanced settings by default and reveals them when advanced is shown', () => {
+    expect(DEFAULT_SETTINGS_FILTERS.advanced).toBe('hidden');
+    const hidden = filterSettingsGroups(groups, DEFAULT_SETTINGS_FILTERS);
+    expect(keysOf(hidden)).not.toContain('LEGACY_FLAG');
+
+    const shown = filterSettingsGroups(groups, {
+      ...DEFAULT_SETTINGS_FILTERS,
+      reload: 'all',
+      advanced: 'shown',
+    });
+    expect(keysOf(shown)).toContain('LEGACY_FLAG');
+  });
+
+  it('hides an advanced+hot setting by default and shows it once advanced is revealed', () => {
+    // FOOTER_TEMPLATE is hot, so the hot reload default alone would keep it;
+    // only the advanced dimension hides it.
+    const hidden = filterSettingsGroups(groups, DEFAULT_SETTINGS_FILTERS);
+    expect(keysOf(hidden)).not.toContain('FOOTER_TEMPLATE');
+
+    const shown = filterSettingsGroups(groups, { ...DEFAULT_SETTINGS_FILTERS, advanced: 'shown' });
+    expect(keysOf(shown)).toContain('FOOTER_TEMPLATE');
+  });
+
+  it('keeps settings whose is_advanced is absent, regardless of the advanced control', () => {
+    const hidden = filterSettingsGroups(groups, DEFAULT_SETTINGS_FILTERS);
+    expect(keysOf(hidden)).toContain('PLAIN_FLAG');
+    const shown = filterSettingsGroups(groups, { ...DEFAULT_SETTINGS_FILTERS, advanced: 'shown' });
+    expect(keysOf(shown)).toContain('PLAIN_FLAG');
   });
 
   it('filters by key substring, case-insensitively', () => {

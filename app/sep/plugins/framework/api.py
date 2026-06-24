@@ -1401,11 +1401,17 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
 
     script_param = Annotated[Any, Depends(make_script_dep(source))]
 
+    list_model = (
+        list[source.list_response_model]
+        if source.list_response_model is not None
+        else None
+    )
+
     @router.get(
         "/",
         name=f"{name}_api_list",
         summary="List",
-        response_model=None,
+        response_model=list_model,
         dependencies=[IsApiAuthenticated],
     )
     async def list_scripts() -> list[BaseModel]:
