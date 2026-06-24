@@ -60,7 +60,6 @@ app = TaskExecutionApp(
     task_spec_builder=build_backup_spec,
     response_builder=build_mysql_backups_api_task_response,
     pagination=make_pagination_dep(max_limit=MYSQL_BACKUPS_MAX_PAGINATION_LIMIT),
-    connectivity_check=True,
     capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),
     list_status_filter=True,
     jinja_router=jinja_router,

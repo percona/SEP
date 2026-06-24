@@ -15,9 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { SchemaDrivenPlugin, type RenderFormSlot } from '@sep/framework';
+import { SchemaDrivenPlugin } from '@sep/framework';
 import { getAppRouteMeta } from '../appNavConfig';
-import { ArchiveForm } from './ArchiveForm';
 
 interface SchemaDrivenAppRouteProps {
   /** Backend plugin module key (``GET /api/apps/`` ``app_key``). */
@@ -28,27 +27,12 @@ interface SchemaDrivenAppRouteProps {
  * Generic shell route for schema-driven apps without a bespoke React package.
  *
  * ``routeBase`` comes from ``appNavConfig`` when the plugin is not mounted
- * under the default ``/plugins/{appKey}`` prefix. Archives keeps its custom
- * create/edit form slots here instead of a separate ``@sep/plugin-archives``
- * package.
+ * under the default ``/plugins/{appKey}`` prefix. The derived schema now drives
+ * every form (including archives' one-of groups and free-solo references), so
+ * no per-app create/edit form override is injected here.
  */
 export function SchemaDrivenAppRoute({ appKey }: SchemaDrivenAppRouteProps) {
   const meta = getAppRouteMeta(appKey);
-  const renderCreateForm: RenderFormSlot | undefined =
-    appKey === 'archives'
-      ? (props) => <ArchiveForm {...props} submitLabel="Create Archives" />
-      : undefined;
-  const renderEditForm: RenderFormSlot | undefined =
-    appKey === 'archives'
-      ? (props) => <ArchiveForm {...props} submitLabel="Save Archives" />
-      : undefined;
 
-  return (
-    <SchemaDrivenPlugin
-      pluginName={appKey}
-      routeBase={meta?.routeBase}
-      renderCreateForm={renderCreateForm}
-      renderEditForm={renderEditForm}
-    />
-  );
+  return <SchemaDrivenPlugin pluginName={appKey} routeBase={meta?.routeBase} />;
 }
