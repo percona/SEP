@@ -26,10 +26,8 @@ import sqlmodel
 from alembic import op
 
 import app.core.db.sql_types
-from app.core.db.utils import (
-    acquire_pg_advisory_xact_lock,
-    SETTINGOVERRIDE_MIGRATION_LOCK_KEY,
-)
+from app.core.db.utils import acquire_pg_advisory_xact_lock
+from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
 
 # revision identifiers, used by Alembic.
 revision = "fafdb0445092"

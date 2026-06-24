@@ -47,8 +47,8 @@ from sqlalchemy.exc import OperationalError
 from app.core.db.utils import (
     acquire_pg_advisory_xact_lock,
     check_constraint_lists_members,
-    SETTINGOVERRIDE_MIGRATION_LOCK_KEY,
 )
+from app.core.settings_override.constants import SETTINGOVERRIDE_MIGRATION_LOCK_KEY
 from app.core.utils.fields import AsyncDatabaseEngine
 from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings

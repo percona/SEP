@@ -228,12 +228,6 @@ def compare_type(
     return None
 
 
-# Stable, app-chosen advisory-lock key shared by every settingoverride migration
-# so they serialize against each other on a shared PostgreSQL database. Any fixed
-# bigint unused elsewhere works; no other advisory lock exists in the repo.
-SETTINGOVERRIDE_MIGRATION_LOCK_KEY = 0x5E770438
-
-
 def acquire_pg_advisory_xact_lock(bind: Connection, lock_key: int) -> None:
     """Serialize concurrent shared-database migrations on PostgreSQL.
 
