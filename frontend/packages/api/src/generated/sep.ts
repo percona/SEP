@@ -2797,13 +2797,11 @@ export interface paths {
     };
     /**
      * List Periodic Tasks
-     * @description Proxy the Tasks-service periodic-task list through the SEP gateway.
+     * @description Return the upstream periodic-task list through the SEP gateway.
      *
      *     :param tasks_api: The Tasks API client used to fetch the upstream list.
-     *     :type tasks_api: TaskAPI
      *     :return: The upstream periodic-task list, or ``[]`` when the upstream
      *         payload is not a list.
-     *     :rtype: list[dict[str, Any]]
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -2828,16 +2826,12 @@ export interface paths {
     get?: never;
     /**
      * Update Periodic Task
-     * @description Proxy a full-replacement update of a periodic task.
+     * @description Dispatch a full-replacement update of a periodic task to the Tasks API.
      *
      *     :param periodic_task_id: The id of the periodic task to update.
-     *     :type periodic_task_id: int
      *     :param tasks_api: The Tasks API client used to update the periodic task.
-     *     :type tasks_api: TaskAPI
      *     :param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.
-     *     :type body: dict[str, Any]
      *     :return: The updated periodic task as returned by the Tasks API.
-     *     :rtype: dict[str, Any]
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -2847,12 +2841,10 @@ export interface paths {
     post?: never;
     /**
      * Delete Periodic Task
-     * @description Proxy deletion of a periodic task.
+     * @description Dispatch deletion of a periodic task to the Tasks API.
      *
      *     :param periodic_task_id: The id of the periodic task to delete.
-     *     :type periodic_task_id: int
      *     :param tasks_api: The Tasks API client used to delete the periodic task.
-     *     :type tasks_api: TaskAPI
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -2875,16 +2867,12 @@ export interface paths {
     put?: never;
     /**
      * Create Periodic Task
-     * @description Proxy creation of a periodic task for ``task_name``.
+     * @description Dispatch creation of a periodic task for ``task_name`` to the Tasks API.
      *
      *     :param task_name: The task name the new periodic schedule runs.
-     *     :type task_name: str
      *     :param tasks_api: The Tasks API client used to create the periodic task.
-     *     :type tasks_api: TaskAPI
      *     :param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.
-     *     :type body: dict[str, Any]
      *     :return: The created periodic task as returned by the Tasks API.
-     *     :rtype: dict[str, Any]
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500).
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
@@ -3014,20 +3002,16 @@ export interface paths {
      *     * **provided, every name blank after trimming** -- reject with ``422``.
      *
      *     :param tasks_api: The Tasks API client used to fetch upstream history.
-     *     :type tasks_api: TaskAPI
      *     :param pagination: Validated offset/limit query parameters.
-     *     :type pagination: Pagination
      *     :param task_names: Zero or more task names (repeat the query param); omit to
      *         list all history.
-     *     :type task_names: list[str] | None
      *     :param task_status: Optional exact status filter forwarded upstream.
-     *     :type task_status: TaskHistoryStatusEnum | None
      *     :return: Paginated task history, either the upstream list or the merged set.
-     *     :rtype: PaginatedResponse[TaskHistoryResponse]
-     *     :raises HTTPException: When ``task_names`` is supplied but every value is
-     *         empty after trimming.
+     *     :raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but
+     *         every value is empty after trimming.
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
-     *         or a connection-level ``OSError`` on the list-all passthrough.
+     *         or a connection-level ``OSError``, on either the list-all passthrough or
+     *         the merged-history fan-out.
      */
     get: operations['sep_list_merged_task_history_api_sep_task_history__get'];
     put?: never;
@@ -3049,14 +3033,11 @@ export interface paths {
     put?: never;
     /**
      * Stop Task History
-     * @description Proxy a stop request for a single task-history row through the SEP gateway.
+     * @description Dispatch a stop request for a single task-history row to the Tasks API.
      *
      *     :param task_history_id: The id of the task-history row to stop.
-     *     :type task_history_id: int
      *     :param tasks_api: The Tasks API client used to issue the stop request.
-     *     :type tasks_api: TaskAPI
      *     :return: The stopped task-history row as returned by the Tasks API.
-     *     :rtype: dict[str, Any]
      *     :raises HTTPException: Re-raised unchanged for an upstream client error
      *         (status < 500), e.g. a ``400`` when the task is not running.
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)

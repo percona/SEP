@@ -17170,7 +17170,7 @@
     },
     "/api/sep/periodic-tasks/": {
       "get": {
-        "description": "Proxy the Tasks-service periodic-task list through the SEP gateway.\n\n:param tasks_api: The Tasks API client used to fetch the upstream list.\n:type tasks_api: TaskAPI\n:return: The upstream periodic-task list, or ``[]`` when the upstream\n    payload is not a list.\n:rtype: list[dict[str, Any]]\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "description": "Return the upstream periodic-task list through the SEP gateway.\n\n:param tasks_api: The Tasks API client used to fetch the upstream list.\n:return: The upstream periodic-task list, or ``[]`` when the upstream\n    payload is not a list.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
         "operationId": "sep_list_periodic_tasks_api_sep_periodic_tasks__get",
         "responses": {
           "200": {
@@ -17214,7 +17214,7 @@
     },
     "/api/sep/periodic-tasks/{periodic_task_id}": {
       "delete": {
-        "description": "Proxy deletion of a periodic task.\n\n:param periodic_task_id: The id of the periodic task to delete.\n:type periodic_task_id: int\n:param tasks_api: The Tasks API client used to delete the periodic task.\n:type tasks_api: TaskAPI\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "description": "Dispatch deletion of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to delete.\n:param tasks_api: The Tasks API client used to delete the periodic task.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
         "operationId": "sep_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete",
         "parameters": [
           {
@@ -17266,7 +17266,7 @@
         ]
       },
       "put": {
-        "description": "Proxy a full-replacement update of a periodic task.\n\n:param periodic_task_id: The id of the periodic task to update.\n:type periodic_task_id: int\n:param tasks_api: The Tasks API client used to update the periodic task.\n:type tasks_api: TaskAPI\n:param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.\n:type body: dict[str, Any]\n:return: The updated periodic task as returned by the Tasks API.\n:rtype: dict[str, Any]\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "description": "Dispatch a full-replacement update of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to update.\n:param tasks_api: The Tasks API client used to update the periodic task.\n:param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.\n:return: The updated periodic task as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
         "operationId": "sep_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put",
         "parameters": [
           {
@@ -17339,7 +17339,7 @@
     },
     "/api/sep/periodic-tasks/{task_name}/": {
       "post": {
-        "description": "Proxy creation of a periodic task for ``task_name``.\n\n:param task_name: The task name the new periodic schedule runs.\n:type task_name: str\n:param tasks_api: The Tasks API client used to create the periodic task.\n:type tasks_api: TaskAPI\n:param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.\n:type body: dict[str, Any]\n:return: The created periodic task as returned by the Tasks API.\n:rtype: dict[str, Any]\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "description": "Dispatch creation of a periodic task for ``task_name`` to the Tasks API.\n\n:param task_name: The task name the new periodic schedule runs.\n:param tasks_api: The Tasks API client used to create the periodic task.\n:param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.\n:return: The created periodic task as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
         "operationId": "sep_create_periodic_task_api_sep_periodic_tasks__task_name___post",
         "parameters": [
           {
@@ -17611,7 +17611,7 @@
     },
     "/api/sep/task-history/": {
       "get": {
-        "description": "Return task-history rows, listing all of them or merging selected names.\n\nThree-way on ``task_names``:\n\n* **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already\n  paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.\n* **provided, at least one non-blank name** -- query each name independently\n  against the Tasks API, then merge, sort newest-first, and paginate globally.\n* **provided, every name blank after trimming** -- reject with ``422``.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:type tasks_api: TaskAPI\n:param pagination: Validated offset/limit query parameters.\n:type pagination: Pagination\n:param task_names: Zero or more task names (repeat the query param); omit to\n    list all history.\n:type task_names: list[str] | None\n:param task_status: Optional exact status filter forwarded upstream.\n:type task_status: TaskHistoryStatusEnum | None\n:return: Paginated task history, either the upstream list or the merged set.\n:rtype: PaginatedResponse[TaskHistoryResponse]\n:raises HTTPException: When ``task_names`` is supplied but every value is\n    empty after trimming.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError`` on the list-all passthrough.",
+        "description": "Return task-history rows, listing all of them or merging selected names.\n\nThree-way on ``task_names``:\n\n* **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already\n  paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.\n* **provided, at least one non-blank name** -- query each name independently\n  against the Tasks API, then merge, sort newest-first, and paginate globally.\n* **provided, every name blank after trimming** -- reject with ``422``.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:param pagination: Validated offset/limit query parameters.\n:param task_names: Zero or more task names (repeat the query param); omit to\n    list all history.\n:param task_status: Optional exact status filter forwarded upstream.\n:return: Paginated task history, either the upstream list or the merged set.\n:raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but\n    every value is empty after trimming.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``, on either the list-all passthrough or\n    the merged-history fan-out.",
         "operationId": "sep_list_merged_task_history_api_sep_task_history__get",
         "parameters": [
           {
@@ -17721,7 +17721,7 @@
     },
     "/api/sep/task-history/{task_history_id}/stop/": {
       "post": {
-        "description": "Proxy a stop request for a single task-history row through the SEP gateway.\n\n:param task_history_id: The id of the task-history row to stop.\n:type task_history_id: int\n:param tasks_api: The Tasks API client used to issue the stop request.\n:type tasks_api: TaskAPI\n:return: The stopped task-history row as returned by the Tasks API.\n:rtype: dict[str, Any]\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500), e.g. a ``400`` when the task is not running.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "description": "Dispatch a stop request for a single task-history row to the Tasks API.\n\n:param task_history_id: The id of the task-history row to stop.\n:param tasks_api: The Tasks API client used to issue the stop request.\n:return: The stopped task-history row as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500), e.g. a ``400`` when the task is not running.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
         "operationId": "sep_stop_task_history_api_sep_task_history__task_history_id__stop__post",
         "parameters": [
           {
