@@ -378,6 +378,61 @@ class TestSepTaskHistoryEndpoint:
             "/task-b/history/", params=second_page_params
         )
 
+    @pytest.mark.parametrize(
+        "upstream_status",
+        [status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND],
+    )
+    def test_merged_passes_through_upstream_client_error(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+        upstream_status: int,
+    ) -> None:
+        """Return an upstream client error (4xx) from the fan-out unchanged."""
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=HTTPException(
+                status_code=upstream_status, detail="upstream rejected"
+            )
+        )
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[("task_names", "task-a")],
+        )
+        assert response.status_code == upstream_status
+        assert response.json() == {"detail": "upstream rejected"}
+
+    def test_merged_upstream_5xx_becomes_502(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Fail the merged fan-out with ``502`` on an upstream server error."""
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="boom"
+            )
+        )
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[("task_names", "task-a")],
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "boom"}
+
+    def test_merged_upstream_oserror_becomes_502(
+        self,
+        test_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Fail the merged fan-out with ``502`` on a connection-level ``OSError``."""
+        mock_task_api_dep.get = AsyncMock(side_effect=OSError("connection refused"))
+        response = test_client.get(
+            "/api/sep/task-history/",
+            params=[("task_names", "task-a")],
+        )
+        assert response.status_code == status.HTTP_502_BAD_GATEWAY
+        assert response.json() == {"detail": "connection refused"}
+
 
 class TestSepTaskHistoryAuth:
     """Tests for ``/api/sep/task-history/`` authentication enforcement."""

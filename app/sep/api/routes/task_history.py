@@ -66,7 +66,8 @@ async def list_merged_task_history(
     :raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but
         every value is empty after trimming.
     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
-        or a connection-level ``OSError`` on the list-all passthrough.
+        or a connection-level ``OSError``, on either the list-all passthrough or
+        the merged-history fan-out.
     """
     if task_names is None:
         params = {
@@ -83,12 +84,15 @@ async def list_merged_task_history(
         raise HTTPUnprocessableEntityException(
             "task_names must contain at least one non-empty name"
         )
-    return await fetch_merged_task_history(
-        tasks_api,
-        task_names,
-        status=task_status,
-        pagination=pagination,
-    )
+    try:
+        return await fetch_merged_task_history(
+            tasks_api,
+            task_names,
+            status=task_status,
+            pagination=pagination,
+        )
+    except (HTTPException, OSError) as exc:
+        reraise_upstream_tasks_error(exc)
 
 
 @router.post(
