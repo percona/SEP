@@ -131,6 +131,37 @@ class TestChecksumsNomadPayloadParity:
 class TestChecksumsPayloadAssembly:
     """Tests for the shared private helper _assemble_checksum_payload."""
 
+    @staticmethod
+    def _assemble(created_service, **overrides):
+        """Call ``_assemble_checksum_payload`` with default kwargs, applying overrides.
+
+        :param created_service: the service fixture forwarded as the first positional arg.
+        :type created_service: Service
+        :param overrides: keyword arguments overriding the assembled defaults.
+        :type overrides: typing.Any
+        """
+        kwargs = {
+            "task_name": "test",
+            "hostname": "host1",
+            "recursion_method": "processlist",
+            "dsn_table": "",
+            "databases": "",
+            "tables": "",
+            "pause_file": "",
+            "binary_index": False,
+            "explain_arg": False,
+            "fail_on_stopped_replication": False,
+            "truncate_replicate_table": False,
+            "progress": "",
+            "set_vars": "",
+            "max_load": "",
+            "chunk_time": "",
+            "max_lag": "",
+            "alert_on_fail": False,
+        }
+        kwargs.update(overrides)
+        return _assemble_checksum_payload(created_service, **kwargs)
+
     def test_dsn_expansion_does_not_mutate_input(self, created_service):
         """Assert _assemble_checksum_payload does not mutate the recursion_method argument."""
         original_recursion_method = "dsn"
@@ -158,65 +189,27 @@ class TestChecksumsPayloadAssembly:
 
         assert original_recursion_method == "dsn"
 
-    def test_dsn_expansion_uses_default_dsn_table_when_empty(self, created_service):
-        """Assert empty dsn_table falls back to D=percona,t=dsns in the expanded arg."""
-        result = _assemble_checksum_payload(
-            created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method="dsn",
-            dsn_table="",
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=False,
-            explain_arg=False,
-            fail_on_stopped_replication=False,
-            truncate_replicate_table=False,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
+    @pytest.mark.parametrize(
+        ("dsn_table_input", "expected_substring"),
+        [
+            ("", DEFAULT_RECURSION_DSN_TABLE),
+            ("D=mydb,t=custom_dsns", "D=mydb,t=custom_dsns"),
+        ],
+        ids=["default_when_empty", "provided_verbatim"],
+    )
+    def test_dsn_expansion_recursion_arg(
+        self, dsn_table_input, expected_substring, created_service
+    ):
+        """Assert dsn expansion uses the default dsn_table when empty, else the provided value verbatim."""
+        result = self._assemble(
+            created_service, recursion_method="dsn", dsn_table=dsn_table_input
         )
 
         args = shlex.split(result.data["meta"]["args"])
         recursion_arg = next(
             (a for a in args if a.startswith("--recursion-method=")), ""
         )
-        assert DEFAULT_RECURSION_DSN_TABLE in recursion_arg
-
-    def test_dsn_expansion_uses_provided_dsn_table(self, created_service):
-        """Assert a custom dsn_table is used verbatim in the expanded recursion arg."""
-        custom_dsn_table = "D=mydb,t=custom_dsns"
-
-        result = _assemble_checksum_payload(
-            created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method="dsn",
-            dsn_table=custom_dsn_table,
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=False,
-            explain_arg=False,
-            fail_on_stopped_replication=False,
-            truncate_replicate_table=False,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
-        )
-
-        args = shlex.split(result.data["meta"]["args"])
-        recursion_arg = next(
-            (a for a in args if a.startswith("--recursion-method=")), ""
-        )
-        assert custom_dsn_table in recursion_arg
+        assert expected_substring in recursion_arg
 
     @pytest.mark.parametrize(
         "recursion_method", ["processlist", "hosts", "none", "default"]
@@ -249,104 +242,66 @@ class TestChecksumsPayloadAssembly:
         args_str = result.data["meta"]["args"]
         assert "dsn=" not in args_str
 
-    def test_optional_string_fields_are_omitted_when_empty(self, created_service):
-        """Assert that empty optional string fields do not appear in the assembled args."""
-        result = _assemble_checksum_payload(
-            created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method="processlist",
-            dsn_table="",
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=False,
-            explain_arg=False,
-            fail_on_stopped_replication=False,
-            truncate_replicate_table=False,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
-        )
+    @pytest.mark.parametrize(
+        ("overrides", "flags", "should_appear"),
+        [
+            (
+                {},
+                ["--databases", "--tables", "--pause-file", "--progress", "--set-vars"],
+                False,
+            ),
+            (
+                {
+                    "binary_index": False,
+                    "explain_arg": False,
+                    "fail_on_stopped_replication": False,
+                    "truncate_replicate_table": False,
+                },
+                [
+                    "--binary-index",
+                    "--explain",
+                    "--fail-on-stopped-replication",
+                    "--truncate-replicate-table",
+                ],
+                False,
+            ),
+            (
+                {
+                    "binary_index": True,
+                    "explain_arg": True,
+                    "fail_on_stopped_replication": True,
+                    "truncate_replicate_table": True,
+                },
+                [
+                    "--binary-index",
+                    "--explain",
+                    "--fail-on-stopped-replication",
+                    "--truncate-replicate-table",
+                ],
+                True,
+            ),
+        ],
+        ids=[
+            "optional_strings_omitted",
+            "bool_flags_omitted_when_false",
+            "bool_flags_present_when_true",
+        ],
+    )
+    def test_optional_and_flag_fields_presence_follows_value(
+        self, overrides, flags, should_appear, created_service
+    ):
+        """Assert optional string and boolean flags appear in args only when set.
+
+        Empty optional string fields and ``False`` boolean flags are omitted;
+        ``True`` boolean flags are emitted. The ``_assemble`` defaults supply
+        empty strings and ``False`` flags, so each case only overrides what it
+        exercises.
+        """
+        result = self._assemble(created_service, **overrides)
 
         args = shlex.split(result.data["meta"]["args"])
-        optional_flags = [
-            "--databases",
-            "--tables",
-            "--pause-file",
-            "--progress",
-            "--set-vars",
-        ]
-        for flag in optional_flags:
-            assert not any(a.startswith(flag) for a in args), (
-                f"{flag} should not appear when empty"
+        for flag in flags:
+            present = any(a.startswith(flag) for a in args)
+            assert present is should_appear, (
+                f"{flag} present={present}, expected {should_appear}"
             )
-
-    def test_flag_fields_are_omitted_when_false(self, created_service):
-        """Assert that boolean flag fields do not appear in args when False."""
-        result = _assemble_checksum_payload(
-            created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method="processlist",
-            dsn_table="",
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=False,
-            explain_arg=False,
-            fail_on_stopped_replication=False,
-            truncate_replicate_table=False,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
-        )
-
-        args = shlex.split(result.data["meta"]["args"])
-        bool_flags = [
-            "--binary-index",
-            "--explain",
-            "--fail-on-stopped-replication",
-            "--truncate-replicate-table",
-        ]
-        for flag in bool_flags:
-            assert flag not in args, f"{flag} should not appear when False"
-
-    def test_flag_fields_appear_when_true(self, created_service):
-        """Assert that boolean flag fields appear in args when True."""
-        result = _assemble_checksum_payload(
-            created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method="processlist",
-            dsn_table="",
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=True,
-            explain_arg=True,
-            fail_on_stopped_replication=True,
-            truncate_replicate_table=True,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
-        )
-
-        args = shlex.split(result.data["meta"]["args"])
-        bool_flags = [
-            "--binary-index",
-            "--explain",
-            "--fail-on-stopped-replication",
-            "--truncate-replicate-table",
-        ]
-        for flag in bool_flags:
-            assert flag in args, f"{flag} should appear when True"
