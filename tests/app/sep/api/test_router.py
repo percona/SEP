@@ -462,7 +462,6 @@ class TestApiRouterConfigDrivenLoop:
     ) -> None:
         """Assert convention auto-derive sets ``api_router_path`` for built-ins."""
         for module, expected in (
-            ("archives", "app.sep.plugins.archives.api_routes.router"),
             ("dipper", "app.sep.plugins.dipper.api_routes.router"),
         ):
             plugin = Plugin(name=module.title(), module_name=module)

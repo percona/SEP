@@ -132,7 +132,9 @@ class BackupPgForm(AppFormModel):
     ]
     service_id: Annotated[
         int,
-        ServiceRef(service_types=(ServiceTypeEnum.POSTGRESQL,)),
+        ServiceRef(
+            service_types=(ServiceTypeEnum.POSTGRESQL,), check_connectivity=True
+        ),
         Ui(label="Database Service", section="Task"),
     ]
     stanza: Annotated[
