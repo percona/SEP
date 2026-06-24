@@ -48,7 +48,7 @@ APPS = {
 }
 
 
-def canonical(doc: dict) -> str:
+def canonical(doc: dict[str, Any]) -> str:
     """Return deterministic JSON for ``doc``: sorted keys, 2-space indent, trailing newline.
 
     ``sort_keys`` neutralizes dict-key-order nondeterminism so the rendered bytes
