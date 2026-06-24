@@ -39,7 +39,7 @@ from app.tasks.models import TaskOwner
 
 app = TaskExecutionApp(
     name="archives",
-    display_name="Archive",
+    display_name="Archives",
     uri_path="/archives",
     css_class="archive",
     nav_order=11,

@@ -1068,6 +1068,7 @@
                 "type": "integer"
               },
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -1082,6 +1083,7 @@
                 "type": "integer"
               },
               {
+                "minLength": 1,
                 "type": "string"
               }
             ],
@@ -1750,6 +1752,7 @@
         "description": "Represent a manually-entered destination host.\n\n:param mode: The one-of discriminator (``\"manual\"``).\n:param dest_host: The destination host address.\n:param dest_port: The destination port (1-65535); defaults to the MySQL port.",
         "properties": {
           "dest_host": {
+            "minLength": 1,
             "title": "Dest Host",
             "type": "string"
           },
@@ -2815,6 +2818,7 @@
                 "type": "integer"
               },
               {
+                "minLength": 1,
                 "type": "string"
               }
             ],
@@ -2826,6 +2830,7 @@
                 "type": "integer"
               },
               {
+                "minLength": 1,
                 "type": "string"
               }
             ],

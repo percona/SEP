@@ -69,7 +69,7 @@ class SourceByTable(BaseModel):
 
     mode: Literal["table"] = "table"
     source_db: Annotated[
-        int | str,
+        int | NonEmptyStr,
         SchemaRef(allow_custom=True),
         Ui(
             label="Source Schema",
@@ -79,7 +79,7 @@ class SourceByTable(BaseModel):
         ),
     ]
     source_table: Annotated[
-        int | str,
+        int | NonEmptyStr,
         TableRef(allow_custom=True),
         Ui(
             label="Source Table",
@@ -119,7 +119,7 @@ class DestByTable(BaseModel):
 
     mode: Literal["table"] = "table"
     dest_db: Annotated[
-        int | str | None,
+        int | NonEmptyStr | None,
         SchemaRef(allow_custom=True),
         Ui(
             label="Destination Schema",
@@ -129,7 +129,7 @@ class DestByTable(BaseModel):
         ),
     ] = None
     dest_table: Annotated[
-        int | str,
+        int | NonEmptyStr,
         TableRef(allow_custom=True),
         Ui(
             label="Destination Table",
@@ -198,7 +198,7 @@ class HostManual(BaseModel):
 
     mode: Literal["manual"] = "manual"
     dest_host: Annotated[
-        str,
+        NonEmptyStr,
         Ui(
             label="Destination Host",
             section="Destination Host",

@@ -24,7 +24,7 @@
       }
     ]
   },
-  "display_name": "Archive",
+  "display_name": "Archives",
   "fail_when": [
     {
       "error_fields": [
