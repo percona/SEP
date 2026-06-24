@@ -419,7 +419,7 @@ class TestBespokeBaseAppDefinitions:
 
 
 class TestAtwDefinition:
-    """Tests for the atw ``BaseApp`` definition (no Jinja router, no legacy re-export).
+    """Cover the atw ``BaseApp`` definition (no Jinja router, no legacy re-export).
 
     atw is kept out of ``BESPOKE_BASE_APP_PLUGINS`` because it ships no
     ``routes.py`` Jinja router and no legacy ``router`` re-export, so the
