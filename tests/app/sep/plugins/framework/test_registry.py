@@ -427,7 +427,7 @@ class TestAtwDefinition:
     """
 
     def test_module_exports_bare_base_app(self) -> None:
-        """Export a bare ``BaseApp`` for atw, not a ``TaskExecutionApp``."""
+        """Assert atw exports a bare ``BaseApp``, not a ``TaskExecutionApp``."""
         app = importlib.import_module("app.sep.plugins.atw").app
         assert isinstance(app, BaseApp)
         assert not isinstance(app, TaskExecutionApp)

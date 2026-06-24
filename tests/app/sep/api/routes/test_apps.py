@@ -105,7 +105,7 @@ class TestListAppsForNavigation:
     async def test_additive_fields_carry_registry_values(
         self, api_user_client: TestClient
     ) -> None:
-        """Every entry carries ``display_name`` and a boolean ``custom_ui`` flag."""
+        """Carry ``display_name`` and a boolean ``custom_ui`` flag on every entry."""
         response = api_user_client.get("/api/apps/")
         entries = {e["app_key"]: e for e in response.json()}
         for entry in entries.values():
