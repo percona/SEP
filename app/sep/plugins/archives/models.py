@@ -27,7 +27,6 @@ from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.framework import (
     AppFormModel,
     Choices,
-    derive_create_response_model,
     Forbidden,
     FormRules,
     HostRef,
@@ -538,17 +537,3 @@ class ArchivesTaskResponse(BaseModel):
     last_updated_by: str | None = None
     service_type: ServiceTypeEnum | None = None
     status: TaskHistoryStatusEnum | None = None
-
-
-ArchivesCreateResponse = derive_create_response_model(
-    ArchivesTaskResponse,
-    name="ArchivesCreateResponse",
-    doc=(
-        "Represent the response body for ``POST /api/plugins/archives/``.\n\n"
-        "Extends :class:`ArchivesTaskResponse` with a connectivity-warning field\n"
-        "surfaced when the post-creation database probe fails or is skipped.\n\n"
-        ":param connectivity_warning: ``None`` when the probe passes, was opted\n"
-        "    out, or the task meta lacks connectivity keys; populated otherwise.\n"
-        ":type connectivity_warning: ConnectivityWarning | None"
-    ),
-)
