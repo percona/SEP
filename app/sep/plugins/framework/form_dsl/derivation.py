@@ -209,8 +209,8 @@ def iter_service_refs(model: type["AppFormModel"]) -> Iterator[ServiceRef]:
     connectivity-primary construction guard to count and validate the markers.
 
     :param model: The create model to introspect.
-    :return: An iterator of the model's ``ServiceRef`` markers, in declaration
-        order (top-level fields, then each one-of branch's leaves).
+    :yield: Each of the model's ``ServiceRef`` markers, in declaration order
+        (top-level fields, then each one-of branch's leaves).
     """
     for field_info in model.model_fields.values():
         if field_info.discriminator is not None:

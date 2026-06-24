@@ -21,21 +21,25 @@ flat-form → one-of mapping and the Jinja index's task-info extraction.
 """
 
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 import yaml
 
 from app.core.exceptions import HTTPUnprocessableEntityException
+from app.core.requests.remote_api import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.archives.deps import (
-    _map_legacy_to_create,
     ArchivesLegacyForm,
+    build_archives_task_payload,
     get_archives_task_info,
 )
-from app.sep.plugins.archives.models import (
-    DestByTable,
-    SourceByQuery,
-    SourceByTable,
+from tests.app.factories import (
+    CreatedNodeFactory,
+    CreatedSchemaFactory,
+    CreatedServiceFactory,
+    CreatedTableFactory,
 )
 
 _SRC_DB_ID = 10
@@ -59,44 +63,87 @@ def _legacy(**overrides: Any) -> ArchivesLegacyForm:
     return ArchivesLegacyForm.model_validate(body)
 
 
-class TestMapLegacyToCreate:
-    """Cover folding the flat Jinja form into the one-of ``ArchivesCreate``."""
+def _fake_inventory() -> AsyncMock:
+    """Return an inventory mock resolving the seeded source/dest ids by path."""
+    routes = {
+        "/services/1": CreatedServiceFactory.build(
+            id=1,
+            node=CreatedNodeFactory.build(address="src-host", name="src-node"),
+            type=ServiceTypeEnum.MYSQL,
+            name="src-svc",
+            port=3306,
+        ).model_dump(mode="json"),
+        f"/schemas/{_SRC_DB_ID}": CreatedSchemaFactory.build(
+            id=_SRC_DB_ID, name="src_db"
+        ).model_dump(mode="json"),
+        f"/tables/{_SRC_TBL_ID}": CreatedTableFactory.build(
+            id=_SRC_TBL_ID, name="src_tbl"
+        ).model_dump(mode="json"),
+        f"/tables/{_DEST_TBL_ID}": CreatedTableFactory.build(
+            id=_DEST_TBL_ID, name="dst_tbl"
+        ).model_dump(mode="json"),
+    }
+    api = AsyncMock(spec=RemoteAPI)
 
-    def test_table_path_collapses_ids(self) -> None:
-        """Map the flat id/name pairs into the collapsed free-solo fields."""
-        create = _map_legacy_to_create(_legacy())
-        assert isinstance(create.source, SourceByTable)
-        assert create.source.source_db == _SRC_DB_ID
-        assert create.source.source_table == _SRC_TBL_ID
-        assert isinstance(create.destination, DestByTable)
-        assert create.destination.dest_table == _DEST_TBL_ID
-        assert create.task_name == "arch"
+    async def _get(path: str, params: dict | None = None) -> dict:
+        return routes[path]
 
-    def test_table_path_prefers_manual_names(self) -> None:
-        """Use the manual name when no id is supplied."""
-        create = _map_legacy_to_create(
+    api.get.side_effect = _get
+    return api
+
+
+def _purge_item(task: Any) -> dict[str, Any]:
+    """Return the single PURGE_LIST item from a built task's config."""
+    return yaml.safe_load(task.data["meta"]["config"])["PURGE_LIST"][0]
+
+
+class TestLegacyFormPayload:
+    """Cover the flat Jinja form folded into the one-of model via the public dep."""
+
+    @pytest.mark.asyncio
+    async def test_table_path_collapses_ids(self) -> None:
+        """Assert the flat id/name pairs collapse into the resolved config names."""
+        task = await build_archives_task_payload(_legacy(), _fake_inventory())
+        item = _purge_item(task)
+        assert item["SOURCE_DB"] == "src_db"
+        assert item["SOURCE_TABLE"] == "src_tbl"
+        assert item["DEST_TABLE"] == "dst_tbl"
+        assert task.name == "arch"
+
+    @pytest.mark.asyncio
+    async def test_manual_names(self) -> None:
+        """Assert the free-typed names are used when no inventory id is supplied."""
+        task = await build_archives_task_payload(
             _legacy(
                 source_db_id="",
                 source_db_name="mydb",
                 source_table_id="",
                 source_table_name="mytbl",
-            )
+            ),
+            _fake_inventory(),
         )
-        assert create.source.source_db == "mydb"
-        assert create.source.source_table == "mytbl"
+        item = _purge_item(task)
+        assert item["SOURCE_DB"] == "mydb"
+        assert item["SOURCE_TABLE"] == "mytbl"
 
-    def test_query_path(self) -> None:
-        """Map a source query into the query branch."""
-        create = _map_legacy_to_create(
-            _legacy(source_db_id="", source_table_id="", source_query="SELECT 1")
+    @pytest.mark.asyncio
+    async def test_query_path(self) -> None:
+        """Assert a source query folds into the query branch."""
+        task = await build_archives_task_payload(
+            _legacy(source_db_id="", source_table_id="", source_query="SELECT 1"),
+            _fake_inventory(),
         )
-        assert isinstance(create.source, SourceByQuery)
-        assert create.source.source_query == "SELECT 1"
+        item = _purge_item(task)
+        assert item["SOURCE_QUERY"] == "SELECT 1"
+        assert "SOURCE_DB" not in item
 
-    def test_invalid_swap_drop_raises_422(self) -> None:
-        """Surface a folded-model validation failure as a 422."""
+    @pytest.mark.asyncio
+    async def test_invalid_swap_drop_raises_422(self) -> None:
+        """Assert a folded-model validation failure surfaces as a 422."""
         with pytest.raises(HTTPUnprocessableEntityException):
-            _map_legacy_to_create(_legacy(swap_drop=SwapDropEnum.SWAP_DROP.value))
+            await build_archives_task_payload(
+                _legacy(swap_drop=SwapDropEnum.SWAP_DROP.value), AsyncMock()
+            )
 
 
 class TestGetArchivesTaskInfo:

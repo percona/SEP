@@ -400,7 +400,7 @@ class _SoleUnmarkedServiceForm(AppFormModel):
 
 
 class _SourceByTable(BaseModel):
-    """A discriminated-union branch nesting a free-solo ``SchemaRef``."""
+    """Carry a discriminated-union branch nesting a free-solo ``SchemaRef``."""
 
     mode: Literal["table"] = "table"
     src_schema: Annotated[
@@ -411,7 +411,7 @@ class _SourceByTable(BaseModel):
 
 
 class _SourceByQuery(BaseModel):
-    """A ref-less discriminated-union branch (the inactive-branch case)."""
+    """Carry a ref-less discriminated-union branch (the inactive-branch case)."""
 
     mode: Literal["query"] = "query"
     query: Annotated[str, Ui(label="Query", section="main")] = ""
@@ -580,7 +580,7 @@ class TestResolveRefs:
 
     @pytest.mark.asyncio
     async def test_sole_service_ref_is_primary_when_none_marked(self) -> None:
-        """Fall back to the sole ``ServiceRef`` as primary when none is marked."""
+        """Select the sole ``ServiceRef`` as primary when none is marked."""
         service = _service(
             address="h", service_type=ServiceTypeEnum.MYSQL, name="svc", port=3306
         )
@@ -647,7 +647,7 @@ class TestAssembleEnvelopeAlertDetailBuilder:
     """Cover the optional ``alert_detail_builder`` stamping on the envelope."""
 
     def test_alert_detail_builder_stamped_when_set(self) -> None:
-        """Stamp the supplied ``alert_detail_builder`` onto the ``TaskWrite``."""
+        """Assert the supplied ``alert_detail_builder`` is stamped onto the ``TaskWrite``."""
         service = _service(
             address="db-host",
             service_type=ServiceTypeEnum.MYSQL,
@@ -667,7 +667,7 @@ class TestAssembleEnvelopeAlertDetailBuilder:
         assert write.alert_detail_builder == "pkg.mod:builder"
 
     def test_alert_detail_builder_none_by_default(self) -> None:
-        """Leave ``alert_detail_builder`` as ``None`` when not supplied."""
+        """Assert ``alert_detail_builder`` defaults to ``None`` when not supplied."""
         service = _service(
             address="db-host",
             service_type=ServiceTypeEnum.MYSQL,

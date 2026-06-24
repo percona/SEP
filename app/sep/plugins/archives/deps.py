@@ -123,7 +123,11 @@ class ArchivesLegacyForm(BaseCaseInsensitiveModel):
 
 
 def _int_flag_to_bool(value: int | None) -> bool | None:
-    """Map a legacy integer flag (0/1/None) to the one-of model's tri-state bool."""
+    """Map a legacy integer flag (0/1/None) to the one-of model's tri-state bool.
+
+    :param value: The legacy integer flag (``0`` / ``1`` / ``None``).
+    :return: ``None`` when unset, else the boolean.
+    """
     return None if value is None else bool(value)
 
 

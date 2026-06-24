@@ -240,7 +240,7 @@ def _iter_ref_fields(
     resolves to nothing.
 
     :param form: The validated create form instance.
-    :return: An iterator of ``(qualified field name, marker, submitted value)``.
+    :yield: Each ``(qualified field name, marker, submitted value)`` tuple.
     """
     for name, field_info in type(form).model_fields.items():
         if field_info.discriminator is not None:

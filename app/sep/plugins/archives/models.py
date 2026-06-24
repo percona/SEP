@@ -60,7 +60,7 @@ def _dsn_safe(value: str | None) -> str | None:
 
 
 class SourceByTable(BaseModel):
-    """Source rows selected by schema + table (collapsed free-solo references).
+    """Represent a schema+table source selection (collapsed free-solo references).
 
     :param mode: The one-of discriminator (``"table"``).
     :param source_db: The source schema — an inventory id or a free-typed name.
@@ -91,7 +91,7 @@ class SourceByTable(BaseModel):
 
 
 class SourceByQuery(BaseModel):
-    """Source rows selected by a custom query.
+    """Represent a custom-query source selection.
 
     :param mode: The one-of discriminator (``"query"``).
     :param source_query: The query defining the rows to archive.
@@ -109,7 +109,7 @@ class SourceByQuery(BaseModel):
 
 
 class DestByTable(BaseModel):
-    """Destination is a table (collapsed free-solo references).
+    """Represent a table destination (collapsed free-solo references).
 
     :param mode: The one-of discriminator (``"table"``).
     :param dest_db: The destination schema — an inventory id, a free-typed name, or
@@ -142,12 +142,16 @@ class DestByTable(BaseModel):
     @field_validator("dest_db")
     @classmethod
     def _dest_db_dsn_safe(cls, value: int | str | None) -> int | str | None:
-        """Reject DSN delimiters in a free-typed destination schema name."""
+        """Reject DSN delimiters in a free-typed destination schema name.
+
+        :param value: The submitted destination-schema value (id, name, or None).
+        :return: The value unchanged when it carries no DSN delimiter.
+        """
         return _dsn_safe(value) if isinstance(value, str) else value
 
 
 class DestByFile(BaseModel):
-    """Destination is a file path.
+    """Represent a file destination.
 
     :param mode: The one-of discriminator (``"file"``).
     :param dest_file: The file path the archived rows are written to.
@@ -165,7 +169,7 @@ class DestByFile(BaseModel):
 
 
 class HostByService(BaseModel):
-    """Destination host taken from an inventory service.
+    """Represent a destination host taken from an inventory service.
 
     :param mode: The one-of discriminator (``"service"``).
     :param dest_service: The inventory id of the destination MySQL service; its
@@ -185,7 +189,7 @@ class HostByService(BaseModel):
 
 
 class HostManual(BaseModel):
-    """Destination host entered manually.
+    """Represent a manually-entered destination host.
 
     :param mode: The one-of discriminator (``"manual"``).
     :param dest_host: The destination host address.
@@ -214,7 +218,11 @@ class HostManual(BaseModel):
     @field_validator("dest_host")
     @classmethod
     def _dest_host_dsn_safe(cls, value: str) -> str:
-        """Reject DSN delimiters in the manual destination host."""
+        """Reject DSN delimiters in the manual destination host.
+
+        :param value: The submitted manual destination-host address.
+        :return: The value unchanged when it carries no DSN delimiter.
+        """
         return _dsn_safe(value) or value
 
 
