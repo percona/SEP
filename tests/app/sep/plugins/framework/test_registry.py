@@ -32,6 +32,7 @@ from app.sep.plugins.framework.registry import (
     get_app_registry,
 )
 from app.sep.plugins.inventory.schema import inventory_schema
+from app.sep.plugins.tasks.schema import TASKS_PLUGIN_SCHEMA
 
 
 @pytest.fixture(autouse=True)
@@ -385,6 +386,7 @@ BESPOKE_BASE_APP_PLUGINS = [
     "dipper",
     "inventory",
     "report",
+    "tasks",
 ]
 
 
@@ -410,6 +412,10 @@ class TestBespokeBaseAppDefinitions:
     def test_inventory_definition_carries_schema(self) -> None:
         """Carry ``inventory_schema`` on the inventory definition's ``app_schema``."""
         assert get_app_registry().get("inventory").app_schema is inventory_schema
+
+    def test_tasks_definition_carries_schema(self) -> None:
+        """Carry ``TASKS_PLUGIN_SCHEMA`` on the tasks definition's ``app_schema``."""
+        assert get_app_registry().get("tasks").app_schema is TASKS_PLUGIN_SCHEMA
 
     @pytest.mark.parametrize(
         "plugin", ["alert_troubleshooting", "alerts", "dipper", "report"]

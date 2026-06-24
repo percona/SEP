@@ -27,7 +27,7 @@ TASKS_PLUGIN_SCHEMA = PluginSchema(
     display_name="Task Manager",
     description=(
         "View task definitions, execution history, and running task logs in one place. "
-        "Task creation and execution remain on owning plugins and /tasks/."
+        "Task creation and execution remain on the owning plugins."
     ),
     forms=[],
     list_view=ListView(
