@@ -52,7 +52,6 @@ app = TaskExecutionApp(
     service_type=ServiceTypeEnum.MYSQL,
     list_status_filter=True,
     list_service_type_filter=True,
-    connectivity_check=True,
     response_context_provider=get_username_mapping,
     update_guard=(Depends(get_unprotected_checksums_task), HasNoConflictedRunningTasks),
     jinja_router=jinja_router,

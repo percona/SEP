@@ -23,6 +23,7 @@ The functions here read each field's :class:`~pydantic.fields.FieldInfo`
 format is byte-identical to a hand-written schema.
 """
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -82,6 +83,7 @@ __all__ = [
     "derive_form_sections",
     "derive_plugin_schema",
     "find_ref_marker",
+    "iter_service_refs",
     "resolve_base",
 ]
 
@@ -196,6 +198,31 @@ def find_ref_marker(
     :raises ValueError: When the field declares more than one reference marker.
     """
     return _find_marker(metadata, _REF_TYPES)
+
+
+def iter_service_refs(model: type["AppFormModel"]) -> Iterator[ServiceRef]:
+    """Yield every ``ServiceRef`` marker declared by ``model``.
+
+    Walk the model's top-level fields and the branch models of any
+    discriminated-union (one-of) field, so a service reference nested in a one-of
+    branch is surfaced alongside the top-level ones. Used by the framework's
+    connectivity-primary construction guard to count and validate the markers.
+
+    :param model: The create model to introspect.
+    :return: An iterator of the model's ``ServiceRef`` markers, in declaration
+        order (top-level fields, then each one-of branch's leaves).
+    """
+    for field_info in model.model_fields.values():
+        if field_info.discriminator is not None:
+            for member in _union_model_members(field_info.annotation):
+                for leaf_info in member.model_fields.values():
+                    ref = find_ref_marker(list(leaf_info.metadata))
+                    if isinstance(ref, ServiceRef):
+                        yield ref
+            continue
+        ref = find_ref_marker(list(field_info.metadata))
+        if isinstance(ref, ServiceRef):
+            yield ref
 
 
 def _find_marker(metadata: list[Any], marker_types: tuple[type, ...]) -> Any:

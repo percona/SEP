@@ -22,10 +22,11 @@ inventory backend; the assemble step is a pure function of form + resolved
 entities, so none of these need a real database.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 from unittest.mock import AsyncMock
 
 import pytest
+from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests.remote_api import RemoteAPI
@@ -366,6 +367,72 @@ class _IntHostForm(AppFormModel):
     ] = None
 
 
+class _TwoServiceForm(AppFormModel):
+    """Carry a marked source and an unmarked destination ``ServiceRef``.
+
+    The destination is declared *after* the source so the old last-wins
+    selection would pick it; the ``check_connectivity`` marker must instead keep
+    the source as ``resolved.service``.
+    """
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    source_id: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
+        Ui(label="Source", section="main"),
+    ] = None
+    dest_id: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(label="Dest", section="main"),
+    ] = None
+
+
+class _SoleUnmarkedServiceForm(AppFormModel):
+    """Carry a single unmarked ``ServiceRef`` to exercise the sole-ref fallback."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_id: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(label="Service", section="main"),
+    ] = None
+
+
+class _SourceByTable(BaseModel):
+    """A discriminated-union branch nesting a free-solo ``SchemaRef``."""
+
+    mode: Literal["table"] = "table"
+    src_schema: Annotated[
+        int | str | None,
+        SchemaRef(allow_custom=True),
+        Ui(label="Schema", section="main", depends_on="service_id"),
+    ] = None
+
+
+class _SourceByQuery(BaseModel):
+    """A ref-less discriminated-union branch (the inactive-branch case)."""
+
+    mode: Literal["query"] = "query"
+    query: Annotated[str, Ui(label="Query", section="main")] = ""
+
+
+class _NestedRefForm(AppFormModel):
+    """Carry a marked top-level service plus a one-of source nesting a ref."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_id: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
+        Ui(label="Service", section="main"),
+    ] = None
+    source: Annotated[
+        _SourceByTable | _SourceByQuery,
+        Field(discriminator="mode"),
+        Ui(label="Source", section="main"),
+    ] = _SourceByTable()
+
+
 class TestResolveRefs:
     """Cover ref-marker resolution against a fake inventory backend."""
 
@@ -479,6 +546,144 @@ class TestResolveRefs:
 
         with pytest.raises(HTTPBadRequestException):
             await resolve_refs(_MultiTypeForm(service_id=1), inventory)
+
+    @pytest.mark.asyncio
+    async def test_check_connectivity_service_is_primary(self) -> None:
+        """Select the ``check_connectivity`` service as primary, not the last ref."""
+        source = _service(
+            address="src-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="source",
+            port=3306,
+        )
+        dest = _service(
+            address="dst-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="dest",
+            port=3306,
+        )
+        inventory = _fake_inventory(
+            {
+                "/services/1": source.model_dump(mode="json"),
+                "/services/2": dest.model_dump(mode="json"),
+            }
+        )
+
+        resolved = await resolve_refs(
+            _TwoServiceForm(source_id=1, dest_id=2), inventory
+        )
+
+        assert resolved.service is not None
+        assert resolved.service.name == "source"
+        assert resolved.entities["source_id"].name == "source"
+        assert resolved.entities["dest_id"].name == "dest"
+
+    @pytest.mark.asyncio
+    async def test_sole_service_ref_is_primary_when_none_marked(self) -> None:
+        """Fall back to the sole ``ServiceRef`` as primary when none is marked."""
+        service = _service(
+            address="h", service_type=ServiceTypeEnum.MYSQL, name="svc", port=3306
+        )
+        inventory = _fake_inventory({"/services/1": service.model_dump(mode="json")})
+
+        resolved = await resolve_refs(_SoleUnmarkedServiceForm(service_id=1), inventory)
+
+        assert resolved.service is not None
+        assert resolved.service.name == "svc"
+
+    @pytest.mark.asyncio
+    async def test_resolves_active_branch_nested_ref(self) -> None:
+        """Resolve a ref nested in the active one-of branch, keyed by dotted name."""
+        service = _service(
+            address="h", service_type=ServiceTypeEnum.MYSQL, name="svc", port=3306
+        )
+        schema = CreatedSchemaFactory.build(name="public")
+        inventory = _fake_inventory(
+            {
+                "/services/1": service.model_dump(mode="json"),
+                "/schemas/5": schema.model_dump(mode="json"),
+            }
+        )
+
+        resolved = await resolve_refs(
+            _NestedRefForm(service_id=1, source=_SourceByTable(src_schema=5)), inventory
+        )
+
+        assert resolved.entities["source.src_schema"].name == "public"
+        assert resolved.service.name == "svc"
+
+    @pytest.mark.asyncio
+    async def test_nested_branch_custom_value_resolves_to_none(self) -> None:
+        """Resolve a free-typed nested ref to ``None`` (manual fallback)."""
+        service = _service(
+            address="h", service_type=ServiceTypeEnum.MYSQL, name="svc", port=3306
+        )
+        inventory = _fake_inventory({"/services/1": service.model_dump(mode="json")})
+
+        resolved = await resolve_refs(
+            _NestedRefForm(service_id=1, source=_SourceByTable(src_schema="custom")),
+            inventory,
+        )
+
+        assert resolved.entities["source.src_schema"] is None
+
+    @pytest.mark.asyncio
+    async def test_inactive_branch_refs_not_resolved(self) -> None:
+        """Skip refs declared on a one-of branch that is not the active one."""
+        service = _service(
+            address="h", service_type=ServiceTypeEnum.MYSQL, name="svc", port=3306
+        )
+        inventory = _fake_inventory({"/services/1": service.model_dump(mode="json")})
+
+        resolved = await resolve_refs(
+            _NestedRefForm(service_id=1, source=_SourceByQuery(query="SELECT 1")),
+            inventory,
+        )
+
+        assert "source.src_schema" not in resolved.entities
+
+
+class TestAssembleEnvelopeAlertDetailBuilder:
+    """Cover the optional ``alert_detail_builder`` stamping on the envelope."""
+
+    def test_alert_detail_builder_stamped_when_set(self) -> None:
+        """Stamp the supplied ``alert_detail_builder`` onto the ``TaskWrite``."""
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        spec = RunPythonSpec(config="", requirements="", payload="file:///p")
+
+        write = assemble_envelope(
+            spec,
+            ResolvedEntities(service=service, entities={}),
+            name="task-1",
+            owner=TaskOwner.ARCHIVER,
+            alert_detail_builder="pkg.mod:builder",
+        )
+
+        assert write.alert_detail_builder == "pkg.mod:builder"
+
+    def test_alert_detail_builder_none_by_default(self) -> None:
+        """Leave ``alert_detail_builder`` as ``None`` when not supplied."""
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        spec = RunPythonSpec(config="", requirements="", payload="file:///p")
+
+        write = assemble_envelope(
+            spec,
+            ResolvedEntities(service=service, entities={}),
+            name="task-1",
+            owner=TaskOwner.ARCHIVER,
+        )
+
+        assert write.alert_detail_builder is None
 
 
 class _ArgForm(AppFormModel):
