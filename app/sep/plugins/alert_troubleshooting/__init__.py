@@ -15,6 +15,7 @@
 
 """Alert Troubleshooting plugin — index page with alert selection by service type."""
 
+from app.sep.plugins.alert_troubleshooting.app import app
 from app.sep.plugins.alert_troubleshooting.routes import router
 
-__all__ = ["router"]
+__all__ = ["app", "router"]

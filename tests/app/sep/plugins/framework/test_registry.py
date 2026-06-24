@@ -379,11 +379,17 @@ class TestGetAppRegistry:
         assert get_app_registry() is get_app_registry()
 
 
-BESPOKE_BASE_APP_PLUGINS = ["alerts", "dipper", "inventory", "report"]
+BESPOKE_BASE_APP_PLUGINS = [
+    "alert_troubleshooting",
+    "alerts",
+    "dipper",
+    "inventory",
+    "report",
+]
 
 
 class TestBespokeBaseAppDefinitions:
-    """Cover the alerts/dipper/inventory/report ``BaseApp`` definition wiring."""
+    """Cover the bespoke ``BaseApp`` definition wiring for every plugin in ``BESPOKE_BASE_APP_PLUGINS``."""
 
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
     def test_module_exports_bare_base_app(self, plugin: str) -> None:
@@ -405,9 +411,11 @@ class TestBespokeBaseAppDefinitions:
         """Carry ``inventory_schema`` on the inventory definition's ``app_schema``."""
         assert get_app_registry().get("inventory").app_schema is inventory_schema
 
-    @pytest.mark.parametrize("plugin", ["alerts", "dipper", "report"])
+    @pytest.mark.parametrize(
+        "plugin", ["alert_troubleshooting", "alerts", "dipper", "report"]
+    )
     def test_schemaless_plugins_have_no_app_schema(self, plugin: str) -> None:
-        """Register the alerts, dipper, and report definitions without a schema."""
+        """Register the schemaless bespoke definitions without an ``app_schema``."""
         assert get_app_registry().get(plugin).app_schema is None
 
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
