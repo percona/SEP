@@ -15,6 +15,8 @@
 
 """Define database utilities."""
 
+import re
+from collections.abc import Iterable
 from typing import Any
 
 from alembic.runtime.migration import MigrationContext
@@ -24,13 +26,16 @@ from sqlalchemy import (
     ColumnClause,
     ColumnElement,
     func,
+    inspect,
     JSON,
     literal,
     Text,
+    text,
     TypeDecorator,
 )
 from sqlalchemy.dialects import mysql, postgresql, sqlite
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine
 from sqlalchemy.orm import InstrumentedAttribute, sessionmaker
 from sqlalchemy.sql.dml import Insert as GenericInsert
@@ -221,3 +226,59 @@ def compare_type(
     if isinstance(metadata_type, AutoJSON) and isinstance(inspected_type, JSONB | JSON):
         return False
     return None
+
+
+def acquire_pg_advisory_xact_lock(bind: Connection, lock_key: int) -> None:
+    """Serialize concurrent shared-database migrations on PostgreSQL.
+
+    Take a transaction-scoped advisory lock so two service tracks running
+    ``upgrade heads`` against one physical database cannot both pass an
+    idempotency preflight and execute the same DDL simultaneously. The lock
+    releases automatically at transaction end. No-op on other dialects: SQLite
+    and per-service-database deployments give each service its own database, so
+    there is no cross-track race to serialize.
+
+    :param bind: The migration's bound connection (``op.get_bind()``).
+    :param lock_key: The advisory-lock key; all callers racing on the same
+        object must pass the same key.
+    """
+    if bind.dialect.name == DatabaseDialect.POSTGRESQL:
+        bind.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+
+
+def check_constraint_lists_members(
+    bind: Connection,
+    table_name: str,
+    column_name: str,
+    members: Iterable[str],
+) -> bool:
+    """Return ``True`` when the CHECK constraint on ``column_name`` lists every member.
+
+    The ``setting_class`` column uses ``native_enum=False``, so its allowed
+    values live in a ``CHECK`` constraint rather than a PostgreSQL ``TYPE``. This
+    reflects the constraint text cross-dialect via ``sqlalchemy.inspect`` and
+    tests membership by matching each value as a single-quoted SQL string
+    literal, so ``"SETTINGS"`` does not spuriously match ``"SEP_SETTINGS"``.
+
+    Returns ``False`` when the table does not exist -- ``get_check_constraints``
+    raises ``NoSuchTableError`` for a missing table, and a missing table means
+    there is no constraint to list anything (so an enum-narrowing downgrade
+    correctly no-ops when another track already dropped the shared table).
+
+    :param bind: The migration's bound connection (``op.get_bind()``).
+    :param table_name: The table whose CHECK constraints are inspected.
+    :param column_name: The constrained column, used to select the relevant
+        constraint and avoid matching unrelated CHECKs.
+    :param members: The enum member names to test for.
+    :return: ``True`` only if the table exists and every member appears as a
+        quoted literal in a CHECK constraint referencing ``column_name``.
+    """
+    inspector = inspect(bind)
+    if not inspector.has_table(table_name):
+        return False
+    haystack = " ".join(
+        constraint["sqltext"] or ""
+        for constraint in inspector.get_check_constraints(table_name)
+        if column_name in (constraint["sqltext"] or "")
+    )
+    return all(re.search(rf"'{re.escape(member)}'", haystack) for member in members)
