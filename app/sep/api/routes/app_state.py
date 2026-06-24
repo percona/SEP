@@ -159,6 +159,11 @@ async def update_app_state(
     straight to ``DISABLED`` (no ``task_postrun`` event will ever fire for an idle
     app), and the response reflects that resulting ``DISABLED`` state.
 
+    An ``ENABLING`` transition completes synchronously: there is no warm-up to
+    wait for and nothing else ever advances ``ENABLING``, so it is flipped
+    straight to ``ENABLED`` (before re-gating, so the app's schedules resume in
+    the same request) and the response reflects that resulting ``ENABLED`` state.
+
     :param app_key: The app key to transition.
     :type app_key: str
     :param body: The requested target lifecycle state.
@@ -179,8 +184,22 @@ async def update_app_state(
     )
     if not created:
         state = await AppStateManager.update(session, state, body)
-    await apply_effective_enabled(session, celery_beat_session, app_keys={app_key})
     resulting_state = state.lifecycle_state
+    # Enabling has no warm-up to wait for (only the disable path drains in-flight
+    # work), so ENABLING completes synchronously: flip it straight to ENABLED.
+    # This must happen *before* the re-gate below because
+    # ``apply_effective_enabled`` only re-arms an app whose state is ENABLED, and
+    # nothing else (no reconciler, no task signal) ever advances ENABLING — so
+    # without this the app would sit in ENABLING forever.
+    if resulting_state == AppLifecycleEnum.ENABLING:
+        await AppStateManager.update_where(
+            session,
+            {"lifecycle_state": AppLifecycleEnum.ENABLED},
+            app_key=app_key,
+            lifecycle_state=AppLifecycleEnum.ENABLING,
+        )
+        resulting_state = AppLifecycleEnum.ENABLED
+    await apply_effective_enabled(session, celery_beat_session, app_keys={app_key})
     if (
         resulting_state == AppLifecycleEnum.DISABLING
         and await finalize_drain_if_complete(session, app_key)
