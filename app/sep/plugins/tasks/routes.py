@@ -20,7 +20,6 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from app.core.alerts.config import alert_settings
 from app.sep.config import sep_settings
 from app.sep.deps import (
     AVAILABLE_TIMEZONES,
@@ -30,11 +29,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.plugins.tasks.deps import TaskDep
-from app.tasks.models import (
-    TaskBackendEnum,
-    TaskHistoryStatusEnum,
-    TaskOwner,
-)
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +51,6 @@ async def tasks_list(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
     context["running_tasks"] = response["items"]
-    context["available_backends"] = TaskBackendEnum
-    context["available_owners"] = TaskOwner
-    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
     logger.debug("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,
@@ -85,7 +77,6 @@ async def tasks_detail(
             f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
         )
         context["running_tasks"] = response["items"]
-    context["available_owners"] = TaskOwner
     context["task_data"] = task.data
     context["executor_hosts"] = executor_hosts_ctx.as_template_list()
     context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
