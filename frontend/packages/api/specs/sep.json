@@ -1098,134 +1098,6 @@
         "title": "ArchivesCreate",
         "type": "object"
       },
-      "ArchivesCreateResponse": {
-        "properties": {
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum"
-          },
-          "connectivity_warning": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConnectivityWarning"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "data": {
-            "title": "Data",
-            "type": "object"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "is_template": {
-            "default": false,
-            "title": "Is Template",
-            "type": "boolean"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Updated By"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
-          },
-          "protected": {
-            "default": false,
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "backend",
-          "owner",
-          "data"
-        ],
-        "title": "ArchivesCreateResponse",
-        "type": "object"
-      },
       "ArchivesLegacyForm": {
         "description": "Parse the deprecated Archives HTML form's flat, urlencoded body.\n\nThe Jinja templates submit the historical flat field names (``source_db_id`` /\n``source_db_name`` / …) that predate the one-of collapse, so the derived\none-of ``ArchivesCreate`` cannot bind them directly. This model parses that\nflat body; :func:`_map_legacy_to_create` folds it into ``ArchivesCreate`` for\nthe shared spec builder, keeping the legacy path byte-identical. Conditional\nvalidation is enforced by the mapped ``ArchivesCreate``, not here.\n\n:param alias: The task name (the ``ALIAS`` in the archiver config).\n:param hostname: The executor host.\n:param service_id: The source MySQL service id.\n:param source_db_id: The source schema inventory id, or empty.\n:param source_db_name: The manually-entered source schema name.\n:param source_table_id: The source table inventory id, or empty.\n:param source_table_name: The manually-entered source table name.\n:param source_query: A custom source query.\n:param where: The WHERE clause.\n:param dest_table_id: The destination table inventory id, or empty.\n:param dest_table_name: The manually-entered destination table name.\n:param dest_file: The destination file path.\n:param swap_drop: The archive type (0-2).\n:param swp_table_suffix: The swap-table date suffix.\n:param use_index: An index hint.\n:param extra_args: Additional pt-archiver CLI arguments.\n:param limit: The maximum rows per run.\n:param sleep: The sleep between chunk operations.\n:param disable_binlog: The disable-binlog flag (0/1).\n:param disable_bulk_insert: The disable-bulk-insert flag (0/1).\n:param delete_data: The delete-without-archiving flag (0/1).\n:param dest_service_id: The destination service inventory id, or empty.\n:param dest_host: The manual destination host.\n:param dest_port: The manual destination port.\n:param dest_db_id: The destination schema inventory id, or empty.\n:param dest_db_name: The manually-entered destination schema name.\n:param alert_on_fail: Whether to alert on failure.",
         "properties": {
@@ -1497,15 +1369,44 @@
         "type": "object"
       },
       "ArchivesTaskResponse": {
-        "description": "Represent an Archives task in API responses.\n\nLean Pydantic projection of ``app.tasks.models.Task`` carrying only the\nfields the React frontend consumes. Defined locally (not inherited from\n``Task``) to keep relationship attributes (``history``) out of the\nserialised payload.\n\n:param id: The task primary key.\n:type id: int | None\n:param name: The task name.\n:type name: str\n:param backend: The execution backend.\n:type backend: TaskBackendEnum\n:param owner: The plugin that owns the task.\n:type owner: TaskOwner\n:param data: Raw task data (``task``/``meta``/``payload``).\n:type data: dict[str, Any]\n:param is_template: Whether the task is a template definition.\n:type is_template: bool\n:param protected: Whether the task is protected from deletion.\n:type protected: bool\n:param alert_on_fail: Whether the task triggers an alert on failure.\n:type alert_on_fail: bool\n:param created_at: Creation timestamp.\n:type created_at: datetime | None\n:param updated_at: Last update timestamp.\n:type updated_at: datetime | None\n:param created_by: User that created the task.\n:type created_by: str | None\n:param last_updated_by: User that last updated the task.\n:type last_updated_by: str | None\n:param service_type: The database service type the task targets.\n:type service_type: ServiceTypeEnum | None\n:param status: The latest known execution status from task history.\n:type status: TaskHistoryStatusEnum | None",
+        "description": "Represent an Archives task in API responses.\n\nExtend the standard task-response surface with the archives-specific\n``is_template`` flag; the shared task identity, status, audit, connectivity,\nand anonymization fields come from\n:class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.\n\n:param is_template: Whether the task is a template definition.",
         "properties": {
           "alert_on_fail": {
-            "default": false,
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -1569,7 +1470,6 @@
             "$ref": "#/components/schemas/TaskOwner"
           },
           "protected": {
-            "default": false,
             "title": "Protected",
             "type": "boolean"
           },
@@ -1608,9 +1508,12 @@
         },
         "required": [
           "name",
-          "backend",
           "owner",
-          "data"
+          "backend",
+          "data",
+          "protected",
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "ArchivesTaskResponse",
         "type": "object"
@@ -13657,7 +13560,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ArchivesCreateResponse"
+                  "$ref": "#/components/schemas/ArchivesTaskResponse"
                 }
               }
             },
@@ -13814,7 +13717,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ArchivesCreateResponse"
+                  "$ref": "#/components/schemas/ArchivesTaskResponse"
                 }
               }
             },

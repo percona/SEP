@@ -5491,43 +5491,6 @@ export interface components {
       /** Where */
       where?: string | null;
     };
-    /** ArchivesCreateResponse */
-    ArchivesCreateResponse: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      backend: components['schemas']['TaskBackendEnum'];
-      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
-      /** Created At */
-      created_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Data */
-      data: Record<string, never>;
-      /** Id */
-      id?: number | null;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /** Last Updated By */
-      last_updated_by?: string | null;
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Updated At */
-      updated_at?: string | null;
-    };
     /**
      * ArchivesLegacyForm
      * @description Parse the deprecated Archives HTML form's flat, urlencoded body.
@@ -5642,47 +5605,25 @@ export interface components {
      * ArchivesTaskResponse
      * @description Represent an Archives task in API responses.
      *
-     *     Lean Pydantic projection of ``app.tasks.models.Task`` carrying only the
-     *     fields the React frontend consumes. Defined locally (not inherited from
-     *     ``Task``) to keep relationship attributes (``history``) out of the
-     *     serialised payload.
+     *     Extend the standard task-response surface with the archives-specific
+     *     ``is_template`` flag; the shared task identity, status, audit, connectivity,
+     *     and anonymization fields come from
+     *     :class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.
      *
-     *     :param id: The task primary key.
-     *     :type id: int | None
-     *     :param name: The task name.
-     *     :type name: str
-     *     :param backend: The execution backend.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The plugin that owns the task.
-     *     :type owner: TaskOwner
-     *     :param data: Raw task data (``task``/``meta``/``payload``).
-     *     :type data: dict[str, Any]
      *     :param is_template: Whether the task is a template definition.
-     *     :type is_template: bool
-     *     :param protected: Whether the task is protected from deletion.
-     *     :type protected: bool
-     *     :param alert_on_fail: Whether the task triggers an alert on failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: Creation timestamp.
-     *     :type created_at: datetime | None
-     *     :param updated_at: Last update timestamp.
-     *     :type updated_at: datetime | None
-     *     :param created_by: User that created the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: User that last updated the task.
-     *     :type last_updated_by: str | None
-     *     :param service_type: The database service type the task targets.
-     *     :type service_type: ServiceTypeEnum | None
-     *     :param status: The latest known execution status from task history.
-     *     :type status: TaskHistoryStatusEnum | None
      */
     ArchivesTaskResponse: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
+      /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -5701,10 +5642,7 @@ export interface components {
       /** Name */
       name: string;
       owner: components['schemas']['TaskOwner'];
-      /**
-       * Protected
-       * @default false
-       */
+      /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
@@ -12407,7 +12345,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesCreateResponse'];
+          'application/json': components['schemas']['ArchivesTaskResponse'];
         };
       };
       /** @description Validation Error */
@@ -12495,7 +12433,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesCreateResponse'];
+          'application/json': components['schemas']['ArchivesTaskResponse'];
         };
       };
       /** @description Validation Error */
