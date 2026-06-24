@@ -37,9 +37,9 @@ const schema: PluginSchema = {
   display_name: 'Sched',
   capabilities: { scheduling: true },
   list_view: { columns: [{ key: 'name', label: 'Name' }] },
-} as unknown as PluginSchema;
+};
 
-function renderPage(props: Record<string, unknown> = {}) {
+function renderPage(props: Partial<Parameters<typeof PluginListPage>[0]> = {}) {
   return render(
     <SnackbarProvider>
       <MemoryRouter>
