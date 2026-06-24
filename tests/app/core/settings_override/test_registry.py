@@ -34,6 +34,7 @@ from app.core.settings_override.registry import (
     materialize_via_owning_model,
     MaterializerContext,
     nested_overridable_field_names,
+    preserve_patch_credential_url_value,
     ReloadClassification,
     resolve_nested_field_metadata,
 )
@@ -120,6 +121,31 @@ def test_materialize_fingerprint_returns_diff_stable_dict() -> None:
     second = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
     assert isinstance(first, dict)
     assert first == second
+
+
+def test_materialize_fingerprint_preserves_embedded_url_credentials() -> None:
+    """Internal fingerprints retain real URL passwords for live executor use."""
+    raw = {"endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646"}
+    fingerprint = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
+    assert "nomad-secret" in fingerprint["endpoint"]
+    assert "****" not in fingerprint["endpoint"]
+
+
+def test_preserve_patch_credential_url_value_for_scalar_field() -> None:
+    """Scalar credential URL PATCH values restore the stored password when redacted."""
+    field = SEPSettings.model_fields["INVENTORY_ENDPOINT"]
+    current = "http://inv-user:inv-secret@inventory.internal:8080"
+    incoming = "http://inv-user:****@inventory.internal:8080"
+    assert preserve_patch_credential_url_value(field, current, incoming) == current
+
+
+def test_preserve_patch_credential_url_value_for_materializer_payload() -> None:
+    """Whole-object materializer PATCH payloads preserve nested endpoint passwords."""
+    field = TasksSettings.model_fields["NOMAD"]
+    current = {"endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646"}
+    incoming = {"endpoint": "http://nomad-user:****@nomad.internal:4646"}
+    preserved = preserve_patch_credential_url_value(field, current, incoming)
+    assert preserved["endpoint"] == current["endpoint"]
 
 
 def test_is_hot_reloadable_true_for_marked_field() -> None:

@@ -32,6 +32,9 @@ from app.tasks.models import TaskBackendEnum
 
 _NOMAD_A = {"endpoint": "https://nomad-a.example.org"}
 _NOMAD_B = {"endpoint": "https://nomad-b.example.org"}
+_NOMAD_WITH_CREDS = {
+    "endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646",
+}
 
 
 def _override_nomad(fingerprint: dict[str, object]) -> None:
@@ -52,6 +55,12 @@ def test_normalize_reconstructs_executor_from_mapping() -> None:
     assert str(result.endpoint).startswith("https://nomad-a.example.org")
 
 
+def test_normalize_reconstructs_executor_with_embedded_credentials() -> None:
+    """A fingerprint with embedded URL credentials rebuilds a usable executor."""
+    result = normalize_nomad_config_value(_NOMAD_WITH_CREDS)
+    assert "nomad-secret" in str(result.endpoint)
+
+
 def test_normalize_raises_on_invalid_mapping() -> None:
     """An invalid fingerprint mapping raises noisily instead of passing through."""
     with pytest.raises(ValidationError):
@@ -69,6 +78,15 @@ def test_current_raises_before_start() -> None:
     holder = NomadLifecycle(FastAPI())
     with pytest.raises(RuntimeError, match="not started"):
         _ = holder.current
+
+
+@pytest.mark.asyncio
+async def test_aenter_enters_executor_with_embedded_credentials() -> None:
+    """``__aenter__`` preserves embedded URL credentials from the override fingerprint."""
+    app = FastAPI()
+    _override_nomad(_NOMAD_WITH_CREDS)
+    async with NomadLifecycle(app) as holder:
+        assert "nomad-secret" in str(holder.current.endpoint)
 
 
 @pytest.mark.asyncio
