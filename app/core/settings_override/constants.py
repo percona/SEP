@@ -1,0 +1,21 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define constants shared by settings-override modules."""
+
+# Stable, app-chosen advisory-lock key shared by every settingoverride migration
+# so they serialize against each other on a shared PostgreSQL database. Any fixed
+# bigint unused elsewhere works; no other advisory lock exists in the repo.
+SETTINGOVERRIDE_MIGRATION_LOCK_KEY = 0x5E770438
