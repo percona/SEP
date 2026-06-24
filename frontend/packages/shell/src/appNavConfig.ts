@@ -107,6 +107,7 @@ const NAV_GROUPS: Record<string, { label: string; icon: NavIcon }> = {
   backups: { label: 'Backups', icon: BackupIcon },
   alerts: { label: 'Alerts', icon: NotificationsActiveIcon },
   schema_change: { label: 'Schema Change', icon: StorageIcon },
+  snippets: { label: 'Snippets', icon: CodeIcon },
 };
 
 const DEFAULT_APP_ICON: NavIcon = ExtensionIcon;

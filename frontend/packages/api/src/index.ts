@@ -118,9 +118,24 @@ export {
   REDACTED_SECRET,
   useEnabledApps,
   ENABLED_APPS_QUERY_KEY,
+  useAdminApps,
+  useSetAppState,
+  useForceDisableApp,
+  isTransitional,
+  appStateErrorMessage,
+  ADMIN_APPS_QUERY_KEY,
+  ADMIN_APP_MUTATION_KEY,
   useConfigExport,
 } from './hooks';
 export type { AlertConfig, DashboardStats, EnabledApp } from './hooks';
+export type {
+  AdminApp,
+  AppStateResult,
+  AppLifecycleState,
+  TransitionalState,
+  SetAppStateVars,
+  ForceDisableAppVars,
+} from './hooks';
 export type {
   SettingClass,
   ReloadClassification,

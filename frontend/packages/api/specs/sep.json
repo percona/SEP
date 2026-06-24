@@ -12085,7 +12085,7 @@
   "info": {
     "description": "Percona Services Enablement Platform\n\nBrowser-oriented SEP routes (HTML, redirects, proxies, streams). JSON REST APIs for inventory and tasks live on the mounted sub-apps.",
     "title": "SEP Web Application API",
-    "version": "v0.14.0.dev0"
+    "version": "v1.0.0.dev0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -12785,7 +12785,7 @@
     },
     "/api/admin/apps/{app_key}/state": {
       "put": {
-        "description": "Transition an app to a new lifecycle state.\n\nValidates the requested edge against the allowed transitions\n(``ENABLED`` -> ``DISABLING``, ``DISABLED`` -> ``ENABLING``,\n``DISABLING`` -> ``DISABLED``, ``ENABLING`` -> ``ENABLED``); an illegal edge\nreturns 409. Returns 409 for protected apps (``inventory``) and 404 if the\nkey does not match any configured plugin. A configured app with no row yet is\ntreated as ``ENABLED`` for the gate and gets its row created with the\nrequested state. Returns the updated row as an :class:`AppStateResponse`\n(the return annotation drives FastAPI's response schema).\n\nAfter the ``AppState`` write commits, the app's owned periodic schedules are\nre-gated via :func:`app.sep.periodic_tasks.apply_effective_enabled` so a\nnon-``ENABLED`` app also stops its Celery beat tasks (and a return to\n``ENABLED`` resumes them, subject to each schedule's ``user_enabled``\noverride).\n\nA ``DISABLING`` transition on an app with no in-flight tasks drains\nimmediately: :func:`app.sep.app_drain.finalize_drain_if_complete` flips it\nstraight to ``DISABLED`` (no ``task_postrun`` event will ever fire for an idle\napp), and the response reflects that resulting ``DISABLED`` state.\n\n:param app_key: The app key to transition.\n:type app_key: str\n:param body: The requested target lifecycle state.\n:type body: AppStateWrite\n:param session: The SEP database session.\n:type session: SessionDep\n:param celery_beat_session: The celery-beat database session.\n:return: The updated app-state response payload.\n:rtype: AppStateResponse\n:raises HTTPConflictException: When the requested transition edge is illegal.",
+        "description": "Transition an app to a new lifecycle state.\n\nValidates the requested edge against the allowed transitions\n(``ENABLED`` -> ``DISABLING``, ``DISABLED`` -> ``ENABLING``,\n``DISABLING`` -> ``DISABLED``, ``ENABLING`` -> ``ENABLED``); an illegal edge\nreturns 409. Returns 409 for protected apps (``inventory``) and 404 if the\nkey does not match any configured plugin. A configured app with no row yet is\ntreated as ``ENABLED`` for the gate and gets its row created with the\nrequested state. Returns the updated row as an :class:`AppStateResponse`\n(the return annotation drives FastAPI's response schema).\n\nAfter the ``AppState`` write commits, the app's owned periodic schedules are\nre-gated via :func:`app.sep.periodic_tasks.apply_effective_enabled` so a\nnon-``ENABLED`` app also stops its Celery beat tasks (and a return to\n``ENABLED`` resumes them, subject to each schedule's ``user_enabled``\noverride).\n\nA ``DISABLING`` transition on an app with no in-flight tasks drains\nimmediately: :func:`app.sep.app_drain.finalize_drain_if_complete` flips it\nstraight to ``DISABLED`` (no ``task_postrun`` event will ever fire for an idle\napp), and the response reflects that resulting ``DISABLED`` state.\n\nAn ``ENABLING`` transition completes synchronously: there is no warm-up to\nwait for and nothing else ever advances ``ENABLING``, so it is flipped\nstraight to ``ENABLED`` (before re-gating, so the app's schedules resume in\nthe same request) and the response reflects that resulting ``ENABLED`` state.\n\n:param app_key: The app key to transition.\n:type app_key: str\n:param body: The requested target lifecycle state.\n:type body: AppStateWrite\n:param session: The SEP database session.\n:type session: SessionDep\n:param celery_beat_session: The celery-beat database session.\n:return: The updated app-state response payload.\n:rtype: AppStateResponse\n:raises HTTPConflictException: When the requested transition edge is illegal.",
         "operationId": "admin_update_app_state_api_admin_apps__app_key__state_put",
         "parameters": [
           {
@@ -18118,25 +18118,6 @@
           "sep",
           "artifacts"
         ]
-      }
-    },
-    "/atw/": {
-      "get": {
-        "description": "Homepage of plugin.",
-        "operationId": "app_index_atw__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "App Index"
       }
     },
     "/backup_mongo/": {

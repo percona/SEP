@@ -169,11 +169,13 @@ const TARGETS: SidebarTarget[] = [
   { label: 'Task Manager', urlPattern: /\/tasks(\/|$)/, sentinel: heading(GENERIC_PLUGIN_HEADING) },
   {
     label: 'Snippet Manager',
+    group: 'Snippets',
     urlPattern: /\/snippets(\/|$)/,
     sentinel: heading('Snippet Manager'),
   },
   {
     label: 'Collect Diagnostic Data',
+    group: 'Snippets',
     urlPattern: /\/atw(\/|$)/,
     sentinel: heading('Collect Diagnostic Data'),
   },

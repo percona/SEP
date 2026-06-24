@@ -39,12 +39,23 @@ export interface MockEnabledApp {
 
 // Registry-driven nav app keys from shell/src/appNavConfig.ts — all enabled so
 // the full sidebar renders. ``display_name`` values mirror backend registry labels.
-// ``custom_ui`` is always false today (legacy apps; see test_apps.py). ``group`` /
-// ``nav_order`` mirror the backend nav_order scale that drives the derived tree.
+// ``custom_ui`` is forced false here — the derived sidebar tree does not branch on
+// it. ``group`` / ``nav_order`` mirror the backend nav_order scale that drives the
+// derived tree.
 const NAV_APP_METADATA = {
   tasks: { display_name: 'Task Manager', uri_path: '/tasks', group: null, nav_order: 1 },
-  snippets: { display_name: 'Snippet Manager', uri_path: '/snippets', group: null, nav_order: 2 },
-  atw: { display_name: 'Collect Diagnostic Data', uri_path: '/atw', group: null, nav_order: 3 },
+  snippets: {
+    display_name: 'Snippet Manager',
+    uri_path: '/snippets',
+    group: 'snippets',
+    nav_order: 2,
+  },
+  atw: {
+    display_name: 'Collect Diagnostic Data',
+    uri_path: '/atw',
+    group: 'snippets',
+    nav_order: 3,
+  },
   alerts: { display_name: 'Alert Templates', uri_path: '/alerts', group: 'alerts', nav_order: 4 },
   alert_troubleshooting: {
     display_name: 'Alert Troubleshooting',
