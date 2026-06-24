@@ -21,8 +21,10 @@ from fastapi import HTTPException, status
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.framework.spec import RESERVED_FORM_KEY
 from app.sep.plugins.mysql_backups.models import BackupType
 from app.sep.plugins.mysql_backups.restore.deps import (
+    build_restore_payload,
     build_restore_task_payload,
     resolve_restore_entities,
 )
@@ -187,6 +189,31 @@ async def test_build_restore_task_payload_skips_lookup_for_unknown_service_senti
 
     assert "_service_name" not in task_payload.data["meta"]
     get_created_entity.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_build_restore_payload_stamps_form_without_new_secret_exposure(
+    mock_remote_api,
+):
+    """Assert the stamped ``_form`` re-carries a secret already held in ``data``.
+
+    AC #3 invariant: ``_form`` introduces no plaintext secret ``data`` does not
+    already persist, so ``master_password`` appears in both and stays equal.
+    """
+    form = RestoreCreate(
+        hostname="restore-host",
+        task_name="restore-task",
+        service_id=None,
+        backup_type=BackupType.XTRABACKUP,
+        backup_source="/var/backups/latest",
+        datadir="/var/lib/mysql",
+        master_password="s3cret-pw",
+    )
+
+    task_payload = await build_restore_payload(form, mock_remote_api)
+
+    assert task_payload.data[RESERVED_FORM_KEY]["master_password"] == "s3cret-pw"
+    assert "s3cret-pw" in task_payload.data["meta"]["config"]
 
 
 @pytest.mark.asyncio

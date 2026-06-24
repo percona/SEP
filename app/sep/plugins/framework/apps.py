@@ -71,6 +71,7 @@ from app.sep.plugins.framework.spec import (
     EnvelopeSpec,
     resolve_refs,
     ResolvedEntities,
+    stamp_form_input,
     validate_arg_formats,
 )
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
@@ -925,7 +926,7 @@ class TaskExecutionApp(BaseApp):
         ) -> TaskWrite:
             resolved = await resolve_refs(form, inventory_api)
             spec = spec_builder(form, resolved)
-            return assemble_envelope(
+            write = assemble_envelope(
                 spec,
                 resolved,
                 name=form.task_name,
@@ -933,5 +934,7 @@ class TaskExecutionApp(BaseApp):
                 alert_on_fail=getattr(form, "alert_on_fail", False),
                 alert_detail_builder=alert_detail_builder,
             )
+            stamp_form_input(write, form)
+            return write
 
         return _create_payload

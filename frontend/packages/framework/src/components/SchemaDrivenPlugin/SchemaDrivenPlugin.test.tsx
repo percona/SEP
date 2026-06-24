@@ -17,7 +17,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
 import type { PluginSchema } from '@sep/api';
@@ -39,8 +39,33 @@ const schema: PluginSchema = {
   ],
 } as unknown as PluginSchema;
 
+// Single-entity (task-style) schema for the task/:id/edit branch.
+const taskSchema: PluginSchema = {
+  pluginName: 'checksums',
+  display_name: 'Checksum',
+  forms: [
+    {
+      title: 'Main',
+      fields: [
+        { type: 'string', name: 'task_name', label: 'Task Name' },
+        { type: 'string', name: 'title', label: 'Title' },
+      ],
+    },
+  ],
+  list_view: { columns: [{ key: 'name', label: 'Name' }] },
+} as unknown as PluginSchema;
+
+const taskRecord = {
+  id: 1,
+  name: 'check1',
+  data: { _form: { task_name: 'check1', title: 'hello' } },
+};
+
+// Schema the mocked usePluginSchema serves; per-test override, reset after each.
+let activeSchema: PluginSchema = schema;
+
 // Stub sibling page modules so their @sep/api imports stay out of the graph;
-// this test exercises only the SchemaDrivenPlugin → PluginEditPage threading.
+// this test exercises only the SchemaDrivenPlugin → edit-page threading.
 vi.mock('./PluginListPage', () => ({ PluginListPage: () => <div>list</div> }));
 vi.mock('./PluginDetailPage', () => ({
   PluginDetailPage: () => <div>detail</div>,
@@ -49,12 +74,18 @@ vi.mock('./PluginDetailPage', () => ({
 vi.mock('./PluginSchedulePage', () => ({ PluginSchedulePage: () => <div>schedule</div> }));
 
 vi.mock('@sep/api', () => ({
-  usePluginSchema: () => ({ data: schema, isLoading: false, error: null }),
+  usePluginSchema: () => ({ data: activeSchema, isLoading: false, error: null }),
   usePluginEntityDetail: () => ({ data: { id: 5, label: 'n1' }, isLoading: false }),
   useUpdatePluginEntity: () => ({ mutate: mockUpdateMutate, isPending: false }),
   useCreatePluginEntity: () => ({ mutate: vi.fn(), isPending: false }),
   useCreatePluginTask: () => ({ mutate: vi.fn(), isPending: false }),
+  usePluginTask: () => ({ data: taskRecord, isLoading: false }),
+  useUpdatePluginTask: () => ({ mutate: vi.fn(), isPending: false, isError: false, error: null }),
 }));
+
+afterEach(() => {
+  activeSchema = schema;
+});
 
 function renderEdit(renderEditForm?: RenderFormSlot) {
   return render(
@@ -93,5 +124,23 @@ describe('SchemaDrivenPlugin — renderEditForm slot', () => {
       { id: '5', values: expect.objectContaining({ label: 'edited' }) },
       expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
     );
+  });
+});
+
+describe('SchemaDrivenPlugin — single-entity task edit route', () => {
+  it('renders PluginTaskEditPage at task/:id/edit, prefilled from the stored form', () => {
+    activeSchema = taskSchema;
+    render(
+      <SnackbarProvider>
+        <MemoryRouter initialEntries={['/task/check1/edit']}>
+          <SchemaDrivenPlugin pluginName="checksums" />
+        </MemoryRouter>
+      </SnackbarProvider>,
+    );
+
+    expect(screen.getByText('Edit Checksum: check1')).toBeInTheDocument();
+    expect(screen.getByLabelText('Title')).toHaveValue('hello');
+    // task_name stays immutable: no editable name input is rendered.
+    expect(screen.queryByLabelText('Task Name')).toBeNull();
   });
 });

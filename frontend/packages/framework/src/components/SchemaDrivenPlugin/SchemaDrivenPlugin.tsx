@@ -35,6 +35,7 @@ import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../S
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
 import { PluginListPage } from './PluginListPage';
 import { PluginCreatePage } from './PluginCreatePage';
+import { PluginTaskEditPage } from './PluginTaskEditPage';
 import { PluginDetailPage, type TaskExecuteAction } from './PluginDetailPage';
 import { PluginSchedulePage } from './PluginSchedulePage';
 import type { RenderFormSlot } from './types';
@@ -349,18 +350,32 @@ export function SchemaDrivenPlugin({
         }
       />
       {showMutationRoutes && (
-        <Route
-          path="new"
-          element={
-            <PluginCreatePage
-              schema={schema}
-              pluginName={pluginName}
-              mockTasks={mockTasks}
-              renderField={renderField}
-              renderCreateForm={renderCreateForm}
-            />
-          }
-        />
+        <>
+          <Route
+            path="new"
+            element={
+              <PluginCreatePage
+                schema={schema}
+                pluginName={pluginName}
+                mockTasks={mockTasks}
+                renderField={renderField}
+                renderCreateForm={renderCreateForm}
+              />
+            }
+          />
+          <Route
+            path="task/:id/edit"
+            element={
+              <PluginTaskEditPage
+                schema={schema}
+                pluginName={pluginName}
+                mockTasks={mockTasks}
+                renderField={renderField}
+                renderEditForm={renderEditForm}
+              />
+            }
+          />
+        </>
       )}
       {/* Schedule route is only registered when the plugin schema opts in;
           otherwise direct navigation to `/plugins/<name>/schedule` would

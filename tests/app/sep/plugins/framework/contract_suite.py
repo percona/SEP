@@ -59,6 +59,7 @@ from app.sep.plugins.framework.form_dsl import (
     ServiceRef,
     TableRef,
 )
+from app.sep.plugins.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.factories import (
     MOCK_CREATED_SCHEMA_ID,
@@ -353,6 +354,25 @@ class DerivedRouterContractTests:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert mock_task_api.create_count == 1
+
+    def test_create_stamps_form_input(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert create stamps the validated form body under ``data['_form']``."""
+        if not self.app_def.capabilities.create:
+            pytest.skip("create capability disabled")
+        body = build_valid_create_body(self.app_def)
+        if body is None:
+            pytest.skip("no derivable create body (schema= passthrough)")
+        base = app_base_url(self.app_def)
+
+        response = post_create_body(contract_client, f"{base}/", self.app_def, body)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        expected = self.app_def.create_model.model_validate(body).model_dump(
+            mode="json"
+        )
+        assert mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY] == expected
 
     def test_create_route_absent(self) -> None:
         """Assert no ``POST /`` route exists when create is disabled."""
@@ -697,6 +717,37 @@ class DerivedRouterContractTests:
         response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
 
         assert response.status_code == status.HTTP_200_OK
+
+    def test_update_round_trips_stored_form(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert a created task's stored ``_form`` re-validates and re-stamps on PUT.
+
+        The stamped create-form body is itself a valid update body: PUT-ing it back
+        200s and the derived PUT re-stamps the same ``_form`` onto the upstream
+        payload, proving the round-trip through ``create_model`` is lossless.
+        """
+        if not (
+            self.app_def.capabilities.create
+            and self.app_def.capabilities.update
+            and self.app_def.update_handler is None
+        ):
+            pytest.skip("no derived create+update round-trip")
+        task_name = "contract-roundtrip-task"
+        body = build_valid_create_body(self.app_def, task_name=task_name)
+        if body is None:
+            pytest.skip("no derivable create body (schema= passthrough)")
+        base = app_base_url(self.app_def)
+        create = post_create_body(contract_client, f"{base}/", self.app_def, body)
+        assert create.status_code == status.HTTP_201_CREATED
+        stored_form = mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY]
+
+        response = contract_client.put(f"{base}/{task_name}", json=stored_form)
+
+        assert response.status_code == status.HTTP_200_OK
+        assert (
+            mock_task_api.last_update_payload["data"][RESERVED_FORM_KEY] == stored_form
+        )
 
     def test_update_404(self, contract_client: TestClient) -> None:
         """Assert ``PUT /{detail}`` 404s for an unknown task name."""

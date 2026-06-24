@@ -21,6 +21,7 @@ export {
   usePluginTasks,
   usePluginTask,
   useCreatePluginTask,
+  useUpdatePluginTask,
   usePluginEntityList,
   usePluginEntityDetail,
   useCreatePluginEntity,
