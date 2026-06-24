@@ -96,6 +96,17 @@ class TestArchivesCreateBranches:
         by_name = ArchivesCreate.model_validate(_valid())
         assert by_name.source.source_db == "src_db"
 
+    def test_free_solo_rejects_empty_string(self) -> None:
+        """Reject an empty free-typed reference on the source and manual host."""
+        with pytest.raises(ValidationError):
+            ArchivesCreate.model_validate(
+                _valid(source={"mode": "table", "source_db": "", "source_table": "t"})
+            )
+        with pytest.raises(ValidationError):
+            ArchivesCreate.model_validate(
+                _valid(host={"mode": "manual", "dest_host": ""})
+            )
+
 
 class TestArchivesCreateRules:
     """Cover the conditional rules ported onto the one-of model."""
