@@ -33,19 +33,8 @@ from typing import Any
 
 import fastapi.openapi.utils
 
-from app.inventory.main import inventory_app
-from app.main import app as main_app
-from app.sep.main import sep_app
-from app.tasks.main import tasks_app
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SPECS_DIR = REPO_ROOT / "frontend" / "packages" / "api" / "specs"
-APPS = {
-    "main": main_app,
-    "inventory": inventory_app,
-    "tasks": tasks_app,
-    "sep": sep_app,
-}
 
 
 def canonical(doc: dict[str, Any]) -> str:
@@ -87,6 +76,31 @@ def _patch_deterministic_schema_names() -> None:
     fastapi.openapi.utils.get_model_name_map = _ordered_model_name_map
 
 
+def _load_apps() -> dict[str, Any]:
+    """Import the whole-app objects from the worktree this script lives in.
+
+    The shared virtualenv carries an editable ``.pth`` that appends one fixed
+    worktree to ``sys.path``. Executing a script puts its own ``scripts/``
+    directory on ``sys.path`` but not the repo root, so a bare ``import app``
+    would resolve to that ``.pth`` worktree rather than the tree whose specs this
+    script writes. Prepending ``REPO_ROOT`` binds the dump to the local worktree.
+
+    :return: The four whole-app objects keyed by spec name.
+    """
+    sys.path.insert(0, str(REPO_ROOT))
+    from app.inventory.main import inventory_app
+    from app.main import app as main_app
+    from app.sep.main import sep_app
+    from app.tasks.main import tasks_app
+
+    return {
+        "main": main_app,
+        "inventory": inventory_app,
+        "tasks": tasks_app,
+        "sep": sep_app,
+    }
+
+
 def main() -> int:
     """Write or check the committed spec fixtures.
 
@@ -101,8 +115,9 @@ def main() -> int:
         help="compare the committed fixtures against a fresh dump without writing",
     )
     args = parser.parse_args()
+    apps = _load_apps()
     drift = []
-    for name, fastapi_app in APPS.items():
+    for name, fastapi_app in apps.items():
         content = canonical(fastapi_app.openapi())
         target = SPECS_DIR / f"{name}.json"
         if args.check:
