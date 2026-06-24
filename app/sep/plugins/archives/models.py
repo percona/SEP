@@ -215,8 +215,7 @@ class HostManual(BaseModel):
     @classmethod
     def _dest_host_dsn_safe(cls, value: str) -> str:
         """Reject DSN delimiters in the manual destination host."""
-        _dsn_safe(value)
-        return value
+        return _dsn_safe(value) or value
 
 
 _ARCHIVES_FORM_RULES = FormRules(
