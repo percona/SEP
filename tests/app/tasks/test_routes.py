@@ -938,7 +938,7 @@ async def test_sync_task_history_not_running_skips_executor(
 @pytest.mark.parametrize("running", [False, True], ids=["already_finished", "running"])
 @pytest.mark.asyncio
 async def test_sync_task_history_populates_has_logs(
-    request, test_client, session, created_task_with_history, running
+    test_client, session, mock_executor, created_task_with_history, running
 ):
     """Assert the sync endpoint populates ``has_logs`` when chunks exist.
 
@@ -971,8 +971,7 @@ async def test_sync_task_history_populates_has_logs(
             return item
 
         # Only the RUNNING path reaches the executor; the early-return branch
-        # short-circuits before it, so the mock is requested lazily here.
-        mock_executor = request.getfixturevalue("mock_executor")
+        # short-circuits before it, so this wiring is a no-op there.
         mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
 
     response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
