@@ -178,6 +178,23 @@ describe('InventoryPlugin', () => {
     expect(screen.queryByRole('button', { name: /New/i })).not.toBeInTheDocument();
   });
 
+  it('renders exactly one Schedules button on the nodes list (custom one only)', async () => {
+    const schedulingSchema: PluginSchema = {
+      ...mockSchema,
+      capabilities: { scheduling: true },
+    };
+    renderWithProviders(
+      <InventoryPlugin mockSchema={schedulingSchema} mockEntityItems={{ nodes: [] }} />,
+    );
+    await screen.findByLabelText('Inventory breadcrumb');
+
+    const scheduleButtons = screen.getAllByRole('button', { name: /Schedules/i });
+    expect(scheduleButtons).toHaveLength(1);
+    // The working custom button is rendered; the generic one is suppressed.
+    expect(screen.getByTestId('inv-schedule-link')).toBeInTheDocument();
+    expect(screen.queryByTestId('plugin-schedule-link')).not.toBeInTheDocument();
+  });
+
   describe('nested routes and SQL/JSON detail highlights', () => {
     beforeEach(() => {
       mockInventoryDetailGets();
