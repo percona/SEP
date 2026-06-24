@@ -31,6 +31,7 @@ nothing more specific claims either prefix. A future
 
 from fastapi import APIRouter, Depends
 
+from app.sep.api.routes.app_info import router as app_info_router
 from app.sep.api.routes.app_state import router as app_state_router
 from app.sep.api.routes.apps import router as apps_router
 from app.sep.api.routes.dashboard import router as dashboard_router
@@ -87,6 +88,7 @@ plugins_router = build_plugins_router(get_app_registry())
 
 api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
 api_router.include_router(plugins_router)
+api_router.include_router(app_info_router, prefix="/sep/app-info", tags=["sep"])
 api_router.include_router(dashboard_router, prefix="/sep/dashboard", tags=["sep"])
 api_router.include_router(hosts_router, prefix="/sep/hosts", tags=["sep"])
 api_router.include_router(services_router, prefix="/sep/services", tags=["sep"])

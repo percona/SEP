@@ -509,6 +509,23 @@ def get_toggleable_app_key(app_key: str) -> str:
 ToggleableAppKeyDep = Annotated[str, Depends(get_toggleable_app_key)]
 
 
+def render_footer_text() -> str:
+    """Render the sidebar footer text from the live ``FOOTER_TEMPLATE`` setting.
+
+    Read :attr:`sep_settings.FOOTER_TEMPLATE` per call (it is a hot,
+    materializer-backed setting) so a live ``SEP__FOOTER_TEMPLATE`` override is
+    reflected without restarting the application. This is the single source of
+    truth shared by the Jinja default context and the JSON app-info endpoint so
+    the two frontends cannot drift.
+
+    :return: The rendered footer text (application summary and version by default).
+    :rtype: str
+    """
+    return sep_settings.FOOTER_TEMPLATE.safe_substitute(
+        version=__version__, summary=__summary__
+    )
+
+
 async def get_default_context(
     request: Request,
     user: CurrentUser,
@@ -562,9 +579,7 @@ async def get_default_context(
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
         "csrf_token": getattr(request.state, "csrf_token", ""),
         "pmm_url": settings.PMM.frontend,
-        "footer_text": sep_settings.FOOTER_TEMPLATE.safe_substitute(
-            version=__version__, summary=__summary__
-        ),
+        "footer_text": render_footer_text(),
         "user_id_to_username": await get_username_mapping(),
     }
 

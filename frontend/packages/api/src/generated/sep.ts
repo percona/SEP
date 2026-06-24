@@ -2703,6 +2703,35 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sep/app-info/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get App Info
+     * @description Return shell metadata for the React frontend.
+     *
+     *     Render ``footer_text`` from the shared :func:`render_footer_text` helper so
+     *     the JSON endpoint and the legacy Jinja sidebar footer cannot drift. The
+     *     helper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live
+     *     ``SEP__FOOTER_TEMPLATE`` override is reflected without a restart. Access is
+     *     gated by the router-level ``IsApiAuthenticated`` dependency.
+     *
+     *     :return: The rendered footer text.
+     *     :rtype: AppInfo
+     */
+    get: operations['sep_get_app_info_api_sep_app_info__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sep/dashboard/': {
     parameters: {
       query?: never;
@@ -5270,6 +5299,18 @@ export interface components {
        * @default
        */
       tries: string;
+    };
+    /**
+     * AppInfo
+     * @description Represent the response of ``GET /api/sep/app-info``.
+     *
+     *     :param footer_text: The rendered sidebar footer text (application summary
+     *         and version by default).
+     *     :type footer_text: str
+     */
+    AppInfo: {
+      /** Footer Text */
+      footer_text: string;
     };
     /**
      * AppInfoResponse
@@ -14729,6 +14770,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_get_app_info_api_sep_app_info__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AppInfo'];
         };
       };
     };

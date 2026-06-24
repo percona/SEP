@@ -70,3 +70,5 @@ export type {
   ForceDisableAppVars,
 } from './useAdminApps';
 export { useConfigExport } from './useConfigExport';
+export { useAppInfo, APP_INFO_QUERY_KEY } from './useAppInfo';
+export type { AppInfo } from './useAppInfo';

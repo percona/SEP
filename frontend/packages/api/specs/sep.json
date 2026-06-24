@@ -723,6 +723,20 @@
         "title": "AltersTaskWrite",
         "type": "object"
       },
+      "AppInfo": {
+        "description": "Represent the response of ``GET /api/sep/app-info``.\n\n:param footer_text: The rendered sidebar footer text (application summary\n    and version by default).\n:type footer_text: str",
+        "properties": {
+          "footer_text": {
+            "title": "Footer Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "footer_text"
+        ],
+        "title": "AppInfo",
+        "type": "object"
+      },
       "AppInfoResponse": {
         "description": "Represent a per-app info entry returned by ``GET /``.\n\n:param app_key: The plugin module key.\n:type app_key: str\n:param name: The human-readable plugin name.\n:type name: str\n:param enabled: Whether the app is fully enabled (derived; deprecated).\n:type enabled: bool\n:param lifecycle_state: The app's runtime lifecycle state.\n:param toggleable: Whether the app may be toggled (``False`` for protected).\n:type toggleable: bool\n:param uri_path: The plugin's mount URI path.\n:type uri_path: str\n:param css_class: The plugin's CSS class.\n:type css_class: str\n:param sidebar: Whether the plugin appears in the sidebar.\n:type sidebar: bool\n:param has_api_router: Whether the plugin exposes a JSON API router.\n:type has_api_router: bool",
         "properties": {
@@ -16801,6 +16815,28 @@
           }
         },
         "summary": "Get Setting",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
+    "/api/sep/app-info/": {
+      "get": {
+        "description": "Return shell metadata for the React frontend.\n\nRender ``footer_text`` from the shared :func:`render_footer_text` helper so\nthe JSON endpoint and the legacy Jinja sidebar footer cannot drift. The\nhelper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live\n``SEP__FOOTER_TEMPLATE`` override is reflected without a restart. Access is\ngated by the router-level ``IsApiAuthenticated`` dependency.\n\n:return: The rendered footer text.\n:rtype: AppInfo",
+        "operationId": "sep_get_app_info_api_sep_app_info__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get App Info",
         "tags": [
           "sep"
         ]

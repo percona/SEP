@@ -37,6 +37,7 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import ViewQuiltIcon from '@mui/icons-material/ViewQuilt';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import GitHubIcon from '@mui/icons-material/GitHub';
+import { useAppInfo } from '@sep/api';
 import { useNavigation, type NavItem } from '../contexts/navigation';
 
 const DRAWER_WIDTH_EXPANDED = 260;
@@ -213,10 +214,17 @@ function ExternalLink({
   );
 }
 
-function DrawerContent({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+export function DrawerContent({
+  collapsed,
+  onNavigate,
+}: {
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
   const nav = useNavigation();
   const navigate = useNavigate();
   const location = useLocation();
+  const { data: appInfo } = useAppInfo();
 
   const handleNav = (to: string) => {
     navigate(to);
@@ -274,7 +282,12 @@ function DrawerContent({ collapsed, onNavigate }: { collapsed: boolean; onNaviga
       </List>
       {!collapsed && (
         <Box sx={{ px: 2, py: 1.5 }}>
-          <Typography variant="caption" color="text.secondary">
+          {appInfo?.footer_text && (
+            <Typography variant="caption" color="text.secondary" display="block">
+              {appInfo.footer_text}
+            </Typography>
+          )}
+          <Typography variant="caption" color="text.secondary" display="block">
             © {new Date().getFullYear()} Percona LLC
           </Typography>
         </Box>
