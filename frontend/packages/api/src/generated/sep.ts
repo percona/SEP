@@ -521,6 +521,11 @@ export interface paths {
      *     straight to ``DISABLED`` (no ``task_postrun`` event will ever fire for an idle
      *     app), and the response reflects that resulting ``DISABLED`` state.
      *
+     *     An ``ENABLING`` transition completes synchronously: there is no warm-up to
+     *     wait for and nothing else ever advances ``ENABLING``, so it is flipped
+     *     straight to ``ENABLED`` (before re-gating, so the app's schedules resume in
+     *     the same request) and the response reflects that resulting ``ENABLED`` state.
+     *
      *     :param app_key: The app key to transition.
      *     :type app_key: str
      *     :param body: The requested target lifecycle state.

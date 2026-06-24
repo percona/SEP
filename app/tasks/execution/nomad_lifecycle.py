@@ -24,6 +24,7 @@ from typing import Any, Self
 
 from fastapi import FastAPI
 
+from app.core.utils.fields import PRESERVE_CREDENTIALS_CONTEXT
 from app.tasks.config import tasks_settings
 from app.tasks.execution.executors.nomad import NomadExecutor
 
@@ -112,7 +113,9 @@ class NomadLifecycle:
         async with self._lock:
             desired = self._desired()
             self._current = await desired.__aenter__()
-            self._current_config = desired.model_dump(mode="json")
+            self._current_config = desired.model_dump(
+                mode="json", context=PRESERVE_CREDENTIALS_CONTEXT
+            )
         self._app.state.nomad_lifecycle = self
         return self
 
@@ -148,7 +151,9 @@ class NomadLifecycle:
             :func:`normalize_nomad_config_value`).
         """
         desired = self._desired()
-        desired_config = desired.model_dump(mode="json")
+        desired_config = desired.model_dump(
+            mode="json", context=PRESERVE_CREDENTIALS_CONTEXT
+        )
         async with self._lock:
             if desired_config == self._current_config:
                 return
