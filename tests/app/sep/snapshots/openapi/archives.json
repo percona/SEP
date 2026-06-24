@@ -2,140 +2,72 @@
   "components": {
     "schemas": {
       "ArchivesCreate": {
-        "description": "Represent an Archives creation form with proper case-insensitive fields.\n\n:param alias: The alias name for the task being created. This name is used for\n    identifying the task in the backend.\n:type alias: NonEmptyStr\n:param hostname: The source hostname where the task will be executed.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the database service to connect to.\n:type service_id: int\n:param source_db_id: The source database schema ID from which data will be purged.\n    Must be None if source_query is set.\n:type source_db_id: int | EmptyStrToNone\n:param source_db_name: The name of the source database schema.\n:type source_db_name: str\n:param source_table_id: The source table ID within the specified schema from which\n    data will be purged. Must be None if source_query is set.\n:type source_table_id: int | EmptyStrToNone\n:param source_table_name: The name of the source table.\n:type source_table_name: str\n:param source_query: Optional; a query defining the source data to be purged.\n    Must be None if both source_db_id and source_table_id are set.\n:type source_query: NonEmptyStr | None\n:param where: Optional; The WHERE condition that defines which data will be purged\n    from the source table. Must be None when swap_drop is SWAP_DROP.\n:type where: NonEmptyStr | None\n:param dest_table_id: Optional; The destination table ID.\n    Must be None if dest_file is set.\n:type dest_table_id: int | EmptyStrToNone\n:param dest_table_name: The name of the destination table.\n:type dest_table_name: str\n:param dest_file: Optional; The destination file path.\n    Must be None if dest_table_id is set.\n:type dest_file: NonEmptyStr | None\n:param swap_drop: Integer field (0-2) indicating the drop behavior.\n    If 1, both dest_table_id and dest_file must be None.\n:type swap_drop: int\n:param swp_table_suffix: Optional; Date suffix for the swap table.\n:type swp_table_suffix: date | None\n:param use_index: Optional; The index to be used for optimizing the query.\n:type use_index: NonEmptyStr | None\n:param extra_args: Optional; Additional arguments for the archive task.\n:type extra_args: NonEmptyStr | None\n:param limit: Optional; The maximum number of records to be processed.\n:type limit: int | EmptyStrToNone\n:param sleep: Optional; Sleep duration between operations for rate limiting.\n:type sleep: int | EmptyStrToNone\n:param disable_binlog: Optional integer flag (0 or 1) to disable binary logging.\n    ``None`` means the checkbox was left unset (binary logging stays enabled).\n:type disable_binlog: int | None\n:param disable_bulk_insert: Optional integer flag (0 or 1) to disable bulk\n    insert. ``None`` means the checkbox was left unset / default behavior is\n    used; 0 means bulk insert remains enabled, and 1 means bulk insert is\n    disabled.\n:type disable_bulk_insert: int | None\n:param delete_data: Optional integer flag (0 or 1). When set to 1, source\n    rows are deleted without being written to any destination; the\n    destination table/file fields (dest_table_id, dest_table_name,\n    dest_file) must not be set, and vice versa.\n:type delete_data: int | None\n:param dest_service_id: Optional; The Inventory ID of the destination database service.\n:type dest_service_id: int | EmptyStrToNone\n:param dest_host: Optional; The hostname of the destination database.\n:type dest_host: str | None\n:param dest_port: Optional; The port of the destination database (1-65535).\n    The ``ge``/``le`` range constraint is scoped to the ``int`` arm so it\n    does not run against ``None`` when ``EmptyStrToNone`` coerces an empty\n    form input.\n:type dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone\n:param dest_db_id: Optional; The destination database schema ID.\n:type dest_db_id: int | EmptyStrToNone\n:param dest_db_name: The name of the destination database schema.\n:type dest_db_name: str\n:param alert_on_fail: If True, send an alert if the task fails. Defaults to False.\n:type alert_on_fail: bool",
+        "description": "Represent an Archives creation form as a model-first ``AppFormModel``.\n\nSource, destination, and destination-host are discriminated-union one-of groups;\nthe schema / table / database references are collapsed free-solo fields\n(``int`` inventory id or free-typed ``str`` name). The ``alert_on_fail``\ncapability control is inherited from :class:`AppFormModel`.\n\n:param task_name: The task name (and the ``ALIAS`` in the archiver config).\n:param hostname: The executor host the task runs on.\n:param service_id: The inventory id of the source MySQL service (the host whose\n    rows are archived; the connectivity probe targets it).\n:param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.\n:param source: The source rows, by schema+table or by query.\n:param destination: The destination table or file; ``None`` when ``delete_data``.\n:param host: The destination host, by service or manual entry; ``None`` reuses\n    the source host.\n:param swp_table_suffix: The swap-table date suffix (SWAP_ARCHIVE_DROP only).\n:param where: The WHERE clause filtering rows; required unless SWAP_DROP.\n:param use_index: An index hint to optimise the query.\n:param extra_args: Additional pt-archiver CLI arguments.\n:param limit: The maximum rows per archiver run.\n:param sleep: The sleep duration between chunk operations (seconds).\n:param disable_binlog: Whether to disable binary logging for the operation.\n:param disable_bulk_insert: Whether to disable the bulk-insert optimisation.\n:param delete_data: Whether to delete source rows without archiving them.",
         "properties": {
-          "ALERT_ON_FAIL": {
+          "alert_on_fail": {
             "default": false,
             "title": "Alert On Fail",
             "type": "boolean"
           },
-          "ALIAS": {
-            "minLength": 1,
-            "title": "Alias",
-            "type": "string"
-          },
-          "DELETE_DATA": {
+          "delete_data": {
             "anyOf": [
               {
-                "maximum": 1.0,
-                "minimum": 0.0,
-                "type": "integer"
+                "type": "boolean"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Delete source rows without writing them to any destination; the destination table/file fields must be left unset.",
-            "title": "Delete Without Archiving"
+            "title": "Delete Data"
           },
-          "DEST_DB_ID": {
+          "destination": {
             "anyOf": [
               {
-                "type": "integer"
+                "discriminator": {
+                  "mapping": {
+                    "file": "#/components/schemas/DestByFile",
+                    "table": "#/components/schemas/DestByTable"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/DestByTable"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DestByFile"
+                  }
+                ]
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Dest Db Id"
+            "title": "Destination"
           },
-          "DEST_DB_NAME": {
-            "default": "",
-            "title": "Dest Db Name",
-            "type": "string"
-          },
-          "DEST_FILE": {
+          "disable_binlog": {
             "anyOf": [
               {
-                "minLength": 1,
-                "type": "string"
+                "type": "boolean"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Dest File"
-          },
-          "DEST_HOST": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Host"
-          },
-          "DEST_PORT": {
-            "anyOf": [
-              {
-                "maximum": 65535.0,
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Port"
-          },
-          "DEST_SERVICE_ID": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Service Id"
-          },
-          "DEST_TABLE_ID": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Table Id"
-          },
-          "DEST_TABLE_NAME": {
-            "default": "",
-            "title": "Dest Table Name",
-            "type": "string"
-          },
-          "DISABLE_BINLOG": {
-            "anyOf": [
-              {
-                "maximum": 1.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Optional flag to disable binary logging.",
             "title": "Disable Binlog"
           },
-          "DISABLE_BULK_INSERT": {
+          "disable_bulk_insert": {
             "anyOf": [
               {
-                "maximum": 1.0,
-                "minimum": 0.0,
-                "type": "integer"
+                "type": "boolean"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Optional flag to disable bulk insert.",
             "title": "Disable Bulk Insert"
           },
-          "EXTRA_ARGS": {
+          "extra_args": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -147,14 +79,40 @@
             ],
             "title": "Extra Args"
           },
-          "HOSTNAME": {
+          "host": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "manual": "#/components/schemas/HostManual",
+                    "service": "#/components/schemas/HostByService"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/HostByService"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HostManual"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "hostname": {
             "minLength": 1,
             "title": "Hostname",
             "type": "string"
           },
-          "LIMIT": {
+          "limit": {
             "anyOf": [
               {
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -163,13 +121,14 @@
             ],
             "title": "Limit"
           },
-          "SERVICE_ID": {
+          "service_id": {
             "title": "Service Id",
             "type": "integer"
           },
-          "SLEEP": {
+          "sleep": {
             "anyOf": [
               {
+                "minimum": 0.0,
                 "type": "integer"
               },
               {
@@ -178,57 +137,32 @@
             ],
             "title": "Sleep"
           },
-          "SOURCE_DB_ID": {
-            "anyOf": [
+          "source": {
+            "discriminator": {
+              "mapping": {
+                "query": "#/components/schemas/SourceByQuery",
+                "table": "#/components/schemas/SourceByTable"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
               {
-                "type": "integer"
+                "$ref": "#/components/schemas/SourceByTable"
               },
               {
-                "type": "null"
+                "$ref": "#/components/schemas/SourceByQuery"
               }
             ],
-            "title": "Source Db Id"
+            "title": "Source"
           },
-          "SOURCE_DB_NAME": {
-            "default": "",
-            "title": "Source Db Name",
-            "type": "string"
-          },
-          "SOURCE_QUERY": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Query"
-          },
-          "SOURCE_TABLE_ID": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Table Id"
-          },
-          "SOURCE_TABLE_NAME": {
-            "default": "",
-            "title": "Source Table Name",
-            "type": "string"
-          },
-          "SWAP_DROP": {
+          "swap_drop": {
+            "default": 0,
             "maximum": 2.0,
             "minimum": 0.0,
             "title": "Swap Drop",
             "type": "integer"
           },
-          "SWP_TABLE_SUFFIX": {
+          "swp_table_suffix": {
             "anyOf": [
               {
                 "format": "date",
@@ -240,7 +174,12 @@
             ],
             "title": "Swp Table Suffix"
           },
-          "USE_INDEX": {
+          "task_name": {
+            "minLength": 1,
+            "title": "Task Name",
+            "type": "string"
+          },
+          "use_index": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -252,7 +191,7 @@
             ],
             "title": "Use Index"
           },
-          "WHERE": {
+          "where": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -266,16 +205,15 @@
           }
         },
         "required": [
-          "ALIAS",
-          "HOSTNAME",
-          "SERVICE_ID",
-          "SWAP_DROP"
+          "task_name",
+          "hostname",
+          "service_id",
+          "source"
         ],
         "title": "ArchivesCreate",
         "type": "object"
       },
       "ArchivesCreateResponse": {
-        "description": "Represent the response body for ``POST /api/plugins/archives/``.\n\nExtends :class:`ArchivesTaskResponse` with a connectivity-warning field\nsurfaced when the post-creation database probe fails or is skipped.\n\n:param connectivity_warning: ``None`` when the probe passes, was opted\n    out, or the task meta lacks connectivity keys; populated otherwise.\n:type connectivity_warning: ConnectivityWarning | None",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -1097,6 +1035,74 @@
         "title": "DerivedTask",
         "type": "object"
       },
+      "DestByFile": {
+        "description": "Destination is a file path.\n\n:param mode: The one-of discriminator (``\"file\"``).\n:param dest_file: The file path the archived rows are written to.",
+        "properties": {
+          "dest_file": {
+            "minLength": 1,
+            "title": "Dest File",
+            "type": "string"
+          },
+          "mode": {
+            "const": "file",
+            "default": "file",
+            "enum": [
+              "file"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest_file"
+        ],
+        "title": "DestByFile",
+        "type": "object"
+      },
+      "DestByTable": {
+        "description": "Destination is a table (collapsed free-solo references).\n\n:param mode: The one-of discriminator (``\"table\"``).\n:param dest_db: The destination schema — an inventory id, a free-typed name, or\n    ``None`` to reuse the source schema.\n:param dest_table: The destination table — an inventory id or a free-typed name.",
+        "properties": {
+          "dest_db": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Db"
+          },
+          "dest_table": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Dest Table"
+          },
+          "mode": {
+            "const": "table",
+            "default": "table",
+            "enum": [
+              "table"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest_table"
+        ],
+        "title": "DestByTable",
+        "type": "object"
+      },
       "DetailField": {
         "additionalProperties": false,
         "description": "Declare one labelled field rendered inside a :class:`DetailSection`.\n\n:param path: Dotted path into the task record (for example\n    ``\"data.meta.command\"``). Each segment must be a Python identifier,\n    optionally followed by one or more ``[N]`` array indices.\n:type path: DetailPath\n:param label: Human-readable label rendered alongside the resolved value.\n:type label: NonEmptyStr\n:param highlight: Optional syntax-highlighter hint. Defaults to ``None``.\n:type highlight: DetailHighlightLanguage | None",
@@ -1620,6 +1626,29 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HostByService": {
+        "description": "Destination host taken from an inventory service.\n\n:param mode: The one-of discriminator (``\"service\"``).\n:param dest_service: The inventory id of the destination MySQL service; its\n    node address and port supply the destination host and port.",
+        "properties": {
+          "dest_service": {
+            "title": "Dest Service",
+            "type": "integer"
+          },
+          "mode": {
+            "const": "service",
+            "default": "service",
+            "enum": [
+              "service"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest_service"
+        ],
+        "title": "HostByService",
+        "type": "object"
+      },
       "HostField": {
         "additionalProperties": false,
         "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). Host selection is not cascaded\nfrom another field — every dispatch form lists every available executor\ntarget.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
@@ -1715,6 +1744,42 @@
           "label"
         ],
         "title": "HostField",
+        "type": "object"
+      },
+      "HostManual": {
+        "description": "Destination host entered manually.\n\n:param mode: The one-of discriminator (``\"manual\"``).\n:param dest_host: The destination host address.\n:param dest_port: The destination port (1-65535); defaults to the MySQL port.",
+        "properties": {
+          "dest_host": {
+            "title": "Dest Host",
+            "type": "string"
+          },
+          "dest_port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Port"
+          },
+          "mode": {
+            "const": "manual",
+            "default": "manual",
+            "enum": [
+              "manual"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest_host"
+        ],
+        "title": "HostManual",
         "type": "object"
       },
       "IntegerField": {
@@ -2708,6 +2773,72 @@
         "title": "ServiceTypeEnum",
         "type": "string"
       },
+      "SourceByQuery": {
+        "description": "Source rows selected by a custom query.\n\n:param mode: The one-of discriminator (``\"query\"``).\n:param source_query: The query defining the rows to archive.",
+        "properties": {
+          "mode": {
+            "const": "query",
+            "default": "query",
+            "enum": [
+              "query"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "source_query": {
+            "minLength": 1,
+            "title": "Source Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_query"
+        ],
+        "title": "SourceByQuery",
+        "type": "object"
+      },
+      "SourceByTable": {
+        "description": "Source rows selected by schema + table (collapsed free-solo references).\n\n:param mode: The one-of discriminator (``\"table\"``).\n:param source_db: The source schema — an inventory id or a free-typed name.\n:param source_table: The source table — an inventory id or a free-typed name.",
+        "properties": {
+          "mode": {
+            "const": "table",
+            "default": "table",
+            "enum": [
+              "table"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "source_db": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Source Db"
+          },
+          "source_table": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Source Table"
+          }
+        },
+        "required": [
+          "source_db",
+          "source_table"
+        ],
+        "title": "SourceByTable",
+        "type": "object"
+      },
       "StringField": {
         "additionalProperties": false,
         "description": "Represent a single-line string input field.\n\n:param field_type: The discriminator literal; always ``\"string\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"string\"]\n:param min_length: Optional minimum character length. Defaults to\n    ``None``.\n:type min_length: int | None\n:param max_length: Optional maximum character length. Defaults to\n    ``None``.\n:type max_length: int | None\n:param pattern: Optional regular expression the value must match.\n    Defaults to ``None``.\n:type pattern: NonEmptyStr | None\n:param placeholder: Optional placeholder text displayed when the field is\n    empty. Defaults to ``None``.\n:type placeholder: NonEmptyStr | None",
@@ -2954,6 +3085,75 @@
         ],
         "title": "TaskBackendEnum",
         "type": "string"
+      },
+      "TaskExecuteWrite": {
+        "description": "Represent the default JSON request body for executing a task.\n\n:param eta: Optional future datetime to schedule execution.\n:param chain_task_names: Optional list of task names to chain after this one.\n:param chain_on_failure: Whether to run chained tasks even on failure.",
+        "properties": {
+          "chain_on_failure": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain On Failure"
+          },
+          "chain_task_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain Task Names"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          }
+        },
+        "title": "TaskExecuteWrite",
+        "type": "object"
+      },
+      "TaskExecutionResponse": {
+        "description": "Represent the default response from a task execute route.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
+        "properties": {
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_name": {
+            "title": "Task Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_name"
+        ],
+        "title": "TaskExecutionResponse",
+        "type": "object"
       },
       "TaskHistoryStatusEnum": {
         "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:vartype FAILED: str\n:cvar PENDING: Enum value for pending tasks.\n:vartype PENDING: str\n:cvar RUNNING: Enum value for running tasks.\n:vartype RUNNING: str\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:vartype SUCCESS: str\n:cvar STOPPED: Enum value for stopped tasks.\n:vartype STOPPED: str\n:cvar LOST: Enum value for tasks that are lost.\n:vartype LOST: str\n:cvar STALE: Enum value for tasks skipped because Nomad placement\n    exceeded the configured staleness threshold.\n:vartype STALE: str",
@@ -3250,8 +3450,25 @@
   "paths": {
     "/api/plugins/archives/": {
       "get": {
-        "description": "List archive tasks.",
-        "operationId": "archives_archives_api_list_api_plugins_archives__get",
+        "operationId": "archives__list_api_plugins_archives__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3260,22 +3477,31 @@
                   "items": {
                     "$ref": "#/components/schemas/ArchivesTaskResponse"
                   },
-                  "title": "Response Archives Archives Api List Api Plugins Archives  Get",
+                  "title": "Response Archives  List Api Plugins Archives  Get",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
-        "summary": "Archives Api List",
+        "summary": "List",
         "tags": [
           "archives"
         ]
       },
       "post": {
-        "description": "Create an archive task from a JSON payload request body.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Mirrors the asymmetric\n    default used by the checksums create flow (the Form path defaults\n    to ``False`` because HTML checkboxes omit the field when unchecked).\n:type check_connectivity: bool",
-        "operationId": "archives_archives_api_create_api_plugins_archives__post",
+        "operationId": "archives__create_api_plugins_archives__post",
         "parameters": [
           {
             "in": "query",
@@ -3320,7 +3546,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Archives Api Create",
+        "summary": "Create",
         "tags": [
           "archives"
         ]
@@ -3350,8 +3576,7 @@
     },
     "/api/plugins/archives/{task_name}": {
       "delete": {
-        "description": "Delete an archive task.",
-        "operationId": "archives_archives_api_delete_api_plugins_archives__task_name__delete",
+        "operationId": "archives__delete_api_plugins_archives__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -3378,14 +3603,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Archives Api Delete",
+        "summary": "Delete",
         "tags": [
           "archives"
         ]
       },
       "get": {
-        "description": "Retrieve a single archive task.",
-        "operationId": "archives_archives_api_detail_api_plugins_archives__task_name__get",
+        "operationId": "archives__detail_api_plugins_archives__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3419,7 +3643,120 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Archives Api Detail",
+        "summary": "Detail",
+        "tags": [
+          "archives"
+        ]
+      },
+      "put": {
+        "operationId": "archives__update_api_plugins_archives__task_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "check_connectivity",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Check Connectivity",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchivesCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchivesCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update",
+        "tags": [
+          "archives"
+        ]
+      }
+    },
+    "/api/plugins/archives/{task_name}/execute": {
+      "post": {
+        "description": "Resolve, dispatch, and wrap a standard task execution.",
+        "operationId": "archives_archives_api_execute_api_plugins_archives__task_name__execute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskExecuteWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExecutionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archives Api Execute",
         "tags": [
           "archives"
         ]
