@@ -519,7 +519,6 @@ def render_footer_text() -> str:
     the two frontends cannot drift.
 
     :return: The rendered footer text (application summary and version by default).
-    :rtype: str
     """
     return sep_settings.FOOTER_TEMPLATE.safe_substitute(
         version=__version__, summary=__summary__
