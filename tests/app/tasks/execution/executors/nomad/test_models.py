@@ -68,6 +68,8 @@ MULTI_CHUNK_LOG_SECOND_OFFSET = 42
 EXPECTED_MULTI_CHUNK_LOG_COUNT = 2
 SPLIT_FRAME_LOG_OFFSET = 99
 EXPECTED_SINGLE_TASK_LOG_COUNT = 1
+EMPTY_DATA_FRAME_DATA_OFFSET = 10
+EMPTY_DATA_FRAME_OFFSET_ONLY = 25
 
 
 def _build_task(
@@ -2080,6 +2082,60 @@ class TestNomadLogStreaming:
         assert logs[0].offset == SPLIT_FRAME_LOG_OFFSET
         assert logs[0].step == "step2"
         assert logs[0].type == TaskLogType.STDOUT
+
+    @pytest.mark.asyncio
+    async def test_consume_nomad_log_stream_empty_data_increments_without_recheck(self):
+        """Data frame then empty frame increments empty_data_count without recheck (step2)."""
+        chunks = [
+            self._nomad_log_frame(msg="has-data", offset=EMPTY_DATA_FRAME_DATA_OFFSET),
+            self._nomad_log_frame(msg=None, offset=EMPTY_DATA_FRAME_OFFSET_ONLY),
+        ]
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = self._alloc_for_logs_step2()
+        params = {
+            "task": "step2",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx),
+            patch.object(
+                NomadExecutor, "get_last_allocation"
+            ) as mock_get_last_allocation,
+        ):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step2",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        logs = await self._drain_task_logs(queue)
+
+        assert state == "running"
+        assert out_alloc is alloc
+        assert stream_start is not None
+        assert params["offset"] == EMPTY_DATA_FRAME_OFFSET_ONLY
+        mock_get_last_allocation.assert_not_called()
+        assert len(logs) == EXPECTED_SINGLE_TASK_LOG_COUNT
+        assert logs[0].msg == "has-data"
+        assert logs[0].offset == EMPTY_DATA_FRAME_DATA_OFFSET
 
 
 class TestListFiles:
