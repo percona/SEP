@@ -359,7 +359,7 @@ def test_pg_backups_index_links_periodic_tasks_to_own_detail_route(test_client):
 
 
 def test_jinja_routes_omitted_from_openapi(test_client):
-    """Migrated Jinja routes are excluded from the OpenAPI schema.
+    """Verify migrated Jinja routes are excluded from the OpenAPI schema.
 
     Regression guard: routes using ``DeprecatedJinja2Route`` must not appear
     in the generated OpenAPI spec now that the React ``backup_pg`` plugin

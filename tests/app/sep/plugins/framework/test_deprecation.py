@@ -105,7 +105,7 @@ def test_deprecation_emits_deprecationwarning():
 
 
 def test_deprecated_routes_omitted_from_openapi():
-    """Legacy Jinja routes using ``DeprecatedJinja2Route`` are omitted from the OpenAPI schema."""
+    """Verify legacy Jinja routes using ``DeprecatedJinja2Route`` are omitted from the OpenAPI schema."""
     app = _build_app()
     spec = app.openapi()
 

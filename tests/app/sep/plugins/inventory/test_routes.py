@@ -129,7 +129,7 @@ def test_node_list(test_client, mock_inventory_api_dep, mock_task_api_dep):
 
 
 def test_jinja_sync_route_is_omitted_from_openapi():
-    """Legacy Jinja2 ``POST /inventory/sync/`` is excluded from the OpenAPI schema.
+    """Verify legacy Jinja2 ``POST /inventory/sync/`` is excluded from the OpenAPI schema.
 
     The React control consumes the new JSON route at
     ``POST /api/plugins/inventory/sync/``; the Jinja2 trigger remains
@@ -1624,7 +1624,7 @@ def test_node_list_renders_per_row_chip_when_token_unset(
 
 
 def test_schedule_post_is_omitted_from_openapi(test_client):
-    """``POST /inventory/schedule/`` is excluded from the OpenAPI schema."""
+    """Verify ``POST /inventory/schedule/`` is excluded from the OpenAPI schema."""
     response = test_client.get("/openapi.json")
     assert response.status_code == status.HTTP_200_OK
     schema = response.json()
