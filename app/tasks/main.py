@@ -28,6 +28,7 @@ from nomad.api.exceptions import BaseNomadException
 from app import __summary__, __version__
 from app.core.config import create_app, default_lifespan, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPGoneException
+from app.core.health import build_health_router
 from app.core.settings_override.lifecycle import (
     CallbackRegistry,
     ProxyEntry,
@@ -124,6 +125,7 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 lifespan = tasks_lifespan
 tasks_app = create_app(
+    build_health_router(get_async_session_maker),
     tasks_router,
     periodic_router,
     connectivity_router,
