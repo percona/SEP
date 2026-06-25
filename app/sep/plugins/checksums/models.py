@@ -15,17 +15,20 @@
 
 """Define models for the Checksums plugin."""
 
-from datetime import datetime
-from typing import Any
+from typing import Annotated
 
-from pydantic import BaseModel, computed_field, FutureDatetime
+from pydantic import BaseModel
 
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.framework import ConnectivityWarning
-from app.tasks.anonymizer.config import anonymizer_settings
-from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.sep.plugins.framework.form_dsl import (
+    AppFormModel,
+    ArgFormat,
+    Choices,
+    HostRef,
+    ServiceRef,
+    Ui,
+)
 
 
 class ChecksumsCreate(BaseModel):
@@ -99,173 +102,175 @@ class ChecksumsCreate(BaseModel):
     alert_on_fail: bool = False
 
 
-class ChecksumTaskWrite(BaseModel):
-    """Represent a JSON request body for creating a checksum task.
+class ChecksumsForm(AppFormModel):
+    """Define the model-first create/update body and schema source for Checksums.
 
-    Mirrors :class:`ChecksumsCreate` minus the form-only resolution fields
-    (``schema_id``, ``table_id``, ``extra_args``). The caller is responsible
-    for pre-resolving database and table names before submitting.
+    The single source of the JSON request body (the field types and defaults the
+    server validates) *and* the derived ``GET /schema`` form (driven by the
+    :class:`Ui` / reference / :class:`Choices` markers). Field set, types, and
+    model defaults match the previous hand-written request body; the form-display
+    defaults that differ from the model default are carried on ``Ui(default=...)``.
 
-    :param task_name: The name of the task to be created.
-    :type task_name: NonEmptyStr
-    :param hostname: The target hostname for the task execution.
-    :type hostname: NonEmptyStr
-    :param service_id: The Inventory ID of the MySQL service to connect to.
-    :type service_id: int
-    :param databases: Comma-separated database names.
-    :type databases: str
-    :param tables: Comma-separated table names (``schema.table`` format).
-    :type tables: str
-    :param recursion_method: The method for handling replica discovery.
-    :type recursion_method: str
-    :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``.
-    :type dsn_table: str
-    :param pause_file: Execution pauses while this file exists.
-    :type pause_file: str
-    :param binary_index: Use BLOB type for replicate-table boundary columns.
-    :type binary_index: bool
-    :param explain_arg: Show but do not execute checksum queries.
-    :type explain_arg: bool
-    :param fail_on_stopped_replication: Fail if replication is stopped.
-    :type fail_on_stopped_replication: bool
-    :param truncate_replicate_table: Truncate the replicate table before starting.
-    :type truncate_replicate_table: bool
-    :param progress: Print progress reports to STDERR.
-    :type progress: str
-    :param set_vars: MySQL variables to set (comma-separated key=value pairs).
-    :type set_vars: str
-    :param max_load: Pause when any GLOBAL STATUS variable exceeds this threshold.
-    :type max_load: str
-    :param chunk_time: Target execution time per chunk.
-    :type chunk_time: str
-    :param max_lag: Pause until replica lag falls below this value.
-    :type max_lag: str
-    :param alert_on_fail: Send an alert if the task fails.
-    :type alert_on_fail: bool
+    Field declaration order is load-bearing. The framework assembles the
+    ``pt-table-checksum`` CLI args as all ``ArgFormat`` value args (in field order)
+    followed by all flag args (in field order), and derives the form section order
+    (Task, Data, Recursion, Flags, Advanced) from each section's first field — so
+    the order here reproduces the historical arg string byte-for-byte. ``progress``
+    is declared last to land at the end of the value args, and ``Ui(order=...)``
+    pins the Advanced section's display order where it diverges from declaration
+    order. The ``alert_on_fail`` capability control is inherited from
+    :class:`AppFormModel` (``Hidden``, off-schema).
     """
 
-    task_name: NonEmptyStr
-    hostname: NonEmptyStr
-    service_id: int
-    databases: str = ""
-    tables: str = ""
-    recursion_method: str = "processlist"
-    dsn_table: str = ""
-    pause_file: str = ""
-    binary_index: bool = False
-    explain_arg: bool = False
-    fail_on_stopped_replication: bool = False
-    truncate_replicate_table: bool = False
-    progress: str = ""
-    set_vars: str = ""
-    max_load: str = ""
-    chunk_time: str = ""
-    max_lag: str = ""
-    alert_on_fail: bool = False
-
-
-class ChecksumTaskBase(BaseModel):
-    """Define the common fields shared across checksum task API responses.
-
-    :param name: The name of the checksum task.
-    :type name: str
-    :param owner: The entity or user that owns the task.
-    :type owner: TaskOwner
-    :param service_type: The type of database service (e.g., MySQL, PostgreSQL).
-    :type service_type: ServiceTypeEnum | None
-    :param status: The current execution status of the task.
-    :type status: TaskHistoryStatusEnum | None
-    """
-
-    name: str
-    owner: TaskOwner
-    service_type: ServiceTypeEnum | None = None
-    status: TaskHistoryStatusEnum | None = None
-
-
-class ChecksumTaskResponse(ChecksumTaskBase):
-    """Represent a checksum task API response.
-
-    :param id: The unique identifier for the checksum task.
-    :type id: int | None
-    :param backend: The backend worker/engine executing the task.
-    :type backend: TaskBackendEnum
-    :param data: The raw configuration and parameters used for the checksum execution.
-    :type data: dict[str, Any]
-    :param protected: Whether the task is protected from deletion or modification.
-    :type protected: bool
-    :param alert_on_fail: If True, notifications are sent upon task failure.
-    :type alert_on_fail: bool
-    :param anonymize_mask: Bitmask of PII entities to anonymize. Defaults to None.
-    :type anonymize_mask: int | None
-    :param created_at: The timestamp when the task was first created.
-    :type created_at: datetime | None
-    :param updated_at: The timestamp of the last modification to the task.
-    :type updated_at: datetime | None
-    :param created_by: Display name for the user who initiated the task
-        (Casdoor username when resolvable, otherwise the stored user id).
-    :type created_by: str | None
-    :param last_updated_by: Display name for the user who last modified the task record
-        (Casdoor username when resolvable, otherwise the stored user id).
-    :type last_updated_by: str | None
-    :param connectivity_warning: A warning surfaced when the post-creation
-        database connectivity check fails. ``None`` when the check passes,
-        is opted out, or the task meta lacks the connectivity keys.
-    :type connectivity_warning: ConnectivityWarning | None
-    :param anonymized_entities: Sorted list of PII entity names derived from
-        ``anonymize_mask`` (or from the owner's configured defaults when the
-        mask is ``None``). Read-only; computed on serialisation.
-    :type anonymized_entities: list[str]
-    """
-
-    id: int | None = None
-    backend: TaskBackendEnum
-    data: dict[str, Any]
-    protected: bool
-    alert_on_fail: bool
-    anonymize_mask: int | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    created_by: str | None = None
-    last_updated_by: str | None = None
-    connectivity_warning: ConnectivityWarning | None = None
-
-    @computed_field
-    @property
-    def anonymized_entities(self) -> list[str]:
-        """Return sorted PII entity names decoded from ``anonymize_mask``."""
-        entities = (
-            PIIEntity.decode_selection(self.anonymize_mask)
-            if self.anonymize_mask is not None
-            else anonymizer_settings.DEFAULT_ENTITIES[self.owner]
-        )
-        return sorted(entity.name for entity in entities)
-
-
-class ChecksumExecuteWrite(BaseModel):
-    """Represent a JSON request body for executing a checksum task.
-
-    :param eta: Optional future datetime to schedule execution.
-    :type eta: FutureDatetime | None
-    :param chain_task_names: Optional list of task names to chain after this one.
-    :type chain_task_names: list[str] | None
-    :param chain_on_failure: Whether to run chained tasks even on failure.
-    :type chain_on_failure: bool | None
-    """
-
-    eta: FutureDatetime | None = None
-    chain_task_names: list[str] | None = None
-    chain_on_failure: bool | None = None
-
-
-class ChecksumExecutionResponse(BaseModel):
-    """Represent the response from POST /api/plugins/checksums/{task_name}/execute.
-
-    :param task_name: The name of the task that was executed.
-    :type task_name: str
-    :param task_id: The id of the task-history row created by the tasks API.
-    :type task_id: int | None
-    """
-
-    task_name: str
-    task_id: int | None = None
+    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
+    hostname: Annotated[
+        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
+    ]
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
+        Ui(label="Database Host", section="Task"),
+    ]
+    databases: Annotated[
+        str,
+        ArgFormat(),
+        Ui(
+            label="Databases",
+            section="Data",
+            default=None,
+            description="Comma-separated database names",
+        ),
+    ] = ""
+    tables: Annotated[
+        str,
+        ArgFormat(),
+        Ui(
+            label="Tables",
+            section="Data",
+            default=None,
+            description="Comma-separated table names (schema.table format)",
+        ),
+    ] = ""
+    recursion_method: Annotated[
+        str,
+        Choices(
+            (
+                ("default", "Default"),
+                ("processlist", "Processlist"),
+                ("hosts", "Hosts"),
+                ("dsn", "DSN"),
+                ("none", "None"),
+            )
+        ),
+        Ui(label="Recursion Method", section="Recursion", required=True),
+    ] = "processlist"
+    dsn_table: Annotated[
+        str,
+        Ui(
+            label="DSN Table",
+            section="Recursion",
+            default="D=percona,t=dsns",
+            description="Only used when recursion method is 'dsn'",
+        ),
+    ] = ""
+    binary_index: Annotated[
+        bool,
+        ArgFormat(),
+        Ui(
+            label="Binary Index",
+            section="Flags",
+            description="Use BLOB type for replicate-table boundary columns",
+        ),
+    ] = False
+    explain_arg: Annotated[
+        bool,
+        ArgFormat("--explain"),
+        Ui(
+            label="Explain (dry run)",
+            section="Flags",
+            description="Show but do not execute checksum queries",
+        ),
+    ] = False
+    fail_on_stopped_replication: Annotated[
+        bool,
+        ArgFormat(),
+        Ui(
+            label="Fail on Stopped Replication",
+            section="Flags",
+            description="Fail with an error if replication is stopped",
+        ),
+    ] = False
+    truncate_replicate_table: Annotated[
+        bool,
+        ArgFormat(),
+        Ui(
+            label="Truncate Replicate Table",
+            section="Flags",
+            description="Truncate the replicate table before starting",
+        ),
+    ] = False
+    pause_file: Annotated[
+        str,
+        ArgFormat(),
+        Ui(
+            label="Pause File",
+            section="Advanced",
+            default=None,
+            description="Execution pauses while this file exists",
+        ),
+    ] = ""
+    set_vars: Annotated[
+        str,
+        ArgFormat(),
+        Ui(
+            label="Set Vars",
+            section="Advanced",
+            order=2,
+            default="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5",
+            description="MySQL variables to set (comma-separated key=value pairs)",
+        ),
+    ] = ""
+    max_load: Annotated[
+        str,
+        ArgFormat(),
+        Ui(
+            label="Max Load",
+            section="Advanced",
+            order=3,
+            default="Threads_running=50",
+            description="Pause when any GLOBAL STATUS variable exceeds this threshold",
+        ),
+    ] = ""
+    chunk_time: Annotated[
+        str,
+        ArgFormat(),
+        Ui(
+            label="Chunk Time",
+            section="Advanced",
+            order=4,
+            default="0.5",
+            description="Target execution time per chunk in seconds",
+        ),
+    ] = ""
+    max_lag: Annotated[
+        str,
+        ArgFormat(),
+        Ui(
+            label="Max Lag",
+            section="Advanced",
+            order=5,
+            default="150",
+            description="Pause until replica lag falls below this value (seconds)",
+        ),
+    ] = ""
+    progress: Annotated[
+        str,
+        ArgFormat(),
+        Ui(
+            label="Progress",
+            section="Advanced",
+            order=1,
+            default="time,10",
+            description="Print progress reports to STDERR (e.g. time,10)",
+        ),
+    ] = ""

@@ -31,11 +31,15 @@ import {
   type PluginEntitySchema,
   type PluginSchema,
 } from '@sep/api';
-import { SchemaFormRenderer } from '../SchemaFormRenderer';
+import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
+import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
 import { PluginListPage } from './PluginListPage';
 import { PluginCreatePage } from './PluginCreatePage';
+import { PluginTaskEditPage } from './PluginTaskEditPage';
 import { PluginDetailPage, type TaskExecuteAction } from './PluginDetailPage';
 import { PluginSchedulePage } from './PluginSchedulePage';
+import type { RenderFormSlot } from './types';
+import type { RenderListColumnOverride } from '../SchemaListView';
 
 interface SchemaDrivenPluginProps {
   pluginName: string;
@@ -80,16 +84,31 @@ interface SchemaDrivenPluginProps {
     mockEntityItems?: Record<string, Record<string, unknown>[]>;
     allowListEntityDelete?: boolean;
   }) => ReactNode;
+  /**
+   * Per-field widget override, threaded to the create and edit forms. Applied
+   * after conditional gating; overrides must write through react-hook-form.
+   */
+  renderField?: RenderFieldOverride;
+  /** Whole-form slot for the create page; framework keeps chrome / mutation / snackbars. */
+  renderCreateForm?: RenderFormSlot;
+  /** Whole-form slot for the edit page; framework keeps chrome / mutation / snackbars. */
+  renderEditForm?: RenderFormSlot;
+  /** Per-cell list column override (non-`actions` columns), threaded to the list page. */
+  renderListColumn?: RenderListColumnOverride;
 }
 
 function PluginEditPage({
   schema,
   pluginName,
   mockEntityItems,
+  renderField,
+  renderEditForm,
 }: {
   schema: PluginSchema;
   pluginName: string;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
+  renderField?: RenderFieldOverride;
+  renderEditForm?: RenderFormSlot;
 }) {
   const navigate = useNavigate();
   const { entityName, id } = useParams<{ entityName?: string; id: string }>();
@@ -122,7 +141,13 @@ function PluginEditPage({
       return;
     }
     updateEntity.mutate(
-      { id, values: data },
+      // Coerce at the submit boundary so whole-form slots that bypass
+      // SchemaFormRenderer's internal coercion still send a backend-ready
+      // payload. Idempotent for the default (already-coerced) path.
+      {
+        id,
+        values: coerceFormValues(data, flattenSectionFields(sections)),
+      },
       {
         onSuccess: () => {
           enqueueSnackbar(`${title} updated`, { variant: 'success' });
@@ -176,13 +201,22 @@ function PluginEditPage({
         </Typography>
       </Box>
 
-      <SchemaFormRenderer
-        sections={sections}
-        onSubmit={handleSubmit}
-        loading={updateEntity.isPending}
-        submitLabel={`Save ${title}`}
-        defaultValues={defaultValues}
-      />
+      {renderEditForm?.({
+        sections,
+        onSubmit: handleSubmit,
+        loading: updateEntity.isPending,
+        defaultValues,
+        renderField,
+      }) ?? (
+        <SchemaFormRenderer
+          sections={sections}
+          onSubmit={handleSubmit}
+          loading={updateEntity.isPending}
+          submitLabel={`Save ${title}`}
+          defaultValues={defaultValues}
+          renderField={renderField}
+        />
+      )}
     </Box>
   );
 }
@@ -202,6 +236,10 @@ export function SchemaDrivenPlugin({
   hideEntityTabs = false,
   allowListEntityDelete = false,
   renderEntityDetailChildren,
+  renderField,
+  renderCreateForm,
+  renderEditForm,
+  renderListColumn,
 }: SchemaDrivenPluginProps) {
   const { data: schema, isLoading, error } = usePluginSchema(pluginName, mockSchema);
   const showMutationRoutes = !listOnly && !browseOnly;
@@ -243,6 +281,7 @@ export function SchemaDrivenPlugin({
               hideCreate={browseOnly && !listOnly}
               hideEntityTabs={hideEntityTabs}
               allowListEntityDelete={allowListEntityDelete}
+              renderListColumn={renderListColumn}
             />
           }
         />
@@ -255,6 +294,8 @@ export function SchemaDrivenPlugin({
                   schema={schema}
                   pluginName={pluginName}
                   mockEntityItems={mockEntityItems}
+                  renderField={renderField}
+                  renderCreateForm={renderCreateForm}
                 />
               }
             />
@@ -265,6 +306,8 @@ export function SchemaDrivenPlugin({
                   schema={schema}
                   pluginName={pluginName}
                   mockEntityItems={mockEntityItems}
+                  renderField={renderField}
+                  renderEditForm={renderEditForm}
                 />
               }
             />
@@ -302,16 +345,37 @@ export function SchemaDrivenPlugin({
             mockEntityItems={mockEntityItems}
             listOnly={listOnly}
             hideCreate={browseOnly && !listOnly}
+            renderListColumn={renderListColumn}
           />
         }
       />
       {showMutationRoutes && (
-        <Route
-          path="new"
-          element={
-            <PluginCreatePage schema={schema} pluginName={pluginName} mockTasks={mockTasks} />
-          }
-        />
+        <>
+          <Route
+            path="new"
+            element={
+              <PluginCreatePage
+                schema={schema}
+                pluginName={pluginName}
+                mockTasks={mockTasks}
+                renderField={renderField}
+                renderCreateForm={renderCreateForm}
+              />
+            }
+          />
+          <Route
+            path="task/:id/edit"
+            element={
+              <PluginTaskEditPage
+                schema={schema}
+                pluginName={pluginName}
+                mockTasks={mockTasks}
+                renderField={renderField}
+                renderEditForm={renderEditForm}
+              />
+            }
+          />
+        </>
       )}
       {/* Schedule route is only registered when the plugin schema opts in;
           otherwise direct navigation to `/plugins/<name>/schedule` would

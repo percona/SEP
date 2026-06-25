@@ -20,8 +20,11 @@ from uuid import uuid4
 
 import pytest
 
-from app.sep.crud import SyncInstanceManager, SyncItemManager
+from app.core.exceptions import HTTPConflictException
+from app.sep.crud import AppStateManager, SyncInstanceManager, SyncItemManager
 from app.sep.models import (
+    AppLifecycleEnum,
+    AppState,
     SyncInstance,
     SyncInventoryEntityTypeEnum,
     SyncItem,
@@ -122,6 +125,50 @@ class TestSyncItemManagerCreate:
 
             assert result == expected_item
             mock_super_create.assert_awaited_once_with(session, item_write)
+
+
+# ---------------------------------------------------------------------------
+# SyncItemManager.get_or_create (overridden-create() guard, real session)
+# ---------------------------------------------------------------------------
+
+
+class TestSyncItemManagerGetOrCreate:
+    """Test that get_or_create respects SyncItemManager's overridden create()."""
+
+    @pytest.mark.asyncio
+    async def test_respects_overridden_create_guard(self, session) -> None:
+        """Assert the in-progress guard fires and no duplicate row is written.
+
+        ``get_or_create``'s default existence filter includes ``status`` (PENDING),
+        so it misses an already-``RUNNING`` item and falls into the create branch.
+        That branch must route through ``SyncItemManager.create`` (not the
+        conflict-tolerant fast path), whose guard raises
+        ``SyncItemAlreadyInProgressError`` instead of silently inserting a second row.
+        """
+        instance = SyncInstance(syncer="test-syncer")
+        session.add(instance)
+        await session.commit()
+        await session.refresh(instance)
+
+        running_item = SyncItem(
+            entity_id=1,
+            entity_type=SyncInventoryEntityTypeEnum.NODE,
+            status=SyncStatusEnum.RUNNING,
+            sync_instance_id=instance.id,
+        )
+        session.add(running_item)
+        await session.commit()
+
+        item_write = SyncItemWrite(
+            entity_id=1,
+            entity_type=SyncInventoryEntityTypeEnum.NODE,
+            sync_instance_id=instance.id,
+        )
+
+        with pytest.raises(SyncItemAlreadyInProgressError):
+            await SyncItemManager.get_or_create(session, item_write)
+
+        assert len(await SyncItemManager.list(session)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -333,3 +380,105 @@ class TestSyncInstanceManagerFinishHangingItems:
 
             mock_save_batch.assert_awaited_once_with(session)
             assert result == []
+
+
+class TestAppStateManager:
+    """Test suite for AppStateManager against a real session."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("state", list(AppLifecycleEnum))
+    async def test_is_enabled_only_for_enabled_state(self, session, state) -> None:
+        """``is_enabled`` is ``True`` only when the row's state is ``ENABLED``."""
+        session.add(AppState(app_key="snippets", lifecycle_state=state))
+        await session.commit()
+        expected = state == AppLifecycleEnum.ENABLED
+        assert await AppStateManager.is_enabled(session, "snippets") is expected
+
+    @pytest.mark.asyncio
+    async def test_is_enabled_true_for_missing_row(self, session) -> None:
+        """A missing row is treated as enabled (active until explicitly disabled)."""
+        assert await AppStateManager.is_enabled(session, "snippets") is True
+
+    @pytest.mark.asyncio
+    async def test_all_lifecycle_states_returns_mapping(self, session) -> None:
+        """``all_lifecycle_states`` returns the ``app_key`` -> state mapping."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        session.add(
+            AppState(app_key="checksums", lifecycle_state=AppLifecycleEnum.DISABLING)
+        )
+        await session.commit()
+        assert await AppStateManager.all_lifecycle_states(session) == {
+            "snippets": AppLifecycleEnum.ENABLED,
+            "checksums": AppLifecycleEnum.DISABLING,
+        }
+
+    @pytest.mark.asyncio
+    async def test_all_lifecycle_states_empty_table(self, session) -> None:
+        """``all_lifecycle_states`` returns an empty mapping when no rows exist."""
+        assert await AppStateManager.all_lifecycle_states(session) == {}
+
+    @pytest.mark.asyncio
+    async def test_all_lifecycle_states_returns_full_mapping(self, session) -> None:
+        """``all_lifecycle_states`` returns the ``app_key`` -> state mapping."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
+        )
+        session.add(
+            AppState(app_key="checksums", lifecycle_state=AppLifecycleEnum.DISABLING)
+        )
+        await session.commit()
+        assert await AppStateManager.all_lifecycle_states(session) == {
+            "snippets": AppLifecycleEnum.ENABLED,
+            "checksums": AppLifecycleEnum.DISABLING,
+        }
+
+    @pytest.mark.asyncio
+    async def test_current_lifecycle_reads_row_state(self, session) -> None:
+        """``current_lifecycle`` returns the persisted state for an existing row."""
+        session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLING)
+        )
+        await session.commit()
+        current = await AppStateManager.current_lifecycle(session, "snippets")
+        assert current is AppLifecycleEnum.DISABLING
+
+    @pytest.mark.asyncio
+    async def test_current_lifecycle_missing_row_is_enabled(self, session) -> None:
+        """A missing row reports ``ENABLED`` for the transition gate."""
+        current = await AppStateManager.current_lifecycle(session, "snippets")
+        assert current is AppLifecycleEnum.ENABLED
+
+    @pytest.mark.parametrize(
+        ("current", "target"),
+        [
+            (AppLifecycleEnum.ENABLED, AppLifecycleEnum.DISABLING),
+            (AppLifecycleEnum.DISABLED, AppLifecycleEnum.ENABLING),
+            (AppLifecycleEnum.DISABLING, AppLifecycleEnum.DISABLED),
+            (AppLifecycleEnum.ENABLING, AppLifecycleEnum.ENABLED),
+        ],
+    )
+    def test_assert_transition_allowed_accepts_valid_edges(
+        self, current, target
+    ) -> None:
+        """Each reachable edge passes the transition gate without raising."""
+        AppStateManager.assert_transition_allowed(current, target)
+
+    @pytest.mark.parametrize(
+        ("current", "target"),
+        [
+            (AppLifecycleEnum.ENABLED, AppLifecycleEnum.ENABLED),
+            (AppLifecycleEnum.ENABLED, AppLifecycleEnum.DISABLED),
+            (AppLifecycleEnum.DISABLED, AppLifecycleEnum.ENABLED),
+            (AppLifecycleEnum.DISABLING, AppLifecycleEnum.ENABLED),
+            (AppLifecycleEnum.DISABLING, AppLifecycleEnum.DISABLING),
+            (AppLifecycleEnum.ENABLING, AppLifecycleEnum.DISABLED),
+        ],
+    )
+    def test_assert_transition_allowed_rejects_illegal_edges(
+        self, current, target
+    ) -> None:
+        """Every illegal edge raises ``HTTPConflictException`` (HTTP 409)."""
+        with pytest.raises(HTTPConflictException):
+            AppStateManager.assert_transition_allowed(current, target)

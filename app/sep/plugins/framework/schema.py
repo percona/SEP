@@ -38,6 +38,8 @@ __all__ = [
     "IntegerField",
     "ListView",
     "MultiChoiceField",
+    "OneOfBranch",
+    "OneOfGroup",
     "PluginDeploymentCapabilities",
     "PluginEntitySchema",
     "PluginSchema",
@@ -52,6 +54,7 @@ __all__ = [
 ]
 
 from collections import Counter
+from collections.abc import Iterator
 from enum import auto, StrEnum
 from typing import Annotated, Any, Literal, Self
 
@@ -72,7 +75,9 @@ from app.sep.plugins.framework.rules import (
     FieldGate,
 )
 
-_FIELD_NAME_PATTERN = r"^[A-Za-z_](?:[\w-]*\w)?$"
+# Dots are permitted so nested one-of branch fields can use paths such as
+# ``source.source_db_id`` (see :class:`OneOfGroup`).
+_FIELD_NAME_PATTERN = r"^[A-Za-z_](?:[\w.-]*\w)?$"
 
 
 class SchemaBaseModel(BaseModel):
@@ -98,10 +103,41 @@ class Choice(SchemaBaseModel):
     :type label: NonEmptyStr
     :param value: The value submitted when the choice is selected.
     :type value: NonEmptyStr
+    :param disabled: Whether the option is rendered non-selectable. Optional,
+        defaulting to ``None`` (selectable). Typed ``bool | None`` so the
+        discovery endpoint's ``exclude_none`` posture drops it from the wire
+        until a plugin opts in, keeping the addition byte-compatible with
+        existing schemas. UI hint only; enforcing rejection of a disabled
+        value is the consuming app's responsibility.
+    :type disabled: bool | None
+    :param disabled_reason: Optional explanatory text surfaced (for example,
+        in a tooltip) when the option is disabled. Defaults to ``None`` and
+        may only be set when ``disabled`` is ``True``.
+    :type disabled_reason: NonEmptyStr | None
     """
 
     label: NonEmptyStr
     value: NonEmptyStr
+    disabled: bool | None = None
+    disabled_reason: NonEmptyStr | None = None
+
+    @model_validator(mode="after")
+    def _validate_disabled_reason_implies_disabled(self) -> Self:
+        """Ensure ``disabled_reason`` is only set on a disabled option.
+
+        ``disabled_reason`` is tooltip text shown when the option is
+        non-selectable, and the UI helpers ignore it unless ``disabled`` is
+        true. Allowing a reason on a still-selectable option would emit an
+        inconsistent wire shape, so reject it here.
+
+        :return: The validated choice instance.
+        :rtype: Choice
+        :raises ValueError: If ``disabled_reason`` is set while ``disabled``
+            is not ``True``.
+        """
+        if self.disabled_reason is not None and not self.disabled:
+            raise ValueError("disabled_reason requires disabled=True")
+        return self
 
 
 class ColumnFormat(EnumFieldMixin, StrEnum):
@@ -123,6 +159,12 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     :cvar ACTIONS: Row actions (for example delete); not bound to row data.
         Use with a synthetic column key such as ``_actions``.
     :vartype ACTIONS: str
+    :cvar SCHEDULE: Render a generic schedule cell for the row's task. The
+        frontend joins the row to its periodic task by name and shows the next
+        run (relative, with the absolute timestamp on hover) plus a periodicity
+        popover, or a muted "Not scheduled" chip when the task has no schedule.
+        Not bound to the column's own cell value.
+    :vartype SCHEDULE: str
     """
 
     TEXT = auto()
@@ -132,6 +174,7 @@ class ColumnFormat(EnumFieldMixin, StrEnum):
     RELATIVE = auto()
     CODE = auto()
     ACTIONS = auto()
+    SCHEDULE = auto()
 
 
 class DetailHighlightLanguage(EnumFieldMixin, StrEnum):
@@ -393,11 +436,15 @@ class HostField(BaseField):
     :param field_type: The discriminator literal; always ``"host"`` for this
         class. Serialised as the JSON key ``"type"``.
     :type field_type: Literal["host"]
+    :param allow_custom: When ``True``, the selector also accepts a free-typed
+        value alongside the inventory options. ``None`` (the default) omits the
+        key from the wire so plugins that do not opt in stay byte-identical.
     """
 
     field_type: Literal["host"] = Field(
         "host", alias="type", serialization_alias="type"
     )
+    allow_custom: bool | None = None
 
 
 class SchemaField(BaseField):
@@ -414,12 +461,22 @@ class SchemaField(BaseField):
     :param depends_on: The name of the field whose value drives the list of
         available schemas.
     :type depends_on: NonEmptyStr
+    :param allow_custom: Opt-in capability flag declaring that a consuming
+        renderer may offer free-text (free-solo) entry in addition to the
+        cascaded inventory options. Optional, defaulting to ``None`` (options
+        only). Typed ``bool | None`` so the discovery endpoint's
+        ``exclude_none`` posture drops it from the wire until a plugin opts
+        in, keeping the addition byte-compatible with existing schemas. The
+        built-in SchemaFormRenderer does not yet consume the flag; the
+        free-solo widget that reads it ships with the consuming plugin.
+    :type allow_custom: bool | None
     """
 
     field_type: Literal["schema"] = Field(
         "schema", alias="type", serialization_alias="type"
     )
     depends_on: NonEmptyStr
+    allow_custom: bool | None = None
 
 
 class ServiceField(BaseField):
@@ -431,12 +488,22 @@ class ServiceField(BaseField):
     :param service_types: The list of service types the selector should offer
         (for example, ``[ServiceTypeEnum.MYSQL]``).
     :type service_types: list[ServiceTypeEnum]
+    :param allow_custom: Opt-in capability flag declaring that a consuming
+        renderer may offer free-text (free-solo) entry in addition to the
+        inventory options. Optional, defaulting to ``None`` (options only).
+        Typed ``bool | None`` so the discovery endpoint's ``exclude_none``
+        posture drops it from the wire until a plugin opts in, keeping the
+        addition byte-compatible with existing schemas. The built-in
+        SchemaFormRenderer does not yet consume the flag; the free-solo
+        widget that reads it ships with the consuming plugin.
+    :type allow_custom: bool | None
     """
 
     field_type: Literal["service"] = Field(
         "service", alias="type", serialization_alias="type"
     )
     service_types: list[ServiceTypeEnum]
+    allow_custom: bool | None = None
 
 
 class TableField(BaseField):
@@ -453,12 +520,22 @@ class TableField(BaseField):
     :param depends_on: The name of the field whose value drives the list of
         available tables.
     :type depends_on: NonEmptyStr
+    :param allow_custom: Opt-in capability flag declaring that a consuming
+        renderer may offer free-text (free-solo) entry in addition to the
+        cascaded inventory options. Optional, defaulting to ``None`` (options
+        only). Typed ``bool | None`` so the discovery endpoint's
+        ``exclude_none`` posture drops it from the wire until a plugin opts
+        in, keeping the addition byte-compatible with existing schemas. The
+        built-in SchemaFormRenderer does not yet consume the flag; the
+        free-solo widget that reads it ships with the consuming plugin.
+    :type allow_custom: bool | None
     """
 
     field_type: Literal["table"] = Field(
         "table", alias="type", serialization_alias="type"
     )
     depends_on: NonEmptyStr
+    allow_custom: bool | None = None
 
 
 class ScriptPreviewField(BaseField):
@@ -496,7 +573,7 @@ class ScriptPreviewField(BaseField):
     language: NonEmptyStr | None = None
 
 
-AnyField = Annotated[
+LeafField = Annotated[
     BoolField
     | ChoiceField
     | DateTimeField
@@ -514,6 +591,75 @@ AnyField = Annotated[
     | YamlField,
     Field(discriminator="field_type"),
 ]
+"""Discriminated union of every leaf field class (excludes :class:`OneOfGroup`)."""
+
+
+class OneOfBranch(SchemaBaseModel):
+    """Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.
+
+    :param value: The discriminator value that selects this branch.
+    :param label: The human-readable label for the segmented-control option.
+    :param fields: The leaf fields revealed when this branch is active.
+    """
+
+    value: NonEmptyStr
+    label: NonEmptyStr
+    fields: list[LeafField] = Field(..., min_length=1)
+
+
+class OneOfGroup(SchemaBaseModel):
+    """Represent a labelled either/or field group with a segmented mode switch.
+
+    The React renderer binds :attr:`discriminator` to a ``ToggleButtonGroup``,
+    shows :attr:`description` as helper text, and renders only the active
+    branch's :attr:`~OneOfBranch.fields`. Inactive-branch leaves are forbidden
+    at validation time via rules synthesised from the group's branch contract.
+
+    :param field_type: The discriminator literal; always ``"one_of"`` for this
+        class. Serialised as the JSON key ``"type"``.
+    :param name: Stable group identifier used as the React list key. Not a
+        separate form value — :attr:`discriminator` names the mode field.
+    :param label: The human-readable group heading above the segmented control.
+    :param description: Optional helper text rendered beneath the group label.
+        Defaults to ``None``.
+    :param discriminator: Dotted path to the mode field (for example,
+        ``"source.mode"``) whose value selects the active branch.
+    :param default: Optional default branch :attr:`~OneOfBranch.value`. Must
+        match one of the declared branches when set. Defaults to ``None``.
+    :param branches: Two or more named branches, each owning its own field list.
+    """
+
+    field_type: Literal["one_of"] = Field(
+        "one_of", alias="type", serialization_alias="type"
+    )
+    name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
+    label: NonEmptyStr
+    description: NonEmptyStr | None = None
+    discriminator: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
+    default: NonEmptyStr | None = None
+    branches: list[OneOfBranch] = Field(..., min_length=2)
+
+    @model_validator(mode="after")
+    def _validate_branch_values(self) -> Self:
+        """Ensure branch values are unique and ``default`` matches one branch."""
+        values = [branch.value for branch in self.branches]
+        duplicates = sorted(
+            value for value, count in Counter(values).items() if count > 1
+        )
+        if duplicates:
+            raise ValueError(f"duplicate one_of branch value(s): {duplicates}")
+        if self.default is not None and self.default not in values:
+            raise ValueError(
+                f"one_of default {self.default!r} is not a declared branch value; "
+                f"known: {sorted(values)}"
+            )
+        return self
+
+
+AnyField = Annotated[
+    LeafField | OneOfGroup,
+    Field(discriminator="field_type"),
+]
 """Discriminated union of every concrete field class in the plugin schema DSL."""
 
 
@@ -525,7 +671,8 @@ class FormSection(SchemaBaseModel):
     :param description: Optional helper text rendered beneath the section
         heading. Defaults to ``None``.
     :type description: NonEmptyStr | None
-    :param fields: The list of fields belonging to this section.
+    :param fields: The list of fields belonging to this section. May include
+        :class:`OneOfGroup` containers alongside leaf fields.
     :type fields: list[AnyField]
     :param cardinality_rules: Optional cross-field cardinality constraints
         scoped to the fields in this section. Defaults to ``None``.
@@ -834,6 +981,106 @@ class Capabilities(SchemaBaseModel):
     pii_anonymization: bool = False
 
 
+def _iter_form_item_leaves(field: AnyField) -> Iterator[BaseField]:
+    """Yield leaf fields for one section item (a leaf field or a one-of group)."""
+    if isinstance(field, OneOfGroup):
+        for branch in field.branches:
+            yield from branch.fields
+        return
+    yield field
+
+
+def _iter_section_fields(section: FormSection) -> Iterator[BaseField]:
+    """Yield every leaf :class:`BaseField` in ``section``, expanding one-of groups."""
+    for field in section.fields:
+        yield from _iter_form_item_leaves(field)
+
+
+def _declared_field_names_from_forms(forms: list[FormSection]) -> set[str]:
+    """Return every field name conditional rules may reference across ``forms``."""
+    names: set[str] = set()
+    for section in forms:
+        for field in section.fields:
+            if isinstance(field, OneOfGroup):
+                names.add(field.discriminator)
+        for leaf in _iter_section_fields(section):
+            names.add(leaf.name)
+    return names
+
+
+def _one_of_group_names_from_forms(forms: list[FormSection]) -> frozenset[str]:
+    """Return the name of every one-of group declared across ``forms``.
+
+    A one-of group's name is reserved (it must be unique) but is intentionally
+    not a rule-referenceable field — only its discriminator and branch leaves are
+    (see :func:`_declared_field_names_from_forms`). Surfacing the group names lets
+    the reference check explain *why* a group name is rejected instead of falling
+    back to the generic unknown-field error.
+
+    :param forms: The form sections to scan for one-of group declarations.
+    :return: The names of all one-of groups declared across ``forms``.
+    """
+    return frozenset(
+        field.name
+        for section in forms
+        for field in section.fields
+        if isinstance(field, OneOfGroup)
+    )
+
+
+def _register_field_name(
+    name: str, global_seen: set[str], duplicates: list[str]
+) -> None:
+    """Record ``name`` in ``global_seen`` or append to ``duplicates``."""
+    if name in global_seen:
+        duplicates.append(name)
+    else:
+        global_seen.add(name)
+
+
+def _validate_one_of_group_names(
+    group: OneOfGroup, global_seen: set[str], duplicates: list[str]
+) -> None:
+    """Apply uniqueness rules for one :class:`OneOfGroup` and its branch leaves."""
+    _register_field_name(group.name, global_seen, duplicates)
+    _register_field_name(group.discriminator, global_seen, duplicates)
+
+    branch_counts: Counter[str] = Counter(
+        leaf.name for branch in group.branches for leaf in branch.fields
+    )
+    structural_names = {group.name, group.discriminator}
+    branch_shared_registered: set[str] = set()
+    for branch in group.branches:
+        for leaf in branch.fields:
+            if branch_counts[leaf.name] > 1:
+                if leaf.name in branch_shared_registered:
+                    continue
+                branch_shared_registered.add(leaf.name)
+            if leaf.name in global_seen:
+                if leaf.name not in structural_names:
+                    duplicates.append(leaf.name)
+            else:
+                global_seen.add(leaf.name)
+
+
+def _validate_unique_field_names_in_forms(forms: list[FormSection]) -> None:
+    """Raise when form field names collide outside allowed one-of branch reuse."""
+    global_seen: set[str] = set()
+    duplicates: list[str] = []
+
+    for section in forms:
+        for field in section.fields:
+            if isinstance(field, OneOfGroup):
+                _validate_one_of_group_names(field, global_seen, duplicates)
+            else:
+                _register_field_name(field.name, global_seen, duplicates)
+
+    if duplicates:
+        raise ValueError(
+            f"duplicate field name(s) across form sections: {sorted(set(duplicates))}"
+        )
+
+
 def _collect_reference_errors(
     scope_path: str,
     names: set[str],
@@ -841,6 +1088,7 @@ def _collect_reference_errors(
     errors: list[str],
     *,
     implicit_self_name: str | None = None,
+    group_field_names: frozenset[str] = frozenset(),
 ) -> None:
     """Append messages to ``errors`` for any unknown or hyphenated rule names.
 
@@ -861,6 +1109,10 @@ def _collect_reference_errors(
         keep the suffix-less form, since the underlying mistake is the
         same: the field that should exist is missing.
     :type implicit_self_name: str | None
+    :param group_field_names: The names of one-of groups in the form tree. A
+        rule that names one is reported with a targeted hint, since a group is
+        not a rule-referenceable field — a group-presence invariant belongs in
+        a ``@model_validator`` rather than a field rule.
     """
     for name in names:
         if "-" in name:
@@ -871,6 +1123,14 @@ def _collect_reference_errors(
             )
             continue
         if name not in declared_field_names:
+            if name in group_field_names:
+                errors.append(
+                    f"{scope_path} references one-of group field {name!r}; a "
+                    "one-of group is not a rule-referenceable field (only its "
+                    "discriminator and branch fields are). Enforce a "
+                    "group-presence invariant with a @model_validator instead."
+                )
+                continue
             suffix = (
                 ""
                 if name == implicit_self_name
@@ -883,8 +1143,20 @@ def _collect_basefield_gate_errors(
     field: "AnyField",
     declared_field_names: set[str],
     errors: list[str],
+    *,
+    group_field_names: frozenset[str] = frozenset(),
 ) -> None:
-    """Walk a BaseField's ``requires`` / ``forbidden`` gates."""
+    """Walk a leaf field's ``requires`` / ``forbidden`` gates (expands one-of branches)."""
+    if isinstance(field, OneOfGroup):
+        for branch in field.branches:
+            for leaf in branch.fields:
+                _collect_basefield_gate_errors(
+                    leaf,
+                    declared_field_names,
+                    errors,
+                    group_field_names=group_field_names,
+                )
+        return
     for primitive in ("requires", "forbidden"):
         for rule_index, gate in enumerate(getattr(field, primitive) or []):
             references = gate.when.referenced_fields() | {field.name}
@@ -894,6 +1166,7 @@ def _collect_basefield_gate_errors(
                 declared_field_names,
                 errors,
                 implicit_self_name=field.name,
+                group_field_names=group_field_names,
             )
 
 
@@ -902,6 +1175,8 @@ def _collect_section_gate_errors(
     section_label: str,
     declared_field_names: set[str],
     errors: list[str],
+    *,
+    group_field_names: frozenset[str] = frozenset(),
 ) -> None:
     """Walk a ``FormSection``'s ``forbidden`` gates."""
     for rule_index, gate in enumerate(section.forbidden or []):
@@ -910,6 +1185,7 @@ def _collect_section_gate_errors(
             gate.when.referenced_fields(),
             declared_field_names,
             errors,
+            group_field_names=group_field_names,
         )
 
 
@@ -918,6 +1194,8 @@ def _collect_cardinality_rule_errors(
     scope_label: str,
     declared_field_names: set[str],
     errors: list[str],
+    *,
+    group_field_names: frozenset[str] = frozenset(),
 ) -> None:
     """Walk a list of :class:`CardinalityRule` instances."""
     for rule_index, rule in enumerate(rules or []):
@@ -929,6 +1207,7 @@ def _collect_cardinality_rule_errors(
             references,
             declared_field_names,
             errors,
+            group_field_names=group_field_names,
         )
 
 
@@ -937,6 +1216,8 @@ def _collect_fail_rule_errors(
     scope_label: str,
     declared_field_names: set[str],
     errors: list[str],
+    *,
+    group_field_names: frozenset[str] = frozenset(),
 ) -> None:
     """Walk a list of :class:`FailRule` instances."""
     for rule_index, rule in enumerate(rules or []):
@@ -946,6 +1227,7 @@ def _collect_fail_rule_errors(
             references,
             declared_field_names,
             errors,
+            group_field_names=group_field_names,
         )
 
 
@@ -994,19 +1276,7 @@ class PluginEntitySchema(SchemaBaseModel):
     @model_validator(mode="after")
     def _validate_unique_field_names(self) -> Self:
         """Ensure field ``name`` values are unique within this entity's forms."""
-        seen = set()
-        duplicates = []
-        for section in self.forms:
-            for field in section.fields:
-                if field.name in seen:
-                    duplicates.append(field.name)
-                else:
-                    seen.add(field.name)
-        if duplicates:
-            raise ValueError(
-                f"duplicate field name(s) across form sections: "
-                f"{sorted(set(duplicates))}"
-            )
+        _validate_unique_field_names_in_forms(self.forms)
         return self
 
 
@@ -1217,19 +1487,7 @@ class PluginSchema(SchemaBaseModel):
             raise ValueError(
                 "list_view is required when entities is not set (task-style plugins)"
             )
-        seen = set()
-        duplicates = []
-        for section in self.forms:
-            for field in section.fields:
-                if field.name in seen:
-                    duplicates.append(field.name)
-                else:
-                    seen.add(field.name)
-        if duplicates:
-            raise ValueError(
-                f"duplicate field name(s) across form sections: "
-                f"{sorted(set(duplicates))}"
-            )
+        _validate_unique_field_names_in_forms(self.forms)
         return self
 
     @model_validator(mode="after")
@@ -1254,9 +1512,8 @@ class PluginSchema(SchemaBaseModel):
         errors = []
         if self.entities:
             for entity_index, entity in enumerate(self.entities):
-                declared_field_names = {
-                    field.name for section in entity.forms for field in section.fields
-                }
+                declared_field_names = _declared_field_names_from_forms(entity.forms)
+                group_field_names = _one_of_group_names_from_forms(entity.forms)
                 entity_label = f"PluginEntitySchema[{entity_index}] {entity.name!r}"
                 for section_index, section in enumerate(entity.forms):
                     section_label = (
@@ -1264,55 +1521,93 @@ class PluginSchema(SchemaBaseModel):
                     )
                     for field in section.fields:
                         _collect_basefield_gate_errors(
-                            field, declared_field_names, errors
+                            field,
+                            declared_field_names,
+                            errors,
+                            group_field_names=group_field_names,
                         )
                     _collect_section_gate_errors(
-                        section, section_label, declared_field_names, errors
+                        section,
+                        section_label,
+                        declared_field_names,
+                        errors,
+                        group_field_names=group_field_names,
                     )
                     _collect_cardinality_rule_errors(
                         section.cardinality_rules,
                         section_label,
                         declared_field_names,
                         errors,
+                        group_field_names=group_field_names,
                     )
                     _collect_fail_rule_errors(
-                        section.fail_when, section_label, declared_field_names, errors
+                        section.fail_when,
+                        section_label,
+                        declared_field_names,
+                        errors,
+                        group_field_names=group_field_names,
                     )
                 _collect_cardinality_rule_errors(
                     entity.cardinality_rules,
                     entity_label,
                     declared_field_names,
                     errors,
+                    group_field_names=group_field_names,
                 )
                 _collect_fail_rule_errors(
-                    entity.fail_when, entity_label, declared_field_names, errors
+                    entity.fail_when,
+                    entity_label,
+                    declared_field_names,
+                    errors,
+                    group_field_names=group_field_names,
                 )
         else:
-            declared_field_names = {
-                field.name for section in self.forms for field in section.fields
-            }
+            declared_field_names = _declared_field_names_from_forms(self.forms)
+            group_field_names = _one_of_group_names_from_forms(self.forms)
             for section_index, section in enumerate(self.forms):
                 section_label = f"FormSection[{section_index}] {section.title!r}"
                 for field in section.fields:
-                    _collect_basefield_gate_errors(field, declared_field_names, errors)
+                    _collect_basefield_gate_errors(
+                        field,
+                        declared_field_names,
+                        errors,
+                        group_field_names=group_field_names,
+                    )
                 _collect_section_gate_errors(
-                    section, section_label, declared_field_names, errors
+                    section,
+                    section_label,
+                    declared_field_names,
+                    errors,
+                    group_field_names=group_field_names,
                 )
                 _collect_cardinality_rule_errors(
                     section.cardinality_rules,
                     section_label,
                     declared_field_names,
                     errors,
+                    group_field_names=group_field_names,
                 )
                 _collect_fail_rule_errors(
-                    section.fail_when, section_label, declared_field_names, errors
+                    section.fail_when,
+                    section_label,
+                    declared_field_names,
+                    errors,
+                    group_field_names=group_field_names,
                 )
             schema_label = f"PluginSchema {self.name!r}"
             _collect_cardinality_rule_errors(
-                self.cardinality_rules, schema_label, declared_field_names, errors
+                self.cardinality_rules,
+                schema_label,
+                declared_field_names,
+                errors,
+                group_field_names=group_field_names,
             )
             _collect_fail_rule_errors(
-                self.fail_when, schema_label, declared_field_names, errors
+                self.fail_when,
+                schema_label,
+                declared_field_names,
+                errors,
+                group_field_names=group_field_names,
             )
         if errors:
             raise ValueError("; ".join(errors))

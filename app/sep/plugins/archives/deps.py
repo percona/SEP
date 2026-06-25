@@ -13,383 +13,226 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define dependencies for the Archives plugin."""
+"""Define dependencies for the Archives plugin.
 
-import asyncio
+The model-first JSON create / update / list / detail surfaces are derived by the
+``TaskExecutionApp`` in ``app.py``. This module holds the parts that stay
+hand-written: the legacy Jinja form path (a flat parse model mapped into the
+one-of ``ArchivesCreate`` so the deprecated HTML form keeps working against the
+shared spec builder), the list/detail response builder, the task-by-name
+dependency, and the Jinja index context.
+"""
+
 import logging
-from pathlib import Path
+from datetime import date
 from typing import Annotated, Any
 
-import yaml
-from fastapi import Body, Depends, Form
+from fastapi import Depends, Form
+from pydantic import Field, ValidationError
 
-from app.inventory.constants import DEFAULT_MYSQL_PORT
-from app.inventory.models import ServiceTypeEnum
-from app.sep.connectivity import (
-    CONNECTIVITY_META_HOST_KEY,
-    CONNECTIVITY_META_PORT_KEY,
-    CONNECTIVITY_META_SERVICE_TYPE_KEY,
-)
+from app.core.exceptions import HTTPUnprocessableEntityException
+from app.core.models import BaseCaseInsensitiveModel
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
-    get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
-from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.archives.models import (
-    ArchivesCreate,
-    ArchivesTaskResponse,
-    PurgeConfig,
-    PurgeConfigAll,
+from app.sep.plugins.archives.alerts import (
+    ALERT_DETAIL_BUILDER,
+    parse_archiver_purge_config,
 )
-from app.tasks.models import (
-    Task,
-    TaskBackendEnum,
-    TaskHistoryStatusEnum,
-    TaskOwner,
-    TaskWrite,
-)
+from app.sep.plugins.archives.models import ArchivesCreate
+from app.sep.plugins.archives.spec import build_archives_spec
+from app.sep.plugins.framework import make_task_dep
+from app.sep.plugins.framework.spec import assemble_envelope, resolve_refs
+from app.tasks.models import Task, TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
-_STATUS_FETCH_CONCURRENCY = 10
 
 
-async def _resolve_source_tables(
-    form: ArchivesCreate, inventory_api: InventoryAPI, service_id: int
-) -> tuple[dict[str, str], Any]:
-    """Resolve source database and table names.
+class ArchivesLegacyForm(BaseCaseInsensitiveModel):
+    """Parse the deprecated Archives HTML form's flat, urlencoded body.
 
-    Fetches source schema and table entities from inventory if IDs are provided,
-    otherwise uses manually-entered names.
+    The Jinja templates submit the historical flat field names (``source_db_id`` /
+    ``source_db_name`` / …) that predate the one-of collapse, so the derived
+    one-of ``ArchivesCreate`` cannot bind them directly. This model parses that
+    flat body; :func:`_map_legacy_to_create` folds it into ``ArchivesCreate`` for
+    the shared spec builder, keeping the legacy path byte-identical. Conditional
+    validation is enforced by the mapped ``ArchivesCreate``, not here.
 
-    :param form: The form data containing source specifications.
-    :type form: ArchivesCreate
-    :param inventory_api: The Inventory API client.
-    :type inventory_api: InventoryAPI
-    :param service_id: The source service ID.
-    :type service_id: int
-    :return: A tuple of resolved source data dict and schema object (or None).
-    :rtype: tuple[dict[str, str], Any]
+    :param alias: The task name (the ``ALIAS`` in the archiver config).
+    :param hostname: The executor host.
+    :param service_id: The source MySQL service id.
+    :param source_db_id: The source schema inventory id, or empty.
+    :param source_db_name: The manually-entered source schema name.
+    :param source_table_id: The source table inventory id, or empty.
+    :param source_table_name: The manually-entered source table name.
+    :param source_query: A custom source query.
+    :param where: The WHERE clause.
+    :param dest_table_id: The destination table inventory id, or empty.
+    :param dest_table_name: The manually-entered destination table name.
+    :param dest_file: The destination file path.
+    :param swap_drop: The archive type (0-2).
+    :param swp_table_suffix: The swap-table date suffix.
+    :param use_index: An index hint.
+    :param extra_args: Additional pt-archiver CLI arguments.
+    :param limit: The maximum rows per run.
+    :param sleep: The sleep between chunk operations.
+    :param disable_binlog: The disable-binlog flag (0/1).
+    :param disable_bulk_insert: The disable-bulk-insert flag (0/1).
+    :param delete_data: The delete-without-archiving flag (0/1).
+    :param dest_service_id: The destination service inventory id, or empty.
+    :param dest_host: The manual destination host.
+    :param dest_port: The manual destination port.
+    :param dest_db_id: The destination schema inventory id, or empty.
+    :param dest_db_name: The manually-entered destination schema name.
+    :param alert_on_fail: Whether to alert on failure.
     """
-    source_data = {}
-    schema = None
 
-    if form.source_db_id is not None:
-        schema = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SCHEMA,
-            form.source_db_id,
-            service_id=service_id,
-        )
-        source_data["source_db"] = schema.name
-    elif source_db := form.source_db_name.rstrip():
-        source_data["source_db"] = source_db
-        if source_table := form.source_table_name.rstrip():
-            source_data["source_table"] = source_table
-        return source_data, schema
+    alias: NonEmptyStr
+    hostname: NonEmptyStr
+    service_id: int
+    source_db_id: int | EmptyStrToNone = None
+    source_db_name: str = ""
+    source_table_id: int | EmptyStrToNone = None
+    source_table_name: str = ""
+    source_query: NonEmptyStr | None = None
+    where: NonEmptyStr | None = None
+    dest_table_id: int | EmptyStrToNone = None
+    dest_table_name: str = ""
+    dest_file: NonEmptyStr | None = None
+    swap_drop: int = Field(..., ge=0, le=2)
+    swp_table_suffix: date | None = None
+    use_index: NonEmptyStr | None = None
+    extra_args: NonEmptyStr | None = None
+    limit: int | EmptyStrToNone = None
+    sleep: int | EmptyStrToNone = None
+    disable_binlog: int | None = Field(None, ge=0, le=1)
+    disable_bulk_insert: int | None = Field(None, ge=0, le=1)
+    delete_data: int | None = Field(None, ge=0, le=1)
+    dest_service_id: int | EmptyStrToNone = None
+    dest_host: str | None = None
+    dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone = None
+    dest_db_id: int | EmptyStrToNone = None
+    dest_db_name: str = ""
+    alert_on_fail: bool = False
 
-    if form.source_table_id is not None:
-        source_table = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.TABLE,
-            form.source_table_id,
-            schema_id=schema.id,
-        )
-        source_data["source_table"] = source_table.name
 
-    return source_data, schema
+def _int_flag_to_bool(value: int | None) -> bool | None:
+    """Map a legacy integer flag (0/1/None) to the one-of model's tri-state bool.
 
-
-async def _resolve_destination_tables(
-    form: ArchivesCreate, inventory_api: InventoryAPI
-) -> dict[str, str]:
-    """Resolve destination table or file path.
-
-    Fetches destination table entity from inventory if ID is provided,
-    otherwise uses manually-entered name or file path.
-
-    :param form: The form data containing destination specifications.
-    :type form: ArchivesCreate
-    :param inventory_api: The Inventory API client.
-    :type inventory_api: InventoryAPI
-    :return: A dictionary with resolved destination data.
-    :rtype: dict[str, str]
+    :param value: The legacy integer flag (``0`` / ``1`` / ``None``).
+    :return: ``None`` when unset, else the boolean.
     """
-    dest_data = {}
-
-    if form.dest_table_id is not None:
-        dest_table = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.TABLE,
-            form.dest_table_id,
-        )
-        dest_data["dest_table"] = dest_table.name
-    elif dest_table := form.dest_table_name.rstrip():
-        dest_data["dest_table"] = dest_table
-    elif form.dest_file is not None:
-        dest_data["dest_file"] = form.dest_file
-
-    return dest_data
+    return None if value is None else bool(value)
 
 
-async def _resolve_destination_host_and_db(
-    form: ArchivesCreate, inventory_api: InventoryAPI
-) -> dict[str, Any]:
-    """Resolve destination host and database schema.
+def _collapse(ref_id: int | None, name: str) -> int | str | None:
+    """Collapse a legacy id/name pair into the one-of's single free-solo value.
 
-    Fetches destination service and schema from inventory if IDs are provided,
-    otherwise uses manually-entered host, port, and database name.
-
-    :param form: The form data containing destination specifications.
-    :type form: ArchivesCreate
-    :param inventory_api: The Inventory API client.
-    :type inventory_api: InventoryAPI
-    :return: A dictionary with resolved destination host/port/database data.
-    :rtype: dict[str, Any]
+    :param ref_id: The inventory id, or ``None`` when not selected.
+    :param name: The manually-entered name (``""`` when not entered).
+    :return: The id when present, else the trimmed name, else ``None``.
     """
-    dest_data = {}
-
-    if form.dest_service_id is not None:
-        dest_service = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SERVICE,
-            form.dest_service_id,
-            type=ServiceTypeEnum.MYSQL,
-        )
-        dest_data["dest_host"] = dest_service.node.address
-        dest_data["dest_port"] = dest_service.port or DEFAULT_MYSQL_PORT
-    elif dest_host := (form.dest_host or "").strip():
-        dest_data["dest_host"] = dest_host
-        dest_data["dest_port"] = form.dest_port or DEFAULT_MYSQL_PORT
-
-    if form.dest_db_id is not None:
-        dest_schema = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SCHEMA,
-            form.dest_db_id,
-            service_id=form.dest_service_id,
-        )
-        dest_data["dest_db"] = dest_schema.name
-    elif dest_db := form.dest_db_name.rstrip():
-        dest_data["dest_db"] = dest_db
-
-    return dest_data
+    if ref_id is not None:
+        return ref_id
+    return name.strip() or None
 
 
-async def _build_archives_payload(
-    form: ArchivesCreate,
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build the ``TaskWrite`` payload from a validated ``ArchivesCreate``.
+def _map_legacy_to_create(flat: ArchivesLegacyForm) -> ArchivesCreate:
+    """Fold the flat legacy form into the one-of ``ArchivesCreate``.
 
-    Shared core for both the form-bodied (Jinja2) and JSON-bodied (REST API)
-    entry points. SEP-1007: the two FastAPI dependency wrappers below remain
-    separate because mixing ``Form()`` and ``Body()`` parameter types in a
-    single route signature silently breaks request parsing; this helper holds
-    the body so the wrappers stay thin.
+    Builds the discriminated-union branches from the flat id/name pairs and
+    validates through ``ArchivesCreate`` so the legacy path enforces the same
+    conditional rules as the JSON path. A validation failure surfaces as a 422,
+    matching the framework's body-validation behaviour.
 
-    :param form: The validated form/body model for the Archives creation.
-    :type form: ArchivesCreate
-    :param inventory_api: The Inventory API to get entities from.
-    :type inventory_api: InventoryAPI
-    :return: A fully constructed ``TaskWrite`` object.
-    :rtype: TaskWrite
+    :param flat: The parsed legacy form body.
+    :return: The validated one-of create model.
+    :raises HTTPUnprocessableEntityException: When the folded model is invalid.
     """
-    service = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SERVICE,
-        form.service_id,
-        type=ServiceTypeEnum.MYSQL,
-    )
-
-    purge_item_data = {
-        **form.model_dump(
-            include={
-                "alias",
-                "source_query",
-                "where",
-                "swap_drop",
-                "swp_table_suffix",
-                "use_index",
-                "extra_args",
-                "limit",
-                "sleep",
-                "disable_binlog",
-                "disable_bulk_insert",
-                "delete_data",
-            },
-            by_alias=True,
-        ),
+    data: dict[str, Any] = {
+        "task_name": flat.alias,
+        "hostname": flat.hostname,
+        "service_id": flat.service_id,
+        "swap_drop": flat.swap_drop,
+        "swp_table_suffix": flat.swp_table_suffix,
+        "where": flat.where,
+        "use_index": flat.use_index,
+        "extra_args": flat.extra_args,
+        "limit": flat.limit,
+        "sleep": flat.sleep,
+        "disable_binlog": _int_flag_to_bool(flat.disable_binlog),
+        "disable_bulk_insert": _int_flag_to_bool(flat.disable_bulk_insert),
+        "delete_data": _int_flag_to_bool(flat.delete_data),
+        "alert_on_fail": flat.alert_on_fail,
     }
-
-    source_data, _ = await _resolve_source_tables(form, inventory_api, service.id)
-    purge_item_data.update(source_data)
-
-    dest_tables = await _resolve_destination_tables(form, inventory_api)
-    purge_item_data.update(dest_tables)
-
-    dest_host_db = await _resolve_destination_host_and_db(form, inventory_api)
-    purge_item_data.update(dest_host_db)
-
-    purge_config = PurgeConfig(
-        all=PurgeConfigAll(
-            source_host=service.node.address,
-            source_port=service.port or DEFAULT_MYSQL_PORT,
-        ),
-        purge_list=[purge_item_data],
-        alias=form.alias,
-    )
-    payload_path = Path(__file__).parent / "payload"
-    return TaskWrite(
-        name=form.alias,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.ARCHIVER,
-        data={
-            "task": "run-python",
-            "meta": {
-                "config": yaml.dump(
-                    purge_config.model_dump(
-                        mode="json", by_alias=True, exclude_none=True
-                    )
-                ),
-                "target": form.hostname,
-                "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
-                "_service_name": service.name,
-                CONNECTIVITY_META_HOST_KEY: service.node.address,
-                CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
-                CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
-            },
-            "payload": f"file://{payload_path}",
-        },
-        alert_on_fail=form.alert_on_fail,
-    )
+    if flat.source_query:
+        data["source"] = {"mode": "query", "source_query": flat.source_query}
+    else:
+        data["source"] = {
+            "mode": "table",
+            "source_db": _collapse(flat.source_db_id, flat.source_db_name),
+            "source_table": _collapse(flat.source_table_id, flat.source_table_name),
+        }
+    if flat.dest_file:
+        data["destination"] = {"mode": "file", "dest_file": flat.dest_file}
+    elif flat.dest_table_id is not None or flat.dest_table_name.strip():
+        data["destination"] = {
+            "mode": "table",
+            "dest_db": _collapse(flat.dest_db_id, flat.dest_db_name),
+            "dest_table": _collapse(flat.dest_table_id, flat.dest_table_name),
+        }
+    if flat.dest_service_id is not None:
+        data["host"] = {"mode": "service", "dest_service": flat.dest_service_id}
+    elif flat.dest_host and flat.dest_host.strip():
+        data["host"] = {
+            "mode": "manual",
+            "dest_host": flat.dest_host,
+            "dest_port": flat.dest_port,
+        }
+    try:
+        return ArchivesCreate.model_validate(data)
+    except ValidationError as exc:
+        raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
 
 
 async def build_archives_task_payload(
-    form: Annotated[ArchivesCreate, Form()],
+    form: Annotated[ArchivesLegacyForm, Form()],
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build the archive task payload from an HTML form body (Jinja2 path)."""
-    return await _build_archives_payload(form, inventory_api)
+    """Build the archive task payload from the legacy HTML form body (Jinja2 path).
+
+    Folds the flat form into the one-of ``ArchivesCreate`` and feeds the shared
+    pure :func:`~app.sep.plugins.archives.spec.build_archives_spec` through the
+    framework's ``assemble_envelope`` — the same pair the model-first JSON create
+    route uses — so a form-created task's payload stays byte-identical.
+
+    :param form: The parsed legacy form body.
+    :param inventory_api: The Inventory API to resolve the reference fields.
+    :return: A fully constructed ``TaskWrite`` object.
+    """
+    create = _map_legacy_to_create(form)
+    resolved = await resolve_refs(create, inventory_api)
+    return assemble_envelope(
+        build_archives_spec(create, resolved),
+        resolved,
+        name=create.task_name,
+        owner=TaskOwner.ARCHIVER,
+        alert_on_fail=create.alert_on_fail,
+        alert_detail_builder=ALERT_DETAIL_BUILDER,
+    )
 
 
 ArchivesGeneratedTask = Annotated[TaskWrite, Depends(build_archives_task_payload)]
 
 
-async def build_archives_api_task_payload(
-    form: Annotated[ArchivesCreate, Body()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build the archive task payload from a JSON body (REST API path)."""
-    return await _build_archives_payload(form, inventory_api)
-
-
-ArchivesApiGeneratedTask = Annotated[
-    TaskWrite, Depends(build_archives_api_task_payload)
-]
-
-
-async def get_archives_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Archives plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Archives plugin. If the task does not exist or is not
-    owned by Archives, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Archiver.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.ARCHIVER)
-
+get_archives_task = make_task_dep(TaskOwner.ARCHIVER)
 
 ArchivesTask = Annotated[Task, Depends(get_archives_task)]
-
-
-def _extract_latest_task_status(
-    histories: list[dict[str, Any]],
-) -> TaskHistoryStatusEnum | None:
-    """Return the latest known status from a task history payload."""
-    for history in histories:
-        if (status := history.get("status")) is not None:
-            return TaskHistoryStatusEnum(status)
-    return None
-
-
-async def get_archives_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for an archive task.
-
-    :param task_name: The name of the archive task.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
-    :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(f"/{task_name}/history/")
-    return _extract_latest_task_status(response["items"])
-
-
-def build_archives_api_task_response(
-    task: Task,
-    status: TaskHistoryStatusEnum | None = None,
-) -> ArchivesTaskResponse:
-    """Build an archive task response object for the JSON API.
-
-    :param task: The archive task retrieved from the Tasks API.
-    :type task: Task
-    :param status: The latest known execution status for the task.
-    :type status: TaskHistoryStatusEnum | None
-    :return: A validated archive task API response object.
-    :rtype: ArchivesTaskResponse
-    """
-    return ArchivesTaskResponse(
-        **task.model_dump(),
-        service_type=ServiceTypeEnum.MYSQL,
-        status=status,
-    )
-
-
-async def get_archives_api_task_responses(
-    tasks_api: TaskAPI,
-) -> list[ArchivesTaskResponse]:
-    """Retrieve archive task responses for the JSON API.
-
-    :param tasks_api: The TaskAPI instance used to query archive tasks.
-    :type tasks_api: TaskAPI
-    :return: The archive task responses enriched with service_type and status.
-    :rtype: list[ArchivesTaskResponse]
-    """
-    response = await tasks_api.get("/", params={"owner": TaskOwner.ARCHIVER.value})
-    tasks = [Task.model_validate(task) for task in response.get("items", [])]
-    sem = asyncio.Semaphore(_STATUS_FETCH_CONCURRENCY)
-
-    async def _bounded_status(task: Task) -> TaskHistoryStatusEnum | None:
-        async with sem:
-            return await get_archives_task_status(task.name, tasks_api)
-
-    task_statuses = await asyncio.gather(*(_bounded_status(task) for task in tasks))
-    return [
-        build_archives_api_task_response(
-            task,
-            status=task_status,
-        )
-        for task, task_status in zip(tasks, task_statuses, strict=True)
-    ]
 
 
 def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
@@ -398,21 +241,13 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
     Processes the task data to extract hostname and tables information.
 
     :param task: The task data retrieved from the Tasks API.
-    :type task: dict[str, Any]
     :return: A dictionary containing hostname and tables information.
-    :rtype: dict[str, Any]
     """
     data = task["data"]
     meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
-    purge_item = task_config["PURGE_LIST"][0]
-
-    source_db = purge_item.get("SOURCE_DB")
-    source_table = purge_item.get("SOURCE_TABLE")
-    dest_table = purge_item.get("DEST_TABLE")
-    source_query = purge_item.get("SOURCE_QUERY")
-    dest_file = purge_item.get("DEST_FILE")
-    dest_db = purge_item.get("DEST_DB")
+    # Shared parser (single source of truth for the PURGE_LIST field mapping);
+    # the tasks-service failure-alert builder uses the same function.
+    fields = parse_archiver_purge_config(meta["config"])
 
     result = {
         "hostname": meta["target"],
@@ -420,18 +255,15 @@ def get_archives_task_info(task: dict[str, Any]) -> dict[str, Any]:
         "last_updated_by": task.get("last_updated_by"),
     }
 
-    if source_db and source_table:
-        result["source_table"] = f"{source_db}.{source_table}"
-    if dest_table:
-        display_db = dest_db if dest_db else source_db
-        if display_db:
-            result["dest_table"] = f"{display_db}.{dest_table}"
-        else:
-            result["dest_table"] = dest_table
-    if source_query:
-        result["source_query"] = source_query
-    if dest_file:
-        result["dest_file"] = dest_file
+    if fields:
+        if fields.source:
+            result["source_table"] = fields.source
+        if fields.dest_table_display:
+            result["dest_table"] = fields.dest_table_display
+        if fields.source_query:
+            result["source_query"] = fields.source_query
+        if fields.dest_file:
+            result["dest_file"] = fields.dest_file
 
     return result
 
@@ -448,16 +280,11 @@ async def get_archives_index_context(
     execution status. Integrates this information into the default context for
     rendering in templates.
 
-    :param inventory_api: The Inventory API client for fetching service and schema data.
-    :type inventory_api: InventoryAPI
+    :param inventory_api: The Inventory API client for service and schema data.
     :param tasks_api: The TaskAPI client for fetching task data.
-    :type tasks_api: TaskAPI
-    :param context: The default context to be updated with Archives-specific information.
-    :type context: DefaultContext
+    :param context: The default context to update with Archives-specific data.
     :param executor_hosts_ctx: The executor hosts context for the Archives tasks.
-    :type executor_hosts_ctx: ExecutorHostsCtx
     :return: An updated context dictionary containing Archives-related data.
-    :rtype: dict[str, Any]
     """
     return await get_tasks_context(
         inventory_api,

@@ -16,14 +16,15 @@
 """Define routes for the restores plugin."""
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 import yaml
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
+from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -35,24 +36,25 @@ from app.sep.deps import (
     IsCsrfValidated,
     TaskAPI,
 )
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.plugins.mysql_backups.models import BackupType
 from app.sep.plugins.mysql_backups.restore.deps import (
-    get_restores_index_context,
     parse_restore_task_data,
     RestoreGeneratedTask,
+    RestoresIndexContext,
     RestoresTask,
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def restores_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_restores_index_context)],
+    context: RestoresIndexContext,
 ) -> HTMLResponse:
     """Homepage of restores plugin."""
     return templates.TemplateResponse(
@@ -133,11 +135,15 @@ async def restores_detail(
     ).as_template_list()
 
     try:
-        response = await inventory_api.get(
-            "/services/",
-            params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0},
+        context["services"] = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                "/services/",
+                params={
+                    "service_type": ServiceTypeEnum.MYSQL,
+                    **pagination.model_dump(),
+                },
+            )
         )
-        context["services"] = response["items"]
     except HTTPException:
         context["services"] = []
 

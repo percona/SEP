@@ -83,7 +83,7 @@ def build_backup_write_body(
 ) -> dict:
     """Build a valid backup-create JSON body.
 
-    ``upload`` is required and non-empty per the SEP-1061 explicit
+    ``upload`` is required and non-empty per the explicit
     MultiChoice contract; the default ``S3 + s3_bucket`` pair keeps the
     bidirectional validator happy. Tests assert on the contract by
     overriding ``upload`` and/or ``s3_bucket`` explicitly.
@@ -151,15 +151,10 @@ class TestListEndpoint:
         """The list endpoint returns the registered backups tasks."""
         task = build_backup_task()
         mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                {"items": [task], "total": 1, "offset": 0, "limit": 50},
-                {
-                    "items": [{"status": TaskHistoryStatusEnum.SUCCESS.value}],
-                    "total": 1,
-                    "offset": 0,
-                    "limit": 50,
-                },
-            ]
+            return_value={"items": [task], "total": 1, "offset": 0, "limit": 50}
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={task["name"]: TaskHistoryStatusEnum.SUCCESS.value}
         )
         response = test_client.get("/api/plugins/mysql_backups/")
         assert response.status_code == status.HTTP_200_OK
@@ -172,6 +167,9 @@ class TestListEndpoint:
         assert items[0]["name"] == task["name"]
         assert items[0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
         assert items[0]["backup_type"] == BackupType.MYDUMPER.value
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest", json={"names": [task["name"]]}
+        )
 
     def test_list_returns_empty(self, test_client, mock_task_api_dep):
         """Empty backup list returns an empty paginated envelope."""
@@ -205,7 +203,7 @@ class TestListEndpoint:
 
     @pytest.mark.parametrize(
         "query",
-        ["offset=-1", "limit=0", "limit=-5", "limit=99999"],
+        ["offset=-1", "limit=0", "limit=-5", "limit=51", "limit=99999"],
     )
     def test_list_rejects_out_of_range_pagination(
         self, test_client, mock_task_api_dep, query
@@ -371,9 +369,9 @@ class TestCreateEndpoint:
     ):
         """``upload=[]`` violates the explicit MultiChoice contract → 422.
 
-        Per the SEP-1061 codex review: the legacy bucket-inference path is
-        gone; submitting with no provider selected must surface 422 instead
-        of silently inferring S3 from ``s3_bucket``.
+        The legacy bucket-inference path is gone; submitting with no provider
+        selected must surface 422 instead of silently inferring S3 from
+        ``s3_bucket``.
         """
         mock_inventory_api_dep.get = AsyncMock(
             return_value=created_service.model_dump()

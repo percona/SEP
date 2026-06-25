@@ -15,13 +15,21 @@
 
 """Define tests for the app.sep.config module."""
 
+from datetime import timedelta
 from string import Template
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 from app.core.config import PMMSettings
-from app.sep.config import _DeprecatedPMMConfig, Plugin, SEPSettings, SessionOptions
+from app.sep.config import (
+    _DeprecatedPMMConfig,
+    AppDrainSettings,
+    Plugin,
+    SEPSettings,
+    SessionOptions,
+)
 
 PMM_ENDPOINT = "https://pmm.example.com"
 CORE_PMM_ENDPOINT = "https://core.example.com"
@@ -75,27 +83,6 @@ class TestFooterTemplate:
         tmpl = Template("custom $summary")
         settings = SEPSettings(FOOTER_TEMPLATE=tmpl)
         assert settings.FOOTER_TEMPLATE is tmpl
-
-    @patch("app.sep.config.__version__", "9.8.7")
-    @patch("app.sep.config.__summary__", "TestApp")
-    def test_footer_text_renders_default_template(self):
-        """Assert FOOTER_TEXT renders the default template with version and summary."""
-        settings = SEPSettings()
-        assert settings.FOOTER_TEXT == "TestApp 9.8.7"
-
-    @patch("app.sep.config.__version__", "1.2.3")
-    @patch("app.sep.config.__summary__", "MySEP")
-    def test_footer_text_renders_custom_template(self):
-        """Assert FOOTER_TEXT renders a custom template with substituted placeholders."""
-        settings = SEPSettings(FOOTER_TEMPLATE="$summary v$version (custom)")
-        assert settings.FOOTER_TEXT == "MySEP v1.2.3 (custom)"
-
-    @patch("app.sep.config.__version__", "0.0.1")
-    @patch("app.sep.config.__summary__", "App")
-    def test_footer_text_ignores_unknown_placeholders(self):
-        """Assert FOOTER_TEXT safely ignores unknown placeholders."""
-        settings = SEPSettings(FOOTER_TEMPLATE="$summary $unknown $version")
-        assert settings.FOOTER_TEXT == "App $unknown 0.0.1"
 
 
 class TestForwardDeprecatedPMMFields:
@@ -176,3 +163,38 @@ class TestPluginModuleNameDeprecation:
             plugin = Plugin(name="Backups", module_name=sibling_value)
         assert plugin.module_name == expected_module
         mock_logger.warning.assert_not_called()
+
+
+class TestPluginNameOptional:
+    """Test the MODULE_NAME-only ``Plugin`` shrink (``name`` optional)."""
+
+    def test_plugin_constructs_without_name(self) -> None:
+        """A MODULE_NAME-only entry validates with ``name`` absent."""
+        plugin = Plugin(module_name="checksums")
+        assert plugin.name is None
+
+    def test_name_absent_leaves_derived_metadata_empty(self) -> None:
+        """Without a name, ``uri_path``/``css_class`` stay empty for the registry."""
+        plugin = Plugin(module_name="checksums")
+        assert plugin.uri_path == ""
+        assert plugin.css_class == ""
+
+    def test_name_still_seeds_derived_metadata(self) -> None:
+        """A supplied name keeps driving the slugified defaults."""
+        plugin = Plugin(name="Snippet Manager", module_name="snippets")
+        assert plugin.uri_path == "/snippet-manager"
+        assert plugin.css_class == "snippet-manager"
+
+
+class TestAppDrainSettings:
+    """The drain reconciler settings reject a non-positive stale-task TTL."""
+
+    def test_default_ttl_is_one_hour(self) -> None:
+        """The default TTL is a positive duration."""
+        assert AppDrainSettings().stale_task_ttl == timedelta(hours=1)
+
+    @pytest.mark.parametrize("seconds", [0, -1, -3600])
+    def test_non_positive_ttl_rejected(self, seconds: int) -> None:
+        """A zero or negative TTL fails validation rather than pruning live rows."""
+        with pytest.raises(ValidationError, match="positive duration"):
+            AppDrainSettings(stale_task_ttl=timedelta(seconds=seconds))

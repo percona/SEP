@@ -451,6 +451,40 @@ def logging_set_host(alias: str | None, log_name: str) -> None:
     logging.getLogger(log_name).addFilter(ContextFilter())
 
 
+def upload_logging_setup(
+    logging_dir: str | Path,
+    log_name: str,
+    alias: str | None = None,
+    level: int = logging.INFO,
+) -> logging.Logger:
+    """Return a logger dedicated to upload messages with ``propagate=False``.
+
+    Idempotent: if a FileHandler for this log file already exists on the
+    named logger, return as-is. This matters because the binlog puller
+    loop and per-day provider log names cause this to be called repeatedly
+    with the same name; without the guard each call would stack another
+    FileHandler and another ContextFilter.
+    """
+    real_logging_dir = Path(logging_dir).expanduser().resolve()
+    real_logging_dir.mkdir(parents=True, exist_ok=True)
+    name = log_name.replace(".log", "")
+    logger = logging.getLogger(name)
+    logger.propagate = False
+    log_file = str(real_logging_dir / log_name)
+    if any(
+        isinstance(existing_handler, logging.FileHandler)
+        and getattr(existing_handler, "baseFilename", None) == log_file
+        for existing_handler in logger.handlers
+    ):
+        return logger
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(logging.Formatter(LOGGING_FORMAT))
+    logger.addHandler(file_handler)
+    logger.setLevel(level)
+    logging_set_host(alias, name)
+    return logger
+
+
 class LocalConfig:
 
     default_nowrite_timeout = 1800  # 30 minutes
@@ -1561,10 +1595,13 @@ class Upload(Backup):
         backup_code = settings["BACKUP_TYPE"]
         super().__init__(settings, backup_code, logger, native_upload)
         self.upload_type = upload_type
-        self.upload_provider = upload_provider(settings, logger)
+        logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
+        self.logger = upload_logging_setup(
+            logging_dir, "upload-binlog.log", self.alias, logger.level
+        )
+        self.upload_provider = upload_provider(settings, self.logger.level)
         self.last_uploaded_number = 0
         self.last_to_upload_number = 0
-        logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
         log_path = Path(logging_dir) / "upload-binlog.log"
         self.log_stream = log_path.open("a")
         self.backup_type = BACKUP_TYPES[self.backup_code]
@@ -1685,8 +1722,6 @@ class Upload(Backup):
                 self.logger.info("Removed tmpdir %s", tmpdir)
 
     def run(self) -> str:
-        logging_set_host(self.alias, "upload-binlog.log")
-
         if self.full_backup_path.is_dir():
             self._collect_paths()
 
@@ -1781,9 +1816,15 @@ class BinaryLogUpload(Upload):
 
 
 class S3UploadProvider:
+    """Upload to Amazon S3 bucket using boto3."""
 
-    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
-        self.logger = logger
+    def __init__(self, settings: dict[str, Any], level: int) -> None:
+        """Initialize S3UploadProvider.
+
+        :param settings: Backup/server settings.
+        :param level: Logging level.
+        :raises BackupError: If S3_BUCKET not set.
+        """
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.s3_bucket = settings.get("S3_BUCKET")
@@ -1792,6 +1833,7 @@ class S3UploadProvider:
         self.s3_storage_class = settings.get("S3_STORAGE_CLASS", "STANDARD")
         self.backup_type = settings.get("BACKUP_TYPE")
         self.skip_s3_safety_check = settings.get("SKIP_S3_SAFETY_CHECK", False)
+        self.upload_quiet = settings.get("UPLOAD_QUIET", False)
         self.logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
 
         if self.s3_bucket is None:
@@ -1799,10 +1841,11 @@ class S3UploadProvider:
             raise BackupError(msg)
 
         log_file = (
-            Path(self.logging_dir)
+            self.logging_dir
             / "s3cmd-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
         )
         self.log_stream = log_file.open("a")
+        self.logger = upload_logging_setup(self.logging_dir, log_file.name, self.alias, level)
 
         bucket_str = self.s3_bucket
         if bucket_str.startswith("s3://"):
@@ -1854,9 +1897,10 @@ class S3UploadProvider:
                     "ServerSideEncryption": "AES256",
                 }
 
-                self.logger.info(
-                    "Uploading %s to s3://%s/%s", local_path, self.bucket_name, key
-                )
+                if not self.upload_quiet:
+                    self.logger.info(
+                        "Uploading %s to s3://%s/%s", local_path, self.bucket_name, key
+                    )
                 try:
                     self.s3.upload_file(
                         str(local_path), self.bucket_name, key, ExtraArgs=extra_args
@@ -1893,22 +1937,23 @@ class S3UploadProvider:
 
 class RsyncUploadProvider:
 
-    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
-        self.logger = logger
+    def __init__(self, settings: dict[str, Any], level: int) -> None:
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.rsync_dir = settings.get("RSYNC_PATH")
         self.backup_type = settings.get("BACKUP_TYPE")
+        self.upload_quiet = settings.get("UPLOAD_QUIET", False)
         if self.rsync_dir is None:
             msg = "RSYNC_PATH is not set."
             raise BackupError(msg)
 
         logging_dir = settings.get("LOGGING_DIR", DEFAULT_LOGGING_DIR)
-        log_file = (
-            Path(logging_dir)
-            / "rsync-{}-{}-{}.log".format(self.alias, self.backup_type, time.strftime("%Y%m%d"))
+        log_name = "rsync-{}-{}-{}.log".format(
+            self.alias, self.backup_type, time.strftime("%Y%m%d")
         )
+        log_file = Path(logging_dir) / log_name
         self.log_stream = log_file.open("a")
+        self.logger = upload_logging_setup(logging_dir, log_name, self.alias, level)
 
     def upload(self, source_dir: str, dest_dir: str) -> str:
         if not Path(RSYNC_BIN).exists():
@@ -1929,7 +1974,7 @@ class RsyncUploadProvider:
 
         cmd = [
             RSYNC_BIN,
-            "-avH",
+            "-aH" if self.upload_quiet else "-avH",
             "--numeric-ids",
             "--no-owner",
             "--no-group",
@@ -1949,31 +1994,30 @@ class RsyncUploadProvider:
 class GSUploadProvider:
     """Google Cloud Storage upload."""
 
-    def __init__(self, settings: dict[str, Any], logger: logging.Logger) -> None:
+    def __init__(self, settings: dict[str, Any], level: int) -> None:
         """Initialize GSUploadProvider.
 
         :param settings: Backup/server settings.
-        :param logger: Logger instance.
+        :param level: Logging level.
         :raises BackupError: If GS_BUCKET not set.
         """
-        self.logger = logger
         host = settings.get("HOST", "localhost")
         self.alias = settings.get("ALIAS", host)
         self.gs_bucket = settings.get("GS_BUCKET")
         self.backup_type = settings.get('BACKUP_TYPE')
+        self.upload_quiet = settings.get("UPLOAD_QUIET", False)
         if self.gs_bucket is None:
             msg = 'GS_BUCKET is not set.'
             raise BackupError(msg)
 
         logging_dir = settings.get('LOGGING_DIR', DEFAULT_LOGGING_DIR)
         os.makedirs(logging_dir, exist_ok=True)
-        log_file = os.path.join(logging_dir, 'gcloud-storage-%s-%s-%s.log' %
-                                (self.alias,
-                                 self.backup_type,
-                                 time.strftime('%Y%m%d')
-                                )
-                               )
+        log_name = 'gcloud-storage-%s-%s-%s.log' % (
+            self.alias, self.backup_type, time.strftime('%Y%m%d'),
+        )
+        log_file = os.path.join(logging_dir, log_name)
         self.log_stream = open(log_file, 'a')
+        self.logger = upload_logging_setup(logging_dir, log_name, self.alias, level)
 
         bucket_str = self.gs_bucket
         if bucket_str.startswith("gs://"):
@@ -1997,6 +2041,8 @@ class GSUploadProvider:
         )
         dest_path = f"gs://{self.bucket_name}/{full_prefix}"
         gs_cmd = [GCLOUD_BIN, 'storage', 'rsync', '-r', str(source_path), dest_path]
+        if self.upload_quiet:
+            gs_cmd.append("--verbosity=error")
         self.logger.info('Uploading backup...')
         self.logger.info('Running: %s', ' '.join(gs_cmd))
 

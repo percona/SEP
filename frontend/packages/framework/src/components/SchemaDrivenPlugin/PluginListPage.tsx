@@ -32,7 +32,7 @@ import {
   usePluginTasks,
   type PluginSchema,
 } from '@sep/api';
-import { SchemaListView } from '../SchemaListView';
+import { SchemaListView, type RenderListColumnOverride } from '../SchemaListView';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
 interface PluginListPageProps {
@@ -46,6 +46,12 @@ interface PluginListPageProps {
   hideCreate?: boolean;
   /** When true, hide entity tabs (nodes / services / …). */
   hideEntityTabs?: boolean;
+  /**
+   * When true, suppress the generic Schedules button. Opt-in for nested mounts
+   * (e.g. inventory) that render their own scheduling button with a correct
+   * relative target; the default still renders the button.
+   */
+  hideScheduleButton?: boolean;
   /** When set, overrides ``useParams().entityName`` (nested routes that use a fixed segment like ``nodes``). */
   entityNameOverride?: string;
   /**
@@ -55,6 +61,8 @@ interface PluginListPageProps {
   rowClickHref?: (row: Record<string, unknown>) => string;
   /** When true, list views that declare an ``actions`` column show row delete controls. */
   allowListEntityDelete?: boolean;
+  /** Optional per-cell override for non-`actions` columns (falls back to `formatCellValue`). */
+  renderListColumn?: RenderListColumnOverride;
 }
 
 export function PluginListPage({
@@ -65,9 +73,11 @@ export function PluginListPage({
   listOnly = false,
   hideCreate = false,
   hideEntityTabs = false,
+  hideScheduleButton = false,
   entityNameOverride,
   rowClickHref,
   allowListEntityDelete = false,
+  renderListColumn,
 }: PluginListPageProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
@@ -175,7 +185,7 @@ export function PluginListPage({
         </Box>
         {!listOnly && (
           <Stack direction="row" spacing={1}>
-            {schema.capabilities?.scheduling && (
+            {!hideScheduleButton && schema.capabilities?.scheduling && (
               <Button
                 variant="outlined"
                 startIcon={<ScheduleIcon />}
@@ -216,6 +226,7 @@ export function PluginListPage({
         listView={listView}
         data={rows}
         isLoading={isLoading}
+        pluginName={pluginName}
         onRowClick={
           listOnly
             ? undefined
@@ -236,6 +247,7 @@ export function PluginListPage({
         }
         onDeleteRow={onDeleteRow}
         deletingRowId={deleteEntity.isPending ? deleteEntity.variables : null}
+        renderListColumn={renderListColumn}
       />
     </Box>
   );

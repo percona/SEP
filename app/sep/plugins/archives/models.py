@@ -15,153 +15,351 @@
 
 """Define models for the Archives plugin."""
 
-from datetime import date, datetime
-from typing import Annotated, Any
+from datetime import date
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.archives.schema import archives_schema
-from app.sep.plugins.framework import ConnectivityWarning
-from app.sep.plugins.framework.rules import (
-    apply_conditional_rules,
-    ConditionalRulesModel,
+from app.sep.plugins.archives.constants import SwapDropEnum
+from app.sep.plugins.framework import (
+    AppFormModel,
+    Choices,
+    Forbidden,
+    FormRules,
+    HostRef,
+    Requires,
+    SchemaRef,
+    ServiceRef,
+    TableRef,
+    Ui,
 )
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.sep.plugins.framework.form_dsl import Hidden
+from app.sep.plugins.framework.rules import (
+    F,
+    FailRule,
+)
 
 
-@apply_conditional_rules(archives_schema)
-class ArchivesCreate(ConditionalRulesModel, BaseCaseInsensitiveModel):
-    """Represent an Archives creation form with proper case-insensitive fields.
+def _dsn_safe(value: str | None) -> str | None:
+    """Reject DSN delimiters (``,`` / ``=``) that could split a pt-archiver DSN.
 
-    :param alias: The alias name for the task being created. This name is used for
-        identifying the task in the backend.
-    :type alias: NonEmptyStr
-    :param hostname: The source hostname where the task will be executed.
-    :type hostname: NonEmptyStr
-    :param service_id: The Inventory ID of the database service to connect to.
-    :type service_id: int
-    :param source_db_id: The source database schema ID from which data will be purged.
-        Must be None if source_query is set.
-    :type source_db_id: int | EmptyStrToNone
-    :param source_db_name: The name of the source database schema.
-    :type source_db_name: str
-    :param source_table_id: The source table ID within the specified schema from which
-        data will be purged. Must be None if source_query is set.
-    :type source_table_id: int | EmptyStrToNone
-    :param source_table_name: The name of the source table.
-    :type source_table_name: str
-    :param source_query: Optional; a query defining the source data to be purged.
-        Must be None if both source_db_id and source_table_id are set.
-    :type source_query: NonEmptyStr | None
-    :param where: Optional; The WHERE condition that defines which data will be purged
-        from the source table. Must be None when swap_drop is SWAP_DROP.
-    :type where: NonEmptyStr | None
-    :param dest_table_id: Optional; The destination table ID.
-        Must be None if dest_file is set.
-    :type dest_table_id: int | EmptyStrToNone
-    :param dest_table_name: The name of the destination table.
-    :type dest_table_name: str
-    :param dest_file: Optional; The destination file path.
-        Must be None if dest_table_id is set.
-    :type dest_file: NonEmptyStr | None
-    :param swap_drop: Integer field (0-2) indicating the drop behavior.
-        If 1, both dest_table_id and dest_file must be None.
-    :type swap_drop: int
-    :param swp_table_suffix: Optional; Date suffix for the swap table.
-    :type swp_table_suffix: date | None
-    :param use_index: Optional; The index to be used for optimizing the query.
-    :type use_index: NonEmptyStr | None
-    :param extra_args: Optional; Additional arguments for the archive task.
-    :type extra_args: NonEmptyStr | None
-    :param limit: Optional; The maximum number of records to be processed.
-    :type limit: int | EmptyStrToNone
-    :param sleep: Optional; Sleep duration between operations for rate limiting.
-    :type sleep: int | EmptyStrToNone
-    :param disable_binlog: Optional integer flag (0 or 1) to disable binary logging.
-        ``None`` means the checkbox was left unset (binary logging stays enabled).
-    :type disable_binlog: int | None
-    :param disable_bulk_insert: Optional integer flag (0 or 1) to disable bulk
-        insert. ``None`` means the checkbox was left unset / default behavior is
-        used; 0 means bulk insert remains enabled, and 1 means bulk insert is
-        disabled.
-    :type disable_bulk_insert: int | None
-    :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
-        If set, dest_table and dest_file must not be set, and vice versa.
-    :type delete_data: int | None
-    :param dest_service_id: Optional; The Inventory ID of the destination database service.
-    :type dest_service_id: int | EmptyStrToNone
-    :param dest_host: Optional; The hostname of the destination database.
-    :type dest_host: str | None
-    :param dest_port: Optional; The port of the destination database (1-65535).
-        The ``ge``/``le`` range constraint is scoped to the ``int`` arm so it
-        does not run against ``None`` when ``EmptyStrToNone`` coerces an empty
-        form input.
-    :type dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone
-    :param dest_db_id: Optional; The destination database schema ID.
-    :type dest_db_id: int | EmptyStrToNone
-    :param dest_db_name: The name of the destination database schema.
-    :type dest_db_name: str
-    :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-    :type alert_on_fail: bool
+    :param value: The destination host or schema name to validate.
+    :return: The value unchanged when it carries no delimiter.
+    :raises ValueError: When the value contains a ``,`` or ``=`` character.
+    """
+    if value and ("," in value or "=" in value):
+        raise ValueError(
+            "Values cannot contain ',' or '=' characters (DSN delimiters)."
+        )
+    return value
+
+
+class SourceByTable(BaseModel):
+    """Represent a schema+table source selection (collapsed free-solo references).
+
+    :param mode: The one-of discriminator (``"table"``).
+    :param source_db: The source schema — an inventory id or a free-typed name.
+    :param source_table: The source table — an inventory id or a free-typed name.
     """
 
-    alias: NonEmptyStr
-    hostname: NonEmptyStr
-    service_id: int
-    source_db_id: int | EmptyStrToNone = None
-    source_db_name: str = ""
-    source_table_id: int | EmptyStrToNone = None
-    source_table_name: str = ""
-    source_query: NonEmptyStr | None = None
-    where: NonEmptyStr | None = None
-    dest_table_id: int | EmptyStrToNone = None
-    dest_table_name: str = ""
-    dest_file: NonEmptyStr | None = None
-    swap_drop: int = Field(..., ge=0, le=2)
-    swp_table_suffix: date | None = None
-    use_index: NonEmptyStr | None = None
-    extra_args: NonEmptyStr | None = None
-    limit: int | EmptyStrToNone = None
-    sleep: int | EmptyStrToNone = None
-    disable_binlog: int | None = Field(
-        None, ge=0, le=1, description="Optional flag to disable binary logging."
-    )
-    disable_bulk_insert: int | None = Field(
-        None, ge=0, le=1, description="Optional flag to disable bulk insert."
-    )
-    delete_data: int | None = Field(
-        None, ge=0, le=1, description="Optional flag to delete data."
-    )
-    dest_service_id: int | EmptyStrToNone = None
-    dest_host: str | None = None
-    dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone = None
-    dest_db_id: int | EmptyStrToNone = None
-    dest_db_name: str = ""
-    alert_on_fail: bool = False
+    mode: Literal["table"] = "table"
+    source_db: Annotated[
+        int | NonEmptyStr,
+        SchemaRef(allow_custom=True),
+        Ui(
+            label="Source Schema",
+            section="Source",
+            depends_on="service_id",
+            description="Schema holding the source table; pick from inventory or type a name.",
+        ),
+    ]
+    source_table: Annotated[
+        int | NonEmptyStr,
+        TableRef(allow_custom=True),
+        Ui(
+            label="Source Table",
+            section="Source",
+            depends_on="source.source_db",
+            description="Table whose rows are archived; pick from inventory or type a name.",
+        ),
+    ]
 
-    @field_validator("dest_host", "dest_db_name")
+
+class SourceByQuery(BaseModel):
+    """Represent a custom-query source selection.
+
+    :param mode: The one-of discriminator (``"query"``).
+    :param source_query: The query defining the rows to archive.
+    """
+
+    mode: Literal["query"] = "query"
+    source_query: Annotated[
+        NonEmptyStr,
+        Ui(
+            label="Source Query",
+            section="Source",
+            description="Custom query defining source rows.",
+        ),
+    ]
+
+
+class DestByTable(BaseModel):
+    """Represent a table destination (collapsed free-solo references).
+
+    :param mode: The one-of discriminator (``"table"``).
+    :param dest_db: The destination schema — an inventory id, a free-typed name, or
+        ``None`` to reuse the source schema.
+    :param dest_table: The destination table — an inventory id or a free-typed name.
+    """
+
+    mode: Literal["table"] = "table"
+    dest_db: Annotated[
+        int | NonEmptyStr | None,
+        SchemaRef(allow_custom=True),
+        Ui(
+            label="Destination Schema",
+            section="Destination",
+            depends_on="host.dest_service",
+            description="Destination schema; leave empty to reuse the source schema.",
+        ),
+    ] = None
+    dest_table: Annotated[
+        int | NonEmptyStr,
+        TableRef(allow_custom=True),
+        Ui(
+            label="Destination Table",
+            section="Destination",
+            depends_on="destination.dest_db",
+            description="Table the archived rows are written to.",
+        ),
+    ]
+
+    @field_validator("dest_db")
     @classmethod
-    def validate_no_dsn_delimiters(cls, v: str | None) -> str | None:
-        """Validate that destination fields do not contain DSN delimiters.
+    def _dest_db_dsn_safe(cls, value: int | str | None) -> int | str | None:
+        """Reject DSN delimiters in a free-typed destination schema name.
 
-        Prevents pt-archiver DSN injection by rejecting commas and equals signs
-        which could split or modify the DSN key=value pairs. Applied to both
-        ``dest_host`` and ``dest_db_name`` fields.
-
-        :param v: The field value to validate.
-        :type v: str | None
-        :return: The validated value if no delimiters are present.
-        :rtype: str | None
-        :raises ValueError: If the value contains ``,`` or ``=`` characters.
+        :param value: The submitted destination-schema value (id, name, or None).
+        :return: The value unchanged when it carries no DSN delimiter.
         """
-        if v and ("," in v or "=" in v):
-            raise ValueError(
-                "Values cannot contain ',' or '=' characters (DSN delimiters)."
+        return _dsn_safe(value) if isinstance(value, str) else value
+
+
+class DestByFile(BaseModel):
+    """Represent a file destination.
+
+    :param mode: The one-of discriminator (``"file"``).
+    :param dest_file: The file path the archived rows are written to.
+    """
+
+    mode: Literal["file"] = "file"
+    dest_file: Annotated[
+        NonEmptyStr,
+        Ui(
+            label="Destination File",
+            section="Destination",
+            description="File path for archiving rows instead of a table.",
+        ),
+    ]
+
+
+class HostByService(BaseModel):
+    """Represent a destination host taken from an inventory service.
+
+    :param mode: The one-of discriminator (``"service"``).
+    :param dest_service: The inventory id of the destination MySQL service; its
+        node address and port supply the destination host and port.
+    """
+
+    mode: Literal["service"] = "service"
+    dest_service: Annotated[
+        int,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(
+            label="Destination Service",
+            section="Destination Host",
+            description="Inventory lookup for the destination host and port.",
+        ),
+    ]
+
+
+class HostManual(BaseModel):
+    """Represent a manually-entered destination host.
+
+    :param mode: The one-of discriminator (``"manual"``).
+    :param dest_host: The destination host address.
+    :param dest_port: The destination port (1-65535); defaults to the MySQL port.
+    """
+
+    mode: Literal["manual"] = "manual"
+    dest_host: Annotated[
+        NonEmptyStr,
+        Ui(
+            label="Destination Host",
+            section="Destination Host",
+            description="Manual destination host address.",
+        ),
+    ]
+    dest_port: Annotated[
+        int | None,
+        Field(ge=1, le=65535),
+        Ui(
+            label="Destination Port",
+            section="Destination Host",
+            description="Destination port (1-65535); defaults to the MySQL port.",
+        ),
+    ] = None
+
+    @field_validator("dest_host")
+    @classmethod
+    def _dest_host_dsn_safe(cls, value: str) -> str:
+        """Reject DSN delimiters in the manual destination host.
+
+        :param value: The submitted manual destination-host address.
+        :return: The value unchanged when it carries no DSN delimiter.
+        """
+        return _dsn_safe(value) or value
+
+
+_ARCHIVES_FORM_RULES = FormRules(
+    fail_when=(
+        # Only Purge Only is supported. Rejects any crafted payload (or a resubmitted
+        # pre-existing SWAP_DROP / SWAP_ARCHIVE_DROP task) that bypasses the UI.
+        FailRule(
+            fail_when=F("swap_drop") != SwapDropEnum.PURGE_ONLY,
+            error_fields=["swap_drop"],
+            message="Not available yet. Only Purge Only is currently supported.",
+        ),
+    ),
+)
+
+
+class ArchivesCreate(AppFormModel):
+    """Represent an Archives creation form as a model-first ``AppFormModel``.
+
+    Source, destination, and destination-host are discriminated-union one-of groups;
+    the schema / table / database references are collapsed free-solo fields
+    (``int`` inventory id or free-typed ``str`` name). The ``alert_on_fail``
+    capability control is inherited from :class:`AppFormModel`.
+
+    :param task_name: The task name (and the ``ALIAS`` in the archiver config).
+    :param hostname: The executor host the task runs on.
+    :param service_id: The inventory id of the source MySQL service (the host whose
+        rows are archived; the connectivity probe targets it).
+    :param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.
+    :param source: The source rows, by schema+table or by query.
+    :param destination: The destination table or file; ``None`` when ``delete_data``.
+    :param host: The destination host, by service or manual entry; ``None`` reuses
+        the source host.
+    :param swp_table_suffix: The swap-table date suffix (SWAP_ARCHIVE_DROP only).
+    :param where: The WHERE clause filtering rows; required unless SWAP_DROP.
+    :param use_index: An index hint to optimise the query.
+    :param extra_args: Additional pt-archiver CLI arguments.
+    :param limit: The maximum rows per archiver run.
+    :param sleep: The sleep duration between chunk operations (seconds).
+    :param disable_binlog: Whether to disable binary logging for the operation.
+    :param disable_bulk_insert: Whether to disable the bulk-insert optimisation.
+    :param delete_data: Whether to delete source rows without archiving them.
+    """
+
+    __form_rules__ = _ARCHIVES_FORM_RULES
+
+    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
+    hostname: Annotated[
+        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
+    ]
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
+        Ui(label="Source Service", section="Task"),
+    ]
+    swap_drop: Annotated[
+        int,
+        Field(ge=0, le=2),
+        Choices(
+            options=(
+                (SwapDropEnum.PURGE_ONLY, "Purge Only"),
+                (SwapDropEnum.SWAP_DROP, "Swap & Drop"),
+                (SwapDropEnum.SWAP_ARCHIVE_DROP, "Swap Archive & Drop"),
             )
-        return v
+        ),
+        Ui(
+            label="Archive Type",
+            section="Archive Type",
+            default=SwapDropEnum.PURGE_ONLY,
+        ),
+    ] = SwapDropEnum.PURGE_ONLY
+    source: Annotated[
+        SourceByTable | SourceByQuery,
+        Field(discriminator="mode"),
+        Ui(label="Source", section="Source"),
+    ]
+    destination: Annotated[
+        DestByTable | DestByFile | None,
+        Field(discriminator="mode"),
+        Ui(label="Destination", section="Destination"),
+    ] = None
+    host: Annotated[
+        HostByService | HostManual | None,
+        Field(discriminator="mode"),
+        Ui(label="Destination Host", section="Destination Host"),
+    ] = None
+    # Kept on the model for the config/legacy-form mapping, but hidden from the
+    # schema: it only applies to SWAP_ARCHIVE_DROP, which the swap_drop rule rejects
+    # while only Purge Only is supported.
+    swp_table_suffix: Annotated[date | None, Hidden()] = None
+    where: Annotated[
+        NonEmptyStr | None,
+        Ui(label="WHERE Clause", section="Options"),
+        Requires(when=F("swap_drop") != SwapDropEnum.SWAP_DROP),
+        Forbidden(when=F("swap_drop") == SwapDropEnum.SWAP_DROP),
+    ] = None
+    use_index: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Use Index", section="Advanced")
+    ] = None
+    extra_args: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Extra Args", section="Advanced")
+    ] = None
+    limit: Annotated[int | None, Field(ge=1), Ui(label="Limit", section="Advanced")] = (
+        None
+    )
+    sleep: Annotated[
+        int | None, Field(ge=0), Ui(label="Sleep (s)", section="Advanced")
+    ] = None
+    disable_binlog: Annotated[
+        bool | None, Ui(label="Disable Binlog", section="Advanced")
+    ] = None
+    disable_bulk_insert: Annotated[
+        bool | None, Ui(label="Disable Bulk Insert", section="Advanced")
+    ] = None
+    delete_data: Annotated[
+        bool | None, Ui(label="Delete Without Archiving", section="Advanced")
+    ] = None
+
+    @model_validator(mode="after")
+    def _check_destination_presence(self) -> "ArchivesCreate":
+        """Require a destination for an archiving run; forbid one when deleting.
+
+        The destination one-of is a group, so this self-vs-``delete_data``
+        invariant is enforced here rather than as a field-scoped rule.
+
+        :return: The validated model.
+        :raises ValueError: When a destination is missing for an archiving run, or
+            present alongside ``delete_data``.
+        """
+        if self.delete_data and self.destination is not None:
+            raise ValueError(
+                "A destination cannot be set when deleting without archiving."
+            )
+        if not self.delete_data and self.destination is None:
+            raise ValueError(
+                "A destination table or file is required unless deleting without "
+                "archiving."
+            )
+        return self
 
 
 class PurgeConfigAll(BaseCaseInsensitiveModel):
@@ -200,7 +398,7 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
     :param dest_file: Optional; The destination file path.
         Must be None if dest_table_id is set.
     :type dest_file: NonEmptyStr | None
-    :param swp_table_suffix: Optional; Date suffix for the swap table.
+    :param swap_drop: Integer field (0-2) indicating the swap/drop behavior.
     :type swap_drop: int
     :param swp_table_suffix: Optional; Date suffix for the swap table.
     :type swp_table_suffix: date | None
@@ -219,8 +417,9 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
         insert. If ``None``, the setting is left unset so existing/default behavior is
         preserved.
     :type disable_bulk_insert: int | None
-    :param delete_data: Optional integer flag (0 or 1) to indicate data deletion.
-        If set, dest_table and dest_file must not be set, and vice versa.
+    :param delete_data: Optional integer flag (0 or 1). When set to 1, source
+        rows are deleted without being written to any destination; dest_table
+        and dest_file must not be set, and vice versa.
     :type delete_data: int | None
     :param dest_host: Optional; The destination host address.
     :type dest_host: NonEmptyStr | None
@@ -256,7 +455,14 @@ class PurgeConfigItem(BaseCaseInsensitiveModel):
         description="Optional flag to disable bulk insert; set to 0 or 1",
     )
     delete_data: int | None = Field(
-        None, ge=0, le=1, description="Optional flag to delete data."
+        None,
+        ge=0,
+        le=1,
+        title="Delete Without Archiving",
+        description=(
+            "Delete source rows without writing them to any destination; "
+            "the destination table/file fields must be left unset."
+        ),
     )
     dest_host: NonEmptyStr | None = None
     dest_port: int | None = None
@@ -276,71 +482,3 @@ class PurgeConfig(BaseCaseInsensitiveModel):
 
     all: PurgeConfigAll
     purge_list: list[PurgeConfigItem]
-
-
-class ArchivesTaskResponse(BaseModel):
-    """Represent an Archives task in API responses.
-
-    Lean Pydantic projection of ``app.tasks.models.Task`` carrying only the
-    fields the React frontend consumes. Defined locally (not inherited from
-    ``Task``) to keep relationship attributes (``history``) out of the
-    serialised payload.
-
-    :param id: The task primary key.
-    :type id: int | None
-    :param name: The task name.
-    :type name: str
-    :param backend: The execution backend.
-    :type backend: TaskBackendEnum
-    :param owner: The plugin that owns the task.
-    :type owner: TaskOwner
-    :param data: Raw task data (``task``/``meta``/``payload``).
-    :type data: dict[str, Any]
-    :param is_template: Whether the task is a template definition.
-    :type is_template: bool
-    :param protected: Whether the task is protected from deletion.
-    :type protected: bool
-    :param alert_on_fail: Whether the task triggers an alert on failure.
-    :type alert_on_fail: bool
-    :param created_at: Creation timestamp.
-    :type created_at: datetime | None
-    :param updated_at: Last update timestamp.
-    :type updated_at: datetime | None
-    :param created_by: User that created the task.
-    :type created_by: str | None
-    :param last_updated_by: User that last updated the task.
-    :type last_updated_by: str | None
-    :param service_type: The database service type the task targets.
-    :type service_type: ServiceTypeEnum | None
-    :param status: The latest known execution status from task history.
-    :type status: TaskHistoryStatusEnum | None
-    """
-
-    id: int | None = None
-    name: str
-    backend: TaskBackendEnum
-    owner: TaskOwner
-    data: dict[str, Any]
-    is_template: bool = False
-    protected: bool = False
-    alert_on_fail: bool = False
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    created_by: str | None = None
-    last_updated_by: str | None = None
-    service_type: ServiceTypeEnum | None = None
-    status: TaskHistoryStatusEnum | None = None
-
-
-class ArchivesCreateResponse(ArchivesTaskResponse):
-    """Represent the response body for ``POST /api/plugins/archives/``.
-
-    Extends :class:`ArchivesTaskResponse` with a connectivity-warning field
-    surfaced when the post-creation database probe fails or is skipped.
-
-    :param connectivity_warning: ``None`` when the probe passes, was opted
-        out, or the task meta lacks connectivity keys; populated otherwise.
-    :type connectivity_warning: ConnectivityWarning | None
-    """
-
-    connectivity_warning: ConnectivityWarning | None = None

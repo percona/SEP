@@ -19,9 +19,11 @@ from urllib.parse import urlencode
 
 import pytest
 
+from app.sep.plugins.dipper.models import DipperScript
 from app.sep.plugins.framework.schema import (
     BoolField,
     ChoiceField,
+    DateTimeField,
     HostField,
     IntegerField,
     ScriptPreviewField,
@@ -29,7 +31,17 @@ from app.sep.plugins.framework.schema import (
 )
 from app.sep.plugins.snippets.schema import (
     build_snippet_schema,
+    evaluate_visibility_gates,
+    field_for,
     SNIPPETS_PLUGIN_SCHEMA,
+)
+from app.sep.snippets.models.meta import (
+    SnippetMetaParameter,
+    SnippetMetaParameterType,
+)
+from app.sep.snippets.models.snippet import (
+    EXECUTOR_HOSTS_INPUT_NAME,
+    Snippet,
 )
 
 
@@ -228,3 +240,311 @@ async def test_per_snippet_schema_maps_choices_to_choice_field(create_snippet):
     assert values == ["info", "debug"]
     labels = [choice.label for choice in field.choices]
     assert labels == ["Info", "debug"]
+
+
+class TestVisibilityGates:
+    """Test that field_for lowers visibility conditions onto forbidden gates.
+
+    The React renderer hides the field and drops its value; the gates are also
+    enforced server-side on the execute paths (see ``evaluate_visibility_gates``
+    and the execute-path tests), which reject a directly-submitted hidden value.
+    """
+
+    def test_no_condition_leaves_forbidden_none(self):
+        """A parameter without a visibility condition carries no forbidden gate."""
+        field = field_for(SnippetMetaParameter(name="start", type="str"))
+        assert field.forbidden is None
+
+    def test_visible_when_not_truthy_lowers_to_truthy_gate(self):
+        """visible_when_not (truthiness) forbids the field when the ref is truthy."""
+        field = field_for(
+            SnippetMetaParameter(name="start", type="str", visible_when_not="list")
+        )
+        assert len(field.forbidden) == 1
+        assert field.forbidden[0].when.to_dict() == {"truthy": "list"}
+
+    def test_visible_when_truthy_lowers_to_negated_gate(self):
+        """visible_when (truthiness) forbids the field when the ref is NOT truthy."""
+        field = field_for(
+            SnippetMetaParameter(name="start", type="str", visible_when="list")
+        )
+        assert len(field.forbidden) == 1
+        assert field.forbidden[0].when.to_dict() == {"not": {"truthy": "list"}}
+
+    def test_visible_when_not_equals_lowers_to_equals_gate(self):
+        """visible_when_not with equals forbids the field on an equality match."""
+        field = field_for(
+            SnippetMetaParameter(
+                name="region",
+                type="str",
+                visible_when_not={"parameter": "mode", "equals": "advanced"},
+            )
+        )
+        assert field.forbidden[0].when.to_dict() == {"equals": {"mode": "advanced"}}
+
+    def test_condition_on_choice_field(self):
+        """A choice-typed parameter still receives the forbidden gate."""
+        field = field_for(
+            SnippetMetaParameter(
+                name="region",
+                type="str",
+                choices=["us", "eu"],
+                visible_when_not="list",
+            )
+        )
+        assert field.forbidden[0].when.to_dict() == {"truthy": "list"}
+
+
+@pytest.mark.asyncio
+async def test_build_snippet_schema_with_gated_field_validates(create_snippet):
+    """A gated, identifier-safe parameter builds a valid PluginSchema.
+
+    Regression guard: ``build_snippet_schema`` constructs a ``PluginSchema``,
+    whose validator folds each gated field's own name into the gate's reference
+    set and rejects hyphenated names. This exercises that full construction so a
+    gate that produces an invalid schema fails here rather than as a 500 at
+    request time.
+    """
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.meta = {
+        **snippet.meta,
+        "parameters": [
+            {"name": "list", "type": "bool", "label": "List services"},
+            {
+                "name": "start",
+                "type": "str",
+                "label": "Start",
+                "visible_when_not": "list",
+            },
+        ],
+    }
+    snippet.__dict__.pop("validated_parameters", None)
+
+    schema = build_snippet_schema(snippet)
+
+    parameters_section = next(s for s in schema.forms if s.title == "Parameters")
+    start_field = next(f for f in parameters_section.fields if f.name == "start")
+    assert start_field.forbidden[0].when.to_dict() == {"truthy": "list"}
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_omits_hidden_parameter(create_snippet):
+    """A ``hidden`` parameter is excluded from the generic snippet schema.
+
+    ``hidden`` is a generic snippet primitive, so the schema-driven snippets form
+    must omit it just as ``_to_form`` and the Dipper schema builder do — while a
+    sibling non-hidden parameter still renders.
+    """
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.__dict__.pop("validated_parameters", None)
+    snippet.meta = {
+        **snippet.meta,
+        "parameters": [
+            {"name": "pmmserver", "type": "str", "label": "PMM server"},
+            {"name": "apikey", "type": "str", "label": "API key", "hidden": True},
+        ],
+    }
+    snippet.__dict__.pop("validated_parameters", None)
+
+    schema = build_snippet_schema(snippet)
+
+    field_names = {field.name for section in schema.forms for field in section.fields}
+    assert "pmmserver" in field_names
+    assert "apikey" not in field_names
+
+
+def _snippet_with_params(params: list[dict]) -> Snippet:
+    """Return an unpersisted snippet carrying ``params`` as its meta parameters."""
+    snippet = Snippet(filename="gated.sh", size=20, md5_digest="a" * 32)
+    snippet.meta = {**snippet.meta, "parameters": params}
+    return snippet
+
+
+def _exec_args(snippet: Snippet, wire: dict):
+    """Validate ``wire`` (keyed by parameter wire/alias names) into exec args."""
+    return snippet.get_execution_model().model_validate(
+        {EXECUTOR_HOSTS_INPUT_NAME: "host1", **wire}
+    )
+
+
+class TestEvaluateVisibilityGates:
+    """Direct coverage of the server-side gate evaluator.
+
+    ``evaluate_visibility_gates`` is the security backstop: it rejects a value
+    submitted directly for a parameter the client would have hidden. Generated
+    execution models name fields with opaque identifiers and expose each
+    parameter only through its wire alias, so evaluation MUST run against the
+    ``by_alias`` view — these tests pin that and the present/absent boundaries.
+    """
+
+    _LIST_START = [
+        {"name": "list", "type": "bool", "label": "List"},
+        {"name": "start", "type": "str", "label": "Start", "visible_when_not": "list"},
+    ]
+
+    def test_gateless_snippet_returns_empty(self) -> None:
+        """A snippet with no visibility gate never reports a failure."""
+        snippet = _snippet_with_params(
+            [{"name": "name", "type": "str", "label": "Name"}]
+        )
+        assert (
+            evaluate_visibility_gates(snippet, _exec_args(snippet, {"name": "x"})) == []
+        )
+
+    def test_evaluation_runs_against_alias_view(self) -> None:
+        """The gate resolves the wire name even though the python attr differs.
+
+        Regression guard for the ``model_dump(by_alias=True)`` requirement: the
+        plain dump is keyed by generated identifiers, so a non-alias evaluation
+        would silently never fire — a gate bypass.
+        """
+        snippet = _snippet_with_params(self._LIST_START)
+        args = _exec_args(snippet, {"list": True, "start": "2020"})
+
+        assert "start" not in args.model_dump()  # python attr is opaque
+        assert "start" in args.model_dump(by_alias=True)
+        assert evaluate_visibility_gates(snippet, args)  # gate fires
+
+    def test_truthy_gate_not_fired_when_trigger_absent(self) -> None:
+        """With the trigger falsy, the gated value is allowed."""
+        snippet = _snippet_with_params(self._LIST_START)
+        args = _exec_args(snippet, {"start": "2020"})
+        assert evaluate_visibility_gates(snippet, args) == []
+
+    def test_visible_when_negated_gate_fires(self) -> None:
+        """``visible_when`` forbids the field while the trigger is NOT truthy."""
+        snippet = _snippet_with_params(
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when": "list",
+                },
+            ]
+        )
+        # ``list`` falsy -> field is hidden -> a submitted ``start`` is rejected.
+        args = _exec_args(snippet, {"start": "2020"})
+        assert evaluate_visibility_gates(snippet, args)
+
+    def test_equals_gate_fires(self) -> None:
+        """An equals condition rejects the gated value on an equality match."""
+        snippet = _snippet_with_params(
+            [
+                {"name": "mode", "type": "str", "label": "Mode"},
+                {
+                    "name": "region",
+                    "type": "str",
+                    "label": "Region",
+                    "visible_when_not": {"parameter": "mode", "equals": "advanced"},
+                },
+            ]
+        )
+        args = _exec_args(snippet, {"mode": "advanced", "region": "eu"})
+        assert evaluate_visibility_gates(snippet, args)
+
+    def test_multiple_gates_fire_yield_multiple_messages(self) -> None:
+        """Every fired gate contributes a message."""
+        snippet = _snippet_with_params(
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+                {
+                    "name": "end",
+                    "type": "str",
+                    "label": "End",
+                    "visible_when_not": "list",
+                },
+            ]
+        )
+        args = _exec_args(snippet, {"list": True, "start": "a", "end": "b"})
+        expected_failures = 2
+        assert len(evaluate_visibility_gates(snippet, args)) == expected_failures
+
+    def test_gated_bool_false_is_allowed(self) -> None:
+        """A gated bool submitted ``False`` is absent, so the gate does not reject.
+
+        ``True`` for the same field IS rejected — locking the ``value_is_present``
+        ``False``-is-absent convention end-to-end through the evaluator.
+        """
+        snippet = _snippet_with_params(
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "flag",
+                    "type": "bool",
+                    "label": "Flag",
+                    "visible_when_not": "list",
+                },
+            ]
+        )
+        allowed = _exec_args(snippet, {"list": True, "flag": False})
+        rejected = _exec_args(snippet, {"list": True, "flag": True})
+
+        assert evaluate_visibility_gates(snippet, allowed) == []
+        assert evaluate_visibility_gates(snippet, rejected)
+
+
+def test_field_for_maps_datetime_parameter_to_datetime_field():
+    """Verify DATETIME parameters map directly to DateTimeField via field_for."""
+    param = SnippetMetaParameter(
+        name="start",
+        type="datetime",
+        label="Start time (UTC)",
+        description="Starting timestamp for graph data.",
+    )
+    field = field_for(param)
+    assert isinstance(field, DateTimeField)
+    assert field.name == "start"
+    assert field.label == "Start time (UTC)"
+    assert field.description == "Starting timestamp for graph data."
+
+
+@pytest.mark.asyncio
+async def test_per_snippet_schema_maps_datetime_parameter_to_datetime_field(
+    create_snippet,
+):
+    """Verify DATETIME parameters surface as DateTimeField in the per-snippet schema."""
+    snippet = await create_snippet("hello.sh", approved=True)
+    snippet.__dict__.pop("validated_parameters", None)
+    snippet.meta = {
+        **snippet.meta,
+        "parameters": [
+            {
+                "name": "start",
+                "type": "datetime",
+                "label": "Start time (UTC)",
+                "description": "Starting timestamp for graph data.",
+            },
+        ],
+    }
+    snippet.__dict__.pop("validated_parameters", None)
+
+    schema = build_snippet_schema(snippet)
+
+    parameters_section = next(s for s in schema.forms if s.title == "Parameters")
+    field = parameters_section.fields[0]
+    assert isinstance(field, DateTimeField)
+    assert field.name == "start"
+    assert field.label == "Start time (UTC)"
+
+
+@pytest.mark.asyncio
+async def test_pmm_mysql_payload_start_end_map_to_datetime_field():
+    """Verify PMM MySQL collector start/end params declare datetime and map to DateTimeField."""
+    script = await DipperScript.from_path("pcs-collect-pmm-mysql.py", update_meta=True)
+
+    assert script.validated_parameters.errors == []
+
+    for name in ("start", "end"):
+        param = next(
+            p for p in script.validated_parameters.parameters if p.name == name
+        )
+        assert param.py_type is SnippetMetaParameterType.DATETIME
+        assert isinstance(field_for(param), DateTimeField)

@@ -98,13 +98,22 @@ def test_restores_detail(
             {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
         ]
     )
-    mock_inventory_api_dep.get.return_value = AsyncMock()
+    mock_inventory_api_dep.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
     response = test_client.get(f"/mysql_backups/restores/{created_restore_task.name}")
     assert response.status_code == status.HTTP_200_OK
     assert (
         f"<title>Restores - {created_restore_task.name} — Services Enablement Platform</title>"
         in response.text
     )
+    assert (
+        f"/mysql_backups/restores/{created_restore_task.name}/delete" in response.text
+    )
+    assert f"/tasks/{created_restore_task.name}/delete" not in response.text
     mock_task_api_dep.get.assert_any_call(f"/{created_restore_task.name}/history/")
     mock_task_api_dep.get.assert_any_call(
         f"/{created_restore_task.name}/history/",

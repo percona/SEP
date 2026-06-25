@@ -3,27 +3,7 @@
  * Do not edit by hand — regenerate from the source OpenAPI spec.
  */
 export interface paths {
-  '/summary/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Summary Inventory
-     * @description Retrieve a summary of inventory counts.
-     */
-    get: operations['summary_get_summary_inventory_summary__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/': {
+  '/nodes/': {
     parameters: {
       query?: never;
       header?: never;
@@ -34,20 +14,20 @@ export interface paths {
      * List Nodes
      * @description List Nodes from Inventory.
      */
-    get: operations['nodes_list_nodes__get'];
+    get: operations['nodes_list_nodes_nodes__get'];
     put?: never;
     /**
      * Create Node
      * @description Create Node.
      */
-    post: operations['nodes_create_node__post'];
+    post: operations['nodes_create_node_nodes__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/{node_id}': {
+  '/nodes/{node_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -58,24 +38,24 @@ export interface paths {
      * Retrieve Node
      * @description Retrieve Node from inventory.
      */
-    get: operations['nodes_retrieve_node__node_id__get'];
+    get: operations['nodes_retrieve_node_nodes__node_id__get'];
     /**
      * Update Node
      * @description Update Node.
      */
-    put: operations['nodes_update_node__node_id__put'];
+    put: operations['nodes_update_node_nodes__node_id__put'];
     post?: never;
     /**
      * Delete Node
      * @description Delete Node.
      */
-    delete: operations['nodes_delete_node__node_id__delete'];
+    delete: operations['nodes_delete_node_nodes__node_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/{node_id}/services/': {
+  '/nodes/{node_id}/services/': {
     parameters: {
       query?: never;
       header?: never;
@@ -86,20 +66,20 @@ export interface paths {
      * List Services By Node
      * @description List Services by Node.
      */
-    get: operations['nodes_list_services_by_node__node_id__services__get'];
+    get: operations['nodes_list_services_by_node_nodes__node_id__services__get'];
     put?: never;
     /**
      * Create Service For Node
      * @description Create Service for Node.
      */
-    post: operations['nodes_create_service_for_node__node_id__services__post'];
+    post: operations['nodes_create_service_for_node_nodes__node_id__services__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/services/': {
+  '/nodes/{node_id}/system-observation': {
     parameters: {
       query?: never;
       header?: never;
@@ -107,83 +87,16 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * List Services
-     * @description List Services.
+     * Retrieve Host System Observation
+     * @description Retrieve host system observation for a node.
      */
-    get: operations['services_list_services_services__get'];
-    put?: never;
+    get: operations['nodes_retrieve_host_system_observation_nodes__node_id__system_observation_get'];
+    /**
+     * Upsert Host System Observation
+     * @description Upsert host system observation for a node.
+     */
+    put: operations['nodes_upsert_host_system_observation_nodes__node_id__system_observation_put'];
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/services/{service_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Retrieve Service
-     * @description Retrieve Service.
-     */
-    get: operations['services_retrieve_service_services__service_id__get'];
-    /**
-     * Update Service
-     * @description Update Service.
-     */
-    put: operations['services_update_service_services__service_id__put'];
-    post?: never;
-    /**
-     * Delete Service
-     * @description Delete Service.
-     */
-    delete: operations['services_delete_service_services__service_id__delete'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/services/{service_id}/schemas/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Schemas By Service
-     * @description List Schemas by Service.
-     *
-     *     Return ``SchemaResponse`` (with nested tables) when ``include_tables``
-     *     is set, otherwise return ``SchemaCompactResponse`` (without tables).
-     *
-     *     :param session: The async database session.
-     *     :type session: AsyncSession
-     *     :param service: The resolved service dependency.
-     *     :type service: Service
-     *     :param search: Filter schemas by name using ILIKE matching.
-     *     :type search: str | None
-     *     :param include_tables: Include nested tables in the response when set to
-     *         any non-empty value. Defaults to compact mode (no tables).
-     *     :type include_tables: str | None
-     *     :param offset: The zero-based starting offset for pagination.
-     *     :type offset: int
-     *     :param limit: The maximum number of items to return.
-     *     :type limit: int
-     *     :return: A paginated response of schema responses.
-     *     :rtype: PaginatedResponse[SchemaResponse | SchemaCompactResponse]
-     */
-    get: operations['services_list_schemas_by_service_services__service_id__schemas__get'];
-    put?: never;
-    /**
-     * Create Schema For Service
-     * @description Create Schema for Service.
-     */
-    post: operations['services_create_schema_for_service_services__service_id__schemas__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -262,6 +175,139 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/services/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Services
+     * @description List Services.
+     */
+    get: operations['services_list_services_services__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/services/{service_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Retrieve Service
+     * @description Retrieve Service.
+     */
+    get: operations['services_retrieve_service_services__service_id__get'];
+    /**
+     * Update Service
+     * @description Update Service.
+     */
+    put: operations['services_update_service_services__service_id__put'];
+    post?: never;
+    /**
+     * Delete Service
+     * @description Delete Service.
+     */
+    delete: operations['services_delete_service_services__service_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/services/{service_id}/schemas/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Schemas By Service
+     * @description List Schemas by Service.
+     *
+     *     Return ``SchemaResponse`` (with nested tables) when ``include_tables``
+     *     is set, otherwise return ``SchemaCompactResponse`` (without tables).
+     *
+     *     :param session: The async database session.
+     *     :type session: AsyncSession
+     *     :param service: The resolved service dependency.
+     *     :type service: Service
+     *     :param search: Filter schemas by name using ILIKE matching.
+     *     :type search: str | None
+     *     :param include_tables: Include nested tables in the response when set to
+     *         any non-empty value. Defaults to compact mode (no tables).
+     *     :type include_tables: str | None
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :type pagination: Pagination
+     *     :return: A paginated response of schema responses.
+     *     :rtype: PaginatedResponse[SchemaResponse | SchemaCompactResponse]
+     */
+    get: operations['services_list_schemas_by_service_services__service_id__schemas__get'];
+    put?: never;
+    /**
+     * Create Schema For Service
+     * @description Create Schema for Service.
+     */
+    post: operations['services_create_schema_for_service_services__service_id__schemas__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/services/{service_id}/system-observation': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Retrieve Service System Observation
+     * @description Retrieve service system observation for a service.
+     */
+    get: operations['services_retrieve_service_system_observation_services__service_id__system_observation_get'];
+    /**
+     * Upsert Service System Observation
+     * @description Upsert service system observation for a service.
+     */
+    put: operations['services_upsert_service_system_observation_services__service_id__system_observation_put'];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/summary/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Summary Inventory
+     * @description Retrieve a summary of inventory counts.
+     */
+    get: operations['summary_get_summary_inventory_summary__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/tables/': {
     parameters: {
       query?: never;
@@ -320,6 +366,81 @@ export interface components {
       detail?: components['schemas']['ValidationError'][];
     };
     /**
+     * HostSystemObservationResponse
+     * @description Define the response model for host system observation data.
+     *
+     *     :param id: The primary key of the observation record.
+     *     :type id: int | None
+     *     :param created_at: When the record was created.
+     *     :type created_at: UTCDatetime
+     *     :param updated_at: When the record was last updated.
+     *     :type updated_at: UTCDatetime | None
+     *     :param node_id: The unique identifier of the observed node.
+     *     :type node_id: int
+     *     :param os_version: The observed operating system version.
+     *     :type os_version: str | None
+     *     :param installed_packages: Snapshot of installed packages.
+     *     :type installed_packages: list[dict[str, Any]] | None
+     *     :param config: Snapshot of host configuration.
+     *     :type config: dict[str, Any] | None
+     *     :param observed_at: When this observation was collected.
+     *     :type observed_at: UTCDatetime
+     */
+    HostSystemObservationResponse: {
+      /** Config */
+      config?: Record<string, never> | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Installed Packages */
+      installed_packages?: Record<string, never>[] | null;
+      /** Node Id */
+      node_id: number;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Os Version */
+      os_version?: string | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * HostSystemObservationWrite
+     * @description Define the model for writing host system observation data to the inventory.
+     *
+     *     :param node_id: The foreign key referencing the node. Defaults to None.
+     *     :type node_id: int | None
+     *     :param os_version: The observed operating system version. Defaults to None.
+     *     :type os_version: str | None
+     *     :param installed_packages: Snapshot of installed packages. Defaults to None.
+     *     :type installed_packages: list[dict[str, Any]] | None
+     *     :param config: Snapshot of host configuration. Defaults to None.
+     *     :type config: dict[str, Any] | None
+     *     :param observed_at: When this observation was collected.
+     *     :type observed_at: UTCDatetime
+     */
+    HostSystemObservationWrite: {
+      /** Config */
+      config?: Record<string, never> | null;
+      /** Installed Packages */
+      installed_packages?: Record<string, never>[] | null;
+      /** Node Id */
+      node_id?: number | null;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Os Version */
+      os_version?: string | null;
+    };
+    /**
      * Node
      * @description Represent a node in the inventory.
      *
@@ -339,27 +460,27 @@ export interface components {
      *     :type services: list[Service]
      */
     Node: {
-      /** Id */
-      id: number | null;
+      /** Address */
+      address: string;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
-      /** Address */
-      address: string;
-      /** Name */
-      name: string;
       /** External Id */
       external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
        * @default generic
        */
       type: string;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * NodeResponse
@@ -389,27 +510,27 @@ export interface components {
     NodeResponse: {
       /** Address */
       address: string;
-      /** Name */
-      name: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
       /** External Id */
       external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Services */
+      services: components['schemas']['Service'][];
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
        * @default generic
        */
       type: string;
-      /** Id */
-      id: number | null;
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at?: string;
       /** Updated At */
       updated_at?: string | null;
-      /** Services */
-      services: components['schemas']['Service'][];
     };
     /**
      * NodeWrite
@@ -431,10 +552,10 @@ export interface components {
     NodeWrite: {
       /** Address */
       address: string;
-      /** Name */
-      name: string;
       /** External Id */
       external_id?: string | null;
+      /** Name */
+      name: string;
       source?: components['schemas']['SourceEnum'] | null;
       /**
        * Type
@@ -446,45 +567,45 @@ export interface components {
     PaginatedResponse_NodeResponse_: {
       /** Items */
       items: components['schemas']['NodeResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[SchemaResponse] */
     PaginatedResponse_SchemaResponse_: {
       /** Items */
       items: components['schemas']['SchemaResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[ServiceResponse] */
     PaginatedResponse_ServiceResponse_: {
       /** Items */
       items: components['schemas']['ServiceResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[TableResponse] */
     PaginatedResponse_TableResponse_: {
       /** Items */
       items: components['schemas']['TableResponse'][];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[Union[SchemaResponse, SchemaCompactResponse]] */
     PaginatedResponse_Union_SchemaResponse__SchemaCompactResponse__: {
@@ -493,12 +614,12 @@ export interface components {
         | components['schemas']['SchemaResponse']
         | components['schemas']['SchemaCompactResponse']
       )[];
-      /** Total */
-      total: number;
-      /** Offset */
-      offset: number;
       /** Limit */
       limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /**
      * Schema
@@ -525,17 +646,17 @@ export interface components {
      *     :type tables: list[Table]
      */
     Schema: {
-      /** Name */
-      name: string;
-      /** Service Id */
-      service_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Service Id */
+      service_id: number;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -557,17 +678,17 @@ export interface components {
      *     :type service_id: int
      */
     SchemaCompactResponse: {
-      /** Name */
-      name: string;
-      /** Service Id */
-      service_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Service Id */
+      service_id: number;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -591,22 +712,22 @@ export interface components {
      *     :type service: Service
      */
     SchemaDetailResponse: {
-      /** Name */
-      name: string;
-      /** Service Id */
-      service_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      service: components['schemas']['Service'];
+      /** Service Id */
+      service_id: number;
       /** Tables */
       tables: components['schemas']['Table'][];
-      service: components['schemas']['Service'];
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * SchemaResponse
@@ -628,21 +749,21 @@ export interface components {
      *     :type tables: list[Table]
      */
     SchemaResponse: {
-      /** Name */
-      name: string;
-      /** Service Id */
-      service_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Service Id */
+      service_id: number;
       /** Tables */
       tables: components['schemas']['Table'][];
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * SchemaWrite
@@ -701,30 +822,30 @@ export interface components {
      *     :type schemas: list[Schema]
      */
     Service: {
-      /** External Id */
-      external_id?: string | null;
-      /** Name */
-      name: string;
-      type: components['schemas']['ServiceTypeEnum'];
-      /** Port */
-      port?: number | null;
-      /** Environment */
-      environment?: string | null;
       /** Cluster */
       cluster?: string | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
-      /** Node Id */
-      node_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Custom Labels */
+      custom_labels?: Record<string, never> | null;
+      /** Environment */
+      environment?: string | null;
+      /** External Id */
+      external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      /** Node Id */
+      node_id: number;
+      /** Port */
+      port?: number | null;
+      /** Replication Set */
+      replication_set?: string | null;
+      type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
     };
@@ -764,35 +885,35 @@ export interface components {
      *     :type node: Node
      */
     ServiceDetailResponse: {
-      /** External Id */
-      external_id?: string | null;
-      /** Name */
-      name: string;
-      type: components['schemas']['ServiceTypeEnum'];
-      /** Port */
-      port?: number | null;
-      /** Environment */
-      environment?: string | null;
       /** Cluster */
       cluster?: string | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
-      /** Node Id */
-      node_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
+      /** Custom Labels */
+      custom_labels?: Record<string, never> | null;
+      /** Environment */
+      environment?: string | null;
+      /** External Id */
+      external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      node: components['schemas']['Node'];
+      /** Node Id */
+      node_id: number;
+      /** Port */
+      port?: number | null;
+      /** Replication Set */
+      replication_set?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
-      node: components['schemas']['Node'];
+      type: components['schemas']['ServiceTypeEnum'];
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * ServiceResponse
@@ -830,39 +951,98 @@ export interface components {
      *     :type node: Node
      */
     ServiceResponse: {
-      /** External Id */
-      external_id?: string | null;
-      /** Name */
-      name: string;
-      type: components['schemas']['ServiceTypeEnum'];
-      /** Port */
-      port?: number | null;
-      /** Environment */
-      environment?: string | null;
       /** Cluster */
       cluster?: string | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
-      /** Node Id */
-      node_id: number;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
-      /** Updated At */
-      updated_at?: string | null;
+      /** Custom Labels */
+      custom_labels?: Record<string, never> | null;
+      /** Environment */
+      environment?: string | null;
+      /** External Id */
+      external_id?: string | null;
+      /** Id */
+      id: number | null;
+      /** Name */
+      name: string;
+      node: components['schemas']['Node'];
+      /** Node Id */
+      node_id: number;
+      /** Port */
+      port?: number | null;
+      /** Replication Set */
+      replication_set?: string | null;
       /** Schemas */
       schemas: components['schemas']['Schema'][];
-      node: components['schemas']['Node'];
+      type: components['schemas']['ServiceTypeEnum'];
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * ServiceSystemObservationResponse
+     * @description Define the response model for service system observation data.
+     *
+     *     :param id: The primary key of the observation record.
+     *     :type id: int | None
+     *     :param created_at: When the record was created.
+     *     :type created_at: UTCDatetime
+     *     :param updated_at: When the record was last updated.
+     *     :type updated_at: UTCDatetime | None
+     *     :param service_id: The unique identifier of the observed service.
+     *     :type service_id: int
+     *     :param db_engine_version: The observed database engine version.
+     *     :type db_engine_version: NonEmptyStr
+     *     :param observed_at: When this observation was collected.
+     *     :type observed_at: UTCDatetime
+     */
+    ServiceSystemObservationResponse: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at?: string;
+      /** Db Engine Version */
+      db_engine_version: string;
+      /** Id */
+      id: number | null;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Service Id */
+      service_id: number;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * ServiceSystemObservationWrite
+     * @description Define the model for writing service system observation data to the inventory.
+     *
+     *     :param service_id: The foreign key referencing the service. Defaults to None.
+     *     :type service_id: int | None
+     *     :param db_engine_version: The observed database engine version.
+     *     :type db_engine_version: NonEmptyStr
+     *     :param observed_at: When this observation was collected.
+     *     :type observed_at: UTCDatetime
+     */
+    ServiceSystemObservationWrite: {
+      /** Db Engine Version */
+      db_engine_version: string;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /** Service Id */
+      service_id?: number | null;
     };
     /**
      * ServiceTypeEnum
-     * @description Enumeration of supported service types.
+     * @description Enumerate the supported service types.
      *
      *     :cvar MYSQL: Represents the MySQL service type.
      *     :vartype MYSQL: str
@@ -876,9 +1056,18 @@ export interface components {
      *     :vartype HAPROXY: str
      *     :cvar EXTERNAL: Represents an external service type.
      *     :vartype EXTERNAL: str
+     *     :cvar VALKEY: Represents the Valkey service type.
+     *     :vartype VALKEY: str
      * @enum {string}
      */
-    ServiceTypeEnum: 'mysql' | 'postgresql' | 'mongodb' | 'proxysql' | 'haproxy' | 'external';
+    ServiceTypeEnum:
+      | 'mysql'
+      | 'postgresql'
+      | 'mongodb'
+      | 'proxysql'
+      | 'haproxy'
+      | 'external'
+      | 'valkey';
     /**
      * ServiceWrite
      * @description Define the model for writing service data to the inventory.
@@ -906,23 +1095,23 @@ export interface components {
      *     :type node_id: int | None
      */
     ServiceWrite: {
+      /** Cluster */
+      cluster?: string | null;
+      /** Custom Labels */
+      custom_labels?: Record<string, never> | null;
+      /** Environment */
+      environment?: string | null;
       /** External Id */
       external_id?: string | null;
       /** Name */
       name: string;
-      type: components['schemas']['ServiceTypeEnum'];
-      /** Port */
-      port?: number | null;
-      /** Environment */
-      environment?: string | null;
-      /** Cluster */
-      cluster?: string | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
       /** Node Id */
       node_id?: number | null;
+      /** Port */
+      port?: number | null;
+      /** Replication Set */
+      replication_set?: string | null;
+      type: components['schemas']['ServiceTypeEnum'];
     };
     /**
      * SourceEnum
@@ -958,21 +1147,21 @@ export interface components {
      *     :type database: Schema
      */
     Table: {
-      /** Name */
-      name: string;
       /** Create */
       create: string;
-      /** Schema Id */
-      schema_id: number;
-      /** Keys */
-      keys: Record<string, never>;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Keys */
+      keys: Record<string, never>;
+      /** Name */
+      name: string;
+      /** Schema Id */
+      schema_id: number;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -998,24 +1187,24 @@ export interface components {
      *     :type database: Schema
      */
     TableDetailResponse: {
-      /** Name */
-      name: string;
       /** Create */
       create: string;
-      /** Schema Id */
-      schema_id: number;
-      /** Keys */
-      keys: Record<string, never>;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      database: components['schemas']['Schema'];
+      /** Id */
+      id: number | null;
+      /** Keys */
+      keys: Record<string, never>;
+      /** Name */
+      name: string;
+      /** Schema Id */
+      schema_id: number;
       /** Updated At */
       updated_at?: string | null;
-      database: components['schemas']['Schema'];
     };
     /**
      * TableResponse
@@ -1037,21 +1226,21 @@ export interface components {
      *     :type schema_id: int
      */
     TableResponse: {
-      /** Name */
-      name: string;
       /** Create */
       create: string;
-      /** Schema Id */
-      schema_id: number;
-      /** Keys */
-      keys: Record<string, never>;
-      /** Id */
-      id: number | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at?: string;
+      /** Id */
+      id: number | null;
+      /** Keys */
+      keys: Record<string, never>;
+      /** Name */
+      name: string;
+      /** Schema Id */
+      schema_id: number;
       /** Updated At */
       updated_at?: string | null;
     };
@@ -1067,17 +1256,21 @@ export interface components {
      *     :type schema_id: int | None
      */
     TableWrite: {
-      /** Name */
-      name: string;
       /** Create */
       create: string;
-      /** Schema Id */
-      schema_id?: number | null;
       /** Keys */
       keys: Record<string, never>;
+      /** Name */
+      name: string;
+      /** Schema Id */
+      schema_id?: number | null;
     };
     /** ValidationError */
     ValidationError: {
+      /** Context */
+      ctx?: Record<string, never>;
+      /** Input */
+      input?: unknown;
       /** Location */
       loc: (string | number)[];
       /** Message */
@@ -1094,29 +1287,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  summary_get_summary_inventory_summary__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            [key: string]: number;
-          };
-        };
-      };
-    };
-  };
-  nodes_list_nodes__get: {
+  nodes_list_nodes_nodes__get: {
     parameters: {
       query?: {
         external_id?: string | null;
@@ -1151,7 +1322,7 @@ export interface operations {
       };
     };
   };
-  nodes_create_node__post: {
+  nodes_create_node_nodes__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -1184,7 +1355,7 @@ export interface operations {
       };
     };
   };
-  nodes_retrieve_node__node_id__get: {
+  nodes_retrieve_node_nodes__node_id__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -1215,7 +1386,7 @@ export interface operations {
       };
     };
   };
-  nodes_update_node__node_id__put: {
+  nodes_update_node_nodes__node_id__put: {
     parameters: {
       query?: never;
       header?: never;
@@ -1250,7 +1421,7 @@ export interface operations {
       };
     };
   };
-  nodes_delete_node__node_id__delete: {
+  nodes_delete_node_nodes__node_id__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -1279,7 +1450,7 @@ export interface operations {
       };
     };
   };
-  nodes_list_services_by_node__node_id__services__get: {
+  nodes_list_services_by_node_nodes__node_id__services__get: {
     parameters: {
       query?: {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -1314,7 +1485,7 @@ export interface operations {
       };
     };
   };
-  nodes_create_service_for_node__node_id__services__post: {
+  nodes_create_service_for_node_nodes__node_id__services__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -1336,6 +1507,269 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['Service'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  nodes_retrieve_host_system_observation_nodes__node_id__system_observation_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HostSystemObservationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  nodes_upsert_host_system_observation_nodes__node_id__system_observation_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        node_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['HostSystemObservationWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HostSystemObservationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_list_schemas_schemas__get: {
+    parameters: {
+      query?: {
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_SchemaResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_retrieve_schema_schemas__schema_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SchemaDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_update_schema_schemas__schema_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SchemaWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Schema'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_delete_schema_schemas__schema_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_list_tables_by_schema_schemas__schema_id__tables__get: {
+    parameters: {
+      query?: {
+        search?: string | null;
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PaginatedResponse_TableResponse_'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  schemas_create_table_for_schema_schemas__schema_id__tables__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        schema_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TableWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['Table'];
         };
       };
       /** @description Validation Error */
@@ -1548,12 +1982,75 @@ export interface operations {
       };
     };
   };
-  schemas_list_schemas_schemas__get: {
+  services_retrieve_service_system_observation_services__service_id__system_observation_get: {
     parameters: {
-      query?: {
-        offset?: number;
-        limit?: number;
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
       };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ServiceSystemObservationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  services_upsert_service_system_observation_services__service_id__system_observation_put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        service_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ServiceSystemObservationWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ServiceSystemObservationResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  summary_get_summary_inventory_summary__get: {
+    parameters: {
+      query?: never;
       header?: never;
       path?: never;
       cookie?: never;
@@ -1566,181 +2063,9 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PaginatedResponse_SchemaResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schemas_retrieve_schema_schemas__schema_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SchemaDetailResponse'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schemas_update_schema_schemas__schema_id__put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SchemaWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Schema'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schemas_delete_schema_schemas__schema_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schemas_list_tables_by_schema_schemas__schema_id__tables__get: {
-    parameters: {
-      query?: {
-        search?: string | null;
-        offset?: number;
-        limit?: number;
-      };
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['PaginatedResponse_TableResponse_'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schemas_create_table_for_schema_schemas__schema_id__tables__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['TableWrite'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['Table'];
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
+          'application/json': {
+            [key: string]: number;
+          };
         };
       };
     };

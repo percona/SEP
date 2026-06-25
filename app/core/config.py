@@ -15,6 +15,8 @@
 
 """Define the application settings."""
 
+import hashlib
+import hmac
 import logging.config
 import re
 import secrets
@@ -60,17 +62,20 @@ from app.core.middleware.security_headers import (
 )
 from app.core.models import BaseLowercaseModel
 from app.core.requests import BaseRemoteAPI, ClientRegistry, RemoteAPI
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import hot_field
 from app.core.utils import deep_dict_update
 from app.core.utils.fields import (
     LogLevel,
     NonEmptyStr,
     RelativeFilePathField,
+    StrCredentialHttpUrl,
     StrHttpUrl,
     StrImportableAttribute,
     TimedeltaSeconds,
     URL,
 )
-from app.core.utils.lazy import LazyProxy
 from app.core.utils.openapi import generate_tag_prefixed_unique_id
 
 LOGGING_CONFIG = {
@@ -267,7 +272,7 @@ class PMMSettings(BaseLowercaseModel):
     """Define core PMM connection and authentication configuration.
 
     :param endpoint: The PMM server URL.
-    :type endpoint: StrHttpUrl | None
+    :type endpoint: StrCredentialHttpUrl | None
     :param frontend: The PMM frontend URL.
     :type frontend: StrHttpUrl | None
     :param api_key: API key for PMM authentication.
@@ -283,7 +288,7 @@ class PMMSettings(BaseLowercaseModel):
     :type annotations_timeout: PositiveInt
     """
 
-    endpoint: StrHttpUrl | None = None
+    endpoint: StrCredentialHttpUrl | None = None
     frontend: StrHttpUrl | None = None
     api_key: SecretStr | None = None
     verify_ssl: bool = True
@@ -314,8 +319,11 @@ class PMMSettings(BaseLowercaseModel):
         return None
 
 
+_INTERNAL_TOKEN_LABEL = b"sep-internal-token"
+
+
 class Settings(BaseYamlSettings):
-    """Main application settings class.
+    """Define the main application settings.
 
     :param CASDOOR: Casdoor configuration options.
     :type CASDOOR: CasdoorSDK
@@ -330,11 +338,12 @@ class Settings(BaseYamlSettings):
     :type ALLOW_CONCURRENT_SESSIONS: bool
     :param SECRET_KEY: The secret key used for signing tokens. Defaults to
         ``secrets.token_urlsafe(32)``.
-    :type SECRET_KEY: str
     :param SEP_INTERNAL_TOKEN: A long random secret used for SEP-internal
         service-to-service authentication (e.g. scheduled inventory sync). When
-        unset, features that depend on it are disabled. Generate with
-        ``openssl rand -hex 32``.
+        unset, it is derived from ``SECRET_KEY`` by ``derive_internal_token`` so
+        every process sharing ``SECRET_KEY`` resolves the identical token.
+        Generate an explicit value with ``openssl rand -hex 32`` to rotate it
+        independently of ``SECRET_KEY``.
     :type SEP_INTERNAL_TOKEN: SecretStr | None
     :param LOGGING: The logging level for the application. Defaults to LogLevel.WARNING.
     :type LOGGING: LogLevel
@@ -377,7 +386,7 @@ class Settings(BaseYamlSettings):
     BACKEND_CORS_ORIGINS: list[StrHttpUrl] | None = None
     ALLOWED_HOSTS: list[str] = []
     SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions()
-    PMM: PMMSettings = PMMSettings()
+    PMM: PMMSettings = hot_field(PMMSettings())
     SETTINGS_OVERRIDE_REFRESH_INTERVAL: TimedeltaSeconds = timedelta(seconds=30)
     SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool = True
     _CLIENT_REGISTRY: ClientRegistry = ClientRegistry()
@@ -443,6 +452,39 @@ class Settings(BaseYamlSettings):
         self.LOGGING_CONFIG["loggers"]["app"]["level"] = self.LOGGING
         return self
 
+    @model_validator(mode="after")
+    def derive_internal_token(self) -> Self:
+        """Derive ``SEP_INTERNAL_TOKEN`` from ``SECRET_KEY`` when it is unset.
+
+        Every process sharing ``SECRET_KEY`` derives the identical token via
+        HMAC-SHA256, so SEP-internal service-to-service authentication works
+        across the web apps and the lifespan-less Celery worker without
+        persisting or distributing a separate secret. An explicitly configured
+        ``SEP_INTERNAL_TOKEN`` takes precedence so it can be rotated
+        independently.
+
+        :return: Validated settings with ``SEP_INTERNAL_TOKEN`` guaranteed set.
+        :raises ValueError: If ``SEP_INTERNAL_TOKEN`` is unset and ``SECRET_KEY``
+            is empty, so no token can be derived.
+        """
+        if (
+            self.SEP_INTERNAL_TOKEN is not None
+            and self.SEP_INTERNAL_TOKEN.get_secret_value()
+        ):
+            return self
+        secret_key = self.SECRET_KEY.get_secret_value()
+        if not secret_key:
+            raise ValueError(
+                "SECRET_KEY must be set to a non-empty value so SEP_INTERNAL_TOKEN "
+                "can be derived for service-to-service authentication "
+                "(e.g. `openssl rand -hex 32`)."
+            )
+        derived = hmac.new(
+            secret_key.encode(), _INTERNAL_TOKEN_LABEL, hashlib.sha256
+        ).hexdigest()
+        self.SEP_INTERNAL_TOKEN = SecretStr(derived)
+        return self
+
     @validate_call
     async def get_remote_api(
         self,
@@ -465,6 +507,18 @@ class Settings(BaseYamlSettings):
         )
         return await self._CLIENT_REGISTRY.get(cls, **kwargs)
 
+    async def invalidate_client(self, endpoint: str) -> None:
+        """Evict every cached remote-API client served from ``endpoint``.
+
+        Thin wrapper over :meth:`ClientRegistry.invalidate` used by override
+        rebind callbacks to drop clients (e.g. PMM) whose connection settings
+        changed at runtime, so the next request reconstructs a fresh client.
+
+        :param endpoint: The endpoint URL whose cached clients to evict.
+        :type endpoint: str
+        """
+        await self._CLIENT_REGISTRY.invalidate(endpoint)
+
     async def close_client_registry(self) -> None:
         """Close the client registry and all its managed clients."""
         await self._CLIENT_REGISTRY.close_all()
@@ -477,7 +531,9 @@ def _create_settings() -> Settings:
     return s
 
 
-settings: Settings = LazyProxy(_create_settings)
+settings: Settings = OverridableSettingsProxy(
+    _create_settings, setting_class=SettingClassEnum.SETTINGS
+)
 logger = logging.getLogger(__name__)
 
 

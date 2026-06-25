@@ -52,10 +52,12 @@ import {
 import { resolvePath } from '../../utils/resolvePath';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
+import { ScheduleSummary } from '../ScheduleSummary';
 import { useExecuteTask, useTaskHistoryByNames } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
 import { resolvePluginRouteBase } from './routeBase';
+import { getStoredForm } from './storedForm';
 import { StatsCard } from './StatsCard';
 
 const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
@@ -256,6 +258,10 @@ interface OverviewTabProps {
   schema: PluginSchema;
   task: Record<string, unknown>;
   hiddenFields?: string[];
+  /** Owning plugin name; enables the generic schedule summary. */
+  pluginName?: string;
+  /** Route to the plugin's Schedules screen (the add-a-schedule target). */
+  scheduleHref?: string;
   children?: ReactNode;
 }
 
@@ -289,8 +295,16 @@ function DetailViewSectionCard({
   );
 }
 
-function OverviewTab({ schema, task, hiddenFields = [], children }: OverviewTabProps) {
+function OverviewTab({
+  schema,
+  task,
+  hiddenFields = [],
+  pluginName,
+  scheduleHref,
+  children,
+}: OverviewTabProps) {
   const connectivityWarning = task.connectivity_warning;
+  const taskName = typeof task.name === 'string' && task.name.trim() ? task.name.trim() : undefined;
   const columns = schema.list_view!.columns;
   const schemaHiddenFields = schema.list_view?.overview_hidden_fields;
 
@@ -328,6 +342,10 @@ function OverviewTab({ schema, task, hiddenFields = [], children }: OverviewTabP
           <TaskOverviewDetailField key={key} label={formatLabel(key)} value={value} />
         ))}
       </SectionCard>
+
+      {schema.capabilities?.scheduling && pluginName && taskName && scheduleHref && (
+        <ScheduleSummary pluginName={pluginName} taskName={taskName} scheduleHref={scheduleHref} />
+      )}
 
       {schema.capabilities?.stats && (
         <StatsCard
@@ -418,9 +436,18 @@ interface ActionBarProps {
   routeBase: string;
   taskName: string;
   executeActions?: TaskExecuteAction[];
+  /** Whether the task carries a stored create-form body, enabling in-place edit. */
+  hasStoredForm: boolean;
 }
 
-function ActionBar({ schema, pluginName, routeBase, taskName, executeActions }: ActionBarProps) {
+function ActionBar({
+  schema,
+  pluginName,
+  routeBase,
+  taskName,
+  executeActions,
+  hasStoredForm,
+}: ActionBarProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const deleteTask = useDeletePluginTask(pluginName);
@@ -473,7 +500,7 @@ function ActionBar({ schema, pluginName, routeBase, taskName, executeActions }: 
     }
   };
 
-  const editBlocked = 'Edit is not yet available in the new UI';
+  const editUnavailable = "Editing isn't available for this task — it has no saved form input.";
 
   return (
     <>
@@ -502,18 +529,30 @@ function ActionBar({ schema, pluginName, routeBase, taskName, executeActions }: 
           </Button>
         ))}
 
-        <Tooltip title={editBlocked}>
-          <span>
-            <Button
-              variant="outlined"
-              startIcon={<EditIcon />}
-              disabled
-              data-testid="plugin-task-edit"
-            >
-              Edit
-            </Button>
-          </span>
-        </Tooltip>
+        {hasStoredForm ? (
+          <Button
+            variant="outlined"
+            component={Link}
+            to={`${routeBase}/task/${encodeURIComponent(taskName)}/edit`}
+            startIcon={<EditIcon />}
+            data-testid="plugin-task-edit"
+          >
+            Edit
+          </Button>
+        ) : (
+          <Tooltip title={editUnavailable}>
+            <span>
+              <Button
+                variant="outlined"
+                startIcon={<EditIcon />}
+                disabled
+                data-testid="plugin-task-edit"
+              >
+                Edit
+              </Button>
+            </span>
+          </Tooltip>
+        )}
 
         <Box sx={{ flexGrow: 1 }} />
 
@@ -837,6 +876,7 @@ export function PluginDetailPage({
   }
 
   const taskName = typeof task.name === 'string' ? task.name : id;
+  const hasStoredForm = Boolean(getStoredForm(task as Record<string, unknown>));
   const detailBase = `${routeBase}/task/${encodeURIComponent(id)}`;
   const taskExecuteActions = getTaskExecuteActions?.(task as Record<string, unknown>);
   const taskHistoryNames =
@@ -875,6 +915,7 @@ export function PluginDetailPage({
         routeBase={routeBase}
         taskName={taskName}
         executeActions={taskExecuteActions}
+        hasStoredForm={hasStoredForm}
       />
 
       <Tabs value={tabValue} sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
@@ -886,7 +927,13 @@ export function PluginDetailPage({
         <Route
           index
           element={
-            <OverviewTab schema={schema} task={task} hiddenFields={suppressDetailKeys}>
+            <OverviewTab
+              schema={schema}
+              task={task}
+              hiddenFields={suppressDetailKeys}
+              pluginName={pluginName}
+              scheduleHref={`${routeBase}/schedule`}
+            >
               {renderTaskDetailChildren?.({
                 task: task as Record<string, unknown>,
                 pluginName,

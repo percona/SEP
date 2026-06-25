@@ -18,6 +18,7 @@
 import { readFile } from 'node:fs/promises';
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 const SNIPPET_FILENAME = 'test-snippet.sh';
 
@@ -90,6 +91,10 @@ async function mockSnippetDetailApis(
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     if (pathname.includes('/oauth/refresh')) {

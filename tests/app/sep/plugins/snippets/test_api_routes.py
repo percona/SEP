@@ -23,7 +23,7 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import app.sep.plugins.snippets.api_routes as snippets_api_routes
+import app.sep.plugins.snippets.extra_routes as snippets_extra_routes
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
     get_api_authenticated_user,
@@ -39,11 +39,28 @@ from app.sep.plugins.snippets.models import (
     SnippetResponse,
     SnippetsCapabilitiesResponse,
 )
+from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
 
 API_BASE = "/api/plugins/snippets"
+
+
+async def _seed_gated_snippet(
+    create_snippet, session, parameters, *, filename="gated.sh"
+):
+    """Seed an approved snippet whose meta declares ``parameters`` (persisted).
+
+    The execute route reloads the snippet from the DB by filename, so the gated
+    parameter metadata must be persisted (not just mutated in memory). The
+    ``validated_parameters`` cache is dropped so the new meta is re-validated.
+    """
+    snippet = await create_snippet(filename, approved=True)
+    snippet.meta = {**snippet.meta, "parameters": parameters}
+    snippet.__dict__.pop("validated_parameters", None)
+    await SnippetManager.save(session, snippet, flag_modified_fields=["meta"])
+    return snippet
 
 
 @pytest.fixture
@@ -52,7 +69,7 @@ def enable_manual_sync(mocker):
 
     def _patch_enable(*, value: bool) -> None:
         mocker.patch.object(
-            snippets_api_routes.snippets_settings,
+            snippets_settings,
             "ENABLE_MANUAL_SYNC",
             new=value,
         )
@@ -70,14 +87,6 @@ class TestSnippetsApprovalApiReviewContracts:
         assert "SnippetApprovalResponse" not in snippets_models.__all__
         assert not hasattr(snippets_models, "SnippetApprovalResponse")
         assert "updated_by" in SnippetResponse.model_fields
-
-    def test_api_routes_module_docstring_lists_approval_routes(self):
-        """The module route inventory includes all approval endpoints."""
-        docstring = snippets_api_routes.__doc__ or ""
-
-        assert "PUT /snippet/approval?snippet_filename=..." in docstring
-        assert "DELETE /snippet/approval?snippet_filename=..." in docstring
-        assert "PATCH /approvals" in docstring
 
     def test_batch_approve_base_is_not_exported(self):
         """``SnippetBatchApproveBase`` is gone; callers use ``SnippetBatchApproveRequest``."""
@@ -471,6 +480,222 @@ class TestSnippetsApiExecute:
         assert meta["_snippet_filename"] == snippet.filename
         assert meta["md5_checksum"] == snippet.md5_digest
 
+    async def test_rejects_submitted_value_for_gated_hidden_param(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """A value for a gated-hidden param is rejected (422); no task dispatched.
+
+        ``start`` is hidden when ``list`` is truthy (``visible_when_not``), so a
+        direct POST that supplies ``start`` while ``list`` is on must be
+        server-rejected — the client would have dropped it.
+        """
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+            ],
+        )
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {"list": True, "start": "2020"}},
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    async def test_allows_value_when_gate_not_fired(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """When the gate does not fire, the submitted value executes normally."""
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+            ],
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": 7})
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {"list": False, "start": "2020"}},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert mock_task_api_dep.post.called
+
+    async def test_allows_gated_param_omitted(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """A hidden param the client dropped (absent) executes without rejection."""
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+            ],
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": 8})
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {"list": True}},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert mock_task_api_dep.post.called
+
+    async def test_rejects_on_equals_gate(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """An equality-based forbidden gate rejects a submitted hidden value."""
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {
+                    "name": "mode",
+                    "type": "str",
+                    "label": "Mode",
+                    "choices": ["basic", "advanced"],
+                },
+                {
+                    "name": "region",
+                    "type": "str",
+                    "label": "Region",
+                    "visible_when_not": {"parameter": "mode", "equals": "advanced"},
+                },
+            ],
+        )
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={
+                "executor_host": "host1",
+                "args": {"mode": "advanced", "region": "us"},
+            },
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    async def test_gateless_snippet_executes_unchanged(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """A snippet with params but no visibility rule executes as before."""
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [{"name": "name", "type": "str", "label": "Name"}],
+            filename="plain.sh",
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": 9})
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {"name": "x"}},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert mock_task_api_dep.post.called
+
+    async def test_multiple_gated_fields_report_all_failures(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """All fired gates surface in the 422 detail; nothing is dispatched."""
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "start",
+                    "type": "str",
+                    "label": "Start",
+                    "visible_when_not": "list",
+                },
+                {
+                    "name": "end",
+                    "type": "str",
+                    "label": "End",
+                    "visible_when_not": "list",
+                },
+            ],
+        )
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={
+                "executor_host": "host1",
+                "args": {"list": True, "start": "a", "end": "b"},
+            },
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        detail = response.json()["detail"]
+        expected_failures = 2
+        assert isinstance(detail, list)
+        assert len(detail) == expected_failures
+        mock_task_api_dep.post.assert_not_called()
+
+    async def test_gated_bool_false_executes(
+        self, test_client, mock_task_api_dep, create_snippet, session
+    ):
+        """A gated bool submitted ``false`` is absent, so execution proceeds.
+
+        Guards against a false-positive rejection: the forbidden gate must treat
+        an explicit ``False`` toggle as unset, matching the client renderer.
+        """
+        snippet = await _seed_gated_snippet(
+            create_snippet,
+            session,
+            [
+                {"name": "list", "type": "bool", "label": "List"},
+                {
+                    "name": "flag",
+                    "type": "bool",
+                    "label": "Flag",
+                    "visible_when_not": "list",
+                },
+            ],
+        )
+        mock_task_api_dep.post = AsyncMock(return_value={"id": 11})
+
+        response = test_client.post(
+            f"{API_BASE}/snippet/execute",
+            params={"snippet_filename": snippet.filename},
+            json={"executor_host": "host1", "args": {"list": True, "flag": False}},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        assert mock_task_api_dep.post.called
+
 
 @pytest.mark.asyncio
 class TestSnippetsApiPutApproval:
@@ -800,7 +1025,7 @@ class TestSnippetsApiPatchApprovals:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     async def test_missing_filenames_returns_422(self, api_admin_client):
-        """Missing ``filenames`` field is a 422 (regression for SEP-1007 quirk)."""
+        """Missing ``filenames`` field is a 422 (regression for the body-parsing quirk)."""
         response = api_admin_client.patch(self.URL, json={})
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
@@ -941,7 +1166,7 @@ class TestSnippetsApiRefresh:
         """Admin happy path: 200 with ISO ``refreshed_at`` and one call."""
         enable_manual_sync(value=True)
         update_mock = mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(return_value=None),
         )
@@ -958,13 +1183,29 @@ class TestSnippetsApiRefresh:
         RefreshResponse.model_validate(body)
         update_mock.assert_awaited_once()
 
+    async def test_refresh_registers_drain_counter(
+        self, api_admin_client, enable_manual_sync, mocker
+    ):
+        """The refresh wraps the sync in ``track_app_task`` for the snippets app."""
+        enable_manual_sync(value=True)
+        mocker.patch.object(
+            snippets_extra_routes, "update_snippets", new=AsyncMock(return_value=None)
+        )
+        spy = mocker.spy(snippets_extra_routes, "track_app_task")
+
+        response = api_admin_client.post(self.URL)
+
+        assert response.status_code == status.HTTP_200_OK
+        spy.assert_called_once()
+        assert spy.call_args.args[1] == "snippets"
+
     async def test_admin_with_manual_sync_disabled_returns_403(
         self, api_admin_client, enable_manual_sync, mocker
     ):
         """Disabled deployment: 403 with structured detail; no work done."""
         enable_manual_sync(value=False)
         update_mock = mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(return_value=None),
         )
@@ -983,7 +1224,7 @@ class TestSnippetsApiRefresh:
         """Non-admin caller: 403; no refresh work done."""
         enable_manual_sync(value=True)
         update_mock = mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(return_value=None),
         )
@@ -999,7 +1240,7 @@ class TestSnippetsApiRefresh:
         """No auth: 401; no refresh work done."""
         enable_manual_sync(value=True)
         update_mock = mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(return_value=None),
         )
@@ -1019,7 +1260,7 @@ class TestSnippetsApiRefresh:
         """
         enable_manual_sync(value=True)
         update_mock = mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(return_value=None),
         )
@@ -1083,7 +1324,7 @@ class TestSnippetsApiRefresh:
         """Backend errors are not silently swallowed (500 to caller)."""
         enable_manual_sync(value=True)
         mocker.patch.object(
-            snippets_api_routes,
+            snippets_extra_routes,
             "update_snippets",
             new=AsyncMock(side_effect=RuntimeError("disk walk failed")),
         )

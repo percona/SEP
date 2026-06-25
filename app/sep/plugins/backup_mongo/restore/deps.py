@@ -17,14 +17,17 @@
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
 from fastapi import Depends, Form, HTTPException, status
 
-from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
-from app.core.models import PaginatedResponse
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPInternalServerErrorException,
+    HTTPNotFoundException,
+)
+from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -36,26 +39,24 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.sep.plugins.backup_mongo.deps import (
-    _fetch_latest_task_statuses_for_names,
-    _gathered_task_status,
-    extract_latest_task_status,
-)
+from app.sep.plugins.backup_mongo.deps import _gathered_task_status
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.backup_mongo.restore.models import (
-    PbmForceResyncPayloadModel,
-    PbmListPayloadModel,
-    restore_leg_payload_models_from_form,
-    RestoreConfig,
-    RestoreConfigPayloadModel,
     RestoreCreate,
     RestoreDerivedTaskSummary,
-    RestoreLegPayloadModel,
     RestoreTaskDetailResponse,
     RestoreTaskGroupPayloads,
-    RestoreTaskLegModel,
     RestoreTaskResponse,
     RestoreTaskWrite,
+)
+from app.sep.plugins.backup_mongo.restore.spec import (
+    build_force_resync_payload,
+    build_restore_payloads,
+)
+from app.sep.plugins.framework import (
+    batch_get_latest_statuses,
+    extract_latest_task_status,
+    get_task_latest_status,
 )
 from app.sep.plugins.framework.cascade import (
     cascade_create_independent_tasks,
@@ -63,125 +64,12 @@ from app.sep.plugins.framework.cascade import (
 )
 from app.tasks.models import (
     Task,
-    TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
 
 logger = logging.getLogger(__name__)
-
-RESTORE_CONFIG_PAYLOAD_MARKER = "pbm_restore_config_payload"
-
-
-def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
-    """Build TaskWrite from typed leg descriptor."""
-    meta = {
-        "target": leg.target,
-        "config": leg.config_yaml,
-        "requirements": leg.requirements,
-    }
-    if leg.service_name is not None:
-        meta["_service_name"] = leg.service_name
-    data = {
-        "task": "run-python",
-        "meta": meta,
-        "payload": f"file://{Path(__file__).parent / leg.payload_name}",
-        **({"parent": leg.parent} if leg.parent is not None else {}),
-    }
-    return TaskWrite(
-        name=leg.name,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.RESTORE_MONGO,
-        data=data,
-    )
-
-
-def _build_restore_config_leg(
-    payload: RestoreConfigPayloadModel,
-) -> RestoreTaskLegModel:
-    """Build typed task leg for restore-config task."""
-    restore_config = RestoreConfig(
-        restore=payload.restore,
-        backup_source=payload.backup_source,
-        backup_type=payload.backup_type,
-        credentials_path=payload.credentials_path,
-    )
-    return RestoreTaskLegModel(
-        name=payload.task_name,
-        payload_name=RESTORE_CONFIG_PAYLOAD_MARKER,
-        target=payload.hostname,
-        requirements="packaging\nPyYAML",
-        config_yaml=yaml.dump(
-            restore_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
-            default_flow_style=False,
-            allow_unicode=True,
-        ),
-        service_name=payload.service_name,
-    )
-
-
-def _build_restore_leg(payload: RestoreLegPayloadModel) -> RestoreTaskLegModel:
-    """Build typed task leg for restore execution task."""
-    restore_config = RestoreConfig(
-        restore=None,  # Restore options already synced by config leg.
-        backup_source=payload.backup_source,
-        backup_type=payload.backup_type,
-        credentials_path=payload.credentials_path,
-    )
-    return RestoreTaskLegModel(
-        name=f"{payload.task_name}-{payload.backup_type}",
-        payload_name=payload.payload_script_name(),
-        target=payload.hostname,
-        requirements="packaging\nPyYAML",
-        config_yaml=yaml.dump(
-            restore_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
-            default_flow_style=False,
-            allow_unicode=True,
-        ),
-        parent=payload.task_name,
-        service_name=payload.service_name,
-    )
-
-
-def _build_pbm_list_leg(payload: PbmListPayloadModel) -> RestoreTaskLegModel:
-    """Build typed task leg for pbm-list helper task."""
-    config_dict = (
-        {"credentials_path": payload.credentials_path}
-        if payload.credentials_path
-        else {}
-    )
-    return RestoreTaskLegModel(
-        name=f"{payload.task_name}-pbm-list",
-        payload_name="pbm_list_payload",
-        target=payload.hostname,
-        config_yaml=yaml.dump(config_dict, default_flow_style=False)
-        if config_dict
-        else "",
-        parent=payload.task_name,
-        service_name=payload.service_name,
-    )
-
-
-def _build_pbm_force_resync_leg(
-    payload: PbmForceResyncPayloadModel,
-) -> RestoreTaskLegModel:
-    """Build typed task leg for pbm-force-resync helper task."""
-    config_dict = (
-        {"credentials_path": payload.credentials_path}
-        if payload.credentials_path
-        else {}
-    )
-    return RestoreTaskLegModel(
-        name=f"{payload.task_name}-pbm-force-resync",
-        payload_name="pbm_force_resync_payload",
-        target=payload.hostname,
-        config_yaml=yaml.dump(config_dict, default_flow_style=False)
-        if config_dict
-        else "",
-        parent=payload.task_name,
-        service_name=payload.service_name,
-    )
 
 
 async def _resolve_service_name(
@@ -224,29 +112,6 @@ async def _resolve_service_name(
     return service.name
 
 
-def build_restore_payloads(
-    form: RestoreCreate,
-    service_name: str | None,
-) -> RestoreTaskGroupPayloads:
-    """Build restore config, restore, list and optional force-resync payloads."""
-    leg_models = restore_leg_payload_models_from_form(form, service_name)
-
-    config_task = _task_write_from_leg(_build_restore_config_leg(leg_models.config))
-    restore_task = _task_write_from_leg(_build_restore_leg(leg_models.restore))
-    pbm_list_task = _task_write_from_leg(_build_pbm_list_leg(leg_models.pbm_list))
-    force_resync_task = (
-        _task_write_from_leg(_build_pbm_force_resync_leg(leg_models.force_resync))
-        if leg_models.force_resync is not None
-        else None
-    )
-    return RestoreTaskGroupPayloads(
-        config_task=config_task,
-        restore_task=restore_task,
-        pbm_list_task=pbm_list_task,
-        force_resync_task=force_resync_task,
-    )
-
-
 async def build_restore_config_task_payload(
     form: Annotated[RestoreCreate, Form()],
     inventory_api: InventoryAPI,
@@ -280,8 +145,7 @@ async def build_pbm_force_resync_task_payload(
 ) -> TaskWrite:
     """Build task payload for pbm config --force-resync command (physical restores only)."""
     service_name = await _resolve_service_name(form, inventory_api)
-    payload = PbmForceResyncPayloadModel.from_form(form, service_name)
-    return _task_write_from_leg(_build_pbm_force_resync_leg(payload))
+    return build_force_resync_payload(form, service_name)
 
 
 def _parse_restore_config_options(restore_config: dict[str, Any]) -> dict[str, Any]:
@@ -481,6 +345,26 @@ async def build_restore_tasks(
     return await build_restore_task_group(form, inventory_api)
 
 
+async def build_restore_task_group_from_body(
+    body: RestoreTaskWrite,
+    inventory_api: InventoryAPI,
+) -> RestoreTaskGroupPayloads:
+    """Build restore task group payloads from a JSON API request body.
+
+    Delegates to :func:`build_restore_task_group` after converting the body
+    to :class:`RestoreCreate`.
+
+    :param body: The JSON request body for restore task creation.
+    :type body: RestoreTaskWrite
+    :param inventory_api: The Inventory API to look up services.
+    :type inventory_api: InventoryAPI
+    :return: Named payloads for config, restore, pbm-list, and optional force-resync legs.
+    :rtype: RestoreTaskGroupPayloads
+    """
+    form = restore_create_from_write(body)
+    return await build_restore_task_group(form, inventory_api)
+
+
 def restore_child_task_names(parent_name: str, backup_type: BackupType) -> list[str]:
     """Return child task names for a parent restore config task.
 
@@ -559,44 +443,31 @@ async def _fetch_restore_parent_tasks(tasks_api: TaskAPI) -> list[Task]:
     ``parent == name``.
     """
     null_response, self_parent_response = await asyncio.gather(
-        tasks_api.get(
-            "/",
-            params={
-                "owner": TaskOwner.RESTORE_MONGO.value,
-                "parent_is_null": "true",
-                "limit": 0,
-            },
+        fetch_all_dict_items(
+            lambda pagination: tasks_api.get(
+                "/",
+                params={
+                    "owner": TaskOwner.RESTORE_MONGO.value,
+                    "parent_is_null": "true",
+                    **pagination.model_dump(),
+                },
+            )
         ),
-        tasks_api.get(
-            "/",
-            params={
-                "owner": TaskOwner.RESTORE_MONGO.value,
-                "parent_is_null": "false",
-                "self_parent": "true",
-                "limit": 0,
-            },
+        fetch_all_dict_items(
+            lambda pagination: tasks_api.get(
+                "/",
+                params={
+                    "owner": TaskOwner.RESTORE_MONGO.value,
+                    "parent_is_null": "false",
+                    "self_parent": "true",
+                    **pagination.model_dump(),
+                },
+            )
         ),
     )
-    null_parents = [Task.model_validate(item) for item in null_response["items"]]
-    self_parents = [Task.model_validate(item) for item in self_parent_response["items"]]
+    null_parents = [Task.model_validate(item) for item in null_response]
+    self_parents = [Task.model_validate(item) for item in self_parent_response]
     return null_parents + self_parents
-
-
-async def get_restore_mongo_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for a restore task.
-
-    :param task_name: The name of the restore task.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
-    :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(f"/{task_name}/history/")
-    return extract_latest_task_status(response["items"])
 
 
 def build_restore_mongo_api_task_response(
@@ -627,9 +498,9 @@ def build_restore_mongo_api_task_response(
 
 async def get_restore_mongo_api_task_responses(
     tasks_api: TaskAPI,
+    *,
+    pagination: Pagination,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = 0,
-    limit: int = 50,
 ) -> PaginatedResponse[RestoreTaskResponse]:
     """Retrieve a page of restore task responses for the JSON API.
 
@@ -640,20 +511,18 @@ async def get_restore_mongo_api_task_responses(
 
     :param tasks_api: The TaskAPI instance used to query restore tasks.
     :type tasks_api: TaskAPI
+    :param pagination: Validated offset/limit window for this page.
+    :type pagination: Pagination
     :param status: Optional latest-history status filter for the list.
     :type status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based starting offset for the page slice.
-    :type offset: int
-    :param limit: Maximum items returned for the page.
-    :type limit: int
     :return: The paginated restore task responses matching the requested filters.
     :rtype: PaginatedResponse[RestoreTaskResponse]
     """
     parents = await _fetch_restore_parent_tasks(tasks_api)
 
     if status is None:
-        page_parents = parents[offset : offset + limit]
-        status_map = await _fetch_latest_task_statuses_for_names(
+        page_parents = pagination.slice(parents)
+        status_map = await batch_get_latest_statuses(
             tasks_api,
             [task.name for task in page_parents],
         )
@@ -664,14 +533,9 @@ async def get_restore_mongo_api_task_responses(
             )
             for task in page_parents
         ]
-        return PaginatedResponse[RestoreTaskResponse](
-            items=items,
-            total=len(parents),
-            offset=offset,
-            limit=limit,
-        )
+        return PaginatedResponse.from_pagination(items, len(parents), pagination)
 
-    status_map = await _fetch_latest_task_statuses_for_names(
+    status_map = await batch_get_latest_statuses(
         tasks_api,
         [task.name for task in parents],
     )
@@ -680,16 +544,15 @@ async def get_restore_mongo_api_task_responses(
         for task in parents
         if (task_status := status_map.get(task.name)) == status
     ]
-    page_pairs = task_status_pairs[offset : offset + limit]
+    page_pairs = pagination.slice(task_status_pairs)
     items = [
         build_restore_mongo_api_task_response(task, status=task_status)
         for task, task_status in page_pairs
     ]
-    return PaginatedResponse[RestoreTaskResponse](
-        items=items,
-        total=len(task_status_pairs),
-        offset=offset,
-        limit=limit,
+    return PaginatedResponse.from_pagination(
+        items,
+        len(task_status_pairs),
+        pagination,
     )
 
 
@@ -725,13 +588,13 @@ async def build_restore_mongo_api_detail_response(
     backup_type = _backup_type_from_parent(task)
     child_names = restore_child_task_names(task.name, backup_type)
     gather_results = await asyncio.gather(
-        get_restore_mongo_task_status(task.name, tasks_api),
+        get_task_latest_status(tasks_api, task.name),
         *(_fetch_restore_child_detail(name, tasks_api) for name in child_names),
         return_exceptions=True,
     )
     parent_status = _gathered_task_status(gather_results[0])
     child_results = gather_results[1:]
-    derived_tasks: list[RestoreDerivedTaskSummary] = []
+    derived_tasks = []
 
     for child_detail in child_results:
         if isinstance(child_detail, BaseException) or child_detail is None:
@@ -798,6 +661,26 @@ UnprotectedRestoreParentTask = Annotated[
 ]
 
 
+def build_restore_update_form_from_body(
+    body: RestoreTaskWrite,
+    parent_task: UnprotectedRestoreParentTask,
+) -> RestoreCreate:
+    """Build a restore update form from a JSON API request body.
+
+    Converts the body to :class:`RestoreCreate` with ``task_name`` and
+    ``backup_type`` pinned from the path parent. Does not mutate tasks; callers
+    pass the result to :func:`update_restore_task_group`.
+
+    :param body: The JSON request body for restore task update.
+    :type body: RestoreTaskWrite
+    :param parent_task: The unprotected parent restore config task from the URL path.
+    :type parent_task: Task
+    :return: A :class:`RestoreCreate` instance for payload construction.
+    :rtype: RestoreCreate
+    """
+    return restore_update_form_from_write(body, parent_task)
+
+
 async def delete_restore_task_group(
     tasks_api: TaskAPI,
     parent_task: Task,
@@ -820,13 +703,20 @@ async def delete_restore_task_group(
         failed = [
             (failure.task_name, str(failure.exception)) for failure in result.failures
         ]
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Partial delete failure; orphaned tasks: {failed}",
+        raise HTTPInternalServerErrorException(
+            detail=f"Partial delete failure; orphaned tasks: {failed}"
         )
 
 
 RestoreTasks = Annotated[RestoreTaskGroupPayloads, Depends(build_restore_tasks)]
+RestoreTaskGroupFromBody = Annotated[
+    RestoreTaskGroupPayloads,
+    Depends(build_restore_task_group_from_body),
+]
+RestoreUpdateFormFromBody = Annotated[
+    RestoreCreate,
+    Depends(build_restore_update_form_from_body),
+]
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 

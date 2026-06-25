@@ -15,14 +15,11 @@
 
 """Define dependencies for the Restores plugin."""
 
-from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form, HTTPException, status
-from fastapi.encoders import jsonable_encoder
+from fastapi import Body, Depends, Form, HTTPException, status
 
-from app.core.utils.pydantic import extract_model_from_instance
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -34,33 +31,37 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.framework import build_default_task_response
+from app.sep.plugins.framework.spec import stamp_form_input
 from app.sep.plugins.mysql_backups.models import BackupType
-from app.sep.plugins.mysql_backups.restore.models import (
-    BaseRestoreConfigServer,
-    RestoreConfig,
-    RestoreConfigAll,
-    RestoreConfigServer,
-    RestoreCreate,
+from app.sep.plugins.mysql_backups.restore.models import RestoreCreate, RestoresResponse
+from app.sep.plugins.mysql_backups.restore.spec import (
+    build_restore_spec,
+    RestoreResolved,
 )
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
 
 UNKNOWN_SERVICE_SENTINEL = "-1"
 
 
-async def build_restore_task_payload(
-    form: Annotated[RestoreCreate, Form()],
-    inventory_api: InventoryAPI,
-) -> TaskWrite:
-    """Build task payload for a restore operation."""
-    all_config_dict = extract_model_from_instance(form, RestoreConfigAll)
-    base_config_dict = extract_model_from_instance(form, BaseRestoreConfigServer)
+async def resolve_restore_entities(
+    form: RestoreCreate, inventory_api: InventoryAPI
+) -> RestoreResolved:
+    """Resolve the inventory entities a restore form references.
 
-    restore_config_payload = {
-        **base_config_dict.model_dump(),
-        "alias": form.task_name,
-    }
+    MyDumper always resolves its MySQL service (eager-raising when ``service_id``
+    is unset or stale), splits the service address into ``dest_host`` / ``dest_port``,
+    and resolves the optional schema into the restore ``database``. XtraBackup and
+    Binlog have no destination service: a ``service_id`` of ``None`` or the
+    ``UNKNOWN_SERVICE_SENTINEL`` placeholder skips the lookup, and a stale id whose
+    service was deleted degrades to a node-only annotation on a 404.
 
-    service = None
+    :param form: The validated restore create form.
+    :param inventory_api: The Inventory API used to resolve the references.
+    :return: The resolved facts fed into :func:`build_restore_spec`.
+    :raises HTTPException: When a MyDumper service lookup fails, or a non-MyDumper
+        lookup fails with a status other than 404.
+    """
     if form.backup_type == BackupType.MYDUMPER:
         service = await get_created_entity(
             inventory_api,
@@ -68,12 +69,12 @@ async def build_restore_task_payload(
             form.service_id,
             type=ServiceTypeEnum.MYSQL,
         )
-
+        dest_host = dest_port = None
         if isinstance(service.address, str) and ":" in service.address:
             host, port_str = service.address.split(":", 1)
-            restore_config_payload["dest_host"] = host.strip()
-            restore_config_payload["dest_port"] = int(port_str.strip())
-
+            dest_host = host.strip()
+            dest_port = int(port_str.strip())
+        database = None
         if str(form.schema_id).isdigit() and int(form.schema_id) > 0:
             schema = await get_created_entity(
                 inventory_api,
@@ -81,8 +82,15 @@ async def build_restore_task_payload(
                 form.schema_id,
                 service_id=service.id,
             )
-            restore_config_payload["database"] = schema.name
-    elif form.service_id and form.service_id != UNKNOWN_SERVICE_SENTINEL:
+            database = schema.name
+        return RestoreResolved(
+            service_name=service.name,
+            dest_host=dest_host,
+            dest_port=dest_port,
+            database=database,
+        )
+
+    if form.service_id and form.service_id != UNKNOWN_SERVICE_SENTINEL:
         try:
             service = await get_created_entity(
                 inventory_api,
@@ -92,56 +100,105 @@ async def build_restore_task_payload(
             )
         except HTTPException as exc:
             # ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404,
-            # not the project's ``HTTPNotFoundException``. The xtrabackup/binlog
-            # forms render ``service_id`` inside the MyLoader fieldset only, so
-            # the value sent for those backup types may be the
-            # ``UNKNOWN_SERVICE_SENTINEL`` placeholder or a stale id whose
-            # service was deleted. A non-MyDumper restore does not need the
-            # service to build the task payload, so fall back to a node-only
-            # PMM annotation on a 404; re-raise any other error.
+            # not the project's ``HTTPNotFoundException``.
             if exc.status_code != status.HTTP_404_NOT_FOUND:
                 raise
-            service = None
+            return RestoreResolved()
+        return RestoreResolved(service_name=service.name)
 
-    restore_config = RestoreConfig(
-        all_servers=RestoreConfigAll.model_validate(all_config_dict),
-        server_list=[RestoreConfigServer.model_validate(restore_config_payload)],
-    )
+    return RestoreResolved()
 
-    backup_type_to_payload = {
-        BackupType.MYDUMPER: "mydumper_payload",
-        BackupType.XTRABACKUP: "xtrabackup_payload",
-        BackupType.BINLOG: "binlog_payload",
-    }
 
-    payload_name = backup_type_to_payload.get(form.backup_type)
-    if not payload_name:
-        raise ValueError(f"Invalid Backup Type {form.backup_type}")
+async def build_restore_payload(
+    form: Annotated[RestoreCreate, Body()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the restore task payload for the derived JSON create route.
 
-    requirements = "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3"
-    if form.backup_type == BackupType.XTRABACKUP:
-        requirements += "\nfilelock"
+    The ``payload_builder`` the framework uses verbatim as the create dependency:
+    resolve the form's references, then feed the shared pure
+    :func:`build_restore_spec`, so a JSON-created task's payload stays
+    byte-identical to a Jinja-form-created one.
 
-    payload_path = Path(__file__).parent / payload_name
+    :param form: The JSON restore create body.
+    :param inventory_api: The Inventory API used to resolve references.
+    :return: The restore ``TaskWrite``.
+    """
+    resolved = await resolve_restore_entities(form, inventory_api)
+    write = build_restore_spec(form, resolved)
+    stamp_form_input(write, form)
+    return write
 
-    meta = {
-        "config": yaml.dump(
-            jsonable_encoder(restore_config, by_alias=True, exclude_none=True)
-        ),
-        "target": form.hostname,
-        "requirements": requirements,
-    }
-    if service is not None:
-        meta["_service_name"] = service.name
 
-    return TaskWrite(
-        name=form.task_name,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.RESTORES,
-        data={
-            "task": "run-python",
-            "meta": meta,
-            "payload": f"file://{payload_path}",
+async def build_restore_task_payload(
+    form: Annotated[RestoreCreate, Form()],
+    inventory_api: InventoryAPI,
+) -> TaskWrite:
+    """Build the restore task payload for the legacy Jinja form path.
+
+    Resolves the form's references and feeds the shared pure
+    :func:`build_restore_spec`, the same pair the JSON create route uses, so a
+    form-created task's payload is byte-identical to a JSON-created one.
+
+    :param form: The form-encoded restore create body.
+    :param inventory_api: The Inventory API used to resolve references.
+    :return: The restore ``TaskWrite``.
+    """
+    resolved = await resolve_restore_entities(form, inventory_api)
+    return build_restore_spec(form, resolved)
+
+
+def _extract_restore_config(task: Task) -> tuple[BackupType | None, Any, Any]:
+    """Read backup type and destination host/port out of a restore task's config.
+
+    :param task: The restore task to inspect.
+    :return: The ``(backup_type, dest_host, dest_port)`` triple, each ``None`` when
+        the config is absent or unparseable.
+    """
+    meta = task.data.get("meta") if task.data else None
+    raw_config = meta.get("config") if meta else None
+    if not raw_config:
+        return None, None, None
+    try:
+        config = yaml.safe_load(raw_config)
+    except yaml.YAMLError:
+        config = None
+    server_list = config.get("SERVER_LIST") if isinstance(config, dict) else None
+    server = server_list[0] if isinstance(server_list, list) and server_list else None
+    if not isinstance(server, dict):
+        return None, None, None
+    host = server.get("DEST_HOST")
+    port = server.get("DEST_PORT")
+    raw_type = server.get("BACKUP_TYPE")
+    if raw_type is None:
+        return None, host, port
+    try:
+        return BackupType(raw_type), host, port
+    except ValueError:
+        return None, host, port
+
+
+def build_restore_api_task_response(
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+) -> RestoresResponse:
+    """Build a ``RestoresResponse`` for the JSON API list/detail routes.
+
+    :param task: The restore task retrieved from the Tasks API.
+    :param status: The latest known execution status for the task.
+    :return: A validated restore task API response object.
+    """
+    backup_type, host, port = _extract_restore_config(task)
+    meta = task.data.get("meta") if task.data else None
+    return build_default_task_response(
+        RestoresResponse,
+        task,
+        status,
+        extras={
+            "backup_type": backup_type,
+            "host": host,
+            "port": port,
+            "hostname": meta.get("target") if meta else None,
         },
     )
 
@@ -263,3 +320,6 @@ async def get_restores_index_context(
         context,
         TaskOwner.RESTORES,
     )
+
+
+RestoresIndexContext = Annotated[dict[str, Any], Depends(get_restores_index_context)]

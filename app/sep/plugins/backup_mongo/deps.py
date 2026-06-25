@@ -18,8 +18,6 @@
 import asyncio
 import json
 import logging
-from collections.abc import Iterable, Sequence
-from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
@@ -27,23 +25,18 @@ from aiohttp import ClientResponseError
 from fastapi import Depends, Form, HTTPException, status
 
 from app.core.exceptions import HTTPNotFoundException
-from app.core.models import PaginatedResponse
+from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.backup_mongo.models import (
-    BackupConfig,
-    BackupConfigBackup,
-    BackupConfigPITR,
-    BackupConfigStorage,
     BackupCreate,
     BackupDerivedTaskSummary,
     BackupTaskDetailResponse,
@@ -52,9 +45,19 @@ from app.sep.plugins.backup_mongo.models import (
     BackupType,
 )
 from app.sep.plugins.backup_mongo.schema import BACKUP_MONGO_DERIVED
+from app.sep.plugins.backup_mongo.spec import (
+    BackupMongoResolved,
+    build_backup_mongo_spec,
+)
+from app.sep.plugins.framework import (
+    batch_get_latest_statuses,
+    build_default_task_response,
+    extract_latest_task_status,
+    get_task_latest_status,
+    make_task_dep,
+)
 from app.tasks.models import (
     Task,
-    TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskOwner,
@@ -65,111 +68,6 @@ logger = logging.getLogger(__name__)
 
 PBM_LATEST_STATUS_TAIL_BYTES = 4096
 BACKUP_DERIVED_SUFFIXES = tuple(spec.name_suffix for spec in BACKUP_MONGO_DERIVED)
-
-
-def _build_pitr_config(form: BackupCreate) -> dict[str, Any]:
-    """Build PITR configuration from form data."""
-    return {
-        "enabled": form.pitr_enabled,
-        "oplogSpanMin": form.pitr_oplog_span_min,
-        "compression": form.pitr_compression,
-    }
-
-
-def _build_storage_config(form: BackupCreate) -> dict[str, Any]:
-    """Build storage configuration from form data."""
-    storage_config = {}
-    if form.storage_type == "s3":
-        storage_config = {
-            "region": form.storage_s3_region,
-            "bucket": form.storage_s3_bucket,
-            "prefix": form.storage_s3_prefix,
-            "endpointUrl": form.storage_s3_endpoint_url,
-        }
-    elif form.storage_type == "filesystem":
-        storage_config = {"path": form.storage_filesystem_path}
-
-    return {"type": form.storage_type, form.storage_type: storage_config}
-
-
-def _parse_backup_priority(priority_str: str) -> dict[str, float] | None:
-    """Parse backup priority YAML string and return as dictionary.
-
-    Parses YAML input (dict format) and returns it as a dictionary
-    mapping node addresses to priority values for PBM configuration.
-
-    :param priority_str: YAML string containing priority configuration.
-    :type priority_str: str
-    :return: Parsed priority dictionary mapping node to priority or None if parsing fails.
-    :rtype: dict[str, float] | None
-    """
-    try:
-        priority_parsed = yaml.safe_load(priority_str)
-    except yaml.YAMLError:
-        logger.warning("Failed to parse backup priority YAML: %s", priority_str)
-        return None
-    else:
-        if priority_parsed is None:
-            return None
-        if isinstance(priority_parsed, dict):
-            return {str(k): float(v) for k, v in priority_parsed.items()}
-        logger.warning(
-            "Priority must be a dictionary/mapping, got: %s", type(priority_parsed)
-        )
-        return None
-
-
-def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
-    """Build backup configuration dictionary from form data.
-
-    :param form: The form data containing backup configuration fields.
-    :type form: BackupCreate
-    :return: A dictionary containing backup configuration settings such as priority,
-        compression, compression level, timeouts, oplog span, and parallel collections.
-        Returns an empty dictionary if no backup configuration fields are provided.
-    :rtype: dict[str, Any]
-    """
-    has_backup_config = any(
-        (
-            form.backup_priority,
-            form.backup_compression,
-            form.backup_compression_level is not None,
-            form.backup_timeouts_starting_status is not None,
-            form.backup_oplog_span_min is not None,
-            form.backup_num_parallel_collections is not None,
-        )
-    )
-
-    if not has_backup_config:
-        return {}
-
-    backup_config_dict = {}
-
-    if form.backup_priority:
-        priority_parsed = _parse_backup_priority(form.backup_priority)
-        if priority_parsed is not None:
-            backup_config_dict["priority"] = priority_parsed
-
-    if form.backup_compression:
-        backup_config_dict["compression"] = form.backup_compression
-
-    if form.backup_compression_level is not None:
-        backup_config_dict["compressionLevel"] = form.backup_compression_level
-
-    if form.backup_timeouts_starting_status is not None:
-        backup_config_dict["timeouts"] = {
-            "startingStatus": form.backup_timeouts_starting_status
-        }
-
-    if form.backup_oplog_span_min is not None:
-        backup_config_dict["oplogSpanMin"] = form.backup_oplog_span_min
-
-    if form.backup_num_parallel_collections is not None:
-        backup_config_dict["numParallelCollections"] = (
-            form.backup_num_parallel_collections
-        )
-
-    return backup_config_dict
 
 
 def backup_derived_task_names(parent_name: str) -> list[str]:
@@ -235,47 +133,10 @@ async def build_backup_task_payload(
             raise
         service = None
 
-    pitr = _build_pitr_config(form)
-    storage = _build_storage_config(form)
-    backup_config_dict = _build_backup_config_dict(form)
-
-    backup_config = BackupConfig(
-        storage=BackupConfigStorage.model_validate(storage),
-        pitr=BackupConfigPITR.model_validate(pitr),
-        backup=BackupConfigBackup.model_validate(backup_config_dict)
-        if backup_config_dict
-        else None,
-        credentials_path=form.credentials_path or None,
+    resolved = BackupMongoResolved(
+        service_name=service.name if service is not None else None
     )
-
-    requirements = "packaging\nPyYAML"
-
-    payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
-
-    meta = {
-        "config": yaml.dump(
-            backup_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
-            default_flow_style=False,
-            allow_unicode=True,
-        ),
-        "target": form.hostname,
-        "requirements": requirements,
-    }
-    if service is not None:
-        meta["_service_name"] = service.name
-
-    return TaskWrite(
-        name=form.task_name,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUP_MONGO,
-        data={
-            "task": "run-python",
-            "meta": meta,
-            "payload": f"file://{payload_path}",
-            "backup_type": form.backup_type,
-        },
-        alert_on_fail=form.alert_on_fail,
-    )
+    return build_backup_mongo_spec(form, resolved)
 
 
 async def build_backup_task_payload_from_form(
@@ -299,33 +160,6 @@ async def build_backup_task_payload_from_form(
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload_from_form)]
 
 
-def extract_latest_task_status(
-    histories: Iterable[dict[str, Any]],
-) -> TaskHistoryStatusEnum | None:
-    """Return the latest known status from a task history payload."""
-    for history in histories:
-        if (status := history.get("status")) is not None:
-            return TaskHistoryStatusEnum(status)
-    return None
-
-
-async def get_backup_mongo_task_status(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> TaskHistoryStatusEnum | None:
-    """Fetch the latest execution status for a backup task.
-
-    :param task_name: The name of the backup task.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
-    :return: The latest known task status, or ``None`` if no history exists.
-    :rtype: TaskHistoryStatusEnum | None
-    """
-    response = await tasks_api.get(f"/{task_name}/history/")
-    return extract_latest_task_status(response["items"])
-
-
 def build_backup_mongo_api_task_response(
     task: Task,
     *,
@@ -342,44 +176,24 @@ def build_backup_mongo_api_task_response(
     """
     data = task.data
     meta = data.get("meta") or {}
-    return BackupTaskResponse(
-        **task.model_dump(),
-        hostname=meta.get("target"),
-        status=status,
-        backup_type=str(data.get("backup_type", "")),
+    return build_default_task_response(
+        BackupTaskResponse,
+        task,
+        status,
+        extras={
+            "hostname": meta.get("target"),
+            "backup_type": str(data.get("backup_type", "")),
+        },
     )
 
 
-def _backup_parent_list_params(
-    *,
-    offset: int,
-    limit: int,
-) -> dict[str, Any]:
+def _backup_parent_list_params(pagination: Pagination) -> dict[str, Any]:
     """Build upstream task-list query params for parent ``pbm_config`` rows."""
     return {
         "owner": TaskOwner.BACKUP_MONGO.value,
         "parent_is_null": "true",
         "backup_type": BackupType.PBM_CONFIG.value,
-        "offset": offset,
-        "limit": limit,
-    }
-
-
-async def _fetch_latest_task_statuses_for_names(
-    tasks_api: TaskAPI,
-    names: Sequence[str],
-) -> dict[str, TaskHistoryStatusEnum | None]:
-    """Resolve latest history status for ``names`` via the tasks batch endpoint."""
-    if not names:
-        return {}
-    try:
-        response = await tasks_api.post("/history/latest", json={"names": list(names)})
-    except Exception:
-        logger.exception("Failed to batch-fetch latest history status for backup list")
-        return dict.fromkeys(names)
-    return {
-        name: TaskHistoryStatusEnum(value) if value is not None else None
-        for name, value in response.items()
+        **pagination.model_dump(),
     }
 
 
@@ -392,34 +206,32 @@ def _gathered_task_status(
 
 async def get_backup_mongo_api_task_responses(
     tasks_api: TaskAPI,
+    *,
+    pagination: Pagination,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = 0,
-    limit: int = 50,
 ) -> PaginatedResponse[BackupTaskResponse]:
     """Retrieve a page of backup task responses for the JSON API.
 
     Uses one filtered upstream task list plus one batch latest-status lookup per
-    page. When ``status`` is set, the upstream list uses ``limit=0`` so
-    ``total`` reflects the parent count after the status filter.
+    page. When ``status`` is set, walks parent-task pages with bounded ``limit``
+    and applies latest-status filtering in-memory before slicing.
 
     :param tasks_api: The TaskAPI instance used to query backup tasks.
     :type tasks_api: TaskAPI
+    :param pagination: Validated offset/limit window for this page.
+    :type pagination: Pagination
     :param status: Optional latest-history status filter for the list.
     :type status: TaskHistoryStatusEnum | None
-    :param offset: Zero-based starting offset for the page slice.
-    :type offset: int
-    :param limit: Maximum items returned for the page.
-    :type limit: int
     :return: The paginated backup task responses matching the requested filters.
     :rtype: PaginatedResponse[BackupTaskResponse]
     """
     if status is None:
         response = await tasks_api.get(
             "/",
-            params=_backup_parent_list_params(offset=offset, limit=limit),
+            params=_backup_parent_list_params(pagination),
         )
         parents = [Task.model_validate(item) for item in response["items"]]
-        status_map = await _fetch_latest_task_statuses_for_names(
+        status_map = await batch_get_latest_statuses(
             tasks_api,
             [task.name for task in parents],
         )
@@ -430,19 +242,20 @@ async def get_backup_mongo_api_task_responses(
             )
             for task in parents
         ]
-        return PaginatedResponse[BackupTaskResponse](
-            items=items,
-            total=response["total"],
-            offset=offset,
-            limit=limit,
+        return PaginatedResponse.from_pagination(
+            items,
+            response["total"],
+            pagination,
         )
 
-    response = await tasks_api.get(
-        "/",
-        params=_backup_parent_list_params(offset=0, limit=0),
+    parent_items = await fetch_all_dict_items(
+        lambda page_pagination: tasks_api.get(
+            "/",
+            params=_backup_parent_list_params(page_pagination),
+        )
     )
-    parents = [Task.model_validate(item) for item in response["items"]]
-    status_map = await _fetch_latest_task_statuses_for_names(
+    parents = [Task.model_validate(item) for item in parent_items]
+    status_map = await batch_get_latest_statuses(
         tasks_api,
         [task.name for task in parents],
     )
@@ -451,16 +264,15 @@ async def get_backup_mongo_api_task_responses(
         for task in parents
         if (task_status := status_map.get(task.name)) == status
     ]
-    page_pairs = task_status_pairs[offset : offset + limit]
+    page_pairs = pagination.slice(task_status_pairs)
     items = [
         build_backup_mongo_api_task_response(task, status=task_status)
         for task, task_status in page_pairs
     ]
-    return PaginatedResponse[BackupTaskResponse](
-        items=items,
-        total=len(task_status_pairs),
-        offset=offset,
-        limit=limit,
+    return PaginatedResponse.from_pagination(
+        items,
+        len(task_status_pairs),
+        pagination,
     )
 
 
@@ -543,14 +355,14 @@ async def build_backup_mongo_api_detail_response(
     """
     derived_names = backup_derived_task_names(task.name)
     gather_results = await asyncio.gather(
-        get_backup_mongo_task_status(task.name, tasks_api),
+        get_task_latest_status(tasks_api, task.name),
         *(_fetch_backup_derived_detail(name, tasks_api) for name in derived_names),
         return_exceptions=True,
     )
     parent_status = _gathered_task_status(gather_results[0])
     derived_results = gather_results[1:]
-    derived_tasks: list[BackupDerivedTaskSummary] = []
-    latest_pbm_status: str | None = None
+    derived_tasks = []
+    latest_pbm_status = None
 
     for derived_detail in derived_results:
         if isinstance(derived_detail, BaseException) or derived_detail is None:
@@ -598,26 +410,7 @@ async def resolve_backup_parent_task(
     return task
 
 
-async def get_backups_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Backups plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Backups plugin. If the task does not exist or is not
-    owned by Backups, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Backups.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.BACKUP_MONGO)
-
+get_backups_task = make_task_dep(TaskOwner.BACKUP_MONGO)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 

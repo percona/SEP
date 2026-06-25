@@ -16,52 +16,21 @@
 """Define tests for the app.sep.plugins.checksums.deps module."""
 
 import shlex
-from collections import defaultdict
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.sep.plugins.checksums.deps import (
     _assemble_checksum_payload,
-    build_checksum_task,
-    build_checksums_api_task_response,
     build_checksums_task_payload,
+)
+from app.sep.plugins.checksums.models import ChecksumsCreate, ChecksumsForm
+from app.sep.plugins.checksums.spec import (
+    build_checksums_spec,
     DEFAULT_RECURSION_DSN_TABLE,
 )
-from app.sep.plugins.checksums.models import (
-    ChecksumsCreate,
-    ChecksumTaskResponse,
-    ChecksumTaskWrite,
-)
-from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
-from tests.app.factories import TaskFactory
-
-
-def _make_checksums_task(
-    created_by: str | None = None, last_updated_by: str | None = None
-) -> Task:
-    return TaskFactory.build(
-        name="test-checksums",
-        owner=TaskOwner.CHECKSUMS,
-        backend=TaskBackendEnum.PROXY,
-        is_template=False,
-        protected=False,
-        alert_on_fail=False,
-        data={
-            "task": "run-command",
-            "meta": {
-                "command": "pt-table-checksum",
-                "args": "--recursion-method=processlist",
-                "target": "host1",
-                "_service_name": "test-svc",
-                "_service_host": "127.0.0.1",
-                "_service_port": 3306,
-            },
-        },
-        created_by=created_by,
-        last_updated_by=last_updated_by,
-    )
+from app.sep.plugins.framework.spec import assemble_envelope, ResolvedEntities
+from app.tasks.models import TaskOwner, TaskWrite
 
 
 class TestChecksumsJinjaFormDeps:
@@ -99,16 +68,22 @@ class TestChecksumsJinjaFormDeps:
         assert DEFAULT_RECURSION_DSN_TABLE in recursion_arg
 
 
-class TestChecksumsJsonApiDeps:
-    """Tests for the JSON API path (build_checksum_task) and form/API parity."""
+class TestChecksumsNomadPayloadParity:
+    """Assert the Jinja form path and the model-first spec path are byte-identical."""
 
     @pytest.mark.asyncio
-    async def test_form_and_json_paths_produce_identical_task_write(
+    async def test_form_and_spec_paths_produce_identical_task_write(
         self,
         created_service,
         mock_remote_api,
     ):
-        """Assert build_checksums_task_payload and build_checksum_task produce identical TaskWrite."""
+        """Assert the form payload and the spec-built envelope produce identical TaskWrite.
+
+        The model-first JSON create path runs the ``ChecksumsForm`` through
+        ``build_checksums_spec`` + the framework's ``assemble_envelope``; the
+        Jinja path runs ``ChecksumsCreate`` through ``build_checksums_task_payload``.
+        Both must produce the same Nomad payload for the same inputs.
+        """
         service_dump = created_service.model_dump()
         mock_remote_api.get = AsyncMock(return_value=service_dump)
 
@@ -133,18 +108,59 @@ class TestChecksumsJsonApiDeps:
             "alert_on_fail": False,
         }
 
-        form_input = ChecksumsCreate(**common_fields, extra_args="")
-        json_input = ChecksumTaskWrite(**common_fields)
+        form_result = await build_checksums_task_payload(
+            ChecksumsCreate(**common_fields, extra_args=""), mock_remote_api
+        )
 
-        form_result = await build_checksums_task_payload(form_input, mock_remote_api)
-        mock_remote_api.get = AsyncMock(return_value=service_dump)
-        json_result = await build_checksum_task(json_input, mock_remote_api)
+        resolved = ResolvedEntities(
+            service=created_service,
+            entities={"service_id": created_service},
+            executor_host=common_fields["hostname"],
+        )
+        spec_result = assemble_envelope(
+            build_checksums_spec(ChecksumsForm(**common_fields), resolved),
+            resolved,
+            name=common_fields["task_name"],
+            owner=TaskOwner.CHECKSUMS,
+            alert_on_fail=common_fields["alert_on_fail"],
+        )
 
-        assert form_result.model_dump() == json_result.model_dump()
+        assert form_result.model_dump() == spec_result.model_dump()
 
 
 class TestChecksumsPayloadAssembly:
     """Tests for the shared private helper _assemble_checksum_payload."""
+
+    @staticmethod
+    def _assemble(created_service, **overrides):
+        """Call ``_assemble_checksum_payload`` with default kwargs, applying overrides.
+
+        :param created_service: the service fixture forwarded as the first positional arg.
+        :type created_service: Service
+        :param overrides: keyword arguments overriding the assembled defaults.
+        :type overrides: typing.Any
+        """
+        kwargs = {
+            "task_name": "test",
+            "hostname": "host1",
+            "recursion_method": "processlist",
+            "dsn_table": "",
+            "databases": "",
+            "tables": "",
+            "pause_file": "",
+            "binary_index": False,
+            "explain_arg": False,
+            "fail_on_stopped_replication": False,
+            "truncate_replicate_table": False,
+            "progress": "",
+            "set_vars": "",
+            "max_load": "",
+            "chunk_time": "",
+            "max_lag": "",
+            "alert_on_fail": False,
+        }
+        kwargs.update(overrides)
+        return _assemble_checksum_payload(created_service, **kwargs)
 
     def test_dsn_expansion_does_not_mutate_input(self, created_service):
         """Assert _assemble_checksum_payload does not mutate the recursion_method argument."""
@@ -173,65 +189,27 @@ class TestChecksumsPayloadAssembly:
 
         assert original_recursion_method == "dsn"
 
-    def test_dsn_expansion_uses_default_dsn_table_when_empty(self, created_service):
-        """Assert empty dsn_table falls back to D=percona,t=dsns in the expanded arg."""
-        result = _assemble_checksum_payload(
-            created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method="dsn",
-            dsn_table="",
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=False,
-            explain_arg=False,
-            fail_on_stopped_replication=False,
-            truncate_replicate_table=False,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
+    @pytest.mark.parametrize(
+        ("dsn_table_input", "expected_substring"),
+        [
+            ("", DEFAULT_RECURSION_DSN_TABLE),
+            ("D=mydb,t=custom_dsns", "D=mydb,t=custom_dsns"),
+        ],
+        ids=["default_when_empty", "provided_verbatim"],
+    )
+    def test_dsn_expansion_recursion_arg(
+        self, dsn_table_input, expected_substring, created_service
+    ):
+        """Assert dsn expansion uses the default dsn_table when empty, else the provided value verbatim."""
+        result = self._assemble(
+            created_service, recursion_method="dsn", dsn_table=dsn_table_input
         )
 
         args = shlex.split(result.data["meta"]["args"])
         recursion_arg = next(
             (a for a in args if a.startswith("--recursion-method=")), ""
         )
-        assert DEFAULT_RECURSION_DSN_TABLE in recursion_arg
-
-    def test_dsn_expansion_uses_provided_dsn_table(self, created_service):
-        """Assert a custom dsn_table is used verbatim in the expanded recursion arg."""
-        custom_dsn_table = "D=mydb,t=custom_dsns"
-
-        result = _assemble_checksum_payload(
-            created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method="dsn",
-            dsn_table=custom_dsn_table,
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=False,
-            explain_arg=False,
-            fail_on_stopped_replication=False,
-            truncate_replicate_table=False,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
-        )
-
-        args = shlex.split(result.data["meta"]["args"])
-        recursion_arg = next(
-            (a for a in args if a.startswith("--recursion-method=")), ""
-        )
-        assert custom_dsn_table in recursion_arg
+        assert expected_substring in recursion_arg
 
     @pytest.mark.parametrize(
         "recursion_method", ["processlist", "hosts", "none", "default"]
@@ -264,188 +242,66 @@ class TestChecksumsPayloadAssembly:
         args_str = result.data["meta"]["args"]
         assert "dsn=" not in args_str
 
-    def test_optional_string_fields_are_omitted_when_empty(self, created_service):
-        """Assert that empty optional string fields do not appear in the assembled args."""
-        result = _assemble_checksum_payload(
-            created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method="processlist",
-            dsn_table="",
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=False,
-            explain_arg=False,
-            fail_on_stopped_replication=False,
-            truncate_replicate_table=False,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
-        )
+    @pytest.mark.parametrize(
+        ("overrides", "flags", "should_appear"),
+        [
+            (
+                {},
+                ["--databases", "--tables", "--pause-file", "--progress", "--set-vars"],
+                False,
+            ),
+            (
+                {
+                    "binary_index": False,
+                    "explain_arg": False,
+                    "fail_on_stopped_replication": False,
+                    "truncate_replicate_table": False,
+                },
+                [
+                    "--binary-index",
+                    "--explain",
+                    "--fail-on-stopped-replication",
+                    "--truncate-replicate-table",
+                ],
+                False,
+            ),
+            (
+                {
+                    "binary_index": True,
+                    "explain_arg": True,
+                    "fail_on_stopped_replication": True,
+                    "truncate_replicate_table": True,
+                },
+                [
+                    "--binary-index",
+                    "--explain",
+                    "--fail-on-stopped-replication",
+                    "--truncate-replicate-table",
+                ],
+                True,
+            ),
+        ],
+        ids=[
+            "optional_strings_omitted",
+            "bool_flags_omitted_when_false",
+            "bool_flags_present_when_true",
+        ],
+    )
+    def test_optional_and_flag_fields_presence_follows_value(
+        self, overrides, flags, should_appear, created_service
+    ):
+        """Assert optional string and boolean flags appear in args only when set.
+
+        Empty optional string fields and ``False`` boolean flags are omitted;
+        ``True`` boolean flags are emitted. The ``_assemble`` defaults supply
+        empty strings and ``False`` flags, so each case only overrides what it
+        exercises.
+        """
+        result = self._assemble(created_service, **overrides)
 
         args = shlex.split(result.data["meta"]["args"])
-        optional_flags = [
-            "--databases",
-            "--tables",
-            "--pause-file",
-            "--progress",
-            "--set-vars",
-        ]
-        for flag in optional_flags:
-            assert not any(a.startswith(flag) for a in args), (
-                f"{flag} should not appear when empty"
+        for flag in flags:
+            present = any(a.startswith(flag) for a in args)
+            assert present is should_appear, (
+                f"{flag} present={present}, expected {should_appear}"
             )
-
-    def test_flag_fields_are_omitted_when_false(self, created_service):
-        """Assert that boolean flag fields do not appear in args when False."""
-        result = _assemble_checksum_payload(
-            created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method="processlist",
-            dsn_table="",
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=False,
-            explain_arg=False,
-            fail_on_stopped_replication=False,
-            truncate_replicate_table=False,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
-        )
-
-        args = shlex.split(result.data["meta"]["args"])
-        bool_flags = [
-            "--binary-index",
-            "--explain",
-            "--fail-on-stopped-replication",
-            "--truncate-replicate-table",
-        ]
-        for flag in bool_flags:
-            assert flag not in args, f"{flag} should not appear when False"
-
-    def test_flag_fields_appear_when_true(self, created_service):
-        """Assert that boolean flag fields appear in args when True."""
-        result = _assemble_checksum_payload(
-            created_service,
-            task_name="test",
-            hostname="host1",
-            recursion_method="processlist",
-            dsn_table="",
-            databases="",
-            tables="",
-            pause_file="",
-            binary_index=True,
-            explain_arg=True,
-            fail_on_stopped_replication=True,
-            truncate_replicate_table=True,
-            progress="",
-            set_vars="",
-            max_load="",
-            chunk_time="",
-            max_lag="",
-            alert_on_fail=False,
-        )
-
-        args = shlex.split(result.data["meta"]["args"])
-        bool_flags = [
-            "--binary-index",
-            "--explain",
-            "--fail-on-stopped-replication",
-            "--truncate-replicate-table",
-        ]
-        for flag in bool_flags:
-            assert flag in args, f"{flag} should appear when True"
-
-
-class TestBuildChecksumsApiTaskResponse:
-    """Tests for build_checksums_api_task_response username mapping."""
-
-    def test_created_by_resolved_to_display_name_when_mapping_provided(self):
-        """Assert created_by is resolved to display name when mapping contains the ID."""
-        task = _make_checksums_task(created_by="uid-abc", last_updated_by=None)
-
-        result = build_checksums_api_task_response(
-            task, username_mapping={"uid-abc": "Alice"}
-        )
-
-        assert result.created_by == "Alice"
-
-    def test_created_by_falls_back_to_raw_id_when_not_in_mapping(self):
-        """Assert created_by is preserved as-is when the ID is not in the mapping."""
-        task = _make_checksums_task(created_by="uid-unknown", last_updated_by=None)
-
-        result = build_checksums_api_task_response(
-            task, username_mapping={"uid-other": "Bob"}
-        )
-
-        assert result.created_by == "uid-unknown"
-
-    def test_last_updated_by_resolved_to_display_name(self):
-        """Assert last_updated_by is also resolved via the mapping."""
-        task = _make_checksums_task(created_by=None, last_updated_by="uid-xyz")
-
-        result = build_checksums_api_task_response(
-            task, username_mapping={"uid-xyz": "Carol"}
-        )
-
-        assert result.last_updated_by == "Carol"
-
-    def test_username_mapping_none_preserves_raw_ids(self):
-        """Assert created_by and last_updated_by are unchanged when mapping is None."""
-        task = _make_checksums_task(created_by="uid-123", last_updated_by="uid-456")
-
-        result = build_checksums_api_task_response(task, username_mapping=None)
-
-        assert result.created_by == "uid-123"
-        assert result.last_updated_by == "uid-456"
-
-
-class TestChecksumTaskResponseAnonymizedEntities:
-    """Test the anonymized_entities computed field on ChecksumTaskResponse."""
-
-    BASE_FIELDS: dict = {
-        "name": "test-checksum",
-        "owner": TaskOwner.CHECKSUMS,
-        "backend": "nomad",
-        "data": {},
-        "protected": False,
-        "alert_on_fail": False,
-    }
-
-    def test_explicit_mask_returns_sorted_entity_names(self) -> None:
-        """Explicit anonymize_mask decodes to a sorted list of PIIEntity name strings."""
-        mask = int(PIIEntity.IP_ADDRESS | PIIEntity.PERSON)
-        response = ChecksumTaskResponse.model_validate(
-            {**self.BASE_FIELDS, "anonymize_mask": mask}
-        )
-        assert response.anonymized_entities == ["IP_ADDRESS", "PERSON"]
-
-    def test_zero_mask_returns_empty_list(self) -> None:
-        """anonymize_mask=0 decodes to an empty list (no entities set)."""
-        response = ChecksumTaskResponse.model_validate(
-            {**self.BASE_FIELDS, "anonymize_mask": 0}
-        )
-        assert response.anonymized_entities == []
-
-    def test_none_mask_falls_back_to_owner_defaults(self) -> None:
-        """anonymize_mask=None falls back to anonymizer_settings.DEFAULT_ENTITIES[owner]."""
-        default_entities = {PIIEntity.EMAIL_ADDRESS}
-        mock_defaults = defaultdict(lambda: default_entities)
-        fields = {**self.BASE_FIELDS, "anonymize_mask": None}
-        with patch(
-            "app.sep.plugins.checksums.models.anonymizer_settings"
-        ) as mock_settings:
-            mock_settings.DEFAULT_ENTITIES = mock_defaults
-            response = ChecksumTaskResponse.model_validate(fields)
-            result = response.anonymized_entities
-        assert result == ["EMAIL_ADDRESS"]

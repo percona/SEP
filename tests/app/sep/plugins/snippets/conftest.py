@@ -17,6 +17,7 @@
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
@@ -25,6 +26,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
+from starlette.datastructures import URL
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
@@ -37,6 +39,7 @@ from app.sep.deps import (
     validate_csrf,
 )
 from app.sep.main import sep_app
+from app.sep.snippets.config import snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 
@@ -54,6 +57,41 @@ async def session_fixture() -> AsyncSession:
     async_session_maker = get_async_session_maker_from_engine(engine)
     async with async_session_maker() as session:
         yield session
+
+
+@pytest.fixture(autouse=True)
+def request_less_session(session: AsyncSession, mocker: object) -> AsyncSession:
+    """Bind the snippets request-less session maker to the test session.
+
+    The derived listing / per-snippet / execute routes open their own
+    request-less session via ``get_async_session_maker`` rather than the
+    request-scoped ``get_session`` the other fixtures override, so the maker is
+    patched to yield the same in-memory ``session`` the rows are seeded through
+    (mirroring ``tests/app/sep/test_celery.py``). Autouse so every derived-route
+    test sees the seeded data; a no-op for tests that never hit that path.
+    """
+    maker = MagicMock()
+    maker.return_value.__aenter__ = AsyncMock(return_value=session)
+    maker.return_value.__aexit__ = AsyncMock(return_value=False)
+    mocker.patch(
+        "app.sep.plugins.snippets.script_source.get_async_session_maker",
+        return_value=maker,
+    )
+    return session
+
+
+@pytest.fixture(autouse=True)
+def snippets_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Configure a base URL so the request-less execute path can build artifact URLs.
+
+    The migrated execute hook reads ``SNIPPETS_BASE_URL`` / ``BASE_URL`` instead of
+    deriving the artifact URL from the request, so a base URL must be set or
+    ``build_snippet_source`` 400s. The value matches the ``TestClient`` host the
+    legacy request-derived fallback produced, keeping artifact URLs unchanged.
+    """
+    monkeypatch.setattr(
+        snippets_settings, "SNIPPETS_BASE_URL", URL("http://testserver")
+    )
 
 
 @pytest.fixture

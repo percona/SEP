@@ -16,7 +16,9 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
+const NODES_ROUTE = '/inventory/nodes';
 const SCHEDULE_ROUTE = '/inventory/schedule';
 const TASK_NAME = 'inventory-sync';
 
@@ -65,6 +67,10 @@ async function mockInventoryScheduleApis(page: Page) {
 
     if (!pathname.startsWith('/api/')) {
       return route.continue();
+    }
+
+    if (isEnabledAppsPath(pathname)) {
+      return fulfillEnabledApps(route);
     }
 
     // Auth
@@ -125,7 +131,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Periodic task list
-    if (pathname.endsWith('/tasks/periodic/') && method === 'GET') {
+    if (pathname.endsWith('/sep/periodic-tasks/') && method === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -134,7 +140,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Periodic task create
-    if (pathname.endsWith(`/tasks/${TASK_NAME}/periodic/`) && method === 'POST') {
+    if (pathname.endsWith(`/sep/periodic-tasks/${TASK_NAME}/`) && method === 'POST') {
       const body = JSON.parse((await route.request().postData()) ?? '{}') as PeriodicTask;
       const created: PeriodicTask = {
         ...body,
@@ -158,7 +164,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Periodic task update / delete
-    const periodicMatch = pathname.match(/\/tasks\/periodic\/(\d+)$/);
+    const periodicMatch = pathname.match(/\/sep\/periodic-tasks\/(\d+)$/);
     if (periodicMatch) {
       const id = Number(periodicMatch[1]);
       const idx = schedules.findIndex((s) => s.id === id);
@@ -188,6 +194,26 @@ async function mockInventoryScheduleApis(page: Page) {
 test.describe('Inventory schedule management smoke', () => {
   test.beforeEach(async ({ page }) => {
     await mockInventoryScheduleApis(page);
+  });
+
+  test('nodes list shows exactly one Schedules button that opens the scheduler', async ({
+    page,
+  }) => {
+    await page.goto(NODES_ROUTE);
+
+    // Exactly one Schedules button: inventory's working custom one. The generic
+    // PluginListPage button is suppressed via hideScheduleButton.
+    const scheduleButtons = page.getByRole('button', { name: /Schedules/i });
+    await expect(scheduleButtons).toHaveCount(1);
+
+    const invButton = page.getByTestId('inv-schedule-link');
+    await expect(invButton).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('plugin-schedule-link')).toHaveCount(0);
+
+    // It navigates to the inventory scheduler.
+    await invButton.click();
+    await expect(page).toHaveURL(new RegExp(`${SCHEDULE_ROUTE}$`));
+    await expect(page.getByTestId('inv-sched-attach')).toBeVisible({ timeout: 10_000 });
   });
 
   test('attach → edit → disable → clear a sync schedule', async ({ page }) => {

@@ -17,8 +17,9 @@
 
 from datetime import timedelta
 from enum import StrEnum
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
+from annotated_types import Gt
 from pydantic import PositiveInt
 
 from app.core.config import BaseYamlAppSettings
@@ -26,7 +27,10 @@ from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import hot_field
+from app.core.settings_override.registry import (
+    hot_field,
+    nested_overridable_field,
+)
 from app.tasks.execution.executors.nomad import NomadExecutor
 
 
@@ -55,16 +59,17 @@ class TasksSettings(BaseYamlAppSettings):
     :param UVICORN_PORT: The port to be used by Uvicorn for running the server.
         Defaults to 8002.
     :type UVICORN_PORT: int
-    :param NOMAD: The configuration options for integrating with Nomad.
-    :type NOMAD: NomadOptions
+    :param NOMAD: The Nomad executor used to integrate with Nomad. Per-leaf
+        overrides are accepted via the settings API; the parent object itself
+        is not patchable as a whole.
     :param DATABASE: The database configuration options. Defaults to an SQLite database
         with the name 'tasks.db'.
     :type DATABASE: DatabaseOptions
     :param SECURITY_HEADERS: Specific options for the SecurityHeadersMiddleware.
         Use ``False`` to disable the middleware completely.
     :type SECURITY_HEADERS: SecurityHeadersOptions | None
-    :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Defaults to 5
-        minutes.
+    :param SYNC_LOCK_TTL: The timeout for the TaskHistory sync lock. Must be a
+        positive duration. Defaults to 5 minutes.
     :type SYNC_LOCK_TTL: timedelta
     :param PRE_EXECUTION_CONNECTIVITY_CHECK: The mode for pre-execution connectivity
         checks. Defaults to ``PreExecutionCheckMode.WARN``.
@@ -77,12 +82,14 @@ class TasksSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
     UVICORN_PORT: int = 8002
-    NOMAD: NomadExecutor
+    NOMAD: NomadExecutor = nested_overridable_field(...)
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
-    SECURITY_HEADERS: SecurityHeadersOptions | None = SecurityHeadersOptions(
-        content_security_policy_strict=False
+    SECURITY_HEADERS: SecurityHeadersOptions | None = nested_overridable_field(
+        SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
     )
-    SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
+    SYNC_LOCK_TTL: Annotated[timedelta, Gt(timedelta(0))] = hot_field(
+        timedelta(minutes=5)
+    )
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = hot_field(
         PreExecutionCheckMode.WARN
     )

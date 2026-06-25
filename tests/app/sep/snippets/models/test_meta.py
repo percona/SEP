@@ -15,11 +15,15 @@
 
 """Tests for SnippetMetaParameter model validators and computed properties."""
 
-import pytest
-from pydantic import ValidationError
+from datetime import datetime, timedelta, timezone, UTC
 
+import pytest
+from pydantic import TypeAdapter, ValidationError
+
+from app.core.utils.fields import UTCDatetime
 from app.sep.snippets.forms import (
     CheckboxInputElement,
+    DateTimeInputElement,
     NumberInputElement,
     SelectElement,
     TextareaElement,
@@ -27,8 +31,11 @@ from app.sep.snippets.forms import (
     TextInputHTMLElement,
 )
 from app.sep.snippets.models.meta import (
+    serialize_cli_value,
     SnippetMetaParameter,
+    SnippetMetaParametersValidationResult,
     SnippetMetaParameterType,
+    SnippetVisibilityCondition,
 )
 
 FLOAT_DEFAULT_STEP = 0.1
@@ -72,6 +79,113 @@ class TestSetDefaultStep:
         """Verify BOOL type does not get a default step value."""
         param = SnippetMetaParameter(name="flag", type=SnippetMetaParameterType.BOOL)
         assert param.step is None
+
+    def test_datetime_type_has_no_step(self):
+        """Verify DATETIME type does not get a default step value."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME
+        )
+        assert param.step is None
+
+
+class TestDatetimeTypeResolution:
+    """Test DATETIME snippet parameter type resolution."""
+
+    def test_yaml_datetime_string_resolves_to_datetime_enum(self):
+        """Verify type: datetime in YAML resolves via name-based enum lookup."""
+        param = SnippetMetaParameter(name="start", type="datetime")
+        assert param.py_type == SnippetMetaParameterType.DATETIME
+
+    def test_datetime_enum_member_value_is_utc_datetime_type(self):
+        """Verify DATETIME enum member maps to UTCDatetime for validation."""
+        assert SnippetMetaParameterType.DATETIME.value is UTCDatetime
+
+
+class TestSerializeCliValue:
+    """Test per-type CLI value serialization."""
+
+    def test_datetime_serializes_with_t_separator_no_microseconds(self):
+        """Verify datetime values render as YYYY-MM-DDTHH:MM:SS without microseconds."""
+        value = datetime(2024, 6, 10, 14, 30, 45, 123456, tzinfo=UTC)
+        assert serialize_cli_value(value) == "2024-06-10T14:30:45"
+
+    def test_tz_aware_datetime_serializes_as_utc_wall_clock(self):
+        """Verify non-UTC offsets convert to UTC before CLI formatting."""
+        value = datetime(2024, 6, 10, 14, 30, 0, tzinfo=timezone(timedelta(hours=5)))
+        assert serialize_cli_value(value) == "2024-06-10T09:30:00"
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            ("hello", "hello"),
+            (42, "42"),
+            (True, "True"),
+        ],
+    )
+    def test_non_datetime_values_use_str(self, value, expected):
+        """Verify non-datetime values still use str() unchanged."""
+        assert serialize_cli_value(value) == expected
+
+
+class TestDatetimeValidation:
+    """Test DATETIME parameter validation and error reporting."""
+
+    def test_optional_empty_string_coerces_to_none(self):
+        """Verify optional datetime params accept empty form input as None."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        adapter = TypeAdapter(param.validation_type)
+        assert adapter.validate_python("") is None
+
+    def test_valid_iso_datetime_string_accepted(self):
+        """Verify ISO-8601 datetime strings validate for DATETIME params."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        adapter = TypeAdapter(param.validation_type)
+        result = adapter.validate_python("2024-06-10T14:30:00")
+        assert isinstance(result, datetime)
+        assert result.tzinfo == UTC
+
+    def test_tz_aware_iso_input_validates_and_serializes_as_utc(self):
+        """Verify offset ISO input normalizes to UTC at validation and serialization."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        adapter = TypeAdapter(param.validation_type)
+        result = adapter.validate_python("2024-06-10T14:30:00+05:00")
+        assert result.tzinfo == UTC
+        assert serialize_cli_value(result) == "2024-06-10T09:30:00"
+
+    def test_datetime_without_seconds_accepted(self):
+        """Verify datetime-local input without seconds parses successfully."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        adapter = TypeAdapter(param.validation_type)
+        result = adapter.validate_python("2024-06-10T14:30")
+        assert (result.year, result.month, result.day, result.hour, result.minute) == (
+            2024,
+            6,
+            10,
+            14,
+            30,
+        )
+
+    def test_malformed_datetime_produces_parameter_error_message(self):
+        """Verify malformed datetime input yields a readable parameter error."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        adapter = TypeAdapter(param.validation_type)
+        with pytest.raises(ValidationError) as exc_info:
+            adapter.validate_python("not-a-datetime")
+        errors = SnippetMetaParameter.convert_validation_errors(
+            exc_info.value, {"name": "start"}
+        )
+        assert any("Parameter error" in e for e in errors)
+        assert any("start" in e for e in errors)
 
 
 class TestValidateArgFormat:
@@ -152,6 +266,13 @@ class TestSetDefaultTypeIfUnknown:
         param = SnippetMetaParameter(name="field", type=SnippetMetaParameterType.INT)
         assert param.py_type == SnippetMetaParameterType.INT
 
+    def test_datetime_type_preserved(self):
+        """Verify DATETIME type value is preserved."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME
+        )
+        assert param.py_type == SnippetMetaParameterType.DATETIME
+
 
 class TestCoerceToType:
     """Test the coerce_to_type field validator."""
@@ -190,6 +311,16 @@ class TestCoerceToType:
         assert isinstance(param.gt, int)
         assert param.lt == EXPECTED_INT_LT
         assert isinstance(param.lt, int)
+
+    def test_string_default_coerced_to_datetime(self):
+        """Verify string default is coerced to datetime for DATETIME type."""
+        param = SnippetMetaParameter(
+            name="start",
+            type=SnippetMetaParameterType.DATETIME,
+            default="2024-06-10T14:30:00",
+        )
+        assert isinstance(param.default, datetime)
+        assert param.default.tzinfo == UTC
 
 
 class TestIsFlag:
@@ -233,6 +364,13 @@ class TestFormFieldElementCls:
         """Verify FLOAT type returns NumberInputElement."""
         param = SnippetMetaParameter(name="ratio", type=SnippetMetaParameterType.FLOAT)
         assert param.form_field_element_cls is NumberInputElement
+
+    def test_datetime_type_returns_datetime_input(self):
+        """Verify DATETIME type returns DateTimeInputElement."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME
+        )
+        assert param.form_field_element_cls is DateTimeInputElement
 
     def test_str_type_returns_text_input(self):
         """Verify STR type returns TextInputElement by default."""
@@ -319,6 +457,15 @@ class TestValidationType:
         vtype = param.validation_type
         assert hasattr(vtype, "__args__")
 
+    def test_optional_datetime_returns_union_with_empty_str_to_none(self):
+        """Verify optional DATETIME param returns UTCDatetime | EmptyStrToNone."""
+        param = SnippetMetaParameter(
+            name="start", type=SnippetMetaParameterType.DATETIME, required=False
+        )
+        vtype = param.validation_type
+        assert hasattr(vtype, "__args__")
+        assert UTCDatetime in vtype.__args__
+
 
 class TestToValidationField:
     """Test the to_validation_field method."""
@@ -358,6 +505,17 @@ class TestToFormField:
         form_field = param.to_form_field()
         assert isinstance(form_field, NumberInputElement)
 
+    def test_datetime_to_form_field_returns_datetime_input(self):
+        """Verify to_form_field returns DateTimeInputElement for DATETIME params."""
+        param = SnippetMetaParameter(
+            name="start",
+            type=SnippetMetaParameterType.DATETIME,
+            label="Start time (UTC)",
+        )
+        form_field = param.to_form_field()
+        assert isinstance(form_field, DateTimeInputElement)
+        assert 'type="datetime-local"' in form_field.to_html()
+
     def test_select_element_for_choices(self):
         """Verify to_form_field returns SelectElement when choices are present."""
         param = SnippetMetaParameter(name="opt", choices=["a", "b"])
@@ -394,28 +552,187 @@ class TestConvertValidationErrors:
 
     def test_converts_to_error_strings(self):
         """Verify ValidationError is converted to a list of readable error strings."""
-        try:
+        with pytest.raises(ValidationError) as exc_info:
             SnippetMetaParameter(name="")
-        except ValidationError as exc:
-            errors = SnippetMetaParameter.convert_validation_errors(exc, {"name": ""})
-            assert len(errors) > 0
-            assert all(isinstance(e, str) for e in errors)
-            assert any("Parameter error" in e for e in errors)
+        errors = SnippetMetaParameter.convert_validation_errors(
+            exc_info.value, {"name": ""}
+        )
+        assert len(errors) > 0
+        assert all(isinstance(e, str) for e in errors)
+        assert any("Parameter error" in e for e in errors)
 
     def test_dict_input_shows_name(self):
         """Verify dict input with 'name' key shows parameter name in error."""
-        try:
+        with pytest.raises(ValidationError) as exc_info:
             SnippetMetaParameter(name="")
-        except ValidationError as exc:
-            errors = SnippetMetaParameter.convert_validation_errors(
-                exc, {"name": "my_param"}
-            )
-            assert any("my_param" in e for e in errors)
+        errors = SnippetMetaParameter.convert_validation_errors(
+            exc_info.value, {"name": "my_param"}
+        )
+        assert any("my_param" in e for e in errors)
 
     def test_non_dict_input_shows_repr(self):
         """Verify non-dict input shows repr in error message."""
-        try:
+        with pytest.raises(ValidationError) as exc_info:
             SnippetMetaParameter(name="")
-        except ValidationError as exc:
-            errors = SnippetMetaParameter.convert_validation_errors(exc, "bad_input")
-            assert any("bad_input" in e for e in errors)
+        errors = SnippetMetaParameter.convert_validation_errors(
+            exc_info.value, "bad_input"
+        )
+        assert any("bad_input" in e for e in errors)
+
+
+class TestVisibilityCondition:
+    """Test the visible_when / visible_when_not conditional-visibility DSL.
+
+    The React renderer hides the field and drops its value from the payload; the
+    gates are also enforced server-side on the execute paths, which reject a
+    directly-submitted hidden value (see ``evaluate_visibility_gates``).
+    """
+
+    def test_string_shorthand_normalized_to_condition(self):
+        """A bare string is shorthand for a truthiness condition on that param."""
+        param = SnippetMetaParameter(name="start", visible_when_not="list")
+        assert isinstance(param.visible_when_not, SnippetVisibilityCondition)
+        assert param.visible_when_not.parameter == "list"
+        assert param.visible_when_not.equals is None
+
+    def test_visible_when_string_shorthand(self):
+        """visible_when accepts the same bare-string shorthand."""
+        param = SnippetMetaParameter(name="start", visible_when="list")
+        assert param.visible_when.parameter == "list"
+        assert param.visible_when.equals is None
+
+    def test_mapping_with_equals(self):
+        """A mapping with equals yields an equality match condition."""
+        param = SnippetMetaParameter(
+            name="region",
+            visible_when_not={"parameter": "mode", "equals": "advanced"},
+        )
+        assert param.visible_when_not.parameter == "mode"
+        assert param.visible_when_not.equals == "advanced"
+
+    def test_no_condition_leaves_fields_none(self):
+        """A parameter without conditions keeps both visibility fields as None."""
+        param = SnippetMetaParameter(name="start")
+        assert param.visible_when is None
+        assert param.visible_when_not is None
+
+    def test_both_conditions_set_raises(self):
+        """Declaring both visible_when and visible_when_not is rejected."""
+        with pytest.raises(ValidationError, match="visible_when"):
+            SnippetMetaParameter(name="start", visible_when="a", visible_when_not="b")
+
+    def test_self_reference_raises(self):
+        """A condition that references the parameter itself is rejected."""
+        with pytest.raises(ValidationError, match="itself|self"):
+            SnippetMetaParameter(name="start", visible_when_not="start")
+
+    def test_required_with_condition_raises(self):
+        """Combining required=True with a visibility condition is rejected."""
+        with pytest.raises(ValidationError, match="required"):
+            SnippetMetaParameter(name="start", required=True, visible_when_not="list")
+
+    def test_nonempty_default_with_condition_raises(self):
+        """A non-empty default + visibility condition is rejected.
+
+        A hidden field is dropped client-side; server-side validation would then
+        backfill the default, which the forbidden gate sees as present and
+        rejects — an unsatisfiable trap. Reject the combination at meta time.
+        """
+        with pytest.raises(ValidationError, match="default"):
+            SnippetMetaParameter(name="start", default="now", visible_when_not="list")
+
+    def test_empty_default_with_condition_allowed(self):
+        """A falsy/empty default (treated as absent) is fine with a condition."""
+        param = SnippetMetaParameter(
+            name="flag", type="bool", default=False, visible_when_not="list"
+        )
+        assert param.visible_when_not.parameter == "list"
+
+    def test_zero_default_with_condition_raises(self):
+        """A ``0`` default + visibility condition is rejected.
+
+        ``0`` is falsy but ``value_is_present`` classifies it as *present*
+        (numeric), so it would hit the same unsatisfiable backfill trap as any
+        other non-empty default and must be rejected — unlike ``False``/``""``.
+        """
+        with pytest.raises(ValidationError, match="default"):
+            SnippetMetaParameter(
+                name="count", type="int", default=0, visible_when_not="list"
+            )
+
+    def test_empty_string_default_with_condition_allowed(self):
+        """An empty-string default (treated as absent) is fine with a condition."""
+        param = SnippetMetaParameter(name="note", default="", visible_when_not="list")
+        assert param.visible_when_not.parameter == "list"
+
+    def test_blank_parameter_name_raises(self):
+        """An empty referenced parameter name is rejected."""
+        with pytest.raises(ValidationError):
+            SnippetMetaParameter(name="start", visible_when_not={"parameter": ""})
+
+    def test_hyphenated_gated_name_raises(self):
+        """A gated parameter whose own name has a hyphen is rejected.
+
+        The framework conditional-rules engine folds the field's own name into
+        the gate's reference set and rejects hyphenated names, so reject early.
+        """
+        with pytest.raises(ValidationError, match="valid Python identifier"):
+            SnippetMetaParameter(name="ha-name", visible_when_not="list")
+
+    def test_hyphenated_referenced_parameter_raises(self):
+        """A condition referencing a hyphenated sibling name is rejected."""
+        with pytest.raises(ValidationError, match="valid Python identifier"):
+            SnippetMetaParameter(name="start", visible_when_not="list-mode")
+
+
+class TestHiddenParameter:
+    """Test the generic, unconditional ``hidden`` flag.
+
+    A hidden parameter is omitted from every rendered form but is still
+    validated normally, so a value the server injects (e.g. the PMM
+    ``apikey``) continues to validate without a visible field.
+    """
+
+    def test_hidden_defaults_to_false(self):
+        """A parameter is not hidden unless explicitly marked."""
+        param = SnippetMetaParameter(name="pmmserver")
+        assert param.hidden is False
+
+    def test_hidden_can_be_set_true(self):
+        """``hidden: true`` is accepted and round-trips."""
+        param = SnippetMetaParameter(name="apikey", hidden=True)
+        assert param.hidden is True
+
+    def test_hidden_param_still_produces_validation_field(self):
+        """A hidden param still yields a validation field so it validates."""
+        param = SnippetMetaParameter(name="apikey", description="API key", hidden=True)
+        field = param.to_validation_field()
+        assert field.alias == "apikey"
+        # validation_type is unchanged by hiding (optional str without default)
+        assert param.validation_type is not None
+
+    def test_hidden_may_combine_with_required(self):
+        """A hidden parameter may also be required.
+
+        A hidden field whose value is injected server-side may legitimately be
+        required; hiding only suppresses rendering, never validation.
+        """
+        param = SnippetMetaParameter(name="apikey", required=True, hidden=True)
+        assert param.hidden is True
+        assert param.required is True
+
+    def test_hidden_serialized_in_model_dump(self):
+        """``hidden`` participates in serialization (so it joins the form cache key)."""
+        param = SnippetMetaParameter(name="apikey", hidden=True)
+        assert param.model_dump()["hidden"] is True
+
+    def test_visible_parameters_excludes_hidden_and_keeps_order(self):
+        """``visible_parameters`` drops hidden params while preserving order."""
+        first = SnippetMetaParameter(name="pmmserver")
+        hidden = SnippetMetaParameter(name="apikey", hidden=True)
+        last = SnippetMetaParameter(name="node")
+        result = SnippetMetaParametersValidationResult(
+            parameters=[first, hidden, last], errors=[]
+        )
+        assert result.visible_parameters == [first, last]
+        assert result.parameters == [first, hidden, last]

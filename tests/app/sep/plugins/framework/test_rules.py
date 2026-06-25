@@ -16,13 +16,14 @@
 """Unit tests for the conditional-rule primitive DSL, evaluator, and wiring."""
 
 from enum import IntEnum
-from typing import Self
+from typing import Annotated, Literal, Self
 
 import pytest
-from pydantic import BaseModel, model_validator, ValidationError
+from pydantic import BaseModel, Field, model_validator, ValidationError
 
 from app.sep.plugins.framework.rules import (
     _extract_rule_plan,
+    _resolve_field,
     absent,
     all_,
     all_equal,
@@ -47,6 +48,8 @@ from app.sep.plugins.framework.rules import (
     Contains,
     contains,
     Equals,
+    evaluate_conditional_rules,
+    extract_forbidden_field_gate_plan,
     F,
     FailRule,
     Falsy,
@@ -66,13 +69,17 @@ from app.sep.plugins.framework.rules import (
     present,
     Truthy,
     truthy,
+    value_is_present,
     Xor,
     xor_,
 )
 from app.sep.plugins.framework.schema import (
     Column,
+    DetailView,
     FormSection,
     ListView,
+    OneOfBranch,
+    OneOfGroup,
     PluginEntitySchema,
     PluginSchema,
     StringField,
@@ -1063,8 +1070,8 @@ class TestCardinalityPatterns:
 class TestWorkedExamples:
     """Verify the 6 worked declarative-DSL equivalents fire correctly.
 
-    These mirror the imperative validators in archives / alters that
-    SEP-1071 documents are now expressible declaratively.
+    These mirror the imperative validators in archives / alters that are
+    now expressible declaratively.
     """
 
     def _build_dsn_table_body(self) -> type:
@@ -1404,3 +1411,305 @@ class TestMultiEntityRulePlan:
 
         with pytest.raises(ValidationError, match="x"):
             Body(x="", y="y")
+
+
+class TestValueIsPresent:
+    """Direct coverage of the shared presence predicate.
+
+    ``value_is_present`` is the single source of truth used by both runtime
+    gate evaluation and authoring-time guards, so its boundaries are pinned
+    here — a regression silently changes whether forbidden gates fire.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [None, False, "", b"", [], (), set(), frozenset(), {}],
+        ids=[
+            "none",
+            "false",
+            "empty_str",
+            "empty_bytes",
+            "empty_list",
+            "empty_tuple",
+            "empty_set",
+            "empty_frozenset",
+            "empty_dict",
+        ],
+    )
+    def test_absent_values(self, value: object) -> None:
+        """``None``, ``False`` and empty containers count as absent."""
+        assert value_is_present(value) is False
+
+    @pytest.mark.parametrize(
+        "value",
+        [0, 0.0, "0", " ", "x", b"x", [0], (0,), {0}, {"k": "v"}, True],
+        ids=[
+            "zero_int",
+            "zero_float",
+            "str_zero",
+            "whitespace",
+            "str",
+            "bytes",
+            "list",
+            "tuple",
+            "set",
+            "dict",
+            "true",
+        ],
+    )
+    def test_present_values(self, value: object) -> None:
+        """Non-empty values — including falsy ``0`` and whitespace — are present."""
+        assert value_is_present(value) is True
+
+    def test_zero_present_but_false_absent(self) -> None:
+        """Pin the ``0`` (present) vs ``False`` (absent) asymmetry explicitly."""
+        false_value = False
+        assert value_is_present(0) is True
+        assert value_is_present(false_value) is False
+
+
+class TestExtractForbiddenFieldGatePlan:
+    """``extract_forbidden_field_gate_plan`` isolates only forbidden gates."""
+
+    def test_returns_only_forbidden_gates(self) -> None:
+        """Requires gates, cardinality and fail rules are filtered out."""
+        schema = _build_schema(
+            StringField(
+                name="x",
+                label="X",
+                requires=[FieldGate(when=truthy("y"))],
+                forbidden=[FieldGate(when=truthy("z"))],
+            ),
+            extra_fields=[
+                StringField(name="y", label="Y"),
+                StringField(name="z", label="Z"),
+            ],
+            section_cardinality=[
+                CardinalityRule(when=truthy("y"), fields=["x"], min=1)
+            ],
+            schema_fail=[FailRule(fail_when=truthy("z"), error_fields=["z"])],
+        )
+
+        plan = extract_forbidden_field_gate_plan(schema)
+
+        assert len(plan.rules) == 1
+        assert all(r.kind == "field_gate_forbidden" for r in plan.rules)
+
+    def test_gateless_schema_yields_empty_plan(self) -> None:
+        """A schema with no forbidden gates produces an empty plan."""
+        schema = _build_schema(StringField(name="x", label="X"))
+
+        assert extract_forbidden_field_gate_plan(schema).rules == ()
+
+    def test_scopes_forbidden_gates_to_named_entity(self) -> None:
+        """The ``entity_name`` argument is honoured for multi-entity schemas."""
+        schema = _multi_entity_two_alpha_beta_schema()
+
+        # alpha declares only a requires gate, so its forbidden plan is empty.
+        assert (
+            extract_forbidden_field_gate_plan(schema, entity_name="alpha").rules == ()
+        )
+        assert extract_forbidden_field_gate_plan(schema, entity_name="beta").rules == ()
+
+
+class TestResolveField:
+    """Tests for dotted-path field resolution in the rules evaluator."""
+
+    def test_resolve_top_level_attribute(self) -> None:
+        """Resolve a plain top-level field name."""
+        assert _resolve_field(_Instance(a="x"), "a") == "x"
+
+    def test_resolve_dotted_nested_attribute(self) -> None:
+        """Resolve a nested attribute via a dotted path."""
+
+        class Source(BaseModel):
+            mode: str = "schema"
+            source_db_id: str = ""
+
+        class Root(BaseModel):
+            source: Source = Source()
+
+        root = Root(source=Source(mode="query", source_db_id="42"))
+        assert _resolve_field(root, "source.mode") == "query"
+        assert _resolve_field(root, "source.source_db_id") == "42"
+
+    def test_resolve_missing_intermediate_returns_none(self) -> None:
+        """Return ``None`` when an intermediate segment is absent."""
+
+        class Root(BaseModel):
+            source: None = None
+
+        assert _resolve_field(Root(), "source.mode") is None
+
+
+class TestOneOfGroupRules:
+    """Branch-selection enforcement synthesised from :class:`OneOfGroup`."""
+
+    @staticmethod
+    def _source_one_of_schema() -> PluginSchema:
+        return PluginSchema(
+            name="p",
+            display_name="P",
+            task_type="t",
+            forms=[
+                FormSection(
+                    title="Source",
+                    fields=[
+                        OneOfGroup(
+                            name="source",
+                            label="Source",
+                            discriminator="source.mode",
+                            default="schema",
+                            branches=[
+                                OneOfBranch(
+                                    value="schema",
+                                    label="Schema",
+                                    fields=[
+                                        StringField(
+                                            name="source.source_db_id",
+                                            label="Schema",
+                                        ),
+                                    ],
+                                ),
+                                OneOfBranch(
+                                    value="query",
+                                    label="Query",
+                                    fields=[
+                                        StringField(
+                                            name="source.source_query",
+                                            label="Query",
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+            list_view=ListView(columns=[Column(key="id", label="ID")]),
+            detail_view=DetailView(sections=[]),
+        )
+
+    @staticmethod
+    def _shared_leaf_one_of_schema() -> PluginSchema:
+        return PluginSchema(
+            name="p",
+            display_name="P",
+            task_type="t",
+            forms=[
+                FormSection(
+                    title="Target",
+                    fields=[
+                        OneOfGroup(
+                            name="target",
+                            label="Target",
+                            discriminator="target_mode",
+                            default="service",
+                            branches=[
+                                OneOfBranch(
+                                    value="service",
+                                    label="Service",
+                                    fields=[StringField(name="target", label="Target")],
+                                ),
+                                OneOfBranch(
+                                    value="schema",
+                                    label="Schema",
+                                    fields=[StringField(name="target", label="Target")],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+            list_view=ListView(columns=[Column(key="id", label="ID")]),
+            detail_view=DetailView(sections=[]),
+        )
+
+    def test_rule_plan_includes_synthesised_branch_forbidden_gates(self) -> None:
+        """Emit one ``field_gate_forbidden`` rule per branch leaf."""
+        plan = _extract_rule_plan(self._source_one_of_schema())
+        forbidden = [
+            rule
+            for rule in plan.rules
+            if isinstance(rule.predicate, NotEquals)
+            and rule.predicate.field == "source.mode"
+        ]
+        targets = {rule.fields[0] for rule in forbidden}
+        assert targets == {"source.source_db_id", "source.source_query"}
+
+    def test_active_branch_leaf_allowed_inactive_branch_leaf_forbidden(self) -> None:
+        """Forbid leaves that belong to an unselected one-of branch."""
+        plan = _extract_rule_plan(self._source_one_of_schema())
+
+        class _Source:
+            def __init__(self, mode: str, **attrs: str) -> None:
+                self.mode = mode
+                for key, value in attrs.items():
+                    setattr(self, key, value)
+
+        schema_body = type("Body", (), {"source": _Source("schema", source_db_id="x")})
+        assert evaluate_conditional_rules(schema_body(), plan) == []
+
+        stale_query = type(
+            "Body",
+            (),
+            {"source": _Source("schema", source_db_id="x", source_query="SELECT 1")},
+        )
+        failures = evaluate_conditional_rules(stale_query(), plan)
+        assert any("source.source_query" in message for message in failures)
+
+        query_body = type(
+            "Body", (), {"source": _Source("query", source_query="SELECT 1")}
+        )
+        assert evaluate_conditional_rules(query_body(), plan) == []
+
+        stale_schema = type(
+            "Body",
+            (),
+            {"source": _Source("query", source_query="SELECT 1", source_db_id="x")},
+        )
+        failures = evaluate_conditional_rules(stale_schema(), plan)
+        assert any("source.source_db_id" in message for message in failures)
+
+    def test_apply_conditional_rules_accepts_nested_union_write_model(self) -> None:
+        """Decorate a write model whose nested union backs a one-of schema."""
+        schema = self._source_one_of_schema()
+
+        class SourceBySchema(BaseModel):
+            mode: Literal["schema"] = "schema"
+            source_db_id: str = ""
+
+        class SourceByQuery(BaseModel):
+            mode: Literal["query"] = "query"
+            source_query: str = ""
+
+        @apply_conditional_rules(schema)
+        class Body(ConditionalRulesModel):
+            source: Annotated[
+                SourceBySchema | SourceByQuery, Field(discriminator="mode")
+            ]
+
+        Body(source=SourceBySchema(source_db_id="inventory"))
+        Body(source=SourceByQuery(source_query="SELECT 1"))
+
+    def test_shared_leaf_across_branches_does_not_emit_contradictory_gates(
+        self,
+    ) -> None:
+        """Avoid per-branch forbidden gates for a leaf shared by all branches."""
+        plan = _extract_rule_plan(self._shared_leaf_one_of_schema())
+        shared_leaf_gates = [
+            rule
+            for rule in plan.rules
+            if isinstance(rule.predicate, NotEquals)
+            and rule.predicate.field == "target_mode"
+            and rule.fields == ("target",)
+        ]
+        assert shared_leaf_gates == []
+
+    def test_shared_leaf_allows_values_for_each_mode(self) -> None:
+        """Allow a shared one-of leaf when either mode is selected."""
+        plan = _extract_rule_plan(self._shared_leaf_one_of_schema())
+        service_body = type("Body", (), {"target_mode": "service", "target": "42"})
+        assert evaluate_conditional_rules(service_body(), plan) == []
+        schema_body = type("Body", (), {"target_mode": "schema", "target": "42"})
+        assert evaluate_conditional_rules(schema_body(), plan) == []

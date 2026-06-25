@@ -20,7 +20,7 @@ from types import TracebackType
 from typing import Any, ClassVar, Self
 
 from async_lru import alru_cache
-from pydantic import field_validator
+from pydantic import Field, field_validator
 
 from app.core.config import PMMSettings, settings
 from app.inventory.models import SourceEnum
@@ -67,7 +67,7 @@ class PMMSyncer(BaseSyncer):
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
     )
-    pmm: PMMSettings = settings.PMM
+    pmm: PMMSettings = Field(default_factory=lambda: settings.PMM)
     keepalive_api: bool = True
     _pmm_api: PMMRemoteAPI | None = None
 
@@ -177,7 +177,7 @@ class PMMSyncer(BaseSyncer):
                 logger.debug("Creating new node: %r", node)
                 created_node = CreatedNode.model_validate(
                     await self.inventory_api.post(
-                        "/",
+                        "/nodes/",
                         json=node.model_dump(exclude={"services"}),
                     ),
                 )
@@ -244,7 +244,7 @@ class PMMSyncer(BaseSyncer):
                 logger.info("Creating new service: %r", service)
                 created_service = CreatedService.model_validate(
                     await self.inventory_api.post(
-                        f"/{created_node.id}/services/",
+                        f"/nodes/{created_node.id}/services/",
                         json=service.model_dump(exclude={"node_id"}),
                     ),
                 )

@@ -21,6 +21,8 @@ from fastapi import HTTPException
 from starlette import status
 from starlette.testclient import TestClient
 
+from app.core.pagination import MAX_PAGINATION_LIMIT
+
 
 class TestListSchemas:
     """Test GET /inventory-api/services/{service_id}/schemas endpoint."""
@@ -58,7 +60,8 @@ class TestListSchemas:
         )
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.get.assert_called_once_with(
-            "/services/10/schemas/", params={"limit": 0, "search": "my"}
+            "/services/10/schemas/",
+            params={"offset": 0, "limit": MAX_PAGINATION_LIMIT, "search": "my"},
         )
 
     def test_list_schemas_empty(
@@ -83,6 +86,17 @@ class TestListSchemas:
             status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
         )
         response = test_client.get("/inventory-api/services/9999/schemas")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    def test_list_schemas_upstream_error(
+        self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
+    ) -> None:
+        """Return empty list when inventory API raises a server error."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        response = test_client.get("/inventory-api/services/10/schemas")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
@@ -123,7 +137,8 @@ class TestListTables:
         )
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.get.assert_called_once_with(
-            "/schemas/5/tables/", params={"limit": 0, "search": "user"}
+            "/schemas/5/tables/",
+            params={"offset": 0, "limit": MAX_PAGINATION_LIMIT, "search": "user"},
         )
 
     def test_list_tables_schema_not_found(
@@ -134,5 +149,16 @@ class TestListTables:
             status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
         )
         response = test_client.get("/inventory-api/schemas/9999/tables")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == []
+
+    def test_list_tables_upstream_error(
+        self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
+    ) -> None:
+        """Return empty list when inventory API raises a server error."""
+        mock_inventory_api_dep.get.side_effect = HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+        response = test_client.get("/inventory-api/schemas/5/tables")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []

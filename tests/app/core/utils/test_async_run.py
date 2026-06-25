@@ -15,6 +15,7 @@
 
 """Define tests for the app.core.utils.async_run module."""
 
+import contextlib
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -37,19 +38,28 @@ def error_func():
     raise ValueError("Test error")
 
 
+@pytest.mark.parametrize(
+    ("func", "args", "expected", "expectation"),
+    [
+        (sample_func, (2, 3), 5, contextlib.nullcontext()),
+        (
+            error_func,
+            (),
+            None,
+            pytest.raises(ValueError, match="Test error"),
+        ),
+    ],
+    ids=["happy-path", "error"],
+)
 @pytest.mark.asyncio
-async def test_async_run(mocker):
+async def test_async_run(mocker, func, args, expected, expectation):
     """Assert async_run returns the direct result of the callable."""
     mocker.patch(
         "app.core.utils.async_run.ProcessPoolExecutor",
         ThreadPoolExecutor,
     )
-    result = await async_run(sample_func, 2, 3)
-    expected_result = 5
-    assert result == expected_result
-
-    with pytest.raises(ValueError, match="Test error"):
-        await async_run(error_func)
+    with expectation:
+        assert await async_run(func, *args) == expected
 
 
 @pytest.mark.asyncio

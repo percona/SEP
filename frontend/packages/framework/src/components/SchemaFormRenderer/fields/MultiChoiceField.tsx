@@ -18,14 +18,12 @@
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import Box from '@mui/material/Box';
 import Checkbox from '@mui/material/Checkbox';
-import FormControl from '@mui/material/FormControl';
-import FormHelperText from '@mui/material/FormHelperText';
-import InputLabel from '@mui/material/InputLabel';
 import ListItemText from '@mui/material/ListItemText';
 import MenuItem from '@mui/material/MenuItem';
-import Select from '@mui/material/Select';
+import { SchemaSelectShell } from '../SchemaSelectShell';
 import type { MultiChoiceField as MultiChoiceFieldType } from '../types';
 import { buildValidationRules } from '../utils/validationMapper';
+import { renderChoiceLabel } from './choiceLabel';
 
 interface MultiChoiceFieldProps {
   field: MultiChoiceFieldType;
@@ -42,45 +40,43 @@ export function MultiChoiceField({ field }: MultiChoiceFieldProps) {
       control={control}
       rules={buildValidationRules(field)}
       render={({ field: rhfField, fieldState: { error } }) => (
-        <FormControl fullWidth size="small" error={!!error}>
-          <InputLabel id={labelId} shrink required={field.required}>
-            {field.label}
-          </InputLabel>
-          <Select
-            {...rhfField}
-            labelId={labelId}
-            label={field.label}
-            multiple
-            displayEmpty
-            notched
-            data-testid={`select-${field.name}-button`}
-            inputProps={{ 'data-testid': `select-input-${field.name}` }}
-            renderValue={(value) => {
-              const values = (value as string[] | undefined) ?? [];
-              if (values.length === 0) {
-                return (
-                  <Box component="span" sx={{ color: 'text.disabled' }}>
-                    Select…
-                  </Box>
-                );
-              }
-              return field.choices
-                .filter((c) => values.includes(c.value))
-                .map((c) => c.label)
-                .join(', ');
-            }}
-          >
-            {field.choices.map((choice) => (
-              <MenuItem key={choice.value} value={choice.value}>
-                <Checkbox checked={selected.includes(choice.value)} />
-                <ListItemText primary={choice.label} />
-              </MenuItem>
-            ))}
-          </Select>
-          {(error?.message || field.description) && (
-            <FormHelperText>{error?.message ?? field.description}</FormHelperText>
-          )}
-        </FormControl>
+        <SchemaSelectShell
+          field={rhfField}
+          labelId={labelId}
+          label={field.label}
+          required={field.required}
+          error={error}
+          description={field.description}
+          multiple
+          renderValue={(value) => {
+            const values = (value as string[] | undefined) ?? [];
+            if (values.length === 0) {
+              return (
+                <Box component="span" sx={{ color: 'text.disabled' }}>
+                  Select…
+                </Box>
+              );
+            }
+            return field.choices
+              .filter((c) => values.includes(c.value))
+              .map((c) => c.label)
+              .join(', ');
+          }}
+        >
+          {field.choices.map((choice) => (
+            <MenuItem
+              key={choice.value}
+              value={choice.value}
+              // Only block disabled options that are not already selected, so a
+              // value that was selected before becoming disabled can still be
+              // de-selected (a fully disabled MenuItem swallows the toggle).
+              disabled={choice.disabled && !selected.includes(choice.value)}
+            >
+              <Checkbox checked={selected.includes(choice.value)} />
+              <ListItemText primary={renderChoiceLabel(choice)} />
+            </MenuItem>
+          ))}
+        </SchemaSelectShell>
       )}
     />
   );

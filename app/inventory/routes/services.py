@@ -17,13 +17,17 @@
 
 import logging
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, status
 from sqlmodel import col
 
 from app.api.deps import IsAuthenticatedDep
-from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
-from app.core.models import PaginatedResponse
-from app.inventory.crud import SchemaManager, ServiceManager
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
+from app.inventory.crud import (
+    SchemaManager,
+    ServiceManager,
+    ServiceSystemObservationManager,
+)
 from app.inventory.deps import ServiceDep, SessionDep
 from app.inventory.models import (
     Schema,
@@ -33,6 +37,8 @@ from app.inventory.models import (
     Service,
     ServiceDetailResponse,
     ServiceResponse,
+    ServiceSystemObservationResponse,
+    ServiceSystemObservationWrite,
     ServiceTypeEnum,
     ServiceWrite,
 )
@@ -45,17 +51,15 @@ router = APIRouter(prefix="/services", tags=["services"])
 @router.get("/", dependencies=[IsAuthenticatedDep])
 async def list_services(
     session: SessionDep,
+    pagination: PaginationDep,
     service_type: ServiceTypeEnum | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[ServiceResponse]:
     """List Services."""
     logger.debug("Listing services for type '%s'", service_type or "all")
     return await ServiceManager.list_paginated(
         session,
         select_related=[Service.schemas, Service.node],
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
         type=service_type,
     )
 
@@ -96,14 +100,40 @@ async def delete_service(session: SessionDep, service: ServiceDep) -> None:
     await ServiceManager.delete(session, service)
 
 
+@router.get("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
+async def retrieve_service_system_observation(
+    session: SessionDep,
+    service: ServiceDep,
+) -> ServiceSystemObservationResponse:
+    """Retrieve service system observation for a service."""
+    return await ServiceSystemObservationManager.get_or_404(
+        session, service_id=service.id
+    )
+
+
+@router.put("/{service_id}/system-observation", dependencies=[IsAuthenticatedDep])
+async def upsert_service_system_observation(
+    session: SessionDep,
+    service: ServiceDep,
+    data: ServiceSystemObservationWrite,
+) -> ServiceSystemObservationResponse:
+    """Upsert service system observation for a service."""
+    data.service_id = service.id
+    obs, created = await ServiceSystemObservationManager.get_or_create(
+        session, data, filter_include={"service_id"}
+    )
+    if not created:
+        obs = await ServiceSystemObservationManager.update(session, obs, data)
+    return obs
+
+
 @router.get("/{service_id}/schemas/", dependencies=[IsAuthenticatedDep])
 async def list_schemas_by_service(
     session: SessionDep,
     service: ServiceDep,
+    pagination: PaginationDep,
     search: str | None = None,
     include_tables: str | None = None,
-    offset: int = Query(default=DEFAULT_PAGINATION_OFFSET, ge=0),
-    limit: int = Query(default=DEFAULT_PAGINATION_LIMIT, ge=0),
 ) -> PaginatedResponse[SchemaResponse | SchemaCompactResponse]:
     """List Schemas by Service.
 
@@ -119,10 +149,8 @@ async def list_schemas_by_service(
     :param include_tables: Include nested tables in the response when set to
         any non-empty value. Defaults to compact mode (no tables).
     :type include_tables: str | None
-    :param offset: The zero-based starting offset for pagination.
-    :type offset: int
-    :param limit: The maximum number of items to return.
-    :type limit: int
+    :param pagination: Validated offset/limit query parameters.
+    :type pagination: Pagination
     :return: A paginated response of schema responses.
     :rtype: PaginatedResponse[SchemaResponse | SchemaCompactResponse]
     """
@@ -135,21 +163,17 @@ async def list_schemas_by_service(
         session,
         *whereclause,
         select_related=select_related,
-        offset=offset,
-        limit=limit,
+        pagination=pagination,
         service_id=service.id,
     )
     if include_tables:
-        items = [
-            SchemaResponse.model_validate(s, from_attributes=True) for s in result.items
-        ]
-    else:
-        items = [
-            SchemaCompactResponse.model_validate(s, from_attributes=True)
-            for s in result.items
-        ]
-    return PaginatedResponse(
-        items=items, total=result.total, offset=result.offset, limit=result.limit
+        return result.map_items(
+            lambda schema: SchemaResponse.model_validate(schema, from_attributes=True)
+        )
+    return result.map_items(
+        lambda schema: SchemaCompactResponse.model_validate(
+            schema, from_attributes=True
+        )
     )
 
 

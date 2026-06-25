@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, call, patch
 import pytest
 from fastapi import HTTPException, status
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
     clear_connectivity_caches,
     get_latest_connectivity_result,
@@ -38,7 +39,6 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
-    TaskWrite,
 )
 from tests.app.factories import (
     AltersCreateFactory,
@@ -171,7 +171,7 @@ def test_alters_create_skips_connectivity_check_when_opted_out(
     """POST /alters/ skips the connectivity check when the checkbox is unchecked."""
     clear_connectivity_caches()
 
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_alter",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.ALTERS,
@@ -187,7 +187,7 @@ def test_alters_create_skips_connectivity_check_when_opted_out(
                 "_service_port": 3306,
                 "_connectivity_host": "10.0.0.1",
                 "_connectivity_port": 3306,
-                "_connectivity_service_type": "mysql",
+                "_connectivity_service_type": ServiceTypeEnum.MYSQL.value,
             },
         },
     )
@@ -286,6 +286,12 @@ def test_alters_detail(
         },
     }
     created_task.data = mock_data
+    mock_inventory_api_dep.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
     mock_task_api_dep.get.side_effect = [
         {"address1": "host1", "address2": "host2"},  # for /hosts/ (dependency)
         {"items": [], "total": 0, "offset": 0, "limit": 50},

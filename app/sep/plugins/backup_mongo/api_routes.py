@@ -23,19 +23,20 @@ route for safety.
 
 import logging
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter
 from fastapi import status as http_status
 
-from app.core.models import PaginatedResponse
+from app.core.exceptions import HTTPInternalServerErrorException
+from app.core.pagination import PaginatedResponse
+from app.core.pagination.deps import PaginationDep
 from app.sep.deps import (
-    HasNoConflictedRunningTasks,
     InventoryAPI,
-    IsApiAuthenticated,
     TaskAPI,
 )
 from app.sep.plugins.backup_mongo.deps import (
     backup_create_from_write,
     backup_derived_task_names,
+    BackupsTask,
     build_backup_mongo_api_detail_response,
     build_backup_task_payload,
     get_backup_mongo_api_task_responses,
@@ -53,9 +54,9 @@ from app.sep.plugins.backup_mongo.restore.api_routes import (
     router as restore_api_router,
 )
 from app.sep.plugins.backup_mongo.schema import backup_mongo_schema
-from app.sep.plugins.framework.api import schema_endpoint
+from app.sep.plugins.framework.api import derive_execute_route, schema_endpoint
 from app.sep.plugins.framework.cascade import cascade_create_tasks, cascade_delete_tasks
-from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +68,14 @@ router.include_router(restore_api_router, prefix="/restores")
 @router.get("/")
 async def backup_mongo_api_list(
     tasks_api: TaskAPI,
+    pagination: PaginationDep,
     status: TaskHistoryStatusEnum | None = None,
-    offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=0, le=200),
 ) -> PaginatedResponse[BackupTaskResponse]:
     """List parent PBM backup config tasks."""
     return await get_backup_mongo_api_task_responses(
-        tasks_api, status=status, offset=offset, limit=limit
+        tasks_api,
+        pagination=pagination,
+        status=status,
     )
 
 
@@ -112,28 +114,14 @@ async def backup_mongo_api_create(
     return await build_backup_mongo_api_detail_response(task, tasks_api)
 
 
-@router.post(
-    "/{task_name}/execute",
-    status_code=http_status.HTTP_201_CREATED,
-    dependencies=[IsApiAuthenticated, HasNoConflictedRunningTasks],
+derive_execute_route(
+    router,
+    name="backup_mongo_api_execute",
+    description="Execute a backup task.",
+    task_dep=BackupsTask,
+    write_model=BackupExecuteWrite,
+    response_model=BackupExecutionResponse,
 )
-async def backup_mongo_api_execute(
-    task_name: str,
-    body: BackupExecuteWrite,
-    tasks_api: TaskAPI,
-) -> BackupExecutionResponse:
-    """Execute a backup task."""
-    task = await get_backups_task(task_name, tasks_api)
-    logger.info("Executing backup_mongo task %r", task.name)
-    created = await tasks_api.post(
-        f"/execute/{task.name}",
-        json=body.model_dump(exclude_none=True),
-    )
-    task_history = TaskHistoryResponse.model_validate(created)
-    return BackupExecutionResponse(
-        task_name=task.name,
-        task_id=task_history.id,
-    )
 
 
 @router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)
@@ -152,7 +140,6 @@ async def backup_mongo_api_delete(
         failed = [
             (failure.task_name, str(failure.exception)) for failure in result.failures
         ]
-        raise HTTPException(
-            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Partial delete failure; orphaned tasks: {failed}",
+        raise HTTPInternalServerErrorException(
+            detail=f"Partial delete failure; orphaned tasks: {failed}"
         )

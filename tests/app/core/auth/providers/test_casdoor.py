@@ -17,6 +17,8 @@
 
 import base64
 
+from pydantic import SecretStr
+
 from app.core.auth.providers.casdoor import CasdoorSDK
 
 
@@ -41,3 +43,31 @@ def test_casdoor_api_key_decodes_secret_values():
     )
     expected = base64.b64encode(b"test-id:test-secret").decode("utf-8")
     assert sdk.api_key == expected
+
+
+def test_casdoor_api_key_with_empty_credentials():
+    """Test that empty credentials encode without raising (no validation guard)."""
+    sdk = CasdoorSDK(
+        endpoint="https://casdoor.example.com",
+        client_id="",
+        client_secret="",
+    )
+    expected = base64.b64encode(b":").decode("utf-8")
+    assert sdk.api_key == expected
+
+
+def test_casdoor_api_key_recomputes_after_credentials_change():
+    """Test that api_key reflects mutated credentials (it is not cached)."""
+    sdk = CasdoorSDK(
+        endpoint="https://casdoor.example.com",
+        client_id="test-id",
+        client_secret="test-secret",
+    )
+    original = sdk.api_key
+
+    sdk.client_id = SecretStr("new-id")
+    sdk.client_secret = SecretStr("new-secret")
+
+    expected = base64.b64encode(b"new-id:new-secret").decode("utf-8")
+    assert sdk.api_key == expected
+    assert sdk.api_key != original

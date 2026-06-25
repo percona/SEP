@@ -92,6 +92,15 @@ const sepThemeOptions = (mode: PaletteMode): ThemeOptions => {
           }),
         },
       },
+      MuiDrawer: {
+        styleOverrides: {
+          root: () => ({
+            [`& .MuiList-root .MuiCollapse-root .MuiListItemIcon-root`]: {
+              minWidth: '33px',
+            },
+          }),
+        },
+      },
     },
   };
 

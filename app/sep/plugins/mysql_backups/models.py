@@ -17,17 +17,38 @@
 
 from datetime import datetime
 from enum import auto, IntEnum, StrEnum
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 
-from pydantic import BaseModel, Field, field_validator, FutureDatetime, model_validator
+from annotated_types import Ge, Le
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
-from app.sep.plugins.framework.rules import (
-    apply_conditional_rules,
-    ConditionalRulesModel,
+from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.framework.form_dsl import (
+    AppFormModel,
+    Choices,
+    Forbidden,
+    FormRules,
+    HostRef,
+    Requires,
+    ServiceRef,
+    Ui,
 )
-from app.sep.plugins.mysql_backups.schema import mysql_backups_schema
+from app.sep.plugins.framework.rules import (
+    Contains,
+    F,
+    FailRule,
+    falsy,
+    not_,
+    truthy,
+)
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
@@ -73,6 +94,60 @@ class UploadProvider(EnumFieldMixin, StrEnum):
     RSYNC = auto()
     S3 = auto()
     GSUTIL = auto()
+
+
+# Single source for the ``upload`` choice values and the destination-field
+# ``Contains`` gate operands, kept in sync with the ``UploadProvider`` enum names.
+_UPLOAD_S3 = "S3"
+_UPLOAD_RSYNC = "RSYNC"
+_UPLOAD_GSUTIL = "GSUTIL"
+
+# ``forbidden`` (not ``requires``): these fields are optional within their owning
+# mode, only forbidden outside it. Bool fields are gated by the ``FailRule``s below
+# instead — ``_field_is_present`` treats ``False`` as absent, so a gate here would
+# never fire on their default.
+_MYDUMPER_ONLY = Forbidden(when=F("backup_type") != "M")
+_XTRABACKUP_ONLY = Forbidden(when=F("backup_type") != "X")
+_BINLOG_ONLY = Forbidden(when=F("backup_type") != "B")
+
+_S3_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_S3)))
+_GSUTIL_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_GSUTIL)))
+_RSYNC_ONLY = Forbidden(when=not_(Contains("upload", _UPLOAD_RSYNC)))
+
+# Bool fields owned by each backup mode. The BINLOG entry is intentionally empty:
+# ``binlog_run_all`` defaults to True and the legacy form always sends it, so no
+# BINLOG-only bool needs gating.
+_MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
+    "M": (
+        "mydumper_dump_triggers",
+        "mydumper_desync_pxc",
+        "mydumper_use_numa",
+    ),
+    "X": (
+        "xtrabackup_kill_queries",
+        "xtrabackup_verify",
+        "xtrabackup_prepare",
+        "xtrabackup_desync_pxc",
+        "xtrabackup_rsync",
+        "xtrabackup_replica_info",
+        "xtrabackup_stop_replica",
+        "xtrabackup_lock_ddl",
+        "xtrabackup_quiet",
+    ),
+    "B": (),
+}
+
+
+def _empty_str_to_none(value: Any) -> Any:
+    """Coerce an empty-string form value to ``None`` (the ``EmptyStrToNone`` idiom).
+
+    Used on ``mydumper_verbose``, whose ``Ge``/``Le`` bounds must sit at the field's
+    outer ``Annotated`` level so the derived schema can read them; an
+    ``int | EmptyStrToNone`` union would make Pydantic apply those bounds to the
+    coerced ``None``, so a plain ``int | None`` plus this before-validator carries
+    the empty-string handling instead.
+    """
+    return None if value == "" else value
 
 
 class DirEncryptConfig(BaseModel):
@@ -146,147 +221,312 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     s3_bucket: NonEmptyStr | EmptyStrToNone = None
     s3_storage_class: NonEmptyStr | EmptyStrToNone = None
     skip_s3_safety_check: bool = False
+    upload_quiet: bool = False
     awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone = None
     gs_bucket: NonEmptyStr | EmptyStrToNone = None
     rsync_path: NonEmptyStr | EmptyStrToNone = None
 
 
-@apply_conditional_rules(mysql_backups_schema)
-class BackupCreate(BackupConfigAll, ConditionalRulesModel):
-    """Represent a Backup creation form with proper case-insensitive fields.
+class BackupCreate(AppFormModel):
+    """Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.
 
-    :param hardlink: Whether to use hardlinks for full backups to save space.
-    :type hardlink: bool
-    :param compress: Whether to enable compression for backup data.
-    :type compress: bool
-    :param check_disk_space: Whether to check disk space before starting the backup.
-    :type check_disk_space: bool
-    :param encrypt: Whether to enable encryption for backup data.
-    :type encrypt: bool
-    :param encrypt_using_tmpdir: Whether to use a temporary directory for encryption operations.
-    :type encrypt_using_tmpdir: bool
-    :param post_run_encrypt: Whether to encrypt backup right after completion.
-    :type post_run_encrypt: bool
-    :param only_if_running_replica: Only perform backup if the server is a replica.
-    :type only_if_running_replica: bool
-    :param only_if_read_only: Only perform backup if the server is in read-only mode.
-    :type only_if_read_only: bool
-    :param logging_dir: Directory where logs are stored.
-    :type logging_dir: NonEmptyStr | EmptyStrToNone
-    :param backup_dir: Directory where backups are stored.
-    :type backup_dir: NonEmptyStr | EmptyStrToNone
-    :param defaults_file: Path to the MySQL defaults file.
-    :type defaults_file: NonEmptyStr | EmptyStrToNone
-    :param compression_algorithm: Compression algorithm to use.
-    :type compression_algorithm: CompressionAlgorithm | EmptyStrToNone
-    :param mydumper_daily_purge: Number of days to keep daily mydumper backups.
-    :type mydumper_daily_purge: int | EmptyStrToNone
-    :param mydumper_weekly_purge: Number of weeks to keep weekly mydumper backups.
-    :type mydumper_weekly_purge: int | EmptyStrToNone
-    :param mydumper_dump_triggers: Whether to include database triggers with mydumper.
-    :type mydumper_dump_triggers: bool
-    :param mydumper_desync_pxc: Whether to desynchronize PXC node before mydumper backup.
-    :type mydumper_desync_pxc: bool
-    :param mydumper_use_numa: Whether to enable NUMA support during mydumper backup.
-    :type mydumper_use_numa: bool
-    :param mydumper_extra_args: Additional command-line arguments for mydumper.
-    :type mydumper_extra_args: str | EmptyStrToNone
-    :param mydumper_verbose: mydumper log verbosity level (0 silent … 3 info).
-        Unset falls back to the payload default of ``3``.
-    :type mydumper_verbose: int | EmptyStrToNone
-    :param use_ftwrl_guardian: Whether to use FTWRL guardian to manage locks during backup.
-    :type use_ftwrl_guardian: bool
-    :param xtrabackup_copies: Number of backup copies for xtrabackup.
-    :type xtrabackup_copies: int | EmptyStrToNone
-    :param xtrabackup_kill_queries: Whether to terminate long-running queries.
-    :type xtrabackup_kill_queries: bool
-    :param xtrabackup_kill_queries_timeout: Maximum time (in seconds) to wait before terminating queries.
-    :type xtrabackup_kill_queries_timeout: int | EmptyStrToNone
-    :param xtrabackup_kill_query_type: Type of queries to avoid backup interruptions (select or all).
-    :type xtrabackup_kill_query_type: Literal["select", "all"] | EmptyStrToNone
-    :param xtrabackup_verify: Whether to verify backup after creation.
-    :type xtrabackup_verify: bool
-    :param xtrabackup_prepare: Whether to prepare the backup for restore.
-    :type xtrabackup_prepare: bool
-    :param xtrabackup_prepare_memory: Amount of memory allocated during prepare phase.
-    :type xtrabackup_prepare_memory: NonEmptyStr | EmptyStrToNone
-    :param xtrabackup_desync_pxc: Whether to desynchronize PXC node during xtrabackup.
-    :type xtrabackup_desync_pxc: bool
-    :param xtrabackup_rsync: Whether to use rsync for file copying in xtrabackup.
-    :type xtrabackup_rsync: bool
-    :param xtrabackup_replica_info: Whether to include replica info in xtrabackup.
-    :type xtrabackup_replica_info: bool
-    :param xtrabackup_defaults_file: Path to the defaults file for xtrabackup.
-    :type xtrabackup_defaults_file: NonEmptyStr | EmptyStrToNone
-    :param xtrabackup_extra_args: Additional command-line arguments passed to xtrabackup.
-    :type xtrabackup_extra_args: NonEmptyStr | EmptyStrToNone
-    :param xtrabackup_incremental_method: Method used for incremental backup.
-    :type xtrabackup_incremental_method: Literal["less_space", "fast_restore"] | EmptyStrToNone
-    :param xtrabackup_incremental_cycle: Frequency of incremental backups.
-    :type xtrabackup_incremental_cycle: Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone
-    :param xtrabackup_local_ssh_destination: SSH destination for storing backups remotely.
-    :type xtrabackup_local_ssh_destination: NonEmptyStr | EmptyStrToNone
-    :param xtrabackup_aes256_keyfile: Path to AES-256 encryption key file.
-    :type xtrabackup_aes256_keyfile: NonEmptyStr | EmptyStrToNone
-    :param xtrabackup_stop_replica: Whether to stop the replica before xtrabackup.
-    :type xtrabackup_stop_replica: bool
-    :param xtrabackup_lock_ddl: Whether to lock DDL operations during backup.
-    :type xtrabackup_lock_ddl: bool
-    :param xtrabackup_quiet: Whether to drop per-file copy progress lines from the backup log.
-    :type xtrabackup_quiet: bool
-    :param xtrabackup_bin_cmd: Backup tool to use.
-    :type xtrabackup_bin_cmd: Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone
-    :param binlog_prefix: Prefix used in binlog backup naming.
-    :type binlog_prefix: NonEmptyStr | EmptyStrToNone
-    :param binlog_purge_days: Number of days to retain binlogs before purging.
-    :type binlog_purge_days: int | EmptyStrToNone
-    :param binlog_extra_args: Extra arguments for binlog backup command.
-    :type binlog_extra_args: NonEmptyStr | EmptyStrToNone
-    :param binlog_compress_cmd: Command used to compress binlog backups.
-    :type binlog_compress_cmd: NonEmptyStr | EmptyStrToNone
-    :param binlog_cmd: Command used to create binlog backups.
-    :type binlog_cmd: NonEmptyStr | EmptyStrToNone
-    :param binlog_run_all: Whether to run all binlog backup types.
-    :type binlog_run_all: bool
-    :param s3_bucket: S3 bucket where backups will be stored.
-    :type s3_bucket: NonEmptyStr | EmptyStrToNone
-    :param s3_storage_class: S3 storage class (e.g., STANDARD, GLACIER).
-    :type s3_storage_class: NonEmptyStr | EmptyStrToNone
-    :param skip_s3_safety_check: Whether to disable safety checks before uploading to S3.
-    :type skip_s3_safety_check: bool
-    :param awscli_s3_upload_extra_args: Extra arguments to pass to AWS S3 upload (ExtraArgs dict).
-        Example: "ChecksumAlgorithm=CRC32C".
-    :type awscli_s3_upload_extra_args: NonEmptyStr | EmptyStrToNone
-    :param rsync_path: Remote destination path for Rsync transfers.
-    :type rsync_path: NonEmptyStr | EmptyStrToNone
-    :param task_name: The name of the backup task.
-    :type task_name: NonEmptyStr
-    :param hostname: The hostname of the machine to back up.
-    :type hostname: NonEmptyStr
-    :param service_id: The identifier of the related service.
-    :type service_id: int
-    :param backup_type: The type of backup to perform.
-    :type backup_type: BackupType
-    :param encryption_recipient: The recipient used for encryption.
-    :type encryption_recipient: NonEmptyStr | EmptyStrToNone
-    :param binlog_alternative_host: Optional alternative host for binlog operations.
-    :type binlog_alternative_host: NonEmptyStr | EmptyStrToNone
-    :param alias: Optional alias for the server in the SERVERS_LIST section.
-    :type alias: NonEmptyStr | EmptyStrToNone
-    :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-    :type alert_on_fail: bool
-    :param upload: Selected upload providers for backup artifacts.
-    :type upload: list[UploadProvider]
+    Declares each form field once, in section order (Task, General, Mydumper,
+    XtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the
+    derived schema. Field declaration order is load-bearing: the derived section
+    order follows each section's first field, and the within-section order follows
+    declaration order, so the order here reproduces the hand-written schema
+    byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
+    (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
+    encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
+    :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
+    into the conditional-rule plan at class definition, so no
+    ``@apply_conditional_rules`` decorator is needed. The config sub-models
+    (:class:`BackupConfigAll` and friends) stay the serialization target the
+    payload builder populates, not this model's base class.
+
+    :cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool
+        outside its mode fails validation with a per-field message.
     """
 
-    task_name: NonEmptyStr
-    hostname: NonEmptyStr
-    service_id: int
-    backup_type: BackupType
-    encryption_recipient: NonEmptyStr | EmptyStrToNone = None
-    alias: NonEmptyStr | EmptyStrToNone = None
-    alert_on_fail: bool = False
-    upload: list[UploadProvider] = Field(min_length=1)
+    __form_rules__: ClassVar[FormRules] = FormRules(
+        fail_when=tuple(
+            FailRule(
+                fail_when=truthy(name) & (F("backup_type") != owner_mode),
+                error_fields=[name],
+                message=(
+                    f"{name!r} must not be set when backup_type is not {owner_mode!r}."
+                ),
+            )
+            for owner_mode, names in _MODE_BOOL_FIELDS.items()
+            for name in names
+        )
+    )
+
+    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
+    hostname: Annotated[
+        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
+    ]
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
+        Ui(label="Database Host", section="Task"),
+    ]
+    backup_type: Annotated[
+        BackupType,
+        Choices((("M", "Mydumper"), ("X", "XtraBackup"), ("B", "Binlog"))),
+        Ui(label="Backup Type", section="Task"),
+    ]
+    alias: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Server Alias", section="Task")
+    ] = None
+
+    hardlink: Annotated[bool, Ui(label="Hardlink full backups", section="General")] = (
+        False
+    )
+    compress: Annotated[bool, Ui(label="Compress backup data", section="General")] = (
+        False
+    )
+    check_disk_space: Annotated[
+        bool, Ui(label="Check disk space first", section="General")
+    ] = False
+    only_if_running_replica: Annotated[
+        bool, Ui(label="Only if running replica", section="General")
+    ] = False
+    only_if_read_only: Annotated[
+        bool, Ui(label="Only if read-only", section="General")
+    ] = False
+    use_ftwrl_guardian: Annotated[
+        bool, Ui(label="FTWRL guardian", section="General")
+    ] = False
+    logging_dir: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Logging directory", section="General")
+    ] = None
+    backup_dir: Annotated[
+        NonEmptyStr | EmptyStrToNone, Ui(label="Backup directory", section="General")
+    ] = None
+    defaults_file: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Ui(label="MySQL defaults file", section="General"),
+    ] = None
+    compression_algorithm: Annotated[
+        CompressionAlgorithm | EmptyStrToNone,
+        Ui(label="Compression algorithm", section="General"),
+    ] = None
+
+    mydumper_daily_purge: Annotated[
+        int | EmptyStrToNone,
+        _MYDUMPER_ONLY,
+        Ui(label="Daily purge (days)", section="Mydumper"),
+    ] = None
+    mydumper_weekly_purge: Annotated[
+        int | EmptyStrToNone,
+        _MYDUMPER_ONLY,
+        Ui(label="Weekly purge (weeks)", section="Mydumper"),
+    ] = None
+    mydumper_dump_triggers: Annotated[
+        bool, Ui(label="Dump triggers", section="Mydumper")
+    ] = False
+    mydumper_desync_pxc: Annotated[
+        bool, Ui(label="Desync PXC node", section="Mydumper")
+    ] = False
+    mydumper_use_numa: Annotated[bool, Ui(label="Use NUMA", section="Mydumper")] = False
+    mydumper_extra_args: Annotated[
+        str | EmptyStrToNone, _MYDUMPER_ONLY, Ui(label="Extra args", section="Mydumper")
+    ] = None
+    mydumper_verbose: Annotated[
+        int | None,
+        Ge(0),
+        Le(3),
+        BeforeValidator(_empty_str_to_none),
+        _MYDUMPER_ONLY,
+        Ui(label="Verbose level", section="Mydumper"),
+    ] = None
+
+    xtrabackup_copies: Annotated[
+        int | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Ui(label="Number of backup copies", section="XtraBackup"),
+    ] = None
+    xtrabackup_kill_queries: Annotated[
+        bool, Ui(label="Kill blocking queries", section="XtraBackup")
+    ] = False
+    xtrabackup_kill_queries_timeout: Annotated[
+        int | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Ui(label="Kill-queries timeout (s)", section="XtraBackup"),
+    ] = None
+    xtrabackup_kill_query_type: Annotated[
+        Literal["select", "all"] | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Choices((("select", "SELECT"), ("all", "All"))),
+        Ui(label="Kill query type", section="XtraBackup"),
+    ] = None
+    xtrabackup_verify: Annotated[
+        bool, Ui(label="Verify after backup", section="XtraBackup")
+    ] = False
+    xtrabackup_prepare: Annotated[
+        bool, Ui(label="Prepare for restore", section="XtraBackup")
+    ] = False
+    xtrabackup_prepare_memory: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Ui(label="Prepare memory", section="XtraBackup"),
+    ] = None
+    xtrabackup_desync_pxc: Annotated[
+        bool, Ui(label="Desync PXC node", section="XtraBackup")
+    ] = False
+    xtrabackup_rsync: Annotated[bool, Ui(label="Use rsync", section="XtraBackup")] = (
+        False
+    )
+    xtrabackup_replica_info: Annotated[
+        bool, Ui(label="Include replica info", section="XtraBackup")
+    ] = False
+    xtrabackup_defaults_file: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Ui(label="XtraBackup defaults file", section="XtraBackup"),
+    ] = None
+    xtrabackup_extra_args: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Ui(label="Extra args", section="XtraBackup"),
+    ] = None
+    xtrabackup_incremental_method: Annotated[
+        Literal["less_space", "fast_restore"] | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Choices((("less_space", "Less space"), ("fast_restore", "Fast restore"))),
+        Ui(label="Incremental method", section="XtraBackup"),
+    ] = None
+    xtrabackup_incremental_cycle: Annotated[
+        Literal["daily", "weekly", "2", "3", "4", "5", "6", "7"] | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Choices(
+            (
+                ("daily", "Daily"),
+                ("weekly", "Weekly"),
+                ("2", "2 days"),
+                ("3", "3 days"),
+                ("4", "4 days"),
+                ("5", "5 days"),
+                ("6", "6 days"),
+                ("7", "7 days"),
+            )
+        ),
+        Ui(label="Incremental cycle", section="XtraBackup"),
+    ] = None
+    xtrabackup_local_ssh_destination: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Ui(label="Local SSH destination", section="XtraBackup"),
+    ] = None
+    xtrabackup_aes256_keyfile: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Ui(label="AES-256 key file path", section="XtraBackup"),
+    ] = None
+    xtrabackup_stop_replica: Annotated[
+        bool, Ui(label="Stop replica before backup", section="XtraBackup")
+    ] = False
+    xtrabackup_lock_ddl: Annotated[bool, Ui(label="Lock DDL", section="XtraBackup")] = (
+        False
+    )
+    xtrabackup_quiet: Annotated[
+        bool, Ui(label="Quiet log (drop per-file copy lines)", section="XtraBackup")
+    ] = False
+    xtrabackup_bin_cmd: Annotated[
+        Literal["xtrabackup", "mariadb-backup", "innobackupex"] | EmptyStrToNone,
+        _XTRABACKUP_ONLY,
+        Ui(label="Backup binary", section="XtraBackup"),
+    ] = None
+
+    binlog_prefix: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _BINLOG_ONLY,
+        Ui(label="Binlog prefix", section="Binlog"),
+    ] = None
+    binlog_purge_days: Annotated[
+        int | EmptyStrToNone,
+        _BINLOG_ONLY,
+        Ui(label="Purge after (days)", section="Binlog"),
+    ] = None
+    binlog_extra_args: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _BINLOG_ONLY,
+        Ui(label="Extra args", section="Binlog"),
+    ] = None
+    binlog_compress_cmd: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _BINLOG_ONLY,
+        Ui(label="Compress command", section="Binlog"),
+    ] = None
+    binlog_cmd: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _BINLOG_ONLY,
+        Ui(label="Binlog command", section="Binlog"),
+    ] = None
+    binlog_run_all: Annotated[
+        bool, Ui(label="Run all binlog backups", section="Binlog")
+    ] = True
+    binlog_alternative_host: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _BINLOG_ONLY,
+        Ui(label="Alternative binlog host", section="Binlog"),
+    ] = None
+
+    encrypt: Annotated[bool, Ui(label="Encrypt backup", section="Encryption")] = False
+    encrypt_using_tmpdir: Annotated[
+        bool, Ui(label="Encrypt using tmpdir", section="Encryption")
+    ] = False
+    post_run_encrypt: Annotated[
+        bool, Ui(label="Encrypt after backup completes", section="Encryption")
+    ] = False
+    encryption_recipient: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        Requires(when=truthy("encrypt")),
+        Forbidden(when=falsy("encrypt")),
+        Ui(label="Encryption recipient", section="Encryption"),
+    ] = None
+
+    upload: Annotated[
+        list[UploadProvider],
+        Choices(
+            (
+                (_UPLOAD_RSYNC, "Rsync"),
+                (_UPLOAD_S3, "S3"),
+                (_UPLOAD_GSUTIL, "Google Cloud Storage"),
+            )
+        ),
+        Ui(label="Upload providers", section="Upload"),
+    ] = Field(min_length=1)
+    s3_bucket: Annotated[
+        NonEmptyStr | EmptyStrToNone, _S3_ONLY, Ui(label="S3 bucket", section="Upload")
+    ] = None
+    s3_storage_class: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _S3_ONLY,
+        Ui(label="S3 storage class", section="Upload"),
+    ] = None
+    skip_s3_safety_check: Annotated[
+        bool, _S3_ONLY, Ui(label="Skip S3 safety check", section="Upload")
+    ] = False
+    upload_quiet: Annotated[bool, Ui(label="Quiet upload logs", section="Upload")] = (
+        False
+    )
+    awscli_s3_upload_extra_args: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _S3_ONLY,
+        Ui(label="AWS S3 upload extra args", section="Upload"),
+    ] = None
+    gs_bucket: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _GSUTIL_ONLY,
+        Ui(label="Google Cloud Storage bucket", section="Upload"),
+    ] = None
+    rsync_path: Annotated[
+        NonEmptyStr | EmptyStrToNone,
+        _RSYNC_ONLY,
+        Ui(label="Rsync destination path", section="Upload"),
+    ] = None
 
     @field_validator("upload", mode="before")
     @classmethod
@@ -413,41 +653,6 @@ class BackupConfig(BaseCaseInsensitiveModel):
 
     all_servers: BackupConfigAll
     server_list: list[BackupConfigServer]
-
-
-class BackupExecuteWrite(BaseModel):
-    """Represent a JSON request body for executing a backup task.
-
-    Fields default to ``None`` so the API route can serialize the body
-    with ``exclude_none=True`` and omit unset values when forwarding to
-    the Tasks API, which then applies its own defaults
-    (``chain_on_failure`` defaults to ``False`` in ``TaskExecutionRequest``).
-
-    :param eta: Optional future datetime at which to schedule execution.
-    :type eta: FutureDatetime | None
-    :param chain_task_names: Optional list of task names to chain after this one.
-    :type chain_task_names: list[str] | None
-    :param chain_on_failure: Whether chained tasks run even on failure. ``None``
-        means "don't send"; the Tasks API treats an omitted value as ``False``.
-    :type chain_on_failure: bool | None
-    """
-
-    eta: FutureDatetime | None = None
-    chain_task_names: list[str] | None = None
-    chain_on_failure: bool | None = None
-
-
-class BackupExecutionResponse(BaseModel):
-    """Carry the response payload from ``POST /api/plugins/mysql_backups/{task_name}/execute``.
-
-    :param task_name: The name of the task that was executed.
-    :type task_name: str
-    :param task_id: The id of the task-history row created by the tasks API.
-    :type task_id: int | None
-    """
-
-    task_name: str
-    task_id: int | None = None
 
 
 class BackupTaskBase(BaseModel):

@@ -93,10 +93,16 @@ This ensures that your code adheres to our linting and formatting standards befo
 
 We enforce code style guidelines using [Ruff](https://docs.astral.sh/ruff/). The rules are defined in the [pyproject.toml](https://github.com/percona/SEP/blob/main/pyproject.toml) file.
 
+- **Type checking** (opt-in):
+
+Because the project is fully type-annotated, you can check the annotations locally with [`ty`](https://github.com/astral-sh/ty) (Astral's type checker) by running `make typecheck`. It is **not** enforced in CI or pre-commit yet, so it is safe to run on demand and will currently report a backlog of existing diagnostics.
+
 - **Docstrings**:
 
 Use [reStructuredText (rST) docstrings](https://peps.python.org/pep-0287/) compatible with [Sphinx](https://www.sphinx-doc.org/en/master/usage/domains/python.html) for documentation.
 All public modules, classes, methods, and functions should include docstrings.
+
+Because the project is fully type-annotated, the function signature (or model field annotation) is the source of truth for types. Use `:param:` / `:return:` to describe a parameter's or return value's *meaning*, and document every parameter with a `:param:` entry. Omit `:type:` / `:rtype:` — they are optional; add one only when the documented type should intentionally differ from the annotation (for example, an `Any` whose real contract is narrower). When a type directive is needed, `:type:` is for `:param:` only and `:vartype:` for class/instance variables.
 
 Example:
 
@@ -105,18 +111,12 @@ class OAuthToken(BaseModel):
     """Represent an OAuth token.
 
     :param access_token: The token used to access protected resources.
-    :type access_token: str
     :param id_token: The token that contains identity information about the user.
-    :type id_token: str
     :param refresh_token: The token used to obtain new access tokens after the
         current one expires.
-    :type refresh_token: str
     :param token_type: The type of token, typically "bearer".
-    :type token_type: str
     :param expires_in: The time duration after which the token expires.
-    :type expires_in: TimedeltaSeconds
     :param scope: The scope of the access granted by the token.
-    :type scope: str
     """
 
     access_token: str
@@ -145,9 +145,7 @@ def deep_dict_update(main_dict: dict[Any, Any], update_dict: dict[Any, Any]) -> 
     from `update_dict`.
 
     :param main_dict: The dictionary to be updated.
-    :type main_dict: dict[Any, Any]
     :param update_dict: The dictionary containing updates to apply.
-    :type update_dict: dict[Any, Any]
     """
     for key, value in update_dict.items():
         if (

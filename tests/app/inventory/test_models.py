@@ -18,7 +18,14 @@
 import pytest
 from pydantic import ValidationError
 
-from app.inventory.models import NodeWrite, ServiceTypeEnum, SourceEnum
+from app.core.utils.date_time import utc_now
+from app.inventory.models import (
+    HostSystemObservationWrite,
+    NodeWrite,
+    ServiceSystemObservationWrite,
+    ServiceTypeEnum,
+    SourceEnum,
+)
 
 
 class TestNodeBaseValidator:
@@ -55,6 +62,52 @@ class TestNodeBaseValidator:
         assert node.source is None
 
 
+class TestHostSystemObservationBaseValidator:
+    """Test HostSystemObservationBase.validate_at_least_one_observation_field."""
+
+    def test_all_observation_fields_none_raises(self) -> None:
+        """Raise ValidationError when os_version, packages, and config are all None."""
+        with pytest.raises(ValidationError, match="os_version"):
+            HostSystemObservationWrite(
+                observed_at=utc_now(),
+            )
+
+    def test_os_version_only_succeeds(self) -> None:
+        """Accept when only os_version is set."""
+        observation = HostSystemObservationWrite(
+            os_version="22.04",
+            observed_at=utc_now(),
+        )
+        assert observation.os_version == "22.04"
+        assert observation.installed_packages is None
+        assert observation.config is None
+
+    def test_installed_packages_only_succeeds(self) -> None:
+        """Accept when only installed_packages is set."""
+        observation = HostSystemObservationWrite(
+            installed_packages=[{"name": "curl", "version": "7.81"}],
+            observed_at=utc_now(),
+        )
+        assert observation.installed_packages == [{"name": "curl", "version": "7.81"}]
+
+    def test_config_only_succeeds(self) -> None:
+        """Accept when only config is set."""
+        observation = HostSystemObservationWrite(
+            config={"kernel": "5.15"},
+            observed_at=utc_now(),
+        )
+        assert observation.config == {"kernel": "5.15"}
+
+
+class TestServiceSystemObservationBaseValidator:
+    """Test required fields on ServiceSystemObservationWrite."""
+
+    def test_db_engine_version_required(self) -> None:
+        """Raise ValidationError when db_engine_version is omitted."""
+        with pytest.raises(ValidationError, match="db_engine_version"):
+            ServiceSystemObservationWrite(observed_at=utc_now())
+
+
 class TestSourceEnum:
     """Test SourceEnum values."""
 
@@ -75,4 +128,5 @@ class TestServiceTypeEnum:
             "proxysql",
             "haproxy",
             "external",
+            "valkey",
         }

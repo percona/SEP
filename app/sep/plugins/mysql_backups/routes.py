@@ -16,17 +16,18 @@
 """Define routes for the backups plugin."""
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 import yaml
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
 from app.core.alerts.config import alert_settings
+from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.config import sep_settings
-from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
+from app.sep.connectivity import maybe_check_connectivity
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -40,27 +41,24 @@ from app.sep.deps import (
 from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.plugins.mysql_backups.deps import (
     BackupGeneratedTask,
+    BackupsIndexContext,
     BackupsTask,
-    get_backups_index_context,
+    CheckConnectivityFlag,
     parse_backup_task_data,
 )
 from app.sep.plugins.mysql_backups.models import BackupType
 from app.tasks.models import TaskHistoryStatusEnum
-
-from .restore.routes import router as restore_router
 
 logger = logging.getLogger(__name__)
 # Jinja2 UI deprecated — React replacement at /plugins/mysql_backups.
 router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
-router.include_router(restore_router, prefix="/restores", tags=["restores"])
-
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def mysql_backups_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_backups_index_context)],
+    context: BackupsIndexContext,
 ) -> HTMLResponse:
     """Homepage of backups plugin."""
     return templates.TemplateResponse(
@@ -88,7 +86,7 @@ async def mysql_backups_create(
     task: BackupGeneratedTask,
     task_api: TaskAPI,
     *,
-    check_connectivity: Annotated[bool, Depends(get_check_connectivity_flag)],
+    check_connectivity: CheckConnectivityFlag,
 ) -> RedirectResponse:
     """Create new backups task."""
     logger.debug("Create backups task: %s", task)
@@ -172,11 +170,15 @@ async def mysql_backups_detail(
     context["executor_hosts_dict"] = executor_hosts_ctx.hosts
 
     try:
-        response = await inventory_api.get(
-            "/services/",
-            params={"service_type": ServiceTypeEnum.MYSQL, "limit": 0},
+        context["services"] = await fetch_all_dict_items(
+            lambda pagination: inventory_api.get(
+                "/services/",
+                params={
+                    "service_type": ServiceTypeEnum.MYSQL,
+                    **pagination.model_dump(),
+                },
+            )
         )
-        context["services"] = response["items"]
     except HTTPException:
         context["services"] = []
 

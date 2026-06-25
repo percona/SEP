@@ -43,6 +43,17 @@ const mockUseTaskStats = vi.fn<(...args: unknown[]) => MockStatsResult>(() => ({
 // Manual factory keeps axios out of the resolution graph.
 vi.mock('@sep/api', () => ({
   usePluginTask: (...args: unknown[]) => mockUsePluginTask(...args),
+  // Consumed transitively by the generic ScheduleSummary (gated on
+  // capabilities.scheduling) via useScheduledTasksForPlugin. No tasks ->
+  // the summary renders its "Not scheduled" state, leaving the execute/delete
+  // flows under test untouched.
+  usePluginTasks: () => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
   useDeletePluginTask: () => ({
     mutateAsync: mockDeleteMutate,
     isPending: false,
@@ -854,6 +865,37 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
     // Unrelated extra field still renders
     expect(screen.getByText('extra_visible')).toBeInTheDocument();
     expect(screen.getByText('hello')).toBeInTheDocument();
+  });
+});
+
+describe('PluginDetailPage — Edit affordance', () => {
+  it('enables Edit and links to the edit route when the task has a stored form', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: { _form: { task_name: 'FECHK' } },
+      },
+      isLoading: false,
+    });
+
+    renderAt('/plugins/checksums/task/FECHK');
+
+    const edit = screen.getByTestId('plugin-task-edit');
+    expect(edit).not.toBeDisabled();
+    expect(edit).toHaveAttribute('href', '/plugins/checksums/task/FECHK/edit');
+  });
+
+  it('disables Edit for a task with no stored form (legacy or legacy-form-created)', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed', data: { meta: {} } },
+      isLoading: false,
+    });
+
+    renderAt('/plugins/checksums/task/FECHK');
+
+    expect(screen.getByTestId('plugin-task-edit')).toBeDisabled();
   });
 });
 

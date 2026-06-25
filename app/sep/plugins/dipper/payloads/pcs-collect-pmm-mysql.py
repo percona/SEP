@@ -29,6 +29,7 @@
 #   - name: apikey
 #     label: API key
 #     description: API key for PMM server. Leave empty to use configured default (PMM.API_KEY).
+#     hidden: true
 #   - name: node
 #     label: Node name
 #     description: Node name of audit target (required unless using --list).
@@ -58,9 +59,13 @@
 #   - name: start
 #     label: Start time (UTC)
 #     description: Starting timestamp for graph data (YYYY-MM-DDTHH:MM:SS). Defaults to 24h ago.
+#     type: datetime
+#     visible_when_not: list
 #   - name: end
 #     label: End time (UTC)
 #     description: Ending timestamp for graph data (YYYY-MM-DDTHH:MM:SS). Defaults to 24h after start.
+#     type: datetime
+#     visible_when_not: list
 #   - name: width
 #     label: Image width
 #     description: Width of images in pixels.
@@ -93,23 +98,36 @@
 #     label: Skip security checks
 #     description: Skip collection of security checks.
 #     type: bool
-#   - name: pxc
-#     label: PXC cluster name
-#     description: Collect PXC graphs; provide cluster name (mutually exclusive with GR/async).
-#   - name: gr
-#     label: Group Replication set
-#     description: Collect Group Replication graphs; provide replica set name (mutually exclusive with PXC/async).
-#   - name: async
-#     label: Async replication set
-#     description: Collect Async Replication graphs; provide replica set name (mutually exclusive with PXC/GR).
-#   - name: rds
-#     label: Amazon RDS MySQL
-#     description: Collect Amazon RDS MySQL graphs.
-#     type: bool
-#   - name: aurora
-#     label: Amazon Aurora MySQL
-#     description: Collect Amazon RDS Aurora MySQL graphs.
-#     type: bool
+#   - name: ha
+#     label: High Availability mode
+#     description: Collect HA-related graphs (mutually exclusive).
+#     group: High Availability
+#     choices:
+#       - value: pxc
+#         label: PXC
+#       - value: gr
+#         label: Group Replication
+#       - value: async
+#         label: Async Replication
+#     arg_format: "--ha ${value}"
+#     visible_when_not: list
+#   - name: ha_name
+#     label: Cluster / replica-set name
+#     description: Required for PXC and Group Replication; ignored for Async or when no HA mode is selected.
+#     group: High Availability
+#     arg_format: "--ha-name ${value}"
+#     visible_when_not: list
+#   - name: dbaas
+#     label: DBaaS mode
+#     description: Collect DBaaS-related graphs (mutually exclusive).
+#     group: DBaaS Options
+#     choices:
+#       - value: rds
+#         label: Amazon RDS MySQL
+#       - value: aurora
+#         label: Amazon Aurora MySQL
+#     arg_format: "--dbaas ${value}"
+#     visible_when_not: list
 # ---
 
 from __future__ import annotations
@@ -214,33 +232,48 @@ skipgroup.add_argument(
 
 # HA options
 hagroup = parser.add_argument_group("High Availability")
-haex = hagroup.add_mutually_exclusive_group()
-haex.add_argument(
-    "--pxc",
-    dest="pxc",
-    help="Collect PXC-related graphs; Must provide cluster name",
-    metavar="CLUSTER_NAME",
+hagroup.add_argument(
+    "--ha",
+    choices=["pxc", "gr", "async"],
+    help="Collect HA-related graphs (mutually exclusive)",
 )
-haex.add_argument(
-    "--gr",
-    dest="gr",
-    help="Collect Group-Replication graphs; Must provide replica set name",
-    metavar="REPLICA_SET",
-)
-haex.add_argument(
-    "--async",
-    dest="haasync",
-    help="Collect Async-Replication graphs; Must provide replica set name",
-    metavar="REPLICA_SET",
+hagroup.add_argument(
+    "--ha-name",
+    dest="ha_name",
+    metavar="NAME",
+    help="Cluster or replica-set name (required for --ha pxc or gr)",
 )
 
 # DBaaS options
 dbaasgroup = parser.add_argument_group("DBaaS Options")
-dbaasex = dbaasgroup.add_mutually_exclusive_group()
-dbaasex.add_argument("--rds", help="Amazon RDS MySQL", action="store_true")
-dbaasex.add_argument("--aurora", help="Amazon RDS Aurora", action="store_true")
+dbaasgroup.add_argument(
+    "--dbaas",
+    choices=["rds", "aurora"],
+    help="Collect DBaaS-related graphs (mutually exclusive)",
+)
 
 args = parser.parse_args()
+
+# Derive legacy HA/DBaaS attrs for downstream collection blocks
+args.pxc = args.gr = None
+args.haasync = None
+args.rds = args.aurora = False
+
+if args.ha:
+    if args.ha in ("pxc", "gr"):
+        if not args.ha_name:
+            parser.error("--ha-name is required when --ha is pxc or gr")
+        if args.ha == "pxc":
+            args.pxc = args.ha_name
+        else:
+            args.gr = args.ha_name
+    elif args.ha == "async":
+        args.haasync = True
+
+if args.dbaas == "rds":
+    args.rds = True
+elif args.dbaas == "aurora":
+    args.aurora = True
 
 VERIFY_SSL = not args.insecure  # noqa: S501
 

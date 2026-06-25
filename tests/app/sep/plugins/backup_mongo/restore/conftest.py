@@ -19,7 +19,7 @@ import pytest
 
 from app.sep.inventory import CreatedService
 from app.sep.plugins.backup_mongo.models import BackupType
-from app.sep.plugins.backup_mongo.restore.models import RestoreCreate
+from app.sep.plugins.backup_mongo.restore.models import RestoreCreate, RestoreTaskWrite
 from tests.app.sep.conftest import (  # noqa: F401
     mock_inventory_api_dep,
     mock_task_api_dep,
@@ -48,3 +48,9 @@ def restore_create_no_service() -> RestoreCreate:
         backup_type=BackupType.PBM_LOGICAL,
         backup_source="2026-04-29T10:00:00",
     )
+
+
+@pytest.fixture
+def restore_task_write(restore_create: RestoreCreate) -> RestoreTaskWrite:
+    """Define a sample RestoreTaskWrite JSON body aligned with restore_create."""
+    return RestoreTaskWrite.model_validate(restore_create.model_dump(mode="json"))

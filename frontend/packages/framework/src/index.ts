@@ -20,7 +20,9 @@ export { SEP_TABLE_CLASS } from './constants';
 
 // Components
 export { SchemaFormRenderer } from './components/SchemaFormRenderer';
+export type { RenderFieldArgs, RenderFieldOverride } from './components/SchemaFormRenderer';
 export { SchemaListView } from './components/SchemaListView';
+export type { RenderListColumnArgs, RenderListColumnOverride } from './components/SchemaListView';
 export {
   SchemaDrivenPlugin,
   DeleteConfirmDialog,
@@ -29,6 +31,7 @@ export {
   PluginListPage,
   PluginSchedulePage,
 } from './components/SchemaDrivenPlugin';
+export type { PluginFormSlotProps, RenderFormSlot } from './components/SchemaDrivenPlugin';
 export type { DeleteConfirmDialogProps } from './components/SchemaDrivenPlugin';
 export type { TaskExecuteAction } from './components/SchemaDrivenPlugin/PluginDetailPage';
 export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';
@@ -38,6 +41,8 @@ export { SchemaSelector } from './components/SchemaSelector';
 export type { SchemaSelectorProps } from './components/SchemaSelector';
 export { TableSelector } from './components/TableSelector';
 export type { TableSelectorProps } from './components/TableSelector';
+export { FreeSoloSelect } from './components/FreeSoloSelect';
+export type { FreeSoloSelectProps } from './components/FreeSoloSelect';
 export { HostSelector, StandaloneHostSelector } from './components/HostSelector';
 export type { StandaloneHostSelectorProps } from './components/HostSelector';
 export {
@@ -67,6 +72,17 @@ export { ChainBuilder } from './components/ChainBuilder';
 export type { ChainBuilderProps, ChainValue, AvailableTask } from './components/ChainBuilder';
 export { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from './components/AlertOnFailField';
 export { ScheduledTasksPanel } from './components/ScheduledTasksPanel';
+export {
+  describePeriod,
+  formatRelativeTime,
+  formatAbsoluteTime,
+  selectSchedule,
+} from './components/ScheduledTasksPanel';
+export type { PeriodDescription } from './components/ScheduledTasksPanel';
+export { ScheduleCell } from './components/ScheduleCell';
+export type { ScheduleCellProps } from './components/ScheduleCell';
+export { ScheduleSummary } from './components/ScheduleSummary';
+export type { ScheduleSummaryProps } from './components/ScheduleSummary';
 export {
   useScheduledTasksForPlugin,
   useCreateScheduledTask,

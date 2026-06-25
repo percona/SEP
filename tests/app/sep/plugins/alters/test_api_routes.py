@@ -95,7 +95,7 @@ def build_alters_write_body(
     service_id: int = 1,
     **kwargs: Any,
 ) -> dict:
-    """Build a valid AltersTaskWrite-compatible request body."""
+    """Build a valid AltersCreate-compatible request body."""
     return {
         "task_name": task_name,
         "hostname": hostname,
@@ -195,15 +195,15 @@ class TestAltersApiList:
         """List only parent execute tasks, not dry-run or pre-checks siblings."""
         group = build_alters_task_group(DEFAULT_PARENT_NAME)
         mock_task_api_dep.get = AsyncMock(
-            side_effect=[
-                {
-                    "items": [group["parent"], group["dry_run"]],
-                    "total": 2,
-                    "offset": 0,
-                    "limit": 50,
-                },
-                {"items": [{"status": TaskHistoryStatusEnum.SUCCESS.value}]},
-            ]
+            return_value={
+                "items": [group["parent"], group["dry_run"]],
+                "total": 2,
+                "offset": 0,
+                "limit": 50,
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={DEFAULT_PARENT_NAME: TaskHistoryStatusEnum.SUCCESS.value}
         )
 
         response = test_client.get(f"{API_BASE}/")
@@ -213,6 +213,10 @@ class TestAltersApiList:
         assert len(data) == 1
         assert data[0]["name"] == DEFAULT_PARENT_NAME
         assert data[0]["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert data[0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest", json={"names": [DEFAULT_PARENT_NAME]}
+        )
 
     def test_list_returns_empty_for_non_mysql_service_type(
         self, test_client, mock_task_api_dep
@@ -381,6 +385,65 @@ class TestAltersApiCreate:
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
+
+    def test_create_returns_422_when_both_target_modes_provided(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """POST returns 422 when both inventory and manual target fields are sent."""
+        body = build_alters_write_body(
+            schema_id=1,
+            table_id=13,
+            schema_name="app",
+            table_name="t1",
+        )
+
+        response = test_client.post(f"{API_BASE}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    def test_create_returns_422_for_multiline_alter(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """POST returns 422 when the alter command contains a newline."""
+        body = build_alters_write_body(alter="ADD COLUMN x INT\nDROP COLUMN y")
+
+        response = test_client.post(f"{API_BASE}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    def test_create_stamps_form_input_on_parent_task(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ) -> None:
+        """POST stamps _form on the parent task so the React Edit button is enabled."""
+        configure_cascade_create_mocks(
+            mock_task_api_dep,
+            mock_inventory_api_dep,
+            created_service,
+            DEFAULT_TASK_NAME,
+        )
+
+        body = build_alters_write_body(
+            task_name=DEFAULT_TASK_NAME,
+            service_id=created_service.id,
+        )
+        response = test_client.post(
+            f"{API_BASE}/?check_connectivity=false",
+            json=body,
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        posted_data = mock_task_api_dep.post.await_args_list[0].kwargs["json"]["data"]
+        assert "_form" in posted_data
+        form_input = posted_data["_form"]
+        assert form_input["task_name"] == DEFAULT_TASK_NAME
+        assert form_input["schema_name"] == "test_schema"
+        assert form_input["table_name"] == "test_table"
 
 
 class TestAltersApiUpdate:

@@ -23,13 +23,19 @@ import IconButton from '@mui/material/IconButton';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
 import { useCreatePluginEntity, useCreatePluginTask, type PluginSchema } from '@sep/api';
-import { SchemaFormRenderer } from '../SchemaFormRenderer';
+import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
+import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
+import type { RenderFormSlot } from './types';
 
 interface PluginCreatePageProps {
   schema: PluginSchema;
   pluginName: string;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
+  /** Per-field widget override threaded to the form renderer. */
+  renderField?: RenderFieldOverride;
+  /** Whole-form slot replacing the form body while keeping chrome / mutation / snackbars. */
+  renderCreateForm?: RenderFormSlot;
 }
 
 export function PluginCreatePage({
@@ -37,6 +43,8 @@ export function PluginCreatePage({
   pluginName,
   mockTasks,
   mockEntityItems,
+  renderField,
+  renderCreateForm,
 }: PluginCreatePageProps) {
   const navigate = useNavigate();
   const { entityName } = useParams<{ entityName?: string }>();
@@ -56,9 +64,14 @@ export function PluginCreatePage({
   const create = multi ? createEntity : createTask;
   const title = multi ? entitySchema!.display_name : schema.display_name;
   const sections = multi ? entitySchema!.forms : schema.forms!;
+  const capabilities = multi ? undefined : schema.capabilities;
 
   const handleSubmit = (data: Record<string, unknown>) => {
-    create.mutate(data, {
+    // Coerce at the submit boundary so whole-form slots that build their own
+    // form (bypassing SchemaFormRenderer's internal coercion) still send a
+    // backend-ready payload. Idempotent for the default SchemaFormRenderer
+    // path, which has already coerced.
+    create.mutate(coerceFormValues(data, flattenSectionFields(sections)), {
       onSuccess: () => {
         enqueueSnackbar(`${title} created`, { variant: 'success' });
         navigate('..', { relative: 'path' });
@@ -79,13 +92,22 @@ export function PluginCreatePage({
         <Typography variant="h4">New {title}</Typography>
       </Box>
 
-      <SchemaFormRenderer
-        sections={sections}
-        onSubmit={handleSubmit}
-        loading={create.isPending}
-        submitLabel={`Create ${title}`}
-        capabilities={multi ? undefined : schema.capabilities}
-      />
+      {renderCreateForm?.({
+        sections,
+        onSubmit: handleSubmit,
+        loading: create.isPending,
+        capabilities,
+        renderField,
+      }) ?? (
+        <SchemaFormRenderer
+          sections={sections}
+          onSubmit={handleSubmit}
+          loading={create.isPending}
+          submitLabel={`Create ${title}`}
+          capabilities={capabilities}
+          renderField={renderField}
+        />
+      )}
     </Box>
   );
 }

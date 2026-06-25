@@ -56,12 +56,15 @@ export type { paths as TasksPaths, components as TasksComponents } from './gener
 export type { paths as SepPaths, components as SepComponents } from './generated/sep';
 
 // Typed request clients (openapi-fetch wrappers sharing interceptors with apiClient)
-export { mainApi, inventoryApi, tasksApi, sepApi, throwOnApiError } from './typed-client';
+export { mainApi, sepApi, throwOnApiError } from './typed-client';
 
 export type {
   PluginSchema,
   PluginEntitySchema,
   PluginField,
+  SectionField,
+  OneOfBranch,
+  OneOfGroup,
   FormSection,
   ListColumn,
   ListView,
@@ -74,6 +77,7 @@ export type {
   FloatField,
   BoolField,
   ChoiceField,
+  ChoiceOption,
   MultiChoiceField,
   TextAreaField,
   DateTimeField,
@@ -97,6 +101,7 @@ export {
   usePluginTasks,
   usePluginTask,
   useCreatePluginTask,
+  useUpdatePluginTask,
   usePluginEntityList,
   usePluginEntityDetail,
   useCreatePluginEntity,
@@ -106,5 +111,41 @@ export {
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
   useDashboardStats,
+  useSettingsList,
+  usePatchSetting,
+  useResetSetting,
+  settingErrorMessage,
+  SETTINGS_QUERY_KEY,
+  REDACTED_SECRET,
+  useEnabledApps,
+  ENABLED_APPS_QUERY_KEY,
+  useAdminApps,
+  useSetAppState,
+  useForceDisableApp,
+  isTransitional,
+  appStateErrorMessage,
+  ADMIN_APPS_QUERY_KEY,
+  ADMIN_APP_MUTATION_KEY,
+  useConfigExport,
+  useAppInfo,
+  APP_INFO_QUERY_KEY,
 } from './hooks';
-export type { AlertConfig, DashboardStats } from './hooks';
+export type { AlertConfig, DashboardStats, EnabledApp, AppInfo } from './hooks';
+export type {
+  AdminApp,
+  AppStateResult,
+  AppLifecycleState,
+  TransitionalState,
+  SetAppStateVars,
+  ForceDisableAppVars,
+} from './hooks';
+export type {
+  SettingClass,
+  ReloadClassification,
+  SettingResponse,
+  SettingClassGroup,
+  SettingsListResponse,
+  SettingsPatch,
+  PatchSettingVars,
+  ResetSettingVars,
+} from './hooks';
