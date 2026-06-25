@@ -35,7 +35,7 @@ UPSTREAM_TASKS_502_RESPONSE: dict[int | str, dict[str, Any]] = {
 }
 """OpenAPI ``responses=`` entry for an SEP proxy route's upstream-Tasks-API ``502``.
 
-Both ``/api/sep/hosts/`` and ``/api/sep/task-stats/{task_name}`` re-raise a
+SEP proxy routes that forward to the Tasks sub-app re-raise a
 ``HTTPBadGatewayException`` on upstream Tasks-API failure. The SEP exception
 handler renders that as a JSON ``{"detail": ...}`` body; this constant declares
 the matching response schema in OpenAPI so the generated typed client sees the

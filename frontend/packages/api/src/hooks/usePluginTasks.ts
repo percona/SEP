@@ -163,6 +163,34 @@ export function useCreatePluginTask<T extends Record<string, unknown>>(
   });
 }
 
+export function useUpdatePluginTask<T extends Record<string, unknown>>(
+  pluginName: string,
+  mockTasks?: T[],
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<T, Error, { taskId: string; values: Record<string, unknown> }>({
+    mutationFn: async ({ taskId, values }) => {
+      try {
+        const { data } = await apiClient.put<T>(
+          `/plugins/${pluginName}/${encodeURIComponent(taskId)}`,
+          values,
+        );
+        return data;
+      } catch (error) {
+        if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
+          return { ...values, name: taskId } as unknown as T;
+        }
+        throw error;
+      }
+    },
+    onSuccess: (_data, { taskId }) => {
+      queryClient.invalidateQueries({ queryKey: ['plugins', pluginName, 'tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['plugins', pluginName, 'tasks', taskId] });
+    },
+  });
+}
+
 function entityQueryKey(pluginName: string, entityName: string) {
   return ['plugins', pluginName, 'entity', entityName] as const;
 }

@@ -29,6 +29,8 @@ from fastapi import status
 
 from app.models import CasdoorUser
 from app.sep.plugins.archives import app as archives_app
+from app.sep.plugins.archives.models import ArchivesCreate
+from app.sep.plugins.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import TaskOwner
 from tests.app.factories import MOCK_DESTINATION_TABLE_ID
 from tests.app.sep.plugins.framework.contract_suite import (
@@ -119,6 +121,23 @@ class TestArchivesApiCreate:
         body = _create_body(source={"mode": "query", "source_query": "SELECT 1"})
         response = client.post(f"{_BASE}/", json=body)
         assert response.status_code == status.HTTP_201_CREATED
+
+    def test_create_stamps_form_input(self, regular_user: CasdoorUser) -> None:
+        """Persist the validated one-of create body under ``data['_form']``."""
+        tasks_api = MockTaskAPI()
+        client = build_contract_client(
+            archives_app,
+            user=regular_user,
+            tasks_api=tasks_api,
+            inventory_api=_inventory(),
+        )
+        body = _create_body()
+
+        response = client.post(f"{_BASE}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED
+        expected = ArchivesCreate.model_validate(body).model_dump(mode="json")
+        assert tasks_api.last_create_payload["data"][RESERVED_FORM_KEY] == expected
 
     def test_create_rejects_non_purge_swap_drop(self, client: Any) -> None:
         """Reject a create with an unsupported archive type."""

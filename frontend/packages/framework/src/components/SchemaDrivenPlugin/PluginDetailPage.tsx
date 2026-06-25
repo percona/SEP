@@ -57,6 +57,7 @@ import { useExecuteTask, useTaskHistoryByNames } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
 import { resolvePluginRouteBase } from './routeBase';
+import { getStoredForm } from './storedForm';
 import { StatsCard } from './StatsCard';
 
 const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
@@ -435,9 +436,18 @@ interface ActionBarProps {
   routeBase: string;
   taskName: string;
   executeActions?: TaskExecuteAction[];
+  /** Whether the task carries a stored create-form body, enabling in-place edit. */
+  hasStoredForm: boolean;
 }
 
-function ActionBar({ schema, pluginName, routeBase, taskName, executeActions }: ActionBarProps) {
+function ActionBar({
+  schema,
+  pluginName,
+  routeBase,
+  taskName,
+  executeActions,
+  hasStoredForm,
+}: ActionBarProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const deleteTask = useDeletePluginTask(pluginName);
@@ -490,7 +500,7 @@ function ActionBar({ schema, pluginName, routeBase, taskName, executeActions }: 
     }
   };
 
-  const editBlocked = 'Edit is not yet available in the new UI';
+  const editUnavailable = "Editing isn't available for this task — it has no saved form input.";
 
   return (
     <>
@@ -519,18 +529,30 @@ function ActionBar({ schema, pluginName, routeBase, taskName, executeActions }: 
           </Button>
         ))}
 
-        <Tooltip title={editBlocked}>
-          <span>
-            <Button
-              variant="outlined"
-              startIcon={<EditIcon />}
-              disabled
-              data-testid="plugin-task-edit"
-            >
-              Edit
-            </Button>
-          </span>
-        </Tooltip>
+        {hasStoredForm ? (
+          <Button
+            variant="outlined"
+            component={Link}
+            to={`${routeBase}/task/${encodeURIComponent(taskName)}/edit`}
+            startIcon={<EditIcon />}
+            data-testid="plugin-task-edit"
+          >
+            Edit
+          </Button>
+        ) : (
+          <Tooltip title={editUnavailable}>
+            <span>
+              <Button
+                variant="outlined"
+                startIcon={<EditIcon />}
+                disabled
+                data-testid="plugin-task-edit"
+              >
+                Edit
+              </Button>
+            </span>
+          </Tooltip>
+        )}
 
         <Box sx={{ flexGrow: 1 }} />
 
@@ -854,6 +876,7 @@ export function PluginDetailPage({
   }
 
   const taskName = typeof task.name === 'string' ? task.name : id;
+  const hasStoredForm = Boolean(getStoredForm(task as Record<string, unknown>));
   const detailBase = `${routeBase}/task/${encodeURIComponent(id)}`;
   const taskExecuteActions = getTaskExecuteActions?.(task as Record<string, unknown>);
   const taskHistoryNames =
@@ -892,6 +915,7 @@ export function PluginDetailPage({
         routeBase={routeBase}
         taskName={taskName}
         executeActions={taskExecuteActions}
+        hasStoredForm={hasStoredForm}
       />
 
       <Tabs value={tabValue} sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>

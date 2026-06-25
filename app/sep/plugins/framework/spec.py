@@ -54,6 +54,7 @@ from app.sep.plugins.framework.form_dsl import (
 from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
 __all__ = [
+    "RESERVED_FORM_KEY",
     "EnvelopeSpec",
     "ResolvedEntities",
     "RunCommandSpec",
@@ -61,8 +62,11 @@ __all__ = [
     "assemble_envelope",
     "build_command_args",
     "resolve_refs",
+    "stamp_form_input",
     "validate_arg_formats",
 ]
+
+RESERVED_FORM_KEY = "_form"
 
 _REF_ENTITY_TYPES = {
     ServiceRef: SyncInventoryEntityTypeEnum.SERVICE,
@@ -410,6 +414,28 @@ def assemble_envelope(
         alert_on_fail=alert_on_fail,
         alert_detail_builder=alert_detail_builder,
     )
+
+
+def stamp_form_input(write: TaskWrite, form: AppFormModel) -> None:
+    """Persist the validated create-form body under ``write.data[RESERVED_FORM_KEY]``.
+
+    Persist the create form verbatim so a derived ``PUT`` can prefill an edit form
+    from it. The JSON-mode dump keeps enums and datetimes as round-trippable JSON
+    scalars, since the stamped body is re-submitted through the derived ``PUT`` and
+    must re-validate against the app's ``create_model``.
+
+    :param write: The assembled task envelope whose ``data`` carries the stamp.
+    :param form: The validated create-form instance to persist.
+    :raises ValueError: When ``write.data`` already carries the reserved key,
+        which means a spec builder populated it; stamping would silently
+        overwrite that app-provided data.
+    """
+    if RESERVED_FORM_KEY in write.data:
+        raise ValueError(
+            f"task envelope data already carries the reserved key "
+            f"{RESERVED_FORM_KEY!r}; a spec builder must not populate it"
+        )
+    write.data[RESERVED_FORM_KEY] = form.model_dump(mode="json")
 
 
 def _find_arg_format(name: str, metadata: list[Any]) -> ArgFormat | None:

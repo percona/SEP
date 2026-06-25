@@ -449,25 +449,43 @@ def test_archives_create_skips_connectivity_check_when_opted_out(
     sep_app.dependency_overrides = {}
 
 
+@pytest.mark.parametrize(
+    ("disable_bulk_insert", "checkbox_checked"),
+    [
+        (None, False),
+        (1, True),
+    ],
+    ids=["bulk_insert_default", "bulk_insert_checked"],
+)
 @pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
 def test_archives_detail(
-    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
+    test_client,
+    created_task,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    disable_bulk_insert,
+    checkbox_checked,
 ):
-    """Test retrieving an archives detail page."""
+    """Test the archives detail page, including the DISABLE_BULK_INSERT checkbox state.
+
+    The ``DISABLE_BULK_INSERT`` flag in the ``PURGE_LIST`` meta config drives whether the
+    ``disable_bulk_insert`` checkbox renders as ``checked``.
+    """
+    purge_entry = {
+        "ALIAS": "test_archiver_task",
+        "SOURCE_DB": "mock_source_db",
+        "SOURCE_TABLE": "mock_source_table",
+        "SWAP_DROP": 1,
+    }
+    if disable_bulk_insert is not None:
+        purge_entry["DISABLE_BULK_INSERT"] = disable_bulk_insert
     mock_meta_config = yaml.dump(
         {
             "ALL": {
                 "SOURCE_HOST": "127.0.0.1",
                 "SOURCE_PORT": 3306,
             },
-            "PURGE_LIST": [
-                {
-                    "ALIAS": "test_archiver_task",
-                    "SOURCE_DB": "mock_source_db",
-                    "SOURCE_TABLE": "mock_source_table",
-                    "SWAP_DROP": 1,
-                }
-            ],
+            "PURGE_LIST": [purge_entry],
         }
     )
 
@@ -511,6 +529,10 @@ def test_archives_detail(
     # Render guard only (see test_archives_index); does not exercise the
     # inline-JS gating.
     assert 'name="dest_file"' in response.text
+    checkbox_is_checked = bool(
+        re.search(r'name="disable_bulk_insert"[^>]*checked', response.text)
+    )
+    assert checkbox_is_checked is checkbox_checked
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
         f"/{created_task.name}/history/",
@@ -526,55 +548,6 @@ def test_archives_detail(
             "limit": MAX_PAGINATION_LIMIT,
         },
     )
-
-
-@pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
-def test_archives_detail_bulk_insert_checked(
-    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
-):
-    """Test that the disable_bulk_insert checkbox is checked when DISABLE_BULK_INSERT=1."""
-    mock_meta_config = yaml.dump(
-        {
-            "ALL": {
-                "SOURCE_HOST": "127.0.0.1",
-                "SOURCE_PORT": 3306,
-            },
-            "PURGE_LIST": [
-                {
-                    "ALIAS": "test_archiver_task",
-                    "SOURCE_DB": "mock_source_db",
-                    "SOURCE_TABLE": "mock_source_table",
-                    "SWAP_DROP": 1,
-                    "DISABLE_BULK_INSERT": 1,
-                }
-            ],
-        }
-    )
-
-    mock_data = {
-        "meta": {
-            "config": mock_meta_config,
-            "target": "mock_target",
-        },
-        "hostname": "mock_nomad_host_name",
-    }
-    created_task.data = mock_data
-    mock_inventory_api_dep.get.return_value = {
-        "items": [],
-        "total": 0,
-        "offset": 0,
-        "limit": 50,
-    }
-    mock_task_api_dep.get.side_effect = [
-        {"127.0.0.1": "localhost"},
-        {"items": [], "total": 0, "offset": 0, "limit": 50},
-        {"items": [], "total": 0, "offset": 0, "limit": 50},
-        [],
-        {"items": [], "total": 0, "offset": 0, "limit": 50},
-    ]
-    response = test_client.get(f"/archives/{created_task.name}")
-    assert response.status_code == status.HTTP_200_OK
-    assert re.search(r'name="disable_bulk_insert"[^>]*checked', response.text)
 
 
 @pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")

@@ -56,7 +56,7 @@ export type { paths as TasksPaths, components as TasksComponents } from './gener
 export type { paths as SepPaths, components as SepComponents } from './generated/sep';
 
 // Typed request clients (openapi-fetch wrappers sharing interceptors with apiClient)
-export { mainApi, inventoryApi, tasksApi, sepApi, throwOnApiError } from './typed-client';
+export { mainApi, sepApi, throwOnApiError } from './typed-client';
 
 export type {
   PluginSchema,
@@ -101,6 +101,7 @@ export {
   usePluginTasks,
   usePluginTask,
   useCreatePluginTask,
+  useUpdatePluginTask,
   usePluginEntityList,
   usePluginEntityDetail,
   useCreatePluginEntity,
@@ -126,8 +127,10 @@ export {
   ADMIN_APPS_QUERY_KEY,
   ADMIN_APP_MUTATION_KEY,
   useConfigExport,
+  useAppInfo,
+  APP_INFO_QUERY_KEY,
 } from './hooks';
-export type { AlertConfig, DashboardStats, EnabledApp } from './hooks';
+export type { AlertConfig, DashboardStats, EnabledApp, AppInfo } from './hooks';
 export type {
   AdminApp,
   AppStateResult,
