@@ -146,7 +146,6 @@ class _AltersForm(AppFormModel):
         Ui(
             label="Alter",
             section="alter",
-            widget=FieldWidget.TEXTAREA,
             description=(
                 "Schema modifications excluding ALTER TABLE keywords "
                 "(e.g. ADD COLUMN new_col INT, DROP COLUMN old_col)"
