@@ -5126,6 +5126,10 @@ export interface components {
      *     ``pre_checks_auto_fire_warning``) per the framework's derived create-response
      *     standard, so the always-null warning fields stay off list/detail rows.
      *
+     *     :param name: The name of the alters task.
+     *     :param owner: The entity or user that owns the task.
+     *     :param service_type: The type of database service (always MySQL for alters).
+     *     :param status: The current execution status of the task.
      *     :param id: The unique identifier for the alters task.
      *     :param backend: The backend worker/engine executing the task.
      *     :param data: The raw configuration and parameters used for the alter execution.
