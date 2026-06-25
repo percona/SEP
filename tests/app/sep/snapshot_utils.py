@@ -221,13 +221,12 @@ def assert_or_update(golden: Path, content: str) -> None:
         pytest.skip(f"snapshot updated: {golden.relative_to(SNAPSHOTS_DIR.parent)}")
     if not golden.exists():
         raise AssertionError(
-            f"missing golden {golden}; run `SEP_UPDATE_SNAPSHOTS=1 pytest "
-            f"tests/app/sep/test_openapi_snapshot.py tests/app/sep/test_schema_snapshot.py`"
+            f"missing golden {golden}; regenerate with `make regen-specs`"
         )
     if content != golden.read_text(encoding="utf-8"):
         raise AssertionError(
-            f"OpenAPI/schema drift vs {golden.name}; if intentional & additive, "
-            f"regenerate with SEP_UPDATE_SNAPSHOTS=1 and review the diff in the PR"
+            f"OpenAPI/schema drift vs {golden.name}; if intentional, regenerate "
+            f"with `make regen-specs` and review the diff in the PR"
         )
 
 
