@@ -4804,67 +4804,39 @@ export interface components {
      *     table and ``time,10`` via ``Ui(default=...)``.
      *
      *     :param task_name: The name of the task to be created.
-     *     :type task_name: NonEmptyStr
      *     :param hostname: The target hostname for the task execution.
-     *     :type hostname: NonEmptyStr
      *     :param service_id: The Inventory ID of the database service to connect to.
-     *     :type service_id: int
      *     :param schema_id: The database schema ID on which the task will operate.
-     *     :type schema_id: int | None
      *     :param table_id: The table ID within the schema to be altered.
-     *     :type table_id: int | None
      *     :param schema_name: Manual schema name when ``schema_id`` is not set.
-     *     :type schema_name: str | None
      *     :param table_name: Manual table name when ``table_id`` is not set.
-     *     :type table_name: str | None
      *     :param recursion_method: The method for handling recursion.
-     *     :type recursion_method: NonEmptyStr
      *     :param alter: The specific alter command to be executed.
-     *     :type alter: NonEmptyStr
      *     :param dsn_table: The DSN table for recursion method when using ``dsn``. When
      *         recursion is ``dsn`` and this field is omitted or empty, it defaults to
      *         ``D=percona,t=dsns`` (Percona Toolkit convention).
-     *     :type dsn_table: str
      *     :param pause_file: Execution will be paused while the file specified by this param exists.
-     *     :type pause_file: str | None
      *     :param new_table_name: New table name before it is swapped.
-     *     :type new_table_name: str | None
      *     :param print_arg: Print SQL statements to STDOUT.
-     *     :type print_arg: bool
      *     :param progress: Print progress reports to STDERR while copying rows.
-     *     :type progress: str
      *     :param no_swap_tables: Swap the original table and the new, altered table.
-     *     :type no_swap_tables: bool
      *     :param no_drop_old_table: Drop the original table after renaming it.
-     *     :type no_drop_old_table: bool
      *     :param no_drop_new_table: Drop the new table if copying the original table fails.
-     *     :type no_drop_new_table: bool
      *     :param no_drop_triggers: Drop triggers on the old table.
-     *     :type no_drop_triggers: bool
      *     :param tries: How many times to try critical operations.
-     *     :type tries: str | None
      *     :param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.
-     *     :type set_vars: str | None
      *     :param critical_load: Examine SHOW GLOBAL STATUS after every chunk, and abort if the load is too high.
-     *     :type critical_load: str | None
      *     :param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are
      *         higher than their thresholds.
-     *     :type max_load: str | None
      *     :param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.
-     *     :type chunk_time: str | None
      *     :param max_lag: Pause the data copy until all replicas lag is less than this value.
-     *     :type max_lag: str | None
      *     :param max_flow_ctl: Pause when PXC flow control exceeds this value.
-     *     :type max_flow_ctl: str | None
      *     :param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.
-     *     :type extra_args: str | None
      *     :param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor
      *         (user/password): pre-checks always use this path; execute/dry-run use pt-osc's
      *         default ~/.my.cnf unless this is set to another path, then --defaults-file is added.
-     *     :type pre_checks_mysql_config_file: str
      *     :param continue_on_pre_check_failure: When True, continue to the run task even if
      *         pre-checks fail (overrides the schema's default ``on_failure="halt"`` policy).
-     *     :type continue_on_pre_check_failure: bool
      */
     AltersCreate: {
       /**
@@ -4964,11 +4936,8 @@ export interface components {
      * @description Represent a JSON request body for executing an alters task.
      *
      *     :param eta: Optional future datetime to schedule execution.
-     *     :type eta: FutureDatetime | None
      *     :param chain_task_names: Optional list of task names to chain after this one.
-     *     :type chain_task_names: list[str] | None
      *     :param chain_on_failure: Whether to run chained tasks even on failure.
-     *     :type chain_on_failure: bool | None
      */
     AltersExecuteWrite: {
       /** Chain On Failure */
@@ -4983,9 +4952,7 @@ export interface components {
      * @description Represent the response from POST /api/plugins/alters/{task_name}/execute.
      *
      *     :param task_name: The name of the task that was executed.
-     *     :type task_name: str
      *     :param task_id: The id of the task-history row created by the tasks API.
-     *     :type task_id: int | None
      */
     AltersExecutionResponse: {
       /** Task Id */
@@ -5004,23 +4971,14 @@ export interface components {
      *     standard, so the always-null warning fields stay off list/detail rows.
      *
      *     :param id: The unique identifier for the alters task.
-     *     :type id: int | None
      *     :param backend: The backend worker/engine executing the task.
-     *     :type backend: TaskBackendEnum
      *     :param data: The raw configuration and parameters used for the alter execution.
-     *     :type data: dict[str, Any]
      *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
      *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :type alert_on_fail: bool
      *     :param created_at: The timestamp when the task was first created.
-     *     :type created_at: datetime | None
      *     :param updated_at: The timestamp of the last modification to the task.
-     *     :type updated_at: datetime | None
      *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
      *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
      */
     AltersTaskResponse: {
       /** Alert On Fail */
