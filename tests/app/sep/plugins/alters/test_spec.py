@@ -53,7 +53,7 @@ def _build_body(**overrides: object) -> AltersCreate:
 def test_build_alters_spec_builds_parent_execute_envelope(
     created_service: CreatedService,
 ):
-    """Test build_alters_spec assembles the run-command pt-osc execute envelope."""
+    """Assemble the run-command pt-osc execute envelope from resolved inputs."""
     task = build_alters_spec(created_service, "app", "users", _build_body())
 
     assert isinstance(task, TaskWrite)
@@ -78,7 +78,7 @@ def test_build_alters_spec_builds_parent_execute_envelope(
 def test_build_alters_spec_remote_service_embeds_host_and_port(
     created_service: CreatedService,
 ):
-    """Test a remote service prefixes the target DSN with its host and port."""
+    """Prefix the target DSN with the service host and port for a remote service."""
     remote = _service_at(created_service, "10.0.0.5").model_copy(
         update={"port": REMOTE_SERVICE_PORT}
     )
@@ -91,7 +91,7 @@ def test_build_alters_spec_remote_service_embeds_host_and_port(
 def test_build_alters_spec_localhost_service_omits_host(
     created_service: CreatedService,
 ):
-    """Test a localhost service omits the ``h=`` host from the target DSN."""
+    """Omit the ``h=`` host from the target DSN for a localhost service."""
     local = _service_at(created_service, "localhost").model_copy(
         update={"port": REMOTE_SERVICE_PORT}
     )
@@ -105,7 +105,7 @@ def test_build_alters_spec_localhost_service_omits_host(
 def test_build_alters_spec_dsn_recursion_embeds_dsn_table(
     created_service: CreatedService,
 ):
-    """Test a dsn recursion method embeds the resolved dsn_table in the args."""
+    """Embed the resolved dsn_table in the args for a dsn recursion method."""
     body = _build_body(recursion_method="dsn", dsn_table="D=custom,t=dsns")
 
     task = build_alters_spec(created_service, "app", "users", body)
@@ -117,7 +117,7 @@ def test_build_alters_spec_dsn_recursion_embeds_dsn_table(
 def test_build_alters_spec_dsn_table_prefix_passes_through(
     created_service: CreatedService,
 ):
-    """Test a dsn_table already carrying an ``h=`` prefix is left unmodified."""
+    """Pass an ``h=``-prefixed dsn_table through to the args unmodified."""
     body = _build_body(recursion_method="dsn", dsn_table="h=custom-host,D=d,t=t")
 
     args = build_alters_spec(created_service, "app", "users", body).data["meta"]["args"]

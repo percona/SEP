@@ -411,7 +411,7 @@ class TestGetAppRegistry:
         assert get_app_registry() is get_app_registry()
 
     def test_alters_binds_as_bare_base_app_with_nav_metadata(self) -> None:
-        """Alters resolves to a bare ``BaseApp`` carrying its ``app.py`` nav metadata.
+        """Resolve alters to a bare ``BaseApp`` carrying its ``app.py`` nav metadata.
 
         The slimmed ``MODULE_NAME``-only settings entry plus the populated
         ``BaseApp(...)`` constructor must reproduce the nav metadata the legacy

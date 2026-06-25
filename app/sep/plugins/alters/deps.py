@@ -81,7 +81,6 @@ async def _resolve_schema_table_names(
     """Resolve schema and table names from inventory IDs or manual fields.
 
     :param body: The alters create/write payload.
-    :type body: AltersCreate
     :param inventory_api: The Inventory API client.
     :type inventory_api: InventoryAPI
     :param service: The validated MySQL service.
@@ -121,7 +120,6 @@ async def build_alters_task(
     """Build the parent alters execute task from a form or JSON payload.
 
     :param body: The alters create/write payload.
-    :type body: AltersCreate
     :param inventory_api: The Inventory API client.
     :type inventory_api: InventoryAPI
     :return: A fully constructed parent execute ``TaskWrite``.
@@ -471,7 +469,6 @@ def resolve_predecessor_specs(
     the first schema predecessor only (the alters pre-checks task).
 
     :param body: The alters create/write payload.
-    :type body: AltersCreate
     :return: Ordered specs aligned with ``alters_schema.predecessors``.
     :rtype: list[ChainedPredecessor]
     """
@@ -520,7 +517,6 @@ async def cascade_create_alters_group(
         :func:`build_pre_checks_task_payload`.
     :type pre_checks_template: TaskWrite
     :param body: The alters create/write payload (for ``continue_on_pre_check_failure``).
-    :type body: AltersCreate
     :return: A user-facing warning when auto-fire of pre-checks fails, else ``None``.
     :rtype: str | None
     :raises Exception: Re-raises the underlying Tasks API error after rollback
@@ -643,7 +639,6 @@ async def cascade_update_alters_group(
     :param pre_checks_template: The updated imperative pre-checks payload.
     :type pre_checks_template: TaskWrite
     :param body: The alters create/write payload (for ``continue_on_pre_check_failure``).
-    :type body: AltersCreate
     :return: A merged :class:`CascadeResult` across derived and predecessor legs.
     :rtype: CascadeResult
     :raises HTTPConflictException: When the update attempts to rename the parent.
@@ -870,7 +865,6 @@ def build_alters_api_task_response(
     :type status: TaskHistoryStatusEnum | None
     :param response_model: The per-verb response model to build; defaults to the
         list/detail base model.
-    :type response_model: type[AltersTaskResponse]
     :param connectivity_warning: A warning to surface when a connectivity
         check failed during the task creation flow.
     :type connectivity_warning: ConnectivityWarning | None

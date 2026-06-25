@@ -84,7 +84,7 @@ def test_alters_schema_serialises_snake_case():
 
 
 def test_alters_create_dsn_table_for_dsn_recursion():
-    """AltersCreate accepts an explicit dsn_table and auto-fills a blank one for dsn."""
+    """Accept an explicit dsn_table and auto-fill a blank one for dsn recursion."""
     explicit = AltersCreate(
         task_name="t1",
         hostname="host1",
@@ -111,7 +111,7 @@ def test_alters_create_dsn_table_for_dsn_recursion():
 
 
 def test_alters_create_dsn_table_accepts_explicit_value():
-    """AltersCreate keeps an explicit dsn_table when recursion_method is dsn."""
+    """Keep an explicit dsn_table when recursion_method is dsn."""
     body = AltersCreate(
         task_name="t1",
         hostname="host1",
@@ -126,7 +126,7 @@ def test_alters_create_dsn_table_accepts_explicit_value():
 
 
 def test_alters_create_dsn_recursion_uses_schema_default_dsn_table() -> None:
-    """JSON clients omitting dsn_table get the schema default, not a 422."""
+    """Apply the schema dsn_table default when a dsn client omits it, not a 422."""
     body = AltersCreate(
         task_name="t1",
         hostname="host1",
@@ -161,7 +161,7 @@ def test_alters_create_normalizes_legacy_dual_target_fields():
 
 
 def test_alters_create_normalizes_dual_target_fields_from_kwargs():
-    """Test AltersCreate prefers inventory IDs when both target modes are passed."""
+    """Prefer inventory IDs when both target modes are passed as kwargs."""
     body = AltersCreate(
         task_name="t1",
         hostname="host1",
@@ -179,7 +179,7 @@ def test_alters_create_normalizes_dual_target_fields_from_kwargs():
 
 
 def test_alters_create_rejects_empty_recursion_method():
-    """Test AltersCreate rejects an empty recursion_method."""
+    """Reject an empty recursion_method."""
     with pytest.raises(ValidationError, match="recursion_method"):
         AltersCreate(
             task_name="t1",
@@ -193,7 +193,7 @@ def test_alters_create_rejects_empty_recursion_method():
 
 
 def test_alters_create_continue_on_pre_check_failure_default_false():
-    """Test continue_on_pre_check_failure defaults to False on AltersCreate."""
+    """Keep continue_on_pre_check_failure False by default."""
     body = AltersCreate(
         task_name="t1",
         hostname="host1",
