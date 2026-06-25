@@ -23,7 +23,6 @@ from fastapi import HTTPException, status
 
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.plugins.alters.deps import (
-    _build_dsn_with_service,
     alters_executor_matches_service_host,
     alters_satellite_task_names,
     build_alters_api_task_response,
@@ -40,7 +39,7 @@ from app.sep.plugins.alters.deps import (
     parse_single_arg,
     resolve_predecessor_specs,
 )
-from app.sep.plugins.alters.models import AltersCreate, AltersTaskWrite
+from app.sep.plugins.alters.models import AltersCreate
 from app.sep.plugins.alters.schema import alters_schema
 from app.sep.plugins.framework.schema import ChainedPredecessor
 from app.tasks.models import (
@@ -294,18 +293,6 @@ def test_alters_executor_matches_service_host():
     assert alters_executor_matches_service_host(meta_ip, None) is True
 
 
-def test_build_dsn_with_service_branches():
-    """DSN prefix passthrough, remote h+P, localhost P-only, and unchanged DSN."""
-    assert _build_dsn_with_service("h=x,D=y", "10.0.0.1", 3306) == "h=x,D=y"
-    assert _build_dsn_with_service("P=3307,D=y", "10.0.0.1", 3306) == "P=3307,D=y"
-    assert (
-        _build_dsn_with_service("D=a,t=b", "10.0.0.5", 3306)
-        == "h=10.0.0.5,P=3306,D=a,t=b"
-    )
-    assert _build_dsn_with_service("D=a,t=b", "localhost", 3306) == "P=3306,D=a,t=b"
-    assert _build_dsn_with_service("D=a,t=b", "localhost", None) == "D=a,t=b"
-
-
 @pytest.mark.asyncio
 async def test_build_alters_task_schema_name_table_name(
     created_alters, created_service, mock_remote_api
@@ -473,7 +460,7 @@ def test_alters_satellite_task_names():
 
 def test_resolve_predecessor_specs_first_halts_by_default():
     """Test first resolved predecessor defaults to on_failure halt."""
-    body = AltersTaskWrite(
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -488,7 +475,7 @@ def test_resolve_predecessor_specs_first_halts_by_default():
 
 def test_resolve_predecessor_specs_first_continues_when_user_overrides():
     """Test continue_on_pre_check_failure maps first predecessor to continue."""
-    body = AltersTaskWrite(
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -505,7 +492,7 @@ def test_resolve_predecessor_specs_first_continues_when_user_overrides():
 async def test_cascade_create_alters_group_posts_three_tasks_and_chains():
     """Test cascade_create_alters_group POSTs parent, dry-run, pre-checks, and chains execute."""
     tasks_api = AsyncMock(spec=RemoteAPI)
-    body = AltersTaskWrite(
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -533,7 +520,7 @@ async def test_cascade_create_alters_group_posts_three_tasks_and_chains():
 async def test_cascade_create_alters_group_continue_on_pre_check_failure():
     """Test cascade_create_alters_group sets chain_on_failure when user opts into continue."""
     tasks_api = AsyncMock(spec=RemoteAPI)
-    body = AltersTaskWrite(
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -562,7 +549,7 @@ async def test_cascade_create_alters_group_keeps_tasks_when_execute_fails():
     tasks_api = AsyncMock(spec=RemoteAPI)
     exc = HTTPException(status_code=status.HTTP_502_BAD_GATEWAY)
     tasks_api.post.side_effect = [None, None, None, exc]
-    body = AltersTaskWrite(
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -588,7 +575,7 @@ async def test_cascade_create_alters_group_rolls_back_on_task_post_failure():
     tasks_api = AsyncMock(spec=RemoteAPI)
     exc = HTTPException(status_code=status.HTTP_502_BAD_GATEWAY)
     tasks_api.post.side_effect = [None, None, exc]
-    body = AltersTaskWrite(
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -615,7 +602,7 @@ async def test_cascade_create_alters_group_rolls_back_on_task_post_failure():
 async def test_cascade_update_alters_group_halt_by_default(mocker):
     """Test cascade_update uses first resolved predecessor halt by default."""
     tasks_api = AsyncMock(spec=RemoteAPI)
-    body = AltersTaskWrite(
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -653,7 +640,7 @@ async def test_cascade_update_alters_group_halt_by_default(mocker):
 async def test_cascade_update_alters_group_continue_on_pre_check_failure(mocker):
     """Test cascade_update honors continue_on_pre_check_failure like create."""
     tasks_api = AsyncMock(spec=RemoteAPI)
-    body = AltersTaskWrite(
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -702,7 +689,7 @@ async def test_cascade_update_pairs_predecessor_names_with_specs(mocker):
     alters_schema.predecessors = [primary, secondary]
     try:
         tasks_api = AsyncMock(spec=RemoteAPI)
-        body = AltersTaskWrite(
+        body = AltersCreate(
             task_name="t1",
             hostname="host1",
             service_id=1,

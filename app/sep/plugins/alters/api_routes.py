@@ -50,10 +50,12 @@ from app.sep.plugins.alters.deps import (
     resolve_alters_parent_task,
 )
 from app.sep.plugins.alters.models import (
+    AltersCreate,
     AltersExecuteWrite,
     AltersExecutionResponse,
     AltersTaskResponse,
-    AltersTaskWrite,
+    AltersTaskResponseCreate,
+    AltersTaskResponseUpdate,
 )
 from app.sep.plugins.alters.schema import alters_schema
 from app.sep.plugins.framework import (
@@ -106,12 +108,12 @@ async def alters_api_detail(
     status_code=http_status.HTTP_201_CREATED,
 )
 async def alters_api_create(
-    body: AltersTaskWrite,
+    body: AltersCreate,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
     *,
     check_connectivity: Annotated[bool, Query()] = True,
-) -> AltersTaskResponse:
+) -> AltersTaskResponseCreate:
     """Create an alters task group from a JSON payload request body.
 
     POSTs the parent execute task, dry-run derived sibling, pre-checks
@@ -147,6 +149,7 @@ async def alters_api_create(
     return build_alters_api_task_response(
         task,
         status=None,
+        response_model=AltersTaskResponseCreate,
         connectivity_warning=connectivity_warning,
         pre_checks_auto_fire_warning=pre_checks_auto_fire_warning,
         username_mapping=username_mapping,
@@ -156,12 +159,12 @@ async def alters_api_create(
 @router.put("/{task_name}")
 async def alters_api_update(
     parent_task: EditableAltersParent,
-    body: AltersTaskWrite,
+    body: AltersCreate,
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
     *,
     check_connectivity: Annotated[bool, Query()] = True,
-) -> AltersTaskResponse:
+) -> AltersTaskResponseUpdate:
     """Update an alters task group from a JSON payload request body.
 
     :param check_connectivity: Whether to verify the target database is
@@ -204,6 +207,7 @@ async def alters_api_update(
     return build_alters_api_task_response(
         updated_task,
         status=task_status,
+        response_model=AltersTaskResponseUpdate,
         connectivity_warning=connectivity_warning,
         username_mapping=username_mapping,
     )

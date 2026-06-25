@@ -61,12 +61,7 @@ default:
         CSS_CLASS: inventory
       - MODULE_NAME: snippets
       - MODULE_NAME: atw
-      - NAME: Schema Change
-        MODULE_NAME: alters
-        URI_PATH: /alters
-        CSS_CLASS: alters
-        GROUP: schema_change
-        NAV_ORDER: 6
+      - MODULE_NAME: alters
       - NAME: Archive
         MODULE_NAME: archives
         URI_PATH: /archives

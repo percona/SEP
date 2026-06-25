@@ -18,7 +18,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.sep.plugins.alters.models import AltersCreate, AltersTaskWrite
+from app.sep.plugins.alters.models import AltersCreate
 from app.sep.plugins.alters.schema import alters_schema
 
 DATA_SECTION_FAIL_WHEN_RULE_COUNT = 2
@@ -83,9 +83,9 @@ def test_alters_schema_serialises_snake_case():
     assert payload["predecessors"][0]["on_failure"] == "halt"
 
 
-def test_alters_create_dsn_table_required_when_recursion_dsn():
-    """Test AltersCreate requires dsn_table when recursion_method is dsn."""
-    AltersCreate(
+def test_alters_create_dsn_table_for_dsn_recursion():
+    """AltersCreate accepts an explicit dsn_table and auto-fills a blank one for dsn."""
+    explicit = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -95,22 +95,24 @@ def test_alters_create_dsn_table_required_when_recursion_dsn():
         recursion_method="dsn",
         dsn_table="D=percona,t=dsns",
     )
-    with pytest.raises(ValidationError, match="dsn_table"):
-        AltersCreate(
-            task_name="t1",
-            hostname="host1",
-            service_id=1,
-            schema_name="app",
-            table_name="users",
-            alter="ADD COLUMN x INT",
-            recursion_method="dsn",
-            dsn_table="",
-        )
+    assert explicit.dsn_table == "D=percona,t=dsns"
+
+    blank_auto_filled = AltersCreate(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        schema_name="app",
+        table_name="users",
+        alter="ADD COLUMN x INT",
+        recursion_method="dsn",
+        dsn_table="",
+    )
+    assert blank_auto_filled.dsn_table == "D=percona,t=dsns"
 
 
-def test_alters_task_write_dsn_table_required_when_recursion_dsn():
-    """Test AltersTaskWrite accepts explicit dsn_table when recursion_method is dsn."""
-    body = AltersTaskWrite(
+def test_alters_create_dsn_table_accepts_explicit_value():
+    """AltersCreate keeps an explicit dsn_table when recursion_method is dsn."""
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -123,9 +125,9 @@ def test_alters_task_write_dsn_table_required_when_recursion_dsn():
     assert body.dsn_table == "D=custom,t=dsns"
 
 
-def test_alters_task_write_dsn_table_defaults_empty_string_when_recursion_dsn():
-    """Empty dsn_table with dsn recursion gets the schema default before validation."""
-    body = AltersTaskWrite(
+def test_alters_create_dsn_recursion_uses_schema_default_dsn_table() -> None:
+    """JSON clients omitting dsn_table get the schema default, not a 422."""
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -133,7 +135,6 @@ def test_alters_task_write_dsn_table_defaults_empty_string_when_recursion_dsn():
         table_name="users",
         alter="ADD COLUMN x INT",
         recursion_method="dsn",
-        dsn_table="",
     )
     assert body.dsn_table == "D=percona,t=dsns"
 
@@ -159,9 +160,9 @@ def test_alters_create_normalizes_legacy_dual_target_fields():
     assert body.table_name == ""
 
 
-def test_alters_task_write_normalizes_legacy_dual_target_fields():
-    """Test AltersTaskWrite prefers inventory IDs when legacy forms post both modes."""
-    body = AltersTaskWrite(
+def test_alters_create_normalizes_dual_target_fields_from_kwargs():
+    """Test AltersCreate prefers inventory IDs when both target modes are passed."""
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,
@@ -177,24 +178,10 @@ def test_alters_task_write_normalizes_legacy_dual_target_fields():
     assert body.table_name == ""
 
 
-def test_alters_task_write_dsn_recursion_uses_schema_default_dsn_table() -> None:
-    """JSON clients omitting dsn_table get the schema default, not a 422."""
-    body = AltersTaskWrite(
-        task_name="t1",
-        hostname="host1",
-        service_id=1,
-        schema_name="app",
-        table_name="users",
-        alter="ADD COLUMN x INT",
-        recursion_method="dsn",
-    )
-    assert body.dsn_table == "D=percona,t=dsns"
-
-
-def test_alters_task_write_rejects_empty_recursion_method():
-    """Test AltersTaskWrite rejects empty recursion_method like AltersCreate."""
+def test_alters_create_rejects_empty_recursion_method():
+    """Test AltersCreate rejects an empty recursion_method."""
     with pytest.raises(ValidationError, match="recursion_method"):
-        AltersTaskWrite(
+        AltersCreate(
             task_name="t1",
             hostname="host1",
             service_id=1,
@@ -205,9 +192,9 @@ def test_alters_task_write_rejects_empty_recursion_method():
         )
 
 
-def test_alters_task_write_continue_on_pre_check_failure_default_false():
-    """Test continue_on_pre_check_failure defaults to False on AltersTaskWrite."""
-    body = AltersTaskWrite(
+def test_alters_create_continue_on_pre_check_failure_default_false():
+    """Test continue_on_pre_check_failure defaults to False on AltersCreate."""
+    body = AltersCreate(
         task_name="t1",
         hostname="host1",
         service_id=1,

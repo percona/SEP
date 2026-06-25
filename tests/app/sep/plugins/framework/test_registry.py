@@ -43,6 +43,23 @@ def _clear_registry_cache() -> None:
     get_app_registry.cache_clear()
 
 
+def _force_legacy_synthesis(mocker: MockerFixture) -> None:
+    """Drive the legacy-synthesis path with a stubbed module and jinja router.
+
+    Every shipped plugin now exports an ``app`` definition, so synthesis is
+    exercised against a module that exports no ``app`` and a stand-in router for
+    the convention import paths.
+    """
+    mocker.patch(
+        "app.sep.plugins.framework.registry.import_module",
+        return_value=SimpleNamespace(),
+    )
+    mocker.patch(
+        "app.sep.plugins.framework.registry.import_var",
+        return_value=APIRouter(),
+    )
+
+
 class TestLegacyWrapping:
     """Tests for synthesizing a ``BaseApp`` from a legacy ``Plugin``."""
 
@@ -65,8 +82,9 @@ class TestLegacyWrapping:
         assert isinstance(app.jinja_router, APIRouter)
         assert isinstance(app.api_router, APIRouter)
 
-    def test_module_name_only_derives_metadata(self) -> None:
+    def test_module_name_only_derives_metadata(self, mocker: MockerFixture) -> None:
         """A MODULE_NAME-only entry derives name/uri/css/display from the key."""
+        _force_legacy_synthesis(mocker)
         registry = build_app_registry([Plugin(module_name="alters")])
         app = registry.get("alters")
         assert app.name == "alters"
@@ -74,8 +92,9 @@ class TestLegacyWrapping:
         assert app.css_class == "alters"
         assert app.display_name == "alters"
 
-    def test_api_router_is_none_when_opted_out(self) -> None:
+    def test_api_router_is_none_when_opted_out(self, mocker: MockerFixture) -> None:
         """A plugin opting out of the API mount carries ``api_router is None``."""
+        _force_legacy_synthesis(mocker)
         registry = build_app_registry(
             [Plugin(name="Alters", module_name="alters", api_router_path=None)]
         )
@@ -98,8 +117,11 @@ class TestLegacyWrapping:
         assert app.group == "alerts"
         assert app.nav_order == nav_order
 
-    def test_legacy_plugin_without_grouping_is_ungrouped(self) -> None:
+    def test_legacy_plugin_without_grouping_is_ungrouped(
+        self, mocker: MockerFixture
+    ) -> None:
         """Carry ``None`` for ``group``/``nav_order`` when the plugin omits them."""
+        _force_legacy_synthesis(mocker)
         registry = build_app_registry([Plugin(name="Alters", module_name="alters")])
         app = registry.get("alters")
         assert app.group is None
@@ -109,8 +131,14 @@ class TestLegacyWrapping:
 class TestFailFast:
     """Tests for the fail-fast carried over from ``build_plugins_router``."""
 
-    def test_non_router_attribute_raises_type_error(self) -> None:
+    def test_non_router_attribute_raises_type_error(
+        self, mocker: MockerFixture
+    ) -> None:
         """An ``api_router_path`` resolving to a non-``APIRouter`` raises ``TypeError``."""
+        mocker.patch(
+            "app.sep.plugins.framework.registry.import_module",
+            return_value=SimpleNamespace(),
+        )
         plugin = Plugin(
             name="Alters",
             module_name="alters",
@@ -119,8 +147,11 @@ class TestFailFast:
         with pytest.raises(TypeError, match="alters"):
             build_app_registry([plugin])
 
-    def test_empty_string_api_router_path_is_no_mount(self) -> None:
+    def test_empty_string_api_router_path_is_no_mount(
+        self, mocker: MockerFixture
+    ) -> None:
         """An empty-string ``api_router_path`` yields ``api_router is None``."""
+        _force_legacy_synthesis(mocker)
         plugin = Plugin.model_construct(
             name="Ghost",
             module_name="app.sep.plugins.alters",
@@ -378,6 +409,28 @@ class TestGetAppRegistry:
     def test_result_is_cached(self) -> None:
         """Repeated calls return the same cached instance."""
         assert get_app_registry() is get_app_registry()
+
+    def test_alters_binds_as_bare_base_app_with_nav_metadata(self) -> None:
+        """Alters resolves to a bare ``BaseApp`` carrying its ``app.py`` nav metadata.
+
+        The slimmed ``MODULE_NAME``-only settings entry plus the populated
+        ``BaseApp(...)`` constructor must reproduce the nav metadata the legacy
+        settings entry used to carry, with both routers bound by identity.
+        """
+        expected_nav_order = 6
+        app = get_app_registry().get("alters")
+        assert isinstance(app, BaseApp)
+        assert not isinstance(app, TaskExecutionApp)
+        assert app.display_name == "Schema Change"
+        assert app.uri_path == "/alters"
+        assert app.css_class == "alters"
+        assert app.group == "schema_change"
+        assert app.nav_order == expected_nav_order
+
+        api_routes = importlib.import_module("app.sep.plugins.alters.api_routes")
+        routes = importlib.import_module("app.sep.plugins.alters.routes")
+        assert app.api_router is api_routes.router
+        assert app.jinja_router is routes.router
 
 
 BESPOKE_BASE_APP_PLUGINS = [

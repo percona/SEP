@@ -95,7 +95,7 @@ def build_alters_write_body(
     service_id: int = 1,
     **kwargs: Any,
 ) -> dict:
-    """Build a valid AltersTaskWrite-compatible request body."""
+    """Build a valid AltersCreate-compatible request body."""
     return {
         "task_name": task_name,
         "hostname": hostname,
