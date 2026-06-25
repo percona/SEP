@@ -70,6 +70,9 @@ SPLIT_FRAME_LOG_OFFSET = 99
 EXPECTED_SINGLE_TASK_LOG_COUNT = 1
 EMPTY_DATA_FRAME_DATA_OFFSET = 10
 EMPTY_DATA_FRAME_OFFSET_ONLY = 25
+RECHECK_LOG_SOCKET_READ_TIMEOUT = 2
+EXPECTED_EMPTY_FRAMES_BEFORE_RECHECK = 3
+RECHECKED_TASK_STATE = "dead"
 
 
 def _build_task(
@@ -2136,6 +2139,70 @@ class TestNomadLogStreaming:
         assert len(logs) == EXPECTED_SINGLE_TASK_LOG_COUNT
         assert logs[0].msg == "has-data"
         assert logs[0].offset == EMPTY_DATA_FRAME_DATA_OFFSET
+
+    @pytest.mark.asyncio
+    async def test_consume_nomad_log_stream_empty_data_triggers_recheck(self):
+        """Consecutive empty frames trigger get_last_allocation and return task state (step2)."""
+        empty_offsets = list(range(1, EXPECTED_EMPTY_FRAMES_BEFORE_RECHECK + 1))
+        chunks = [
+            self._nomad_log_frame(msg=None, offset=offset) for offset in empty_offsets
+        ]
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor(
+            log_socket_read_timeout=RECHECK_LOG_SOCKET_READ_TIMEOUT
+        )
+        alloc = self._alloc_for_logs_step2()
+        refreshed_alloc = {
+            **alloc,
+            "TaskStates": {
+                "step2": {
+                    "StartedAt": "2024-01-01T00:00:00Z",
+                    "State": RECHECKED_TASK_STATE,
+                },
+            },
+        }
+        params = {
+            "task": "step2",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with (
+            patch.object(executor, "_request", return_value=mock_ctx),
+            patch.object(
+                NomadExecutor,
+                "get_last_allocation",
+                return_value=refreshed_alloc,
+            ) as mock_get_last_allocation,
+        ):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step2",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        logs = await self._drain_task_logs(queue)
+
+        assert state == RECHECKED_TASK_STATE
+        assert out_alloc is refreshed_alloc
+        assert stream_start is not None
+        mock_get_last_allocation.assert_called_once_with("job-1", "eval-1")
+        assert logs == []
 
 
 class TestListFiles:
