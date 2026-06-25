@@ -323,11 +323,20 @@ class ArchivesCreate(AppFormModel):
     extra_args: Annotated[
         NonEmptyStr | EmptyStrToNone, Ui(label="Extra Args", section="Advanced")
     ] = None
-    limit: Annotated[int | None, Field(ge=1), Ui(label="Limit", section="Advanced")] = (
-        None
-    )
+    # Ui.default pre-fills the create form with the purge-script fallbacks
+    # (LIMIT 1000 / SLEEP 1, from purge.get(...) in this plugin's `payload`
+    # script); keep the two in sync. The model default stays None, so an omitted
+    # limit / sleep is dropped by exclude_none and still resolves via that same
+    # payload fallback, leaving the wire/validation contract unchanged.
+    limit: Annotated[
+        int | None,
+        Field(ge=1),
+        Ui(label="Limit", section="Advanced", default=1000),
+    ] = None
     sleep: Annotated[
-        int | None, Field(ge=0), Ui(label="Sleep (s)", section="Advanced")
+        int | None,
+        Field(ge=0),
+        Ui(label="Sleep (s)", section="Advanced", default=1),
     ] = None
     disable_binlog: Annotated[
         bool | None, Ui(label="Disable Binlog", section="Advanced")
