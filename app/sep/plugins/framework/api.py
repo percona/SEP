@@ -35,7 +35,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, cast, TypeVar
 
-from fastapi import APIRouter, Depends, HTTPException, params, Query, status
+from fastapi import APIRouter, Depends, params, Query, status
 from pydantic import BaseModel, ValidationError
 
 from app.core.exceptions import HTTPUnprocessableEntityException
