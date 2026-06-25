@@ -19,12 +19,14 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ScheduleIcon from '@mui/icons-material/Schedule';
+import DeviceHubIcon from '@mui/icons-material/DeviceHub';
 import type { PluginSchema } from '@sep/api';
 import { PluginDetailPage, PluginListPage } from '@sep/framework';
 import { renderInventoryDetailChildren } from './InventoryPluginNavigation';
 import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
 import { SyncControl } from './SyncControl';
 import { InventorySchedulePage } from './InventorySchedulePage';
+import { TargetHostsPage } from './TargetHostsPage';
 
 const INVENTORY_DETAIL_SUPPRESS_KEYS = [
   'services',
@@ -51,6 +53,14 @@ function InventoryNodesList({
   return (
     <>
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mb: 1 }}>
+        <Button
+          variant="outlined"
+          startIcon={<DeviceHubIcon />}
+          onClick={() => navigate('../target-hosts', { relative: 'path' })}
+          data-testid="inv-target-hosts-link"
+        >
+          Target hosts
+        </Button>
         {schedulingEnabled && (
           <Button
             variant="outlined"
@@ -121,6 +131,7 @@ export function InventoryRoutes({
         path="schedule"
         element={<InventorySchedulePage schedulingEnabled={schedulingEnabled} />}
       />
+      <Route path="target-hosts" element={<TargetHostsPage />} />
       <Route
         path="nodes/:nodeId"
         element={
