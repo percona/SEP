@@ -30,6 +30,7 @@ from pydantic import HttpUrl, ValidationError
 from starlette.staticfiles import StaticFiles
 
 from app import __summary__, __version__
+from app.api.main import api_router as top_level_api_router
 from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
@@ -355,6 +356,7 @@ if {"snippets", "dipper"} & imported_plugins:
     sep_app.include_router(artifacts_router, prefix="/artifacts")
 
 sep_app.include_router(api_router)
+sep_app.include_router(top_level_api_router)
 
 if "snippets" in imported_plugins:
     sep_app.mount(
