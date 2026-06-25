@@ -42,7 +42,7 @@ from app.sep.models import AppLifecycleEnum, AppStateBase, AppStateWrite
 from app.sep.periodic_tasks import apply_effective_enabled
 from app.sep.plugins.framework.registry import get_app_registry
 
-router = APIRouter(tags=["admin", "apps"])
+router = APIRouter()
 
 
 class AppInfoResponse(BaseModel):

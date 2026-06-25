@@ -44,10 +44,11 @@ from app.sep.plugins.checksums.deps import (
     get_checksums_index_context,
     parse_checksums_task_args,
 )
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 

@@ -2805,49 +2805,6 @@
         "title": "BatchApprovalResponse",
         "type": "object"
       },
-      "Body_checksums_execute_checksums__task_name__post": {
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "Body_checksums_execute_checksums__task_name__post",
-        "type": "object"
-      },
       "Body_login_login_post": {
         "properties": {
           "client_id": {
@@ -3221,128 +3178,6 @@
           "name_suffix"
         ],
         "title": "ChainedPredecessor",
-        "type": "object"
-      },
-      "ChecksumsCreate": {
-        "description": "Represent a Checksums creation form.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the database service to connect to.\n:type service_id: int\n:param schema_id: The database schema IDs on which the task will operate.\n:type schema_id: set[int]\n:param databases: The database schemas on which the task will operate.\n:type databases: str\n:param table_id: The table IDs within the schema to be checksummed.\n:type table_id: set[int]\n:param tables: The tables within the schema to be checksummed.\n:type tables: str\n:param recursion_method: The method for handling recursion.\n:type recursion_method: NonEmptyStr\n:param dsn_table: The DSN table for recursion method when using ``dsn``. When empty,\n    the command builder uses ``D=percona,t=dsns`` (Percona Toolkit convention).\n:type dsn_table: str\n:param pause_file: Execution will be paused while the file specified by this param exists.\n:type pause_file: str\n:param progress: Print progress reports to STDERR while copying rows.\n:type progress: str\n:param binary_index: Modify the behavior of --create-replicate-table such that the replicate\n    table's upper and lower boundary columns are created with the BLOB data type.\n:type binary_index: bool\n:param explain_arg: Show, but do not execute, checksum queries.\n:type explain_arg: bool\n:param fail_on_stopped_replication: If replication is stopped, fail with an error.\n:type fail_on_stopped_replication: bool\n:param truncate_replicate_table: Truncate the replicate table before starting the checksum.\n:type truncate_replicate_table: bool\n:param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.\n:type set_vars: str\n:param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are\n    higher than their thresholds.\n:type max_load: str\n:param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.\n:type chunk_time: str\n:param max_lag: Pause the data copy until all replicas lag is less than this value.\n:type max_lag: str\n:param alert_on_fail: If True, send an alert if the task fails. Defaults to False.\n:type alert_on_fail: bool",
-        "properties": {
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "binary_index": {
-            "default": false,
-            "title": "Binary Index",
-            "type": "boolean"
-          },
-          "chunk_time": {
-            "default": "",
-            "title": "Chunk Time",
-            "type": "string"
-          },
-          "databases": {
-            "default": "",
-            "title": "Databases",
-            "type": "string"
-          },
-          "dsn_table": {
-            "default": "",
-            "title": "Dsn Table",
-            "type": "string"
-          },
-          "explain_arg": {
-            "default": false,
-            "title": "Explain Arg",
-            "type": "boolean"
-          },
-          "extra_args": {
-            "default": "",
-            "title": "Extra Args",
-            "type": "string"
-          },
-          "fail_on_stopped_replication": {
-            "default": false,
-            "title": "Fail On Stopped Replication",
-            "type": "boolean"
-          },
-          "hostname": {
-            "minLength": 1,
-            "title": "Hostname",
-            "type": "string"
-          },
-          "max_lag": {
-            "default": "",
-            "title": "Max Lag",
-            "type": "string"
-          },
-          "max_load": {
-            "default": "",
-            "title": "Max Load",
-            "type": "string"
-          },
-          "pause_file": {
-            "default": "",
-            "title": "Pause File",
-            "type": "string"
-          },
-          "progress": {
-            "default": "",
-            "title": "Progress",
-            "type": "string"
-          },
-          "recursion_method": {
-            "title": "Recursion Method",
-            "type": "string"
-          },
-          "schema_id": {
-            "items": {
-              "type": "integer"
-            },
-            "title": "Schema Id",
-            "type": "array",
-            "uniqueItems": true
-          },
-          "service_id": {
-            "title": "Service Id",
-            "type": "integer"
-          },
-          "set_vars": {
-            "default": "",
-            "title": "Set Vars",
-            "type": "string"
-          },
-          "table_id": {
-            "items": {
-              "type": "integer"
-            },
-            "title": "Table Id",
-            "type": "array",
-            "uniqueItems": true
-          },
-          "tables": {
-            "default": "",
-            "title": "Tables",
-            "type": "string"
-          },
-          "task_name": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
-          },
-          "truncate_replicate_table": {
-            "default": false,
-            "title": "Truncate Replicate Table",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "task_name",
-          "hostname",
-          "service_id",
-          "recursion_method"
-        ],
-        "title": "ChecksumsCreate",
         "type": "object"
       },
       "ChecksumsForm": {
@@ -10739,9 +10574,7 @@
         },
         "summary": "List Apps",
         "tags": [
-          "admin",
-          "admin",
-          "apps"
+          "admin"
         ]
       }
     },
@@ -10784,9 +10617,7 @@
         },
         "summary": "Force Disable App",
         "tags": [
-          "admin",
-          "admin",
-          "apps"
+          "admin"
         ]
       }
     },
@@ -10839,9 +10670,7 @@
         },
         "summary": "Update App State",
         "tags": [
-          "admin",
-          "admin",
-          "apps"
+          "admin"
         ]
       }
     },
@@ -16265,222 +16094,10 @@
         ]
       }
     },
-    "/checksums/": {
-      "get": {
-        "description": "Homepage of checksums plugin.",
-        "operationId": "checksums_index_checksums__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Checksums Index"
-      },
-      "post": {
-        "description": "Create an checksum task.",
-        "operationId": "checksums_create_checksums__post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/ChecksumsCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Checksums Create"
-      }
-    },
-    "/checksums/{task_name}": {
-      "get": {
-        "description": "Retrieve checksums task.",
-        "operationId": "checksums_detail_checksums__task_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Checksums Detail"
-      },
-      "post": {
-        "description": "Execute checksums task.",
-        "operationId": "checksums_execute_checksums__task_name__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_checksums_execute_checksums__task_name__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Checksums Execute"
-      }
-    },
-    "/checksums/{task_name}/delete": {
-      "post": {
-        "description": "Delete checksums task.",
-        "operationId": "checksums_delete_checksums__task_name__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Checksums Delete"
-      }
-    },
-    "/checksums/{task_name}/update": {
-      "post": {
-        "description": "Update checksums task.",
-        "operationId": "checksums_update_checksums__task_name__update_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/ChecksumsCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Checksums Update"
-      }
-    },
     "/execution-events/{task_history_id}": {
       "get": {
         "description": "Return executor tracking events for a task history (Tasks API proxy).",
-        "operationId": "sep_list_task_execution_events_execution_events__task_history_id__get",
+        "operationId": "tasks_list_task_execution_events_execution_events__task_history_id__get",
         "parameters": [
           {
             "in": "path",
@@ -16516,7 +16133,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ExecutionEvent"
                   },
-                  "title": "Response Sep List Task Execution Events Execution Events  Task History Id  Get",
+                  "title": "Response Tasks List Task Execution Events Execution Events  Task History Id  Get",
                   "type": "array"
                 }
               }
@@ -16536,7 +16153,6 @@
         },
         "summary": "List Task Execution Events",
         "tags": [
-          "sep",
           "tasks"
         ]
       }
@@ -16544,7 +16160,7 @@
     "/files/{task_history_id}": {
       "get": {
         "description": "Return files available for the given task history.",
-        "operationId": "sep_list_task_history_files_files__task_history_id__get",
+        "operationId": "tasks_list_task_history_files_files__task_history_id__get",
         "parameters": [
           {
             "in": "path",
@@ -16580,7 +16196,7 @@
                   "additionalProperties": {
                     "$ref": "#/components/schemas/FileMetadata"
                   },
-                  "title": "Response Sep List Task History Files Files  Task History Id  Get",
+                  "title": "Response Tasks List Task History Files Files  Task History Id  Get",
                   "type": "object"
                 }
               }
@@ -16600,16 +16216,14 @@
         },
         "summary": "List Task History Files",
         "tags": [
-          "sep",
-          "tasks",
-          "files"
+          "tasks"
         ]
       }
     },
     "/files/{task_history_id}/download": {
       "get": {
         "description": "Stream a task history's archived file as a binary download.",
-        "operationId": "sep_download_task_history_file_files__task_history_id__download_get",
+        "operationId": "tasks_download_task_history_file_files__task_history_id__download_get",
         "parameters": [
           {
             "in": "path",
@@ -16659,125 +16273,7 @@
         },
         "summary": "Download Task History File",
         "tags": [
-          "sep",
-          "tasks",
-          "files"
-        ]
-      }
-    },
-    "/inventory-api/schemas/{schema_id}/tables": {
-      "get": {
-        "description": "Return tables for a schema as JSON for AJAX dropdowns.",
-        "operationId": "sep_list_tables_inventory_api_schemas__schema_id__tables_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "schema_id",
-            "required": true,
-            "schema": {
-              "title": "Schema Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Search"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Tables",
-        "tags": [
-          "sep",
-          "inventory"
-        ]
-      }
-    },
-    "/inventory-api/services/{service_id}/schemas": {
-      "get": {
-        "description": "Return schemas for a service as JSON for AJAX dropdowns.",
-        "operationId": "sep_list_schemas_inventory_api_services__service_id__schemas_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "service_id",
-            "required": true,
-            "schema": {
-              "title": "Service Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "search",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Search"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Schemas",
-        "tags": [
-          "sep",
-          "inventory"
+          "tasks"
         ]
       }
     },
@@ -17698,7 +17194,7 @@
     "/stop-task/{task_history_id}": {
       "post": {
         "description": "Stop a task history.",
-        "operationId": "sep_stop_task_execution_stop_task__task_history_id__post",
+        "operationId": "tasks_stop_task_execution_stop_task__task_history_id__post",
         "parameters": [
           {
             "in": "path",
@@ -17758,7 +17254,6 @@
         },
         "summary": "Stop Task Execution",
         "tags": [
-          "sep",
           "tasks"
         ]
       }
@@ -17766,7 +17261,7 @@
     "/stream-logs/{task_history_id}": {
       "get": {
         "description": "Stream a task history's logs as server-sent events.",
-        "operationId": "sep_task_logs_event_stream_stream_logs__task_history_id__get",
+        "operationId": "tasks_task_logs_event_stream_stream_logs__task_history_id__get",
         "parameters": [
           {
             "in": "path",
@@ -17816,16 +17311,14 @@
         },
         "summary": "Task Logs Event Stream",
         "tags": [
-          "sep",
-          "tasks",
-          "streaming"
+          "tasks"
         ]
       }
     },
     "/stream-logs/{task_history_id}/execution-events": {
       "get": {
         "description": "Stream task execution events as server-sent events.",
-        "operationId": "sep_task_execution_events_stream_stream_logs__task_history_id__execution_events_get",
+        "operationId": "tasks_task_execution_events_stream_stream_logs__task_history_id__execution_events_get",
         "parameters": [
           {
             "in": "path",
@@ -17875,85 +17368,8 @@
         },
         "summary": "Task Execution Events Stream",
         "tags": [
-          "sep",
-          "tasks",
-          "streaming"
+          "tasks"
         ]
-      }
-    },
-    "/tasks/": {
-      "get": {
-        "description": "Homepage of Tasks Plugin.",
-        "operationId": "tasks_list_tasks__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Tasks List"
-      }
-    },
-    "/tasks/{task_name}": {
-      "get": {
-        "description": "Retrieve task.",
-        "operationId": "tasks_detail_tasks__task_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TaskOwner"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Tasks Detail"
       }
     }
   }

@@ -26,7 +26,7 @@ from app.sep.middleware import messages
 from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["sep", "tasks"])
+router = APIRouter(tags=["tasks"])
 
 
 @router.post("/{task_history_id}", dependencies=[IsAuthenticated, IsCsrfValidated])

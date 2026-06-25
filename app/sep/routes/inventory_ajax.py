@@ -27,11 +27,12 @@ from fastapi.responses import JSONResponse
 
 from app.core.pagination import fetch_all_dict_items
 from app.sep.deps import InventoryAPI, IsAuthenticated
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.utils.decorators import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["sep", "inventory"])
+router = APIRouter(route_class=DeprecatedJinja2Route, include_in_schema=False)
 
 
 @router.get("/services/{service_id}/schemas", dependencies=[IsAuthenticated])

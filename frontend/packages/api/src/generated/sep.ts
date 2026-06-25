@@ -2741,94 +2741,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/checksums/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Checksums Index
-     * @description Homepage of checksums plugin.
-     */
-    get: operations['checksums_index_checksums__get'];
-    put?: never;
-    /**
-     * Checksums Create
-     * @description Create an checksum task.
-     */
-    post: operations['checksums_create_checksums__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/checksums/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Checksums Detail
-     * @description Retrieve checksums task.
-     */
-    get: operations['checksums_detail_checksums__task_name__get'];
-    put?: never;
-    /**
-     * Checksums Execute
-     * @description Execute checksums task.
-     */
-    post: operations['checksums_execute_checksums__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/checksums/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Checksums Delete
-     * @description Delete checksums task.
-     */
-    post: operations['checksums_delete_checksums__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/checksums/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Checksums Update
-     * @description Update checksums task.
-     */
-    post: operations['checksums_update_checksums__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/execution-events/{task_history_id}': {
     parameters: {
       query?: never;
@@ -2840,7 +2752,7 @@ export interface paths {
      * List Task Execution Events
      * @description Return executor tracking events for a task history (Tasks API proxy).
      */
-    get: operations['sep_list_task_execution_events_execution_events__task_history_id__get'];
+    get: operations['tasks_list_task_execution_events_execution_events__task_history_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2860,7 +2772,7 @@ export interface paths {
      * List Task History Files
      * @description Return files available for the given task history.
      */
-    get: operations['sep_list_task_history_files_files__task_history_id__get'];
+    get: operations['tasks_list_task_history_files_files__task_history_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2880,47 +2792,7 @@ export interface paths {
      * Download Task History File
      * @description Stream a task history's archived file as a binary download.
      */
-    get: operations['sep_download_task_history_file_files__task_history_id__download_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory-api/schemas/{schema_id}/tables': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Tables
-     * @description Return tables for a schema as JSON for AJAX dropdowns.
-     */
-    get: operations['sep_list_tables_inventory_api_schemas__schema_id__tables_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory-api/services/{service_id}/schemas': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Schemas
-     * @description Return schemas for a service as JSON for AJAX dropdowns.
-     */
-    get: operations['sep_list_schemas_inventory_api_services__service_id__schemas_get'];
+    get: operations['tasks_download_task_history_file_files__task_history_id__download_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3350,7 +3222,7 @@ export interface paths {
      * Stop Task Execution
      * @description Stop a task history.
      */
-    post: operations['sep_stop_task_execution_stop_task__task_history_id__post'];
+    post: operations['tasks_stop_task_execution_stop_task__task_history_id__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -3368,7 +3240,7 @@ export interface paths {
      * Task Logs Event Stream
      * @description Stream a task history's logs as server-sent events.
      */
-    get: operations['sep_task_logs_event_stream_stream_logs__task_history_id__get'];
+    get: operations['tasks_task_logs_event_stream_stream_logs__task_history_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -3388,47 +3260,7 @@ export interface paths {
      * Task Execution Events Stream
      * @description Stream task execution events as server-sent events.
      */
-    get: operations['sep_task_execution_events_stream_stream_logs__task_history_id__execution_events_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/tasks/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Tasks List
-     * @description Homepage of Tasks Plugin.
-     */
-    get: operations['tasks_list_tasks__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/tasks/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Tasks Detail
-     * @description Retrieve task.
-     */
-    get: operations['tasks_detail_tasks__task_name__get'];
+    get: operations['tasks_task_execution_events_stream_stream_logs__task_history_id__execution_events_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -4778,15 +4610,6 @@ export interface components {
       /** Skipped Already Approved */
       skipped_already_approved: string[];
     };
-    /** Body_checksums_execute_checksums__task_name__post */
-    Body_checksums_execute_checksums__task_name__post: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
     /** Body_login_login_post */
     Body_login_login_post: {
       /** Client Id */
@@ -5034,143 +4857,6 @@ export interface components {
        * @default true
        */
       parent_link: boolean;
-    };
-    /**
-     * ChecksumsCreate
-     * @description Represent a Checksums creation form.
-     *
-     *     :param task_name: The name of the task to be created.
-     *     :type task_name: NonEmptyStr
-     *     :param hostname: The target hostname for the task execution.
-     *     :type hostname: NonEmptyStr
-     *     :param service_id: The Inventory ID of the database service to connect to.
-     *     :type service_id: int
-     *     :param schema_id: The database schema IDs on which the task will operate.
-     *     :type schema_id: set[int]
-     *     :param databases: The database schemas on which the task will operate.
-     *     :type databases: str
-     *     :param table_id: The table IDs within the schema to be checksummed.
-     *     :type table_id: set[int]
-     *     :param tables: The tables within the schema to be checksummed.
-     *     :type tables: str
-     *     :param recursion_method: The method for handling recursion.
-     *     :type recursion_method: NonEmptyStr
-     *     :param dsn_table: The DSN table for recursion method when using ``dsn``. When empty,
-     *         the command builder uses ``D=percona,t=dsns`` (Percona Toolkit convention).
-     *     :type dsn_table: str
-     *     :param pause_file: Execution will be paused while the file specified by this param exists.
-     *     :type pause_file: str
-     *     :param progress: Print progress reports to STDERR while copying rows.
-     *     :type progress: str
-     *     :param binary_index: Modify the behavior of --create-replicate-table such that the replicate
-     *         table's upper and lower boundary columns are created with the BLOB data type.
-     *     :type binary_index: bool
-     *     :param explain_arg: Show, but do not execute, checksum queries.
-     *     :type explain_arg: bool
-     *     :param fail_on_stopped_replication: If replication is stopped, fail with an error.
-     *     :type fail_on_stopped_replication: bool
-     *     :param truncate_replicate_table: Truncate the replicate table before starting the checksum.
-     *     :type truncate_replicate_table: bool
-     *     :param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.
-     *     :type set_vars: str
-     *     :param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are
-     *         higher than their thresholds.
-     *     :type max_load: str
-     *     :param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.
-     *     :type chunk_time: str
-     *     :param max_lag: Pause the data copy until all replicas lag is less than this value.
-     *     :type max_lag: str
-     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-     *     :type alert_on_fail: bool
-     */
-    ChecksumsCreate: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      /**
-       * Binary Index
-       * @default false
-       */
-      binary_index: boolean;
-      /**
-       * Chunk Time
-       * @default
-       */
-      chunk_time: string;
-      /**
-       * Databases
-       * @default
-       */
-      databases: string;
-      /**
-       * Dsn Table
-       * @default
-       */
-      dsn_table: string;
-      /**
-       * Explain Arg
-       * @default false
-       */
-      explain_arg: boolean;
-      /**
-       * Extra Args
-       * @default
-       */
-      extra_args: string;
-      /**
-       * Fail On Stopped Replication
-       * @default false
-       */
-      fail_on_stopped_replication: boolean;
-      /** Hostname */
-      hostname: string;
-      /**
-       * Max Lag
-       * @default
-       */
-      max_lag: string;
-      /**
-       * Max Load
-       * @default
-       */
-      max_load: string;
-      /**
-       * Pause File
-       * @default
-       */
-      pause_file: string;
-      /**
-       * Progress
-       * @default
-       */
-      progress: string;
-      /** Recursion Method */
-      recursion_method: string;
-      /** Schema Id */
-      schema_id?: number[];
-      /** Service Id */
-      service_id: number;
-      /**
-       * Set Vars
-       * @default
-       */
-      set_vars: string;
-      /** Table Id */
-      table_id?: number[];
-      /**
-       * Tables
-       * @default
-       */
-      tables: string;
-      /** Task Name */
-      task_name: string;
-      /**
-       * Truncate Replicate Table
-       * @default false
-       */
-      truncate_replicate_table: boolean;
     };
     /**
      * ChecksumsForm
@@ -12973,186 +12659,7 @@ export interface operations {
       };
     };
   };
-  checksums_index_checksums__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  checksums_create_checksums__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['ChecksumsCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_detail_checksums__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_execute_checksums__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_checksums_execute_checksums__task_name__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_delete_checksums__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  checksums_update_checksums__task_name__update_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['ChecksumsCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_list_task_execution_events_execution_events__task_history_id__get: {
+  tasks_list_task_execution_events_execution_events__task_history_id__get: {
     parameters: {
       query?: {
         owner?: components['schemas']['TaskOwner'] | null;
@@ -13185,7 +12692,7 @@ export interface operations {
       };
     };
   };
-  sep_list_task_history_files_files__task_history_id__get: {
+  tasks_list_task_history_files_files__task_history_id__get: {
     parameters: {
       query?: {
         owner?: components['schemas']['TaskOwner'] | null;
@@ -13220,7 +12727,7 @@ export interface operations {
       };
     };
   };
-  sep_download_task_history_file_files__task_history_id__download_get: {
+  tasks_download_task_history_file_files__task_history_id__download_get: {
     parameters: {
       query?: {
         owner?: components['schemas']['TaskOwner'] | null;
@@ -13228,72 +12735,6 @@ export interface operations {
       header?: never;
       path: {
         task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_list_tables_inventory_api_schemas__schema_id__tables_get: {
-    parameters: {
-      query?: {
-        search?: string | null;
-      };
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_list_schemas_inventory_api_services__service_id__schemas_get: {
-    parameters: {
-      query?: {
-        search?: string | null;
-      };
-      header?: never;
-      path: {
-        service_id: number;
       };
       cookie?: never;
     };
@@ -14019,7 +13460,7 @@ export interface operations {
       };
     };
   };
-  sep_stop_task_execution_stop_task__task_history_id__post: {
+  tasks_stop_task_execution_stop_task__task_history_id__post: {
     parameters: {
       query?: {
         owner?: components['schemas']['TaskOwner'] | null;
@@ -14054,7 +13495,7 @@ export interface operations {
       };
     };
   };
-  sep_task_logs_event_stream_stream_logs__task_history_id__get: {
+  tasks_task_logs_event_stream_stream_logs__task_history_id__get: {
     parameters: {
       query?: {
         owner?: components['schemas']['TaskOwner'] | null;
@@ -14087,7 +13528,7 @@ export interface operations {
       };
     };
   };
-  sep_task_execution_events_stream_stream_logs__task_history_id__execution_events_get: {
+  tasks_task_execution_events_stream_stream_logs__task_history_id__execution_events_get: {
     parameters: {
       query?: {
         owner?: components['schemas']['TaskOwner'] | null;
@@ -14107,59 +13548,6 @@ export interface operations {
         };
         content: {
           'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_list_tasks__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  tasks_detail_tasks__task_name__get: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
         };
       };
       /** @description Validation Error */
