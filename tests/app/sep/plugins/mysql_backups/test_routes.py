@@ -42,9 +42,8 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
-    TaskWrite,
 )
-from tests.app.factories import TaskFactory
+from tests.app.factories import GeneratedTaskFactory, TaskFactory
 
 
 @pytest.fixture
@@ -113,7 +112,7 @@ def test_backups_index(test_client):
 
 def test_backups_create(test_client, mock_task_api_dep, backup_create):
     """Test POST /backups/ route."""
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.BACKUPS,
@@ -177,7 +176,7 @@ def test_backups_create_triggers_connectivity_check(
     """POST /backups/ runs a connectivity check when meta carries connectivity data."""
     clear_connectivity_caches()
 
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.BACKUPS,
@@ -234,7 +233,7 @@ def test_backups_create_skips_connectivity_check_when_opted_out(
     """POST /backups/ skips the connectivity check when the checkbox is unchecked."""
     clear_connectivity_caches()
 
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.BACKUPS,

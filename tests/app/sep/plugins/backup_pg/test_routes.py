@@ -35,9 +35,8 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
-    TaskWrite,
 )
-from tests.app.factories import CreatedServiceFactory
+from tests.app.factories import CreatedServiceFactory, GeneratedTaskFactory
 
 
 @pytest.mark.usefixtures("_mock_get_backups_index_context_dep")
@@ -112,7 +111,7 @@ def test_pg_backups_create_skips_connectivity_check_when_opted_out(
     """POST /backup_pg/ skips the connectivity check when the checkbox is unchecked."""
     clear_connectivity_caches()
 
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.BACKUP_PG,

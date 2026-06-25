@@ -20,7 +20,7 @@ from starlette.testclient import TestClient
 
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.inventory.models import Schema, Service, Table
-from tests.app.factories import SchemaWriteFactory
+from tests.app.factories import SchemaWriteFactory, TableWriteFactory
 
 EXPECTED_TABLE_COUNT = 2
 OFFSET_BEYOND_TOTAL = 999
@@ -102,12 +102,12 @@ class TestUpdateTable:
         self, test_client: TestClient, table: Table, schema: Schema
     ) -> None:
         """Update the table name and return the updated table."""
-        payload = {
-            "name": "updated_table_name",
-            "create": table.create,
-            "keys": table.keys,
-            "schema_id": schema.id,
-        }
+        payload = TableWriteFactory.build(
+            name="updated_table_name",
+            create=table.create,
+            keys=table.keys,
+            schema_id=schema.id,
+        ).model_dump(mode="json")
         response = test_client.put(f"/tables/{table.id}", json=payload)
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -117,12 +117,7 @@ class TestUpdateTable:
         self, test_client: TestClient, schema: Schema
     ) -> None:
         """Return 404 when updating a nonexistent table."""
-        payload = {
-            "name": "ghost_table",
-            "create": "CREATE TABLE ghost (id INT)",
-            "keys": {},
-            "schema_id": schema.id,
-        }
+        payload = TableWriteFactory.build(schema_id=schema.id).model_dump(mode="json")
         response = test_client.put("/tables/99999", json=payload)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
@@ -130,12 +125,7 @@ class TestUpdateTable:
         self, test_client: TestClient, table: Table
     ) -> None:
         """Return 400 when schema_id references a nonexistent schema."""
-        payload = {
-            "name": table.name,
-            "create": table.create,
-            "keys": table.keys,
-            "schema_id": 99999,
-        }
+        payload = TableWriteFactory.build(schema_id=99999).model_dump(mode="json")
         response = test_client.put(f"/tables/{table.id}", json=payload)
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.json()["detail"] == "Invalid schema_id: 99999"
