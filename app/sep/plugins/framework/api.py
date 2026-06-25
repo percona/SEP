@@ -1199,7 +1199,9 @@ def derive_crud_routes(
     ) -> BaseModel:
         try:
             task_status = await get_task_latest_status(tasks_api, task.name)
-        except HTTPException:
+        except ValueError:
+            raise
+        except Exception:
             logger.exception("Failed to fetch history for task %s", task.name)
             task_status = None
         builder = await _bind_context(detail_builder, context_provider)
