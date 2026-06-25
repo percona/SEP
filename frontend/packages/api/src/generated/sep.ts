@@ -2722,7 +2722,6 @@ export interface paths {
      *     gated by the router-level ``IsApiAuthenticated`` dependency.
      *
      *     :return: The rendered footer text.
-     *     :rtype: AppInfo
      */
     get: operations['sep_get_app_info_api_sep_app_info__get'];
     put?: never;
@@ -5307,7 +5306,6 @@ export interface components {
      *
      *     :param footer_text: The rendered sidebar footer text (application summary
      *         and version by default).
-     *     :type footer_text: str
      */
     AppInfo: {
       /** Footer Text */

@@ -724,7 +724,7 @@
         "type": "object"
       },
       "AppInfo": {
-        "description": "Represent the response of ``GET /api/sep/app-info``.\n\n:param footer_text: The rendered sidebar footer text (application summary\n    and version by default).\n:type footer_text: str",
+        "description": "Represent the response of ``GET /api/sep/app-info``.\n\n:param footer_text: The rendered sidebar footer text (application summary\n    and version by default).",
         "properties": {
           "footer_text": {
             "title": "Footer Text",
@@ -17118,7 +17118,7 @@
     },
     "/api/sep/app-info/": {
       "get": {
-        "description": "Return shell metadata for the React frontend.\n\nRender ``footer_text`` from the shared :func:`render_footer_text` helper so\nthe JSON endpoint and the legacy Jinja sidebar footer cannot drift. The\nhelper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live\n``SEP__FOOTER_TEMPLATE`` override is reflected without a restart. Access is\ngated by the router-level ``IsApiAuthenticated`` dependency.\n\n:return: The rendered footer text.\n:rtype: AppInfo",
+        "description": "Return shell metadata for the React frontend.\n\nRender ``footer_text`` from the shared :func:`render_footer_text` helper so\nthe JSON endpoint and the legacy Jinja sidebar footer cannot drift. The\nhelper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live\n``SEP__FOOTER_TEMPLATE`` override is reflected without a restart. Access is\ngated by the router-level ``IsApiAuthenticated`` dependency.\n\n:return: The rendered footer text.",
         "operationId": "sep_get_app_info_api_sep_app_info__get",
         "responses": {
           "200": {
