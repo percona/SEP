@@ -44,13 +44,9 @@ def _build_dsn_with_service(
     """Build a DSN string with service information (host and port) if needed.
 
     :param dsn_base: The base DSN string (e.g., "D=schema,t=table" or "D=percona,t=dsns").
-    :type dsn_base: str
     :param service_address: The service node address.
-    :type service_address: str
     :param service_port: The service port, if available.
-    :type service_port: int | None
     :return: The constructed DSN string with service information if not already present.
-    :rtype: str
     """
     if dsn_base.startswith(("h=", "P=")):
         return dsn_base
@@ -82,15 +78,10 @@ def build_alters_spec(
     payloads are byte-identical regardless of call origin.
 
     :param service: The validated inventory service instance.
-    :type service: CreatedService
     :param schema_name: The target schema name.
-    :type schema_name: str
     :param table_name: The target table name.
-    :type table_name: str
     :param body: The alters create/write payload.
-    :type body: AltersCreate
     :return: A fully constructed parent execute ``TaskWrite``.
-    :rtype: TaskWrite
     """
     dsn = _build_dsn_with_service(
         f"D={schema_name},t={table_name}", service.node.address, service.port

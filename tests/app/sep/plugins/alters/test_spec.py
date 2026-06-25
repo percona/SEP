@@ -22,37 +22,39 @@ from app.sep.connectivity import (
 )
 from app.sep.inventory import CreatedService
 from app.sep.plugins.alters.models import AltersCreate
-from app.sep.plugins.alters.spec import _build_dsn_with_service, build_alters_spec
+from app.sep.plugins.alters.spec import build_alters_spec
 from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
+REMOTE_SERVICE_PORT = 3306
 
-def test_build_dsn_with_service_branches():
-    """DSN prefix passthrough, remote h+P, localhost P-only, and unchanged DSN."""
-    assert _build_dsn_with_service("h=x,D=y", "10.0.0.1", 3306) == "h=x,D=y"
-    assert _build_dsn_with_service("P=3307,D=y", "10.0.0.1", 3306) == "P=3307,D=y"
-    assert (
-        _build_dsn_with_service("D=a,t=b", "10.0.0.5", 3306)
-        == "h=10.0.0.5,P=3306,D=a,t=b"
+
+def _service_at(service: CreatedService, address: str) -> CreatedService:
+    """Return a copy of ``service`` whose node address is ``address``."""
+    return service.model_copy(
+        update={"node": service.node.model_copy(update={"address": address})}
     )
-    assert _build_dsn_with_service("D=a,t=b", "localhost", 3306) == "P=3306,D=a,t=b"
-    assert _build_dsn_with_service("D=a,t=b", "localhost", None) == "D=a,t=b"
+
+
+def _build_body(**overrides: object) -> AltersCreate:
+    """Build a valid manual-target AltersCreate, applying ``overrides``."""
+    fields: dict[str, object] = {
+        "task_name": "my-alter",
+        "hostname": "exec-host",
+        "service_id": 1,
+        "schema_name": "app",
+        "table_name": "users",
+        "alter": "ADD COLUMN x INT",
+        "recursion_method": "processlist",
+    }
+    fields.update(overrides)
+    return AltersCreate(**fields)
 
 
 def test_build_alters_spec_builds_parent_execute_envelope(
     created_service: CreatedService,
 ):
     """Test build_alters_spec assembles the run-command pt-osc execute envelope."""
-    body = AltersCreate(
-        task_name="my-alter",
-        hostname="exec-host",
-        service_id=1,
-        schema_name="app",
-        table_name="users",
-        alter="ADD COLUMN x INT",
-        recursion_method="processlist",
-    )
-
-    task = build_alters_spec(created_service, "app", "users", body)
+    task = build_alters_spec(created_service, "app", "users", _build_body())
 
     assert isinstance(task, TaskWrite)
     assert task.owner == TaskOwner.ALTERS
@@ -73,22 +75,51 @@ def test_build_alters_spec_builds_parent_execute_envelope(
     assert meta[CONNECTIVITY_META_SERVICE_TYPE_KEY] == created_service.type.value
 
 
+def test_build_alters_spec_remote_service_embeds_host_and_port(
+    created_service: CreatedService,
+):
+    """Test a remote service prefixes the target DSN with its host and port."""
+    remote = _service_at(created_service, "10.0.0.5").model_copy(
+        update={"port": REMOTE_SERVICE_PORT}
+    )
+
+    task = build_alters_spec(remote, "app", "users", _build_body())
+
+    assert "h=10.0.0.5,P=3306,D=app,t=users" in task.data["meta"]["args"]
+
+
+def test_build_alters_spec_localhost_service_omits_host(
+    created_service: CreatedService,
+):
+    """Test a localhost service omits the ``h=`` host from the target DSN."""
+    local = _service_at(created_service, "localhost").model_copy(
+        update={"port": REMOTE_SERVICE_PORT}
+    )
+
+    args = build_alters_spec(local, "app", "users", _build_body()).data["meta"]["args"]
+
+    assert "P=3306,D=app,t=users" in args
+    assert "h=localhost" not in args
+
+
 def test_build_alters_spec_dsn_recursion_embeds_dsn_table(
     created_service: CreatedService,
 ):
     """Test a dsn recursion method embeds the resolved dsn_table in the args."""
-    body = AltersCreate(
-        task_name="my-alter",
-        hostname="exec-host",
-        service_id=1,
-        schema_name="app",
-        table_name="users",
-        alter="ADD COLUMN x INT",
-        recursion_method="dsn",
-        dsn_table="D=custom,t=dsns",
-    )
+    body = _build_body(recursion_method="dsn", dsn_table="D=custom,t=dsns")
 
     task = build_alters_spec(created_service, "app", "users", body)
 
     assert "--recursion-method=dsn=" in task.data["meta"]["args"]
     assert "D=custom,t=dsns" in task.data["meta"]["args"]
+
+
+def test_build_alters_spec_dsn_table_prefix_passes_through(
+    created_service: CreatedService,
+):
+    """Test a dsn_table already carrying an ``h=`` prefix is left unmodified."""
+    body = _build_body(recursion_method="dsn", dsn_table="h=custom-host,D=d,t=t")
+
+    args = build_alters_spec(created_service, "app", "users", body).data["meta"]["args"]
+
+    assert "--recursion-method=dsn=h=custom-host,D=d,t=t" in args
