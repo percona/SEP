@@ -199,12 +199,15 @@ async def check_connectivity(
     provisioning_elapsed = 0
     connect_elapsed = 0
     connect_started = False
+    scanned_logs = 0
     while queue_item.status in (
         TaskHistoryStatusEnum.PENDING,
         TaskHistoryStatusEnum.RUNNING,
     ):
         if not connect_started:
-            connect_started = await _connect_phase_started(session, queue_item)
+            connect_started, scanned_logs = await _connect_phase_started(
+                session, queue_item, scanned_logs
+            )
         if not connect_started:
             if provisioning_elapsed >= PROVISIONING_TIMEOUT:
                 break
@@ -320,8 +323,8 @@ def _strip_marker(text: str) -> str:
 
 
 async def _connect_phase_started(
-    session: AsyncSession, task_history: TaskHistory
-) -> bool:
+    session: AsyncSession, task_history: TaskHistory, scanned: int = 0
+) -> tuple[bool, int]:
     """Return whether the payload has emitted :data:`CONNECT_PHASE_MARKER`.
 
     ``payload.py`` flushes the marker to ``run-script`` stderr immediately
@@ -330,21 +333,37 @@ async def _connect_phase_started(
     so a marker echoed on stdout cannot trip the latch and corrupt the pure-JSON
     stdout result contract.
 
+    The poll loop calls this once per iteration until the marker latches, so
+    ``scanned`` carries the number of log chunks already inspected on prior
+    polls: only chunks beyond that offset are searched, keeping the per-poll
+    work proportional to *new* output rather than re-scanning the whole log
+    history (which would make provisioning polling O(n²) in chunk count).
+
     :param session: The async database session.
     :type session: AsyncSession
     :param task_history: The task history row being inspected.
     :type task_history: TaskHistory
-    :return: ``True`` once the marker appears in run-script stderr.
-    :rtype: bool
+    :param scanned: The number of run-script log chunks already inspected on
+        previous polls; chunks at or before this index are skipped.
+    :type scanned: int
+    :return: A tuple of ``(started, scanned)`` where ``started`` is ``True``
+        once the marker appears in run-script stderr and ``scanned`` is the
+        updated count of chunks inspected (to pass back on the next poll).
+    :rtype: tuple[bool, int]
     """
+    index = 0
+    started = False
     async for log in _iter_run_script_logs(session, task_history):
+        index += 1
+        if index <= scanned:
+            continue
         if (
             log.type == TaskLogType.STDERR
             and log.msg
             and CONNECT_PHASE_MARKER in log.msg
         ):
-            return True
-    return False
+            started = True
+    return started, index
 
 
 async def _fetch_fresh_task_history(

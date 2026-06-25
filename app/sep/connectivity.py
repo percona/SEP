@@ -42,7 +42,8 @@ logger = logging.getLogger(__name__)
 CACHE_TTL = 600
 #: Connect budget (seconds) sent to the Tasks API as ``request.timeout``. The
 #: poll loop charges only post-provisioning connect time against it; the inner
-#: DB ``connect_timeout`` (``10``) must stay strictly below it.
+#: DB ``connect_timeout`` (the payload's ``CONNECT_TIMEOUT``) must stay strictly
+#: below it.
 CHECK_TIMEOUT = 30
 CACHE_MAXSIZE = 128
 
