@@ -52,6 +52,7 @@ from app.tasks.models import (
     TaskExecutionRequest,
     TaskHistory,
     TaskHistoryStatusEnum,
+    TaskLog,
     TaskLogType,
 )
 
@@ -62,6 +63,9 @@ INITIAL_LOG_OFFSET = 50
 EXPECTED_GET_LOGS_STREAM_CALLS_ONE_READY_STEP = 2
 MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 STALENESS_THRESHOLD_OVERRIDE = 300
+MULTI_CHUNK_LOG_FIRST_OFFSET = 17
+MULTI_CHUNK_LOG_SECOND_OFFSET = 42
+EXPECTED_MULTI_CHUNK_LOG_COUNT = 2
 
 
 def _build_task(
@@ -1745,6 +1749,39 @@ class TestNomadLogStreaming:
             },
         }
 
+    @staticmethod
+    def _alloc_for_logs_step2():
+        return {
+            "ID": "alloc-stream",
+            "JobID": "job-1",
+            "EvalID": "eval-1",
+            "TaskStates": {
+                "step2": {"StartedAt": "2024-01-01T00:00:00Z", "State": "running"},
+            },
+        }
+
+    @staticmethod
+    def _nomad_log_frame(*, msg: str | None, offset: int) -> bytes:
+        frame: dict = {"Offset": offset}
+        if msg is not None:
+            frame["Data"] = b64encode(msg.encode()).decode()
+        return json.dumps(frame).encode()
+
+    @staticmethod
+    def _make_iter_chunks(chunks: list[bytes]):
+        async def iter_chunks():
+            for chunk in chunks:
+                yield chunk, None
+
+        return iter_chunks
+
+    @staticmethod
+    async def _drain_task_logs(queue: asyncio.Queue) -> list[TaskLog]:
+        logs = []
+        while not queue.empty():
+            logs.append(await queue.get())
+        return logs
+
     @pytest.mark.asyncio
     @patch(
         "app.tasks.execution.executors.nomad.models.asyncio.sleep",
@@ -1936,6 +1973,61 @@ class TestNomadLogStreaming:
         assert state == _NOMAD_LOG_STREAM_SOCK_TIMEOUT
         assert out_alloc is alloc
         assert stream_start is not None
+
+    @pytest.mark.asyncio
+    async def test_consume_nomad_log_stream_advances_offset_across_chunks(self):
+        """Two data frames advance params offset and enqueue TaskLogs in order (step2)."""
+        chunks = [
+            self._nomad_log_frame(msg="line-one", offset=MULTI_CHUNK_LOG_FIRST_OFFSET),
+            self._nomad_log_frame(msg="line-two", offset=MULTI_CHUNK_LOG_SECOND_OFFSET),
+        ]
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = self._alloc_for_logs_step2()
+        params = {
+            "task": "step2",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_request", return_value=mock_ctx):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step2",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        logs = await self._drain_task_logs(queue)
+
+        assert state == "running"
+        assert out_alloc is alloc
+        assert stream_start is not None
+        assert params["offset"] == MULTI_CHUNK_LOG_SECOND_OFFSET
+        assert len(logs) == EXPECTED_MULTI_CHUNK_LOG_COUNT
+        assert [log.msg for log in logs] == ["line-one", "line-two"]
+        assert [log.offset for log in logs] == [
+            MULTI_CHUNK_LOG_FIRST_OFFSET,
+            MULTI_CHUNK_LOG_SECOND_OFFSET,
+        ]
+        assert all(log.step == "step2" for log in logs)
+        assert all(log.type == TaskLogType.STDOUT for log in logs)
+        offsets = [log.offset for log in logs]
+        assert offsets == sorted(offsets)
 
 
 class TestListFiles:
