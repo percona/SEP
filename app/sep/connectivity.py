@@ -40,7 +40,10 @@ from app.sep.middleware import messages
 logger = logging.getLogger(__name__)
 
 CACHE_TTL = 600
-CHECK_TIMEOUT = 10
+#: Connect budget (seconds) sent to the Tasks API as ``request.timeout``. The
+#: poll loop charges only post-provisioning connect time against it; the inner
+#: DB ``connect_timeout`` (``10``) must stay strictly below it.
+CHECK_TIMEOUT = 30
 CACHE_MAXSIZE = 128
 
 CONNECTIVITY_META_HOST_KEY = "_connectivity_host"
@@ -140,13 +143,17 @@ async def _fetch_connectivity_result(
     host: str,
     port: int,
     service_type: str,
-) -> tuple[bool, str | None]:
-    """Run the Tasks API connectivity check and return ``(success, error)``.
+) -> tuple[bool, str | None, int | None]:
+    """Run the Tasks API connectivity check and return ``(success, error, id)``.
 
     Memoize results by ``(tasks_api, target, host, port, service_type)`` so
     repeated checks within ``CACHE_TTL`` seconds skip the API roundtrip.
     ``RemoteAPI`` is hashable, so it participates in the cache key directly
     without any contextvar indirection.
+
+    The third tuple element is the ``task_history_id`` of the underlying
+    run-script task, so callers can link its log. It is ``None`` on transport
+    errors where no task was created.
 
     :param tasks_api: Authenticated Tasks API client.
     :type tasks_api: RemoteAPI
@@ -158,9 +165,10 @@ async def _fetch_connectivity_result(
     :type port: int
     :param service_type: The lowercase service type (e.g. ``mysql``).
     :type service_type: str
-    :return: A tuple of ``(success, error)`` where ``error`` is ``None`` on
-        success or carries a human-readable message on failure.
-    :rtype: tuple[bool, str | None]
+    :return: A tuple of ``(success, error, task_history_id)`` where ``error``
+        is ``None`` on success and ``task_history_id`` carries the run-script
+        task id (``None`` when no task was created).
+    :rtype: tuple[bool, str | None, int | None]
     """
     try:
         result = cast(
@@ -176,7 +184,11 @@ async def _fetch_connectivity_result(
                 },
             ),
         )
-        return result.get("success", False), result.get("error")
+        return (
+            result.get("success", False),
+            result.get("error"),
+            result.get("task_history_id"),
+        )
     except HTTPException as exc:
         logger.debug(
             "Tasks API connectivity check returned error response", exc_info=True
@@ -184,10 +196,10 @@ async def _fetch_connectivity_result(
         error = (
             exc.detail if isinstance(exc.detail, str) else "Connectivity check failed"
         )
-        return False, error
+        return False, error, None
     except (OSError, TimeoutError, ClientError):
         logger.debug("Could not reach Tasks API for connectivity check", exc_info=True)
-        return False, "Could not reach the Tasks API"
+        return False, "Could not reach the Tasks API", None
 
 
 async def check_and_warn_connectivity(
@@ -219,16 +231,21 @@ async def check_and_warn_connectivity(
     :param service_type: The lowercase service type (e.g. ``mysql``).
     :type service_type: str
     """
-    success, error = await _fetch_connectivity_result(
+    success, error, task_history_id = await _fetch_connectivity_result(
         tasks_api, target, host, port, service_type
     )
     _record_latest_result(target, service_type, success=success)
 
     if not success:
+        pointer = (
+            f" (see task #{task_history_id} logs)"
+            if task_history_id is not None
+            else ""
+        )
         messages.warning(
             request,
             f"Connectivity warning for {host}:{port} ({service_type}) "
-            f"on executor {target}: {error or 'check failed'}",
+            f"on executor {target}: {error or 'check failed'}{pointer}",
         )
 
 

@@ -27,7 +27,11 @@ from sqlalchemy.orm import QueryableAttribute, undefer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.celery import dispatch_queue_item, get_executor_for_task
-from app.tasks.connectivity.constants import CONNECTIVITY_CHECK_TIMEOUT
+from app.tasks.connectivity.constants import (
+    CONNECT_PHASE_MARKER,
+    CONNECTIVITY_CHECK_TIMEOUT,
+    PROVISIONING_TIMEOUT,
+)
 from app.tasks.connectivity.models import (
     ConnectivityCheckResponse,
     ConnectivityCheckWrite,
@@ -183,14 +187,33 @@ async def check_connectivity(
 
     executor = get_executor_for_task(task)
     async_session = get_async_session_maker()
-    elapsed = 0
-    while (
-        queue_item.status
-        in (TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING)
-        and elapsed < request.timeout
+    # Two independent clocks. Nomad reports ``RUNNING`` from dispatch onward, so
+    # ``status`` cannot mark when the DB connect actually begins; instead the
+    # payload flushes ``CONNECT_PHASE_MARKER`` to stderr right before
+    # connecting. Time before the marker (Nomad dispatch + ``run-python``
+    # scheduling + dependency install) is charged against ``PROVISIONING_TIMEOUT``;
+    # only post-marker time is charged against the connect budget
+    # (``request.timeout``). This stops provisioning latency from
+    # false-negativing a reachable DB while still bounding a task whose payload
+    # never reaches the connect phase.
+    provisioning_elapsed = 0
+    connect_elapsed = 0
+    connect_started = False
+    while queue_item.status in (
+        TaskHistoryStatusEnum.PENDING,
+        TaskHistoryStatusEnum.RUNNING,
     ):
+        if not connect_started:
+            connect_started = await _connect_phase_started(session, queue_item)
+        if not connect_started:
+            if provisioning_elapsed >= PROVISIONING_TIMEOUT:
+                break
+            provisioning_elapsed += POLL_INTERVAL
+        else:
+            if connect_elapsed >= request.timeout:
+                break
+            connect_elapsed += POLL_INTERVAL
         await asyncio.sleep(POLL_INTERVAL)
-        elapsed += POLL_INTERVAL
         async with async_session() as writer_session:
             queue_item = await executor.sync_task_history(
                 queue_item, writer_session=writer_session
@@ -204,14 +227,124 @@ async def check_connectivity(
         TaskHistoryStatusEnum.PENDING,
         TaskHistoryStatusEnum.RUNNING,
     ):
-        return ConnectivityCheckResponse(
-            success=False,
-            error=f"Connectivity check timed out after {request.timeout}s",
-            task_history_id=queue_item_id,
+        return await _build_timeout_response(
+            session,
+            queue_item_id,
+            provisioning=not connect_started,
+            connect_timeout=request.timeout,
         )
 
     fresh_queue_item = await _fetch_fresh_task_history(session, queue_item_id)
     return await _parse_check_result(session, fresh_queue_item)
+
+
+async def _build_timeout_response(
+    session: AsyncSession,
+    task_history_id: int,
+    *,
+    provisioning: bool,
+    connect_timeout: int,
+) -> ConnectivityCheckResponse:
+    """Build a timeout :class:`ConnectivityCheckResponse` with any captured output.
+
+    Distinguish a provisioning timeout (the payload never emitted
+    ``CONNECT_PHASE_MARKER``, so the DB connect never started) from a connect
+    timeout (the connect phase began but did not complete) so operators can tell
+    provisioning latency apart from an unreachable DB. Surface any ``run-script``
+    output captured before the timeout instead of discarding it,
+    while still carrying ``task_history_id`` so the GUI can link the full
+    run-script log.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param task_history_id: The ID of the timed-out check task.
+    :type task_history_id: int
+    :param provisioning: Whether the connect phase never started (provisioning
+        timeout) rather than began but stalled (connect timeout) at timeout.
+    :type provisioning: bool
+    :param connect_timeout: The connect budget in seconds (``request.timeout``).
+    :type connect_timeout: int
+    :return: A failure response with a descriptive error and ``task_history_id``.
+    :rtype: ConnectivityCheckResponse
+    """
+    if provisioning:
+        message = (
+            f"Connectivity check timed out after {PROVISIONING_TIMEOUT}s "
+            "waiting for the execution host to provision"
+        )
+    else:
+        message = f"Connectivity check timed out after {connect_timeout}s"
+
+    output = await _collect_run_script_output(session, task_history_id)
+    error = f"{message}\n\n{output}" if output else message
+    return ConnectivityCheckResponse(
+        success=False,
+        error=error,
+        task_history_id=task_history_id,
+    )
+
+
+async def _collect_run_script_output(
+    session: AsyncSession, task_history_id: int
+) -> str:
+    """Return the concatenated ``run-script`` stdout/stderr captured so far.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param task_history_id: The ID of the task history row to read.
+    :type task_history_id: int
+    :return: The concatenated run-script output, or an empty string if none.
+    :rtype: str
+    """
+    task_history = await _expire_and_fetch(session, task_history_id)
+    chunks = [
+        log.msg async for log in _iter_run_script_logs(session, task_history) if log.msg
+    ]
+    return _strip_marker("".join(chunks))
+
+
+def _strip_marker(text: str) -> str:
+    """Return ``text`` with any line equal to :data:`CONNECT_PHASE_MARKER` removed.
+
+    The connect-phase marker is an internal provisioning/connect boundary
+    signal; it must never leak into operator-facing error output.
+
+    :param text: The raw run-script output to clean.
+    :type text: str
+    :return: ``text`` without standalone marker lines.
+    :rtype: str
+    """
+    return "\n".join(
+        line for line in text.splitlines() if line.strip() != CONNECT_PHASE_MARKER
+    )
+
+
+async def _connect_phase_started(
+    session: AsyncSession, task_history: TaskHistory
+) -> bool:
+    """Return whether the payload has emitted :data:`CONNECT_PHASE_MARKER`.
+
+    ``payload.py`` flushes the marker to ``run-script`` stderr immediately
+    before the DB connect, so its presence marks the boundary between the
+    provisioning phase and the connect phase. Only stderr is scanned
+    so a marker echoed on stdout cannot trip the latch and corrupt the pure-JSON
+    stdout result contract.
+
+    :param session: The async database session.
+    :type session: AsyncSession
+    :param task_history: The task history row being inspected.
+    :type task_history: TaskHistory
+    :return: ``True`` once the marker appears in run-script stderr.
+    :rtype: bool
+    """
+    async for log in _iter_run_script_logs(session, task_history):
+        if (
+            log.type == TaskLogType.STDERR
+            and log.msg
+            and CONNECT_PHASE_MARKER in log.msg
+        ):
+            return True
+    return False
 
 
 async def _fetch_fresh_task_history(
@@ -352,6 +485,7 @@ async def _parse_check_result(
         async for log in _iter_run_script_logs(session, task_history):
             if log.type == TaskLogType.STDERR:
                 stderr += log.msg or ""
+        stderr = _strip_marker(stderr).strip()
         return ConnectivityCheckResponse(
             success=False,
             error=stderr or "Task failed",

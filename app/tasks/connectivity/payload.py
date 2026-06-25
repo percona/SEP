@@ -24,6 +24,22 @@ import contextlib
 import json
 import sys
 
+#: Inner per-driver DB connect timeout (seconds). Defined here (not imported
+#: from ``app.tasks.connectivity.constants``) because this script runs
+#: standalone on a Nomad client with no access to the ``app`` package. Must
+#: stay strictly less than ``CONNECTIVITY_CHECK_TIMEOUT`` (the outer connect
+#: budget; a test enforces this) so the inner connect completes inside the
+#: outer window.
+CONNECT_TIMEOUT = 10
+
+#: Sentinel flushed to stderr right before the DB connect so the Tasks poll
+#: loop can tell the provisioning phase from the connect phase. Must match
+#: ``CONNECT_PHASE_MARKER`` in ``app.tasks.connectivity.constants`` — duplicated
+#: here because this script runs standalone with no access to the ``app``
+#: package; a test keeps them in sync. On stderr (not stdout) so stdout stays
+#: pure JSON for the result parser.
+CONNECT_PHASE_MARKER = "__SEP_CONNECTIVITY_CONNECT_START__"
+
 
 def check_mysql(host: str, port: int) -> dict[str, bool | str]:
     """Check MySQL connectivity via ``SELECT 1``.
@@ -43,7 +59,7 @@ def check_mysql(host: str, port: int) -> dict[str, bool | str]:
     import myloginpath
     import pymysql
 
-    connect_kwargs = {"host": host, "port": port, "connect_timeout": 10}
+    connect_kwargs = {"host": host, "port": port, "connect_timeout": CONNECT_TIMEOUT}
     with contextlib.suppress(Exception):
         login = myloginpath.parse("client")
         connect_kwargs["user"] = login.get("user")
@@ -84,7 +100,7 @@ def check_postgresql(host: str, port: int) -> dict[str, bool | str]:
     import psycopg2
 
     try:
-        conn = psycopg2.connect(host=host, port=port, connect_timeout=10)
+        conn = psycopg2.connect(host=host, port=port, connect_timeout=CONNECT_TIMEOUT)
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT 1")
@@ -119,7 +135,7 @@ def check_mongodb(host: str, port: int) -> dict[str, bool | str]:
 
     try:
         client = pymongo.MongoClient(
-            host=host, port=port, serverSelectionTimeoutMS=10000
+            host=host, port=port, serverSelectionTimeoutMS=CONNECT_TIMEOUT * 1000
         )
         try:
             client.admin.command("ping")
@@ -154,6 +170,10 @@ def main() -> None:
     with open(args.config) as config_file:
         config = json.load(config_file)
     checker = CHECKERS[config["service_type"]]
+    # Mark the provisioning -> connect boundary. Everything up to here (Nomad
+    # scheduling, run-python startup, dependency install) is provisioning; the
+    # driver import and connect happen inside ``checker``.
+    print(CONNECT_PHASE_MARKER, file=sys.stderr, flush=True)
     result = checker(config["host"], config["port"])
     json.dump(result, sys.stdout)
 

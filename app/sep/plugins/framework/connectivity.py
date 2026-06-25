@@ -52,11 +52,17 @@ class ConnectivityWarning(BaseModel):
     :type service_type: str
     :param message: A human-readable description of the failure.
     :type message: str
+    :param task_history_id: The run-script task-history id whose log explains
+        the failure, or ``None`` when no task was created (e.g. the Tasks API
+        was unreachable). Optional for backward compatibility with existing
+        plugin consumers.
+    :type task_history_id: int | None
     """
 
     target: str
     service_type: str
     message: str
+    task_history_id: int | None = None
 
 
 async def record_connectivity_warning(
@@ -89,7 +95,7 @@ async def record_connectivity_warning(
     :return: ``None`` on success or a populated ``ConnectivityWarning`` on failure.
     :rtype: ConnectivityWarning | None
     """
-    success, error = await _fetch_connectivity_result(
+    success, error, task_history_id = await _fetch_connectivity_result(
         tasks_api, target, host, port, service_type
     )
     _record_latest_result(target, service_type, success=success)
@@ -99,6 +105,7 @@ async def record_connectivity_warning(
         target=target,
         service_type=service_type,
         message=error or _CONNECTIVITY_CHECK_FAILED_FALLBACK,
+        task_history_id=task_history_id,
     )
 
 
