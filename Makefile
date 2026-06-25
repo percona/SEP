@@ -178,6 +178,15 @@ checkmigrations: migrate
 test: venv
 	@$(DARWIN_DYLD) PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
 
+# Regenerate every derived API/form contract from the live app in one pass:
+# the route GET /schema + OpenAPI snapshot goldens, the synthetic form-DSL
+# goldens, the frontend OpenAPI spec, and the generated TS client. Run after
+# changing an app form model, review the diff, then commit.
+regen-specs: venv
+	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/plugins/framework/test_form_dsl_golden.py
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/dump_openapi.py
+	@cd frontend && pnpm --filter @sep/api codegen && pnpm --filter @sep/api exec oxfmt --write src/generated
+
 changelog-add:
 ifndef TICKET
 	$(error TICKET is required. Usage: make changelog-add TICKET=SEP-XXX SECTION=added MSG="description")
@@ -252,4 +261,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
