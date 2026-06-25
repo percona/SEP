@@ -34,6 +34,9 @@ from fastapi import APIRouter, Depends
 from app.sep.api.routes.app_info import router as app_info_router
 from app.sep.api.routes.app_state import router as app_state_router
 from app.sep.api.routes.apps import router as apps_router
+from app.sep.api.routes.connectivity_check import (
+    router as connectivity_check_router,
+)
 from app.sep.api.routes.dashboard import router as dashboard_router
 from app.sep.api.routes.hosts import router as hosts_router
 from app.sep.api.routes.periodic_tasks import router as periodic_tasks_router
@@ -102,6 +105,12 @@ api_router.include_router(
     prefix="/sep/periodic-tasks",
     tags=["sep"],
     dependencies=[RequireBearerForUnsafeMethods],
+)
+api_router.include_router(
+    connectivity_check_router,
+    prefix="/sep/admin/connectivity-check",
+    tags=["sep"],
+    dependencies=[IsApiAdmin, RequireBearerForUnsafeMethods],
 )
 api_router.include_router(
     app_state_router,

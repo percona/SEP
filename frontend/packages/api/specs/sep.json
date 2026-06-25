@@ -3806,6 +3806,58 @@
         "title": "ColumnFormat",
         "type": "string"
       },
+      "ConnectivityResult": {
+        "description": "Represent the outcome of probing a single external / inter-service endpoint.\n\n:param service: Stable identifier of the probed service (e.g. ``\"pmm\"``).\n:type service: str\n:param reachable: ``True`` only when the endpoint answered successfully.\n:type reachable: bool\n:param status: Machine-readable outcome state.\n:type status: ConnectivityStatusEnum\n:param detail: Human-readable status / error, free of secrets.\n:type detail: str\n:param version: Optional remote version string when the probe exposes one.\n:type version: str | None",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "reachable": {
+            "title": "Reachable",
+            "type": "boolean"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ConnectivityStatusEnum"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "service",
+          "reachable",
+          "status",
+          "detail"
+        ],
+        "title": "ConnectivityResult",
+        "type": "object"
+      },
+      "ConnectivityStatusEnum": {
+        "description": "Enumerate the mutually-exclusive outcomes of a connectivity probe.",
+        "enum": [
+          "reachable",
+          "auth_failed",
+          "error",
+          "unreachable",
+          "ssl_error",
+          "timeout"
+        ],
+        "title": "ConnectivityStatusEnum",
+        "type": "string"
+      },
       "ConnectivityWarning": {
         "description": "Represent a connectivity-check failure on a JSON API task-creation response.\n\n:param target: The Nomad node the task targets.\n:type target: str\n:param service_type: The lowercase database service type (e.g. ``mysql``).\n:type service_type: str\n:param message: A human-readable description of the failure.\n:type message: str",
         "properties": {
@@ -17013,6 +17065,32 @@
         "summary": "Tasks Api Detail",
         "tags": [
           "tasks"
+        ]
+      }
+    },
+    "/api/sep/admin/connectivity-check/": {
+      "post": {
+        "description": "Probe every configured external / inter-service endpoint and report status.\n\nRun the PMM, Inventory, and Tasks/Nomad probes concurrently. Each is\nisolated: one endpoint's failure is classified independently and never fails\nthe whole response, which always returns ``200`` with one entry per service\n(``pmm``, ``inventory``, ``tasks``, ``nomad``).\n\n:param pmm_api: The PMM client dependency, or ``None`` when unconfigured.\n:type pmm_api: PMMAPIDep\n:param inventory_api: The authenticated Inventory API client.\n:type inventory_api: InventoryAPI\n:param tasks_api: The authenticated Tasks API client.\n:type tasks_api: TaskAPI\n:return: One normalized connectivity result per service.\n:rtype: list[ConnectivityResult]",
+        "operationId": "sep_check_connectivity_api_sep_admin_connectivity_check__post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConnectivityResult"
+                  },
+                  "title": "Response Sep Check Connectivity Api Sep Admin Connectivity Check  Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Check Connectivity",
+        "tags": [
+          "sep"
         ]
       }
     },

@@ -15,6 +15,7 @@
 
 """PMM API client for interacting with the PMM inventory system."""
 
+import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Callable
@@ -26,6 +27,13 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from app.core.requests import RemoteAPI
+from app.core.requests.connectivity import (
+    build_connectivity_result,
+    classify_connectivity_error,
+    ConnectivityResult,
+    ConnectivityStatusEnum,
+    PROBE_TIMEOUT_SECONDS,
+)
 from app.core.utils.dict import remove_falsy_values_from_dict
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import SourceEnum
@@ -264,6 +272,44 @@ class PMMRemoteAPI(RemoteAPI):
         """
         version_data = await self.get("/v1/version")
         return version_data["version"]
+
+    async def check_connectivity(
+        self,
+        service: str,
+        *,
+        path: str | None = None,  # noqa: ARG002 -- fixed /v1/version route
+    ) -> ConnectivityResult:
+        """Probe PMM by reusing :meth:`get_version` against ``/v1/version``.
+
+        Override the generic probe so a successful check also reports the PMM
+        version. ``path`` is accepted for signature compatibility but ignored:
+        the version route is fixed. A response with an unexpected body shape
+        (missing ``version`` key) still counts as reachable -- the server
+        answered -- just without a version. All other failures are classified
+        into the same outcome states as the base probe and never re-raised.
+
+        :param service: Stable identifier of the probed service (``"pmm"``).
+        :type service: str
+        :param path: Ignored; accepted for signature compatibility.
+        :type path: str | None
+        :return: The normalized connectivity result, with ``version`` set on
+            success.
+        :rtype: ConnectivityResult
+        """
+        try:
+            async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
+                version = await self.get_version()
+        except (KeyError, TypeError):
+            return build_connectivity_result(
+                service,
+                ConnectivityStatusEnum.REACHABLE,
+                detail="Reachable (version unavailable).",
+            )
+        except Exception as exc:  # noqa: BLE001 -- classified, never re-raised
+            return build_connectivity_result(service, classify_connectivity_error(exc))
+        return build_connectivity_result(
+            service, ConnectivityStatusEnum.REACHABLE, version=version
+        )
 
     async def get_node(
         self,
