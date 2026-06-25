@@ -17,7 +17,7 @@
 
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { apiClient, type PluginSchema } from '@sep/api';
@@ -192,6 +192,43 @@ describe('InventoryPlugin', () => {
     expect(scheduleButtons).toHaveLength(1);
     expect(screen.getByTestId('inv-schedule-link')).toBeInTheDocument();
     expect(screen.queryByTestId('plugin-schedule-link')).not.toBeInTheDocument();
+  });
+
+  describe('target hosts view', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('shows a Target hosts navigation button on the nodes list', async () => {
+      renderWithProviders(
+        <InventoryPlugin mockSchema={mockSchema} mockEntityItems={{ nodes: [] }} />,
+      );
+      expect(await screen.findByTestId('inv-target-hosts-link')).toBeInTheDocument();
+    });
+
+    it('navigates to the target-hosts view, rendering its table and breadcrumb', async () => {
+      vi.spyOn(apiClient, 'get').mockResolvedValue({
+        data: [{ id: 'nomad-1', name: 'host-a', address: '10.0.0.9' }],
+      } as never);
+
+      const { router } = renderWithProviders(
+        <InventoryPlugin mockSchema={mockSchema} mockEntityItems={{ nodes: [] }} />,
+      );
+
+      fireEvent.click(await screen.findByTestId('inv-target-hosts-link'));
+
+      await waitFor(() => {
+        expect(router.state.location.pathname).toBe('/inventory/target-hosts');
+      });
+
+      expect(await screen.findByRole('heading', { name: 'Target Hosts' })).toBeInTheDocument();
+      expect(await screen.findByText('host-a')).toBeInTheDocument();
+      expect(screen.getByText('10.0.0.9')).toBeInTheDocument();
+
+      const crumbs = screen.getByLabelText('Inventory breadcrumb');
+      expect(within(crumbs).getByText('Target hosts')).toBeInTheDocument();
+      expect(within(crumbs).getByRole('link', { name: 'Inventory' })).toBeInTheDocument();
+    });
   });
 
   describe('nested routes and SQL/JSON detail highlights', () => {
