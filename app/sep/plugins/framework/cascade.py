@@ -409,13 +409,10 @@ def build_predecessor_chain_execute_body(
     ``False``).
 
     :param parent_name: The parent task name.
-    :type parent_name: str
     :param predecessor_specs: Ordered predecessor specs (same order as
         :func:`cascade_create_predecessors`).
-    :type predecessor_specs: Sequence[ChainedPredecessor]
     :return: A dict with ``chain_task_names`` and ``chain_on_failure`` ready
         for the tasks sub-app execute endpoint.
-    :rtype: dict[str, Any]
     :raises ValueError: When ``predecessor_specs`` is empty.
     """
     if not predecessor_specs:
