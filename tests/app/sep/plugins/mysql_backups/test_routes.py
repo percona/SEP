@@ -297,6 +297,8 @@ def test_backups_detail(
         f"<title>Backups - {created_task.name} — Services Enablement Platform</title>"
         in response.text
     )
+    assert f"/mysql_backups/{created_task.name}/delete" in response.text
+    assert f"/tasks/{created_task.name}/delete" not in response.text
 
     mock_task_api_dep.get.assert_any_call(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_call(

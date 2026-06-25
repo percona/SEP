@@ -183,10 +183,18 @@ class ServiceRef:
     :param allow_custom: When ``True``, the field accepts a free-typed value
         alongside the inventory options and emits ``allow_custom`` on the wire.
         Defaults to ``False``.
+    :param check_connectivity: When ``True``, the create route runs its
+        post-creation connectivity probe against this service, and the service is
+        selected as the envelope's primary (``_service_name``, the connectivity
+        meta, and the executor-target fallback) even when a second ``ServiceRef``
+        resolves. A model declares at most one ``check_connectivity`` service;
+        when none is marked the sole ``ServiceRef`` is the primary and no probe
+        runs. Defaults to ``False``.
     """
 
     service_types: tuple[ServiceTypeEnum, ...]
     allow_custom: bool = False
+    check_connectivity: bool = False
 
     def __post_init__(self) -> None:
         """Normalise ``service_types`` to a tuple so the marker stays hashable."""

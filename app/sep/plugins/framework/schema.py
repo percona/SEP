@@ -1008,6 +1008,26 @@ def _declared_field_names_from_forms(forms: list[FormSection]) -> set[str]:
     return names
 
 
+def _one_of_group_names_from_forms(forms: list[FormSection]) -> frozenset[str]:
+    """Return the name of every one-of group declared across ``forms``.
+
+    A one-of group's name is reserved (it must be unique) but is intentionally
+    not a rule-referenceable field — only its discriminator and branch leaves are
+    (see :func:`_declared_field_names_from_forms`). Surfacing the group names lets
+    the reference check explain *why* a group name is rejected instead of falling
+    back to the generic unknown-field error.
+
+    :param forms: The form sections to scan for one-of group declarations.
+    :return: The names of all one-of groups declared across ``forms``.
+    """
+    return frozenset(
+        field.name
+        for section in forms
+        for field in section.fields
+        if isinstance(field, OneOfGroup)
+    )
+
+
 def _register_field_name(
     name: str, global_seen: set[str], duplicates: list[str]
 ) -> None:
@@ -1068,6 +1088,7 @@ def _collect_reference_errors(
     errors: list[str],
     *,
     implicit_self_name: str | None = None,
+    group_field_names: frozenset[str] = frozenset(),
 ) -> None:
     """Append messages to ``errors`` for any unknown or hyphenated rule names.
 
@@ -1088,6 +1109,10 @@ def _collect_reference_errors(
         keep the suffix-less form, since the underlying mistake is the
         same: the field that should exist is missing.
     :type implicit_self_name: str | None
+    :param group_field_names: The names of one-of groups in the form tree. A
+        rule that names one is reported with a targeted hint, since a group is
+        not a rule-referenceable field — a group-presence invariant belongs in
+        a ``@model_validator`` rather than a field rule.
     """
     for name in names:
         if "-" in name:
@@ -1098,6 +1123,14 @@ def _collect_reference_errors(
             )
             continue
         if name not in declared_field_names:
+            if name in group_field_names:
+                errors.append(
+                    f"{scope_path} references one-of group field {name!r}; a "
+                    "one-of group is not a rule-referenceable field (only its "
+                    "discriminator and branch fields are). Enforce a "
+                    "group-presence invariant with a @model_validator instead."
+                )
+                continue
             suffix = (
                 ""
                 if name == implicit_self_name
@@ -1110,12 +1143,19 @@ def _collect_basefield_gate_errors(
     field: "AnyField",
     declared_field_names: set[str],
     errors: list[str],
+    *,
+    group_field_names: frozenset[str] = frozenset(),
 ) -> None:
     """Walk a leaf field's ``requires`` / ``forbidden`` gates (expands one-of branches)."""
     if isinstance(field, OneOfGroup):
         for branch in field.branches:
             for leaf in branch.fields:
-                _collect_basefield_gate_errors(leaf, declared_field_names, errors)
+                _collect_basefield_gate_errors(
+                    leaf,
+                    declared_field_names,
+                    errors,
+                    group_field_names=group_field_names,
+                )
         return
     for primitive in ("requires", "forbidden"):
         for rule_index, gate in enumerate(getattr(field, primitive) or []):
@@ -1126,6 +1166,7 @@ def _collect_basefield_gate_errors(
                 declared_field_names,
                 errors,
                 implicit_self_name=field.name,
+                group_field_names=group_field_names,
             )
 
 
@@ -1134,6 +1175,8 @@ def _collect_section_gate_errors(
     section_label: str,
     declared_field_names: set[str],
     errors: list[str],
+    *,
+    group_field_names: frozenset[str] = frozenset(),
 ) -> None:
     """Walk a ``FormSection``'s ``forbidden`` gates."""
     for rule_index, gate in enumerate(section.forbidden or []):
@@ -1142,6 +1185,7 @@ def _collect_section_gate_errors(
             gate.when.referenced_fields(),
             declared_field_names,
             errors,
+            group_field_names=group_field_names,
         )
 
 
@@ -1150,6 +1194,8 @@ def _collect_cardinality_rule_errors(
     scope_label: str,
     declared_field_names: set[str],
     errors: list[str],
+    *,
+    group_field_names: frozenset[str] = frozenset(),
 ) -> None:
     """Walk a list of :class:`CardinalityRule` instances."""
     for rule_index, rule in enumerate(rules or []):
@@ -1161,6 +1207,7 @@ def _collect_cardinality_rule_errors(
             references,
             declared_field_names,
             errors,
+            group_field_names=group_field_names,
         )
 
 
@@ -1169,6 +1216,8 @@ def _collect_fail_rule_errors(
     scope_label: str,
     declared_field_names: set[str],
     errors: list[str],
+    *,
+    group_field_names: frozenset[str] = frozenset(),
 ) -> None:
     """Walk a list of :class:`FailRule` instances."""
     for rule_index, rule in enumerate(rules or []):
@@ -1178,6 +1227,7 @@ def _collect_fail_rule_errors(
             references,
             declared_field_names,
             errors,
+            group_field_names=group_field_names,
         )
 
 
@@ -1463,6 +1513,7 @@ class PluginSchema(SchemaBaseModel):
         if self.entities:
             for entity_index, entity in enumerate(self.entities):
                 declared_field_names = _declared_field_names_from_forms(entity.forms)
+                group_field_names = _one_of_group_names_from_forms(entity.forms)
                 entity_label = f"PluginEntitySchema[{entity_index}] {entity.name!r}"
                 for section_index, section in enumerate(entity.forms):
                     section_label = (
@@ -1470,53 +1521,93 @@ class PluginSchema(SchemaBaseModel):
                     )
                     for field in section.fields:
                         _collect_basefield_gate_errors(
-                            field, declared_field_names, errors
+                            field,
+                            declared_field_names,
+                            errors,
+                            group_field_names=group_field_names,
                         )
                     _collect_section_gate_errors(
-                        section, section_label, declared_field_names, errors
+                        section,
+                        section_label,
+                        declared_field_names,
+                        errors,
+                        group_field_names=group_field_names,
                     )
                     _collect_cardinality_rule_errors(
                         section.cardinality_rules,
                         section_label,
                         declared_field_names,
                         errors,
+                        group_field_names=group_field_names,
                     )
                     _collect_fail_rule_errors(
-                        section.fail_when, section_label, declared_field_names, errors
+                        section.fail_when,
+                        section_label,
+                        declared_field_names,
+                        errors,
+                        group_field_names=group_field_names,
                     )
                 _collect_cardinality_rule_errors(
                     entity.cardinality_rules,
                     entity_label,
                     declared_field_names,
                     errors,
+                    group_field_names=group_field_names,
                 )
                 _collect_fail_rule_errors(
-                    entity.fail_when, entity_label, declared_field_names, errors
+                    entity.fail_when,
+                    entity_label,
+                    declared_field_names,
+                    errors,
+                    group_field_names=group_field_names,
                 )
         else:
             declared_field_names = _declared_field_names_from_forms(self.forms)
+            group_field_names = _one_of_group_names_from_forms(self.forms)
             for section_index, section in enumerate(self.forms):
                 section_label = f"FormSection[{section_index}] {section.title!r}"
                 for field in section.fields:
-                    _collect_basefield_gate_errors(field, declared_field_names, errors)
+                    _collect_basefield_gate_errors(
+                        field,
+                        declared_field_names,
+                        errors,
+                        group_field_names=group_field_names,
+                    )
                 _collect_section_gate_errors(
-                    section, section_label, declared_field_names, errors
+                    section,
+                    section_label,
+                    declared_field_names,
+                    errors,
+                    group_field_names=group_field_names,
                 )
                 _collect_cardinality_rule_errors(
                     section.cardinality_rules,
                     section_label,
                     declared_field_names,
                     errors,
+                    group_field_names=group_field_names,
                 )
                 _collect_fail_rule_errors(
-                    section.fail_when, section_label, declared_field_names, errors
+                    section.fail_when,
+                    section_label,
+                    declared_field_names,
+                    errors,
+                    group_field_names=group_field_names,
                 )
             schema_label = f"PluginSchema {self.name!r}"
             _collect_cardinality_rule_errors(
-                self.cardinality_rules, schema_label, declared_field_names, errors
+                self.cardinality_rules,
+                schema_label,
+                declared_field_names,
+                errors,
+                group_field_names=group_field_names,
             )
             _collect_fail_rule_errors(
-                self.fail_when, schema_label, declared_field_names, errors
+                self.fail_when,
+                schema_label,
+                declared_field_names,
+                errors,
+                group_field_names=group_field_names,
             )
         if errors:
             raise ValueError("; ".join(errors))
