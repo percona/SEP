@@ -40,7 +40,7 @@ export function getStoredForm(
     return undefined;
   }
   const stored = (data as Record<string, unknown>)[STORED_FORM_KEY];
-  if (!stored || typeof stored !== 'object') {
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
     return undefined;
   }
   return stored as Record<string, unknown>;

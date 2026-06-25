@@ -48,13 +48,15 @@ from app.sep.plugins.framework.form_dsl import (
 from app.sep.plugins.framework.spec import (
     assemble_envelope,
     build_command_args,
+    RESERVED_FORM_KEY,
     resolve_refs,
     ResolvedEntities,
     RunCommandSpec,
     RunPythonSpec,
+    stamp_form_input,
     validate_arg_formats,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
@@ -829,3 +831,46 @@ class TestDerivedArgFormat:
     def test_validate_accepts_templateless_markers(self) -> None:
         """Accept templateless markers on both bool and non-bool fields."""
         validate_arg_formats(_DefaultArgForm)
+
+
+class _StampForm(AppFormModel):
+    """Minimal create form for the reserved-key stamp unit tests."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+
+
+class TestStampFormInput:
+    """Cover the reserved-key stamp written onto the task envelope ``data``."""
+
+    @staticmethod
+    def _envelope() -> TaskWrite:
+        """Build a run-command envelope to stamp the create form onto."""
+        service = _service(
+            address="db-host",
+            service_type=ServiceTypeEnum.MYSQL,
+            name="svc-1",
+            port=3306,
+        )
+        return assemble_envelope(
+            RunCommandSpec(command="cmd", args=""),
+            ResolvedEntities(service=service, entities={}),
+            name="task-1",
+            owner=TaskOwner.CHECKSUMS,
+        )
+
+    def test_stamps_dumped_form_under_reserved_key(self) -> None:
+        """Write the JSON-mode form dump onto the reserved ``data`` key."""
+        write = self._envelope()
+        form = _StampForm(task_name="task-1")
+
+        stamp_form_input(write, form)
+
+        assert write.data[RESERVED_FORM_KEY] == form.model_dump(mode="json")
+
+    def test_raises_when_reserved_key_already_present(self) -> None:
+        """Fail fast rather than silently overwrite a key a spec builder set."""
+        write = self._envelope()
+        write.data[RESERVED_FORM_KEY] = {"prior": True}
+
+        with pytest.raises(ValueError, match="reserved key"):
+            stamp_form_input(write, _StampForm(task_name="task-1"))

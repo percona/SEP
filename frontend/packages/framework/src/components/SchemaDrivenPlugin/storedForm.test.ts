@@ -41,4 +41,11 @@ describe('getStoredForm', () => {
     expect(getStoredForm({ name: 't', data: { [STORED_FORM_KEY]: 'nope' } })).toBeUndefined();
     expect(getStoredForm({ name: 't', data: { [STORED_FORM_KEY]: null } })).toBeUndefined();
   });
+
+  it('returns undefined when _form is an array', () => {
+    expect(getStoredForm({ name: 't', data: { [STORED_FORM_KEY]: [] } })).toBeUndefined();
+    expect(
+      getStoredForm({ name: 't', data: { [STORED_FORM_KEY]: [{ task_name: 't' }] } }),
+    ).toBeUndefined();
+  });
 });

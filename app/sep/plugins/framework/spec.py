@@ -426,7 +426,15 @@ def stamp_form_input(write: TaskWrite, form: AppFormModel) -> None:
 
     :param write: The assembled task envelope whose ``data`` carries the stamp.
     :param form: The validated create-form instance to persist.
+    :raises ValueError: When ``write.data`` already carries the reserved key,
+        which means a spec builder populated it; stamping would silently
+        overwrite that app-provided data.
     """
+    if RESERVED_FORM_KEY in write.data:
+        raise ValueError(
+            f"task envelope data already carries the reserved key "
+            f"{RESERVED_FORM_KEY!r}; a spec builder must not populate it"
+        )
     write.data[RESERVED_FORM_KEY] = form.model_dump(mode="json")
 
 
