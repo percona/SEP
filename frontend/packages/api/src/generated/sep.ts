@@ -6149,7 +6149,11 @@ export interface components {
      *         runs.
      *     :param id: The task's unique identifier.
      *     :param backend: The backend worker/engine executing the task.
-     *     :param data: The raw configuration and parameters used for execution.
+     *     :param data: The raw configuration and parameters used for execution. Tasks
+     *         created through the JSON schema-driven path also carry a reserved additive
+     *         ``_form`` key holding the verbatim, validated create-form body for
+     *         prefilling an edit form; it is absent for tasks created through a legacy
+     *         form, so consumers must treat it as optional.
      *     :param protected: Whether the task is protected from deletion or modification.
      *     :param alert_on_fail: Whether a notification is sent on task failure.
      *     :param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls

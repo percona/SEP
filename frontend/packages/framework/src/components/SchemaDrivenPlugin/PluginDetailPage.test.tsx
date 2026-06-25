@@ -868,6 +868,37 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
   });
 });
 
+describe('PluginDetailPage — Edit affordance', () => {
+  it('enables Edit and links to the edit route when the task has a stored form', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        data: { _form: { task_name: 'FECHK' } },
+      },
+      isLoading: false,
+    });
+
+    renderAt('/plugins/checksums/task/FECHK');
+
+    const edit = screen.getByTestId('plugin-task-edit');
+    expect(edit).not.toBeDisabled();
+    expect(edit).toHaveAttribute('href', '/plugins/checksums/task/FECHK/edit');
+  });
+
+  it('disables Edit for a task with no stored form (legacy or legacy-form-created)', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed', data: { meta: {} } },
+      isLoading: false,
+    });
+
+    renderAt('/plugins/checksums/task/FECHK');
+
+    expect(screen.getByTestId('plugin-task-edit')).toBeDisabled();
+  });
+});
+
 describe('PluginDetailPage delete flow', () => {
   it('confirms then calls delete mutation and navigates to list on success', async () => {
     mockDeleteMutate.mockReset();

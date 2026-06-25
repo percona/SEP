@@ -97,6 +97,7 @@ class MockTaskAPI:
         self._ids = count(1)
         self.create_count = 0
         self.last_create_payload: dict[str, Any] | None = None
+        self.last_update_payload: dict[str, Any] | None = None
 
     def seed_task(
         self,
@@ -175,6 +176,7 @@ class MockTaskAPI:
         name = path.lstrip("/")
         if name not in self._tasks:
             raise HTTPNotFoundException
+        self.last_update_payload = json
         self._tasks[name].update(json or {})
         return self._tasks[name]
 
