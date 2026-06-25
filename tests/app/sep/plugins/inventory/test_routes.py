@@ -128,8 +128,8 @@ def test_node_list(test_client, mock_inventory_api_dep, mock_task_api_dep):
     mock_task_api_dep.get.assert_any_await("/inventory-sync/periodic/")
 
 
-def test_jinja_sync_route_is_omitted_from_openapi():
-    """Verify legacy Jinja2 ``POST /inventory/sync/`` is excluded from the OpenAPI schema.
+def test_jinja_routes_are_omitted_from_openapi():
+    """Verify legacy inventory Jinja2 routes are excluded from the OpenAPI schema.
 
     The React control consumes the new JSON route at
     ``POST /api/plugins/inventory/sync/``; the Jinja2 trigger remains
@@ -137,8 +137,8 @@ def test_jinja_sync_route_is_omitted_from_openapi():
     surface is JSON-only.
     """
     openapi = sep_app.openapi()
-    sync_ops = openapi["paths"].get("/inventory/sync/", {})
-    assert "post" not in sync_ops
+    assert "/inventory/sync/" not in openapi["paths"]
+    assert "/inventory/" not in openapi["paths"]
 
 
 @pytest.mark.asyncio

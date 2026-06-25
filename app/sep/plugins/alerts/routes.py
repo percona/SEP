@@ -40,9 +40,10 @@ from app.sep.plugins.alerts.deps import (
 )
 from app.sep.plugins.alerts.models import DEFAULT_FOR_DURATION, to_pmm_template_yaml
 from app.sep.plugins.alerts.restore import delete_conflicting_rules, restore_from_backup
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 
