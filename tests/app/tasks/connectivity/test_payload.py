@@ -377,3 +377,98 @@ class TestMain:
             pytest.raises(KeyError),
         ):
             main()
+
+
+class TestConnectTimeoutBudget:
+    """Guard the inner-DB-connect vs outer-connect budget invariant."""
+
+    def test_inner_connect_timeout_strictly_less_than_outer_budget(self):
+        """Verify the inner DB ``connect_timeout`` is below the connect budget.
+
+        If the inner DB ``connect_timeout`` equals the outer connect budget,
+        the inner connect can never complete inside the outer window once any
+        dispatch latency is added, producing a false-negative. The inner
+        timeout must stay strictly less than ``CONNECTIVITY_CHECK_TIMEOUT``.
+        """
+        from app.tasks.connectivity.constants import CONNECTIVITY_CHECK_TIMEOUT
+        from app.tasks.connectivity.payload import CONNECT_TIMEOUT
+
+        assert CONNECT_TIMEOUT < CONNECTIVITY_CHECK_TIMEOUT
+
+    def test_each_driver_uses_the_shared_connect_timeout_constant(
+        self, mock_myloginpath, mock_pymysql, mock_psycopg2, mock_pymongo
+    ):
+        """Verify every driver sources its timeout from ``CONNECT_TIMEOUT``.
+
+        A future edit must not be able to reintroduce a per-driver literal that
+        drifts from the shared constant.
+        """
+        from app.tasks.connectivity.payload import (
+            check_mongodb,
+            check_mysql,
+            check_postgresql,
+            CONNECT_TIMEOUT,
+        )
+
+        mock_myloginpath.parse.return_value = {}
+        check_mysql("db-host", 3306)
+        assert (
+            mock_pymysql.connect.call_args.kwargs["connect_timeout"] == CONNECT_TIMEOUT
+        )
+
+        check_postgresql("db-host", 5432)
+        assert (
+            mock_psycopg2.connect.call_args.kwargs["connect_timeout"] == CONNECT_TIMEOUT
+        )
+
+        check_mongodb("db-host", 27017)
+        assert (
+            mock_pymongo.MongoClient.call_args.kwargs["serverSelectionTimeoutMS"]
+            == CONNECT_TIMEOUT * 1000
+        )
+
+
+class TestConnectPhaseMarker:
+    """Guard the provisioning/connect boundary marker."""
+
+    def test_marker_matches_the_shared_constant(self):
+        """Verify the payload marker matches ``constants.CONNECT_PHASE_MARKER``.
+
+        ``payload.py`` runs standalone on a Nomad client and cannot import the
+        ``app`` package, so it re-declares the literal. The Tasks poll loop
+        scans for the constant version, so the two must never drift.
+        """
+        from app.tasks.connectivity import constants, payload
+
+        assert payload.CONNECT_PHASE_MARKER == constants.CONNECT_PHASE_MARKER
+
+    def test_main_emits_marker_to_stderr_keeping_stdout_pure_json(
+        self, tmp_path, capsys, mock_myloginpath, mock_pymysql
+    ):
+        """Verify ``main`` flushes the marker to stderr and leaves stdout pure JSON.
+
+        The Tasks poll loop detects the connect phase via the stderr marker;
+        stdout must remain a single JSON document so ``_parse_check_result``'s
+        ``json.loads`` keeps working.
+        """
+        from app.tasks.connectivity.payload import CONNECT_PHASE_MARKER, main
+
+        mock_myloginpath.parse.return_value = {}
+        mock_conn = MagicMock()
+        mock_pymysql.connect.return_value = mock_conn
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        config_path = tmp_path / "script_config"
+        config_path.write_text(
+            json.dumps({"service_type": "mysql", "host": "db-host", "port": 3306})
+        )
+
+        with patch("sys.argv", ["payload.py", "--config", str(config_path)]):
+            main()
+
+        captured = capsys.readouterr()
+        assert CONNECT_PHASE_MARKER in captured.err
+        assert CONNECT_PHASE_MARKER not in captured.out
+        assert json.loads(captured.out) == {"success": True}

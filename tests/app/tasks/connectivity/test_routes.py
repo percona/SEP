@@ -25,6 +25,7 @@ from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
 from app.core.db.utils import get_async_session_maker_from_engine
+from app.tasks.connectivity.constants import CONNECT_PHASE_MARKER
 from app.tasks.connectivity.models import (
     ConnectivityCheckResponse,
     ConnectivityServiceType,
@@ -47,6 +48,11 @@ from tests.app.factories import TaskFactory
 
 MOCK_TASK_HISTORY_ID = 42
 MIN_POLL_ITERATIONS = 2
+#: ``sync_task_history`` call on which the fake executor flushes
+#: ``CONNECT_PHASE_MARKER``. Chosen so the marker arrives only after several
+#: provisioning polls have elapsed — more than the small connect budget the
+#: facet-(a) test grants — proving provisioning time is not charged to it.
+MARKER_EMIT_POLL = 4
 
 
 @pytest.fixture(autouse=True)
@@ -337,6 +343,260 @@ class TestConnectivityCheckEndpointRealSession:
         assert data["success"] is True
         assert data["error"] is None
         assert call_count["n"] >= MIN_POLL_ITERATIONS
+        assert await TaskHistoryLogManager.exists_for_task(
+            session, data["task_history_id"]
+        )
+
+    async def test_provisioning_latency_does_not_false_negative_over_http(
+        self,
+        regular_user,
+        session: AsyncSession,
+        mock_executor: MagicMock,
+    ):
+        """Verify a slow-to-provision but reachable DB returns success over HTTP.
+
+        The two-phase budget regression, exercised end-to-end through the route:
+        the fake executor holds the task RUNNING with no marker across several
+        provisioning polls, then flushes ``CONNECT_PHASE_MARKER`` to stderr and a
+        ``{"success": true}`` stdout chunk. The POST grants a deliberately small
+        connect budget (``POLL_INTERVAL * 2``) that the provisioning polls exceed.
+        A pre-fix single-budget loop would have timed out before the connect even
+        started; the decoupled budget must still return ``success=True``.
+        """
+        test_session_maker = get_async_session_maker_from_engine(session.bind)
+
+        task_write = TaskWrite.model_validate(
+            TaskFactory.build(
+                name="run-python",
+                backend=TaskBackendEnum.NOMAD,
+                is_template=False,
+                protected=False,
+                alert_on_fail=False,
+            )
+        )
+        await TaskManager.create(session, task_write)
+
+        tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
+        tasks_app.dependency_overrides[get_session] = lambda: session
+        tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
+
+        marker_bytes = (CONNECT_PHASE_MARKER + "\n").encode()
+        stdout_bytes = b'{"success": true}'
+        connect_budget = POLL_INTERVAL * 2
+        call_count = {"n": 0}
+
+        async def real_dispatch(
+            queue_item: TaskHistory, db: AsyncSession
+        ) -> TaskHistory:
+            queue_item.status = TaskHistoryStatusEnum.RUNNING
+            queue_item.execution_request.tracking.update(
+                evaluation_id="eval-1", job_id="job-1"
+            )
+            saved = await TaskHistoryManager.save(
+                db, queue_item, flag_modified_fields=["execution_request"]
+            )
+            await db.refresh(saved)
+            return saved
+
+        async def sync_task_history(
+            queue_item: TaskHistory,
+            writer_session: AsyncSession | None = None,
+        ) -> TaskHistory:
+            call_count["n"] += 1
+            assert writer_session is not None
+            n = call_count["n"]
+            if n < MARKER_EMIT_POLL:
+                # Provisioning: still RUNNING, marker not yet emitted.
+                return queue_item
+            if n == MARKER_EMIT_POLL:
+                await TaskHistoryLogWriter.append(
+                    writer_session,
+                    queue_item.id,
+                    source="run-script",
+                    stream=TaskLogType.STDERR,
+                    new_bytes=marker_bytes,
+                    force_flush=True,
+                    producer_offset_after=len(marker_bytes),
+                )
+                return queue_item
+            await TaskHistoryLogWriter.append(
+                writer_session,
+                queue_item.id,
+                source="run-script",
+                stream=TaskLogType.STDOUT,
+                new_bytes=stdout_bytes,
+                force_flush=True,
+                producer_offset_after=len(stdout_bytes),
+            )
+            queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            return queue_item
+
+        fake_service_executor = MagicMock(spec=BaseExecutor)
+        fake_service_executor.sync_task_history = sync_task_history
+
+        try:
+            with (
+                patch(
+                    "app.tasks.connectivity.routes.get_executor_for_task",
+                    return_value=mock_executor,
+                ),
+                patch(
+                    "app.tasks.connectivity.service.dispatch_queue_item",
+                    side_effect=real_dispatch,
+                ),
+                patch(
+                    "app.tasks.connectivity.service.get_executor_for_task",
+                    return_value=fake_service_executor,
+                ),
+                patch(
+                    "app.tasks.connectivity.service.get_async_session_maker",
+                    return_value=test_session_maker,
+                ),
+                patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
+            ):
+                transport = ASGITransport(app=tasks_app)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as client:
+                    response = await client.post(
+                        "/connectivity-check/",
+                        json={
+                            "target": "node1",
+                            "host": "db-host",
+                            "port": 3306,
+                            "service_type": ConnectivityServiceType.MYSQL.value,
+                            "timeout": connect_budget,
+                        },
+                    )
+        finally:
+            tasks_app.dependency_overrides = {}
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["error"] is None
+        # Provisioning spanned more polls than the connect budget alone permits,
+        # yet the check still succeeded — the budgets are independent.
+        assert call_count["n"] > connect_budget // POLL_INTERVAL
+        assert await TaskHistoryLogManager.exists_for_task(
+            session, data["task_history_id"]
+        )
+
+    async def test_timeout_surfaces_partial_logs_and_id_over_http(
+        self,
+        regular_user,
+        session: AsyncSession,
+        mock_executor: MagicMock,
+    ):
+        """Verify a timed-out check surfaces partial run-script output over HTTP.
+
+        End-to-end coverage of the diagnostics fix: the fake executor writes a
+        partial run-script chunk (including the connect-phase marker) then never
+        finishes, exhausting the connect budget. The response must carry
+        ``success=False``, the captured ``installing deps...`` output (the marker
+        stripped out), and the ``task_history_id`` whose persisted log the GUI
+        links — the path that previously discarded the captured output.
+        """
+        test_session_maker = get_async_session_maker_from_engine(session.bind)
+
+        task_write = TaskWrite.model_validate(
+            TaskFactory.build(
+                name="run-python",
+                backend=TaskBackendEnum.NOMAD,
+                is_template=False,
+                protected=False,
+                alert_on_fail=False,
+            )
+        )
+        await TaskManager.create(session, task_write)
+
+        tasks_app.dependency_overrides[get_current_user] = lambda: regular_user
+        tasks_app.dependency_overrides[get_session] = lambda: session
+        tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
+
+        partial_bytes = b"installing deps...\n" + (CONNECT_PHASE_MARKER + "\n").encode()
+        call_count = {"n": 0}
+
+        async def real_dispatch(
+            queue_item: TaskHistory, db: AsyncSession
+        ) -> TaskHistory:
+            queue_item.status = TaskHistoryStatusEnum.RUNNING
+            queue_item.execution_request.tracking.update(
+                evaluation_id="eval-1", job_id="job-1"
+            )
+            saved = await TaskHistoryManager.save(
+                db, queue_item, flag_modified_fields=["execution_request"]
+            )
+            await db.refresh(saved)
+            return saved
+
+        async def sync_task_history(
+            queue_item: TaskHistory,
+            writer_session: AsyncSession | None = None,
+        ) -> TaskHistory:
+            call_count["n"] += 1
+            assert writer_session is not None
+            if call_count["n"] == 1:
+                await TaskHistoryLogWriter.append(
+                    writer_session,
+                    queue_item.id,
+                    source="run-script",
+                    stream=TaskLogType.STDERR,
+                    new_bytes=partial_bytes,
+                    force_flush=True,
+                    producer_offset_after=len(partial_bytes),
+                )
+            # Never flip the status: both phases exhaust and the loop times out.
+            return queue_item
+
+        fake_service_executor = MagicMock(spec=BaseExecutor)
+        fake_service_executor.sync_task_history = sync_task_history
+
+        try:
+            with (
+                patch(
+                    "app.tasks.connectivity.routes.get_executor_for_task",
+                    return_value=mock_executor,
+                ),
+                patch(
+                    "app.tasks.connectivity.service.dispatch_queue_item",
+                    side_effect=real_dispatch,
+                ),
+                patch(
+                    "app.tasks.connectivity.service.get_executor_for_task",
+                    return_value=fake_service_executor,
+                ),
+                patch(
+                    "app.tasks.connectivity.service.get_async_session_maker",
+                    return_value=test_session_maker,
+                ),
+                patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
+            ):
+                transport = ASGITransport(app=tasks_app)
+                async with AsyncClient(
+                    transport=transport, base_url="http://test"
+                ) as client:
+                    response = await client.post(
+                        "/connectivity-check/",
+                        json={
+                            "target": "node1",
+                            "host": "db-host",
+                            "port": 3306,
+                            "service_type": ConnectivityServiceType.MYSQL.value,
+                            "timeout": POLL_INTERVAL * 2,
+                        },
+                    )
+        finally:
+            tasks_app.dependency_overrides = {}
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is False
+        assert "timed out" in data["error"]
+        assert "installing deps..." in data["error"]
+        # The internal provisioning/connect boundary marker must never leak.
+        assert CONNECT_PHASE_MARKER not in data["error"]
+        assert data["task_history_id"] is not None
         assert await TaskHistoryLogManager.exists_for_task(
             session, data["task_history_id"]
         )
