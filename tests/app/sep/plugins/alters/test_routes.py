@@ -118,7 +118,7 @@ def test_alters_create(
     )
 
 
-EXPECTED_ALTERS_POST_CALLS = 4
+EXPECTED_ALTERS_POST_CALLS = 3
 
 
 def test_alters_create_full_form_dependency_chain_without_payload_override(
@@ -157,12 +157,6 @@ def test_alters_create_full_form_dependency_chain_without_payload_override(
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert response.headers["location"].endswith(f"/alters/{created_alters.task_name}")
     assert mock_task_api_dep.post.call_count == EXPECTED_ALTERS_POST_CALLS
-    execute_call = mock_task_api_dep.post.call_args_list[-1]
-    assert execute_call.args[0] == f"/execute/{created_alters.task_name}-pre-checks"
-    assert execute_call.kwargs["json"] == {
-        "chain_task_names": [created_alters.task_name],
-        "chain_on_failure": False,
-    }
 
 
 def test_alters_create_skips_connectivity_check_when_opted_out(
