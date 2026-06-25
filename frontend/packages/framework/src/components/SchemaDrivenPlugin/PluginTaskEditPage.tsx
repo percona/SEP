@@ -25,9 +25,46 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
 import { usePluginTask, useUpdatePluginTask, type PluginSchema } from '@sep/api';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
-import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
+import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/types';
 import type { RenderFormSlot } from './types';
 import { getStoredForm } from './storedForm';
+
+/**
+ * Normalize choice and multi-choice default values so that case differences
+ * between stored enum values (e.g. ``"rsync"`` from Python's StrEnum auto())
+ * and schema choice values (e.g. ``"RSYNC"``) do not produce empty selections.
+ *
+ * For each ``choice`` / ``multi_choice`` field in ``sections``, look up the
+ * stored value(s) case-insensitively against the field's canonical choice
+ * values and replace them with the canonical form. Unrecognised values are
+ * left as-is so the form's own validation surfaces them rather than silently
+ * discarding them.
+ */
+export function normalizeChoiceDefaults(
+  form: Record<string, unknown>,
+  sections: FormSection[],
+): Record<string, unknown> {
+  const out = { ...form };
+  for (const field of flattenSectionFields(sections)) {
+    if (field.type !== 'choice' && field.type !== 'multi_choice') {
+      continue;
+    }
+    const choiceMap = new Map(field.choices.map((c) => [c.value.toLowerCase(), c.value]));
+    const raw = out[field.name];
+    if (field.type === 'multi_choice' && Array.isArray(raw)) {
+      out[field.name] = raw.map((v) => {
+        const canonical = typeof v === 'string' ? choiceMap.get(v.toLowerCase()) : undefined;
+        return canonical ?? v;
+      });
+    } else if (field.type === 'choice' && typeof raw === 'string') {
+      const canonical = choiceMap.get(raw.toLowerCase());
+      if (canonical !== undefined) {
+        out[field.name] = canonical;
+      }
+    }
+  }
+  return out;
+}
 
 /**
  * The create-form field that names the task. It is load-bearing identity — the
@@ -73,6 +110,11 @@ export function PluginTaskEditPage({
         }))
         .filter((section) => section.fields.length > 0),
     [schema.forms],
+  );
+
+  const normalizedDefaults = useMemo(
+    () => (storedForm ? normalizeChoiceDefaults(storedForm, editableSections) : storedForm),
+    [storedForm, editableSections],
   );
 
   const handleSubmit = (data: Record<string, unknown>) => {
@@ -142,7 +184,7 @@ export function PluginTaskEditPage({
         sections: editableSections,
         onSubmit: handleSubmit,
         loading: updateTask.isPending,
-        defaultValues: storedForm,
+        defaultValues: normalizedDefaults,
         capabilities: schema.capabilities,
         renderField,
       }) ?? (
@@ -151,7 +193,7 @@ export function PluginTaskEditPage({
           onSubmit={handleSubmit}
           loading={updateTask.isPending}
           submitLabel="Save"
-          defaultValues={storedForm}
+          defaultValues={normalizedDefaults}
           capabilities={schema.capabilities}
           renderField={renderField}
         />

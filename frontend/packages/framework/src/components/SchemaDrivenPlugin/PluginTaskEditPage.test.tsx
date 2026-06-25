@@ -21,7 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
 import type { PluginSchema } from '@sep/api';
-import { PluginTaskEditPage } from './PluginTaskEditPage';
+import { PluginTaskEditPage, normalizeChoiceDefaults } from './PluginTaskEditPage';
 import type { RenderFormSlot } from './types';
 
 const mockUpdateTaskMutate = vi.fn();
@@ -211,5 +211,128 @@ describe('PluginTaskEditPage', () => {
     await waitFor(() => expect(mockUpdateTaskMutate).toHaveBeenCalledTimes(1));
     const [{ values }] = mockUpdateTaskMutate.mock.calls[0];
     expect(values.alert_on_fail).toBe(true);
+  });
+
+  it('normalizes lowercase multi_choice stored values to match uppercase schema choices', async () => {
+    // Reproduces the mysql_backups 422: model_dump(mode="json") on a StrEnum
+    // with auto() stores lowercase values ("rsync") while schema choices use the
+    // member name ("RSYNC"). The mismatch left the multi-select empty on load,
+    // causing the form to submit upload:[] and the backend to return 422.
+    const uploadSchema: PluginSchema = {
+      pluginName: 'mysql_backups',
+      display_name: 'MySQL Backup',
+      description: 'Test',
+      capabilities: {},
+      list_view: { columns: [{ key: 'name', label: 'Name' }] },
+      forms: [
+        {
+          title: 'Main',
+          fields: [
+            { type: 'string', name: 'task_name', label: 'Task Name' },
+            {
+              type: 'multi_choice',
+              name: 'upload',
+              label: 'Upload',
+              required: true,
+              min_items: 1,
+              choices: [
+                { value: 'RSYNC', label: 'Rsync' },
+                { value: 'S3', label: 'S3' },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as PluginSchema;
+
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'backup1',
+        status: 'completed',
+        // Stored with lowercase "rsync" (Python StrEnum auto() output).
+        data: { _form: { task_name: 'backup1', upload: ['rsync'] } },
+      },
+      isLoading: false,
+    });
+    mockUpdateTaskMutate.mockImplementation((_vars, opts) => opts.onSuccess?.());
+
+    render(
+      <SnackbarProvider>
+        <MemoryRouter initialEntries={['/plugins/mysql_backups/task/backup1/edit']}>
+          <Routes>
+            <Route
+              path="/plugins/:plugin/task/:id/edit"
+              element={<PluginTaskEditPage schema={uploadSchema} pluginName="mysql_backups" />}
+            />
+            <Route path="/plugins/:plugin/task/:id" element={<div>detail page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </SnackbarProvider>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdateTaskMutate).toHaveBeenCalledTimes(1));
+    const [{ values }] = mockUpdateTaskMutate.mock.calls[0];
+    // After normalization, the submitted value must use the canonical "RSYNC",
+    // not the stored "rsync", so the backend accepts the request.
+    expect(values.upload).toEqual(['RSYNC']);
+  });
+});
+
+describe('normalizeChoiceDefaults', () => {
+  const sections = [
+    {
+      title: 'Main',
+      fields: [
+        {
+          type: 'multi_choice' as const,
+          name: 'upload',
+          label: 'Upload',
+          required: true,
+          choices: [
+            { value: 'RSYNC', label: 'Rsync' },
+            { value: 'S3', label: 'S3' },
+          ],
+        },
+        {
+          type: 'choice' as const,
+          name: 'mode',
+          label: 'Mode',
+          required: false,
+          choices: [
+            { value: 'FULL', label: 'Full' },
+            { value: 'INCREMENTAL', label: 'Incremental' },
+          ],
+        },
+        { type: 'string' as const, name: 'title', label: 'Title', required: false },
+      ],
+    },
+  ];
+
+  it('upcases lowercase multi_choice values to canonical schema values', () => {
+    const result = normalizeChoiceDefaults({ upload: ['rsync', 's3'] }, sections);
+    expect(result.upload).toEqual(['RSYNC', 'S3']);
+  });
+
+  it('normalizes a single choice field value', () => {
+    const result = normalizeChoiceDefaults({ mode: 'full' }, sections);
+    expect(result.mode).toBe('FULL');
+  });
+
+  it('leaves non-choice fields untouched', () => {
+    const result = normalizeChoiceDefaults({ title: 'hello' }, sections);
+    expect(result.title).toBe('hello');
+  });
+
+  it('preserves unrecognised values so validation can surface them', () => {
+    const result = normalizeChoiceDefaults({ upload: ['unknown'] }, sections);
+    expect(result.upload).toEqual(['unknown']);
+  });
+
+  it('handles already-canonical values without modification', () => {
+    const result = normalizeChoiceDefaults({ upload: ['RSYNC'] }, sections);
+    expect(result.upload).toEqual(['RSYNC']);
   });
 });
