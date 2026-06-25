@@ -899,6 +899,129 @@ describe('PluginDetailPage — Edit affordance', () => {
   });
 });
 
+describe('PluginDetailPage — connectivity warning', () => {
+  it('renders the warning message', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        connectivity_warning: {
+          target: 'node1',
+          service_type: 'mysql',
+          message: 'Connectivity check timed out after 30s',
+          task_history_id: 555,
+        },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    expect(screen.getByText('Connectivity check timed out after 30s')).toBeInTheDocument();
+  });
+
+  it('offers a log affordance and opens the log viewer when task_history_id is present', async () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        connectivity_warning: {
+          target: 'node1',
+          service_type: 'mysql',
+          message: 'Connectivity check timed out after 30s',
+          task_history_id: 555,
+        },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    const logButton = screen.getByTestId('connectivity-log-button');
+    await userEvent.click(logButton);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/555/)).toBeInTheDocument();
+  });
+
+  it('does not offer a log affordance when task_history_id is absent', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        connectivity_warning: {
+          target: 'node1',
+          service_type: 'mysql',
+          message: 'Could not reach the Tasks API',
+        },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    expect(screen.getByText('Could not reach the Tasks API')).toBeInTheDocument();
+    expect(screen.queryByTestId('connectivity-log-button')).toBeNull();
+  });
+
+  it('renders a warning carried via navigation state when the detail query omits it', async () => {
+    // detail/list response omits connectivity_warning; carried from create
+    // response via router location state.
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+    const warning = {
+      target: 'node1',
+      service_type: 'mysql',
+      message: 'Connectivity check timed out after 30s',
+      task_history_id: 777,
+    };
+
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <SnackbarProvider>
+          <MemoryRouter
+            initialEntries={[
+              {
+                pathname: '/plugins/checksums/task/FECHK',
+                state: { connectivityWarning: warning },
+              },
+            ]}
+          >
+            <Routes>
+              <Route
+                path="/plugins/:plugin/task/:id/*"
+                element={<PluginDetailPage schema={makeSchema({})} pluginName="checksums" />}
+              />
+              <Route path="/plugins/:plugin" element={<div>list page</div>} />
+            </Routes>
+          </MemoryRouter>
+        </SnackbarProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText('Connectivity check timed out after 30s')).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('connectivity-log-button'));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/777/)).toBeInTheDocument();
+  });
+
+  it('shows no warning when neither the detail query nor navigation state has one', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    expect(screen.queryByTestId('connectivity-log-button')).toBeNull();
+  });
+});
+
 describe('PluginDetailPage delete flow', () => {
   it('confirms then calls delete mutation and navigates to list on success', async () => {
     mockDeleteMutate.mockReset();
