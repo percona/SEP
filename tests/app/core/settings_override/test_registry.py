@@ -29,7 +29,6 @@ from app.core.settings_override.registry import (
     hot_field_names,
     is_advanced_field,
     is_hot_reloadable,
-    materialize_fingerprint,
     materialize_template,
     materialize_via_owning_model,
     MaterializerContext,
@@ -114,23 +113,6 @@ def test_materialize_template_rejects_non_string() -> None:
         materialize_template(_ctx(SEPSettings, "FOOTER_TEMPLATE", 1))
 
 
-def test_materialize_fingerprint_returns_diff_stable_dict() -> None:
-    """``materialize_fingerprint`` returns a plain dict equal across two calls."""
-    raw = {"endpoint": "https://nomad.example.org"}
-    first = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
-    second = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
-    assert isinstance(first, dict)
-    assert first == second
-
-
-def test_materialize_fingerprint_preserves_embedded_url_credentials() -> None:
-    """Internal fingerprints retain real URL passwords for live executor use."""
-    raw = {"endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646"}
-    fingerprint = materialize_fingerprint(_ctx(TasksSettings, "NOMAD", raw))
-    assert "nomad-secret" in fingerprint["endpoint"]
-    assert "****" not in fingerprint["endpoint"]
-
-
 def test_preserve_patch_credential_url_value_for_scalar_field() -> None:
     """Scalar credential URL PATCH values restore the stored password when redacted."""
     field = SEPSettings.model_fields["INVENTORY_ENDPOINT"]
@@ -183,12 +165,11 @@ def test_hot_field_names_sep_settings() -> None:
 
 
 def test_hot_field_names_tasks_settings() -> None:
-    """``TasksSettings`` HOT fields include ``NOMAD`` and ``SYNC_LOCK_TTL``."""
+    """``TasksSettings`` HOT fields exclude ``NOMAD`` but include ``SYNC_LOCK_TTL``."""
     assert hot_field_names(TasksSettings) == frozenset(
         {
             "PRE_EXECUTION_CONNECTIVITY_CHECK",
             "STALENESS_THRESHOLD_SECONDS",
-            "NOMAD",
             "SYNC_LOCK_TTL",
         }
     )
@@ -202,14 +183,9 @@ def test_nested_overridable_field_names_sep_settings() -> None:
 
 
 def test_nested_overridable_field_names_tasks_settings() -> None:
-    """``SECURITY_HEADERS`` is the NESTED_ONLY parent on ``TasksSettings``.
-
-    ``NOMAD`` is HOT (whole-object override materializes a config fingerprint
-    that the lifecycle holder rebinds), so it is not in the NESTED_ONLY set even
-    though HOT also accepts per-child overrides.
-    """
+    """``NOMAD`` and ``SECURITY_HEADERS`` are NESTED_ONLY parents on ``TasksSettings``."""
     assert nested_overridable_field_names(TasksSettings) == frozenset(
-        {"SECURITY_HEADERS"}
+        {"NOMAD", "SECURITY_HEADERS"}
     )
 
 

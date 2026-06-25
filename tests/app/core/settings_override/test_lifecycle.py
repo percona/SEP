@@ -20,6 +20,7 @@ from datetime import timedelta
 
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -37,7 +38,10 @@ from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils import json_serializer
 from app.sep.config import SEPSettings
-from app.tasks.config import TasksSettings
+from app.tasks.config import tasks_settings, TasksSettings
+from app.tasks.execution.executors.nomad import NomadExecutor
+from app.tasks.execution.nomad_lifecycle import NomadLifecycle
+from app.tasks.main import _reconcile_nomad, tasks_app
 
 
 @pytest_asyncio.fixture(name="session_maker")
@@ -219,6 +223,31 @@ async def test_start_refresh_task_cancellable(
 
 
 _CALLBACK_KEY = (SettingClassEnum.SEP_SETTINGS, "CONNECTIVITY_CHECK_DEFAULT")
+_NOMAD_CALLBACK_KEY = (SettingClassEnum.TASKS_SETTINGS, "NOMAD")
+_NOMAD_LEAF_TIMEOUT = 30
+
+
+def _make_tasks_proxy_registry() -> tuple[OverridableSettingsProxy, dict]:
+    """Construct the global Tasks proxy and a single-entry registry."""
+    registry = {
+        SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_settings, TasksSettings),
+    }
+    return tasks_settings, registry
+
+
+async def _seed_nomad_timeout_override(
+    session_maker: async_sessionmaker, *, value: int = _NOMAD_LEAF_TIMEOUT
+) -> None:
+    """Insert a ``NOMAD__TIMEOUT`` per-leaf override row."""
+    async with session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.TASKS_SETTINGS,
+                key="NOMAD__TIMEOUT",
+                value=value,
+            ),
+        )
 
 
 async def _seed_connectivity_override(
@@ -234,6 +263,85 @@ async def _seed_connectivity_override(
                 value=value,
             ),
         )
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_nomad_reconcile_stable_under_per_leaf_override(
+    session_maker: async_sessionmaker,
+) -> None:
+    """Record reconcile-churn under an active per-child ``NOMAD`` override.
+
+    A per-leaf override stores a merged
+    ``NomadExecutor`` in the snapshot (not a fingerprint dict). Each
+    ``build_snapshot`` produces a fresh instance, but Pydantic field equality
+    makes consecutive snapshots compare equal, so ``fire_change_callbacks`` does
+    **not** notify ``_reconcile_nomad`` on every cycle when the effective config
+    is unchanged. When a callback does fire,
+    :meth:`NomadLifecycle.reconcile` compares ``model_dump(mode="json")`` and
+    does not rebuild the entered executor.
+    """
+    tasks_settings._set_snapshot({})
+    try:
+        await _seed_nomad_timeout_override(session_maker)
+        _proxy, registry = _make_tasks_proxy_registry()
+
+        # Seed the override snapshot without firing rebind callbacks.
+        await refresh_all(lambda: session_maker, registry)
+
+        app = FastAPI()
+        reconcile_calls = 0
+
+        async with NomadLifecycle(app) as holder:
+            executor_before = holder.current
+            real_reconcile = holder.reconcile
+
+            async def _counting_reconcile() -> None:
+                nonlocal reconcile_calls
+                reconcile_calls += 1
+                await real_reconcile()
+
+            holder.reconcile = _counting_reconcile
+
+            tasks_app.state.nomad_lifecycle = holder
+            try:
+                # Baseline refresh under the live holder (not counted).
+                await refresh_all(lambda: session_maker, registry)
+                snapshot_before = dict(tasks_settings.get_snapshot())
+                executor_after_baseline = holder.current
+
+                # Measure one further cycle with rebind callbacks wired.
+                await refresh_all(
+                    lambda: session_maker,
+                    registry,
+                    {_NOMAD_CALLBACK_KEY: _reconcile_nomad},
+                )
+                snapshot_after = dict(tasks_settings.get_snapshot())
+                executor_after = holder.current
+            finally:
+                tasks_app.state.nomad_lifecycle = None
+
+        nomad_before = snapshot_before["NOMAD"]
+        nomad_after = snapshot_after["NOMAD"]
+        assert isinstance(nomad_before, NomadExecutor)
+        assert isinstance(nomad_after, NomadExecutor)
+        assert nomad_before.timeout == _NOMAD_LEAF_TIMEOUT
+        assert nomad_after.timeout == _NOMAD_LEAF_TIMEOUT
+
+        before_config = nomad_before.model_dump(mode="json")
+        after_config = nomad_after.model_dump(mode="json")
+        assert before_config == after_config
+
+        # Fresh merged instances compare equal on declared fields, so callbacks
+        # stay quiet; if equality ever regresses, reconcile must still no-op.
+        snapshots_compare_equal = nomad_before == nomad_after
+        assert snapshots_compare_equal
+
+        # reconcile's JSON guard must keep the live entered executor stable.
+        assert executor_before is executor_after_baseline
+        assert executor_after_baseline is executor_after
+        assert reconcile_calls == 0
+    finally:
+        tasks_settings._set_snapshot({})
 
 
 @pytest.mark.asyncio

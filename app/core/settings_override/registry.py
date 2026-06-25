@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "NESTED_VALUE_MISSING",
     "FieldMetadata",
     "Materializer",
     "MaterializerContext",
@@ -38,7 +39,6 @@ __all__ = [
     "is_nested_overridable_parent",
     "iter_class_fields",
     "iter_nested_leaf_keys",
-    "materialize_fingerprint",
     "materialize_override_value",
     "materialize_template",
     "materialize_via_owning_model",
@@ -70,7 +70,6 @@ from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils.fields import (
     _credential_url_serializer,
     preserve_credential_url_password,
-    PRESERVE_CREDENTIALS_CONTEXT,
 )
 from app.core.utils.pydantic import (
     annotation_pydantic_class,
@@ -85,6 +84,12 @@ if TYPE_CHECKING:
     # the concrete settings classes at runtime, which lets ``app.core.config``
     # import this module at top level without a circular import.
     from app.core.config import BaseYamlSettings
+
+#: Sentinel returned by :func:`resolve_nested_value` when a segment along the
+#: chain is absent. Distinct from a present intermediate or leaf whose value is
+#: ``None`` (an optional intermediate collapsing to ``None``, or an unresolved
+#: secret leaf). The LIST response builder maps this to a JSON ``null``.
+NESTED_VALUE_MISSING = object()
 
 
 class ReloadClassification(StrEnum):
@@ -153,8 +158,8 @@ def hot_field(
     and :func:`app.core.settings_override.cache.build_snapshot` invokes it in
     place of the default :func:`coerce_field_value` coercion -- used for fields
     whose snapshot value cannot be produced by a plain ``TypeAdapter`` (a
-    before-validator must run, the type is not Pydantic-serialisable, or a plain
-    fingerprint must be stored for diff stability). When ``advanced`` is set it
+    before-validator must run, or the type is not Pydantic-serialisable). When
+    ``advanced`` is set it
     rides the same channel under the ``"advanced"`` key, read back by
     :func:`is_advanced_field`; it is display-only metadata and does not affect
     override eligibility.
@@ -410,29 +415,6 @@ def materialize_template(ctx: MaterializerContext) -> Any:
     )
 
 
-def materialize_fingerprint(ctx: MaterializerContext) -> Any:
-    """Materialize a plain JSON config fingerprint instead of a live instance.
-
-    Coerces ``raw`` to the field's declared type, then stores only its
-    ``model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)`` -- a
-    plain dict carrying no private attributes and retaining embedded URL
-    credentials (redaction applies only to settings API responses).
-    Two snapshots built from the same override therefore compare equal, which a
-    live model instance with per-instance private attributes (a ``ContextVar``,
-    an aiohttp session) would not. The live resource is owned by a lifecycle
-    holder; the snapshot carries only the diff-stable config fingerprint.
-
-    :param ctx: The materialization context.
-    :type ctx: MaterializerContext
-    :return: A JSON-safe ``dict`` fingerprint of the coerced value.
-    :rtype: Any
-    :raises ValidationError: If ``raw`` cannot be coerced to the declared type.
-    """
-    return coerce_field_value(ctx.field_info, ctx.raw).model_dump(
-        mode="json", context=PRESERVE_CREDENTIALS_CONTEXT
-    )
-
-
 def materialize_override_value(
     settings_cls: type[BaseYamlSettings],
     field_name: str,
@@ -445,7 +427,7 @@ def materialize_override_value(
     default :func:`coerce_field_value` coercion. Shared by snapshot building
     (:func:`app.core.settings_override.cache.build_snapshot`) and the settings
     API PATCH validation so both accept exactly the same override payloads -- a
-    materializer-backed field (``PROVIDERS``, ``FOOTER_TEMPLATE``, ``NOMAD``)
+    materializer-backed field (``PROVIDERS``, ``FOOTER_TEMPLATE``)
     would otherwise be accepted on snapshot load but rejected by the API.
 
     :param settings_cls: The Pydantic settings class that owns the field.
@@ -760,6 +742,19 @@ def coerce_nested_field_value(
     return chain, coerce_field_value(leaf_info, raw)
 
 
+def _mapping_segment_or_default(
+    mapping: Mapping[str, Any], segment: str, default: Any
+) -> Any:
+    """Read ``segment`` from ``mapping`` (case-insensitive) or return ``default``."""
+    if segment in mapping:
+        return mapping[segment]
+    seg_lower = segment.lower()
+    for key, value in mapping.items():
+        if isinstance(key, str) and key.lower() == seg_lower:
+            return value
+    return default
+
+
 def resolve_nested_value(
     *,
     settings_cls: type[BaseModel],
@@ -772,9 +767,9 @@ def resolve_nested_value(
     (case-corrected) names, so the returned value reflects the merged snapshot
     copy when an override is active and the YAML/env value otherwise. Each
     segment is read as a :class:`~collections.abc.Mapping` key when the current
-    node is a mapping -- a materializer-fingerprint override stores a plain dict
-    rather than a live model -- and as an attribute otherwise. A missing or
-    ``None`` intermediate yields ``None`` rather than raising.
+    node is a mapping, and as an attribute otherwise. A **missing** segment
+    returns :data:`NESTED_VALUE_MISSING`; a present ``None`` intermediate
+    collapses the leaf to ``None`` (optional-intermediate contract).
 
     :param settings_cls: The Pydantic settings class the key belongs to.
     :type settings_cls: type[BaseModel]
@@ -782,7 +777,8 @@ def resolve_nested_value(
     :type proxy: OverridableSettingsProxy
     :param key: The ``__``-delimited nested key.
     :type key: str
-    :return: A ``(leaf_FieldInfo, current_value)`` pair.
+    :return: A ``(leaf_FieldInfo, current_value)`` pair. ``current_value`` may
+        be :data:`NESTED_VALUE_MISSING` when a segment is absent.
     :rtype: tuple[FieldInfo, Any]
     :raises KeyError: If ``key`` does not resolve to a nested field on
         ``settings_cls``.
@@ -793,10 +789,19 @@ def resolve_nested_value(
     chain, leaf_info = resolved
     current = proxy
     for segment in chain:
+        if current is None:
+            return leaf_info, None
         if isinstance(current, Mapping):
-            current = current.get(segment)
-        else:
-            current = getattr(current, segment, None)
+            segment_value = _mapping_segment_or_default(
+                current, segment, NESTED_VALUE_MISSING
+            )
+            if segment_value is NESTED_VALUE_MISSING:
+                return leaf_info, NESTED_VALUE_MISSING
+            current = segment_value
+            continue
+        if not hasattr(current, segment):
+            return leaf_info, NESTED_VALUE_MISSING
+        current = getattr(current, segment)
     return leaf_info, current
 
 

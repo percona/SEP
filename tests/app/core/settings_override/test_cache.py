@@ -38,6 +38,8 @@ from app.sep.config import SEPSettings, SessionOptions
 from app.tasks.config import PreExecutionCheckMode, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 
+_NOMAD_OVERRIDE_TIMEOUT = 30
+
 
 async def _insert(session: AsyncSession, **kwargs: object) -> None:
     """Insert a setting override row via the manager."""
@@ -301,19 +303,22 @@ async def test_invalid_footer_template_value_logged_and_skipped(
 
 
 @pytest.mark.asyncio
-async def test_nomad_materialized_to_diff_stable_fingerprint(
+async def test_nomad_per_leaf_override_merged_as_executor(
     session: AsyncSession,
 ) -> None:
-    """``NOMAD`` snapshots a plain dict equal across two consecutive builds."""
+    """Snapshot a per-leaf ``NOMAD`` override as a merged ``NomadExecutor``."""
+    nomad = NomadExecutor(endpoint="http://nomad.example:4646")
+    base = SimpleNamespace(NOMAD=nomad)
     await _insert(
         session,
         setting_class=SettingClassEnum.TASKS_SETTINGS,
-        key="NOMAD",
-        value={"endpoint": "https://nomad.example.org"},
+        key="NOMAD__TIMEOUT",
+        value=_NOMAD_OVERRIDE_TIMEOUT,
     )
-    first = await build_snapshot(session, TasksSettings)
-    second = await build_snapshot(session, TasksSettings)
-    assert isinstance(first["NOMAD"], dict)
+    first = await build_snapshot(session, TasksSettings, base_settings=base)
+    second = await build_snapshot(session, TasksSettings, base_settings=base)
+    assert isinstance(first["NOMAD"], NomadExecutor)
+    assert first["NOMAD"].timeout == _NOMAD_OVERRIDE_TIMEOUT
     assert first["NOMAD"] == second["NOMAD"]
 
 
@@ -542,6 +547,37 @@ async def test_top_level_row_targeting_nested_only_parent_is_skipped(
     assert timedelta(seconds=3600) == merged.MAX_AGE
     # The whole-object row did not take effect (SAMESITE stays default).
     assert merged.SAMESITE == SessionOptions().SAMESITE
+    assert any("non-HOT" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_top_level_nomad_row_targeting_nested_only_parent_is_skipped(
+    session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Drop a whole-parent ``NOMAD`` row while still merging per-leaf rows."""
+    caplog.set_level(logging.WARNING, logger="app.core.settings_override.cache")
+    nomad = NomadExecutor(endpoint="http://nomad.example:4646")
+    base = SimpleNamespace(NOMAD=nomad)
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="NOMAD",
+        value={
+            "endpoint": "https://nomad-whole-override.example.org",
+            "timeout": 99,
+        },
+    )
+    await _insert(
+        session,
+        setting_class=SettingClassEnum.TASKS_SETTINGS,
+        key="NOMAD__TIMEOUT",
+        value=_NOMAD_OVERRIDE_TIMEOUT,
+    )
+    snapshot = await build_snapshot(session, TasksSettings, base_settings=base)
+    merged = snapshot["NOMAD"]
+    assert isinstance(merged, NomadExecutor)
+    assert merged.timeout == _NOMAD_OVERRIDE_TIMEOUT
+    assert str(merged.endpoint).startswith("http://nomad.example")
     assert any("non-HOT" in r.getMessage() for r in caplog.records)
 
 

@@ -997,25 +997,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Archives Api List
-     * @description List archive tasks.
-     */
-    get: operations['archives_archives_api_list_api_plugins_archives__get'];
+    /** List */
+    get: operations['archives__list_api_plugins_archives__get'];
     put?: never;
-    /**
-     * Archives Api Create
-     * @description Create an archive task from a JSON payload request body.
-     *
-     *     :param check_connectivity: Whether to verify the target database is
-     *         reachable after task creation. Defaults to ``True`` so callers that
-     *         omit the parameter still get a connectivity round-trip; pass
-     *         ``check_connectivity=false`` to opt out. Mirrors the asymmetric
-     *         default used by the checksums create flow (the Form path defaults
-     *         to ``False`` because HTML checkboxes omit the field when unchecked).
-     *     :type check_connectivity: bool
-     */
-    post: operations['archives_archives_api_create_api_plugins_archives__post'];
+    /** Create */
+    post: operations['archives__create_api_plugins_archives__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1051,18 +1037,33 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Archives Api Detail
-     * @description Retrieve a single archive task.
-     */
-    get: operations['archives_archives_api_detail_api_plugins_archives__task_name__get'];
-    put?: never;
+    /** Detail */
+    get: operations['archives__detail_api_plugins_archives__task_name__get'];
+    /** Update */
+    put: operations['archives__update_api_plugins_archives__task_name__put'];
     post?: never;
+    /** Delete */
+    delete: operations['archives__delete_api_plugins_archives__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/archives/{task_name}/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
     /**
-     * Archives Api Delete
-     * @description Delete an archive task.
+     * Archives Api Execute
+     * @description Resolve, dispatch, and wrap a standard task execution.
      */
-    delete: operations['archives_archives_api_delete_api_plugins_archives__task_name__delete'];
+    post: operations['archives_archives_api_execute_api_plugins_archives__task_name__execute_post'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -4613,11 +4614,7 @@ export interface paths {
      */
     get: operations['tasks_list_tasks__get'];
     put?: never;
-    /**
-     * Task Create
-     * @description Create task.
-     */
-    post: operations['task_create_tasks__post'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -4637,31 +4634,7 @@ export interface paths {
      */
     get: operations['tasks_detail_tasks__task_name__get'];
     put?: never;
-    /**
-     * Tasks Execute
-     * @description Execute task.
-     */
-    post: operations['tasks_execute_tasks__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/tasks/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Tasks Delete
-     * @description Delete task.
-     */
-    post: operations['tasks_delete_tasks__task_name__delete_post'];
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -5420,82 +5393,116 @@ export interface components {
     };
     /**
      * ArchivesCreate
-     * @description Represent an Archives creation form with proper case-insensitive fields.
+     * @description Represent an Archives creation form as a model-first ``AppFormModel``.
      *
-     *     :param alias: The alias name for the task being created. This name is used for
-     *         identifying the task in the backend.
-     *     :type alias: NonEmptyStr
-     *     :param hostname: The source hostname where the task will be executed.
-     *     :type hostname: NonEmptyStr
-     *     :param service_id: The Inventory ID of the database service to connect to.
-     *     :type service_id: int
-     *     :param source_db_id: The source database schema ID from which data will be purged.
-     *         Must be None if source_query is set.
-     *     :type source_db_id: int | EmptyStrToNone
-     *     :param source_db_name: The name of the source database schema.
-     *     :type source_db_name: str
-     *     :param source_table_id: The source table ID within the specified schema from which
-     *         data will be purged. Must be None if source_query is set.
-     *     :type source_table_id: int | EmptyStrToNone
-     *     :param source_table_name: The name of the source table.
-     *     :type source_table_name: str
-     *     :param source_query: Optional; a query defining the source data to be purged.
-     *         Must be None if both source_db_id and source_table_id are set.
-     *     :type source_query: NonEmptyStr | None
-     *     :param where: Optional; The WHERE condition that defines which data will be purged
-     *         from the source table. Must be None when swap_drop is SWAP_DROP.
-     *     :type where: NonEmptyStr | None
-     *     :param dest_table_id: Optional; The destination table ID.
-     *         Must be None if dest_file is set.
-     *     :type dest_table_id: int | EmptyStrToNone
-     *     :param dest_table_name: The name of the destination table.
-     *     :type dest_table_name: str
-     *     :param dest_file: Optional; The destination file path.
-     *         Must be None if dest_table_id is set.
-     *     :type dest_file: NonEmptyStr | None
-     *     :param swap_drop: Integer field (0-2) indicating the drop behavior.
-     *         If 1, both dest_table_id and dest_file must be None.
-     *     :type swap_drop: int
-     *     :param swp_table_suffix: Optional; Date suffix for the swap table.
-     *     :type swp_table_suffix: date | None
-     *     :param use_index: Optional; The index to be used for optimizing the query.
-     *     :type use_index: NonEmptyStr | None
-     *     :param extra_args: Optional; Additional arguments for the archive task.
-     *     :type extra_args: NonEmptyStr | None
-     *     :param limit: Optional; The maximum number of records to be processed.
-     *     :type limit: int | EmptyStrToNone
-     *     :param sleep: Optional; Sleep duration between operations for rate limiting.
-     *     :type sleep: int | EmptyStrToNone
-     *     :param disable_binlog: Optional integer flag (0 or 1) to disable binary logging.
-     *         ``None`` means the checkbox was left unset (binary logging stays enabled).
-     *     :type disable_binlog: int | None
-     *     :param disable_bulk_insert: Optional integer flag (0 or 1) to disable bulk
-     *         insert. ``None`` means the checkbox was left unset / default behavior is
-     *         used; 0 means bulk insert remains enabled, and 1 means bulk insert is
-     *         disabled.
-     *     :type disable_bulk_insert: int | None
-     *     :param delete_data: Optional integer flag (0 or 1). When set to 1, source
-     *         rows are deleted without being written to any destination; the
-     *         destination table/file fields (dest_table_id, dest_table_name,
-     *         dest_file) must not be set, and vice versa.
-     *     :type delete_data: int | None
-     *     :param dest_service_id: Optional; The Inventory ID of the destination database service.
-     *     :type dest_service_id: int | EmptyStrToNone
-     *     :param dest_host: Optional; The hostname of the destination database.
-     *     :type dest_host: str | None
-     *     :param dest_port: Optional; The port of the destination database (1-65535).
-     *         The ``ge``/``le`` range constraint is scoped to the ``int`` arm so it
-     *         does not run against ``None`` when ``EmptyStrToNone`` coerces an empty
-     *         form input.
-     *     :type dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone
-     *     :param dest_db_id: Optional; The destination database schema ID.
-     *     :type dest_db_id: int | EmptyStrToNone
-     *     :param dest_db_name: The name of the destination database schema.
-     *     :type dest_db_name: str
-     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-     *     :type alert_on_fail: bool
+     *     Source, destination, and destination-host are discriminated-union one-of groups;
+     *     the schema / table / database references are collapsed free-solo fields
+     *     (``int`` inventory id or free-typed ``str`` name). The ``alert_on_fail``
+     *     capability control is inherited from :class:`AppFormModel`.
+     *
+     *     :param task_name: The task name (and the ``ALIAS`` in the archiver config).
+     *     :param hostname: The executor host the task runs on.
+     *     :param service_id: The inventory id of the source MySQL service (the host whose
+     *         rows are archived; the connectivity probe targets it).
+     *     :param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.
+     *     :param source: The source rows, by schema+table or by query.
+     *     :param destination: The destination table or file; ``None`` when ``delete_data``.
+     *     :param host: The destination host, by service or manual entry; ``None`` reuses
+     *         the source host.
+     *     :param swp_table_suffix: The swap-table date suffix (SWAP_ARCHIVE_DROP only).
+     *     :param where: The WHERE clause filtering rows; required unless SWAP_DROP.
+     *     :param use_index: An index hint to optimise the query.
+     *     :param extra_args: Additional pt-archiver CLI arguments.
+     *     :param limit: The maximum rows per archiver run.
+     *     :param sleep: The sleep duration between chunk operations (seconds).
+     *     :param disable_binlog: Whether to disable binary logging for the operation.
+     *     :param disable_bulk_insert: Whether to disable the bulk-insert optimisation.
+     *     :param delete_data: Whether to delete source rows without archiving them.
      */
     ArchivesCreate: {
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /** Delete Data */
+      delete_data?: boolean | null;
+      /** Destination */
+      destination?:
+        | (components['schemas']['DestByTable'] | components['schemas']['DestByFile'])
+        | null;
+      /** Disable Binlog */
+      disable_binlog?: boolean | null;
+      /** Disable Bulk Insert */
+      disable_bulk_insert?: boolean | null;
+      /** Extra Args */
+      extra_args?: string | null;
+      /** Host */
+      host?: (components['schemas']['HostByService'] | components['schemas']['HostManual']) | null;
+      /** Hostname */
+      hostname: string;
+      /** Limit */
+      limit?: number | null;
+      /** Service Id */
+      service_id: number;
+      /** Sleep */
+      sleep?: number | null;
+      /** Source */
+      source: components['schemas']['SourceByTable'] | components['schemas']['SourceByQuery'];
+      /**
+       * Swap Drop
+       * @default 0
+       */
+      swap_drop: number;
+      /** Swp Table Suffix */
+      swp_table_suffix?: string | null;
+      /** Task Name */
+      task_name: string;
+      /** Use Index */
+      use_index?: string | null;
+      /** Where */
+      where?: string | null;
+    };
+    /**
+     * ArchivesLegacyForm
+     * @description Parse the deprecated Archives HTML form's flat, urlencoded body.
+     *
+     *     The Jinja templates submit the historical flat field names (``source_db_id`` /
+     *     ``source_db_name`` / …) that predate the one-of collapse, so the derived
+     *     one-of ``ArchivesCreate`` cannot bind them directly. This model parses that
+     *     flat body; :func:`_map_legacy_to_create` folds it into ``ArchivesCreate`` for
+     *     the shared spec builder, keeping the legacy path byte-identical. Conditional
+     *     validation is enforced by the mapped ``ArchivesCreate``, not here.
+     *
+     *     :param alias: The task name (the ``ALIAS`` in the archiver config).
+     *     :param hostname: The executor host.
+     *     :param service_id: The source MySQL service id.
+     *     :param source_db_id: The source schema inventory id, or empty.
+     *     :param source_db_name: The manually-entered source schema name.
+     *     :param source_table_id: The source table inventory id, or empty.
+     *     :param source_table_name: The manually-entered source table name.
+     *     :param source_query: A custom source query.
+     *     :param where: The WHERE clause.
+     *     :param dest_table_id: The destination table inventory id, or empty.
+     *     :param dest_table_name: The manually-entered destination table name.
+     *     :param dest_file: The destination file path.
+     *     :param swap_drop: The archive type (0-2).
+     *     :param swp_table_suffix: The swap-table date suffix.
+     *     :param use_index: An index hint.
+     *     :param extra_args: Additional pt-archiver CLI arguments.
+     *     :param limit: The maximum rows per run.
+     *     :param sleep: The sleep between chunk operations.
+     *     :param disable_binlog: The disable-binlog flag (0/1).
+     *     :param disable_bulk_insert: The disable-bulk-insert flag (0/1).
+     *     :param delete_data: The delete-without-archiving flag (0/1).
+     *     :param dest_service_id: The destination service inventory id, or empty.
+     *     :param dest_host: The manual destination host.
+     *     :param dest_port: The manual destination port.
+     *     :param dest_db_id: The destination schema inventory id, or empty.
+     *     :param dest_db_name: The manually-entered destination schema name.
+     *     :param alert_on_fail: Whether to alert on failure.
+     */
+    ArchivesLegacyForm: {
       /**
        * Alert On Fail
        * @default false
@@ -5503,10 +5510,7 @@ export interface components {
       ALERT_ON_FAIL: boolean;
       /** Alias */
       ALIAS: string;
-      /**
-       * Delete Without Archiving
-       * @description Delete source rows without writing them to any destination; the destination table/file fields must be left unset.
-       */
+      /** Delete Data */
       DELETE_DATA?: number | null;
       /** Dest Db Id */
       DEST_DB_ID?: number | null;
@@ -5530,15 +5534,9 @@ export interface components {
        * @default
        */
       DEST_TABLE_NAME: string;
-      /**
-       * Disable Binlog
-       * @description Optional flag to disable binary logging.
-       */
+      /** Disable Binlog */
       DISABLE_BINLOG?: number | null;
-      /**
-       * Disable Bulk Insert
-       * @description Optional flag to disable bulk insert.
-       */
+      /** Disable Bulk Insert */
       DISABLE_BULK_INSERT?: number | null;
       /** Extra Args */
       EXTRA_ARGS?: string | null;
@@ -5574,126 +5572,6 @@ export interface components {
       USE_INDEX?: string | null;
       /** Where */
       WHERE?: string | null;
-    };
-    /**
-     * ArchivesCreateResponse
-     * @description Represent the response body for ``POST /api/plugins/archives/``.
-     *
-     *     Extends :class:`ArchivesTaskResponse` with a connectivity-warning field
-     *     surfaced when the post-creation database probe fails or is skipped.
-     *
-     *     :param connectivity_warning: ``None`` when the probe passes, was opted
-     *         out, or the task meta lacks connectivity keys; populated otherwise.
-     *     :type connectivity_warning: ConnectivityWarning | None
-     */
-    ArchivesCreateResponse: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      backend: components['schemas']['TaskBackendEnum'];
-      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
-      /** Created At */
-      created_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Data */
-      data: Record<string, never>;
-      /** Id */
-      id?: number | null;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /** Last Updated By */
-      last_updated_by?: string | null;
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Updated At */
-      updated_at?: string | null;
-    };
-    /**
-     * ArchivesTaskResponse
-     * @description Represent an Archives task in API responses.
-     *
-     *     Lean Pydantic projection of ``app.tasks.models.Task`` carrying only the
-     *     fields the React frontend consumes. Defined locally (not inherited from
-     *     ``Task``) to keep relationship attributes (``history``) out of the
-     *     serialised payload.
-     *
-     *     :param id: The task primary key.
-     *     :type id: int | None
-     *     :param name: The task name.
-     *     :type name: str
-     *     :param backend: The execution backend.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The plugin that owns the task.
-     *     :type owner: TaskOwner
-     *     :param data: Raw task data (``task``/``meta``/``payload``).
-     *     :type data: dict[str, Any]
-     *     :param is_template: Whether the task is a template definition.
-     *     :type is_template: bool
-     *     :param protected: Whether the task is protected from deletion.
-     *     :type protected: bool
-     *     :param alert_on_fail: Whether the task triggers an alert on failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: Creation timestamp.
-     *     :type created_at: datetime | None
-     *     :param updated_at: Last update timestamp.
-     *     :type updated_at: datetime | None
-     *     :param created_by: User that created the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: User that last updated the task.
-     *     :type last_updated_by: str | None
-     *     :param service_type: The database service type the task targets.
-     *     :type service_type: ServiceTypeEnum | None
-     *     :param status: The latest known execution status from task history.
-     *     :type status: TaskHistoryStatusEnum | None
-     */
-    ArchivesTaskResponse: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      backend: components['schemas']['TaskBackendEnum'];
-      /** Created At */
-      created_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Data */
-      data: Record<string, never>;
-      /** Id */
-      id?: number | null;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /** Last Updated By */
-      last_updated_by?: string | null;
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Updated At */
-      updated_at?: string | null;
     };
     /**
      * AvailableSyncer
@@ -7152,6 +7030,42 @@ export interface components {
       } | null;
     };
     /**
+     * DestByFile
+     * @description Represent a file destination.
+     *
+     *     :param mode: The one-of discriminator (``"file"``).
+     *     :param dest_file: The file path the archived rows are written to.
+     */
+    DestByFile: {
+      /** Dest File */
+      dest_file: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'file';
+    };
+    /**
+     * DestByTable
+     * @description Represent a table destination (collapsed free-solo references).
+     *
+     *     :param mode: The one-of discriminator (``"table"``).
+     *     :param dest_db: The destination schema — an inventory id, a free-typed name, or
+     *         ``None`` to reuse the source schema.
+     *     :param dest_table: The destination table — an inventory id or a free-typed name.
+     */
+    DestByTable: {
+      /** Dest Db */
+      dest_db?: number | string | null;
+      /** Dest Table */
+      dest_table: number | string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'table';
+    };
+    /**
      * DetailField
      * @description Declare one labelled field rendered inside a :class:`DetailSection`.
      *
@@ -7604,6 +7518,23 @@ export interface components {
       detail?: components['schemas']['ValidationError'][];
     };
     /**
+     * HostByService
+     * @description Represent a destination host taken from an inventory service.
+     *
+     *     :param mode: The one-of discriminator (``"service"``).
+     *     :param dest_service: The inventory id of the destination MySQL service; its
+     *         node address and port supply the destination host and port.
+     */
+    HostByService: {
+      /** Dest Service */
+      dest_service: number;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'service';
+    };
+    /**
      * HostField
      * @description Represent an executor-target (Nomad / Celery) selector field.
      *
@@ -7645,6 +7576,25 @@ export interface components {
        * @enum {string}
        */
       type: 'host';
+    };
+    /**
+     * HostManual
+     * @description Represent a manually-entered destination host.
+     *
+     *     :param mode: The one-of discriminator (``"manual"``).
+     *     :param dest_host: The destination host address.
+     *     :param dest_port: The destination port (1-65535); defaults to the MySQL port.
+     */
+    HostManual: {
+      /** Dest Host */
+      dest_host: string;
+      /** Dest Port */
+      dest_port?: number | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'manual';
     };
     /**
      * HostResponse
@@ -9611,6 +9561,41 @@ export interface components {
       manual_sync_enabled: boolean;
     };
     /**
+     * SourceByQuery
+     * @description Represent a custom-query source selection.
+     *
+     *     :param mode: The one-of discriminator (``"query"``).
+     *     :param source_query: The query defining the rows to archive.
+     */
+    SourceByQuery: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'query';
+      /** Source Query */
+      source_query: string;
+    };
+    /**
+     * SourceByTable
+     * @description Represent a schema+table source selection (collapsed free-solo references).
+     *
+     *     :param mode: The one-of discriminator (``"table"``).
+     *     :param source_db: The source schema — an inventory id or a free-typed name.
+     *     :param source_table: The source table — an inventory id or a free-typed name.
+     */
+    SourceByTable: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'table';
+      /** Source Db */
+      source_db: number | string;
+      /** Source Table */
+      source_table: number | string;
+    };
+    /**
      * SourceEnum
      * @description Enumeration of possible data sources for a node.
      *
@@ -9761,42 +9746,6 @@ export interface components {
      */
     TaskBackendEnum: 'nomad' | 'proxy' | 'celery';
     /**
-     * TaskCreateRequest
-     * @description Create a new task with the specified parameters.
-     *
-     *     :param name: The unique name of the task.
-     *     :type name: NonEmptyStr
-     *     :param payload: The payload for the task.
-     *     :type payload: NonEmptyStr
-     *     :param fmt: The format of the payload. Supported formats are "hcl", "json", and
-     *         "yaml".
-     *     :type fmt: Literal["hcl", "json", "yaml"]
-     *     :param backend: The backend system to use for task execution.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The owner of the task.
-     *     :type owner: TaskOwner
-     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-     *     :type alert_on_fail: bool
-     */
-    TaskCreateRequest: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      backend: components['schemas']['TaskBackendEnum'];
-      /**
-       * Fmt
-       * @enum {string}
-       */
-      fmt: 'hcl' | 'json' | 'yaml';
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      /** Payload */
-      payload: string;
-    };
-    /**
      * TaskDetailResponse
      * @description Represent the aggregate payload for ``GET /api/plugins/tasks/{task_name}``.
      *
@@ -9823,48 +9772,6 @@ export interface components {
       /** Periodic Summary */
       periodic_summary?: components['schemas']['PeriodicTaskSummary'][];
       task: components['schemas']['TaskResponse'];
-    };
-    /**
-     * TaskExecuteRequest
-     * @description Represent a request to execute a task with additional metadata and payload.
-     *
-     *     :param meta: A dictionary of meta variables for the task execution.
-     *         Defaults to an empty dictionary.
-     *     :type meta: dict[str, Any]
-     *     :param payload: Optional payload data or file path for the task execution.
-     *         Defaults to None.
-     *     :type payload: str | None
-     *     :param eta: The earliest time the task can be executed. Defaults to None, meaning
-     *         it will be executed as soon as possible.
-     *     :type eta: datetime | None
-     *     :param anonymize_mask: Bitmask of PII entities to anonymize. Defaults to None.
-     *     :type anonymize_mask: int | None
-     *     :param chain_task_names: Ordered list of task names to execute sequentially after
-     *         this one completes. Defaults to None.
-     *     :type chain_task_names: list[str] | None
-     *     :param chain_on_failure: Whether the chain should continue when a task fails,
-     *         stops, or is lost. Defaults to False (chain only on success).
-     *     :type chain_on_failure: bool
-     */
-    TaskExecuteRequest: {
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /**
-       * Chain On Failure
-       * @default false
-       */
-      chain_on_failure: boolean;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-      /**
-       * Meta
-       * @default {}
-       */
-      meta: Record<string, never>;
-      /** Payload */
-      payload?: string | null;
     };
     /**
      * TaskExecuteWrite
@@ -12232,9 +12139,11 @@ export interface operations {
       };
     };
   };
-  archives_archives_api_list_api_plugins_archives__get: {
+  archives__list_api_plugins_archives__get: {
     parameters: {
-      query?: never;
+      query?: {
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -12247,12 +12156,21 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesTaskResponse'][];
+          'application/json': components['schemas']['BaseTaskResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
   };
-  archives_archives_api_create_api_plugins_archives__post: {
+  archives__create_api_plugins_archives__post: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -12273,7 +12191,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesCreateResponse'];
+          'application/json': components['schemas']['BaseTaskResponse'];
         };
       };
       /** @description Validation Error */
@@ -12307,7 +12225,7 @@ export interface operations {
       };
     };
   };
-  archives_archives_api_detail_api_plugins_archives__task_name__get: {
+  archives__detail_api_plugins_archives__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -12324,7 +12242,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesTaskResponse'];
+          'application/json': components['schemas']['BaseTaskResponse'];
         };
       };
       /** @description Validation Error */
@@ -12338,7 +12256,44 @@ export interface operations {
       };
     };
   };
-  archives_archives_api_delete_api_plugins_archives__task_name__delete: {
+  archives__update_api_plugins_archives__task_name__put: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ArchivesCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BaseTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  archives__delete_api_plugins_archives__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -12355,6 +12310,41 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  archives_archives_api_execute_api_plugins_archives__task_name__execute_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TaskExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskExecutionResponse'];
+        };
       };
       /** @description Validation Error */
       422: {
@@ -15094,7 +15084,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['ArchivesCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['ArchivesLegacyForm'];
       };
     };
     responses: {
@@ -15222,7 +15212,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['ArchivesCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['ArchivesLegacyForm'];
       };
     };
     responses: {
@@ -17790,39 +17780,6 @@ export interface operations {
       };
     };
   };
-  task_create_tasks__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['TaskCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   tasks_detail_tasks__task_name__get: {
     parameters: {
       query?: {
@@ -17843,76 +17800,6 @@ export interface operations {
         };
         content: {
           'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_execute_tasks__task_name__post: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['TaskExecuteRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_delete_tasks__task_name__delete_post: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
         };
       };
       /** @description Validation Error */
