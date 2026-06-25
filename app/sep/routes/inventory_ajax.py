@@ -32,7 +32,7 @@ from app.sep.utils.decorators import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(route_class=DeprecatedJinja2Route, include_in_schema=False)
+router = APIRouter(route_class=DeprecatedJinja2Route)
 
 
 @router.get("/services/{service_id}/schemas", dependencies=[IsAuthenticated])

@@ -2805,65 +2805,6 @@
         "title": "BatchApprovalResponse",
         "type": "object"
       },
-      "Body_login_login_post": {
-        "properties": {
-          "client_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Client Id"
-          },
-          "client_secret": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "format": "password",
-            "title": "Client Secret"
-          },
-          "grant_type": {
-            "anyOf": [
-              {
-                "pattern": "^password$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Grant Type"
-          },
-          "password": {
-            "format": "password",
-            "title": "Password",
-            "type": "string"
-          },
-          "scope": {
-            "default": "",
-            "title": "Scope",
-            "type": "string"
-          },
-          "username": {
-            "title": "Username",
-            "type": "string"
-          }
-        },
-        "required": [
-          "username",
-          "password"
-        ],
-        "title": "Body_login_login_post",
-        "type": "object"
-      },
       "Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post": {
         "properties": {
           "full": {
@@ -2914,57 +2855,6 @@
           }
         },
         "title": "Body_report_report_upload_api_api_plugins_report_upload_post",
-        "type": "object"
-      },
-      "Body_sync_node_inventory__node_id__sync__post": {
-        "properties": {
-          "syncer": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Syncer"
-          }
-        },
-        "title": "Body_sync_node_inventory__node_id__sync__post",
-        "type": "object"
-      },
-      "Body_sync_schema_inventory_schemas__schema_id__sync__post": {
-        "properties": {
-          "syncer": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Syncer"
-          }
-        },
-        "title": "Body_sync_schema_inventory_schemas__schema_id__sync__post",
-        "type": "object"
-      },
-      "Body_sync_service_inventory_services__service_id__sync__post": {
-        "properties": {
-          "syncer": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Syncer"
-          }
-        },
-        "title": "Body_sync_service_inventory_services__service_id__sync__post",
         "type": "object"
       },
       "BoolField": {
@@ -3506,43 +3396,6 @@
         "title": "ConnectivityWarning",
         "type": "object"
       },
-      "CrontabSchedule": {
-        "description": "Representing a crontab schedule.\n\n:param minute: Represents the minute component in cron format. Defaults to `\"*\"`.\n:type minute: str\n:param hour: Represents the hour component in cron format. Defaults to `\"*\"`.\n:type hour: str\n:param day_of_week: Represents the day of the week component in cron format.\n    Defaults to `\"*\"`.\n:type day_of_week: str\n:param day_of_month: Represents the day of the month component in cron format.\n    Defaults to `\"*\"`.\n:type day_of_month: str\n:param month_of_year: Represents the month component in cron format.\n    Defaults to `\"*\"`.\n:type month_of_year: str\n:param timezone: The timezone for the cron schedule. Defaults to \"UTC\". Must be a\n    valid timezone as returned in `available_timezones()`\n:type timezone: str",
-        "properties": {
-          "day_of_month": {
-            "default": "*",
-            "title": "Day Of Month",
-            "type": "string"
-          },
-          "day_of_week": {
-            "default": "*",
-            "title": "Day Of Week",
-            "type": "string"
-          },
-          "hour": {
-            "default": "*",
-            "title": "Hour",
-            "type": "string"
-          },
-          "minute": {
-            "default": "*",
-            "title": "Minute",
-            "type": "string"
-          },
-          "month_of_year": {
-            "default": "*",
-            "title": "Month Of Year",
-            "type": "string"
-          },
-          "timezone": {
-            "default": "UTC",
-            "title": "Timezone",
-            "type": "string"
-          }
-        },
-        "title": "CrontabSchedule",
-        "type": "object"
-      },
       "DashboardStatsResponse": {
         "description": "Represent aggregate counts for the four dashboard stat cards.\n\n:param nodes: Total inventory node count.\n:type nodes: int\n:param tasks: Total active task count.\n:type tasks: int\n:param snippets: Total snippet count.\n:type snippets: int\n:param targets: Total executor target (host) count.\n:type targets: int",
         "properties": {
@@ -3949,76 +3802,6 @@
           "collector_type"
         ],
         "title": "DipperExecutionResponse",
-        "type": "object"
-      },
-      "EnhancedPeriodicTaskCreateRequest": {
-        "description": "Define a model for creating periodic tasks compatible with the SEP app form data.\n\nThis model accepts keys prefixed with 'execute_request_' from form data, which are\nparsed by the base class into an execute_request object.\n\n:param start_time: The start time for the task execution.\n:type start_time: UTCDatetime | EmptyStrToNone\n:param enabled: Whether the task is enabled.\n:type enabled: bool | EmptyStrToNone\n:param execute_request: The execution request details for the task.\n:type execute_request: PeriodicTaskExecuteRequest | EmptyStrToNone\n:param interval: The interval schedule for the task.\n:type interval: IntervalSchedule | EmptyStrToNone\n:param crontab: The crontab schedule for the task.\n:type crontab: CrontabSchedule | EmptyStrToNone\n:param task: The SEP task name.\n:type task: str",
-        "properties": {
-          "crontab": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CrontabSchedule"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Crontab"
-          },
-          "enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enabled"
-          },
-          "execute_request": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PeriodicTaskExecuteRequest"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Execute Request"
-          },
-          "interval": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/IntervalSchedule"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Interval"
-          },
-          "start_time": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Start Time"
-          },
-          "task": {
-            "title": "Task",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task"
-        ],
-        "title": "EnhancedPeriodicTaskCreateRequest",
         "type": "object"
       },
       "ExecutionEvent": {
@@ -4993,25 +4776,6 @@
         "title": "IntegerField",
         "type": "object"
       },
-      "IntervalSchedule": {
-        "description": "Represent an interval schedule.\n\n:param every: The number of periods between each execution.\n:type every: PositiveInt\n:param period: The period unit for the interval (e.g., hours, minutes).\n:type period: Period",
-        "properties": {
-          "every": {
-            "exclusiveMinimum": 0.0,
-            "title": "Every",
-            "type": "integer"
-          },
-          "period": {
-            "$ref": "#/components/schemas/Period"
-          }
-        },
-        "required": [
-          "every",
-          "period"
-        ],
-        "title": "IntervalSchedule",
-        "type": "object"
-      },
       "InventorySelectorOption": {
         "description": "Represent a minimal ``{id, name}`` option for inventory autocomplete selectors.\n\n:param id: The inventory entity ID consumed by form payloads.\n:type id: int\n:param name: The human-readable display label.\n:type name: str",
         "properties": {
@@ -5332,65 +5096,7 @@
         "title": "MysqlBackupsCreateResponse",
         "type": "object"
       },
-      "Node-Input": {
-        "description": "Represent an inventory node.\n\nThis model represents a node within the Inventory API, including its network\naddress, external identifier, name, and type.\n\n:param address: The network address of the node.\n:type address: NonEmptyStr\n:param name: The name of the node, aliased as \"node_name\".\n:type name: NonEmptyStr\n:param external_id: The external identifier for the node, aliased as \"node_id\".\n    Defaults to None.\n:type external_id: NonEmptyStr | EmptyStrToNone\n:param source: The source of the node information. Defaults to None.\n:type source: SourceEnum | EmptyStrToNone\n:param type: The type of the node (e.g., \"generic\"), aliased as \"node_type\".\n    Defaults to \"generic\".\n:type type: NonEmptyStr\n:param services: The services associated with the node.\n:type services: list[Service]",
-        "properties": {
-          "address": {
-            "minLength": 1,
-            "title": "Address",
-            "type": "string"
-          },
-          "node_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Node Id"
-          },
-          "node_name": {
-            "minLength": 1,
-            "title": "Node Name",
-            "type": "string"
-          },
-          "node_type": {
-            "default": "generic",
-            "minLength": 1,
-            "title": "Node Type",
-            "type": "string"
-          },
-          "services": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/Service"
-            },
-            "title": "Services",
-            "type": "array"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SourceEnum"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source"
-          }
-        },
-        "required": [
-          "address",
-          "node_name"
-        ],
-        "title": "Node",
-        "type": "object"
-      },
-      "Node-Output": {
+      "Node": {
         "description": "Represent a node in the inventory.\n\n:param address: The network address of the node.\n:type address: NonEmptyStr\n:param name: The name of the node.\n:type name: NonEmptyStr\n:param external_id: An external identifier for the node. Must be unique for source,\n    as defined by composite index ix_node_external_id_source.\n:type external_id: NonEmptyStr | None\n:param source: The source from which the node information is derived. Must be unique\n    for external_id, as defined by composite index ix_node_external_id_source.\n:type source: SourceEnum | None\n:param type: The type of the node (e.g., remote, generic).\n:type type: NonEmptyStr\n:param services: A list of services associated with the node.\n:type services: list[Service]",
         "properties": {
           "address": {
@@ -5855,145 +5561,6 @@
           "limit"
         ],
         "title": "PaginatedResponse[TaskHistoryResponse]",
-        "type": "object"
-      },
-      "Period": {
-        "enum": [
-          "days",
-          "hours",
-          "minutes",
-          "seconds",
-          "microseconds"
-        ],
-        "title": "Period",
-        "type": "string"
-      },
-      "PeriodicTaskExecuteRequest": {
-        "description": "Represent the execute request the periodic task will use for executions.\n\n:param meta: A dictionary of meta variables for the task execution.\n    Defaults to an empty dictionary.\n:type meta: dict[str, Any]\n:param payload: Optional payload data or file path for the task execution.\n    Defaults to None.\n:type payload: str | None\n:param eta: The earliest time the task can be executed. Forced to None, as periodic\n    tasks are always executed on the defined schedule.\n:type eta: datetime | None",
-        "properties": {
-          "anonymize_mask": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anonymize Mask"
-          },
-          "chain_on_failure": {
-            "default": false,
-            "title": "Chain On Failure",
-            "type": "boolean"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          },
-          "meta": {
-            "default": {},
-            "title": "Meta",
-            "type": "object"
-          },
-          "payload": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payload"
-          }
-        },
-        "title": "PeriodicTaskExecuteRequest",
-        "type": "object"
-      },
-      "PeriodicTaskRequest": {
-        "description": "Define the base model for writing periodic tasks from the SEP app.\n\nEvery field defaults to None and only fields that were set are sent to the Tasks\nAPI.\n\n:param start_time: The start time for the task execution.\n:type start_time: UTCDatetime | EmptyStrToNone\n:param enabled: Whether the task is enabled.\n:type enabled: bool | EmptyStrToNone\n:param execute_request: The execution request details for the task.\n:type execute_request: PeriodicTaskExecuteRequest | EmptyStrToNone\n:param interval: The interval schedule for the task.\n:type interval: IntervalSchedule | EmptyStrToNone\n:param crontab: The crontab schedule for the task.\n:type crontab: CrontabSchedule | EmptyStrToNone",
-        "properties": {
-          "crontab": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CrontabSchedule"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Crontab"
-          },
-          "enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enabled"
-          },
-          "execute_request": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PeriodicTaskExecuteRequest"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Execute Request"
-          },
-          "interval": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/IntervalSchedule"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Interval"
-          },
-          "start_time": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Start Time"
-          }
-        },
-        "title": "PeriodicTaskRequest",
         "type": "object"
       },
       "PeriodicTaskSummary": {
@@ -7628,30 +7195,7 @@
         "title": "S3Tool",
         "type": "string"
       },
-      "Schema-Input": {
-        "description": "Represent an inventory schema.\n\nThis model represents a schema within the Inventory API, including its name.\n\n:param name: The name of the schema.\n:type name: NonEmptyStr\n:param tables: The tables associated with the schema.\n:type tables: list[Table]",
-        "properties": {
-          "name": {
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "tables": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/Table"
-            },
-            "title": "Tables",
-            "type": "array"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "Schema",
-        "type": "object"
-      },
-      "Schema-Output": {
+      "Schema": {
         "description": "Represent a database schema within a service.\n\n:param id: The primary key for the table. Auto-incremented and not nullable.\n:type id: int | None\n:param created_at: The timestamp when the record is created. Defaults to the current\n    time in UTC.\n:type created_at: UTCDatetime\n:param updated_at: The timestamp when the record is last updated. Automatically\n    updated on changes.\n:type updated_at: UTCDatetime | None\n:param name: The name of the schema. Must be unique for service_id, as defined by\n    composite index ix_schema_name_service_id.\n:type name: NonEmptyStr\n:param service_id: The unique identifier of the service to which the schema belongs.\n    Must be unique for name, as defined by composite index\n    ix_schema_name_service_id.\n:type service_id: int\n:param service: The service to which the schema is associated.\n:type service: Service\n:param tables: A list of tables within the schema.\n:type tables: list[Table]",
         "properties": {
           "created_at": {
@@ -7996,100 +7540,6 @@
         "title": "ScriptPreviewResponse",
         "type": "object"
       },
-      "Service": {
-        "description": "Represent an inventory service.\n\nThis model represents a service within the Inventory API, including its environment,\ncluster, custom labels, external identifier, name, port, and type.\n\n:param environment: The environment in which the service is running (e.g.,\n    \"production\", \"staging\"). Defaults to None.\n:type environment: str | None\n:param cluster: The cluster in which the service is running. Defaults to None.\n:type cluster: str | None\n:param replication_set: The replication set in which the service is running. Defaults to None.\n:type replication_set: str | None\n:param custom_labels: Custom labels associated with the service. Defaults to None.\n:type custom_labels: dict[str, Any] | None\n:param external_id: The external identifier for the service, aliased as\n    \"service_id\". Defaults to None.\n:type external_id: NonEmptyStr | EmptyStrToNone\n:param name: The name of the service, aliased as \"service_name\".\n:type name: NonEmptyStr\n:param port: The port number on which the service is running. Defaults to None.\n:type port: int | EmptyStrToNone\n:param type: The type of the service (e.g., \"service_type\"), aliased as\n    \"service_type\".\n:type type: ServiceTypeEnum\n:param schemas: The schemas associated with the service.\n:type schemas: list[Schema]",
-        "properties": {
-          "cluster": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cluster"
-          },
-          "custom_labels": {
-            "anyOf": [
-              {
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Custom Labels"
-          },
-          "environment": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Environment"
-          },
-          "port": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port"
-          },
-          "replication_set": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Replication Set"
-          },
-          "schemas": {
-            "default": [],
-            "items": {
-              "$ref": "#/components/schemas/Schema-Input"
-            },
-            "title": "Schemas",
-            "type": "array"
-          },
-          "service_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Service Id"
-          },
-          "service_name": {
-            "minLength": 1,
-            "title": "Service Name",
-            "type": "string"
-          },
-          "service_type": {
-            "$ref": "#/components/schemas/ServiceTypeEnum"
-          }
-        },
-        "required": [
-          "service_name",
-          "service_type"
-        ],
-        "title": "Service",
-        "type": "object"
-      },
       "ServiceField": {
         "additionalProperties": false,
         "description": "Represent an inventory service selector field.\n\n:param field_type: The discriminator literal; always ``\"service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"service\"]\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:type service_types: list[ServiceTypeEnum]\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    inventory options. Optional, defaulting to ``None`` (options only).\n    Typed ``bool | None`` so the discovery endpoint's ``exclude_none``\n    posture drops it from the wire until a plugin opts in, keeping the\n    addition byte-compatible with existing schemas. The built-in\n    SchemaFormRenderer does not yet consume the flag; the free-solo\n    widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
@@ -8265,7 +7715,7 @@
             "type": "string"
           },
           "node": {
-            "$ref": "#/components/schemas/Node-Output"
+            "$ref": "#/components/schemas/Node"
           },
           "node_id": {
             "title": "Node Id",
@@ -8295,7 +7745,7 @@
           },
           "schemas": {
             "items": {
-              "$ref": "#/components/schemas/Schema-Output"
+              "$ref": "#/components/schemas/Schema"
             },
             "title": "Schemas",
             "type": "array"
@@ -8831,31 +8281,6 @@
           "label"
         ],
         "title": "StringField",
-        "type": "object"
-      },
-      "Table": {
-        "description": "Represent an inventory table.\n\nThis model represents a table within a schema in the Inventory API, including its\nname and the SQL statement used to create the table, and details about its keys.\n\n:param name: The name of the table.\n:type name: NonEmptyStr\n:param create: The SQL statement used to create the table.\n:type create: NonEmptyStr\n:param keys: A dictionary containing details about table keys (e.g., primary, unique).\n:type keys: dict[str, Any]",
-        "properties": {
-          "create": {
-            "minLength": 1,
-            "title": "Create",
-            "type": "string"
-          },
-          "keys": {
-            "title": "Keys",
-            "type": "object"
-          },
-          "name": {
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "create"
-        ],
-        "title": "Table",
         "type": "object"
       },
       "TableField": {
@@ -10533,25 +9958,6 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/": {
-      "get": {
-        "description": "Homepage route.",
-        "operationId": "read_root__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Read Root"
-      }
-    },
     "/api/admin/apps/": {
       "get": {
         "description": "List every configured app with its current enabled state.\n\nReturns one entry per ``SEP.PLUGINS`` entry, in declaration order. Apps with\nno row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);\nprotected apps (``inventory``) are forced to ``ENABLED`` and reported with\n``toggleable=False``. The list is non-paginated: app cardinality is bounded\n(<20).\n\n:param session: The database session.\n:type session: SessionDep\n:return: The per-app info list.\n:rtype: list[AppInfoResponse]",
@@ -14945,7 +14351,7 @@
     "/api/plugins/tasks/": {
       "get": {
         "description": "List task definitions for the read-only plugin UI.\n\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:return: Task rows for the schema-driven list view.\n:rtype: list[TaskListResponse]",
-        "operationId": "tasks_tasks_api_list_api_plugins_tasks__get",
+        "operationId": "task_manager_tasks_api_list_api_plugins_tasks__get",
         "responses": {
           "200": {
             "content": {
@@ -14954,7 +14360,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TaskListResponse"
                   },
-                  "title": "Response Tasks Tasks Api List Api Plugins Tasks  Get",
+                  "title": "Response Task Manager Tasks Api List Api Plugins Tasks  Get",
                   "type": "array"
                 }
               }
@@ -14964,14 +14370,14 @@
         },
         "summary": "Tasks Api List",
         "tags": [
-          "tasks"
+          "Task Manager"
         ]
       }
     },
     "/api/plugins/tasks/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "tasks_get_schema_api_plugins_tasks_schema_get",
+        "operationId": "task_manager_get_schema_api_plugins_tasks_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -14986,14 +14392,14 @@
         },
         "summary": "Get Schema",
         "tags": [
-          "tasks"
+          "Task Manager"
         ]
       }
     },
     "/api/plugins/tasks/{task_name}": {
       "get": {
         "description": "Return the per-task detail bundle for the read-only plugin UI.\n\n:param task: The task definition resolved by name.\n:type task: Task\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:param executor_hosts_ctx: Executor hosts enriched with inventory labels.\n:type executor_hosts_ctx: ExecutorHostsCtx\n:return: Task definition, history, periodic schedules, and executor hosts.\n:rtype: TaskDetailResponse",
-        "operationId": "tasks_tasks_api_detail_api_plugins_tasks__task_name__get",
+        "operationId": "task_manager_tasks_api_detail_api_plugins_tasks__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -15045,7 +14451,7 @@
         },
         "summary": "Tasks Api Detail",
         "tags": [
-          "tasks"
+          "Task Manager"
         ]
       }
     },
@@ -15380,7 +14786,7 @@
     "/api/sep/periodic-tasks/": {
       "get": {
         "description": "Return the upstream periodic-task list through the SEP gateway.\n\n:param tasks_api: The Tasks API client used to fetch the upstream list.\n:return: The upstream periodic-task list, or ``[]`` when the upstream\n    payload is not a list.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
-        "operationId": "sep_list_periodic_tasks_api_sep_periodic_tasks__get",
+        "operationId": "tasks_list_periodic_tasks_api_sep_periodic_tasks__get",
         "responses": {
           "200": {
             "content": {
@@ -15389,7 +14795,7 @@
                   "items": {
                     "type": "object"
                   },
-                  "title": "Response Sep List Periodic Tasks Api Sep Periodic Tasks  Get",
+                  "title": "Response Tasks List Periodic Tasks Api Sep Periodic Tasks  Get",
                   "type": "array"
                 }
               }
@@ -15417,14 +14823,14 @@
         },
         "summary": "List Periodic Tasks",
         "tags": [
-          "sep"
+          "tasks"
         ]
       }
     },
     "/api/sep/periodic-tasks/{periodic_task_id}": {
       "delete": {
         "description": "Dispatch deletion of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to delete.\n:param tasks_api: The Tasks API client used to delete the periodic task.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
-        "operationId": "sep_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete",
+        "operationId": "tasks_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -15471,12 +14877,12 @@
         },
         "summary": "Delete Periodic Task",
         "tags": [
-          "sep"
+          "tasks"
         ]
       },
       "put": {
         "description": "Dispatch a full-replacement update of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to update.\n:param tasks_api: The Tasks API client used to update the periodic task.\n:param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.\n:return: The updated periodic task as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
-        "operationId": "sep_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put",
+        "operationId": "tasks_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put",
         "parameters": [
           {
             "in": "path",
@@ -15504,7 +14910,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Sep Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
+                  "title": "Response Tasks Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
                   "type": "object"
                 }
               }
@@ -15542,14 +14948,14 @@
         },
         "summary": "Update Periodic Task",
         "tags": [
-          "sep"
+          "tasks"
         ]
       }
     },
     "/api/sep/periodic-tasks/{task_name}/": {
       "post": {
         "description": "Dispatch creation of a periodic task for ``task_name`` to the Tasks API.\n\n:param task_name: The task name the new periodic schedule runs.\n:param tasks_api: The Tasks API client used to create the periodic task.\n:param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.\n:return: The created periodic task as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
-        "operationId": "sep_create_periodic_task_api_sep_periodic_tasks__task_name___post",
+        "operationId": "tasks_create_periodic_task_api_sep_periodic_tasks__task_name___post",
         "parameters": [
           {
             "in": "path",
@@ -15577,7 +14983,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Sep Create Periodic Task Api Sep Periodic Tasks  Task Name   Post",
+                  "title": "Response Tasks Create Periodic Task Api Sep Periodic Tasks  Task Name   Post",
                   "type": "object"
                 }
               }
@@ -15615,7 +15021,7 @@
         },
         "summary": "Create Periodic Task",
         "tags": [
-          "sep"
+          "tasks"
         ]
       }
     },
@@ -15821,7 +15227,7 @@
     "/api/sep/task-history/": {
       "get": {
         "description": "Return task-history rows, listing all of them or merging selected names.\n\nThree-way on ``task_names``:\n\n* **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already\n  paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.\n* **provided, at least one non-blank name** -- query each name independently\n  against the Tasks API, then merge, sort newest-first, and paginate globally.\n* **provided, every name blank after trimming** -- reject with ``422``.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:param pagination: Validated offset/limit query parameters.\n:param task_names: Zero or more task names (repeat the query param); omit to\n    list all history.\n:param task_status: Optional exact status filter forwarded upstream.\n:return: Paginated task history, either the upstream list or the merged set.\n:raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but\n    every value is empty after trimming.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``, on either the list-all passthrough or\n    the merged-history fan-out.",
-        "operationId": "sep_list_merged_task_history_api_sep_task_history__get",
+        "operationId": "tasks_list_merged_task_history_api_sep_task_history__get",
         "parameters": [
           {
             "in": "query",
@@ -15924,14 +15330,14 @@
         },
         "summary": "List Merged Task History",
         "tags": [
-          "sep"
+          "tasks"
         ]
       }
     },
     "/api/sep/task-history/{task_history_id}/stop/": {
       "post": {
         "description": "Dispatch a stop request for a single task-history row to the Tasks API.\n\n:param task_history_id: The id of the task-history row to stop.\n:param tasks_api: The Tasks API client used to issue the stop request.\n:return: The stopped task-history row as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500), e.g. a ``400`` when the task is not running.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
-        "operationId": "sep_stop_task_history_api_sep_task_history__task_history_id__stop__post",
+        "operationId": "tasks_stop_task_history_api_sep_task_history__task_history_id__stop__post",
         "parameters": [
           {
             "in": "path",
@@ -15948,7 +15354,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Sep Stop Task History Api Sep Task History  Task History Id  Stop  Post",
+                  "title": "Response Tasks Stop Task History Api Sep Task History  Task History Id  Stop  Post",
                   "type": "object"
                 }
               }
@@ -15986,14 +15392,14 @@
         },
         "summary": "Stop Task History",
         "tags": [
-          "sep"
+          "tasks"
         ]
       }
     },
     "/api/sep/task-stats/{task_name}": {
       "get": {
         "description": "Return aggregated execution statistics for ``task_name``.\n\nProxy to the Tasks-service ``GET /stats/{task_name}`` aggregation so the\nReact frontend reaches the data through SEP rather than calling the Tasks\nsub-app directly. On upstream failure, re-raise as\n:class:`~app.core.exceptions.HTTPBadGatewayException` so the SEP exception\nhandler emits a ``502`` JSON body ``{\"detail\": \"<upstream detail>\"}`` that\nthe React frontend surfaces through React Query's error state.\n\n:param task_name: The task name (not the database id) whose stats are\n    being requested.\n:type task_name: str\n:param tasks_api: The Tasks API client used to fetch the upstream stats.\n:type tasks_api: TaskAPI\n:return: The raw upstream stats payload.\n:rtype: dict[str, Any]\n:raises HTTPBadGatewayException: If the Tasks API call fails with an\n    ``HTTPException`` (e.g. an upstream non-2xx response) or an\n    ``OSError`` (e.g. a connection failure).",
-        "operationId": "sep_get_task_stats_api_sep_task_stats__task_name__get",
+        "operationId": "tasks_get_task_stats_api_sep_task_stats__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -16010,7 +15416,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Sep Get Task Stats Api Sep Task Stats  Task Name  Get",
+                  "title": "Response Tasks Get Task Stats Api Sep Task Stats  Task Name  Get",
                   "type": "object"
                 }
               }
@@ -16048,49 +15454,7 @@
         },
         "summary": "Get Task Stats",
         "tags": [
-          "sep"
-        ]
-      }
-    },
-    "/artifacts/download/{token}": {
-      "get": {
-        "description": "Serve an artifact file identified by a signed, time-limited token.\n\n:param token: A signed token encoding the artifact type, filename, and MD5 digest.\n:type token: str\n:return: The artifact file as a streaming response.\n:rtype: FileResponse\n:raises HTTPBadRequestException: If the token is expired, tampered, or references\n    an invalid artifact type or a path outside the permitted base directory.\n:raises HTTPNotFoundException: If the resolved file does not exist.",
-        "operationId": "sep_download_artifact_artifacts_download__token__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "token",
-            "required": true,
-            "schema": {
-              "title": "Token",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Download Artifact",
-        "tags": [
-          "sep",
-          "artifacts"
+          "tasks"
         ]
       }
     },
@@ -16272,987 +15636,6 @@
           }
         },
         "summary": "Download Task History File",
-        "tags": [
-          "tasks"
-        ]
-      }
-    },
-    "/inventory/": {
-      "get": {
-        "description": "List Nodes.",
-        "operationId": "node_list_inventory__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Node List"
-      },
-      "post": {
-        "description": "Create Node.",
-        "operationId": "node_create_inventory__post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Node-Input"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Node Create"
-      }
-    },
-    "/inventory/schemas/{schema_id}": {
-      "get": {
-        "description": "Retrieve Schema Details.",
-        "operationId": "schema_detail_inventory_schemas__schema_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "schema_id",
-            "required": true,
-            "schema": {
-              "title": "Schema Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Schema Detail"
-      }
-    },
-    "/inventory/schemas/{schema_id}/delete": {
-      "post": {
-        "description": "Delete Schema.",
-        "operationId": "schema_delete_inventory_schemas__schema_id__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "schema_id",
-            "required": true,
-            "schema": {
-              "title": "Schema Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Schema Delete"
-      }
-    },
-    "/inventory/schemas/{schema_id}/sync/": {
-      "post": {
-        "description": "Start schema sync as a background task.",
-        "operationId": "sync_schema_inventory_schemas__schema_id__sync__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "schema_id",
-            "required": true,
-            "schema": {
-              "title": "Schema Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_sync_schema_inventory_schemas__schema_id__sync__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Sync Schema"
-      }
-    },
-    "/inventory/schemas/{schema_id}/tables/": {
-      "post": {
-        "description": "Create Table for Schema.",
-        "operationId": "table_create_for_schema_inventory_schemas__schema_id__tables__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "schema_id",
-            "required": true,
-            "schema": {
-              "title": "Schema Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Table"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Table Create For Schema"
-      }
-    },
-    "/inventory/services/{service_id}": {
-      "get": {
-        "description": "Retrieve Service Details.",
-        "operationId": "service_detail_inventory_services__service_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "service_id",
-            "required": true,
-            "schema": {
-              "title": "Service Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Service Detail"
-      }
-    },
-    "/inventory/services/{service_id}/check-connectivity/": {
-      "post": {
-        "description": "Check database connectivity for a service via Nomad.",
-        "operationId": "check_service_connectivity_inventory_services__service_id__check_connectivity__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "service_id",
-            "required": true,
-            "schema": {
-              "title": "Service Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Check Service Connectivity"
-      }
-    },
-    "/inventory/services/{service_id}/delete": {
-      "post": {
-        "description": "Delete Service.",
-        "operationId": "service_delete_inventory_services__service_id__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "service_id",
-            "required": true,
-            "schema": {
-              "title": "Service Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Service Delete"
-      }
-    },
-    "/inventory/services/{service_id}/schemas/": {
-      "post": {
-        "description": "Create Schema for Service.",
-        "operationId": "schema_create_for_service_inventory_services__service_id__schemas__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "service_id",
-            "required": true,
-            "schema": {
-              "title": "Service Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Schema-Input"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Schema Create For Service"
-      }
-    },
-    "/inventory/services/{service_id}/sync/": {
-      "post": {
-        "description": "Start service sync as a background task.",
-        "operationId": "sync_service_inventory_services__service_id__sync__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "service_id",
-            "required": true,
-            "schema": {
-              "title": "Service Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_sync_service_inventory_services__service_id__sync__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Sync Service"
-      }
-    },
-    "/inventory/tables/{table_id}/delete": {
-      "post": {
-        "description": "Delete Table.",
-        "operationId": "table_delete_inventory_tables__table_id__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "table_id",
-            "required": true,
-            "schema": {
-              "title": "Table Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Table Delete"
-      }
-    },
-    "/inventory/{node_id}": {
-      "get": {
-        "description": "Retrieve Node Details.",
-        "operationId": "node_detail_inventory__node_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "node_id",
-            "required": true,
-            "schema": {
-              "title": "Node Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Node Detail"
-      }
-    },
-    "/inventory/{node_id}/delete": {
-      "post": {
-        "description": "Delete Node.",
-        "operationId": "node_delete_inventory__node_id__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "node_id",
-            "required": true,
-            "schema": {
-              "title": "Node Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Node Delete"
-      }
-    },
-    "/inventory/{node_id}/services/": {
-      "post": {
-        "description": "Create Service for Node.",
-        "operationId": "service_create_for_node_inventory__node_id__services__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "node_id",
-            "required": true,
-            "schema": {
-              "title": "Node Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Service"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Service Create For Node"
-      }
-    },
-    "/inventory/{node_id}/sync/": {
-      "post": {
-        "description": "Start node sync as a background task.",
-        "operationId": "sync_node_inventory__node_id__sync__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "node_id",
-            "required": true,
-            "schema": {
-              "title": "Node Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_sync_node_inventory__node_id__sync__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Sync Node"
-      }
-    },
-    "/login": {
-      "get": {
-        "description": "Display login form.",
-        "operationId": "login_form_login_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "next",
-            "required": false,
-            "schema": {
-              "default": "/",
-              "title": "Next",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Login Form"
-      },
-      "post": {
-        "description": "Authenticate user from their username and password.",
-        "operationId": "login_login_post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "next",
-            "required": false,
-            "schema": {
-              "default": "/",
-              "title": "Next",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_login_login_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Login"
-      }
-    },
-    "/logout": {
-      "post": {
-        "description": "Logout route.",
-        "operationId": "logout_logout_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Logout"
-      }
-    },
-    "/periodic/": {
-      "post": {
-        "description": "Create periodic task.",
-        "operationId": "sep_periodic_task_create_periodic__post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "referer",
-            "required": false,
-            "schema": {
-              "default": "/tasks",
-              "title": "Referer",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/EnhancedPeriodicTaskCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Periodic Task Create",
-        "tags": [
-          "sep",
-          "periodic-tasks"
-        ]
-      }
-    },
-    "/periodic/{periodic_task_id}/delete": {
-      "post": {
-        "description": "Delete Periodic task.",
-        "operationId": "sep_periodic_task_delete_periodic__periodic_task_id__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "periodic_task_id",
-            "required": true,
-            "schema": {
-              "title": "Periodic Task Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "referer",
-            "required": false,
-            "schema": {
-              "default": "/tasks",
-              "title": "Referer",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Periodic Task Delete",
-        "tags": [
-          "sep",
-          "periodic-tasks"
-        ]
-      }
-    },
-    "/periodic/{periodic_task_id}/update": {
-      "post": {
-        "description": "Update periodic task.",
-        "operationId": "sep_periodic_task_update_periodic__periodic_task_id__update_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "periodic_task_id",
-            "required": true,
-            "schema": {
-              "title": "Periodic Task Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "header",
-            "name": "referer",
-            "required": false,
-            "schema": {
-              "default": "/tasks",
-              "title": "Referer",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/PeriodicTaskRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Periodic Task Update",
-        "tags": [
-          "sep",
-          "periodic-tasks"
-        ]
-      }
-    },
-    "/stop-task/{task_history_id}": {
-      "post": {
-        "description": "Stop a task history.",
-        "operationId": "tasks_stop_task_execution_stop_task__task_history_id__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_history_id",
-            "required": true,
-            "schema": {
-              "title": "Task History Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "owner",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TaskOwner"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Owner"
-            }
-          },
-          {
-            "in": "header",
-            "name": "referer",
-            "required": false,
-            "schema": {
-              "default": "/",
-              "title": "Referer",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Stop Task Execution",
         "tags": [
           "tasks"
         ]

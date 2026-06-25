@@ -673,7 +673,7 @@ def create_app(
     """Create and configure the FastAPI app.
 
     :param routers: Routers to include to created app.
-    :type routers: APIRouter
+    :type routers: APIRouterA
     :param lifespan: Lifespan context manager for the FastAPI app, if any. Defaults to
         None.
     :type lifespan: Lifespan[AppType] | None

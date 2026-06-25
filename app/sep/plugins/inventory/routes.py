@@ -156,7 +156,9 @@ async def sync_inventory(
 
 
 @router.post(
-    "/schedule/", dependencies=[IsAuthenticated, IsCsrfValidated], include_in_schema=False
+    "/schedule/",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    include_in_schema=False,
 )
 async def schedule_create(
     syncers: SyncersDep,

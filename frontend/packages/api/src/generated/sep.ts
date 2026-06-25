@@ -3,26 +3,6 @@
  * Do not edit by hand — regenerate from the source OpenAPI spec.
  */
 export interface paths {
-  '/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Read Root
-     * @description Homepage route.
-     */
-    get: operations['read_root__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/admin/apps/': {
     parameters: {
       query?: never;
@@ -2053,7 +2033,7 @@ export interface paths {
      *     :return: Task rows for the schema-driven list view.
      *     :rtype: list[TaskListResponse]
      */
-    get: operations['tasks_tasks_api_list_api_plugins_tasks__get'];
+    get: operations['task_manager_tasks_api_list_api_plugins_tasks__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2075,7 +2055,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['tasks_get_schema_api_plugins_tasks_schema_get'];
+    get: operations['task_manager_get_schema_api_plugins_tasks_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2104,7 +2084,7 @@ export interface paths {
      *     :return: Task definition, history, periodic schedules, and executor hosts.
      *     :rtype: TaskDetailResponse
      */
-    get: operations['tasks_tasks_api_detail_api_plugins_tasks__task_name__get'];
+    get: operations['task_manager_tasks_api_detail_api_plugins_tasks__task_name__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2432,7 +2412,7 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
      *         or a connection-level ``OSError``.
      */
-    get: operations['sep_list_periodic_tasks_api_sep_periodic_tasks__get'];
+    get: operations['tasks_list_periodic_tasks_api_sep_periodic_tasks__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2462,7 +2442,7 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
      *         or a connection-level ``OSError``.
      */
-    put: operations['sep_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put'];
+    put: operations['tasks_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put'];
     post?: never;
     /**
      * Delete Periodic Task
@@ -2475,7 +2455,7 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
      *         or a connection-level ``OSError``.
      */
-    delete: operations['sep_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete'];
+    delete: operations['tasks_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
@@ -2503,7 +2483,7 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
      *         or a connection-level ``OSError``.
      */
-    post: operations['sep_create_periodic_task_api_sep_periodic_tasks__task_name___post'];
+    post: operations['tasks_create_periodic_task_api_sep_periodic_tasks__task_name___post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2638,7 +2618,7 @@ export interface paths {
      *         or a connection-level ``OSError``, on either the list-all passthrough or
      *         the merged-history fan-out.
      */
-    get: operations['sep_list_merged_task_history_api_sep_task_history__get'];
+    get: operations['tasks_list_merged_task_history_api_sep_task_history__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2668,7 +2648,7 @@ export interface paths {
      *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
      *         or a connection-level ``OSError``.
      */
-    post: operations['sep_stop_task_history_api_sep_task_history__task_history_id__stop__post'];
+    post: operations['tasks_stop_task_history_api_sep_task_history__task_history_id__stop__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2704,35 +2684,7 @@ export interface paths {
      *         ``HTTPException`` (e.g. an upstream non-2xx response) or an
      *         ``OSError`` (e.g. a connection failure).
      */
-    get: operations['sep_get_task_stats_api_sep_task_stats__task_name__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/artifacts/download/{token}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Download Artifact
-     * @description Serve an artifact file identified by a signed, time-limited token.
-     *
-     *     :param token: A signed token encoding the artifact type, filename, and MD5 digest.
-     *     :type token: str
-     *     :return: The artifact file as a streaming response.
-     *     :rtype: FileResponse
-     *     :raises HTTPBadRequestException: If the token is expired, tampered, or references
-     *         an invalid artifact type or a path outside the permitted base directory.
-     *     :raises HTTPNotFoundException: If the resolved file does not exist.
-     */
-    get: operations['sep_download_artifact_artifacts_download__token__get'];
+    get: operations['tasks_get_task_stats_api_sep_task_stats__task_name__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2795,434 +2747,6 @@ export interface paths {
     get: operations['tasks_download_task_history_file_files__task_history_id__download_get'];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Node List
-     * @description List Nodes.
-     */
-    get: operations['node_list_inventory__get'];
-    put?: never;
-    /**
-     * Node Create
-     * @description Create Node.
-     */
-    post: operations['node_create_inventory__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/schemas/{schema_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Schema Detail
-     * @description Retrieve Schema Details.
-     */
-    get: operations['schema_detail_inventory_schemas__schema_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/schemas/{schema_id}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Schema Delete
-     * @description Delete Schema.
-     */
-    post: operations['schema_delete_inventory_schemas__schema_id__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/schemas/{schema_id}/sync/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Sync Schema
-     * @description Start schema sync as a background task.
-     */
-    post: operations['sync_schema_inventory_schemas__schema_id__sync__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/schemas/{schema_id}/tables/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Table Create For Schema
-     * @description Create Table for Schema.
-     */
-    post: operations['table_create_for_schema_inventory_schemas__schema_id__tables__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/services/{service_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Service Detail
-     * @description Retrieve Service Details.
-     */
-    get: operations['service_detail_inventory_services__service_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/services/{service_id}/check-connectivity/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Check Service Connectivity
-     * @description Check database connectivity for a service via Nomad.
-     */
-    post: operations['check_service_connectivity_inventory_services__service_id__check_connectivity__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/services/{service_id}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Service Delete
-     * @description Delete Service.
-     */
-    post: operations['service_delete_inventory_services__service_id__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/services/{service_id}/schemas/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Schema Create For Service
-     * @description Create Schema for Service.
-     */
-    post: operations['schema_create_for_service_inventory_services__service_id__schemas__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/services/{service_id}/sync/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Sync Service
-     * @description Start service sync as a background task.
-     */
-    post: operations['sync_service_inventory_services__service_id__sync__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/tables/{table_id}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Table Delete
-     * @description Delete Table.
-     */
-    post: operations['table_delete_inventory_tables__table_id__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/{node_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Node Detail
-     * @description Retrieve Node Details.
-     */
-    get: operations['node_detail_inventory__node_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/{node_id}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Node Delete
-     * @description Delete Node.
-     */
-    post: operations['node_delete_inventory__node_id__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/{node_id}/services/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Service Create For Node
-     * @description Create Service for Node.
-     */
-    post: operations['service_create_for_node_inventory__node_id__services__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/{node_id}/sync/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Sync Node
-     * @description Start node sync as a background task.
-     */
-    post: operations['sync_node_inventory__node_id__sync__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/login': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Login Form
-     * @description Display login form.
-     */
-    get: operations['login_form_login_get'];
-    put?: never;
-    /**
-     * Login
-     * @description Authenticate user from their username and password.
-     */
-    post: operations['login_login_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/logout': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Logout
-     * @description Logout route.
-     */
-    post: operations['logout_logout_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/periodic/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Periodic Task Create
-     * @description Create periodic task.
-     */
-    post: operations['sep_periodic_task_create_periodic__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/periodic/{periodic_task_id}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Periodic Task Delete
-     * @description Delete Periodic task.
-     */
-    post: operations['sep_periodic_task_delete_periodic__periodic_task_id__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/periodic/{periodic_task_id}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Periodic Task Update
-     * @description Update periodic task.
-     */
-    post: operations['sep_periodic_task_update_periodic__periodic_task_id__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/stop-task/{task_history_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Stop Task Execution
-     * @description Stop a task history.
-     */
-    post: operations['tasks_stop_task_execution_stop_task__task_history_id__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -4610,30 +4134,6 @@ export interface components {
       /** Skipped Already Approved */
       skipped_already_approved: string[];
     };
-    /** Body_login_login_post */
-    Body_login_login_post: {
-      /** Client Id */
-      client_id?: string | null;
-      /**
-       * Client Secret
-       * Format: password
-       */
-      client_secret?: string | null;
-      /** Grant Type */
-      grant_type?: string | null;
-      /**
-       * Password
-       * Format: password
-       */
-      password: string;
-      /**
-       * Scope
-       * @default
-       */
-      scope: string;
-      /** Username */
-      username: string;
-    };
     /** Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post */
     Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post: {
       /**
@@ -4679,21 +4179,6 @@ export interface components {
        * @default now
        */
       until: string;
-    };
-    /** Body_sync_node_inventory__node_id__sync__post */
-    Body_sync_node_inventory__node_id__sync__post: {
-      /** Syncer */
-      syncer?: string | null;
-    };
-    /** Body_sync_schema_inventory_schemas__schema_id__sync__post */
-    Body_sync_schema_inventory_schemas__schema_id__sync__post: {
-      /** Syncer */
-      syncer?: string | null;
-    };
-    /** Body_sync_service_inventory_services__service_id__sync__post */
-    Body_sync_service_inventory_services__service_id__sync__post: {
-      /** Syncer */
-      syncer?: string | null;
     };
     /**
      * BoolField
@@ -5118,59 +4603,6 @@ export interface components {
       target: string;
     };
     /**
-     * CrontabSchedule
-     * @description Representing a crontab schedule.
-     *
-     *     :param minute: Represents the minute component in cron format. Defaults to `"*"`.
-     *     :type minute: str
-     *     :param hour: Represents the hour component in cron format. Defaults to `"*"`.
-     *     :type hour: str
-     *     :param day_of_week: Represents the day of the week component in cron format.
-     *         Defaults to `"*"`.
-     *     :type day_of_week: str
-     *     :param day_of_month: Represents the day of the month component in cron format.
-     *         Defaults to `"*"`.
-     *     :type day_of_month: str
-     *     :param month_of_year: Represents the month component in cron format.
-     *         Defaults to `"*"`.
-     *     :type month_of_year: str
-     *     :param timezone: The timezone for the cron schedule. Defaults to "UTC". Must be a
-     *         valid timezone as returned in `available_timezones()`
-     *     :type timezone: str
-     */
-    CrontabSchedule: {
-      /**
-       * Day Of Month
-       * @default *
-       */
-      day_of_month: string;
-      /**
-       * Day Of Week
-       * @default *
-       */
-      day_of_week: string;
-      /**
-       * Hour
-       * @default *
-       */
-      hour: string;
-      /**
-       * Minute
-       * @default *
-       */
-      minute: string;
-      /**
-       * Month Of Year
-       * @default *
-       */
-      month_of_year: string;
-      /**
-       * Timezone
-       * @default UTC
-       */
-      timezone: string;
-    };
-    /**
      * DashboardStatsResponse
      * @description Represent aggregate counts for the four dashboard stat cards.
      *
@@ -5435,40 +4867,6 @@ export interface components {
       task_id?: number | null;
       /** Task Name */
       task_name: string;
-    };
-    /**
-     * EnhancedPeriodicTaskCreateRequest
-     * @description Define a model for creating periodic tasks compatible with the SEP app form data.
-     *
-     *     This model accepts keys prefixed with 'execute_request_' from form data, which are
-     *     parsed by the base class into an execute_request object.
-     *
-     *     :param start_time: The start time for the task execution.
-     *     :type start_time: UTCDatetime | EmptyStrToNone
-     *     :param enabled: Whether the task is enabled.
-     *     :type enabled: bool | EmptyStrToNone
-     *     :param execute_request: The execution request details for the task.
-     *     :type execute_request: PeriodicTaskExecuteRequest | EmptyStrToNone
-     *     :param interval: The interval schedule for the task.
-     *     :type interval: IntervalSchedule | EmptyStrToNone
-     *     :param crontab: The crontab schedule for the task.
-     *     :type crontab: CrontabSchedule | EmptyStrToNone
-     *     :param task: The SEP task name.
-     *     :type task: str
-     */
-    EnhancedPeriodicTaskCreateRequest: {
-      /** Crontab */
-      crontab?: components['schemas']['CrontabSchedule'] | null;
-      /** Enabled */
-      enabled?: boolean | null;
-      /** Execute Request */
-      execute_request?: components['schemas']['PeriodicTaskExecuteRequest'] | null;
-      /** Interval */
-      interval?: components['schemas']['IntervalSchedule'] | null;
-      /** Start Time */
-      start_time?: string | null;
-      /** Task */
-      task: string;
     };
     /**
      * ExecutionEvent
@@ -6026,20 +5424,6 @@ export interface components {
       type: 'integer';
     };
     /**
-     * IntervalSchedule
-     * @description Represent an interval schedule.
-     *
-     *     :param every: The number of periods between each execution.
-     *     :type every: PositiveInt
-     *     :param period: The period unit for the interval (e.g., hours, minutes).
-     *     :type period: Period
-     */
-    IntervalSchedule: {
-      /** Every */
-      every: number;
-      period: components['schemas']['Period'];
-    };
-    /**
      * InventorySelectorOption
      * @description Represent a minimal ``{id, name}`` option for inventory autocomplete selectors.
      *
@@ -6176,48 +5560,6 @@ export interface components {
     };
     /**
      * Node
-     * @description Represent an inventory node.
-     *
-     *     This model represents a node within the Inventory API, including its network
-     *     address, external identifier, name, and type.
-     *
-     *     :param address: The network address of the node.
-     *     :type address: NonEmptyStr
-     *     :param name: The name of the node, aliased as "node_name".
-     *     :type name: NonEmptyStr
-     *     :param external_id: The external identifier for the node, aliased as "node_id".
-     *         Defaults to None.
-     *     :type external_id: NonEmptyStr | EmptyStrToNone
-     *     :param source: The source of the node information. Defaults to None.
-     *     :type source: SourceEnum | EmptyStrToNone
-     *     :param type: The type of the node (e.g., "generic"), aliased as "node_type".
-     *         Defaults to "generic".
-     *     :type type: NonEmptyStr
-     *     :param services: The services associated with the node.
-     *     :type services: list[Service]
-     */
-    'Node-Input': {
-      /** Address */
-      address: string;
-      /** Node Id */
-      node_id?: string | null;
-      /** Node Name */
-      node_name: string;
-      /**
-       * Node Type
-       * @default generic
-       */
-      node_type: string;
-      /**
-       * Services
-       * @default []
-       */
-      services: components['schemas']['Service'][];
-      /** Source */
-      source?: components['schemas']['SourceEnum'] | null;
-    };
-    /**
-     * Node
      * @description Represent a node in the inventory.
      *
      *     :param address: The network address of the node.
@@ -6235,7 +5577,7 @@ export interface components {
      *     :param services: A list of services associated with the node.
      *     :type services: list[Service]
      */
-    'Node-Output': {
+    Node: {
       /** Address */
       address: string;
       /**
@@ -6424,75 +5766,6 @@ export interface components {
       offset: number;
       /** Total */
       total: number;
-    };
-    /**
-     * Period
-     * @enum {string}
-     */
-    Period: 'days' | 'hours' | 'minutes' | 'seconds' | 'microseconds';
-    /**
-     * PeriodicTaskExecuteRequest
-     * @description Represent the execute request the periodic task will use for executions.
-     *
-     *     :param meta: A dictionary of meta variables for the task execution.
-     *         Defaults to an empty dictionary.
-     *     :type meta: dict[str, Any]
-     *     :param payload: Optional payload data or file path for the task execution.
-     *         Defaults to None.
-     *     :type payload: str | None
-     *     :param eta: The earliest time the task can be executed. Forced to None, as periodic
-     *         tasks are always executed on the defined schedule.
-     *     :type eta: datetime | None
-     */
-    PeriodicTaskExecuteRequest: {
-      /** Anonymize Mask */
-      anonymize_mask?: number | null;
-      /**
-       * Chain On Failure
-       * @default false
-       */
-      chain_on_failure: boolean;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-      /**
-       * Meta
-       * @default {}
-       */
-      meta: Record<string, never>;
-      /** Payload */
-      payload?: string | null;
-    };
-    /**
-     * PeriodicTaskRequest
-     * @description Define the base model for writing periodic tasks from the SEP app.
-     *
-     *     Every field defaults to None and only fields that were set are sent to the Tasks
-     *     API.
-     *
-     *     :param start_time: The start time for the task execution.
-     *     :type start_time: UTCDatetime | EmptyStrToNone
-     *     :param enabled: Whether the task is enabled.
-     *     :type enabled: bool | EmptyStrToNone
-     *     :param execute_request: The execution request details for the task.
-     *     :type execute_request: PeriodicTaskExecuteRequest | EmptyStrToNone
-     *     :param interval: The interval schedule for the task.
-     *     :type interval: IntervalSchedule | EmptyStrToNone
-     *     :param crontab: The crontab schedule for the task.
-     *     :type crontab: CrontabSchedule | EmptyStrToNone
-     */
-    PeriodicTaskRequest: {
-      /** Crontab */
-      crontab?: components['schemas']['CrontabSchedule'] | null;
-      /** Enabled */
-      enabled?: boolean | null;
-      /** Execute Request */
-      execute_request?: components['schemas']['PeriodicTaskExecuteRequest'] | null;
-      /** Interval */
-      interval?: components['schemas']['IntervalSchedule'] | null;
-      /** Start Time */
-      start_time?: string | null;
     };
     /**
      * PeriodicTaskSummary
@@ -7220,26 +6493,6 @@ export interface components {
     S3Tool: 's3cmd' | 'awscli';
     /**
      * Schema
-     * @description Represent an inventory schema.
-     *
-     *     This model represents a schema within the Inventory API, including its name.
-     *
-     *     :param name: The name of the schema.
-     *     :type name: NonEmptyStr
-     *     :param tables: The tables associated with the schema.
-     *     :type tables: list[Table]
-     */
-    'Schema-Input': {
-      /** Name */
-      name: string;
-      /**
-       * Tables
-       * @default []
-       */
-      tables: components['schemas']['Table'][];
-    };
-    /**
-     * Schema
      * @description Represent a database schema within a service.
      *
      *     :param id: The primary key for the table. Auto-incremented and not nullable.
@@ -7262,7 +6515,7 @@ export interface components {
      *     :param tables: A list of tables within the schema.
      *     :type tables: list[Table]
      */
-    'Schema-Output': {
+    Schema: {
       /**
        * Created At
        * Format: date-time
@@ -7456,57 +6709,6 @@ export interface components {
       language: string;
     };
     /**
-     * Service
-     * @description Represent an inventory service.
-     *
-     *     This model represents a service within the Inventory API, including its environment,
-     *     cluster, custom labels, external identifier, name, port, and type.
-     *
-     *     :param environment: The environment in which the service is running (e.g.,
-     *         "production", "staging"). Defaults to None.
-     *     :type environment: str | None
-     *     :param cluster: The cluster in which the service is running. Defaults to None.
-     *     :type cluster: str | None
-     *     :param replication_set: The replication set in which the service is running. Defaults to None.
-     *     :type replication_set: str | None
-     *     :param custom_labels: Custom labels associated with the service. Defaults to None.
-     *     :type custom_labels: dict[str, Any] | None
-     *     :param external_id: The external identifier for the service, aliased as
-     *         "service_id". Defaults to None.
-     *     :type external_id: NonEmptyStr | EmptyStrToNone
-     *     :param name: The name of the service, aliased as "service_name".
-     *     :type name: NonEmptyStr
-     *     :param port: The port number on which the service is running. Defaults to None.
-     *     :type port: int | EmptyStrToNone
-     *     :param type: The type of the service (e.g., "service_type"), aliased as
-     *         "service_type".
-     *     :type type: ServiceTypeEnum
-     *     :param schemas: The schemas associated with the service.
-     *     :type schemas: list[Schema]
-     */
-    Service: {
-      /** Cluster */
-      cluster?: string | null;
-      /** Custom Labels */
-      custom_labels?: Record<string, never> | null;
-      /** Environment */
-      environment?: string | null;
-      /** Port */
-      port?: number | null;
-      /** Replication Set */
-      replication_set?: string | null;
-      /**
-       * Schemas
-       * @default []
-       */
-      schemas: components['schemas']['Schema-Input'][];
-      /** Service Id */
-      service_id?: string | null;
-      /** Service Name */
-      service_name: string;
-      service_type: components['schemas']['ServiceTypeEnum'];
-    };
-    /**
      * ServiceField
      * @description Represent an inventory service selector field.
      *
@@ -7607,7 +6809,7 @@ export interface components {
       id: number | null;
       /** Name */
       name: string;
-      node: components['schemas']['Node-Output'];
+      node: components['schemas']['Node'];
       /** Node Id */
       node_id: number;
       /** Port */
@@ -7615,7 +6817,7 @@ export interface components {
       /** Replication Set */
       replication_set?: string | null;
       /** Schemas */
-      schemas: components['schemas']['Schema-Output'][];
+      schemas: components['schemas']['Schema'][];
       type: components['schemas']['ServiceTypeEnum'];
       /** Updated At */
       updated_at?: string | null;
@@ -8001,28 +7203,6 @@ export interface components {
        * @enum {string}
        */
       type: 'string';
-    };
-    /**
-     * Table
-     * @description Represent an inventory table.
-     *
-     *     This model represents a table within a schema in the Inventory API, including its
-     *     name and the SQL statement used to create the table, and details about its keys.
-     *
-     *     :param name: The name of the table.
-     *     :type name: NonEmptyStr
-     *     :param create: The SQL statement used to create the table.
-     *     :type create: NonEmptyStr
-     *     :param keys: A dictionary containing details about table keys (e.g., primary, unique).
-     *     :type keys: dict[str, Any]
-     */
-    Table: {
-      /** Create */
-      create: string;
-      /** Keys */
-      keys?: Record<string, never>;
-      /** Name */
-      name: string;
     };
     /**
      * TableField
@@ -8857,26 +8037,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  read_root__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
   admin_list_apps_api_admin_apps__get: {
     parameters: {
       query?: never;
@@ -11934,7 +11094,7 @@ export interface operations {
       };
     };
   };
-  tasks_tasks_api_list_api_plugins_tasks__get: {
+  task_manager_tasks_api_list_api_plugins_tasks__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -11954,7 +11114,7 @@ export interface operations {
       };
     };
   };
-  tasks_get_schema_api_plugins_tasks_schema_get: {
+  task_manager_get_schema_api_plugins_tasks_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -11974,7 +11134,7 @@ export interface operations {
       };
     };
   };
-  tasks_tasks_api_detail_api_plugins_tasks__task_name__get: {
+  task_manager_tasks_api_detail_api_plugins_tasks__task_name__get: {
     parameters: {
       query?: {
         owner?: components['schemas']['TaskOwner'] | null;
@@ -12237,7 +11397,7 @@ export interface operations {
       };
     };
   };
-  sep_list_periodic_tasks_api_sep_periodic_tasks__get: {
+  tasks_list_periodic_tasks_api_sep_periodic_tasks__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -12268,7 +11428,7 @@ export interface operations {
       };
     };
   };
-  sep_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put: {
+  tasks_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put: {
     parameters: {
       query?: never;
       header?: never;
@@ -12314,7 +11474,7 @@ export interface operations {
       };
     };
   };
-  sep_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete: {
+  tasks_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -12354,7 +11514,7 @@ export interface operations {
       };
     };
   };
-  sep_create_periodic_task_api_sep_periodic_tasks__task_name___post: {
+  tasks_create_periodic_task_api_sep_periodic_tasks__task_name___post: {
     parameters: {
       query?: never;
       header?: never;
@@ -12499,7 +11659,7 @@ export interface operations {
       };
     };
   };
-  sep_list_merged_task_history_api_sep_task_history__get: {
+  tasks_list_merged_task_history_api_sep_task_history__get: {
     parameters: {
       query?: {
         task_names?: string[] | null;
@@ -12544,7 +11704,7 @@ export interface operations {
       };
     };
   };
-  sep_stop_task_history_api_sep_task_history__task_history_id__stop__post: {
+  tasks_stop_task_history_api_sep_task_history__task_history_id__stop__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -12586,7 +11746,7 @@ export interface operations {
       };
     };
   };
-  sep_get_task_stats_api_sep_task_stats__task_name__get: {
+  tasks_get_task_stats_api_sep_task_stats__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -12624,37 +11784,6 @@ export interface operations {
           'application/json': {
             detail: string;
           };
-        };
-      };
-    };
-  };
-  sep_download_artifact_artifacts_download__token__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        token: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -12733,741 +11862,6 @@ export interface operations {
         owner?: components['schemas']['TaskOwner'] | null;
       };
       header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  node_list_inventory__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  node_create_inventory__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Node-Input'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schema_detail_inventory_schemas__schema_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schema_delete_inventory_schemas__schema_id__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sync_schema_inventory_schemas__schema_id__sync__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_sync_schema_inventory_schemas__schema_id__sync__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  table_create_for_schema_inventory_schemas__schema_id__tables__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        schema_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Table'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  service_detail_inventory_services__service_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  check_service_connectivity_inventory_services__service_id__check_connectivity__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  service_delete_inventory_services__service_id__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schema_create_for_service_inventory_services__service_id__schemas__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Schema-Input'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sync_service_inventory_services__service_id__sync__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        service_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_sync_service_inventory_services__service_id__sync__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  table_delete_inventory_tables__table_id__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        table_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  node_detail_inventory__node_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  node_delete_inventory__node_id__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  service_create_for_node_inventory__node_id__services__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Service'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sync_node_inventory__node_id__sync__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        node_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_sync_node_inventory__node_id__sync__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  login_form_login_get: {
-    parameters: {
-      query?: {
-        next?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  login_login_post: {
-    parameters: {
-      query?: {
-        next?: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_login_login_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  logout_logout_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-    };
-  };
-  sep_periodic_task_create_periodic__post: {
-    parameters: {
-      query?: never;
-      header?: {
-        referer?: string;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['EnhancedPeriodicTaskCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_periodic_task_delete_periodic__periodic_task_id__delete_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        referer?: string;
-      };
-      path: {
-        periodic_task_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  sep_periodic_task_update_periodic__periodic_task_id__update_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        referer?: string;
-      };
-      path: {
-        periodic_task_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['PeriodicTaskRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_stop_task_execution_stop_task__task_history_id__post: {
-    parameters: {
-      query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
-      };
-      header?: {
-        referer?: string;
-      };
       path: {
         task_history_id: number;
       };

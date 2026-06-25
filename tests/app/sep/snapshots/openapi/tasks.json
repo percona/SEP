@@ -3014,7 +3014,7 @@
     "/api/plugins/tasks/": {
       "get": {
         "description": "List task definitions for the read-only plugin UI.\n\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:return: Task rows for the schema-driven list view.\n:rtype: list[TaskListResponse]",
-        "operationId": "tasks_tasks_api_list_api_plugins_tasks__get",
+        "operationId": "task_manager_tasks_api_list_api_plugins_tasks__get",
         "responses": {
           "200": {
             "content": {
@@ -3023,7 +3023,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TaskListResponse"
                   },
-                  "title": "Response Tasks Tasks Api List Api Plugins Tasks  Get",
+                  "title": "Response Task Manager Tasks Api List Api Plugins Tasks  Get",
                   "type": "array"
                 }
               }
@@ -3033,14 +3033,14 @@
         },
         "summary": "Tasks Api List",
         "tags": [
-          "tasks"
+          "Task Manager"
         ]
       }
     },
     "/api/plugins/tasks/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "tasks_get_schema_api_plugins_tasks_schema_get",
+        "operationId": "task_manager_get_schema_api_plugins_tasks_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -3055,14 +3055,14 @@
         },
         "summary": "Get Schema",
         "tags": [
-          "tasks"
+          "Task Manager"
         ]
       }
     },
     "/api/plugins/tasks/{task_name}": {
       "get": {
         "description": "Return the per-task detail bundle for the read-only plugin UI.\n\n:param task: The task definition resolved by name.\n:type task: Task\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:param executor_hosts_ctx: Executor hosts enriched with inventory labels.\n:type executor_hosts_ctx: ExecutorHostsCtx\n:return: Task definition, history, periodic schedules, and executor hosts.\n:rtype: TaskDetailResponse",
-        "operationId": "tasks_tasks_api_detail_api_plugins_tasks__task_name__get",
+        "operationId": "task_manager_tasks_api_detail_api_plugins_tasks__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3114,7 +3114,7 @@
         },
         "summary": "Tasks Api Detail",
         "tags": [
-          "tasks"
+          "Task Manager"
         ]
       }
     }
