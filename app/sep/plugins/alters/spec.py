@@ -32,10 +32,8 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
 from app.sep.inventory import CreatedService
-from app.sep.plugins.alters.models import AltersCreate
+from app.sep.plugins.alters.models import AltersCreate, DEFAULT_ALTERS_DSN_TABLE
 from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
-
-DEFAULT_RECURSION_DSN_TABLE = "D=percona,t=dsns"
 
 
 def _build_dsn_with_service(
@@ -89,7 +87,7 @@ def build_alters_spec(
 
     effective_recursion_method = body.recursion_method
     if body.recursion_method == "dsn":
-        dsn_table_base = (body.dsn_table or "").strip() or DEFAULT_RECURSION_DSN_TABLE
+        dsn_table_base = (body.dsn_table or "").strip() or DEFAULT_ALTERS_DSN_TABLE
         dsn_table = _build_dsn_with_service(
             dsn_table_base, service.node.address, service.port
         )

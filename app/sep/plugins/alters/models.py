@@ -247,7 +247,7 @@ class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
         Ui(
             label="DSN Table",
             section="recursion",
-            default="D=percona,t=dsns",
+            default=DEFAULT_ALTERS_DSN_TABLE,
             description="Required when recursion method is 'dsn'",
         ),
     ] = ""
