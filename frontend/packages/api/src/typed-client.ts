@@ -21,8 +21,6 @@
  *
  * One client per OpenAPI spec (see `scripts/codegen.ts`):
  *   - `mainApi`      — core API (oauth, users)
- *   - `inventoryApi` — `/api/inventory/*`
- *   - `tasksApi`     — `/api/tasks/*`
  *   - `sepApi`       — SEP app
  *
  * The generated `paths` keys include the mount prefix (e.g. `/api/users/me`),
@@ -40,10 +38,8 @@
 import createClient, { type Client, type Middleware } from 'openapi-fetch';
 import { emitUnauthorized, getToken } from './client';
 import { ApiError } from './errors';
-import type { paths as InventoryPaths } from './generated/inventory';
 import type { paths as MainPaths } from './generated/main';
 import type { paths as SepPaths } from './generated/sep';
-import type { paths as TasksPaths } from './generated/tasks';
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -118,8 +114,6 @@ function makeClient<Paths extends object>(): Client<Paths> {
 }
 
 export const mainApi = makeClient<MainPaths>();
-export const inventoryApi = makeClient<InventoryPaths>();
-export const tasksApi = makeClient<TasksPaths>();
 export const sepApi = makeClient<SepPaths>();
 
 interface FetchResult<T> {

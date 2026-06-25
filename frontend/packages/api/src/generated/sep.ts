@@ -2704,6 +2704,34 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sep/app-info/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get App Info
+     * @description Return shell metadata for the React frontend.
+     *
+     *     Render ``footer_text`` from the shared :func:`render_footer_text` helper so
+     *     the JSON endpoint and the legacy Jinja sidebar footer cannot drift. The
+     *     helper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live
+     *     ``SEP__FOOTER_TEMPLATE`` override is reflected without a restart. Access is
+     *     gated by the router-level ``IsApiAuthenticated`` dependency.
+     *
+     *     :return: The rendered footer text.
+     */
+    get: operations['sep_get_app_info_api_sep_app_info__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sep/dashboard/': {
     parameters: {
       query?: never;
@@ -2782,6 +2810,103 @@ export interface paths {
     get: operations['sep_list_hosts_api_sep_hosts__get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/periodic-tasks/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Periodic Tasks
+     * @description Return the upstream periodic-task list through the SEP gateway.
+     *
+     *     :param tasks_api: The Tasks API client used to fetch the upstream list.
+     *     :return: The upstream periodic-task list, or ``[]`` when the upstream
+     *         payload is not a list.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500).
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    get: operations['sep_list_periodic_tasks_api_sep_periodic_tasks__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/periodic-tasks/{periodic_task_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Update Periodic Task
+     * @description Dispatch a full-replacement update of a periodic task to the Tasks API.
+     *
+     *     :param periodic_task_id: The id of the periodic task to update.
+     *     :param tasks_api: The Tasks API client used to update the periodic task.
+     *     :param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.
+     *     :return: The updated periodic task as returned by the Tasks API.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500).
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    put: operations['sep_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put'];
+    post?: never;
+    /**
+     * Delete Periodic Task
+     * @description Dispatch deletion of a periodic task to the Tasks API.
+     *
+     *     :param periodic_task_id: The id of the periodic task to delete.
+     *     :param tasks_api: The Tasks API client used to delete the periodic task.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500).
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    delete: operations['sep_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/periodic-tasks/{task_name}/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Periodic Task
+     * @description Dispatch creation of a periodic task for ``task_name`` to the Tasks API.
+     *
+     *     :param task_name: The task name the new periodic schedule runs.
+     *     :param tasks_api: The Tasks API client used to create the periodic task.
+     *     :param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.
+     *     :return: The created periodic task as returned by the Tasks API.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500).
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    post: operations['sep_create_periodic_task_api_sep_periodic_tasks__task_name___post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2894,28 +3019,59 @@ export interface paths {
     };
     /**
      * List Merged Task History
-     * @description Return merged execution history for one or more task names.
+     * @description Return task-history rows, listing all of them or merging selected names.
      *
-     *     Each ``task_names`` value is queried independently against the Tasks API
-     *     with the same ``status`` filter and a widened upstream window starting at
-     *     ``offset=0``; the SEP layer merges, sorts newest-first, then applies the
-     *     client ``offset`` and ``limit`` globally before responding.
+     *     Three-way on ``task_names``:
+     *
+     *     * **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already
+     *       paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.
+     *     * **provided, at least one non-blank name** -- query each name independently
+     *       against the Tasks API, then merge, sort newest-first, and paginate globally.
+     *     * **provided, every name blank after trimming** -- reject with ``422``.
      *
      *     :param tasks_api: The Tasks API client used to fetch upstream history.
-     *     :type tasks_api: TaskAPI
-     *     :param task_names: One or more task names (repeat the query param).
-     *     :type task_names: list[str]
-     *     :param task_status: Optional exact status filter forwarded upstream.
-     *     :type task_status: TaskHistoryStatusEnum | None
      *     :param pagination: Validated offset/limit query parameters.
-     *     :type pagination: Pagination
-     *     :return: Merged paginated task history across all requested names.
-     *     :rtype: PaginatedResponse[TaskHistoryResponse]
-     *     :raises HTTPException: When every supplied task name is empty after trimming.
+     *     :param task_names: Zero or more task names (repeat the query param); omit to
+     *         list all history.
+     *     :param task_status: Optional exact status filter forwarded upstream.
+     *     :return: Paginated task history, either the upstream list or the merged set.
+     *     :raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but
+     *         every value is empty after trimming.
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``, on either the list-all passthrough or
+     *         the merged-history fan-out.
      */
     get: operations['sep_list_merged_task_history_api_sep_task_history__get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/task-history/{task_history_id}/stop/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Stop Task History
+     * @description Dispatch a stop request for a single task-history row to the Tasks API.
+     *
+     *     :param task_history_id: The id of the task-history row to stop.
+     *     :param tasks_api: The Tasks API client used to issue the stop request.
+     *     :return: The stopped task-history row as returned by the Tasks API.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500), e.g. a ``400`` when the task is not running.
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    post: operations['sep_stop_task_history_api_sep_task_history__task_history_id__stop__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -5065,6 +5221,17 @@ export interface components {
       updated_at?: string | null;
     };
     /**
+     * AppInfo
+     * @description Represent the response of ``GET /api/sep/app-info``.
+     *
+     *     :param footer_text: The rendered sidebar footer text (application summary
+     *         and version by default).
+     */
+    AppInfo: {
+      /** Footer Text */
+      footer_text: string;
+    };
+    /**
      * AppInfoResponse
      * @description Represent a per-app info entry returned by ``GET /``.
      *
@@ -5774,7 +5941,11 @@ export interface components {
      *         runs.
      *     :param id: The task's unique identifier.
      *     :param backend: The backend worker/engine executing the task.
-     *     :param data: The raw configuration and parameters used for execution.
+     *     :param data: The raw configuration and parameters used for execution. Tasks
+     *         created through the JSON schema-driven path also carry a reserved additive
+     *         ``_form`` key holding the verbatim, validated create-form body for
+     *         prefilling an edit form; it is absent for tasks created through a legacy
+     *         form, so consumers must treat it as optional.
      *     :param protected: Whether the task is protected from deletion or modification.
      *     :param alert_on_fail: Whether a notification is sent on task failure.
      *     :param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls
@@ -14621,6 +14792,26 @@ export interface operations {
       };
     };
   };
+  sep_get_app_info_api_sep_app_info__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AppInfo'];
+        };
+      };
+    };
+  };
   sep_get_dashboard_stats_api_sep_dashboard__get: {
     parameters: {
       query?: never;
@@ -14657,6 +14848,169 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HostResponse'][];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_list_periodic_tasks_api_sep_periodic_tasks__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>[];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        periodic_task_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        periodic_task_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_create_periodic_task_api_sep_periodic_tasks__task_name___post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
       /** @description Upstream Tasks API failure. */
@@ -14773,8 +15127,8 @@ export interface operations {
   };
   sep_list_merged_task_history_api_sep_task_history__get: {
     parameters: {
-      query: {
-        task_names: string[];
+      query?: {
+        task_names?: string[] | null;
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
         offset?: number;
         limit?: number;
@@ -14801,6 +15155,59 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_stop_task_history_api_sep_task_history__task_history_id__stop__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
         };
       };
     };
