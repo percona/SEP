@@ -23,7 +23,7 @@ from functools import partial
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 
 from app.core.exceptions import (
     HTTPBadRequestException,
@@ -490,24 +490,17 @@ def resolve_predecessor_specs(
     return resolved
 
 
-_PRE_CHECKS_AUTO_FIRE_FAILED_MESSAGE = (
-    "Task group was created, but automatic pre-checks could not be started. "
-    "Run Pre-checks from the task detail page."
-)
-
-
 async def cascade_create_alters_group(
     tasks_api: RemoteAPI,
     parent_task: TaskWrite,
     pre_checks_template: TaskWrite,
     body: AltersCreate,
-) -> str | None:
-    """POST parent + dry-run + pre-checks, then fire the pre-checks chain.
+) -> None:
+    """POST parent + dry-run + pre-checks; roll back on any failure.
 
-    Atomically creates the three-task group, then best-effort fires
-    ``POST /execute/{parent}-pre-checks`` to chain into the parent run task.
-    Rolls back already-created tasks when any of the three POSTs fail; a
-    failure on the execute call leaves the persisted group intact.
+    Atomically creates the three-task group. Chain execution is not fired
+    here; the user starts pre-checks from the detail action bar (see
+    :func:`~app.sep.plugins.framework.cascade.build_predecessor_chain_execute_body`).
 
     :param tasks_api: The Tasks API client.
     :type tasks_api: RemoteAPI
@@ -516,9 +509,9 @@ async def cascade_create_alters_group(
     :param pre_checks_template: The imperative pre-checks payload from
         :func:`build_pre_checks_task_payload`.
     :type pre_checks_template: TaskWrite
-    :param body: The alters create/write payload (for ``continue_on_pre_check_failure``).
-    :return: A user-facing warning when auto-fire of pre-checks fails, else ``None``.
-    :rtype: str | None
+    :param body: The alters create/write payload (for ``continue_on_pre_check_failure``
+        when resolving the predecessor spec).
+    :type body: AltersCreate
     :raises Exception: Re-raises the underlying Tasks API error after rollback
         when one of the three task POSTs fails.
     """
@@ -556,23 +549,6 @@ async def cascade_create_alters_group(
                     rollback_exc,
                 )
         raise
-
-    try:
-        await tasks_api.post(
-            f"/execute/{predecessor_payload['name']}",
-            json={
-                "chain_task_names": [parent_payload["name"]],
-                "chain_on_failure": predecessor_spec.on_failure == "continue",
-            },
-        )
-    except HTTPException as exc:
-        logger.warning(
-            "Auto-fire of pre-checks %r failed; task group persisted: %s",
-            predecessor_payload["name"],
-            exc,
-        )
-        return _PRE_CHECKS_AUTO_FIRE_FAILED_MESSAGE
-    return None
 
 
 _ALTERS_GROUP_RENAME_MESSAGE = (
@@ -849,15 +825,14 @@ def build_alters_api_task_response(
     *,
     response_model: type[AltersTaskResponse] = AltersTaskResponse,
     connectivity_warning: ConnectivityWarning | None = None,
-    pre_checks_auto_fire_warning: str | None = None,
     username_mapping: dict[str, str] | None = None,
 ) -> AltersTaskResponse:
     """Build an alters task response object for the JSON API.
 
     The warning fields are only carried when ``response_model`` declares them:
     list/detail use the base :class:`~app.sep.plugins.alters.models.AltersTaskResponse`
-    (neither warning), create uses ``AltersTaskResponseCreate`` (both), and update
-    uses ``AltersTaskResponseUpdate`` (connectivity only).
+    (no warnings), create/update use the derived models with
+    ``connectivity_warning``.
 
     :param task: The alters task retrieved from the Tasks API.
     :type task: Task
@@ -868,9 +843,6 @@ def build_alters_api_task_response(
     :param connectivity_warning: A warning to surface when a connectivity
         check failed during the task creation flow.
     :type connectivity_warning: ConnectivityWarning | None
-    :param pre_checks_auto_fire_warning: A warning when automatic pre-checks
-        could not be started after create.
-    :type pre_checks_auto_fire_warning: str | None
     :param username_mapping: Optional mapping of user IDs to usernames.
     :type username_mapping: dict[str, str] | None
     :return: A validated alters task API response object.
@@ -885,10 +857,7 @@ def build_alters_api_task_response(
             meta["_command_line"] = command_line
     warning_extras = {
         field: value
-        for field, value in (
-            ("connectivity_warning", connectivity_warning),
-            ("pre_checks_auto_fire_warning", pre_checks_auto_fire_warning),
-        )
+        for field, value in (("connectivity_warning", connectivity_warning),)
         if field in response_model.model_fields
     }
     return build_default_task_response(

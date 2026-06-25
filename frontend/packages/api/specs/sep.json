@@ -491,7 +491,7 @@
         "type": "object"
       },
       "AltersTaskResponse": {
-        "description": "Represent an alters task API response for list and detail surfaces.\n\nThe create/update routes return the\n:data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models\nderived from this base; both add ``connectivity_warning`` (and, for create,\n``pre_checks_auto_fire_warning``) per the framework's derived create-response\nstandard, so the always-null warning fields stay off list/detail rows.\n\n:param name: The name of the alters task.\n:param owner: The entity or user that owns the task.\n:param service_type: The type of database service (always MySQL for alters).\n:param status: The current execution status of the task.\n:param id: The unique identifier for the alters task.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for the alter execution.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: The user who initiated the task.\n:param last_updated_by: The user who last modified the task record.",
+        "description": "Represent an alters task API response for list and detail surfaces.\n\nThe create/update routes return the\n:data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models\nderived from this base; both add ``connectivity_warning`` per the framework's\nderived create-response standard, so the always-null warning field stays off\nlist/detail rows.\n\n:param name: The name of the alters task.\n:param owner: The entity or user that owns the task.\n:param service_type: The type of database service (always MySQL for alters).\n:param status: The current execution status of the task.\n:param id: The unique identifier for the alters task.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for the alter execution.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: The user who initiated the task.\n:param last_updated_by: The user who last modified the task record.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -605,7 +605,7 @@
         "type": "object"
       },
       "AltersTaskResponseCreate": {
-        "description": "Represent the create response for an alters task group, carrying the post-creation connectivity warning and the automatic pre-checks auto-fire warning.",
+        "description": "Represent the create response for an alters task group, carrying the post-creation connectivity warning.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -679,17 +679,6 @@
           },
           "owner": {
             "$ref": "#/components/schemas/TaskOwner"
-          },
-          "pre_checks_auto_fire_warning": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pre Checks Auto Fire Warning"
           },
           "protected": {
             "title": "Protected",
@@ -3206,7 +3195,7 @@
       },
       "ChainedPredecessor": {
         "additionalProperties": false,
-        "description": "Represent a chained predecessor task that runs before the parent.\n\nThe cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes\nthis spec when POSTing, PUTting, or DELETEing a plugin's tasks: each\npredecessor is created with ``data[\"parent\"]`` linked to the parent's\nname (when ``parent_link`` is true) and named\n``f\"{parent_name}{name_suffix}\"``. After every create succeeds, the\ncascade fires ``POST /execute/{first_predecessor_name}`` with\n``chain_task_names`` spanning the remaining predecessors followed by\nthe parent; ``chain_on_failure`` is derived from ``on_failure``\n(``\"halt\"`` maps to ``False``, ``\"continue\"`` maps to ``True``). The\nchain inherits ``_chain_on_failure`` chain-wide via celery's\n:func:`_dispatch_chained_task`.\n\n:param name_suffix: String appended to the parent's ``name`` to form\n    the predecessor's name (for example ``\"-pre-checks\"``).\n:type name_suffix: NonEmptyStr\n:param on_failure: Chain semantics when the predecessor terminates\n    non-successfully. ``\"halt\"`` (default) stops the chain;\n    ``\"continue\"`` lets the chain continue regardless. Translates to\n    the boolean ``chain_on_failure`` flag at execute time.\n:type on_failure: Literal[\"halt\", \"continue\"]\n:param parent_link: When true, set ``data[\"parent\"]`` on the\n    predecessor payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "description": "Represent a chained predecessor task that runs before the parent.\n\nThe cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes\nthis spec when POSTing, PUTting, or DELETEing a plugin's tasks: each\npredecessor is created with ``data[\"parent\"]`` linked to the parent's\nname (when ``parent_link`` is true) and named\n``f\"{parent_name}{name_suffix}\"``. Create persists task records only;\nwhen the user starts the chain, the consuming plugin fires\n``POST /execute/{first_predecessor_name}`` using\n:func:`build_predecessor_chain_execute_body` for ``chain_task_names``\n(remaining predecessors then parent) and ``chain_on_failure`` derived\nfrom ``on_failure`` (``\"halt\"`` maps to ``False``, ``\"continue\"`` maps\nto ``True``).\n\n:param name_suffix: String appended to the parent's ``name`` to form\n    the predecessor's name (for example ``\"-pre-checks\"``).\n:type name_suffix: NonEmptyStr\n:param on_failure: Chain semantics when the predecessor terminates\n    non-successfully. ``\"halt\"`` (default) stops the chain;\n    ``\"continue\"`` lets the chain continue regardless. Translates to\n    the boolean ``chain_on_failure`` flag at execute time.\n:type on_failure: Literal[\"halt\", \"continue\"]\n:param parent_link: When true, set ``data[\"parent\"]`` on the\n    predecessor payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
         "properties": {
           "name_suffix": {
             "minLength": 1,
@@ -11324,7 +11313,7 @@
         ]
       },
       "post": {
-        "description": "Create an alters task group from a JSON payload request body.\n\nPOSTs the parent execute task, dry-run derived sibling, pre-checks\npredecessor, and fires ``POST /execute/{name}-pre-checks`` to chain into\nthe parent run task.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics — an unchecked box\n    submits no field); this asymmetry is intentional.\n:type check_connectivity: bool",
+        "description": "Create an alters task group from a JSON payload request body.\n\nPOSTs the parent execute task, dry-run derived sibling, and pre-checks\npredecessor. Pre-checks are started manually from the detail page.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics — an unchecked box\n    submits no field); this asymmetry is intentional.\n:type check_connectivity: bool",
         "operationId": "alters_alters_api_create_api_plugins_alters__post",
         "parameters": [
           {
