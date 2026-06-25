@@ -23,408 +23,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/alert-troubleshooting/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Troubleshooting Index
-     * @description Render the Alert Troubleshooting index page.
-     *
-     *     Display available alerts grouped by database service type in expandable
-     *     accordion sections.
-     *
-     *     :param request: The HTTP request object.
-     *     :type request: Request
-     *     :param context: The assembled template context with grouped alerts.
-     *     :type context: TroubleshootingIndexContext
-     *     :return: The rendered HTML response.
-     *     :rtype: HTMLResponse
-     */
-    get: operations['troubleshooting_index_alert_troubleshooting__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alert-troubleshooting/execute': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Troubleshooting Execute
-     * @description Execute a snippet via AJAX and return the task ID as JSON.
-     *
-     *     Proxy the execution request to the Tasks API and return the task history
-     *     ID for subsequent output polling. The caller passes ``snippet_filename`` as
-     *     a query parameter so nested snippet keys do not occupy a routed path segment.
-     *
-     *     :param tasks_api: The authenticated Tasks API client.
-     *     :type tasks_api: TaskAPI
-     *     :param snippet: The validated executable snippet.
-     *     :type snippet: AjaxExecutableSnippet
-     *     :param execution_request_meta: The assembled execution metadata.
-     *     :type execution_request_meta: ExecutionRequestMeta
-     *     :return: A JSON response with the task ID and submission status.
-     *     :rtype: JSONResponse
-     */
-    post: operations['troubleshooting_execute_alert_troubleshooting_execute_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alert-troubleshooting/output/{task_history_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Troubleshooting Output
-     * @description Poll the execution status and output for a task history entry.
-     *
-     *     Return the current task status and, when finished, the STDOUT content
-     *     from the task's logs.  When the task has failed and STDERR is
-     *     available, include it in the ``error`` field so the client can display
-     *     the failure reason.
-     *
-     *     :param task_history_id: The task history ID to poll.
-     *     :type task_history_id: int
-     *     :param tasks_api: The authenticated Tasks API client.
-     *     :type tasks_api: TaskAPI
-     *     :return: A JSON response with the task status, optional output, and
-     *         optional error.
-     *     :rtype: JSONResponse
-     */
-    get: operations['troubleshooting_output_alert_troubleshooting_output__task_history_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alert-troubleshooting/{service_type}/{alert_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Troubleshooting Detail
-     * @description Render the Alert Troubleshooting detail page for a specific alert.
-     *
-     *     Display the alert header, shared host selector, and snippet cards with
-     *     parameter forms for AJAX-based execution.
-     *
-     *     :param request: The HTTP request object.
-     *     :type request: Request
-     *     :param context: The assembled template context with alert info and snippets.
-     *     :type context: TroubleshootingDetailContext
-     *     :return: The rendered HTML response.
-     *     :rtype: HTMLResponse
-     */
-    get: operations['troubleshooting_detail_alert_troubleshooting__service_type___alert_name__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Alerts Index
-     * @deprecated
-     * @description Render the alert templates list page.
-     */
-    get: operations['alerts_index_alerts__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/backups/{backup_id}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Alerts Backup Detail
-     * @deprecated
-     * @description Return a summary of a single backup's contents.
-     *
-     *     :param session: The async database session.
-     *     :type session: AsyncSession
-     *     :param backup_id: The ID of the backup to retrieve.
-     *     :type backup_id: int
-     *     :return: JSON with categorized backup contents.
-     *     :rtype: JSONResponse
-     */
-    get: operations['alerts_backup_detail_alerts_backups__backup_id__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/pagerduty': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pagerduty Save
-     * @deprecated
-     * @description Create or update the PagerDuty contact point and notification policy.
-     *
-     *     :param pmm_api: The PMM API client dependency.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param integration_key: The PagerDuty integration key from the form.
-     *     :type integration_key: NonEmptyStr
-     *     :return: JSON with ``status``.
-     *     :rtype: JSONResponse
-     */
-    post: operations['pagerduty_save_alerts_pagerduty_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/pagerduty/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pagerduty Delete
-     * @deprecated
-     * @description Delete the PagerDuty contact point and remove its notification route.
-     *
-     *     :param pmm_api: The PMM API client dependency.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :return: JSON with ``status`` set to ``"deleted"``.
-     *     :rtype: JSONResponse
-     */
-    post: operations['pagerduty_delete_alerts_pagerduty_delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/push': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Alerts Push
-     * @deprecated
-     * @description Push selected alert templates to PMM as rules.
-     *
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param alert_templates: Alert templates grouped by service type.
-     *     :type alert_templates: AlertTemplatesDep
-     *     :param folder: The PMM alert folder.
-     *     :type folder: Folder
-     *     :param present_names: Set of template names present in PMM, or ``None``
-     *         when PMM is unreachable.
-     *     :type present_names: set[str] | None
-     *     :param selected: List of template names selected by the user.
-     *     :type selected: list[str]
-     *     :return: JSON response with per-template push results.
-     *     :rtype: JSONResponse
-     */
-    post: operations['alerts_push_alerts_push_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alerts/restore': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Alerts Restore
-     * @deprecated
-     * @description Restore alert configuration from a selected backup.
-     *
-     *     :param pmm_api: The PMM API client, or ``None`` when PMM is not configured.
-     *     :type pmm_api: PMMRemoteAPI | None
-     *     :param session: The async database session.
-     *     :type session: AsyncSession
-     *     :param backup_id: The ID of the backup to restore from.
-     *     :type backup_id: int
-     *     :return: JSON with restore results on success or an error envelope on failure.
-     *     :rtype: JSONResponse
-     */
-    post: operations['alerts_restore_alerts_restore_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alters/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Alters Index
-     * @description Homepage of alters plugin.
-     */
-    get: operations['alters_index_alters__get'];
-    put?: never;
-    /**
-     * Alters Create
-     * @description Create the alters task group (parent, dry-run, and pre-checks tasks).
-     */
-    post: operations['alters_create_alters__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alters/table/{table_id}/details': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Table Details
-     * @description Get table details including create statement and keys.
-     */
-    get: operations['get_table_details_alters_table__table_id__details_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alters/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Alters Detail
-     * @description Retrieve alters task.
-     */
-    get: operations['alters_detail_alters__task_name__get'];
-    put?: never;
-    /**
-     * Alters Execute
-     * @description Execute alters task.
-     */
-    post: operations['alters_execute_alters__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alters/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Alters Delete
-     * @description Delete the alters task group.
-     */
-    post: operations['alters_delete_alters__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/alters/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Alters Update
-     * @description Update the alters task group.
-     */
-    post: operations['alters_update_alters__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/api/admin/apps/': {
     parameters: {
       query?: never;
@@ -3115,94 +2713,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/archives/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Archives Index
-     * @description Homepage of archives plugin.
-     */
-    get: operations['archives_index_archives__get'];
-    put?: never;
-    /**
-     * Archives Create
-     * @description Create new archives task.
-     */
-    post: operations['archives_create_archives__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/archives/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Archives Detail
-     * @description Retrieve archives task.
-     */
-    get: operations['archives_detail_archives__task_name__get'];
-    put?: never;
-    /**
-     * Archives Execute
-     * @description Execute archives task.
-     */
-    post: operations['archives_execute_archives__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/archives/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Archives Delete
-     * @description Delete archives task.
-     */
-    post: operations['archives_delete_archives__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/archives/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Archives Update
-     * @description Update archives task.
-     */
-    post: operations['archives_update_archives__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/artifacts/download/{token}': {
     parameters: {
       query?: never;
@@ -3225,253 +2735,6 @@ export interface paths {
     get: operations['sep_download_artifact_artifacts_download__token__get'];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Pbm Backups Index
-     * @description Homepage of PBM backup mongo plugin.
-     */
-    get: operations['pbm_backups_index_backup_mongo__get'];
-    put?: never;
-    /**
-     * Pbm Backups Create
-     * @description Create new backups task.
-     */
-    post: operations['pbm_backups_create_backup_mongo__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/restores/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Pbm Restores Index
-     * @description Homepage of restores plugin.
-     */
-    get: operations['restores_pbm_restores_index_backup_mongo_restores__get'];
-    put?: never;
-    /**
-     * Pbm Restores Create
-     * @description Create new restores task.
-     */
-    post: operations['restores_pbm_restores_create_backup_mongo_restores__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/restores/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Pbm Restores Detail
-     * @description Retrieve restores task.
-     */
-    get: operations['restores_pbm_restores_detail_backup_mongo_restores__task_name__get'];
-    put?: never;
-    /**
-     * Pbm Restores Execute
-     * @description Execute restores task.
-     */
-    post: operations['restores_pbm_restores_execute_backup_mongo_restores__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/restores/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pbm Restores Delete
-     * @description Delete restores task.
-     */
-    post: operations['restores_pbm_restores_delete_backup_mongo_restores__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/restores/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pbm Restores Update
-     * @description Update restores task.
-     */
-    post: operations['restores_pbm_restores_update_backup_mongo_restores__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Pbm Backups Detail
-     * @description Retrieve backups task.
-     */
-    get: operations['pbm_backups_detail_backup_mongo__task_name__get'];
-    put?: never;
-    /**
-     * Pbm Backups Execute
-     * @description Execute backups task.
-     */
-    post: operations['pbm_backups_execute_backup_mongo__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_mongo/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pbm Backups Delete
-     * @description Delete backups task.
-     */
-    post: operations['pbm_backups_delete_backup_mongo__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_pg/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Pg Backups Index
-     * @deprecated
-     * @description Render the PG backups plugin index page.
-     *
-     *     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
-     */
-    get: operations['pg_backups_index_backup_pg__get'];
-    put?: never;
-    /**
-     * Pg Backups Create
-     * @deprecated
-     * @description Create new backups task.
-     *
-     *     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
-     */
-    post: operations['pg_backups_create_backup_pg__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_pg/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Pg Backups Detail
-     * @deprecated
-     * @description Retrieve backups task.
-     *
-     *     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
-     */
-    get: operations['pg_backups_detail_backup_pg__task_name__get'];
-    put?: never;
-    /**
-     * Pg Backups Execute
-     * @deprecated
-     * @description Execute backups task.
-     *
-     *     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
-     */
-    post: operations['pg_backups_execute_backup_pg__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/backup_pg/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Pg Backups Delete
-     * @deprecated
-     * @description Delete backups task.
-     *
-     *     Deprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.
-     *
-     *     :param task: The PG backups task to delete, resolved by the
-     *         ``BackupsTask`` dependency from the ``task_name`` path param.
-     *     :type task: BackupsTask
-     *     :param tasks_api: The tasks-API client used to issue the delete call.
-     *     :type tasks_api: TaskAPI
-     *     :return: HTTP 303 redirect to the plugin index.
-     *     :rtype: RedirectResponse
-     */
-    post: operations['pg_backups_delete_backup_pg__task_name__delete_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -3560,46 +2823,6 @@ export interface paths {
      * @description Update checksums task.
      */
     post: operations['checksums_update_checksums__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/dipper/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Dipper Index
-     * @description Render the Dipper page with service selection and execution history.
-     */
-    get: operations['dipper_index_dipper__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/dipper/execute': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Dipper Execute
-     * @description Dispatch a dipper task for the selected service.
-     */
-    post: operations['dipper_execute_dipper_execute_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -3724,50 +2947,6 @@ export interface paths {
      * @description Create Node.
      */
     post: operations['node_create_inventory__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/inventory/schedule/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Schedule Create
-     * @deprecated
-     * @description Attach a periodic schedule to the inventory-sync task.
-     *
-     *     Deprecated in favour of the React schedule UI; functional until
-     *     Wave 3 when the Jinja2 path is retired.
-     *
-     *     Validate the optional ``syncer`` field and the interval/crontab shape at
-     *     form-submit time using ``filter_syncers_by_name`` and explicit checks so
-     *     invalid input fails fast with a friendly redirect rather than silently
-     *     misfiring inside the worker. When ``syncer`` is unset the schedule runs
-     *     every configured syncer; when set it targets only that syncer.
-     *
-     *     :param syncers: The configured syncers from ``SyncersDep``.
-     *     :type syncers: SyncersDep
-     *     :param tasks_api: The Tasks API client.
-     *     :type tasks_api: TaskAPI
-     *     :param schedule: The submitted attach form.
-     *     :type schedule: InventorySyncScheduleCreateForm
-     *     :param referer: The originating page used for the redirect on success.
-     *     :type referer: str
-     *     :return: A 303 redirect back to the originating page.
-     *     :rtype: RedirectResponse
-     *     :raises HTTPBadRequestException: If ``SEP_INTERNAL_TOKEN`` is not
-     *         configured, the syncer name is unknown, or both / neither schedule
-     *         mode is supplied.
-     */
-    post: operations['schedule_create_inventory_schedule__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -3954,30 +3133,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/inventory/sync/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Sync Inventory
-     * @deprecated
-     * @description Start inventory sync as a background task.
-     *
-     *     Deprecated in favour of the React sync control at
-     *     ``POST /api/plugins/inventory/sync/``; functional until Wave 3.
-     */
-    post: operations['sync_inventory_inventory_sync__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/inventory/tables/{table_id}/delete': {
     parameters: {
       query?: never;
@@ -4122,202 +3277,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/mysql_backups/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Mysql Backups Index
-     * @description Homepage of backups plugin.
-     */
-    get: operations['mysql_backups_index_mysql_backups__get'];
-    put?: never;
-    /**
-     * Mysql Backups Create
-     * @description Create new backups task.
-     */
-    post: operations['mysql_backups_create_mysql_backups__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/docs': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Mysql Backups Docs
-     * @description Standalone documentation page for backup configuration.
-     */
-    get: operations['mysql_backups_docs_mysql_backups_docs_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/restores/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Restores Index
-     * @description Homepage of restores plugin.
-     */
-    get: operations['restores_index_mysql_backups_restores__get'];
-    put?: never;
-    /**
-     * Restores Create
-     * @description Create new restores task.
-     */
-    post: operations['restores_create_mysql_backups_restores__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/restores/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Restores Detail
-     * @description Retrieve restores task.
-     */
-    get: operations['restores_detail_mysql_backups_restores__task_name__get'];
-    put?: never;
-    /**
-     * Restores Execute
-     * @description Execute restores task.
-     */
-    post: operations['restores_execute_mysql_backups_restores__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/restores/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Restores Delete
-     * @description Delete restores task.
-     */
-    post: operations['restores_delete_mysql_backups_restores__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/restores/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Restores Update
-     * @description Update restores task.
-     */
-    post: operations['restores_update_mysql_backups_restores__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/{task_name}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Mysql Backups Detail
-     * @description Retrieve backups task.
-     */
-    get: operations['mysql_backups_detail_mysql_backups__task_name__get'];
-    put?: never;
-    /**
-     * Mysql Backups Execute
-     * @description Execute backups task.
-     */
-    post: operations['mysql_backups_execute_mysql_backups__task_name__post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/{task_name}/delete': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Mysql Backups Delete
-     * @description Delete backups task.
-     */
-    post: operations['mysql_backups_delete_mysql_backups__task_name__delete_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/mysql_backups/{task_name}/update': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Mysql Backups Update
-     * @description Update backups task.
-     */
-    post: operations['mysql_backups_update_mysql_backups__task_name__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   '/periodic/': {
     parameters: {
       query?: never;
@@ -4372,324 +3331,6 @@ export interface paths {
      * @description Update periodic task.
      */
     post: operations['sep_periodic_task_update_periodic__periodic_task_id__update_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/report/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Report Index
-     * @deprecated
-     * @description Render the report plugin landing page.
-     */
-    get: operations['report_index_report__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/report/generate': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Report Generate
-     * @deprecated
-     * @description Generate a report and render the HTML result page.
-     *
-     *     :param request: The incoming HTTP request.
-     *     :type request: Request
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param context: Template context.
-     *     :type context: ReportIndexContext
-     *     :param since: Relative start of the report period.
-     *     :type since: str
-     *     :param until: Relative end of the report period.
-     *     :type until: str
-     *     :param full: Include all check results and full backup history.
-     *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
-     *     :type refresh: bool
-     *     :return: Rendered HTML report.
-     *     :rtype: HTMLResponse
-     */
-    post: operations['report_generate_report_generate_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/report/generate/json': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Report Generate Json
-     * @deprecated
-     * @description Generate a report and return as JSON.
-     *
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param since: Relative start of the report period.
-     *     :type since: str
-     *     :param until: Relative end of the report period.
-     *     :type until: str
-     *     :param full: Include all check results and full backup history.
-     *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
-     *     :type refresh: bool
-     *     :param sections: Optional list of sections to include.
-     *     :type sections: list[str] | None
-     *     :return: JSON response with the full report data.
-     *     :rtype: JSONResponse
-     */
-    get: operations['report_generate_json_report_generate_json_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/report/generate/pdf': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Report Generate Pdf
-     * @deprecated
-     * @description Generate a report and return it as a downloadable PDF.
-     *
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param since: Relative start of the report period.
-     *     :type since: str
-     *     :param until: Relative end of the report period.
-     *     :type until: str
-     *     :param full: Include all check results and full backup history.
-     *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
-     *     :type refresh: bool
-     *     :return: PDF file response.
-     *     :rtype: Response
-     */
-    post: operations['report_generate_pdf_report_generate_pdf_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/report/upload': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Report Upload
-     * @deprecated
-     * @description Generate a report, convert to PDF, and upload to ServiceNow.
-     *
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param since: Relative start of the report period.
-     *     :type since: str
-     *     :param until: Relative end of the report period.
-     *     :type until: str
-     *     :param full: Include all check results and full backup history.
-     *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
-     *     :type refresh: bool
-     *     :return: JSON response with the upload result.
-     *     :rtype: JSONResponse
-     */
-    post: operations['report_upload_report_upload_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Snippets Index
-     * @description Homepage of snippets plugin.
-     */
-    get: operations['snippets_index_snippets__get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/approve': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Approve
-     * @description Approve a snippet.
-     */
-    post: operations['snippets_approve_snippets_approve_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/approve-batch': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Approve Batch
-     * @description Approve multiple snippets in a single atomic bulk operation.
-     *
-     *     Reject the whole batch if any requested filename is unknown, its file is
-     *     missing on disk, or it is already approved. On success, flash a summary and
-     *     redirect back to the snippets index.
-     *
-     *     :param request: The HTTP request object.
-     *     :type request: Request
-     *     :param user: The admin performing the action.
-     *     :type user: User
-     *     :param session: The active database session.
-     *     :type session: AsyncSession
-     *     :param body: The validated request body containing the filenames to approve.
-     *     :type body: SnippetBatchApproveForm
-     *     :return: A 303 redirect back to the snippets index.
-     *     :rtype: RedirectResponse
-     */
-    post: operations['snippets_approve_batch_snippets_approve_batch_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/detail': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Snippets Detail
-     * @description Retrieve and display information about a snippet.
-     */
-    get: operations['snippets_detail_snippets_detail_get'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/execute': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Execute
-     * @description Execute a snippet.
-     */
-    post: operations['snippets_execute_snippets_execute_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/refresh': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Refresh
-     * @description Refresh the snippets.
-     */
-    post: operations['snippets_refresh_snippets_refresh_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/snippets/remove-approval': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Snippets Remove Approval
-     * @description Remove the approval of a snippet.
-     */
-    post: operations['snippets_remove_approval_snippets_remove_approval_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -5424,116 +4065,6 @@ export interface components {
       where?: string | null;
     };
     /**
-     * ArchivesLegacyForm
-     * @description Parse the deprecated Archives HTML form's flat, urlencoded body.
-     *
-     *     The Jinja templates submit the historical flat field names (``source_db_id`` /
-     *     ``source_db_name`` / …) that predate the one-of collapse, so the derived
-     *     one-of ``ArchivesCreate`` cannot bind them directly. This model parses that
-     *     flat body; :func:`_map_legacy_to_create` folds it into ``ArchivesCreate`` for
-     *     the shared spec builder, keeping the legacy path byte-identical. Conditional
-     *     validation is enforced by the mapped ``ArchivesCreate``, not here.
-     *
-     *     :param alias: The task name (the ``ALIAS`` in the archiver config).
-     *     :param hostname: The executor host.
-     *     :param service_id: The source MySQL service id.
-     *     :param source_db_id: The source schema inventory id, or empty.
-     *     :param source_db_name: The manually-entered source schema name.
-     *     :param source_table_id: The source table inventory id, or empty.
-     *     :param source_table_name: The manually-entered source table name.
-     *     :param source_query: A custom source query.
-     *     :param where: The WHERE clause.
-     *     :param dest_table_id: The destination table inventory id, or empty.
-     *     :param dest_table_name: The manually-entered destination table name.
-     *     :param dest_file: The destination file path.
-     *     :param swap_drop: The archive type (0-2).
-     *     :param swp_table_suffix: The swap-table date suffix.
-     *     :param use_index: An index hint.
-     *     :param extra_args: Additional pt-archiver CLI arguments.
-     *     :param limit: The maximum rows per run.
-     *     :param sleep: The sleep between chunk operations.
-     *     :param disable_binlog: The disable-binlog flag (0/1).
-     *     :param disable_bulk_insert: The disable-bulk-insert flag (0/1).
-     *     :param delete_data: The delete-without-archiving flag (0/1).
-     *     :param dest_service_id: The destination service inventory id, or empty.
-     *     :param dest_host: The manual destination host.
-     *     :param dest_port: The manual destination port.
-     *     :param dest_db_id: The destination schema inventory id, or empty.
-     *     :param dest_db_name: The manually-entered destination schema name.
-     *     :param alert_on_fail: Whether to alert on failure.
-     */
-    ArchivesLegacyForm: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      ALERT_ON_FAIL: boolean;
-      /** Alias */
-      ALIAS: string;
-      /** Delete Data */
-      DELETE_DATA?: number | null;
-      /** Dest Db Id */
-      DEST_DB_ID?: number | null;
-      /**
-       * Dest Db Name
-       * @default
-       */
-      DEST_DB_NAME: string;
-      /** Dest File */
-      DEST_FILE?: string | null;
-      /** Dest Host */
-      DEST_HOST?: string | null;
-      /** Dest Port */
-      DEST_PORT?: number | null;
-      /** Dest Service Id */
-      DEST_SERVICE_ID?: number | null;
-      /** Dest Table Id */
-      DEST_TABLE_ID?: number | null;
-      /**
-       * Dest Table Name
-       * @default
-       */
-      DEST_TABLE_NAME: string;
-      /** Disable Binlog */
-      DISABLE_BINLOG?: number | null;
-      /** Disable Bulk Insert */
-      DISABLE_BULK_INSERT?: number | null;
-      /** Extra Args */
-      EXTRA_ARGS?: string | null;
-      /** Hostname */
-      HOSTNAME: string;
-      /** Limit */
-      LIMIT?: number | null;
-      /** Service Id */
-      SERVICE_ID: number;
-      /** Sleep */
-      SLEEP?: number | null;
-      /** Source Db Id */
-      SOURCE_DB_ID?: number | null;
-      /**
-       * Source Db Name
-       * @default
-       */
-      SOURCE_DB_NAME: string;
-      /** Source Query */
-      SOURCE_QUERY?: string | null;
-      /** Source Table Id */
-      SOURCE_TABLE_ID?: number | null;
-      /**
-       * Source Table Name
-       * @default
-       */
-      SOURCE_TABLE_NAME: string;
-      /** Swap Drop */
-      SWAP_DROP: number;
-      /** Swp Table Suffix */
-      SWP_TABLE_SUFFIX?: string | null;
-      /** Use Index */
-      USE_INDEX?: string | null;
-      /** Where */
-      WHERE?: string | null;
-    };
-    /**
      * AvailableSyncer
      * @description Provide template-facing metadata for an available syncer.
      *
@@ -5551,6 +4082,231 @@ export interface components {
       display_name: string;
       /** Name */
       name: string;
+    };
+    /**
+     * BackupCreate
+     * @description Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.
+     *
+     *     Declares each form field once, in section order (Task, General, Mydumper,
+     *     XtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the
+     *     derived schema. Field declaration order is load-bearing: the derived section
+     *     order follows each section's first field, and the within-section order follows
+     *     declaration order, so the order here reproduces the hand-written schema
+     *     byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
+     *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
+     *     encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
+     *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
+     *     into the conditional-rule plan at class definition, so no
+     *     ``@apply_conditional_rules`` decorator is needed. The config sub-models
+     *     (:class:`BackupConfigAll` and friends) stay the serialization target the
+     *     payload builder populates, not this model's base class.
+     *
+     *     :cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool
+     *         outside its mode fails validation with a per-field message.
+     */
+    BackupCreate: {
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /** Alias */
+      alias?: string | null;
+      /** Awscli S3 Upload Extra Args */
+      awscli_s3_upload_extra_args?: string | null;
+      /** Backup Dir */
+      backup_dir?: string | null;
+      backup_type: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      /** Binlog Alternative Host */
+      binlog_alternative_host?: string | null;
+      /** Binlog Cmd */
+      binlog_cmd?: string | null;
+      /** Binlog Compress Cmd */
+      binlog_compress_cmd?: string | null;
+      /** Binlog Extra Args */
+      binlog_extra_args?: string | null;
+      /** Binlog Prefix */
+      binlog_prefix?: string | null;
+      /** Binlog Purge Days */
+      binlog_purge_days?: number | null;
+      /**
+       * Binlog Run All
+       * @default true
+       */
+      binlog_run_all: boolean;
+      /**
+       * Check Disk Space
+       * @default false
+       */
+      check_disk_space: boolean;
+      /**
+       * Compress
+       * @default false
+       */
+      compress: boolean;
+      /** Compression Algorithm */
+      compression_algorithm?:
+        | components['schemas']['app__sep__plugins__mysql_backups__models__CompressionAlgorithm']
+        | null;
+      /** Defaults File */
+      defaults_file?: string | null;
+      /**
+       * Encrypt
+       * @default false
+       */
+      encrypt: boolean;
+      /**
+       * Encrypt Using Tmpdir
+       * @default false
+       */
+      encrypt_using_tmpdir: boolean;
+      /** Encryption Recipient */
+      encryption_recipient?: string | null;
+      /** Gs Bucket */
+      gs_bucket?: string | null;
+      /**
+       * Hardlink
+       * @default false
+       */
+      hardlink: boolean;
+      /** Hostname */
+      hostname: string;
+      /** Logging Dir */
+      logging_dir?: string | null;
+      /** Mydumper Daily Purge */
+      mydumper_daily_purge?: number | null;
+      /**
+       * Mydumper Desync Pxc
+       * @default false
+       */
+      mydumper_desync_pxc: boolean;
+      /**
+       * Mydumper Dump Triggers
+       * @default false
+       */
+      mydumper_dump_triggers: boolean;
+      /** Mydumper Extra Args */
+      mydumper_extra_args?: string | null;
+      /**
+       * Mydumper Use Numa
+       * @default false
+       */
+      mydumper_use_numa: boolean;
+      /** Mydumper Verbose */
+      mydumper_verbose?: number | null;
+      /** Mydumper Weekly Purge */
+      mydumper_weekly_purge?: number | null;
+      /**
+       * Only If Read Only
+       * @default false
+       */
+      only_if_read_only: boolean;
+      /**
+       * Only If Running Replica
+       * @default false
+       */
+      only_if_running_replica: boolean;
+      /**
+       * Post Run Encrypt
+       * @default false
+       */
+      post_run_encrypt: boolean;
+      /** Rsync Path */
+      rsync_path?: string | null;
+      /** S3 Bucket */
+      s3_bucket?: string | null;
+      /** S3 Storage Class */
+      s3_storage_class?: string | null;
+      /** Service Id */
+      service_id: number;
+      /**
+       * Skip S3 Safety Check
+       * @default false
+       */
+      skip_s3_safety_check: boolean;
+      /** Task Name */
+      task_name: string;
+      /** Upload */
+      upload: components['schemas']['UploadProvider'][];
+      /**
+       * Upload Quiet
+       * @default false
+       */
+      upload_quiet: boolean;
+      /**
+       * Use Ftwrl Guardian
+       * @default false
+       */
+      use_ftwrl_guardian: boolean;
+      /** Xtrabackup Aes256 Keyfile */
+      xtrabackup_aes256_keyfile?: string | null;
+      /** Xtrabackup Bin Cmd */
+      xtrabackup_bin_cmd?: ('xtrabackup' | 'mariadb-backup' | 'innobackupex') | null;
+      /** Xtrabackup Copies */
+      xtrabackup_copies?: number | null;
+      /** Xtrabackup Defaults File */
+      xtrabackup_defaults_file?: string | null;
+      /**
+       * Xtrabackup Desync Pxc
+       * @default false
+       */
+      xtrabackup_desync_pxc: boolean;
+      /** Xtrabackup Extra Args */
+      xtrabackup_extra_args?: string | null;
+      /** Xtrabackup Incremental Cycle */
+      xtrabackup_incremental_cycle?:
+        | ('daily' | 'weekly' | '2' | '3' | '4' | '5' | '6' | '7')
+        | null;
+      /** Xtrabackup Incremental Method */
+      xtrabackup_incremental_method?: ('less_space' | 'fast_restore') | null;
+      /**
+       * Xtrabackup Kill Queries
+       * @default false
+       */
+      xtrabackup_kill_queries: boolean;
+      /** Xtrabackup Kill Queries Timeout */
+      xtrabackup_kill_queries_timeout?: number | null;
+      /** Xtrabackup Kill Query Type */
+      xtrabackup_kill_query_type?: ('select' | 'all') | null;
+      /** Xtrabackup Local Ssh Destination */
+      xtrabackup_local_ssh_destination?: string | null;
+      /**
+       * Xtrabackup Lock Ddl
+       * @default false
+       */
+      xtrabackup_lock_ddl: boolean;
+      /**
+       * Xtrabackup Prepare
+       * @default false
+       */
+      xtrabackup_prepare: boolean;
+      /** Xtrabackup Prepare Memory */
+      xtrabackup_prepare_memory?: string | null;
+      /**
+       * Xtrabackup Quiet
+       * @default false
+       */
+      xtrabackup_quiet: boolean;
+      /**
+       * Xtrabackup Replica Info
+       * @default false
+       */
+      xtrabackup_replica_info: boolean;
+      /**
+       * Xtrabackup Rsync
+       * @default false
+       */
+      xtrabackup_rsync: boolean;
+      /**
+       * Xtrabackup Stop Replica
+       * @default false
+       */
+      xtrabackup_stop_replica: boolean;
+      /**
+       * Xtrabackup Verify
+       * @default false
+       */
+      xtrabackup_verify: boolean;
     };
     /**
      * BackupDerivedTaskSummary
@@ -6022,34 +4778,6 @@ export interface components {
       /** Skipped Already Approved */
       skipped_already_approved: string[];
     };
-    /** Body_alerts_push_alerts_push_post */
-    Body_alerts_push_alerts_push_post: {
-      /** Selected Templates */
-      selected_templates: string[];
-    };
-    /** Body_alerts_restore_alerts_restore_post */
-    Body_alerts_restore_alerts_restore_post: {
-      /** Backup Id */
-      backup_id: number;
-    };
-    /** Body_alters_execute_alters__task_name__post */
-    Body_alters_execute_alters__task_name__post: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
-    /** Body_archives_execute_archives__task_name__post */
-    Body_archives_execute_archives__task_name__post: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
     /** Body_checksums_execute_checksums__task_name__post */
     Body_checksums_execute_checksums__task_name__post: {
       /** Chain On Failure */
@@ -6082,84 +4810,6 @@ export interface components {
       scope: string;
       /** Username */
       username: string;
-    };
-    /** Body_mysql_backups_execute_mysql_backups__task_name__post */
-    Body_mysql_backups_execute_mysql_backups__task_name__post: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
-    /** Body_pagerduty_save_alerts_pagerduty_post */
-    Body_pagerduty_save_alerts_pagerduty_post: {
-      /** Integration Key */
-      integration_key: string;
-    };
-    /** Body_pbm_backups_execute_backup_mongo__task_name__post */
-    Body_pbm_backups_execute_backup_mongo__task_name__post: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
-    /** Body_pg_backups_execute_backup_pg__task_name__post */
-    Body_pg_backups_execute_backup_pg__task_name__post: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
-    /** Body_report_generate_pdf_report_generate_pdf_post */
-    Body_report_generate_pdf_report_generate_pdf_post: {
-      /**
-       * Full
-       * @default true
-       */
-      full: boolean;
-      /**
-       * Refresh
-       * @default false
-       */
-      refresh: boolean;
-      /**
-       * Since
-       * @default now-7d
-       */
-      since: string;
-      /**
-       * Until
-       * @default now
-       */
-      until: string;
-    };
-    /** Body_report_generate_report_generate_post */
-    Body_report_generate_report_generate_post: {
-      /**
-       * Full
-       * @default true
-       */
-      full: boolean;
-      /**
-       * Refresh
-       * @default false
-       */
-      refresh: boolean;
-      /**
-       * Since
-       * @default now-7d
-       */
-      since: string;
-      /**
-       * Until
-       * @default now
-       */
-      until: string;
     };
     /** Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post */
     Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post: {
@@ -6206,52 +4856,6 @@ export interface components {
        * @default now
        */
       until: string;
-    };
-    /** Body_report_upload_report_upload_post */
-    Body_report_upload_report_upload_post: {
-      /**
-       * Full
-       * @default true
-       */
-      full: boolean;
-      /**
-       * Refresh
-       * @default false
-       */
-      refresh: boolean;
-      /**
-       * Since
-       * @default now-7d
-       */
-      since: string;
-      /**
-       * Until
-       * @default now
-       */
-      until: string;
-    };
-    /** Body_restores_execute_mysql_backups_restores__task_name__post */
-    Body_restores_execute_mysql_backups_restores__task_name__post: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
-    /** Body_restores_pbm_restores_execute_backup_mongo_restores__task_name__post */
-    Body_restores_pbm_restores_execute_backup_mongo_restores__task_name__post: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
-    /** Body_sync_inventory_inventory_sync__post */
-    Body_sync_inventory_inventory_sync__post: {
-      /** Syncer */
-      syncer?: string | null;
     };
     /** Body_sync_node_inventory__node_id__sync__post */
     Body_sync_node_inventory__node_id__sync__post: {
@@ -7147,20 +5751,6 @@ export interface components {
       task_name: string;
     };
     /**
-     * DipperScript
-     * @description Represent a Dipper payload script stored on the SEP server filesystem.
-     */
-    DipperScript: {
-      /** Filename */
-      filename: string;
-      /** Md5 Digest */
-      md5_digest: string;
-      /** Meta */
-      meta?: Record<string, never>;
-      /** Size */
-      size: number;
-    };
-    /**
      * EnhancedPeriodicTaskCreateRequest
      * @description Define a model for creating periodic tasks compatible with the SEP app form data.
      *
@@ -7777,45 +6367,6 @@ export interface components {
       id: number;
       /** Name */
       name: string;
-    };
-    /**
-     * InventorySyncScheduleCreateForm
-     * @description Define the form-data shape for attaching an inventory-sync schedule.
-     *
-     *     Mirror the ``interval_every`` / ``interval_period`` / ``cron_expression``
-     *     / ``cron_timezone`` field names used by the schedule template
-     *     (``templates/inventory/partials/sync-schedule-edit-form.html.j2``) so the
-     *     existing template's input names continue to work, and add a ``syncer``
-     *     field that gets persisted into ``execute_request.meta`` as
-     *     ``{"syncer": <fully qualified name>}`` when set.
-     *
-     *     :param syncer: Optional fully qualified syncer name (e.g.
-     *         ``"app.sep.sync.syncers.pmm.PMMSyncer"``). When set, the schedule
-     *         targets that syncer only; when unset, the schedule runs every
-     *         configured syncer.
-     *     :type syncer: str | None
-     *     :param enabled: Whether the schedule is enabled.
-     *     :type enabled: bool | EmptyStrToNone
-     *     :param interval: Populated by the validator from ``interval_every`` and
-     *         ``interval_period`` form fields.
-     *     :type interval: IntervalSchedule | EmptyStrToNone
-     *     :param crontab: Populated by the validator from ``cron_expression`` and
-     *         ``cron_timezone`` form fields.
-     *     :type crontab: CrontabSchedule | EmptyStrToNone
-     *     :param start_time: Optional UTC start time.
-     *     :type start_time: UTCDatetime | EmptyStrToNone
-     */
-    InventorySyncScheduleCreateForm: {
-      /** Crontab */
-      crontab?: components['schemas']['CrontabSchedule'] | null;
-      /** Enabled */
-      enabled?: boolean | null;
-      /** Interval */
-      interval?: components['schemas']['IntervalSchedule'] | null;
-      /** Start Time */
-      start_time?: string | null;
-      /** Syncer */
-      syncer?: string | null;
     };
     /**
      * InventorySyncStatusResponse
@@ -8529,6 +7080,158 @@ export interface components {
      * @enum {string}
      */
     ReloadClassification: 'hot' | 'nested_only' | 'not_overridable';
+    /**
+     * RestoreCreate
+     * @description Declare the model-first create/update body and ``GET /schema`` source for Restores.
+     *
+     *     Declares every restore form field once, in section order (Task, General,
+     *     Mydumper, XtraBackup, Binlog), with the DSL markers driving the derived
+     *     schema. The previously-inherited config models (:class:`RestoreConfigAll` and
+     *     :class:`BaseRestoreConfigServer`) stay the YAML-serialization targets the
+     *     payload builder populates via ``extract_model_from_instance``; this model
+     *     re-declares their fields directly so it can also carry presentation metadata.
+     *
+     *     The per-``backup_type`` section visibility is expressed in the view layout
+     *     (``restore/views.py``), not as field-level gates: several mode-specific config
+     *     fields carry non-``None`` defaults (``myloader_threads``, ``xb_parallel``,
+     *     ``master_port``), so a field-level ``Forbidden`` gate would reject those
+     *     defaults on a cross-mode restore. Keeping the model permissive preserves the
+     *     legacy payload contract byte-for-byte.
+     *
+     *     ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
+     *     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
+     *     markers drive only the ``GET /schema`` widgets, while the conditional,
+     *     404-tolerant resolution lives in ``deps.resolve_restore_entities``.
+     */
+    RestoreCreate: {
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /** Backup Source */
+      backup_source: string;
+      backup_type: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      /** Binlog Restore Extra Args */
+      binlog_restore_extra_args?: string | null;
+      /** Custom Mysql Init Command */
+      custom_mysql_init_command?: string | null;
+      /** Datadir */
+      datadir?: string | null;
+      /** Gpg Password File */
+      gpg_password_file?: string | null;
+      /** Hostname */
+      hostname: string;
+      /** Include Databases */
+      include_databases?: string | null;
+      /** Incremental Dest Path */
+      incremental_dest_path?: string | null;
+      /** Keyring File Data */
+      keyring_file_data?: string | null;
+      /**
+       * Kill Mysql
+       * @default false
+       */
+      kill_mysql: boolean;
+      /** Local Path */
+      local_path?: string | null;
+      /** Logging Dir */
+      logging_dir?: string | null;
+      /** Master Ip */
+      master_ip?: string | null;
+      /** Master Password */
+      master_password?: string | null;
+      /**
+       * Master Port
+       * @default 3306
+       */
+      master_port: number | null;
+      /** Master User */
+      master_user?: string | null;
+      /** Myloader Extra Args */
+      myloader_extra_args?: string | null;
+      /**
+       * Myloader Threads
+       * @default 4
+       */
+      myloader_threads: number | null;
+      /**
+       * Overwrite Tables
+       * @default false
+       */
+      overwrite_tables: boolean;
+      /** Port */
+      port?: number | null;
+      /** Post Script */
+      post_script?: string | null;
+      /** Pre Script */
+      pre_script?: string | null;
+      /**
+       * Restore Mycnf
+       * @default false
+       */
+      restore_mycnf: boolean;
+      /** @default s3cmd */
+      s3_tool: components['schemas']['S3Tool'];
+      /** Schema Id */
+      schema_id?: string | null;
+      /** Service Id */
+      service_id?: string | null;
+      /** Skip Databases */
+      skip_databases?: string | null;
+      /**
+       * Skip Incrementals
+       * @default false
+       */
+      skip_incrementals: boolean;
+      /**
+       * Slave From Master
+       * @default false
+       */
+      slave_from_master: boolean;
+      /** Ssh Key */
+      ssh_key?: string | null;
+      /**
+       * Ssh Port
+       * @default 22
+       */
+      ssh_port: number | null;
+      /**
+       * Ssh User
+       * @default percona
+       */
+      ssh_user: string | null;
+      /** Start File */
+      start_file?: string | null;
+      /** Start Position */
+      start_position?: number | null;
+      /** Stop File */
+      stop_file?: string | null;
+      /** Stop Position */
+      stop_position?: number | null;
+      /** Task Name */
+      task_name: string;
+      /** Use Sql File */
+      use_sql_file?: string | null;
+      /**
+       * Wait For Catchup
+       * @default false
+       */
+      wait_for_catchup: boolean;
+      /**
+       * Xb Parallel
+       * @default 4
+       */
+      xb_parallel: number | null;
+      /** Xb Prepare Memory */
+      xb_prepare_memory?: string | null;
+      /** Xtrabackup Aes256 Keyfile */
+      xtrabackup_aes256_keyfile?: string | null;
+      /** Xtrabackup Bin Cmd */
+      xtrabackup_bin_cmd?: components['schemas']['XtraBackupTool'] | null;
+      /** Xtrabackup Restore Args */
+      xtrabackup_restore_args?: string | null;
+    };
     /**
      * RestoreDerivedTaskSummary
      * @description Represent one child task in a restore task group detail response.
@@ -9396,14 +8099,6 @@ export interface components {
       [key: string]: components['schemas']['JsonValue'];
     };
     /**
-     * SnippetBatchApproveForm
-     * @description Form-bound twin used by the legacy Jinja2 batch-approve route.
-     */
-    SnippetBatchApproveForm: {
-      /** Filenames */
-      filenames: string[];
-    };
-    /**
      * SnippetBatchApproveRequest
      * @description Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.
      *
@@ -10171,72 +8866,6 @@ export interface components {
       total: number;
     };
     /**
-     * BackupCreate
-     * @description Represent a Backup creation form with proper case-insensitive fields.
-     *
-     *     :param task_name: The PBM yaml payload to parse from CLI.
-     *     :type task_name: NonEmptyStr
-     *     :param hostname: The PBM yaml payload to parse from CLI.
-     *     :type hostname: NonEmptyStr
-     *     :param service_id: Service for executing PBM.
-     *     :type service_id: int
-     *     :param backup_type: Type of backup activity on PBM.
-     *     :type backup_type: BackupType
-     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-     *     :type alert_on_fail: bool
-     */
-    app__sep__plugins__backup_mongo__models__BackupCreate: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      ALERT_ON_FAIL: boolean;
-      /** Backup Compression */
-      BACKUP_COMPRESSION?:
-        | components['schemas']['app__sep__plugins__backup_mongo__models__CompressionAlgorithm']
-        | null;
-      /** Backup Compression Level */
-      BACKUP_COMPRESSION_LEVEL?: number | null;
-      /** Backup Num Parallel Collections */
-      BACKUP_NUM_PARALLEL_COLLECTIONS?: number | null;
-      /** Backup Oplog Span Min */
-      BACKUP_OPLOG_SPAN_MIN?: number | null;
-      /** Backup Priority */
-      BACKUP_PRIORITY?: string | null;
-      /** Backup Timeouts Starting Status */
-      BACKUP_TIMEOUTS_STARTING_STATUS?: number | null;
-      BACKUP_TYPE: components['schemas']['app__sep__plugins__backup_mongo__models__BackupType'];
-      /** Credentials Path */
-      CREDENTIALS_PATH?: string | null;
-      /** Hostname */
-      HOSTNAME: string;
-      /** Pitr Compression */
-      PITR_COMPRESSION?: string | null;
-      /**
-       * Pitr Enabled
-       * @default false
-       */
-      PITR_ENABLED: boolean;
-      /** Pitr Oplog Span Min */
-      PITR_OPLOG_SPAN_MIN?: number | null;
-      /** Service Id */
-      SERVICE_ID: number;
-      /** Storage Filesystem Path */
-      STORAGE_FILESYSTEM_PATH?: string | null;
-      /** Storage S3 Bucket */
-      STORAGE_S3_BUCKET?: string | null;
-      /** Storage S3 Endpoint Url */
-      STORAGE_S3_ENDPOINT_URL?: string | null;
-      /** Storage S3 Prefix */
-      STORAGE_S3_PREFIX?: string | null;
-      /** Storage S3 Region */
-      STORAGE_S3_REGION?: string | null;
-      /** Storage Type */
-      STORAGE_TYPE?: string | null;
-      /** Task Name */
-      TASK_NAME: string;
-    };
-    /**
      * BackupExecuteWrite
      * @description Represent a JSON request body for executing a backup task.
      *
@@ -10388,74 +9017,6 @@ export interface components {
       | 'pgzip'
       | 'zstd';
     /**
-     * RestoreCreate
-     * @description Represent a restore-task creation request (HTML form and shared payload input).
-     *
-     *     Kept alongside :class:`RestoreTaskWrite` because FastAPI form binding needs
-     *     ``service_id: NonEmptyStr | EmptyStrToNone`` (empty form field → ``None``) and
-     *     optional restore ints with ``EmptyStrToNone``, while the JSON API uses
-     *     ``service_id: int | None`` and plain optional ints. Collapsing to one model would
-     *     break empty-string form semantics unless a dedicated form adapter is proven.
-     *
-     *     :param hostname: The hostname of the machine to restore to.
-     *     :type hostname: NonEmptyStr
-     *     :param task_name: Name of the restore task.
-     *     :type task_name: NonEmptyStr
-     *     :param service_id: Service identifier for the restore task.
-     *     :type service_id: NonEmptyStr | EmptyStrToNone = None
-     *     :param backup_type: Type of backup to restore from.
-     *     :type backup_type: BackupType
-     *     :param backup_source: Source location of the backup (backup name or timestamp).
-     *     :type backup_source: NonEmptyStr
-     *     :param restore_batch_size: Number of documents to buffer.
-     *     :type restore_batch_size: int | None
-     *     :param restore_num_insertion_workers: Number of insertion workers to run concurrently per collection.
-     *     :type restore_num_insertion_workers: int | None
-     *     :param restore_num_parallel_collections: Number of collections to process in parallel during logical restore.
-     *     :type restore_num_parallel_collections: int | None
-     *     :param restore_num_download_workers: Number of workers that request data chunks from storage.
-     *     :type restore_num_download_workers: int | None
-     *     :param restore_max_download_buffer_mb: Maximum size of in-memory buffer for downloading files from S3.
-     *     :type restore_max_download_buffer_mb: int | None
-     *     :param restore_download_chunk_mb: Size of data chunk in MB to download from S3 storage.
-     *     :type restore_download_chunk_mb: int | None
-     *     :param restore_mongod_location: Custom path to mongod binaries.
-     *     :type restore_mongod_location: NonEmptyStr | EmptyStrToNone
-     *     :param restore_mongod_location_map: Custom paths to mongod binaries on every node (YAML string).
-     *     :type restore_mongod_location_map: NonEmptyStr | EmptyStrToNone
-     *     :param credentials_path: Optional path to MongoDB URI credentials file on the Nomad node.
-     *     :type credentials_path: NonEmptyStr | EmptyStrToNone
-     */
-    app__sep__plugins__backup_mongo__restore__models__RestoreCreate: {
-      /** Backup Source */
-      BACKUP_SOURCE: string;
-      BACKUP_TYPE: components['schemas']['app__sep__plugins__backup_mongo__models__BackupType'];
-      /** Credentials Path */
-      CREDENTIALS_PATH?: string | null;
-      /** Hostname */
-      HOSTNAME: string;
-      /** Restore Batch Size */
-      RESTORE_BATCH_SIZE?: number | null;
-      /** Restore Download Chunk Mb */
-      RESTORE_DOWNLOAD_CHUNK_MB?: number | null;
-      /** Restore Max Download Buffer Mb */
-      RESTORE_MAX_DOWNLOAD_BUFFER_MB?: number | null;
-      /** Restore Mongod Location */
-      RESTORE_MONGOD_LOCATION?: string | null;
-      /** Restore Mongod Location Map */
-      RESTORE_MONGOD_LOCATION_MAP?: string | null;
-      /** Restore Num Download Workers */
-      RESTORE_NUM_DOWNLOAD_WORKERS?: number | null;
-      /** Restore Num Insertion Workers */
-      RESTORE_NUM_INSERTION_WORKERS?: number | null;
-      /** Restore Num Parallel Collections */
-      RESTORE_NUM_PARALLEL_COLLECTIONS?: number | null;
-      /** Service Id */
-      SERVICE_ID?: string | null;
-      /** Task Name */
-      TASK_NAME: string;
-    };
-    /**
      * BackupExecuteWrite
      * @description Represent a JSON request body for executing a backup task.
      *
@@ -10586,231 +9147,6 @@ export interface components {
       updated_at?: string | null;
     };
     /**
-     * BackupCreate
-     * @description Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.
-     *
-     *     Declares each form field once, in section order (Task, General, Mydumper,
-     *     XtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the
-     *     derived schema. Field declaration order is load-bearing: the derived section
-     *     order follows each section's first field, and the within-section order follows
-     *     declaration order, so the order here reproduces the hand-written schema
-     *     byte-for-byte. The conditional gating that the legacy ``schema.py`` declared
-     *     (per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the
-     *     encryption requires/forbidden pair, and the per-mode bool ``FailRule``s in
-     *     :attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it
-     *     into the conditional-rule plan at class definition, so no
-     *     ``@apply_conditional_rules`` decorator is needed. The config sub-models
-     *     (:class:`BackupConfigAll` and friends) stay the serialization target the
-     *     payload builder populates, not this model's base class.
-     *
-     *     :cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool
-     *         outside its mode fails validation with a per-field message.
-     */
-    app__sep__plugins__mysql_backups__models__BackupCreate: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      /** Alias */
-      alias?: string | null;
-      /** Awscli S3 Upload Extra Args */
-      awscli_s3_upload_extra_args?: string | null;
-      /** Backup Dir */
-      backup_dir?: string | null;
-      backup_type: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
-      /** Binlog Alternative Host */
-      binlog_alternative_host?: string | null;
-      /** Binlog Cmd */
-      binlog_cmd?: string | null;
-      /** Binlog Compress Cmd */
-      binlog_compress_cmd?: string | null;
-      /** Binlog Extra Args */
-      binlog_extra_args?: string | null;
-      /** Binlog Prefix */
-      binlog_prefix?: string | null;
-      /** Binlog Purge Days */
-      binlog_purge_days?: number | null;
-      /**
-       * Binlog Run All
-       * @default true
-       */
-      binlog_run_all: boolean;
-      /**
-       * Check Disk Space
-       * @default false
-       */
-      check_disk_space: boolean;
-      /**
-       * Compress
-       * @default false
-       */
-      compress: boolean;
-      /** Compression Algorithm */
-      compression_algorithm?:
-        | components['schemas']['app__sep__plugins__mysql_backups__models__CompressionAlgorithm']
-        | null;
-      /** Defaults File */
-      defaults_file?: string | null;
-      /**
-       * Encrypt
-       * @default false
-       */
-      encrypt: boolean;
-      /**
-       * Encrypt Using Tmpdir
-       * @default false
-       */
-      encrypt_using_tmpdir: boolean;
-      /** Encryption Recipient */
-      encryption_recipient?: string | null;
-      /** Gs Bucket */
-      gs_bucket?: string | null;
-      /**
-       * Hardlink
-       * @default false
-       */
-      hardlink: boolean;
-      /** Hostname */
-      hostname: string;
-      /** Logging Dir */
-      logging_dir?: string | null;
-      /** Mydumper Daily Purge */
-      mydumper_daily_purge?: number | null;
-      /**
-       * Mydumper Desync Pxc
-       * @default false
-       */
-      mydumper_desync_pxc: boolean;
-      /**
-       * Mydumper Dump Triggers
-       * @default false
-       */
-      mydumper_dump_triggers: boolean;
-      /** Mydumper Extra Args */
-      mydumper_extra_args?: string | null;
-      /**
-       * Mydumper Use Numa
-       * @default false
-       */
-      mydumper_use_numa: boolean;
-      /** Mydumper Verbose */
-      mydumper_verbose?: number | null;
-      /** Mydumper Weekly Purge */
-      mydumper_weekly_purge?: number | null;
-      /**
-       * Only If Read Only
-       * @default false
-       */
-      only_if_read_only: boolean;
-      /**
-       * Only If Running Replica
-       * @default false
-       */
-      only_if_running_replica: boolean;
-      /**
-       * Post Run Encrypt
-       * @default false
-       */
-      post_run_encrypt: boolean;
-      /** Rsync Path */
-      rsync_path?: string | null;
-      /** S3 Bucket */
-      s3_bucket?: string | null;
-      /** S3 Storage Class */
-      s3_storage_class?: string | null;
-      /** Service Id */
-      service_id: number;
-      /**
-       * Skip S3 Safety Check
-       * @default false
-       */
-      skip_s3_safety_check: boolean;
-      /** Task Name */
-      task_name: string;
-      /** Upload */
-      upload: components['schemas']['UploadProvider'][];
-      /**
-       * Upload Quiet
-       * @default false
-       */
-      upload_quiet: boolean;
-      /**
-       * Use Ftwrl Guardian
-       * @default false
-       */
-      use_ftwrl_guardian: boolean;
-      /** Xtrabackup Aes256 Keyfile */
-      xtrabackup_aes256_keyfile?: string | null;
-      /** Xtrabackup Bin Cmd */
-      xtrabackup_bin_cmd?: ('xtrabackup' | 'mariadb-backup' | 'innobackupex') | null;
-      /** Xtrabackup Copies */
-      xtrabackup_copies?: number | null;
-      /** Xtrabackup Defaults File */
-      xtrabackup_defaults_file?: string | null;
-      /**
-       * Xtrabackup Desync Pxc
-       * @default false
-       */
-      xtrabackup_desync_pxc: boolean;
-      /** Xtrabackup Extra Args */
-      xtrabackup_extra_args?: string | null;
-      /** Xtrabackup Incremental Cycle */
-      xtrabackup_incremental_cycle?:
-        | ('daily' | 'weekly' | '2' | '3' | '4' | '5' | '6' | '7')
-        | null;
-      /** Xtrabackup Incremental Method */
-      xtrabackup_incremental_method?: ('less_space' | 'fast_restore') | null;
-      /**
-       * Xtrabackup Kill Queries
-       * @default false
-       */
-      xtrabackup_kill_queries: boolean;
-      /** Xtrabackup Kill Queries Timeout */
-      xtrabackup_kill_queries_timeout?: number | null;
-      /** Xtrabackup Kill Query Type */
-      xtrabackup_kill_query_type?: ('select' | 'all') | null;
-      /** Xtrabackup Local Ssh Destination */
-      xtrabackup_local_ssh_destination?: string | null;
-      /**
-       * Xtrabackup Lock Ddl
-       * @default false
-       */
-      xtrabackup_lock_ddl: boolean;
-      /**
-       * Xtrabackup Prepare
-       * @default false
-       */
-      xtrabackup_prepare: boolean;
-      /** Xtrabackup Prepare Memory */
-      xtrabackup_prepare_memory?: string | null;
-      /**
-       * Xtrabackup Quiet
-       * @default false
-       */
-      xtrabackup_quiet: boolean;
-      /**
-       * Xtrabackup Replica Info
-       * @default false
-       */
-      xtrabackup_replica_info: boolean;
-      /**
-       * Xtrabackup Rsync
-       * @default false
-       */
-      xtrabackup_rsync: boolean;
-      /**
-       * Xtrabackup Stop Replica
-       * @default false
-       */
-      xtrabackup_stop_replica: boolean;
-      /**
-       * Xtrabackup Verify
-       * @default false
-       */
-      xtrabackup_verify: boolean;
-    };
-    /**
      * BackupType
      * @description Backup types.
      * @enum {string}
@@ -10826,158 +9162,6 @@ export interface components {
       | 'lz4'
       | 'gzip'
       | 'quicklz';
-    /**
-     * RestoreCreate
-     * @description Declare the model-first create/update body and ``GET /schema`` source for Restores.
-     *
-     *     Declares every restore form field once, in section order (Task, General,
-     *     Mydumper, XtraBackup, Binlog), with the DSL markers driving the derived
-     *     schema. The previously-inherited config models (:class:`RestoreConfigAll` and
-     *     :class:`BaseRestoreConfigServer`) stay the YAML-serialization targets the
-     *     payload builder populates via ``extract_model_from_instance``; this model
-     *     re-declares their fields directly so it can also carry presentation metadata.
-     *
-     *     The per-``backup_type`` section visibility is expressed in the view layout
-     *     (``restore/views.py``), not as field-level gates: several mode-specific config
-     *     fields carry non-``None`` defaults (``myloader_threads``, ``xb_parallel``,
-     *     ``master_port``), so a field-level ``Forbidden`` gate would reject those
-     *     defaults on a cross-mode restore. Keeping the model permissive preserves the
-     *     legacy payload contract byte-for-byte.
-     *
-     *     ``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying
-     *     the ``"-1"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``
-     *     markers drive only the ``GET /schema`` widgets, while the conditional,
-     *     404-tolerant resolution lives in ``deps.resolve_restore_entities``.
-     */
-    app__sep__plugins__mysql_backups__restore__models__RestoreCreate: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      /** Backup Source */
-      backup_source: string;
-      backup_type: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
-      /** Binlog Restore Extra Args */
-      binlog_restore_extra_args?: string | null;
-      /** Custom Mysql Init Command */
-      custom_mysql_init_command?: string | null;
-      /** Datadir */
-      datadir?: string | null;
-      /** Gpg Password File */
-      gpg_password_file?: string | null;
-      /** Hostname */
-      hostname: string;
-      /** Include Databases */
-      include_databases?: string | null;
-      /** Incremental Dest Path */
-      incremental_dest_path?: string | null;
-      /** Keyring File Data */
-      keyring_file_data?: string | null;
-      /**
-       * Kill Mysql
-       * @default false
-       */
-      kill_mysql: boolean;
-      /** Local Path */
-      local_path?: string | null;
-      /** Logging Dir */
-      logging_dir?: string | null;
-      /** Master Ip */
-      master_ip?: string | null;
-      /** Master Password */
-      master_password?: string | null;
-      /**
-       * Master Port
-       * @default 3306
-       */
-      master_port: number | null;
-      /** Master User */
-      master_user?: string | null;
-      /** Myloader Extra Args */
-      myloader_extra_args?: string | null;
-      /**
-       * Myloader Threads
-       * @default 4
-       */
-      myloader_threads: number | null;
-      /**
-       * Overwrite Tables
-       * @default false
-       */
-      overwrite_tables: boolean;
-      /** Port */
-      port?: number | null;
-      /** Post Script */
-      post_script?: string | null;
-      /** Pre Script */
-      pre_script?: string | null;
-      /**
-       * Restore Mycnf
-       * @default false
-       */
-      restore_mycnf: boolean;
-      /** @default s3cmd */
-      s3_tool: components['schemas']['S3Tool'];
-      /** Schema Id */
-      schema_id?: string | null;
-      /** Service Id */
-      service_id?: string | null;
-      /** Skip Databases */
-      skip_databases?: string | null;
-      /**
-       * Skip Incrementals
-       * @default false
-       */
-      skip_incrementals: boolean;
-      /**
-       * Slave From Master
-       * @default false
-       */
-      slave_from_master: boolean;
-      /** Ssh Key */
-      ssh_key?: string | null;
-      /**
-       * Ssh Port
-       * @default 22
-       */
-      ssh_port: number | null;
-      /**
-       * Ssh User
-       * @default percona
-       */
-      ssh_user: string | null;
-      /** Start File */
-      start_file?: string | null;
-      /** Start Position */
-      start_position?: number | null;
-      /** Stop File */
-      stop_file?: string | null;
-      /** Stop Position */
-      stop_position?: number | null;
-      /** Task Name */
-      task_name: string;
-      /** Use Sql File */
-      use_sql_file?: string | null;
-      /**
-       * Wait For Catchup
-       * @default false
-       */
-      wait_for_catchup: boolean;
-      /**
-       * Xb Parallel
-       * @default 4
-       */
-      xb_parallel: number | null;
-      /** Xb Prepare Memory */
-      xb_prepare_memory?: string | null;
-      /** Xtrabackup Aes256 Keyfile */
-      xtrabackup_aes256_keyfile?: string | null;
-      /** Xtrabackup Bin Cmd */
-      xtrabackup_bin_cmd?: components['schemas']['XtraBackupTool'] | null;
-      /** Xtrabackup Restore Args */
-      xtrabackup_restore_args?: string | null;
-    };
   };
   responses: never;
   parameters: never;
@@ -11003,503 +9187,6 @@ export interface operations {
         };
         content: {
           'text/html': string;
-        };
-      };
-    };
-  };
-  troubleshooting_index_alert_troubleshooting__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  troubleshooting_execute_alert_troubleshooting_execute_post: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  troubleshooting_output_alert_troubleshooting_output__task_history_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_history_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  troubleshooting_detail_alert_troubleshooting__service_type___alert_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        alert_name: string;
-        service_type: components['schemas']['AlertServiceType'];
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alerts_index_alerts__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  alerts_backup_detail_alerts_backups__backup_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        backup_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pagerduty_save_alerts_pagerduty_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_pagerduty_save_alerts_pagerduty_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pagerduty_delete_alerts_pagerduty_delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-    };
-  };
-  alerts_push_alerts_push_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_alerts_push_alerts_push_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alerts_restore_alerts_restore_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_alerts_restore_alerts_restore_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alters_index_alters__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  alters_create_alters__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['AltersCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  get_table_details_alters_table__table_id__details_get: {
-    parameters: {
-      query?: {
-        syntax_highlight_style?: string | null;
-      };
-      header?: never;
-      path: {
-        table_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alters_detail_alters__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alters_execute_alters__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_alters_execute_alters__task_name__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alters_delete_alters__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  alters_update_alters__task_name__update_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['AltersCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
@@ -13709,7 +11396,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
+        'application/json': components['schemas']['BackupCreate'];
       };
     };
     responses: {
@@ -13775,7 +11462,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
+        'application/json': components['schemas']['RestoreCreate'];
       };
     };
     responses: {
@@ -13861,7 +11548,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
+        'application/json': components['schemas']['RestoreCreate'];
       };
     };
     responses: {
@@ -14013,7 +11700,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
+        'application/json': components['schemas']['BackupCreate'];
       };
     };
     responses: {
@@ -15255,185 +12942,6 @@ export interface operations {
       };
     };
   };
-  archives_index_archives__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  archives_create_archives__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['ArchivesLegacyForm'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  archives_detail_archives__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  archives_execute_archives__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_archives_execute_archives__task_name__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  archives_delete_archives__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  archives_update_archives__task_name__update_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['ArchivesLegacyForm'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   sep_download_artifact_artifacts_download__token__get: {
     parameters: {
       query?: never;
@@ -15453,477 +12961,6 @@ export interface operations {
         content: {
           'application/json': unknown;
         };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pbm_backups_index_backup_mongo__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  pbm_backups_create_backup_mongo__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup_mongo__models__BackupCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_pbm_restores_index_backup_mongo_restores__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  restores_pbm_restores_create_backup_mongo_restores__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup_mongo__restore__models__RestoreCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_pbm_restores_detail_backup_mongo_restores__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_pbm_restores_execute_backup_mongo_restores__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_restores_pbm_restores_execute_backup_mongo_restores__task_name__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_pbm_restores_delete_backup_mongo_restores__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_pbm_restores_update_backup_mongo_restores__task_name__update_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__backup_mongo__restore__models__RestoreCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pbm_backups_detail_backup_mongo__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pbm_backups_execute_backup_mongo__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_pbm_backups_execute_backup_mongo__task_name__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pbm_backups_delete_backup_mongo__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pg_backups_index_backup_pg__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  pg_backups_create_backup_pg__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['BackupPgForm'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pg_backups_detail_backup_pg__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pg_backups_execute_backup_pg__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_pg_backups_execute_backup_pg__task_name__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  pg_backups_delete_backup_pg__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
       };
       /** @description Validation Error */
       422: {
@@ -16103,76 +13140,6 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  dipper_index_dipper__get: {
-    parameters: {
-      query?: {
-        service_id?: number | null;
-        collector_type?: components['schemas']['CollectorTypeEnum'];
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  dipper_execute_dipper_execute_post: {
-    parameters: {
-      query: {
-        service_id: number;
-        collector_type?: components['schemas']['CollectorTypeEnum'];
-      };
-      header?: {
-        referer?: string | null;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['DipperScript'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
       };
       /** @description Validation Error */
       422: {
@@ -16382,41 +13349,6 @@ export interface operations {
     requestBody: {
       content: {
         'application/x-www-form-urlencoded': components['schemas']['Node-Input'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  schedule_create_inventory_schedule__post: {
-    parameters: {
-      query?: never;
-      header?: {
-        referer?: string;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['InventorySyncScheduleCreateForm'];
       };
     };
     responses: {
@@ -16735,39 +13667,6 @@ export interface operations {
       };
     };
   };
-  sync_inventory_inventory_sync__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_sync_inventory_inventory_sync__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   table_delete_inventory_tables__table_id__delete_post: {
     parameters: {
       query?: never;
@@ -17017,384 +13916,6 @@ export interface operations {
       };
     };
   };
-  mysql_backups_index_mysql_backups__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  mysql_backups_create_mysql_backups__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_docs_mysql_backups_docs_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  restores_index_mysql_backups_restores__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  restores_create_mysql_backups_restores__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_detail_mysql_backups_restores__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_execute_mysql_backups_restores__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_restores_execute_mysql_backups_restores__task_name__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_delete_mysql_backups_restores__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  restores_update_mysql_backups_restores__task_name__update_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__restore__models__RestoreCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_detail_mysql_backups__task_name__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_execute_mysql_backups__task_name__post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_mysql_backups_execute_mysql_backups__task_name__post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_delete_mysql_backups__task_name__delete_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  mysql_backups_update_mysql_backups__task_name__update_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        task_name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['app__sep__plugins__mysql_backups__models__BackupCreate'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      307: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
   sep_periodic_task_create_periodic__post: {
     parameters: {
       query?: never;
@@ -17477,367 +13998,6 @@ export interface operations {
         'application/x-www-form-urlencoded': components['schemas']['PeriodicTaskRequest'];
       };
     };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  report_index_report__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  report_generate_report_generate_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_report_generate_report_generate_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  report_generate_json_report_generate_json_get: {
-    parameters: {
-      query?: {
-        since?: string;
-        until?: string;
-        full?: boolean;
-        refresh?: boolean;
-        sections?: string[] | null;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  report_generate_pdf_report_generate_pdf_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_report_generate_pdf_report_generate_pdf_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  report_upload_report_upload_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_report_upload_report_upload_post'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_index_snippets__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-    };
-  };
-  snippets_approve_snippets_approve_post: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: {
-        referer?: string | null;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_approve_batch_snippets_approve_batch_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/x-www-form-urlencoded': components['schemas']['SnippetBatchApproveForm'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_detail_snippets_detail_get: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'text/html': string;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_execute_snippets_execute_post: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: {
-        referer?: string | null;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  snippets_refresh_snippets_refresh_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-    };
-  };
-  snippets_remove_approval_snippets_remove_approval_post: {
-    parameters: {
-      query: {
-        /** @description Snippet filename (relative path under snippets root). */
-        snippet_filename: string;
-      };
-      header?: {
-        referer?: string | null;
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {
