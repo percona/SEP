@@ -97,6 +97,7 @@ class MockTaskAPI:
         self._ids = count(1)
         self.create_count = 0
         self.last_create_payload: dict[str, Any] | None = None
+        self.last_update_payload: dict[str, Any] | None = None
 
     def seed_task(
         self,
@@ -175,6 +176,7 @@ class MockTaskAPI:
         name = path.lstrip("/")
         if name not in self._tasks:
             raise HTTPNotFoundException
+        self.last_update_payload = json
         self._tasks[name].update(json or {})
         return self._tasks[name]
 
@@ -323,6 +325,21 @@ class SynthForm(AppFormModel):
     mode: Annotated[
         str, Ui(label="Mode", section="main", default="display-default")
     ] = "body-default"
+
+
+class SynthConnectivityForm(SynthForm):
+    """A ``SynthForm`` whose service ``ServiceRef`` enables the connectivity probe.
+
+    The probe (and the auto-derived ``connectivity_warning`` create-response field)
+    is derived from a ``check_connectivity=True`` ``ServiceRef`` rather than an
+    app-level flag, so the connectivity variant marks ``service_id``.
+    """
+
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
+        Ui(label="Service", section="main"),
+    ]
 
 
 class SynthResponse(BaseModel):
@@ -564,7 +581,15 @@ def synth_app_kwargs() -> dict[str, Any]:
 def synth_app(**overrides: Any) -> TaskExecutionApp:
     """Build the canonical synthetic ``TaskExecutionApp`` with optional overrides.
 
+    The connectivity probe is now derived from a ``check_connectivity=True``
+    ``ServiceRef`` on the create model rather than an app-level flag, so a
+    ``connectivity_check=True`` override is translated into the
+    :class:`SynthConnectivityForm` create model (unless the caller pins its own
+    ``create_model``).
+
     :param overrides: Fields merged over the canonical kwargs to derive variants.
     :return: A validated synthetic app definition the contract suite runs green.
     """
+    if overrides.pop("connectivity_check", False):
+        overrides.setdefault("create_model", SynthConnectivityForm)
     return TaskExecutionApp(**{**synth_app_kwargs(), **overrides})

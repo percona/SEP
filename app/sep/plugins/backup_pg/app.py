@@ -77,7 +77,6 @@ app = TaskExecutionApp(
     pagination=make_pagination_dep(),
     list_status_filter=True,
     list_service_type_filter=False,
-    connectivity_check=True,
     response_builder=build_backup_pg_api_task_response,
     detail_response_builder=build_backup_pg_api_detail_response,
     detail_response_model=BackupTaskDetailResponse,

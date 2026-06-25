@@ -46,6 +46,12 @@ interface PluginListPageProps {
   hideCreate?: boolean;
   /** When true, hide entity tabs (nodes / services / …). */
   hideEntityTabs?: boolean;
+  /**
+   * When true, suppress the generic Schedules button. Opt-in for nested mounts
+   * (e.g. inventory) that render their own scheduling button with a correct
+   * relative target; the default still renders the button.
+   */
+  hideScheduleButton?: boolean;
   /** When set, overrides ``useParams().entityName`` (nested routes that use a fixed segment like ``nodes``). */
   entityNameOverride?: string;
   /**
@@ -67,6 +73,7 @@ export function PluginListPage({
   listOnly = false,
   hideCreate = false,
   hideEntityTabs = false,
+  hideScheduleButton = false,
   entityNameOverride,
   rowClickHref,
   allowListEntityDelete = false,
@@ -178,7 +185,7 @@ export function PluginListPage({
         </Box>
         {!listOnly && (
           <Stack direction="row" spacing={1}>
-            {schema.capabilities?.scheduling && (
+            {!hideScheduleButton && schema.capabilities?.scheduling && (
               <Button
                 variant="outlined"
                 startIcon={<ScheduleIcon />}

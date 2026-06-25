@@ -29,6 +29,7 @@ from typing import Any
 
 from fastapi import status
 
+from app.sep.plugins.framework.spec import RESERVED_FORM_KEY
 from app.sep.plugins.mysql_backups.models import BackupType
 from app.sep.plugins.mysql_backups.restore.app import app as restore_app
 from tests.app.factories import MOCK_CREATED_SERVICE_ID
@@ -150,3 +151,42 @@ class TestRestoreContract(DerivedRouterContractTests):
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_create_stamps_form_input(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Persist the validated restore create body under ``data['_form']``.
+
+        Overrides the generic suite method: the str-typed ``service_id`` /
+        ``schema_id`` reject the kit's int reference ids, so a hand-built body is
+        used in place of the Polyfactory pass.
+        """
+        base = app_base_url(self.app_def)
+        body = _valid_restore_body()
+
+        response = contract_client.post(f"{base}/", json=body)
+
+        assert response.status_code == status.HTTP_201_CREATED, response.text
+        expected = self.app_def.create_model.model_validate(body).model_dump(
+            mode="json"
+        )
+        assert mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY] == expected
+
+    def test_update_round_trips_stored_form(
+        self, contract_client: Any, mock_task_api: Any
+    ) -> None:
+        """Assert the stored restore ``_form`` re-validates and re-stamps on PUT."""
+        base = app_base_url(self.app_def)
+        task_name = "contract-roundtrip-restore"
+        create = contract_client.post(
+            f"{base}/", json=_valid_restore_body(task_name=task_name)
+        )
+        assert create.status_code == status.HTTP_201_CREATED, create.text
+        stored_form = mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY]
+
+        response = contract_client.put(f"{base}/{task_name}", json=stored_form)
+
+        assert response.status_code == status.HTTP_200_OK, response.text
+        assert (
+            mock_task_api.last_update_payload["data"][RESERVED_FORM_KEY] == stored_form
+        )

@@ -997,25 +997,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Archives Api List
-     * @description List archive tasks.
-     */
-    get: operations['archives_archives_api_list_api_plugins_archives__get'];
+    /** List */
+    get: operations['archives__list_api_plugins_archives__get'];
     put?: never;
-    /**
-     * Archives Api Create
-     * @description Create an archive task from a JSON payload request body.
-     *
-     *     :param check_connectivity: Whether to verify the target database is
-     *         reachable after task creation. Defaults to ``True`` so callers that
-     *         omit the parameter still get a connectivity round-trip; pass
-     *         ``check_connectivity=false`` to opt out. Mirrors the asymmetric
-     *         default used by the checksums create flow (the Form path defaults
-     *         to ``False`` because HTML checkboxes omit the field when unchecked).
-     *     :type check_connectivity: bool
-     */
-    post: operations['archives_archives_api_create_api_plugins_archives__post'];
+    /** Create */
+    post: operations['archives__create_api_plugins_archives__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1051,18 +1037,33 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Archives Api Detail
-     * @description Retrieve a single archive task.
-     */
-    get: operations['archives_archives_api_detail_api_plugins_archives__task_name__get'];
-    put?: never;
+    /** Detail */
+    get: operations['archives__detail_api_plugins_archives__task_name__get'];
+    /** Update */
+    put: operations['archives__update_api_plugins_archives__task_name__put'];
     post?: never;
+    /** Delete */
+    delete: operations['archives__delete_api_plugins_archives__task_name__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/plugins/archives/{task_name}/execute': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
     /**
-     * Archives Api Delete
-     * @description Delete an archive task.
+     * Archives Api Execute
+     * @description Resolve, dispatch, and wrap a standard task execution.
      */
-    delete: operations['archives_archives_api_delete_api_plugins_archives__task_name__delete'];
+    post: operations['archives_archives_api_execute_api_plugins_archives__task_name__execute_post'];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -2703,6 +2704,34 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sep/app-info/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get App Info
+     * @description Return shell metadata for the React frontend.
+     *
+     *     Render ``footer_text`` from the shared :func:`render_footer_text` helper so
+     *     the JSON endpoint and the legacy Jinja sidebar footer cannot drift. The
+     *     helper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live
+     *     ``SEP__FOOTER_TEMPLATE`` override is reflected without a restart. Access is
+     *     gated by the router-level ``IsApiAuthenticated`` dependency.
+     *
+     *     :return: The rendered footer text.
+     */
+    get: operations['sep_get_app_info_api_sep_app_info__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sep/dashboard/': {
     parameters: {
       query?: never;
@@ -2781,6 +2810,103 @@ export interface paths {
     get: operations['sep_list_hosts_api_sep_hosts__get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/periodic-tasks/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Periodic Tasks
+     * @description Return the upstream periodic-task list through the SEP gateway.
+     *
+     *     :param tasks_api: The Tasks API client used to fetch the upstream list.
+     *     :return: The upstream periodic-task list, or ``[]`` when the upstream
+     *         payload is not a list.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500).
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    get: operations['sep_list_periodic_tasks_api_sep_periodic_tasks__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/periodic-tasks/{periodic_task_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Update Periodic Task
+     * @description Dispatch a full-replacement update of a periodic task to the Tasks API.
+     *
+     *     :param periodic_task_id: The id of the periodic task to update.
+     *     :param tasks_api: The Tasks API client used to update the periodic task.
+     *     :param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.
+     *     :return: The updated periodic task as returned by the Tasks API.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500).
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    put: operations['sep_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put'];
+    post?: never;
+    /**
+     * Delete Periodic Task
+     * @description Dispatch deletion of a periodic task to the Tasks API.
+     *
+     *     :param periodic_task_id: The id of the periodic task to delete.
+     *     :param tasks_api: The Tasks API client used to delete the periodic task.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500).
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    delete: operations['sep_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/periodic-tasks/{task_name}/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Periodic Task
+     * @description Dispatch creation of a periodic task for ``task_name`` to the Tasks API.
+     *
+     *     :param task_name: The task name the new periodic schedule runs.
+     *     :param tasks_api: The Tasks API client used to create the periodic task.
+     *     :param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.
+     *     :return: The created periodic task as returned by the Tasks API.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500).
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    post: operations['sep_create_periodic_task_api_sep_periodic_tasks__task_name___post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2893,28 +3019,59 @@ export interface paths {
     };
     /**
      * List Merged Task History
-     * @description Return merged execution history for one or more task names.
+     * @description Return task-history rows, listing all of them or merging selected names.
      *
-     *     Each ``task_names`` value is queried independently against the Tasks API
-     *     with the same ``status`` filter and a widened upstream window starting at
-     *     ``offset=0``; the SEP layer merges, sorts newest-first, then applies the
-     *     client ``offset`` and ``limit`` globally before responding.
+     *     Three-way on ``task_names``:
+     *
+     *     * **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already
+     *       paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.
+     *     * **provided, at least one non-blank name** -- query each name independently
+     *       against the Tasks API, then merge, sort newest-first, and paginate globally.
+     *     * **provided, every name blank after trimming** -- reject with ``422``.
      *
      *     :param tasks_api: The Tasks API client used to fetch upstream history.
-     *     :type tasks_api: TaskAPI
-     *     :param task_names: One or more task names (repeat the query param).
-     *     :type task_names: list[str]
-     *     :param task_status: Optional exact status filter forwarded upstream.
-     *     :type task_status: TaskHistoryStatusEnum | None
      *     :param pagination: Validated offset/limit query parameters.
-     *     :type pagination: Pagination
-     *     :return: Merged paginated task history across all requested names.
-     *     :rtype: PaginatedResponse[TaskHistoryResponse]
-     *     :raises HTTPException: When every supplied task name is empty after trimming.
+     *     :param task_names: Zero or more task names (repeat the query param); omit to
+     *         list all history.
+     *     :param task_status: Optional exact status filter forwarded upstream.
+     *     :return: Paginated task history, either the upstream list or the merged set.
+     *     :raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but
+     *         every value is empty after trimming.
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``, on either the list-all passthrough or
+     *         the merged-history fan-out.
      */
     get: operations['sep_list_merged_task_history_api_sep_task_history__get'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/sep/task-history/{task_history_id}/stop/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Stop Task History
+     * @description Dispatch a stop request for a single task-history row to the Tasks API.
+     *
+     *     :param task_history_id: The id of the task-history row to stop.
+     *     :param tasks_api: The Tasks API client used to issue the stop request.
+     *     :return: The stopped task-history row as returned by the Tasks API.
+     *     :raises HTTPException: Re-raised unchanged for an upstream client error
+     *         (status < 500), e.g. a ``400`` when the task is not running.
+     *     :raises HTTPBadGatewayException: For an upstream server error (status >= 500)
+     *         or a connection-level ``OSError``.
+     */
+    post: operations['sep_stop_task_history_api_sep_task_history__task_history_id__stop__post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -4787,71 +4944,55 @@ export interface components {
     };
     /**
      * AltersCreate
-     * @description Represent an Alters creation form.
+     * @description Represent the single model-first declaration of the Alters create form.
+     *
+     *     This one declaration drives the JSON create/update request body, the Jinja
+     *     ``Form()`` body, and — via
+     *     :func:`~app.sep.plugins.framework.form_dsl.derive_plugin_schema` — the
+     *     ``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are
+     *     enforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /
+     *     ``Forbidden`` gates plus ``__form_rules__``), not by a decorator.
+     *
+     *     The schema-display defaults for ``dsn_table`` and ``progress`` diverge from the
+     *     request-body defaults: the body defaults both to the empty string (so the
+     *     ``dsn_table`` forbidden gate passes for non-``dsn`` recursion, and an omitted
+     *     ``progress`` emits no value), while the form renders the Percona-Toolkit DSN
+     *     table and ``time,10`` via ``Ui(default=...)``.
      *
      *     :param task_name: The name of the task to be created.
-     *     :type task_name: NonEmptyStr
      *     :param hostname: The target hostname for the task execution.
-     *     :type hostname: NonEmptyStr
      *     :param service_id: The Inventory ID of the database service to connect to.
-     *     :type service_id: int
      *     :param schema_id: The database schema ID on which the task will operate.
-     *     :type schema_id: int | None
      *     :param table_id: The table ID within the schema to be altered.
-     *     :type table_id: int | None
      *     :param schema_name: Manual schema name when ``schema_id`` is not set.
-     *     :type schema_name: str
      *     :param table_name: Manual table name when ``table_id`` is not set.
-     *     :type table_name: str
      *     :param recursion_method: The method for handling recursion.
-     *     :type recursion_method: NonEmptyStr
      *     :param alter: The specific alter command to be executed.
-     *     :type alter: NonEmptyStr
-     *     :param dsn_table: The DSN table for recursion method when using ``dsn``. When empty,
-     *         the command builder uses ``D=percona,t=dsns`` (Percona Toolkit convention).
-     *     :type dsn_table: str
+     *     :param dsn_table: The DSN table for recursion method when using ``dsn``. When
+     *         recursion is ``dsn`` and this field is omitted or empty, it defaults to
+     *         ``D=percona,t=dsns`` (Percona Toolkit convention).
      *     :param pause_file: Execution will be paused while the file specified by this param exists.
-     *     :type pause_file: str
      *     :param new_table_name: New table name before it is swapped.
-     *     :type new_table_name: str
      *     :param print_arg: Print SQL statements to STDOUT.
-     *     :type print_arg: bool
      *     :param progress: Print progress reports to STDERR while copying rows.
-     *     :type progress: str
      *     :param no_swap_tables: Swap the original table and the new, altered table.
-     *     :type no_swap_tables: bool
      *     :param no_drop_old_table: Drop the original table after renaming it.
-     *     :type no_drop_old_table: bool
      *     :param no_drop_new_table: Drop the new table if copying the original table fails.
-     *     :type no_drop_new_table: bool
      *     :param no_drop_triggers: Drop triggers on the old table.
-     *     :type no_drop_triggers: bool
      *     :param tries: How many times to try critical operations.
-     *     :type tries: str
      *     :param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.
-     *     :type set_vars: str
      *     :param critical_load: Examine SHOW GLOBAL STATUS after every chunk, and abort if the load is too high.
-     *     :type critical_load: str
      *     :param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are
      *         higher than their thresholds.
-     *     :type max_load: str
      *     :param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.
-     *     :type chunk_time: str
      *     :param max_lag: Pause the data copy until all replicas lag is less than this value.
-     *     :type max_lag: str
      *     :param max_flow_ctl: Pause when PXC flow control exceeds this value.
-     *     :type max_flow_ctl: str
      *     :param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.
-     *     :type extra_args: str
-     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-     *     :type alert_on_fail: bool
      *     :param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor
      *         (user/password): pre-checks always use this path; execute/dry-run use pt-osc's
      *         default ~/.my.cnf unless this is set to another path, then --defaults-file is added.
-     *     :type pre_checks_mysql_config_file: str
      *     :param continue_on_pre_check_failure: When True, continue to the run task even if
      *         pre-checks fail (overrides the schema's default ``on_failure="halt"`` policy).
-     *     :type continue_on_pre_check_failure: bool
      */
     AltersCreate: {
       /**
@@ -4861,53 +5002,32 @@ export interface components {
       alert_on_fail: boolean;
       /** Alter */
       alter: string;
-      /**
-       * Chunk Time
-       * @default
-       */
-      chunk_time: string;
+      /** Chunk Time */
+      chunk_time?: string | null;
       /**
        * Continue On Pre Check Failure
        * @default false
        */
       continue_on_pre_check_failure: boolean;
-      /**
-       * Critical Load
-       * @default
-       */
-      critical_load: string;
+      /** Critical Load */
+      critical_load?: string | null;
       /**
        * Dsn Table
        * @default
        */
       dsn_table: string;
-      /**
-       * Extra Args
-       * @default
-       */
-      extra_args: string;
+      /** Extra Args */
+      extra_args?: string | null;
       /** Hostname */
       hostname: string;
-      /**
-       * Max Flow Ctl
-       * @default
-       */
-      max_flow_ctl: string;
-      /**
-       * Max Lag
-       * @default
-       */
-      max_lag: string;
-      /**
-       * Max Load
-       * @default
-       */
-      max_load: string;
-      /**
-       * New Table Name
-       * @default
-       */
-      new_table_name: string;
+      /** Max Flow Ctl */
+      max_flow_ctl?: string | null;
+      /** Max Lag */
+      max_lag?: string | null;
+      /** Max Load */
+      max_load?: string | null;
+      /** New Table Name */
+      new_table_name?: string | null;
       /**
        * No Drop New Table
        * @default false
@@ -4928,11 +5048,8 @@ export interface components {
        * @default false
        */
       no_swap_tables: boolean;
-      /**
-       * Pause File
-       * @default
-       */
-      pause_file: string;
+      /** Pause File */
+      pause_file?: string | null;
       /**
        * Pre Checks Mysql Config File
        * @default ~/.my.cnf
@@ -4948,47 +5065,35 @@ export interface components {
        * @default
        */
       progress: string;
-      /** Recursion Method */
+      /**
+       * Recursion Method
+       * @default processlist
+       */
       recursion_method: string;
       /** Schema Id */
       schema_id?: number | null;
-      /**
-       * Schema Name
-       * @default
-       */
-      schema_name: string;
+      /** Schema Name */
+      schema_name?: string | null;
       /** Service Id */
       service_id: number;
-      /**
-       * Set Vars
-       * @default
-       */
-      set_vars: string;
+      /** Set Vars */
+      set_vars?: string | null;
       /** Table Id */
       table_id?: number | null;
-      /**
-       * Table Name
-       * @default
-       */
-      table_name: string;
+      /** Table Name */
+      table_name?: string | null;
       /** Task Name */
       task_name: string;
-      /**
-       * Tries
-       * @default
-       */
-      tries: string;
+      /** Tries */
+      tries?: string | null;
     };
     /**
      * AltersExecuteWrite
      * @description Represent a JSON request body for executing an alters task.
      *
      *     :param eta: Optional future datetime to schedule execution.
-     *     :type eta: FutureDatetime | None
      *     :param chain_task_names: Optional list of task names to chain after this one.
-     *     :type chain_task_names: list[str] | None
      *     :param chain_on_failure: Whether to run chained tasks even on failure.
-     *     :type chain_on_failure: bool | None
      */
     AltersExecuteWrite: {
       /** Chain On Failure */
@@ -5003,9 +5108,7 @@ export interface components {
      * @description Represent the response from POST /api/plugins/alters/{task_name}/execute.
      *
      *     :param task_name: The name of the task that was executed.
-     *     :type task_name: str
      *     :param task_id: The id of the task-history row created by the tasks API.
-     *     :type task_id: int | None
      */
     AltersExecutionResponse: {
       /** Task Id */
@@ -5015,35 +5118,57 @@ export interface components {
     };
     /**
      * AltersTaskResponse
-     * @description Represent an alters task API response.
+     * @description Represent an alters task API response for list and detail surfaces.
      *
+     *     The create/update routes return the
+     *     :data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models
+     *     derived from this base; both add ``connectivity_warning`` (and, for create,
+     *     ``pre_checks_auto_fire_warning``) per the framework's derived create-response
+     *     standard, so the always-null warning fields stay off list/detail rows.
+     *
+     *     :param name: The name of the alters task.
+     *     :param owner: The entity or user that owns the task.
+     *     :param service_type: The type of database service (always MySQL for alters).
+     *     :param status: The current execution status of the task.
      *     :param id: The unique identifier for the alters task.
-     *     :type id: int | None
      *     :param backend: The backend worker/engine executing the task.
-     *     :type backend: TaskBackendEnum
      *     :param data: The raw configuration and parameters used for the alter execution.
-     *     :type data: dict[str, Any]
      *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
      *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :type alert_on_fail: bool
      *     :param created_at: The timestamp when the task was first created.
-     *     :type created_at: datetime | None
      *     :param updated_at: The timestamp of the last modification to the task.
-     *     :type updated_at: datetime | None
      *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
      *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
-     *     :param connectivity_warning: A warning surfaced when the post-creation
-     *         database connectivity check fails. ``None`` when the check passes,
-     *         is opted out, or the task meta lacks the connectivity keys.
-     *     :type connectivity_warning: ConnectivityWarning | None
-     *     :param pre_checks_auto_fire_warning: A warning when the task group was
-     *         created but the automatic pre-checks execute call failed.
-     *     :type pre_checks_auto_fire_warning: str | None
      */
     AltersTaskResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Protected */
+      protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * AltersTaskResponseCreate
+     * @description Represent the create response for an alters task group, carrying the post-creation connectivity warning and the automatic pre-checks auto-fire warning.
+     */
+    AltersTaskResponseCreate: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
@@ -5071,205 +5196,44 @@ export interface components {
       updated_at?: string | null;
     };
     /**
-     * AltersTaskWrite
-     * @description Represent a JSON request body for creating or updating an alters task group.
-     *
-     *     Mirrors :class:`AltersCreate` and is validated against ``alters_schema``
-     *     conditional rules (for example, ``dsn_table`` required when
-     *     ``recursion_method`` is ``"dsn"``).
-     *
-     *     :param task_name: The name of the task to be created.
-     *     :type task_name: NonEmptyStr
-     *     :param hostname: The target hostname for the task execution.
-     *     :type hostname: NonEmptyStr
-     *     :param service_id: The Inventory ID of the MySQL service to connect to.
-     *     :type service_id: int
-     *     :param schema_id: The inventory schema ID, when not using manual names.
-     *     :type schema_id: int | None
-     *     :param table_id: The inventory table ID, when not using manual names.
-     *     :type table_id: int | None
-     *     :param schema_name: Manual schema name when ``schema_id`` is not set.
-     *     :type schema_name: str
-     *     :param table_name: Manual table name when ``table_id`` is not set.
-     *     :type table_name: str
-     *     :param recursion_method: The method for handling replica discovery.
-     *     :type recursion_method: NonEmptyStr
-     *     :param alter: The specific alter command to be executed.
-     *     :type alter: NonEmptyStr
-     *     :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``. When
-     *         recursion is ``"dsn"`` and this field is omitted or empty, it defaults to
-     *         ``D=percona,t=dsns`` (Percona Toolkit convention), matching ``alters_schema``.
-     *     :type dsn_table: str
-     *     :param pause_file: Execution pauses while this file exists.
-     *     :type pause_file: str
-     *     :param new_table_name: New table name before swap.
-     *     :type new_table_name: str
-     *     :param print_arg: Print SQL statements to STDOUT.
-     *     :type print_arg: bool
-     *     :param progress: Print progress reports to STDERR.
-     *     :type progress: str
-     *     :param no_swap_tables: Simulate without swapping tables.
-     *     :type no_swap_tables: bool
-     *     :param no_drop_old_table: Keep the original table after rename.
-     *     :type no_drop_old_table: bool
-     *     :param no_drop_new_table: Keep the new table if copy fails.
-     *     :type no_drop_new_table: bool
-     *     :param no_drop_triggers: Do not drop triggers on the old table.
-     *     :type no_drop_triggers: bool
-     *     :param tries: Retries and wait times for critical operations.
-     *     :type tries: str
-     *     :param set_vars: MySQL variables to set (comma-separated key=value pairs).
-     *     :type set_vars: str
-     *     :param critical_load: Abort when GLOBAL STATUS exceeds thresholds.
-     *     :type critical_load: str
-     *     :param max_load: Pause when GLOBAL STATUS exceeds thresholds.
-     *     :type max_load: str
-     *     :param chunk_time: Target execution time per chunk.
-     *     :type chunk_time: str
-     *     :param max_lag: Pause until replica lag falls below this value.
-     *     :type max_lag: str
-     *     :param max_flow_ctl: Pause when PXC flow control exceeds this value.
-     *     :type max_flow_ctl: str
-     *     :param extra_args: Additional pt-online-schema-change arguments.
-     *     :type extra_args: str
-     *     :param alert_on_fail: Send an alert if the task fails.
-     *     :type alert_on_fail: bool
-     *     :param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor
-     *         (user/password): pre-checks always use this path; execute/dry-run use pt-osc's
-     *         default ~/.my.cnf unless this is set to another path, then --defaults-file is added.
-     *     :type pre_checks_mysql_config_file: str
-     *     :param continue_on_pre_check_failure: When True, continue to the run task even if
-     *         pre-checks fail (overrides the schema's default ``on_failure="halt"`` policy).
-     *     :type continue_on_pre_check_failure: bool
+     * AltersTaskResponseUpdate
+     * @description Represent the update response for an alters task group, carrying the post-update connectivity warning.
      */
-    AltersTaskWrite: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
+    AltersTaskResponseUpdate: {
+      /** Alert On Fail */
       alert_on_fail: boolean;
-      /** Alter */
-      alter: string;
-      /**
-       * Chunk Time
-       * @default
-       */
-      chunk_time: string;
-      /**
-       * Continue On Pre Check Failure
-       * @default false
-       */
-      continue_on_pre_check_failure: boolean;
-      /**
-       * Critical Load
-       * @default
-       */
-      critical_load: string;
-      /**
-       * Dsn Table
-       * @default
-       */
-      dsn_table: string;
-      /**
-       * Extra Args
-       * @default
-       */
-      extra_args: string;
-      /** Hostname */
-      hostname: string;
-      /**
-       * Max Flow Ctl
-       * @default
-       */
-      max_flow_ctl: string;
-      /**
-       * Max Lag
-       * @default
-       */
-      max_lag: string;
-      /**
-       * Max Load
-       * @default
-       */
-      max_load: string;
-      /**
-       * New Table Name
-       * @default
-       */
-      new_table_name: string;
-      /**
-       * No Drop New Table
-       * @default false
-       */
-      no_drop_new_table: boolean;
-      /**
-       * No Drop Old Table
-       * @default false
-       */
-      no_drop_old_table: boolean;
-      /**
-       * No Drop Triggers
-       * @default false
-       */
-      no_drop_triggers: boolean;
-      /**
-       * No Swap Tables
-       * @default false
-       */
-      no_swap_tables: boolean;
-      /**
-       * Pause File
-       * @default
-       */
-      pause_file: string;
-      /**
-       * Pre Checks Mysql Config File
-       * @default ~/.my.cnf
-       */
-      pre_checks_mysql_config_file: string;
-      /**
-       * Print Arg
-       * @default false
-       */
-      print_arg: boolean;
-      /**
-       * Progress
-       * @default
-       */
-      progress: string;
-      /**
-       * Recursion Method
-       * @default processlist
-       */
-      recursion_method: string;
-      /** Schema Id */
-      schema_id?: number | null;
-      /**
-       * Schema Name
-       * @default
-       */
-      schema_name: string;
-      /** Service Id */
-      service_id: number;
-      /**
-       * Set Vars
-       * @default
-       */
-      set_vars: string;
-      /** Table Id */
-      table_id?: number | null;
-      /**
-       * Table Name
-       * @default
-       */
-      table_name: string;
-      /** Task Name */
-      task_name: string;
-      /**
-       * Tries
-       * @default
-       */
-      tries: string;
+      backend: components['schemas']['TaskBackendEnum'];
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Protected */
+      protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * AppInfo
+     * @description Represent the response of ``GET /api/sep/app-info``.
+     *
+     *     :param footer_text: The rendered sidebar footer text (application summary
+     *         and version by default).
+     */
+    AppInfo: {
+      /** Footer Text */
+      footer_text: string;
     };
     /**
      * AppInfoResponse
@@ -5392,82 +5356,116 @@ export interface components {
     };
     /**
      * ArchivesCreate
-     * @description Represent an Archives creation form with proper case-insensitive fields.
+     * @description Represent an Archives creation form as a model-first ``AppFormModel``.
      *
-     *     :param alias: The alias name for the task being created. This name is used for
-     *         identifying the task in the backend.
-     *     :type alias: NonEmptyStr
-     *     :param hostname: The source hostname where the task will be executed.
-     *     :type hostname: NonEmptyStr
-     *     :param service_id: The Inventory ID of the database service to connect to.
-     *     :type service_id: int
-     *     :param source_db_id: The source database schema ID from which data will be purged.
-     *         Must be None if source_query is set.
-     *     :type source_db_id: int | EmptyStrToNone
-     *     :param source_db_name: The name of the source database schema.
-     *     :type source_db_name: str
-     *     :param source_table_id: The source table ID within the specified schema from which
-     *         data will be purged. Must be None if source_query is set.
-     *     :type source_table_id: int | EmptyStrToNone
-     *     :param source_table_name: The name of the source table.
-     *     :type source_table_name: str
-     *     :param source_query: Optional; a query defining the source data to be purged.
-     *         Must be None if both source_db_id and source_table_id are set.
-     *     :type source_query: NonEmptyStr | None
-     *     :param where: Optional; The WHERE condition that defines which data will be purged
-     *         from the source table. Must be None when swap_drop is SWAP_DROP.
-     *     :type where: NonEmptyStr | None
-     *     :param dest_table_id: Optional; The destination table ID.
-     *         Must be None if dest_file is set.
-     *     :type dest_table_id: int | EmptyStrToNone
-     *     :param dest_table_name: The name of the destination table.
-     *     :type dest_table_name: str
-     *     :param dest_file: Optional; The destination file path.
-     *         Must be None if dest_table_id is set.
-     *     :type dest_file: NonEmptyStr | None
-     *     :param swap_drop: Integer field (0-2) indicating the drop behavior.
-     *         If 1, both dest_table_id and dest_file must be None.
-     *     :type swap_drop: int
-     *     :param swp_table_suffix: Optional; Date suffix for the swap table.
-     *     :type swp_table_suffix: date | None
-     *     :param use_index: Optional; The index to be used for optimizing the query.
-     *     :type use_index: NonEmptyStr | None
-     *     :param extra_args: Optional; Additional arguments for the archive task.
-     *     :type extra_args: NonEmptyStr | None
-     *     :param limit: Optional; The maximum number of records to be processed.
-     *     :type limit: int | EmptyStrToNone
-     *     :param sleep: Optional; Sleep duration between operations for rate limiting.
-     *     :type sleep: int | EmptyStrToNone
-     *     :param disable_binlog: Optional integer flag (0 or 1) to disable binary logging.
-     *         ``None`` means the checkbox was left unset (binary logging stays enabled).
-     *     :type disable_binlog: int | None
-     *     :param disable_bulk_insert: Optional integer flag (0 or 1) to disable bulk
-     *         insert. ``None`` means the checkbox was left unset / default behavior is
-     *         used; 0 means bulk insert remains enabled, and 1 means bulk insert is
-     *         disabled.
-     *     :type disable_bulk_insert: int | None
-     *     :param delete_data: Optional integer flag (0 or 1). When set to 1, source
-     *         rows are deleted without being written to any destination; the
-     *         destination table/file fields (dest_table_id, dest_table_name,
-     *         dest_file) must not be set, and vice versa.
-     *     :type delete_data: int | None
-     *     :param dest_service_id: Optional; The Inventory ID of the destination database service.
-     *     :type dest_service_id: int | EmptyStrToNone
-     *     :param dest_host: Optional; The hostname of the destination database.
-     *     :type dest_host: str | None
-     *     :param dest_port: Optional; The port of the destination database (1-65535).
-     *         The ``ge``/``le`` range constraint is scoped to the ``int`` arm so it
-     *         does not run against ``None`` when ``EmptyStrToNone`` coerces an empty
-     *         form input.
-     *     :type dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone
-     *     :param dest_db_id: Optional; The destination database schema ID.
-     *     :type dest_db_id: int | EmptyStrToNone
-     *     :param dest_db_name: The name of the destination database schema.
-     *     :type dest_db_name: str
-     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-     *     :type alert_on_fail: bool
+     *     Source, destination, and destination-host are discriminated-union one-of groups;
+     *     the schema / table / database references are collapsed free-solo fields
+     *     (``int`` inventory id or free-typed ``str`` name). The ``alert_on_fail``
+     *     capability control is inherited from :class:`AppFormModel`.
+     *
+     *     :param task_name: The task name (and the ``ALIAS`` in the archiver config).
+     *     :param hostname: The executor host the task runs on.
+     *     :param service_id: The inventory id of the source MySQL service (the host whose
+     *         rows are archived; the connectivity probe targets it).
+     *     :param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.
+     *     :param source: The source rows, by schema+table or by query.
+     *     :param destination: The destination table or file; ``None`` when ``delete_data``.
+     *     :param host: The destination host, by service or manual entry; ``None`` reuses
+     *         the source host.
+     *     :param swp_table_suffix: The swap-table date suffix (SWAP_ARCHIVE_DROP only).
+     *     :param where: The WHERE clause filtering rows; required unless SWAP_DROP.
+     *     :param use_index: An index hint to optimise the query.
+     *     :param extra_args: Additional pt-archiver CLI arguments.
+     *     :param limit: The maximum rows per archiver run.
+     *     :param sleep: The sleep duration between chunk operations (seconds).
+     *     :param disable_binlog: Whether to disable binary logging for the operation.
+     *     :param disable_bulk_insert: Whether to disable the bulk-insert optimisation.
+     *     :param delete_data: Whether to delete source rows without archiving them.
      */
     ArchivesCreate: {
+      /**
+       * Alert On Fail
+       * @default false
+       */
+      alert_on_fail: boolean;
+      /** Delete Data */
+      delete_data?: boolean | null;
+      /** Destination */
+      destination?:
+        | (components['schemas']['DestByTable'] | components['schemas']['DestByFile'])
+        | null;
+      /** Disable Binlog */
+      disable_binlog?: boolean | null;
+      /** Disable Bulk Insert */
+      disable_bulk_insert?: boolean | null;
+      /** Extra Args */
+      extra_args?: string | null;
+      /** Host */
+      host?: (components['schemas']['HostByService'] | components['schemas']['HostManual']) | null;
+      /** Hostname */
+      hostname: string;
+      /** Limit */
+      limit?: number | null;
+      /** Service Id */
+      service_id: number;
+      /** Sleep */
+      sleep?: number | null;
+      /** Source */
+      source: components['schemas']['SourceByTable'] | components['schemas']['SourceByQuery'];
+      /**
+       * Swap Drop
+       * @default 0
+       */
+      swap_drop: number;
+      /** Swp Table Suffix */
+      swp_table_suffix?: string | null;
+      /** Task Name */
+      task_name: string;
+      /** Use Index */
+      use_index?: string | null;
+      /** Where */
+      where?: string | null;
+    };
+    /**
+     * ArchivesLegacyForm
+     * @description Parse the deprecated Archives HTML form's flat, urlencoded body.
+     *
+     *     The Jinja templates submit the historical flat field names (``source_db_id`` /
+     *     ``source_db_name`` / …) that predate the one-of collapse, so the derived
+     *     one-of ``ArchivesCreate`` cannot bind them directly. This model parses that
+     *     flat body; :func:`_map_legacy_to_create` folds it into ``ArchivesCreate`` for
+     *     the shared spec builder, keeping the legacy path byte-identical. Conditional
+     *     validation is enforced by the mapped ``ArchivesCreate``, not here.
+     *
+     *     :param alias: The task name (the ``ALIAS`` in the archiver config).
+     *     :param hostname: The executor host.
+     *     :param service_id: The source MySQL service id.
+     *     :param source_db_id: The source schema inventory id, or empty.
+     *     :param source_db_name: The manually-entered source schema name.
+     *     :param source_table_id: The source table inventory id, or empty.
+     *     :param source_table_name: The manually-entered source table name.
+     *     :param source_query: A custom source query.
+     *     :param where: The WHERE clause.
+     *     :param dest_table_id: The destination table inventory id, or empty.
+     *     :param dest_table_name: The manually-entered destination table name.
+     *     :param dest_file: The destination file path.
+     *     :param swap_drop: The archive type (0-2).
+     *     :param swp_table_suffix: The swap-table date suffix.
+     *     :param use_index: An index hint.
+     *     :param extra_args: Additional pt-archiver CLI arguments.
+     *     :param limit: The maximum rows per run.
+     *     :param sleep: The sleep between chunk operations.
+     *     :param disable_binlog: The disable-binlog flag (0/1).
+     *     :param disable_bulk_insert: The disable-bulk-insert flag (0/1).
+     *     :param delete_data: The delete-without-archiving flag (0/1).
+     *     :param dest_service_id: The destination service inventory id, or empty.
+     *     :param dest_host: The manual destination host.
+     *     :param dest_port: The manual destination port.
+     *     :param dest_db_id: The destination schema inventory id, or empty.
+     *     :param dest_db_name: The manually-entered destination schema name.
+     *     :param alert_on_fail: Whether to alert on failure.
+     */
+    ArchivesLegacyForm: {
       /**
        * Alert On Fail
        * @default false
@@ -5475,10 +5473,7 @@ export interface components {
       ALERT_ON_FAIL: boolean;
       /** Alias */
       ALIAS: string;
-      /**
-       * Delete Without Archiving
-       * @description Delete source rows without writing them to any destination; the destination table/file fields must be left unset.
-       */
+      /** Delete Data */
       DELETE_DATA?: number | null;
       /** Dest Db Id */
       DEST_DB_ID?: number | null;
@@ -5502,15 +5497,9 @@ export interface components {
        * @default
        */
       DEST_TABLE_NAME: string;
-      /**
-       * Disable Binlog
-       * @description Optional flag to disable binary logging.
-       */
+      /** Disable Binlog */
       DISABLE_BINLOG?: number | null;
-      /**
-       * Disable Bulk Insert
-       * @description Optional flag to disable bulk insert.
-       */
+      /** Disable Bulk Insert */
       DISABLE_BULK_INSERT?: number | null;
       /** Extra Args */
       EXTRA_ARGS?: string | null;
@@ -5546,126 +5535,6 @@ export interface components {
       USE_INDEX?: string | null;
       /** Where */
       WHERE?: string | null;
-    };
-    /**
-     * ArchivesCreateResponse
-     * @description Represent the response body for ``POST /api/plugins/archives/``.
-     *
-     *     Extends :class:`ArchivesTaskResponse` with a connectivity-warning field
-     *     surfaced when the post-creation database probe fails or is skipped.
-     *
-     *     :param connectivity_warning: ``None`` when the probe passes, was opted
-     *         out, or the task meta lacks connectivity keys; populated otherwise.
-     *     :type connectivity_warning: ConnectivityWarning | None
-     */
-    ArchivesCreateResponse: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      backend: components['schemas']['TaskBackendEnum'];
-      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
-      /** Created At */
-      created_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Data */
-      data: Record<string, never>;
-      /** Id */
-      id?: number | null;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /** Last Updated By */
-      last_updated_by?: string | null;
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Updated At */
-      updated_at?: string | null;
-    };
-    /**
-     * ArchivesTaskResponse
-     * @description Represent an Archives task in API responses.
-     *
-     *     Lean Pydantic projection of ``app.tasks.models.Task`` carrying only the
-     *     fields the React frontend consumes. Defined locally (not inherited from
-     *     ``Task``) to keep relationship attributes (``history``) out of the
-     *     serialised payload.
-     *
-     *     :param id: The task primary key.
-     *     :type id: int | None
-     *     :param name: The task name.
-     *     :type name: str
-     *     :param backend: The execution backend.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The plugin that owns the task.
-     *     :type owner: TaskOwner
-     *     :param data: Raw task data (``task``/``meta``/``payload``).
-     *     :type data: dict[str, Any]
-     *     :param is_template: Whether the task is a template definition.
-     *     :type is_template: bool
-     *     :param protected: Whether the task is protected from deletion.
-     *     :type protected: bool
-     *     :param alert_on_fail: Whether the task triggers an alert on failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: Creation timestamp.
-     *     :type created_at: datetime | None
-     *     :param updated_at: Last update timestamp.
-     *     :type updated_at: datetime | None
-     *     :param created_by: User that created the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: User that last updated the task.
-     *     :type last_updated_by: str | None
-     *     :param service_type: The database service type the task targets.
-     *     :type service_type: ServiceTypeEnum | None
-     *     :param status: The latest known execution status from task history.
-     *     :type status: TaskHistoryStatusEnum | None
-     */
-    ArchivesTaskResponse: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
-      alert_on_fail: boolean;
-      backend: components['schemas']['TaskBackendEnum'];
-      /** Created At */
-      created_at?: string | null;
-      /** Created By */
-      created_by?: string | null;
-      /** Data */
-      data: Record<string, never>;
-      /** Id */
-      id?: number | null;
-      /**
-       * Is Template
-       * @default false
-       */
-      is_template: boolean;
-      /** Last Updated By */
-      last_updated_by?: string | null;
-      /** Name */
-      name: string;
-      owner: components['schemas']['TaskOwner'];
-      /**
-       * Protected
-       * @default false
-       */
-      protected: boolean;
-      service_type?: components['schemas']['ServiceTypeEnum'] | null;
-      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
-      /** Updated At */
-      updated_at?: string | null;
     };
     /**
      * AvailableSyncer
@@ -6076,7 +5945,11 @@ export interface components {
      *         runs.
      *     :param id: The task's unique identifier.
      *     :param backend: The backend worker/engine executing the task.
-     *     :param data: The raw configuration and parameters used for execution.
+     *     :param data: The raw configuration and parameters used for execution. Tasks
+     *         created through the JSON schema-driven path also carry a reserved additive
+     *         ``_form`` key holding the verbatim, validated create-form body for
+     *         prefilling an edit form; it is absent for tasks created through a legacy
+     *         form, so consumers must treat it as optional.
      *     :param protected: Whether the task is protected from deletion or modification.
      *     :param alert_on_fail: Whether a notification is sent on task failure.
      *     :param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls
@@ -7124,6 +6997,42 @@ export interface components {
       } | null;
     };
     /**
+     * DestByFile
+     * @description Represent a file destination.
+     *
+     *     :param mode: The one-of discriminator (``"file"``).
+     *     :param dest_file: The file path the archived rows are written to.
+     */
+    DestByFile: {
+      /** Dest File */
+      dest_file: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'file';
+    };
+    /**
+     * DestByTable
+     * @description Represent a table destination (collapsed free-solo references).
+     *
+     *     :param mode: The one-of discriminator (``"table"``).
+     *     :param dest_db: The destination schema — an inventory id, a free-typed name, or
+     *         ``None`` to reuse the source schema.
+     *     :param dest_table: The destination table — an inventory id or a free-typed name.
+     */
+    DestByTable: {
+      /** Dest Db */
+      dest_db?: number | string | null;
+      /** Dest Table */
+      dest_table: number | string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'table';
+    };
+    /**
      * DetailField
      * @description Declare one labelled field rendered inside a :class:`DetailSection`.
      *
@@ -7576,6 +7485,23 @@ export interface components {
       detail?: components['schemas']['ValidationError'][];
     };
     /**
+     * HostByService
+     * @description Represent a destination host taken from an inventory service.
+     *
+     *     :param mode: The one-of discriminator (``"service"``).
+     *     :param dest_service: The inventory id of the destination MySQL service; its
+     *         node address and port supply the destination host and port.
+     */
+    HostByService: {
+      /** Dest Service */
+      dest_service: number;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'service';
+    };
+    /**
      * HostField
      * @description Represent an executor-target (Nomad / Celery) selector field.
      *
@@ -7617,6 +7543,25 @@ export interface components {
        * @enum {string}
        */
       type: 'host';
+    };
+    /**
+     * HostManual
+     * @description Represent a manually-entered destination host.
+     *
+     *     :param mode: The one-of discriminator (``"manual"``).
+     *     :param dest_host: The destination host address.
+     *     :param dest_port: The destination port (1-65535); defaults to the MySQL port.
+     */
+    HostManual: {
+      /** Dest Host */
+      dest_host: string;
+      /** Dest Port */
+      dest_port?: number | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'manual';
     };
     /**
      * HostResponse
@@ -9581,6 +9526,41 @@ export interface components {
     SnippetsCapabilitiesResponse: {
       /** Manual Sync Enabled */
       manual_sync_enabled: boolean;
+    };
+    /**
+     * SourceByQuery
+     * @description Represent a custom-query source selection.
+     *
+     *     :param mode: The one-of discriminator (``"query"``).
+     *     :param source_query: The query defining the rows to archive.
+     */
+    SourceByQuery: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'query';
+      /** Source Query */
+      source_query: string;
+    };
+    /**
+     * SourceByTable
+     * @description Represent a schema+table source selection (collapsed free-solo references).
+     *
+     *     :param mode: The one-of discriminator (``"table"``).
+     *     :param source_db: The source schema — an inventory id or a free-typed name.
+     *     :param source_table: The source table — an inventory id or a free-typed name.
+     */
+    SourceByTable: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: 'table';
+      /** Source Db */
+      source_db: number | string;
+      /** Source Table */
+      source_table: number | string;
     };
     /**
      * SourceEnum
@@ -11950,7 +11930,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['AltersTaskWrite'];
+        'application/json': components['schemas']['AltersCreate'];
       };
     };
     responses: {
@@ -11960,7 +11940,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AltersTaskResponse'];
+          'application/json': components['schemas']['AltersTaskResponseCreate'];
         };
       };
       /** @description Validation Error */
@@ -12038,7 +12018,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['AltersTaskWrite'];
+        'application/json': components['schemas']['AltersCreate'];
       };
     };
     responses: {
@@ -12048,7 +12028,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AltersTaskResponse'];
+          'application/json': components['schemas']['AltersTaskResponseUpdate'];
         };
       };
       /** @description Validation Error */
@@ -12126,9 +12106,11 @@ export interface operations {
       };
     };
   };
-  archives_archives_api_list_api_plugins_archives__get: {
+  archives__list_api_plugins_archives__get: {
     parameters: {
-      query?: never;
+      query?: {
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      };
       header?: never;
       path?: never;
       cookie?: never;
@@ -12141,12 +12123,21 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesTaskResponse'][];
+          'application/json': components['schemas']['BaseTaskResponse'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };
   };
-  archives_archives_api_create_api_plugins_archives__post: {
+  archives__create_api_plugins_archives__post: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -12167,7 +12158,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesCreateResponse'];
+          'application/json': components['schemas']['BaseTaskResponse'];
         };
       };
       /** @description Validation Error */
@@ -12201,7 +12192,7 @@ export interface operations {
       };
     };
   };
-  archives_archives_api_detail_api_plugins_archives__task_name__get: {
+  archives__detail_api_plugins_archives__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -12218,7 +12209,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['ArchivesTaskResponse'];
+          'application/json': components['schemas']['BaseTaskResponse'];
         };
       };
       /** @description Validation Error */
@@ -12232,7 +12223,44 @@ export interface operations {
       };
     };
   };
-  archives_archives_api_delete_api_plugins_archives__task_name__delete: {
+  archives__update_api_plugins_archives__task_name__put: {
+    parameters: {
+      query?: {
+        check_connectivity?: boolean;
+      };
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ArchivesCreate'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BaseTaskResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  archives__delete_api_plugins_archives__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -12249,6 +12277,41 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  archives_archives_api_execute_api_plugins_archives__task_name__execute_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['TaskExecuteWrite'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['TaskExecutionResponse'];
+        };
       };
       /** @description Validation Error */
       422: {
@@ -14733,6 +14796,26 @@ export interface operations {
       };
     };
   };
+  sep_get_app_info_api_sep_app_info__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AppInfo'];
+        };
+      };
+    };
+  };
   sep_get_dashboard_stats_api_sep_dashboard__get: {
     parameters: {
       query?: never;
@@ -14769,6 +14852,169 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HostResponse'][];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_list_periodic_tasks_api_sep_periodic_tasks__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>[];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        periodic_task_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        periodic_task_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_create_periodic_task_api_sep_periodic_tasks__task_name___post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': Record<string, never>;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
       /** @description Upstream Tasks API failure. */
@@ -14885,8 +15131,8 @@ export interface operations {
   };
   sep_list_merged_task_history_api_sep_task_history__get: {
     parameters: {
-      query: {
-        task_names: string[];
+      query?: {
+        task_names?: string[] | null;
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
         offset?: number;
         limit?: number;
@@ -14913,6 +15159,59 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
+        };
+      };
+    };
+  };
+  sep_stop_task_history_api_sep_task_history__task_history_id__stop__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        task_history_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': Record<string, never>;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+      /** @description Upstream Tasks API failure. */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': {
+            detail: string;
+          };
         };
       };
     };
@@ -14988,7 +15287,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['ArchivesCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['ArchivesLegacyForm'];
       };
     };
     responses: {
@@ -15116,7 +15415,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['ArchivesCreate'];
+        'application/x-www-form-urlencoded': components['schemas']['ArchivesLegacyForm'];
       };
     };
     responses: {

@@ -42,9 +42,8 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
-    TaskWrite,
 )
-from tests.app.factories import TaskFactory
+from tests.app.factories import GeneratedTaskFactory, TaskFactory
 
 
 @pytest.fixture
@@ -113,7 +112,7 @@ def test_backups_index(test_client):
 
 def test_backups_create(test_client, mock_task_api_dep, backup_create):
     """Test POST /backups/ route."""
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.BACKUPS,
@@ -177,7 +176,7 @@ def test_backups_create_triggers_connectivity_check(
     """POST /backups/ runs a connectivity check when meta carries connectivity data."""
     clear_connectivity_caches()
 
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.BACKUPS,
@@ -234,7 +233,7 @@ def test_backups_create_skips_connectivity_check_when_opted_out(
     """POST /backups/ skips the connectivity check when the checkbox is unchecked."""
     clear_connectivity_caches()
 
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.BACKUPS,
@@ -308,13 +307,35 @@ def test_backups_detail(
     mock_task_api_dep.get.assert_any_call(f"/stats/{created_task.name}")
 
 
+@pytest.mark.parametrize(
+    ("form_data", "expected_json"),
+    [
+        (
+            {},
+            {"eta": None, "chain_task_names": None, "chain_on_failure": None},
+        ),
+        (
+            {"chain_task_names": ["task-a", "task-b"]},
+            {
+                "eta": None,
+                "chain_task_names": ["task-a", "task-b"],
+                "chain_on_failure": None,
+            },
+        ),
+    ],
+    ids=["no_chain", "with_chain"],
+)
 @pytest.mark.usefixtures(
     "_mock_get_backups_task_dep", "_mock_check_for_conflicted_running_tasks"
 )
-def test_backups_execute(test_client, mock_task_api_dep, created_task):
-    """Test POST /backups/{task_name} route with no chain_task_names."""
+def test_backups_execute(
+    test_client, mock_task_api_dep, created_task, form_data, expected_json
+):
+    """Test POST /mysql_backups/{task_name} forwards the form payload to the tasks API."""
     response = test_client.post(
-        f"/mysql_backups/{created_task.name}", follow_redirects=False
+        f"/mysql_backups/{created_task.name}",
+        data=form_data,
+        follow_redirects=False,
     )
 
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -326,31 +347,7 @@ def test_backups_execute(test_client, mock_task_api_dep, created_task):
     mock_task_api_dep.post.assert_called_once()
     called_args, called_kwargs = mock_task_api_dep.post.call_args
     assert called_args[0] == f"/execute/{created_task.name}"
-    assert called_kwargs["json"] == {
-        "eta": None,
-        "chain_task_names": None,
-        "chain_on_failure": None,
-    }
-
-
-@pytest.mark.usefixtures(
-    "_mock_get_backups_task_dep", "_mock_check_for_conflicted_running_tasks"
-)
-def test_backups_execute_with_chain_task_names(
-    test_client, mock_task_api_dep, created_task
-):
-    """Test POST /backups/{task_name} passes chain_task_names to the tasks API."""
-    response = test_client.post(
-        f"/mysql_backups/{created_task.name}",
-        data={"chain_task_names": ["task-a", "task-b"]},
-        follow_redirects=False,
-    )
-
-    assert response.status_code == status.HTTP_303_SEE_OTHER
-
-    called_args, called_kwargs = mock_task_api_dep.post.call_args
-    assert called_args[0] == f"/execute/{created_task.name}"
-    assert called_kwargs["json"]["chain_task_names"] == ["task-a", "task-b"]
+    assert called_kwargs["json"] == expected_json
 
 
 @pytest.mark.usefixtures("_mock_get_backups_task_dep")

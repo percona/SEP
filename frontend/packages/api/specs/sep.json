@@ -180,7 +180,7 @@
         "type": "object"
       },
       "AltersCreate": {
-        "description": "Represent an Alters creation form.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the database service to connect to.\n:type service_id: int\n:param schema_id: The database schema ID on which the task will operate.\n:type schema_id: int | None\n:param table_id: The table ID within the schema to be altered.\n:type table_id: int | None\n:param schema_name: Manual schema name when ``schema_id`` is not set.\n:type schema_name: str\n:param table_name: Manual table name when ``table_id`` is not set.\n:type table_name: str\n:param recursion_method: The method for handling recursion.\n:type recursion_method: NonEmptyStr\n:param alter: The specific alter command to be executed.\n:type alter: NonEmptyStr\n:param dsn_table: The DSN table for recursion method when using ``dsn``. When empty,\n    the command builder uses ``D=percona,t=dsns`` (Percona Toolkit convention).\n:type dsn_table: str\n:param pause_file: Execution will be paused while the file specified by this param exists.\n:type pause_file: str\n:param new_table_name: New table name before it is swapped.\n:type new_table_name: str\n:param print_arg: Print SQL statements to STDOUT.\n:type print_arg: bool\n:param progress: Print progress reports to STDERR while copying rows.\n:type progress: str\n:param no_swap_tables: Swap the original table and the new, altered table.\n:type no_swap_tables: bool\n:param no_drop_old_table: Drop the original table after renaming it.\n:type no_drop_old_table: bool\n:param no_drop_new_table: Drop the new table if copying the original table fails.\n:type no_drop_new_table: bool\n:param no_drop_triggers: Drop triggers on the old table.\n:type no_drop_triggers: bool\n:param tries: How many times to try critical operations.\n:type tries: str\n:param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.\n:type set_vars: str\n:param critical_load: Examine SHOW GLOBAL STATUS after every chunk, and abort if the load is too high.\n:type critical_load: str\n:param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are\n    higher than their thresholds.\n:type max_load: str\n:param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.\n:type chunk_time: str\n:param max_lag: Pause the data copy until all replicas lag is less than this value.\n:type max_lag: str\n:param max_flow_ctl: Pause when PXC flow control exceeds this value.\n:type max_flow_ctl: str\n:param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.\n:type extra_args: str\n:param alert_on_fail: If True, send an alert if the task fails. Defaults to False.\n:type alert_on_fail: bool\n:param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor\n    (user/password): pre-checks always use this path; execute/dry-run use pt-osc's\n    default ~/.my.cnf unless this is set to another path, then --defaults-file is added.\n:type pre_checks_mysql_config_file: str\n:param continue_on_pre_check_failure: When True, continue to the run task even if\n    pre-checks fail (overrides the schema's default ``on_failure=\"halt\"`` policy).\n:type continue_on_pre_check_failure: bool",
+        "description": "Represent the single model-first declaration of the Alters create form.\n\nThis one declaration drives the JSON create/update request body, the Jinja\n``Form()`` body, and — via\n:func:`~app.sep.plugins.framework.form_dsl.derive_plugin_schema` — the\n``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are\nenforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /\n``Forbidden`` gates plus ``__form_rules__``), not by a decorator.\n\nThe schema-display defaults for ``dsn_table`` and ``progress`` diverge from the\nrequest-body defaults: the body defaults both to the empty string (so the\n``dsn_table`` forbidden gate passes for non-``dsn`` recursion, and an omitted\n``progress`` emits no value), while the form renders the Percona-Toolkit DSN\ntable and ``time,10`` via ``Ui(default=...)``.\n\n:param task_name: The name of the task to be created.\n:param hostname: The target hostname for the task execution.\n:param service_id: The Inventory ID of the database service to connect to.\n:param schema_id: The database schema ID on which the task will operate.\n:param table_id: The table ID within the schema to be altered.\n:param schema_name: Manual schema name when ``schema_id`` is not set.\n:param table_name: Manual table name when ``table_id`` is not set.\n:param recursion_method: The method for handling recursion.\n:param alter: The specific alter command to be executed.\n:param dsn_table: The DSN table for recursion method when using ``dsn``. When\n    recursion is ``dsn`` and this field is omitted or empty, it defaults to\n    ``D=percona,t=dsns`` (Percona Toolkit convention).\n:param pause_file: Execution will be paused while the file specified by this param exists.\n:param new_table_name: New table name before it is swapped.\n:param print_arg: Print SQL statements to STDOUT.\n:param progress: Print progress reports to STDERR while copying rows.\n:param no_swap_tables: Swap the original table and the new, altered table.\n:param no_drop_old_table: Drop the original table after renaming it.\n:param no_drop_new_table: Drop the new table if copying the original table fails.\n:param no_drop_triggers: Drop triggers on the old table.\n:param tries: How many times to try critical operations.\n:param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.\n:param critical_load: Examine SHOW GLOBAL STATUS after every chunk, and abort if the load is too high.\n:param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are\n    higher than their thresholds.\n:param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.\n:param max_lag: Pause the data copy until all replicas lag is less than this value.\n:param max_flow_ctl: Pause when PXC flow control exceeds this value.\n:param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.\n:param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor\n    (user/password): pre-checks always use this path; execute/dry-run use pt-osc's\n    default ~/.my.cnf unless this is set to another path, then --defaults-file is added.\n:param continue_on_pre_check_failure: When True, continue to the run task even if\n    pre-checks fail (overrides the schema's default ``on_failure=\"halt\"`` policy).",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -193,9 +193,15 @@
             "type": "string"
           },
           "chunk_time": {
-            "default": "",
-            "title": "Chunk Time",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Time"
           },
           "continue_on_pre_check_failure": {
             "default": false,
@@ -203,9 +209,15 @@
             "type": "boolean"
           },
           "critical_load": {
-            "default": "",
-            "title": "Critical Load",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Critical Load"
           },
           "dsn_table": {
             "default": "",
@@ -213,9 +225,15 @@
             "type": "string"
           },
           "extra_args": {
-            "default": "",
-            "title": "Extra Args",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Args"
           },
           "hostname": {
             "minLength": 1,
@@ -223,24 +241,48 @@
             "type": "string"
           },
           "max_flow_ctl": {
-            "default": "",
-            "title": "Max Flow Ctl",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Flow Ctl"
           },
           "max_lag": {
-            "default": "",
-            "title": "Max Lag",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Lag"
           },
           "max_load": {
-            "default": "",
-            "title": "Max Load",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Load"
           },
           "new_table_name": {
-            "default": "",
-            "title": "New Table Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Table Name"
           },
           "no_drop_new_table": {
             "default": false,
@@ -263,9 +305,15 @@
             "type": "boolean"
           },
           "pause_file": {
-            "default": "",
-            "title": "Pause File",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pause File"
           },
           "pre_checks_mysql_config_file": {
             "default": "~/.my.cnf",
@@ -283,6 +331,7 @@
             "type": "string"
           },
           "recursion_method": {
+            "default": "processlist",
             "minLength": 1,
             "title": "Recursion Method",
             "type": "string"
@@ -299,18 +348,30 @@
             "title": "Schema Id"
           },
           "schema_name": {
-            "default": "",
-            "title": "Schema Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Name"
           },
           "service_id": {
             "title": "Service Id",
             "type": "integer"
           },
           "set_vars": {
-            "default": "",
-            "title": "Set Vars",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Vars"
           },
           "table_id": {
             "anyOf": [
@@ -324,9 +385,15 @@
             "title": "Table Id"
           },
           "table_name": {
-            "default": "",
-            "title": "Table Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Table Name"
           },
           "task_name": {
             "minLength": 1,
@@ -334,23 +401,28 @@
             "type": "string"
           },
           "tries": {
-            "default": "",
-            "title": "Tries",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tries"
           }
         },
         "required": [
           "task_name",
           "hostname",
           "service_id",
-          "recursion_method",
           "alter"
         ],
         "title": "AltersCreate",
         "type": "object"
       },
       "AltersExecuteWrite": {
-        "description": "Represent a JSON request body for executing an alters task.\n\n:param eta: Optional future datetime to schedule execution.\n:type eta: FutureDatetime | None\n:param chain_task_names: Optional list of task names to chain after this one.\n:type chain_task_names: list[str] | None\n:param chain_on_failure: Whether to run chained tasks even on failure.\n:type chain_on_failure: bool | None",
+        "description": "Represent a JSON request body for executing an alters task.\n\n:param eta: Optional future datetime to schedule execution.\n:param chain_task_names: Optional list of task names to chain after this one.\n:param chain_on_failure: Whether to run chained tasks even on failure.",
         "properties": {
           "chain_on_failure": {
             "anyOf": [
@@ -394,7 +466,7 @@
         "type": "object"
       },
       "AltersExecutionResponse": {
-        "description": "Represent the response from POST /api/plugins/alters/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:type task_name: str\n:param task_id: The id of the task-history row created by the tasks API.\n:type task_id: int | None",
+        "description": "Represent the response from POST /api/plugins/alters/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
         "properties": {
           "task_id": {
             "anyOf": [
@@ -419,7 +491,121 @@
         "type": "object"
       },
       "AltersTaskResponse": {
-        "description": "Represent an alters task API response.\n\n:param id: The unique identifier for the alters task.\n:type id: int | None\n:param backend: The backend worker/engine executing the task.\n:type backend: TaskBackendEnum\n:param data: The raw configuration and parameters used for the alter execution.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:type alert_on_fail: bool\n:param created_at: The timestamp when the task was first created.\n:type created_at: datetime | None\n:param updated_at: The timestamp of the last modification to the task.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes,\n    is opted out, or the task meta lacks the connectivity keys.\n:type connectivity_warning: ConnectivityWarning | None\n:param pre_checks_auto_fire_warning: A warning when the task group was\n    created but the automatic pre-checks execute call failed.\n:type pre_checks_auto_fire_warning: str | None",
+        "description": "Represent an alters task API response for list and detail surfaces.\n\nThe create/update routes return the\n:data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models\nderived from this base; both add ``connectivity_warning`` (and, for create,\n``pre_checks_auto_fire_warning``) per the framework's derived create-response\nstandard, so the always-null warning fields stay off list/detail rows.\n\n:param name: The name of the alters task.\n:param owner: The entity or user that owns the task.\n:param service_type: The type of database service (always MySQL for alters).\n:param status: The current execution status of the task.\n:param id: The unique identifier for the alters task.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for the alter execution.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: The user who initiated the task.\n:param last_updated_by: The user who last modified the task record.",
+        "properties": {
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated By"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/TaskOwner"
+          },
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backend",
+          "data",
+          "protected",
+          "alert_on_fail"
+        ],
+        "title": "AltersTaskResponse",
+        "type": "object"
+      },
+      "AltersTaskResponseCreate": {
+        "description": "Represent the create response for an alters task group, carrying the post-creation connectivity warning and the automatic pre-checks auto-fire warning.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -550,119 +736,57 @@
           "protected",
           "alert_on_fail"
         ],
-        "title": "AltersTaskResponse",
+        "title": "AltersTaskResponseCreate",
         "type": "object"
       },
-      "AltersTaskWrite": {
-        "description": "Represent a JSON request body for creating or updating an alters task group.\n\nMirrors :class:`AltersCreate` and is validated against ``alters_schema``\nconditional rules (for example, ``dsn_table`` required when\n``recursion_method`` is ``\"dsn\"``).\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the MySQL service to connect to.\n:type service_id: int\n:param schema_id: The inventory schema ID, when not using manual names.\n:type schema_id: int | None\n:param table_id: The inventory table ID, when not using manual names.\n:type table_id: int | None\n:param schema_name: Manual schema name when ``schema_id`` is not set.\n:type schema_name: str\n:param table_name: Manual table name when ``table_id`` is not set.\n:type table_name: str\n:param recursion_method: The method for handling replica discovery.\n:type recursion_method: NonEmptyStr\n:param alter: The specific alter command to be executed.\n:type alter: NonEmptyStr\n:param dsn_table: The DSN table when ``recursion_method`` is ``\"dsn\"``. When\n    recursion is ``\"dsn\"`` and this field is omitted or empty, it defaults to\n    ``D=percona,t=dsns`` (Percona Toolkit convention), matching ``alters_schema``.\n:type dsn_table: str\n:param pause_file: Execution pauses while this file exists.\n:type pause_file: str\n:param new_table_name: New table name before swap.\n:type new_table_name: str\n:param print_arg: Print SQL statements to STDOUT.\n:type print_arg: bool\n:param progress: Print progress reports to STDERR.\n:type progress: str\n:param no_swap_tables: Simulate without swapping tables.\n:type no_swap_tables: bool\n:param no_drop_old_table: Keep the original table after rename.\n:type no_drop_old_table: bool\n:param no_drop_new_table: Keep the new table if copy fails.\n:type no_drop_new_table: bool\n:param no_drop_triggers: Do not drop triggers on the old table.\n:type no_drop_triggers: bool\n:param tries: Retries and wait times for critical operations.\n:type tries: str\n:param set_vars: MySQL variables to set (comma-separated key=value pairs).\n:type set_vars: str\n:param critical_load: Abort when GLOBAL STATUS exceeds thresholds.\n:type critical_load: str\n:param max_load: Pause when GLOBAL STATUS exceeds thresholds.\n:type max_load: str\n:param chunk_time: Target execution time per chunk.\n:type chunk_time: str\n:param max_lag: Pause until replica lag falls below this value.\n:type max_lag: str\n:param max_flow_ctl: Pause when PXC flow control exceeds this value.\n:type max_flow_ctl: str\n:param extra_args: Additional pt-online-schema-change arguments.\n:type extra_args: str\n:param alert_on_fail: Send an alert if the task fails.\n:type alert_on_fail: bool\n:param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor\n    (user/password): pre-checks always use this path; execute/dry-run use pt-osc's\n    default ~/.my.cnf unless this is set to another path, then --defaults-file is added.\n:type pre_checks_mysql_config_file: str\n:param continue_on_pre_check_failure: When True, continue to the run task even if\n    pre-checks fail (overrides the schema's default ``on_failure=\"halt\"`` policy).\n:type continue_on_pre_check_failure: bool",
+      "AltersTaskResponseUpdate": {
+        "description": "Represent the update response for an alters task group, carrying the post-update connectivity warning.",
         "properties": {
           "alert_on_fail": {
-            "default": false,
             "title": "Alert On Fail",
             "type": "boolean"
           },
-          "alter": {
-            "minLength": 1,
-            "title": "Alter",
-            "type": "string"
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
           },
-          "chunk_time": {
-            "default": "",
-            "title": "Chunk Time",
-            "type": "string"
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
-          "continue_on_pre_check_failure": {
-            "default": false,
-            "title": "Continue On Pre Check Failure",
-            "type": "boolean"
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
           },
-          "critical_load": {
-            "default": "",
-            "title": "Critical Load",
-            "type": "string"
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
           },
-          "dsn_table": {
-            "default": "",
-            "title": "Dsn Table",
-            "type": "string"
+          "data": {
+            "title": "Data",
+            "type": "object"
           },
-          "extra_args": {
-            "default": "",
-            "title": "Extra Args",
-            "type": "string"
-          },
-          "hostname": {
-            "minLength": 1,
-            "title": "Hostname",
-            "type": "string"
-          },
-          "max_flow_ctl": {
-            "default": "",
-            "title": "Max Flow Ctl",
-            "type": "string"
-          },
-          "max_lag": {
-            "default": "",
-            "title": "Max Lag",
-            "type": "string"
-          },
-          "max_load": {
-            "default": "",
-            "title": "Max Load",
-            "type": "string"
-          },
-          "new_table_name": {
-            "default": "",
-            "title": "New Table Name",
-            "type": "string"
-          },
-          "no_drop_new_table": {
-            "default": false,
-            "title": "No Drop New Table",
-            "type": "boolean"
-          },
-          "no_drop_old_table": {
-            "default": false,
-            "title": "No Drop Old Table",
-            "type": "boolean"
-          },
-          "no_drop_triggers": {
-            "default": false,
-            "title": "No Drop Triggers",
-            "type": "boolean"
-          },
-          "no_swap_tables": {
-            "default": false,
-            "title": "No Swap Tables",
-            "type": "boolean"
-          },
-          "pause_file": {
-            "default": "",
-            "title": "Pause File",
-            "type": "string"
-          },
-          "pre_checks_mysql_config_file": {
-            "default": "~/.my.cnf",
-            "title": "Pre Checks Mysql Config File",
-            "type": "string"
-          },
-          "print_arg": {
-            "default": false,
-            "title": "Print Arg",
-            "type": "boolean"
-          },
-          "progress": {
-            "default": "",
-            "title": "Progress",
-            "type": "string"
-          },
-          "recursion_method": {
-            "default": "processlist",
-            "minLength": 1,
-            "title": "Recursion Method",
-            "type": "string"
-          },
-          "schema_id": {
+          "id": {
             "anyOf": [
               {
                 "type": "integer"
@@ -671,56 +795,86 @@
                 "type": "null"
               }
             ],
-            "title": "Schema Id"
+            "title": "Id"
           },
-          "schema_name": {
-            "default": "",
-            "title": "Schema Name",
-            "type": "string"
-          },
-          "service_id": {
-            "title": "Service Id",
-            "type": "integer"
-          },
-          "set_vars": {
-            "default": "",
-            "title": "Set Vars",
-            "type": "string"
-          },
-          "table_id": {
+          "last_updated_by": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Table Id"
+            "title": "Last Updated By"
           },
-          "table_name": {
-            "default": "",
-            "title": "Table Name",
+          "name": {
+            "title": "Name",
             "type": "string"
           },
-          "task_name": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
+          "owner": {
+            "$ref": "#/components/schemas/TaskOwner"
           },
-          "tries": {
-            "default": "",
-            "title": "Tries",
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backend",
+          "data",
+          "protected",
+          "alert_on_fail"
+        ],
+        "title": "AltersTaskResponseUpdate",
+        "type": "object"
+      },
+      "AppInfo": {
+        "description": "Represent the response of ``GET /api/sep/app-info``.\n\n:param footer_text: The rendered sidebar footer text (application summary\n    and version by default).",
+        "properties": {
+          "footer_text": {
+            "title": "Footer Text",
             "type": "string"
           }
         },
         "required": [
-          "task_name",
-          "hostname",
-          "service_id",
-          "alter"
+          "footer_text"
         ],
-        "title": "AltersTaskWrite",
+        "title": "AppInfo",
         "type": "object"
       },
       "AppInfoResponse": {
@@ -887,7 +1041,219 @@
         "type": "object"
       },
       "ArchivesCreate": {
-        "description": "Represent an Archives creation form with proper case-insensitive fields.\n\n:param alias: The alias name for the task being created. This name is used for\n    identifying the task in the backend.\n:type alias: NonEmptyStr\n:param hostname: The source hostname where the task will be executed.\n:type hostname: NonEmptyStr\n:param service_id: The Inventory ID of the database service to connect to.\n:type service_id: int\n:param source_db_id: The source database schema ID from which data will be purged.\n    Must be None if source_query is set.\n:type source_db_id: int | EmptyStrToNone\n:param source_db_name: The name of the source database schema.\n:type source_db_name: str\n:param source_table_id: The source table ID within the specified schema from which\n    data will be purged. Must be None if source_query is set.\n:type source_table_id: int | EmptyStrToNone\n:param source_table_name: The name of the source table.\n:type source_table_name: str\n:param source_query: Optional; a query defining the source data to be purged.\n    Must be None if both source_db_id and source_table_id are set.\n:type source_query: NonEmptyStr | None\n:param where: Optional; The WHERE condition that defines which data will be purged\n    from the source table. Must be None when swap_drop is SWAP_DROP.\n:type where: NonEmptyStr | None\n:param dest_table_id: Optional; The destination table ID.\n    Must be None if dest_file is set.\n:type dest_table_id: int | EmptyStrToNone\n:param dest_table_name: The name of the destination table.\n:type dest_table_name: str\n:param dest_file: Optional; The destination file path.\n    Must be None if dest_table_id is set.\n:type dest_file: NonEmptyStr | None\n:param swap_drop: Integer field (0-2) indicating the drop behavior.\n    If 1, both dest_table_id and dest_file must be None.\n:type swap_drop: int\n:param swp_table_suffix: Optional; Date suffix for the swap table.\n:type swp_table_suffix: date | None\n:param use_index: Optional; The index to be used for optimizing the query.\n:type use_index: NonEmptyStr | None\n:param extra_args: Optional; Additional arguments for the archive task.\n:type extra_args: NonEmptyStr | None\n:param limit: Optional; The maximum number of records to be processed.\n:type limit: int | EmptyStrToNone\n:param sleep: Optional; Sleep duration between operations for rate limiting.\n:type sleep: int | EmptyStrToNone\n:param disable_binlog: Optional integer flag (0 or 1) to disable binary logging.\n    ``None`` means the checkbox was left unset (binary logging stays enabled).\n:type disable_binlog: int | None\n:param disable_bulk_insert: Optional integer flag (0 or 1) to disable bulk\n    insert. ``None`` means the checkbox was left unset / default behavior is\n    used; 0 means bulk insert remains enabled, and 1 means bulk insert is\n    disabled.\n:type disable_bulk_insert: int | None\n:param delete_data: Optional integer flag (0 or 1). When set to 1, source\n    rows are deleted without being written to any destination; the\n    destination table/file fields (dest_table_id, dest_table_name,\n    dest_file) must not be set, and vice versa.\n:type delete_data: int | None\n:param dest_service_id: Optional; The Inventory ID of the destination database service.\n:type dest_service_id: int | EmptyStrToNone\n:param dest_host: Optional; The hostname of the destination database.\n:type dest_host: str | None\n:param dest_port: Optional; The port of the destination database (1-65535).\n    The ``ge``/``le`` range constraint is scoped to the ``int`` arm so it\n    does not run against ``None`` when ``EmptyStrToNone`` coerces an empty\n    form input.\n:type dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone\n:param dest_db_id: Optional; The destination database schema ID.\n:type dest_db_id: int | EmptyStrToNone\n:param dest_db_name: The name of the destination database schema.\n:type dest_db_name: str\n:param alert_on_fail: If True, send an alert if the task fails. Defaults to False.\n:type alert_on_fail: bool",
+        "description": "Represent an Archives creation form as a model-first ``AppFormModel``.\n\nSource, destination, and destination-host are discriminated-union one-of groups;\nthe schema / table / database references are collapsed free-solo fields\n(``int`` inventory id or free-typed ``str`` name). The ``alert_on_fail``\ncapability control is inherited from :class:`AppFormModel`.\n\n:param task_name: The task name (and the ``ALIAS`` in the archiver config).\n:param hostname: The executor host the task runs on.\n:param service_id: The inventory id of the source MySQL service (the host whose\n    rows are archived; the connectivity probe targets it).\n:param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.\n:param source: The source rows, by schema+table or by query.\n:param destination: The destination table or file; ``None`` when ``delete_data``.\n:param host: The destination host, by service or manual entry; ``None`` reuses\n    the source host.\n:param swp_table_suffix: The swap-table date suffix (SWAP_ARCHIVE_DROP only).\n:param where: The WHERE clause filtering rows; required unless SWAP_DROP.\n:param use_index: An index hint to optimise the query.\n:param extra_args: Additional pt-archiver CLI arguments.\n:param limit: The maximum rows per archiver run.\n:param sleep: The sleep duration between chunk operations (seconds).\n:param disable_binlog: Whether to disable binary logging for the operation.\n:param disable_bulk_insert: Whether to disable the bulk-insert optimisation.\n:param delete_data: Whether to delete source rows without archiving them.",
+        "properties": {
+          "alert_on_fail": {
+            "default": false,
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "delete_data": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delete Data"
+          },
+          "destination": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "file": "#/components/schemas/DestByFile",
+                    "table": "#/components/schemas/DestByTable"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/DestByTable"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DestByFile"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destination"
+          },
+          "disable_binlog": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disable Binlog"
+          },
+          "disable_bulk_insert": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disable Bulk Insert"
+          },
+          "extra_args": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extra Args"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "manual": "#/components/schemas/HostManual",
+                    "service": "#/components/schemas/HostByService"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/HostByService"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HostManual"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "hostname": {
+            "minLength": 1,
+            "title": "Hostname",
+            "type": "string"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "service_id": {
+            "title": "Service Id",
+            "type": "integer"
+          },
+          "sleep": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sleep"
+          },
+          "source": {
+            "discriminator": {
+              "mapping": {
+                "query": "#/components/schemas/SourceByQuery",
+                "table": "#/components/schemas/SourceByTable"
+              },
+              "propertyName": "mode"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SourceByTable"
+              },
+              {
+                "$ref": "#/components/schemas/SourceByQuery"
+              }
+            ],
+            "title": "Source"
+          },
+          "swap_drop": {
+            "default": 0,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Swap Drop",
+            "type": "integer"
+          },
+          "swp_table_suffix": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swp Table Suffix"
+          },
+          "task_name": {
+            "minLength": 1,
+            "title": "Task Name",
+            "type": "string"
+          },
+          "use_index": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Use Index"
+          },
+          "where": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Where"
+          }
+        },
+        "required": [
+          "task_name",
+          "hostname",
+          "service_id",
+          "source"
+        ],
+        "title": "ArchivesCreate",
+        "type": "object"
+      },
+      "ArchivesLegacyForm": {
+        "description": "Parse the deprecated Archives HTML form's flat, urlencoded body.\n\nThe Jinja templates submit the historical flat field names (``source_db_id`` /\n``source_db_name`` / …) that predate the one-of collapse, so the derived\none-of ``ArchivesCreate`` cannot bind them directly. This model parses that\nflat body; :func:`_map_legacy_to_create` folds it into ``ArchivesCreate`` for\nthe shared spec builder, keeping the legacy path byte-identical. Conditional\nvalidation is enforced by the mapped ``ArchivesCreate``, not here.\n\n:param alias: The task name (the ``ALIAS`` in the archiver config).\n:param hostname: The executor host.\n:param service_id: The source MySQL service id.\n:param source_db_id: The source schema inventory id, or empty.\n:param source_db_name: The manually-entered source schema name.\n:param source_table_id: The source table inventory id, or empty.\n:param source_table_name: The manually-entered source table name.\n:param source_query: A custom source query.\n:param where: The WHERE clause.\n:param dest_table_id: The destination table inventory id, or empty.\n:param dest_table_name: The manually-entered destination table name.\n:param dest_file: The destination file path.\n:param swap_drop: The archive type (0-2).\n:param swp_table_suffix: The swap-table date suffix.\n:param use_index: An index hint.\n:param extra_args: Additional pt-archiver CLI arguments.\n:param limit: The maximum rows per run.\n:param sleep: The sleep between chunk operations.\n:param disable_binlog: The disable-binlog flag (0/1).\n:param disable_bulk_insert: The disable-bulk-insert flag (0/1).\n:param delete_data: The delete-without-archiving flag (0/1).\n:param dest_service_id: The destination service inventory id, or empty.\n:param dest_host: The manual destination host.\n:param dest_port: The manual destination port.\n:param dest_db_id: The destination schema inventory id, or empty.\n:param dest_db_name: The manually-entered destination schema name.\n:param alert_on_fail: Whether to alert on failure.",
         "properties": {
           "ALERT_ON_FAIL": {
             "default": false,
@@ -910,8 +1276,7 @@
                 "type": "null"
               }
             ],
-            "description": "Delete source rows without writing them to any destination; the destination table/file fields must be left unset.",
-            "title": "Delete Without Archiving"
+            "title": "Delete Data"
           },
           "DEST_DB_ID": {
             "anyOf": [
@@ -1003,7 +1368,6 @@
                 "type": "null"
               }
             ],
-            "description": "Optional flag to disable binary logging.",
             "title": "Disable Binlog"
           },
           "DISABLE_BULK_INSERT": {
@@ -1017,7 +1381,6 @@
                 "type": "null"
               }
             ],
-            "description": "Optional flag to disable bulk insert.",
             "title": "Disable Bulk Insert"
           },
           "EXTRA_ARGS": {
@@ -1156,255 +1519,7 @@
           "SERVICE_ID",
           "SWAP_DROP"
         ],
-        "title": "ArchivesCreate",
-        "type": "object"
-      },
-      "ArchivesCreateResponse": {
-        "description": "Represent the response body for ``POST /api/plugins/archives/``.\n\nExtends :class:`ArchivesTaskResponse` with a connectivity-warning field\nsurfaced when the post-creation database probe fails or is skipped.\n\n:param connectivity_warning: ``None`` when the probe passes, was opted\n    out, or the task meta lacks connectivity keys; populated otherwise.\n:type connectivity_warning: ConnectivityWarning | None",
-        "properties": {
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum"
-          },
-          "connectivity_warning": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConnectivityWarning"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "data": {
-            "title": "Data",
-            "type": "object"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "is_template": {
-            "default": false,
-            "title": "Is Template",
-            "type": "boolean"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Updated By"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
-          },
-          "protected": {
-            "default": false,
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "backend",
-          "owner",
-          "data"
-        ],
-        "title": "ArchivesCreateResponse",
-        "type": "object"
-      },
-      "ArchivesTaskResponse": {
-        "description": "Represent an Archives task in API responses.\n\nLean Pydantic projection of ``app.tasks.models.Task`` carrying only the\nfields the React frontend consumes. Defined locally (not inherited from\n``Task``) to keep relationship attributes (``history``) out of the\nserialised payload.\n\n:param id: The task primary key.\n:type id: int | None\n:param name: The task name.\n:type name: str\n:param backend: The execution backend.\n:type backend: TaskBackendEnum\n:param owner: The plugin that owns the task.\n:type owner: TaskOwner\n:param data: Raw task data (``task``/``meta``/``payload``).\n:type data: dict[str, Any]\n:param is_template: Whether the task is a template definition.\n:type is_template: bool\n:param protected: Whether the task is protected from deletion.\n:type protected: bool\n:param alert_on_fail: Whether the task triggers an alert on failure.\n:type alert_on_fail: bool\n:param created_at: Creation timestamp.\n:type created_at: datetime | None\n:param updated_at: Last update timestamp.\n:type updated_at: datetime | None\n:param created_by: User that created the task.\n:type created_by: str | None\n:param last_updated_by: User that last updated the task.\n:type last_updated_by: str | None\n:param service_type: The database service type the task targets.\n:type service_type: ServiceTypeEnum | None\n:param status: The latest known execution status from task history.\n:type status: TaskHistoryStatusEnum | None",
-        "properties": {
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum"
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "data": {
-            "title": "Data",
-            "type": "object"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "is_template": {
-            "default": false,
-            "title": "Is Template",
-            "type": "boolean"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Updated By"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
-          },
-          "protected": {
-            "default": false,
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "backend",
-          "owner",
-          "data"
-        ],
-        "title": "ArchivesTaskResponse",
+        "title": "ArchivesLegacyForm",
         "type": "object"
       },
       "AvailableSyncer": {
@@ -2234,7 +2349,7 @@
         "type": "string"
       },
       "BaseTaskResponse": {
-        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity and ownership, the resolved execution status, the stored\nconfiguration, and the audit/anonymization metadata. A standard app whose\nresponse has no app-specific fields uses this model directly; an app with\nextras subclasses it. The model is parametrized by the task ``owner``, which\ndrives the ``anonymized_entities`` default-entity lookup.\n\n:param name: The task name.\n:param owner: The entity or user that owns the task.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (Casdoor\n    username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (Casdoor username when resolvable, otherwise the stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
+        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity and ownership, the resolved execution status, the stored\nconfiguration, and the audit/anonymization metadata. A standard app whose\nresponse has no app-specific fields uses this model directly; an app with\nextras subclasses it. The model is parametrized by the task ``owner``, which\ndrives the ``anonymized_entities`` default-entity lookup.\n\n:param name: The task name.\n:param owner: The entity or user that owns the task.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution. Tasks\n    created through the JSON schema-driven path also carry a reserved additive\n    ``_form`` key holding the verbatim, validated create-form body for\n    prefilling an edit form; it is absent for tasks created through a legacy\n    form, so consumers must treat it as optional.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (Casdoor\n    username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (Casdoor username when resolvable, otherwise the stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -3927,6 +4042,76 @@
         "title": "DerivedTask",
         "type": "object"
       },
+      "DestByFile": {
+        "description": "Represent a file destination.\n\n:param mode: The one-of discriminator (``\"file\"``).\n:param dest_file: The file path the archived rows are written to.",
+        "properties": {
+          "dest_file": {
+            "minLength": 1,
+            "title": "Dest File",
+            "type": "string"
+          },
+          "mode": {
+            "const": "file",
+            "default": "file",
+            "enum": [
+              "file"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest_file"
+        ],
+        "title": "DestByFile",
+        "type": "object"
+      },
+      "DestByTable": {
+        "description": "Represent a table destination (collapsed free-solo references).\n\n:param mode: The one-of discriminator (``\"table\"``).\n:param dest_db: The destination schema — an inventory id, a free-typed name, or\n    ``None`` to reuse the source schema.\n:param dest_table: The destination table — an inventory id or a free-typed name.",
+        "properties": {
+          "dest_db": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Db"
+          },
+          "dest_table": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "minLength": 1,
+                "type": "string"
+              }
+            ],
+            "title": "Dest Table"
+          },
+          "mode": {
+            "const": "table",
+            "default": "table",
+            "enum": [
+              "table"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest_table"
+        ],
+        "title": "DestByTable",
+        "type": "object"
+      },
       "DetailField": {
         "additionalProperties": false,
         "description": "Declare one labelled field rendered inside a :class:`DetailSection`.\n\n:param path: Dotted path into the task record (for example\n    ``\"data.meta.command\"``). Each segment must be a Python identifier,\n    optionally followed by one or more ``[N]`` array indices.\n:type path: DetailPath\n:param label: Human-readable label rendered alongside the resolved value.\n:type label: NonEmptyStr\n:param highlight: Optional syntax-highlighter hint. Defaults to ``None``.\n:type highlight: DetailHighlightLanguage | None",
@@ -4703,6 +4888,29 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HostByService": {
+        "description": "Represent a destination host taken from an inventory service.\n\n:param mode: The one-of discriminator (``\"service\"``).\n:param dest_service: The inventory id of the destination MySQL service; its\n    node address and port supply the destination host and port.",
+        "properties": {
+          "dest_service": {
+            "title": "Dest Service",
+            "type": "integer"
+          },
+          "mode": {
+            "const": "service",
+            "default": "service",
+            "enum": [
+              "service"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest_service"
+        ],
+        "title": "HostByService",
+        "type": "object"
+      },
       "HostField": {
         "additionalProperties": false,
         "description": "Represent an executor-target (Nomad / Celery) selector field.\n\nThe React renderer loads options from ``GET /api/sep/hosts/`` (an SEP\nproxy endpoint that internally calls Tasks ``/hosts/`` and merges\nInventory display names server-side). Host selection is not cascaded\nfrom another field — every dispatch form lists every available executor\ntarget.\n\n:param field_type: The discriminator literal; always ``\"host\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"host\"]\n:param allow_custom: When ``True``, the selector also accepts a free-typed\n    value alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
@@ -4798,6 +5006,43 @@
           "label"
         ],
         "title": "HostField",
+        "type": "object"
+      },
+      "HostManual": {
+        "description": "Represent a manually-entered destination host.\n\n:param mode: The one-of discriminator (``\"manual\"``).\n:param dest_host: The destination host address.\n:param dest_port: The destination port (1-65535); defaults to the MySQL port.",
+        "properties": {
+          "dest_host": {
+            "minLength": 1,
+            "title": "Dest Host",
+            "type": "string"
+          },
+          "dest_port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dest Port"
+          },
+          "mode": {
+            "const": "manual",
+            "default": "manual",
+            "enum": [
+              "manual"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dest_host"
+        ],
+        "title": "HostManual",
         "type": "object"
       },
       "HostResponse": {
@@ -8339,6 +8584,74 @@
           "manual_sync_enabled"
         ],
         "title": "SnippetsCapabilitiesResponse",
+        "type": "object"
+      },
+      "SourceByQuery": {
+        "description": "Represent a custom-query source selection.\n\n:param mode: The one-of discriminator (``\"query\"``).\n:param source_query: The query defining the rows to archive.",
+        "properties": {
+          "mode": {
+            "const": "query",
+            "default": "query",
+            "enum": [
+              "query"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "source_query": {
+            "minLength": 1,
+            "title": "Source Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_query"
+        ],
+        "title": "SourceByQuery",
+        "type": "object"
+      },
+      "SourceByTable": {
+        "description": "Represent a schema+table source selection (collapsed free-solo references).\n\n:param mode: The one-of discriminator (``\"table\"``).\n:param source_db: The source schema — an inventory id or a free-typed name.\n:param source_table: The source table — an inventory id or a free-typed name.",
+        "properties": {
+          "mode": {
+            "const": "table",
+            "default": "table",
+            "enum": [
+              "table"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "source_db": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "minLength": 1,
+                "type": "string"
+              }
+            ],
+            "title": "Source Db"
+          },
+          "source_table": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "minLength": 1,
+                "type": "string"
+              }
+            ],
+            "title": "Source Table"
+          }
+        },
+        "required": [
+          "source_db",
+          "source_table"
+        ],
+        "title": "SourceByTable",
         "type": "object"
       },
       "SourceEnum": {
@@ -12814,7 +13127,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AltersTaskWrite"
+                "$ref": "#/components/schemas/AltersCreate"
               }
             }
           },
@@ -12825,7 +13138,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AltersTaskResponse"
+                  "$ref": "#/components/schemas/AltersTaskResponseCreate"
                 }
               }
             },
@@ -12974,7 +13287,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AltersTaskWrite"
+                "$ref": "#/components/schemas/AltersCreate"
               }
             }
           },
@@ -12985,7 +13298,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AltersTaskResponse"
+                  "$ref": "#/components/schemas/AltersTaskResponseUpdate"
                 }
               }
             },
@@ -13063,32 +13376,58 @@
     },
     "/api/plugins/archives/": {
       "get": {
-        "description": "List archive tasks.",
-        "operationId": "archives_archives_api_list_api_plugins_archives__get",
+        "operationId": "archives__list_api_plugins_archives__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ArchivesTaskResponse"
+                    "$ref": "#/components/schemas/BaseTaskResponse"
                   },
-                  "title": "Response Archives Archives Api List Api Plugins Archives  Get",
+                  "title": "Response Archives  List Api Plugins Archives  Get",
                   "type": "array"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
-        "summary": "Archives Api List",
+        "summary": "List",
         "tags": [
           "archives"
         ]
       },
       "post": {
-        "description": "Create an archive task from a JSON payload request body.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Mirrors the asymmetric\n    default used by the checksums create flow (the Form path defaults\n    to ``False`` because HTML checkboxes omit the field when unchecked).\n:type check_connectivity: bool",
-        "operationId": "archives_archives_api_create_api_plugins_archives__post",
+        "operationId": "archives__create_api_plugins_archives__post",
         "parameters": [
           {
             "in": "query",
@@ -13116,7 +13455,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ArchivesCreateResponse"
+                  "$ref": "#/components/schemas/BaseTaskResponse"
                 }
               }
             },
@@ -13133,7 +13472,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Archives Api Create",
+        "summary": "Create",
         "tags": [
           "archives"
         ]
@@ -13163,8 +13502,7 @@
     },
     "/api/plugins/archives/{task_name}": {
       "delete": {
-        "description": "Delete an archive task.",
-        "operationId": "archives_archives_api_delete_api_plugins_archives__task_name__delete",
+        "operationId": "archives__delete_api_plugins_archives__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -13191,14 +13529,13 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Archives Api Delete",
+        "summary": "Delete",
         "tags": [
           "archives"
         ]
       },
       "get": {
-        "description": "Retrieve a single archive task.",
-        "operationId": "archives_archives_api_detail_api_plugins_archives__task_name__get",
+        "operationId": "archives__detail_api_plugins_archives__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -13215,7 +13552,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ArchivesTaskResponse"
+                  "$ref": "#/components/schemas/BaseTaskResponse"
                 }
               }
             },
@@ -13232,7 +13569,120 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Archives Api Detail",
+        "summary": "Detail",
+        "tags": [
+          "archives"
+        ]
+      },
+      "put": {
+        "operationId": "archives__update_api_plugins_archives__task_name__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "check_connectivity",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Check Connectivity",
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchivesCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BaseTaskResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update",
+        "tags": [
+          "archives"
+        ]
+      }
+    },
+    "/api/plugins/archives/{task_name}/execute": {
+      "post": {
+        "description": "Resolve, dispatch, and wrap a standard task execution.",
+        "operationId": "archives_archives_api_execute_api_plugins_archives__task_name__execute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskExecuteWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExecutionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archives Api Execute",
         "tags": [
           "archives"
         ]
@@ -16806,6 +17256,28 @@
         ]
       }
     },
+    "/api/sep/app-info/": {
+      "get": {
+        "description": "Return shell metadata for the React frontend.\n\nRender ``footer_text`` from the shared :func:`render_footer_text` helper so\nthe JSON endpoint and the legacy Jinja sidebar footer cannot drift. The\nhelper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live\n``SEP__FOOTER_TEMPLATE`` override is reflected without a restart. Access is\ngated by the router-level ``IsApiAuthenticated`` dependency.\n\n:return: The rendered footer text.",
+        "operationId": "sep_get_app_info_api_sep_app_info__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get App Info",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
     "/api/sep/dashboard/": {
       "get": {
         "description": "Return aggregate counts for all four dashboard stat cards.\n\nSources (each degrades to ``0`` on failure):\n\n* ``nodes`` — ``GET /summary/`` on the Inventory API.\n* ``tasks`` — ``GET /`` on the Tasks API (``limit=1``; reads ``total``).\n* ``snippets`` — :meth:`SnippetManager.count` on the SEP database.\n* ``targets`` — ``GET /hosts/`` on the Tasks API; count of returned items.\n\nWhen one or more sources fail the names of the failed sources are joined\nwith commas and set on the ``X-Sep-Upstream-Error`` response header so the\ncaller can surface a partial-failure warning without treating all-zero\ncounts as healthy data.\n\n:param response: The outgoing response used to attach the error header.\n:type response: Response\n:param session: The active database session for snippet queries.\n:type session: AsyncSession\n:param tasks_api: Async client for the Tasks sub-app.\n:type tasks_api: RemoteAPI\n:param inventory_api: Async client for the Inventory sub-app.\n:type inventory_api: RemoteAPI\n:return: Aggregate counts for nodes, tasks, snippets, and targets.\n:rtype: DashboardStatsResponse",
@@ -16867,6 +17339,248 @@
           }
         },
         "summary": "List Hosts",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
+    "/api/sep/periodic-tasks/": {
+      "get": {
+        "description": "Return the upstream periodic-task list through the SEP gateway.\n\n:param tasks_api: The Tasks API client used to fetch the upstream list.\n:return: The upstream periodic-task list, or ``[]`` when the upstream\n    payload is not a list.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "sep_list_periodic_tasks_api_sep_periodic_tasks__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "title": "Response Sep List Periodic Tasks Api Sep Periodic Tasks  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "List Periodic Tasks",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
+    "/api/sep/periodic-tasks/{periodic_task_id}": {
+      "delete": {
+        "description": "Dispatch deletion of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to delete.\n:param tasks_api: The Tasks API client used to delete the periodic task.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "sep_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodic_task_id",
+            "required": true,
+            "schema": {
+              "title": "Periodic Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "Delete Periodic Task",
+        "tags": [
+          "sep"
+        ]
+      },
+      "put": {
+        "description": "Dispatch a full-replacement update of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to update.\n:param tasks_api: The Tasks API client used to update the periodic task.\n:param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.\n:return: The updated periodic task as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "sep_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodic_task_id",
+            "required": true,
+            "schema": {
+              "title": "Periodic Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Sep Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "Update Periodic Task",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
+    "/api/sep/periodic-tasks/{task_name}/": {
+      "post": {
+        "description": "Dispatch creation of a periodic task for ``task_name`` to the Tasks API.\n\n:param task_name: The task name the new periodic schedule runs.\n:param tasks_api: The Tasks API client used to create the periodic task.\n:param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.\n:return: The created periodic task as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "sep_create_periodic_task_api_sep_periodic_tasks__task_name___post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Sep Create Periodic Task Api Sep Periodic Tasks  Task Name   Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "Create Periodic Task",
         "tags": [
           "sep"
         ]
@@ -17073,20 +17787,26 @@
     },
     "/api/sep/task-history/": {
       "get": {
-        "description": "Return merged execution history for one or more task names.\n\nEach ``task_names`` value is queried independently against the Tasks API\nwith the same ``status`` filter and a widened upstream window starting at\n``offset=0``; the SEP layer merges, sorts newest-first, then applies the\nclient ``offset`` and ``limit`` globally before responding.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:type tasks_api: TaskAPI\n:param task_names: One or more task names (repeat the query param).\n:type task_names: list[str]\n:param task_status: Optional exact status filter forwarded upstream.\n:type task_status: TaskHistoryStatusEnum | None\n:param pagination: Validated offset/limit query parameters.\n:type pagination: Pagination\n:return: Merged paginated task history across all requested names.\n:rtype: PaginatedResponse[TaskHistoryResponse]\n:raises HTTPException: When every supplied task name is empty after trimming.",
+        "description": "Return task-history rows, listing all of them or merging selected names.\n\nThree-way on ``task_names``:\n\n* **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already\n  paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.\n* **provided, at least one non-blank name** -- query each name independently\n  against the Tasks API, then merge, sort newest-first, and paginate globally.\n* **provided, every name blank after trimming** -- reject with ``422``.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:param pagination: Validated offset/limit query parameters.\n:param task_names: Zero or more task names (repeat the query param); omit to\n    list all history.\n:param task_status: Optional exact status filter forwarded upstream.\n:return: Paginated task history, either the upstream list or the merged set.\n:raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but\n    every value is empty after trimming.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``, on either the list-all passthrough or\n    the merged-history fan-out.",
         "operationId": "sep_list_merged_task_history_api_sep_task_history__get",
         "parameters": [
           {
             "in": "query",
             "name": "task_names",
-            "required": true,
+            "required": false,
             "schema": {
-              "items": {
-                "type": "string"
-              },
-              "minItems": 1,
-              "title": "Task Names",
-              "type": "array"
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Names"
             }
           },
           {
@@ -17149,9 +17869,89 @@
               }
             },
             "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
           }
         },
         "summary": "List Merged Task History",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
+    "/api/sep/task-history/{task_history_id}/stop/": {
+      "post": {
+        "description": "Dispatch a stop request for a single task-history row to the Tasks API.\n\n:param task_history_id: The id of the task-history row to stop.\n:param tasks_api: The Tasks API client used to issue the stop request.\n:return: The stopped task-history row as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500), e.g. a ``400`` when the task is not running.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "sep_stop_task_history_api_sep_task_history__task_history_id__stop__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_history_id",
+            "required": true,
+            "schema": {
+              "title": "Task History Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Sep Stop Task History Api Sep Task History  Task History Id  Stop  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "Stop Task History",
         "tags": [
           "sep"
         ]
@@ -17244,7 +18044,7 @@
           "content": {
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/ArchivesCreate"
+                "$ref": "#/components/schemas/ArchivesLegacyForm"
               }
             }
           },
@@ -17407,7 +18207,7 @@
           "content": {
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/ArchivesCreate"
+                "$ref": "#/components/schemas/ArchivesLegacyForm"
               }
             }
           },

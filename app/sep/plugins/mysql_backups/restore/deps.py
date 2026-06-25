@@ -32,6 +32,7 @@ from app.sep.deps import (
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.framework import build_default_task_response
+from app.sep.plugins.framework.spec import stamp_form_input
 from app.sep.plugins.mysql_backups.models import BackupType
 from app.sep.plugins.mysql_backups.restore.models import RestoreCreate, RestoresResponse
 from app.sep.plugins.mysql_backups.restore.spec import (
@@ -124,7 +125,9 @@ async def build_restore_payload(
     :return: The restore ``TaskWrite``.
     """
     resolved = await resolve_restore_entities(form, inventory_api)
-    return build_restore_spec(form, resolved)
+    write = build_restore_spec(form, resolved)
+    stamp_form_input(write, form)
+    return write
 
 
 async def build_restore_task_payload(

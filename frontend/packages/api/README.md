@@ -12,7 +12,7 @@ packages. Anything that talks to the backend should go through here.
   token injection, unauthorized handling, dev logging, and structured error
   normalization into `ApiError`. Request/response bodies are passed through
   verbatim — field casing matches the OpenAPI spec.
-- **Typed clients** — `mainApi`, `inventoryApi`, `tasksApi`, `sepApi` are
+- **Typed clients** — `mainApi`, `sepApi` are
   [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/) clients typed
   against the generated `paths` under `src/generated/`. They share
   Bearer-token and unauthorized handling with `apiClient` via a middleware
@@ -149,8 +149,7 @@ git diff --exit-code -- packages/api/src/generated/
 ## How to add a new typed hook
 
 1. Regenerate types if you're calling a newly-added endpoint.
-2. Pick the client matching the spec: `mainApi`, `inventoryApi`,
-   `tasksApi`, or `sepApi`.
+2. Pick the client matching the spec: `mainApi` or `sepApi`.
 3. Wrap the call in `throwOnApiError` so errors propagate as `ApiError`:
 
 ```ts

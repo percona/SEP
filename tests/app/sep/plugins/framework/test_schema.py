@@ -19,6 +19,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.plugins.framework.rules import FailRule, present
 from app.sep.plugins.framework.schema import (
     _declared_field_names_from_forms,
     _iter_section_fields,
@@ -1024,7 +1025,6 @@ class TestReferenceFieldAllowCustom:
 from app.sep.plugins.framework.rules import (  # noqa: E402 — group near tests
     CardinalityRule,
     F,
-    FailRule,
     FieldGate,
     truthy,
 )
@@ -2079,6 +2079,24 @@ class TestOneOfGroup:
             forms=[section],
             list_view=_minimal_list_view(),
         )
+
+    def test_rejects_rule_referencing_one_of_group_name(self) -> None:
+        """Reject a rule that names a one-of group, hinting at a model_validator."""
+        group = _sample_one_of_group()
+        with pytest.raises(ValueError, match="one-of group field 'source'"):
+            PluginSchema(
+                name="archives",
+                display_name="Archives",
+                forms=[FormSection(title="Source", fields=[group])],
+                list_view=_minimal_list_view(),
+                fail_when=[
+                    FailRule(
+                        fail_when=present("source"),
+                        error_fields=["source"],
+                        message="Destination required.",
+                    )
+                ],
+            )
 
     def test_rejects_duplicate_leaf_outside_one_of_reuse(self) -> None:
         """Reject a leaf name that collides outside one-of branch reuse."""

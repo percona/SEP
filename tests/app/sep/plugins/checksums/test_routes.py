@@ -31,10 +31,11 @@ from app.sep.plugins.checksums.deps import (
     get_checksums_task,
 )
 from app.sep.plugins.checksums.models import ChecksumsCreate
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedServiceFactory,
+    GeneratedTaskFactory,
     TaskFactory,
 )
 
@@ -85,7 +86,7 @@ def test_checksums_create_skips_connectivity_check_when_opted_out(
     """POST /checksums/ skips the connectivity check when the checkbox is unchecked."""
     clear_connectivity_caches()
 
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_checksum",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.CHECKSUMS,

@@ -26,7 +26,7 @@ byte-uniform with the canonical hand-written envelopes in
 """
 
 import shlex
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from string import Template
 from typing import Any, cast, Protocol
@@ -54,6 +54,7 @@ from app.sep.plugins.framework.form_dsl import (
 from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
 __all__ = [
+    "RESERVED_FORM_KEY",
     "EnvelopeSpec",
     "ResolvedEntities",
     "RunCommandSpec",
@@ -61,8 +62,11 @@ __all__ = [
     "assemble_envelope",
     "build_command_args",
     "resolve_refs",
+    "stamp_form_input",
     "validate_arg_formats",
 ]
+
+RESERVED_FORM_KEY = "_form"
 
 _REF_ENTITY_TYPES = {
     ServiceRef: SyncInventoryEntityTypeEnum.SERVICE,
@@ -227,22 +231,79 @@ async def _resolve_ref(
     return entity
 
 
+def _iter_ref_fields(
+    form: AppFormModel,
+) -> Iterator[tuple[str, ServiceRef | SchemaRef | TableRef | HostRef, Any]]:
+    """Yield ``(key, ref, value)`` for each reference field on ``form``.
+
+    Walk the model's top-level fields, and for each discriminated-union (one-of)
+    field recurse into the **active** branch instance, keying its reference leaves
+    by the dotted ``f"{field}.{leaf}"`` name the schema derivation emits. The
+    discriminator field carries no reference marker and is skipped; inactive
+    branches are never visited, so a ref declared on a non-selected branch
+    resolves to nothing.
+
+    :param form: The validated create form instance.
+    :yield: Each ``(qualified field name, marker, submitted value)`` tuple.
+    """
+    for name, field_info in type(form).model_fields.items():
+        if field_info.discriminator is not None:
+            branch = getattr(form, name, None)
+            if branch is None:
+                continue
+            for leaf_name, leaf_info in type(branch).model_fields.items():
+                ref = find_ref_marker(list(leaf_info.metadata))
+                if ref is not None:
+                    yield f"{name}.{leaf_name}", ref, getattr(branch, leaf_name, None)
+            continue
+        ref = find_ref_marker(list(field_info.metadata))
+        if ref is not None:
+            yield name, ref, getattr(form, name, None)
+
+
+def _select_primary_service(
+    candidates: list[tuple[ServiceRef, CreatedService | None]],
+) -> CreatedService | None:
+    """Select the primary (connectivity) service from the resolved service refs.
+
+    A ``check_connectivity``-marked ref wins outright (the construction guard
+    permits at most one). Otherwise fall back to the last ref that resolved to a
+    real entity, preserving the pre-marker last-wins behaviour for the
+    single-service apps that declare no marker.
+
+    :param candidates: The ``(marker, resolved entity)`` pairs for every resolved
+        ``ServiceRef`` field, in declaration order.
+    :return: The primary service, or ``None`` when none resolved.
+    """
+    primary = None
+    for ref, entity in candidates:
+        if ref.check_connectivity:
+            return entity
+        if entity is not None:
+            primary = entity
+    return primary
+
+
 async def resolve_refs(
     form: AppFormModel, inventory_api: InventoryAPI
 ) -> ResolvedEntities:
     """Resolve a create form's ``ServiceRef`` / ``SchemaRef`` / ``TableRef`` fields.
 
-    Walk the model's fields, fetch the inventory entity selected by each
-    reference field, and collect them keyed by field name. An empty selection or
-    a free-typed (``allow_custom``) value that arrives as a string resolves to
-    ``None`` so the spec builder can fall back to the raw form value. A ``HostRef``
-    field's submitted value (free-typed or selected) is captured as the executor
-    host without an inventory call, coerced to ``str``; a model declaring more than
-    one ``HostRef`` is rejected.
+    Walk the model's fields — and the active branch of any discriminated-union
+    (one-of) field — fetch the inventory entity selected by each reference field,
+    and collect them keyed by field name (nested refs keyed by the dotted
+    ``f"{field}.{leaf}"`` name). An empty selection or a free-typed
+    (``allow_custom``) value that arrives as a string resolves to ``None`` so the
+    spec builder can fall back to the raw form value. A ``HostRef`` field's
+    submitted value (free-typed or selected) is captured as the executor host
+    without an inventory call, coerced to ``str``; a model declaring more than one
+    ``HostRef`` is rejected. The connectivity / primary service is the
+    ``check_connectivity``-marked ``ServiceRef`` when present, else the sole
+    resolved ``ServiceRef``.
 
     :param form: The validated create form instance.
     :param inventory_api: The inventory API client.
-    :return: The resolved entities, the resolved service (if any), and the
+    :return: The resolved entities, the primary service (if any), and the
         captured executor host (``None`` when no ``HostRef`` is declared).
     :raises ValueError: When the model declares more than one ``HostRef`` field, or
         propagated from :func:`get_created_entity` on a single-type ``ServiceRef``
@@ -250,39 +311,36 @@ async def resolve_refs(
     :raises HTTPBadRequestException: When a multi-type ``ServiceRef`` resolves to a
         service outside its allowed types.
     """
-    entities = {}
-    service = None
+    entities: dict[str, CreatedEntity | None] = {}
     executor_host = None
     host_field = None
-    for name, field_info in type(form).model_fields.items():
-        ref = find_ref_marker(list(field_info.metadata))
+    service_candidates: list[tuple[ServiceRef, CreatedService | None]] = []
+    for key, ref, value in _iter_ref_fields(form):
         if isinstance(ref, HostRef):
             if host_field is not None:
                 raise ValueError(
                     "resolve_refs found more than one HostRef field "
-                    f"({host_field!r} and {name!r}); a model names at most one "
+                    f"({host_field!r} and {key!r}); a model names at most one "
                     "executor host"
                 )
-            host_field = name
-            host_value = getattr(form, name, None)
-            executor_host = None if host_value is None else str(host_value)
-            continue
-        if not isinstance(ref, ServiceRef | SchemaRef | TableRef):
+            host_field = key
+            executor_host = None if value is None else str(value)
             continue
 
-        value = getattr(form, name, None)
         if isinstance(value, bool) or not isinstance(value, int):
-            entities[name] = None
-            continue
-
-        entity = await _resolve_ref(
-            inventory_api, ref, _REF_ENTITY_TYPES[type(ref)], value
-        )
-        entities[name] = entity
+            entity = None
+        else:
+            entity = await _resolve_ref(
+                inventory_api, ref, _REF_ENTITY_TYPES[type(ref)], value
+            )
+        entities[key] = entity
         if isinstance(ref, ServiceRef):
-            service = cast(CreatedService, entity)
+            service_candidates.append((ref, cast("CreatedService | None", entity)))
+
     return ResolvedEntities(
-        service=service, entities=entities, executor_host=executor_host
+        service=_select_primary_service(service_candidates),
+        entities=entities,
+        executor_host=executor_host,
     )
 
 
@@ -293,6 +351,7 @@ def assemble_envelope(
     name: str,
     owner: TaskOwner,
     alert_on_fail: bool = False,
+    alert_detail_builder: str | None = None,
 ) -> TaskWrite:
     """Assemble a ``TaskWrite`` from a spec and the resolved entities.
 
@@ -313,6 +372,9 @@ def assemble_envelope(
     :param name: The task name.
     :param owner: The task owner.
     :param alert_on_fail: Whether to alert on task failure. Defaults to ``False``.
+    :param alert_detail_builder: The ``"module:function"`` path of a plugin
+        callable that enriches this task's failure alert, stamped onto the
+        ``TaskWrite``. Defaults to ``None`` (no per-owner enrichment).
     :return: The assembled ``TaskWrite``, ready to POST to the Tasks API.
     :raises ValueError: When no service was resolved (the connectivity meta has no
         source), or when the resolved service declares no port and no default port
@@ -350,7 +412,30 @@ def assemble_envelope(
         backend=TaskBackendEnum.PROXY,
         data=data,
         alert_on_fail=alert_on_fail,
+        alert_detail_builder=alert_detail_builder,
     )
+
+
+def stamp_form_input(write: TaskWrite, form: AppFormModel) -> None:
+    """Persist the validated create-form body under ``write.data[RESERVED_FORM_KEY]``.
+
+    Persist the create form verbatim so a derived ``PUT`` can prefill an edit form
+    from it. The JSON-mode dump keeps enums and datetimes as round-trippable JSON
+    scalars, since the stamped body is re-submitted through the derived ``PUT`` and
+    must re-validate against the app's ``create_model``.
+
+    :param write: The assembled task envelope whose ``data`` carries the stamp.
+    :param form: The validated create-form instance to persist.
+    :raises ValueError: When ``write.data`` already carries the reserved key,
+        which means a spec builder populated it; stamping would silently
+        overwrite that app-provided data.
+    """
+    if RESERVED_FORM_KEY in write.data:
+        raise ValueError(
+            f"task envelope data already carries the reserved key "
+            f"{RESERVED_FORM_KEY!r}; a spec builder must not populate it"
+        )
+    write.data[RESERVED_FORM_KEY] = form.model_dump(mode="json")
 
 
 def _find_arg_format(name: str, metadata: list[Any]) -> ArgFormat | None:

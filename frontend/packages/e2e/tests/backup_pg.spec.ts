@@ -161,6 +161,14 @@ async function mockBackupPgApis(page: Page, apiState: ApiState): Promise<void> {
       return fulfillEnabledApps(route);
     }
 
+    if (pathname === '/api/sep/app-info/') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ footer_text: 'SEP' }),
+      });
+    }
+
     if (pathname === '/api/plugins/backup_pg/schema') {
       return route.fulfill({
         status: 200,

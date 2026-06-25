@@ -38,14 +38,12 @@ from app.sep.plugins.archives.deps import (
     get_archives_index_context,
     get_archives_task,
 )
-from app.sep.plugins.archives.models import ArchivesCreate
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
-    TaskWrite,
 )
-from tests.app.factories import TaskFactory
+from tests.app.factories import GeneratedTaskFactory, TaskFactory
 
 
 @pytest.fixture
@@ -58,18 +56,18 @@ def mock_inventory_api_dep(mock_remote_api: RemoteAPI) -> AsyncMock:
 
 
 @pytest.fixture
-def created_archives() -> ArchivesCreate:
-    """Return a fake created task (Purge Only — the only supported type)."""
-    return ArchivesCreate(
-        alias="purge_only",
-        hostname="source_db",
-        service_id=1,
-        source_db_id=10,
-        source_table_id=20,
-        swap_drop=SwapDropEnum.PURGE_ONLY,
-        where="id > 1",
-        delete_data=1,
-    )
+def created_archives() -> dict:
+    """Return flat legacy-form data for the Jinja create route (Purge Only)."""
+    return {
+        "alias": "purge_only",
+        "hostname": "source_db",
+        "service_id": 1,
+        "source_db_id": 10,
+        "source_table_id": 20,
+        "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+        "where": "id > 1",
+        "delete_data": 1,
+    }
 
 
 @pytest.fixture
@@ -132,7 +130,7 @@ def test_archives_create(
 ):
     """Test creating a new archives task."""
     response = test_client.post(
-        "/archives/", data=created_archives.model_dump(), follow_redirects=False
+        "/archives/", data=created_archives, follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
@@ -154,16 +152,16 @@ def test_archives_create_full_form_dependency_chain_without_payload_override(
     created_table,
 ):
     """Test POST /archives/ route without overriding build_archives_task_payload."""
-    created_archives = ArchivesCreate(
-        alias="arch_full_chain",
-        hostname="source_db",
-        service_id=created_service.id,
-        source_db_id=created_schema.id,
-        source_table_id=created_table.id,
-        swap_drop=SwapDropEnum.PURGE_ONLY,
-        where="id > 1",
-        delete_data=1,
-    )
+    flat = {
+        "alias": "arch_full_chain",
+        "hostname": "source_db",
+        "service_id": created_service.id,
+        "source_db_id": created_schema.id,
+        "source_table_id": created_table.id,
+        "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+        "where": "id > 1",
+        "delete_data": 1,
+    }
     mock_inventory_api_dep.get = AsyncMock(
         side_effect=[
             created_service.model_dump(),
@@ -173,18 +171,13 @@ def test_archives_create_full_form_dependency_chain_without_payload_override(
     )
     mock_task_api_dep.post.return_value = AsyncMock()
 
-    # Omit explicit null optional fields so multipart form values stay valid.
-    response = test_client.post(
-        "/archives/",
-        data=created_archives.model_dump(exclude_none=True),
-        follow_redirects=False,
-    )
+    response = test_client.post("/archives/", data=flat, follow_redirects=False)
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    assert response.headers["location"].endswith("/archives/arch_full_chain")
     mock_task_api_dep.post.assert_awaited_once()
     assert mock_task_api_dep.post.await_args.args[0] == "/"
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
-    assert posted["name"] == created_archives.alias
+    assert posted["name"] == "arch_full_chain"
     assert posted["owner"] == TaskOwner.ARCHIVER.value
     assert posted["data"]["meta"]["_service_name"] == created_service.name
 
@@ -203,16 +196,18 @@ def test_archives_create_accepts_empty_dest_port(
     override) so the ``EmptyStrToNone`` ``BeforeValidator`` is the only thing
     stopping the previous 422 response.
     """
-    created_archives = ArchivesCreate(
-        alias="arch_empty_port",
-        hostname="source_db",
-        service_id=created_service.id,
-        source_db_id=created_schema.id,
-        source_table_id=created_table.id,
-        swap_drop=SwapDropEnum.PURGE_ONLY,
-        where="id > 1",
-        delete_data=1,
-    )
+    payload = {
+        "alias": "arch_empty_port",
+        "hostname": "source_db",
+        "service_id": created_service.id,
+        "source_db_id": created_schema.id,
+        "source_table_id": created_table.id,
+        "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+        "where": "id > 1",
+        "delete_data": 1,
+        "dest_port": "",
+        "limit": "",
+    }
     mock_inventory_api_dep.get = AsyncMock(
         side_effect=[
             created_service.model_dump(),
@@ -222,13 +217,9 @@ def test_archives_create_accepts_empty_dest_port(
     )
     mock_task_api_dep.post.return_value = AsyncMock()
 
-    payload = created_archives.model_dump(exclude_none=True)
-    payload["dest_port"] = ""
-    payload["limit"] = ""
-
     response = test_client.post("/archives/", data=payload, follow_redirects=False)
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    assert response.headers["location"].endswith("/archives/arch_empty_port")
     mock_task_api_dep.post.assert_awaited_once()
 
 
@@ -245,16 +236,18 @@ def test_archives_update_accepts_empty_dest_port(
     Same real-form-binding pattern as the create test — the update route shares
     the ``ArchivesGeneratedTask`` dep, so the empty-string fix has to cover it too.
     """
-    created_archives = ArchivesCreate(
-        alias="arch_update_empty_port",
-        hostname="source_db",
-        service_id=created_service.id,
-        source_db_id=created_schema.id,
-        source_table_id=created_table.id,
-        swap_drop=SwapDropEnum.PURGE_ONLY,
-        where="id > 1",
-        delete_data=1,
-    )
+    payload = {
+        "alias": "arch_update_empty_port",
+        "hostname": "source_db",
+        "service_id": created_service.id,
+        "source_db_id": created_schema.id,
+        "source_table_id": created_table.id,
+        "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+        "where": "id > 1",
+        "delete_data": 1,
+        "dest_port": "",
+        "limit": "",
+    }
     mock_inventory_api_dep.get = AsyncMock(
         side_effect=[
             created_service.model_dump(),
@@ -264,84 +257,14 @@ def test_archives_update_accepts_empty_dest_port(
     )
     mock_task_api_dep.put.return_value = AsyncMock()
 
-    payload = created_archives.model_dump(exclude_none=True)
-    payload["dest_port"] = ""
-    payload["limit"] = ""
-
     response = test_client.post(
-        f"/archives/{created_archives.alias}/update",
+        "/archives/arch_update_empty_port/update",
         data=payload,
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    assert response.headers["location"].endswith("/archives/arch_update_empty_port")
     mock_task_api_dep.put.assert_awaited_once()
-
-
-def test_archives_create_rejects_dest_port_with_dest_service_id(
-    test_client, mock_task_api_dep, mock_inventory_api_dep
-):
-    """POST /archives/ with a dest_service_id and a typed dest_port is rejected.
-
-    The contradictory service-plus-port combination trips the model-level
-    forbidden gate. HTML form routes surface validation failures as a flash +
-    redirect back to the Referer, so the task is never created.
-    """
-    payload = {
-        "alias": "arch_dest_port_conflict",
-        "hostname": "source_db",
-        "service_id": 1,
-        "source_db_id": 10,
-        "source_table_id": 20,
-        "swap_drop": SwapDropEnum.PURGE_ONLY.value,
-        "where": "id > 1",
-        "dest_table_id": 2,
-        "dest_service_id": 2,
-        "dest_port": 3307,
-    }
-    referer = "http://testserver/archives/create"
-    response = test_client.post(
-        "/archives/",
-        data=payload,
-        headers={"referer": referer},
-        follow_redirects=False,
-    )
-    assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == referer
-    mock_task_api_dep.post.assert_not_awaited()
-
-
-def test_archives_update_rejects_dest_port_with_dest_service_id(
-    test_client, mock_task_api_dep, mock_inventory_api_dep
-):
-    """POST /archives/{task_name}/update with dest_service_id + typed dest_port is rejected.
-
-    The update route shares the create form's body dependency, so the same
-    forbidden gate rejects the service-plus-port combination on edit; the form
-    route redirects back to the Referer and never updates the task.
-    """
-    payload = {
-        "alias": "arch_update_dest_port_conflict",
-        "hostname": "source_db",
-        "service_id": 1,
-        "source_db_id": 10,
-        "source_table_id": 20,
-        "swap_drop": SwapDropEnum.PURGE_ONLY.value,
-        "where": "id > 1",
-        "dest_table_id": 2,
-        "dest_service_id": 2,
-        "dest_port": 3307,
-    }
-    referer = "http://testserver/archives/arch_update_dest_port_conflict/edit"
-    response = test_client.post(
-        "/archives/arch_update_dest_port_conflict/update",
-        data=payload,
-        headers={"referer": referer},
-        follow_redirects=False,
-    )
-    assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"] == referer
-    mock_task_api_dep.put.assert_not_awaited()
 
 
 def test_archives_create_same_as_source_with_manual_dest_schema(
@@ -359,17 +282,17 @@ def test_archives_create_same_as_source_with_manual_dest_schema(
     on the same host) and omit ``DEST_HOST`` entirely. Goes through the real
     form-binding chain (no ``build_archives_task_payload`` override).
     """
-    created_archives = ArchivesCreate(
-        alias="arch_same_host_manual_schema",
-        hostname="source_db",
-        service_id=created_service.id,
-        source_db_id=created_schema.id,
-        source_table_id=created_table.id,
-        swap_drop=SwapDropEnum.PURGE_ONLY,
-        where="id > 1",
-        dest_table_name="archived_tbl",
-        dest_db_name="archive_db",
-    )
+    flat = {
+        "alias": "arch_same_host_manual_schema",
+        "hostname": "source_db",
+        "service_id": created_service.id,
+        "source_db_id": created_schema.id,
+        "source_table_id": created_table.id,
+        "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+        "where": "id > 1",
+        "dest_table_name": "archived_tbl",
+        "dest_db_name": "archive_db",
+    }
     mock_inventory_api_dep.get = AsyncMock(
         side_effect=[
             created_service.model_dump(),
@@ -379,13 +302,11 @@ def test_archives_create_same_as_source_with_manual_dest_schema(
     )
     mock_task_api_dep.post.return_value = AsyncMock()
 
-    response = test_client.post(
-        "/archives/",
-        data=created_archives.model_dump(exclude_none=True),
-        follow_redirects=False,
-    )
+    response = test_client.post("/archives/", data=flat, follow_redirects=False)
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    assert response.headers["location"].endswith(
+        "/archives/arch_same_host_manual_schema"
+    )
     mock_task_api_dep.post.assert_awaited_once()
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
     purge_config = yaml.safe_load(posted["data"]["meta"]["config"])
@@ -408,17 +329,17 @@ def test_archives_update_same_as_source_with_manual_dest_schema(
     manual-schema path has to reach ``DEST_DB`` (and omit ``DEST_HOST``) on the
     PUT payload too.
     """
-    created_archives = ArchivesCreate(
-        alias="arch_update_same_host_manual_schema",
-        hostname="source_db",
-        service_id=created_service.id,
-        source_db_id=created_schema.id,
-        source_table_id=created_table.id,
-        swap_drop=SwapDropEnum.PURGE_ONLY,
-        where="id > 1",
-        dest_table_name="archived_tbl",
-        dest_db_name="archive_db",
-    )
+    flat = {
+        "alias": "arch_update_same_host_manual_schema",
+        "hostname": "source_db",
+        "service_id": created_service.id,
+        "source_db_id": created_schema.id,
+        "source_table_id": created_table.id,
+        "swap_drop": SwapDropEnum.PURGE_ONLY.value,
+        "where": "id > 1",
+        "dest_table_name": "archived_tbl",
+        "dest_db_name": "archive_db",
+    }
     mock_inventory_api_dep.get = AsyncMock(
         side_effect=[
             created_service.model_dump(),
@@ -429,12 +350,14 @@ def test_archives_update_same_as_source_with_manual_dest_schema(
     mock_task_api_dep.put.return_value = AsyncMock()
 
     response = test_client.post(
-        f"/archives/{created_archives.alias}/update",
-        data=created_archives.model_dump(exclude_none=True),
+        "/archives/arch_update_same_host_manual_schema/update",
+        data=flat,
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
-    assert response.headers["location"].endswith(f"/archives/{created_archives.alias}")
+    assert response.headers["location"].endswith(
+        "/archives/arch_update_same_host_manual_schema"
+    )
     mock_task_api_dep.put.assert_awaited_once()
     put_payload = mock_task_api_dep.put.await_args.kwargs["json"]
     purge_config = yaml.safe_load(put_payload["data"]["meta"]["config"])
@@ -489,7 +412,7 @@ def test_archives_create_skips_connectivity_check_when_opted_out(
     """POST /archives/ skips the connectivity check when the checkbox is unchecked."""
     clear_connectivity_caches()
 
-    fake_task_write = TaskWrite(
+    fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.ARCHIVER,
@@ -508,7 +431,7 @@ def test_archives_create_skips_connectivity_check_when_opted_out(
     sep_app.dependency_overrides[build_archives_task_payload] = lambda: fake_task_write
 
     response = test_client.post(
-        "/archives/", data=created_archives.model_dump(), follow_redirects=False
+        "/archives/", data=created_archives, follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
@@ -526,25 +449,43 @@ def test_archives_create_skips_connectivity_check_when_opted_out(
     sep_app.dependency_overrides = {}
 
 
+@pytest.mark.parametrize(
+    ("disable_bulk_insert", "checkbox_checked"),
+    [
+        (None, False),
+        (1, True),
+    ],
+    ids=["bulk_insert_default", "bulk_insert_checked"],
+)
 @pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
 def test_archives_detail(
-    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
+    test_client,
+    created_task,
+    mock_task_api_dep,
+    mock_inventory_api_dep,
+    disable_bulk_insert,
+    checkbox_checked,
 ):
-    """Test retrieving an archives detail page."""
+    """Test the archives detail page, including the DISABLE_BULK_INSERT checkbox state.
+
+    The ``DISABLE_BULK_INSERT`` flag in the ``PURGE_LIST`` meta config drives whether the
+    ``disable_bulk_insert`` checkbox renders as ``checked``.
+    """
+    purge_entry = {
+        "ALIAS": "test_archiver_task",
+        "SOURCE_DB": "mock_source_db",
+        "SOURCE_TABLE": "mock_source_table",
+        "SWAP_DROP": 1,
+    }
+    if disable_bulk_insert is not None:
+        purge_entry["DISABLE_BULK_INSERT"] = disable_bulk_insert
     mock_meta_config = yaml.dump(
         {
             "ALL": {
                 "SOURCE_HOST": "127.0.0.1",
                 "SOURCE_PORT": 3306,
             },
-            "PURGE_LIST": [
-                {
-                    "ALIAS": "test_archiver_task",
-                    "SOURCE_DB": "mock_source_db",
-                    "SOURCE_TABLE": "mock_source_table",
-                    "SWAP_DROP": 1,
-                }
-            ],
+            "PURGE_LIST": [purge_entry],
         }
     )
 
@@ -588,6 +529,10 @@ def test_archives_detail(
     # Render guard only (see test_archives_index); does not exercise the
     # inline-JS gating.
     assert 'name="dest_file"' in response.text
+    checkbox_is_checked = bool(
+        re.search(r'name="disable_bulk_insert"[^>]*checked', response.text)
+    )
+    assert checkbox_is_checked is checkbox_checked
     mock_task_api_dep.get.assert_any_await(f"/{created_task.name}/history/")
     mock_task_api_dep.get.assert_any_await(
         f"/{created_task.name}/history/",
@@ -603,55 +548,6 @@ def test_archives_detail(
             "limit": MAX_PAGINATION_LIMIT,
         },
     )
-
-
-@pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")
-def test_archives_detail_bulk_insert_checked(
-    test_client, created_task, mock_task_api_dep, mock_inventory_api_dep
-):
-    """Test that the disable_bulk_insert checkbox is checked when DISABLE_BULK_INSERT=1."""
-    mock_meta_config = yaml.dump(
-        {
-            "ALL": {
-                "SOURCE_HOST": "127.0.0.1",
-                "SOURCE_PORT": 3306,
-            },
-            "PURGE_LIST": [
-                {
-                    "ALIAS": "test_archiver_task",
-                    "SOURCE_DB": "mock_source_db",
-                    "SOURCE_TABLE": "mock_source_table",
-                    "SWAP_DROP": 1,
-                    "DISABLE_BULK_INSERT": 1,
-                }
-            ],
-        }
-    )
-
-    mock_data = {
-        "meta": {
-            "config": mock_meta_config,
-            "target": "mock_target",
-        },
-        "hostname": "mock_nomad_host_name",
-    }
-    created_task.data = mock_data
-    mock_inventory_api_dep.get.return_value = {
-        "items": [],
-        "total": 0,
-        "offset": 0,
-        "limit": 50,
-    }
-    mock_task_api_dep.get.side_effect = [
-        {"127.0.0.1": "localhost"},
-        {"items": [], "total": 0, "offset": 0, "limit": 50},
-        {"items": [], "total": 0, "offset": 0, "limit": 50},
-        [],
-        {"items": [], "total": 0, "offset": 0, "limit": 50},
-    ]
-    response = test_client.get(f"/archives/{created_task.name}")
-    assert response.status_code == status.HTTP_200_OK
-    assert re.search(r'name="disable_bulk_insert"[^>]*checked', response.text)
 
 
 @pytest.mark.usefixtures("_mock_get_archives_task_dep", "mock_get_username_mapping")

@@ -16,21 +16,39 @@
 """Define models for the Alters plugin."""
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, ClassVar
 
-from pydantic import BaseModel, FutureDatetime, model_validator
+from pydantic import AfterValidator, BaseModel, FutureDatetime, model_validator
 
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
-from app.sep.plugins.alters.schema import alters_schema
-from app.sep.plugins.framework import ConnectivityWarning
+from app.sep.plugins.framework import derive_create_response_model
+from app.sep.plugins.framework.form_dsl import (
+    AppFormModel,
+    Choices,
+    Forbidden,
+    FormRules,
+    HostRef,
+    Requires,
+    SchemaRef,
+    SectionRules,
+    ServiceRef,
+    TableRef,
+    Ui,
+)
 from app.sep.plugins.framework.rules import (
-    apply_conditional_rules,
-    ConditionalRulesModel,
+    all_,
+    all_present,
+    F,
+    FailRule,
+    truthy,
 )
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 DEFAULT_ALTERS_DSN_TABLE = "D=percona,t=dsns"
+
+_MANUAL_TARGET_SET = all_(truthy("schema_name"), truthy("table_name"))
+_INVENTORY_TARGET_SET = all_present("schema_id", "table_id")
 
 
 def _coerce_optional_int(value: Any) -> int | None:
@@ -49,9 +67,7 @@ def normalize_alters_target_fields(data: Any) -> Any:
     mutual-exclusion rules do not reject otherwise valid edits.
 
     :param data: Raw model input (typically a form mapping).
-    :type data: Any
     :return: Normalized input with exactly one target mode represented.
-    :rtype: Any
     """
     if not isinstance(data, dict):
         return data
@@ -62,6 +78,11 @@ def normalize_alters_target_fields(data: Any) -> Any:
     table_name = str(normalized.get("table_name") or "").strip()
     normalized["schema_id"] = schema_id
     normalized["table_id"] = table_id
+    if schema_id is not None and table_id is not None and schema_name and table_name:
+        raise ValueError(
+            "Cannot use both schema_id/table_id and "
+            "schema_name/table_name at the same time."
+        )
     if schema_id is not None and table_id is not None:
         normalized["schema_name"] = ""
         normalized["table_name"] = ""
@@ -69,6 +90,21 @@ def normalize_alters_target_fields(data: Any) -> Any:
         normalized["schema_id"] = None
         normalized["table_id"] = None
     return normalized
+
+
+def reject_multiline_alter(value: str) -> str:
+    """Reject newline characters in an alter command.
+
+    The value is interpolated into a single ``--alter=`` command-line flag, so a
+    newline would split it across argv entries and corrupt the generated command.
+
+    :param value: The submitted alter command.
+    :return: The validated value, unchanged.
+    :raises ValueError: When ``value`` contains a line feed or carriage return.
+    """
+    if "\n" in value or "\r" in value:
+        raise ValueError("alter must not contain newline characters")
+    return value
 
 
 class _AltersTargetFieldsMixin:
@@ -80,177 +116,56 @@ class _AltersTargetFieldsMixin:
         return normalize_alters_target_fields(data)
 
 
-@apply_conditional_rules(alters_schema)
-class AltersCreate(_AltersTargetFieldsMixin, ConditionalRulesModel):
-    """Represent an Alters creation form.
+class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
+    """Represent the single model-first declaration of the Alters create form.
+
+    This one declaration drives the JSON create/update request body, the Jinja
+    ``Form()`` body, and — via
+    :func:`~app.sep.plugins.framework.form_dsl.derive_plugin_schema` — the
+    ``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are
+    enforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /
+    ``Forbidden`` gates plus ``__form_rules__``), not by a decorator.
+
+    The schema-display defaults for ``dsn_table`` and ``progress`` diverge from the
+    request-body defaults: the body defaults both to the empty string (so the
+    ``dsn_table`` forbidden gate passes for non-``dsn`` recursion, and an omitted
+    ``progress`` emits no value), while the form renders the Percona-Toolkit DSN
+    table and ``time,10`` via ``Ui(default=...)``.
 
     :param task_name: The name of the task to be created.
-    :type task_name: NonEmptyStr
     :param hostname: The target hostname for the task execution.
-    :type hostname: NonEmptyStr
     :param service_id: The Inventory ID of the database service to connect to.
-    :type service_id: int
     :param schema_id: The database schema ID on which the task will operate.
-    :type schema_id: int | None
     :param table_id: The table ID within the schema to be altered.
-    :type table_id: int | None
     :param schema_name: Manual schema name when ``schema_id`` is not set.
-    :type schema_name: str
     :param table_name: Manual table name when ``table_id`` is not set.
-    :type table_name: str
     :param recursion_method: The method for handling recursion.
-    :type recursion_method: NonEmptyStr
     :param alter: The specific alter command to be executed.
-    :type alter: NonEmptyStr
-    :param dsn_table: The DSN table for recursion method when using ``dsn``. When empty,
-        the command builder uses ``D=percona,t=dsns`` (Percona Toolkit convention).
-    :type dsn_table: str
+    :param dsn_table: The DSN table for recursion method when using ``dsn``. When
+        recursion is ``dsn`` and this field is omitted or empty, it defaults to
+        ``D=percona,t=dsns`` (Percona Toolkit convention).
     :param pause_file: Execution will be paused while the file specified by this param exists.
-    :type pause_file: str
     :param new_table_name: New table name before it is swapped.
-    :type new_table_name: str
     :param print_arg: Print SQL statements to STDOUT.
-    :type print_arg: bool
     :param progress: Print progress reports to STDERR while copying rows.
-    :type progress: str
     :param no_swap_tables: Swap the original table and the new, altered table.
-    :type no_swap_tables: bool
     :param no_drop_old_table: Drop the original table after renaming it.
-    :type no_drop_old_table: bool
     :param no_drop_new_table: Drop the new table if copying the original table fails.
-    :type no_drop_new_table: bool
     :param no_drop_triggers: Drop triggers on the old table.
-    :type no_drop_triggers: bool
     :param tries: How many times to try critical operations.
-    :type tries: str
     :param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.
-    :type set_vars: str
     :param critical_load: Examine SHOW GLOBAL STATUS after every chunk, and abort if the load is too high.
-    :type critical_load: str
     :param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are
         higher than their thresholds.
-    :type max_load: str
     :param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.
-    :type chunk_time: str
     :param max_lag: Pause the data copy until all replicas lag is less than this value.
-    :type max_lag: str
     :param max_flow_ctl: Pause when PXC flow control exceeds this value.
-    :type max_flow_ctl: str
     :param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.
-    :type extra_args: str
-    :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-    :type alert_on_fail: bool
     :param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor
         (user/password): pre-checks always use this path; execute/dry-run use pt-osc's
         default ~/.my.cnf unless this is set to another path, then --defaults-file is added.
-    :type pre_checks_mysql_config_file: str
     :param continue_on_pre_check_failure: When True, continue to the run task even if
         pre-checks fail (overrides the schema's default ``on_failure="halt"`` policy).
-    :type continue_on_pre_check_failure: bool
-    """
-
-    task_name: NonEmptyStr
-    hostname: NonEmptyStr
-    service_id: int
-    schema_id: int | None = None
-    table_id: int | None = None
-    schema_name: str = ""
-    table_name: str = ""
-    recursion_method: NonEmptyStr
-    alter: NonEmptyStr
-    dsn_table: str = ""
-    pause_file: str = ""
-    new_table_name: str = ""
-    print_arg: bool = False
-    progress: str = ""
-    no_swap_tables: bool = False
-    no_drop_old_table: bool = False
-    no_drop_new_table: bool = False
-    no_drop_triggers: bool = False
-    tries: str = ""
-    set_vars: str = ""
-    critical_load: str = ""
-    max_load: str = ""
-    chunk_time: str = ""
-    max_lag: str = ""
-    max_flow_ctl: str = ""
-    extra_args: str = ""
-    alert_on_fail: bool = False
-    pre_checks_mysql_config_file: str = "~/.my.cnf"
-    continue_on_pre_check_failure: bool = False
-
-
-@apply_conditional_rules(alters_schema)
-class AltersTaskWrite(_AltersTargetFieldsMixin, ConditionalRulesModel):
-    """Represent a JSON request body for creating or updating an alters task group.
-
-    Mirrors :class:`AltersCreate` and is validated against ``alters_schema``
-    conditional rules (for example, ``dsn_table`` required when
-    ``recursion_method`` is ``"dsn"``).
-
-    :param task_name: The name of the task to be created.
-    :type task_name: NonEmptyStr
-    :param hostname: The target hostname for the task execution.
-    :type hostname: NonEmptyStr
-    :param service_id: The Inventory ID of the MySQL service to connect to.
-    :type service_id: int
-    :param schema_id: The inventory schema ID, when not using manual names.
-    :type schema_id: int | None
-    :param table_id: The inventory table ID, when not using manual names.
-    :type table_id: int | None
-    :param schema_name: Manual schema name when ``schema_id`` is not set.
-    :type schema_name: str
-    :param table_name: Manual table name when ``table_id`` is not set.
-    :type table_name: str
-    :param recursion_method: The method for handling replica discovery.
-    :type recursion_method: NonEmptyStr
-    :param alter: The specific alter command to be executed.
-    :type alter: NonEmptyStr
-    :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``. When
-        recursion is ``"dsn"`` and this field is omitted or empty, it defaults to
-        ``D=percona,t=dsns`` (Percona Toolkit convention), matching ``alters_schema``.
-    :type dsn_table: str
-    :param pause_file: Execution pauses while this file exists.
-    :type pause_file: str
-    :param new_table_name: New table name before swap.
-    :type new_table_name: str
-    :param print_arg: Print SQL statements to STDOUT.
-    :type print_arg: bool
-    :param progress: Print progress reports to STDERR.
-    :type progress: str
-    :param no_swap_tables: Simulate without swapping tables.
-    :type no_swap_tables: bool
-    :param no_drop_old_table: Keep the original table after rename.
-    :type no_drop_old_table: bool
-    :param no_drop_new_table: Keep the new table if copy fails.
-    :type no_drop_new_table: bool
-    :param no_drop_triggers: Do not drop triggers on the old table.
-    :type no_drop_triggers: bool
-    :param tries: Retries and wait times for critical operations.
-    :type tries: str
-    :param set_vars: MySQL variables to set (comma-separated key=value pairs).
-    :type set_vars: str
-    :param critical_load: Abort when GLOBAL STATUS exceeds thresholds.
-    :type critical_load: str
-    :param max_load: Pause when GLOBAL STATUS exceeds thresholds.
-    :type max_load: str
-    :param chunk_time: Target execution time per chunk.
-    :type chunk_time: str
-    :param max_lag: Pause until replica lag falls below this value.
-    :type max_lag: str
-    :param max_flow_ctl: Pause when PXC flow control exceeds this value.
-    :type max_flow_ctl: str
-    :param extra_args: Additional pt-online-schema-change arguments.
-    :type extra_args: str
-    :param alert_on_fail: Send an alert if the task fails.
-    :type alert_on_fail: bool
-    :param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor
-        (user/password): pre-checks always use this path; execute/dry-run use pt-osc's
-        default ~/.my.cnf unless this is set to another path, then --defaults-file is added.
-    :type pre_checks_mysql_config_file: str
-    :param continue_on_pre_check_failure: When True, continue to the run task even if
-        pre-checks fail (overrides the schema's default ``on_failure="halt"`` policy).
-    :type continue_on_pre_check_failure: bool
     """
 
     @model_validator(mode="before")
@@ -266,86 +181,306 @@ class AltersTaskWrite(_AltersTargetFieldsMixin, ConditionalRulesModel):
             return {**data, "dsn_table": DEFAULT_ALTERS_DSN_TABLE}
         return data
 
-    task_name: NonEmptyStr
-    hostname: NonEmptyStr
-    service_id: int
-    schema_id: int | None = None
-    table_id: int | None = None
-    schema_name: str = ""
-    table_name: str = ""
-    recursion_method: NonEmptyStr = "processlist"
-    alter: NonEmptyStr
-    dsn_table: str = ""
-    pause_file: str = ""
-    new_table_name: str = ""
-    print_arg: bool = False
-    progress: str = ""
-    no_swap_tables: bool = False
-    no_drop_old_table: bool = False
-    no_drop_new_table: bool = False
-    no_drop_triggers: bool = False
-    tries: str = ""
-    set_vars: str = ""
-    critical_load: str = ""
-    max_load: str = ""
-    chunk_time: str = ""
-    max_lag: str = ""
-    max_flow_ctl: str = ""
-    extra_args: str = ""
-    alert_on_fail: bool = False
-    pre_checks_mysql_config_file: str = "~/.my.cnf"
-    continue_on_pre_check_failure: bool = False
+    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="task")]
+    hostname: Annotated[
+        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="task")
+    ]
+    service_id: Annotated[
+        int,
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
+        Ui(label="Database Host", section="task"),
+    ]
+    pre_checks_mysql_config_file: Annotated[
+        str,
+        Ui(
+            label="MySQL Defaults File",
+            section="task",
+            description=(
+                "Path on the executor with [client] user/password. Pre-checks "
+                "always use this path. Execute/dry-run use the same path only "
+                "when not ~/.my.cnf."
+            ),
+        ),
+    ] = "~/.my.cnf"
+
+    schema_id: Annotated[
+        int | None,
+        SchemaRef(),
+        Forbidden(when=_MANUAL_TARGET_SET),
+        Ui(label="Schema", section="data", depends_on="service_id"),
+    ] = None
+    table_id: Annotated[
+        int | None,
+        TableRef(),
+        Forbidden(when=_MANUAL_TARGET_SET),
+        Ui(label="Table", section="data", depends_on="schema_id"),
+    ] = None
+    schema_name: Annotated[
+        str | None,
+        Forbidden(when=_INVENTORY_TARGET_SET),
+        Ui(
+            label="Schema Name",
+            section="data",
+            description="Manual schema name when not selecting from inventory",
+        ),
+    ] = None
+    table_name: Annotated[
+        str | None,
+        Forbidden(when=_INVENTORY_TARGET_SET),
+        Ui(
+            label="Table Name",
+            section="data",
+            description="Manual table name when not selecting from inventory",
+        ),
+    ] = None
+
+    alter: Annotated[
+        NonEmptyStr,
+        AfterValidator(reject_multiline_alter),
+        Ui(
+            label="Alter",
+            section="alter",
+            description=(
+                "Schema modifications excluding ALTER TABLE keywords "
+                "(e.g. ADD COLUMN new_col INT, DROP COLUMN old_col)"
+            ),
+        ),
+    ]
+
+    recursion_method: Annotated[
+        NonEmptyStr,
+        Choices(
+            (
+                ("processlist", "Processlist"),
+                ("hosts", "Hosts"),
+                ("dsn", "DSN"),
+                ("none", "None"),
+            )
+        ),
+        Ui(label="Recursion Method", section="recursion", required=True),
+    ] = "processlist"
+    dsn_table: Annotated[
+        str,
+        Requires(when=F("recursion_method") == "dsn"),
+        Forbidden(when=F("recursion_method") != "dsn"),
+        Ui(
+            label="DSN Table",
+            section="recursion",
+            default=DEFAULT_ALTERS_DSN_TABLE,
+            description="Required when recursion method is 'dsn'",
+        ),
+    ] = ""
+
+    print_arg: Annotated[
+        bool,
+        Ui(
+            label="Print", section="flags", description="Print SQL statements to STDOUT"
+        ),
+    ] = False
+    progress: Annotated[
+        str,
+        Ui(
+            label="Progress",
+            section="flags",
+            default="time,10",
+            description="Print progress reports to STDERR (e.g. time,10)",
+        ),
+    ] = ""
+    no_swap_tables: Annotated[
+        bool,
+        Ui(
+            label="No Swap Tables",
+            section="flags",
+            description="Simulate without swapping the original and new table",
+        ),
+    ] = False
+    no_drop_old_table: Annotated[
+        bool,
+        Ui(
+            label="No Drop Old Table",
+            section="flags",
+            description="Keep the original table after rename",
+        ),
+    ] = False
+    no_drop_new_table: Annotated[
+        bool,
+        Ui(
+            label="No Drop New Table",
+            section="flags",
+            description="Keep the new table if copying the original fails",
+        ),
+    ] = False
+    no_drop_triggers: Annotated[
+        bool,
+        Ui(
+            label="No Drop Triggers",
+            section="flags",
+            description="Do not drop triggers on the old table",
+        ),
+    ] = False
+
+    pause_file: Annotated[
+        str | None,
+        Ui(
+            label="Pause File",
+            section="advanced",
+            description="Execution pauses while this file exists",
+        ),
+    ] = None
+    new_table_name: Annotated[
+        str | None,
+        Ui(
+            label="New Table Name",
+            section="advanced",
+            description="New table name before swap (%T includes original name)",
+        ),
+    ] = None
+    tries: Annotated[
+        str | None,
+        Ui(
+            label="Tries",
+            section="advanced",
+            description=(
+                "Retries and wait times for critical operations "
+                "(operation:tries:wait, comma-separated)"
+            ),
+        ),
+    ] = None
+    set_vars: Annotated[
+        str | None,
+        Ui(
+            label="Set Vars",
+            section="advanced",
+            description="MySQL variables to set (comma-separated key=value pairs)",
+        ),
+    ] = None
+    critical_load: Annotated[
+        str | None,
+        Ui(
+            label="Critical Load",
+            section="advanced",
+            description="Abort when GLOBAL STATUS variables exceed thresholds",
+        ),
+    ] = None
+    max_load: Annotated[
+        str | None,
+        Ui(
+            label="Max Load",
+            section="advanced",
+            description="Pause when GLOBAL STATUS variables exceed thresholds",
+        ),
+    ] = None
+    chunk_time: Annotated[
+        str | None,
+        Ui(
+            label="Chunk Time",
+            section="advanced",
+            description="Target execution time per chunk in seconds",
+        ),
+    ] = None
+    max_lag: Annotated[
+        str | None,
+        Ui(
+            label="Max Lag",
+            section="advanced",
+            description="Pause until replica lag falls below this value (seconds)",
+        ),
+    ] = None
+    max_flow_ctl: Annotated[
+        str | None,
+        Ui(
+            label="Max Flow Control",
+            section="advanced",
+            description="Pause when PXC flow control exceeds this value",
+        ),
+    ] = None
+    extra_args: Annotated[
+        str | None,
+        Ui(
+            label="Extra Args",
+            section="advanced",
+            description="Additional pt-online-schema-change arguments",
+        ),
+    ] = None
+    continue_on_pre_check_failure: Annotated[
+        bool,
+        Ui(
+            label="Continue on Pre-Check Failure",
+            section="advanced",
+            description=(
+                "When enabled, continue to the run task even if pre-checks fail "
+                "(overrides the default halt policy)"
+            ),
+        ),
+    ] = False
+
+    __form_rules__: ClassVar[FormRules] = FormRules(
+        sections={
+            "data": SectionRules(
+                fail_when=(
+                    FailRule(
+                        fail_when=all_(
+                            ~_INVENTORY_TARGET_SET,
+                            ~_MANUAL_TARGET_SET,
+                        ),
+                        error_fields=[
+                            "schema_id",
+                            "table_id",
+                            "schema_name",
+                            "table_name",
+                        ],
+                        message=(
+                            "Either both schema_id and table_id or both "
+                            "schema_name and table_name must be provided."
+                        ),
+                    ),
+                    FailRule(
+                        fail_when=all_(_INVENTORY_TARGET_SET, _MANUAL_TARGET_SET),
+                        error_fields=[
+                            "schema_id",
+                            "table_id",
+                            "schema_name",
+                            "table_name",
+                        ],
+                        message=(
+                            "Cannot use both schema_id/table_id and "
+                            "schema_name/table_name at the same time."
+                        ),
+                    ),
+                ),
+            ),
+        },
+    )
 
 
-class AltersTaskBase(BaseModel):
-    """Define the common fields shared across alters task API responses.
+class AltersTaskResponse(BaseModel):
+    """Represent an alters task API response for list and detail surfaces.
+
+    The create/update routes return the
+    :data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models
+    derived from this base; both add ``connectivity_warning`` (and, for create,
+    ``pre_checks_auto_fire_warning``) per the framework's derived create-response
+    standard, so the always-null warning fields stay off list/detail rows.
 
     :param name: The name of the alters task.
-    :type name: str
     :param owner: The entity or user that owns the task.
-    :type owner: TaskOwner
     :param service_type: The type of database service (always MySQL for alters).
-    :type service_type: ServiceTypeEnum | None
     :param status: The current execution status of the task.
-    :type status: TaskHistoryStatusEnum | None
+    :param id: The unique identifier for the alters task.
+    :param backend: The backend worker/engine executing the task.
+    :param data: The raw configuration and parameters used for the alter execution.
+    :param protected: Whether the task is protected from deletion or modification.
+    :param alert_on_fail: If True, notifications are sent upon task failure.
+    :param created_at: The timestamp when the task was first created.
+    :param updated_at: The timestamp of the last modification to the task.
+    :param created_by: The user who initiated the task.
+    :param last_updated_by: The user who last modified the task record.
     """
 
     name: str
     owner: TaskOwner
     service_type: ServiceTypeEnum | None = None
     status: TaskHistoryStatusEnum | None = None
-
-
-class AltersTaskResponse(AltersTaskBase):
-    """Represent an alters task API response.
-
-    :param id: The unique identifier for the alters task.
-    :type id: int | None
-    :param backend: The backend worker/engine executing the task.
-    :type backend: TaskBackendEnum
-    :param data: The raw configuration and parameters used for the alter execution.
-    :type data: dict[str, Any]
-    :param protected: Whether the task is protected from deletion or modification.
-    :type protected: bool
-    :param alert_on_fail: If True, notifications are sent upon task failure.
-    :type alert_on_fail: bool
-    :param created_at: The timestamp when the task was first created.
-    :type created_at: datetime | None
-    :param updated_at: The timestamp of the last modification to the task.
-    :type updated_at: datetime | None
-    :param created_by: The user who initiated the task.
-    :type created_by: str | None
-    :param last_updated_by: The user who last modified the task record.
-    :type last_updated_by: str | None
-    :param connectivity_warning: A warning surfaced when the post-creation
-        database connectivity check fails. ``None`` when the check passes,
-        is opted out, or the task meta lacks the connectivity keys.
-    :type connectivity_warning: ConnectivityWarning | None
-    :param pre_checks_auto_fire_warning: A warning when the task group was
-        created but the automatic pre-checks execute call failed.
-    :type pre_checks_auto_fire_warning: str | None
-    """
-
     id: int | None = None
     backend: TaskBackendEnum
     data: dict[str, Any]
@@ -355,19 +490,35 @@ class AltersTaskResponse(AltersTaskBase):
     updated_at: datetime | None = None
     created_by: str | None = None
     last_updated_by: str | None = None
-    connectivity_warning: ConnectivityWarning | None = None
-    pre_checks_auto_fire_warning: str | None = None
+
+
+AltersTaskResponseCreate = derive_create_response_model(
+    AltersTaskResponse,
+    name="AltersTaskResponseCreate",
+    doc=(
+        "Represent the create response for an alters task group, carrying the "
+        "post-creation connectivity warning and the automatic pre-checks "
+        "auto-fire warning."
+    ),
+    extra_fields={"pre_checks_auto_fire_warning": (str | None, None)},
+)
+
+AltersTaskResponseUpdate = derive_create_response_model(
+    AltersTaskResponse,
+    name="AltersTaskResponseUpdate",
+    doc=(
+        "Represent the update response for an alters task group, carrying the "
+        "post-update connectivity warning."
+    ),
+)
 
 
 class AltersExecuteWrite(BaseModel):
     """Represent a JSON request body for executing an alters task.
 
     :param eta: Optional future datetime to schedule execution.
-    :type eta: FutureDatetime | None
     :param chain_task_names: Optional list of task names to chain after this one.
-    :type chain_task_names: list[str] | None
     :param chain_on_failure: Whether to run chained tasks even on failure.
-    :type chain_on_failure: bool | None
     """
 
     eta: FutureDatetime | None = None
@@ -379,9 +530,7 @@ class AltersExecutionResponse(BaseModel):
     """Represent the response from POST /api/plugins/alters/{task_name}/execute.
 
     :param task_name: The name of the task that was executed.
-    :type task_name: str
     :param task_id: The id of the task-history row created by the tasks API.
-    :type task_id: int | None
     """
 
     task_name: str

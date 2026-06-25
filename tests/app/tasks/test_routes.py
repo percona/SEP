@@ -935,40 +935,24 @@ async def test_sync_task_history_not_running_skips_executor(
     mock_executor.sync_task_history.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_sync_task_history_not_running_still_populates_has_logs(
-    test_client, session, created_task_with_history
-):
-    """Assert the early-return branch (already-finished) still populates ``has_logs``.
-
-    Regression: the sync endpoint short-circuits when the task has already
-    finished. Before the fix, the early return skipped ``_populate_has_logs``
-    so the response always had ``has_logs=False`` even when chunks existed,
-    which broke the API contract relative to ``GET /history/{id}``.
-    """
-    await TaskHistoryLogWriter.append(
-        session,
-        created_task_with_history.id,
-        source="run-script",
-        stream=TaskLogType.STDOUT,
-        new_bytes=b"chunk output",
-        force_flush=True,
-        producer_offset_after=12,
-    )
-
-    response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
-
-    assert response.status_code == status.HTTP_200_OK
-    assert response.json()["has_logs"] is True
-
-
+@pytest.mark.parametrize("running", [False, True], ids=["already_finished", "running"])
 @pytest.mark.asyncio
 async def test_sync_task_history_populates_has_logs(
-    test_client, session, mock_executor, created_task_with_history
+    test_client, session, mock_executor, created_task_with_history, running
 ):
-    """Assert the sync endpoint populates ``has_logs`` when chunks exist."""
-    created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
-    await TaskHistoryManager.save(session, created_task_with_history)
+    """Assert the sync endpoint populates ``has_logs`` when chunks exist.
+
+    Covers both the already-finished early-return branch and the RUNNING
+    full-sync path. Regression: the sync endpoint short-circuits when the task
+    has already finished. Before the fix, the early return skipped
+    ``_populate_has_logs`` so the response always had ``has_logs=False`` even
+    when chunks existed, which broke the API contract relative to
+    ``GET /history/{id}``.
+    """
+    if running:
+        created_task_with_history.status = TaskHistoryStatusEnum.RUNNING
+        await TaskHistoryManager.save(session, created_task_with_history)
+
     await TaskHistoryLogWriter.append(
         session,
         created_task_with_history.id,
@@ -979,12 +963,17 @@ async def test_sync_task_history_populates_has_logs(
         producer_offset_after=12,
     )
 
-    async def fake_sync(item, writer_session=None):
-        item.status = TaskHistoryStatusEnum.SUCCESS
-        item.finished_at = utc_now()
-        return item
+    if running:
 
-    mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+        async def fake_sync(item, writer_session=None):
+            item.status = TaskHistoryStatusEnum.SUCCESS
+            item.finished_at = utc_now()
+            return item
+
+        # Only the RUNNING path reaches the executor; the early-return branch
+        # short-circuits before it, so this wiring is a no-op there.
+        mock_executor.sync_task_history = AsyncMock(side_effect=fake_sync)
+
     response = test_client.post(f"/history/{created_task_with_history.id}/sync/")
 
     assert response.status_code == status.HTTP_200_OK

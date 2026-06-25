@@ -81,9 +81,11 @@ function refetchIntervalFor(
 /**
  * List task history across all tasks.
  *
- * Polling activates only when at least one row is in a running state, matching
- * the legacy Jinja2 page reload behaviour. Server cursor pagination is deferred
- * (SEP-923/924/925); callers paginate client-side for now.
+ * Requests are routed through ``GET /api/sep/task-history/`` (with no
+ * `task_names`) so the browser never calls the Tasks sub-app directly. Polling
+ * activates only when at least one row is in a running state, matching the
+ * legacy Jinja2 page reload behaviour. Server cursor pagination is deferred;
+ * callers paginate client-side for now.
  */
 export function useTaskHistory(options: UseTaskHistoryOptions = {}) {
   const {
@@ -98,7 +100,7 @@ export function useTaskHistory(options: UseTaskHistoryOptions = {}) {
     queryKey: ['task-history', { status: status ?? null, offset, limit }],
     enabled,
     queryFn: async () => {
-      const { data } = await apiClient.get<PaginatedTaskHistory>('/tasks/history/', {
+      const { data } = await apiClient.get<PaginatedTaskHistory>('/sep/task-history/', {
         params: buildParams({ status, offset, limit }),
       });
       return data;
@@ -167,7 +169,7 @@ export function useStopTaskHistory() {
   return useMutation<TaskHistoryEntry, Error, number>({
     mutationFn: async (taskHistoryId) => {
       const { data } = await apiClient.post<TaskHistoryEntry>(
-        `/tasks/history/${taskHistoryId}/stop/`,
+        `/sep/task-history/${taskHistoryId}/stop/`,
       );
       return data;
     },
