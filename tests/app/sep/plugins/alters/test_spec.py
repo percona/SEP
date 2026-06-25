@@ -15,6 +15,7 @@
 
 """Define tests for the app.sep.plugins.alters.spec pure task builder."""
 
+from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -73,6 +74,17 @@ def test_build_alters_spec_builds_parent_execute_envelope(
     assert meta[CONNECTIVITY_META_HOST_KEY] == created_service.node.address
     assert meta[CONNECTIVITY_META_PORT_KEY]
     assert meta[CONNECTIVITY_META_SERVICE_TYPE_KEY] == created_service.type.value
+
+
+def test_build_alters_spec_defaults_connectivity_port_when_service_port_unset(
+    created_service: CreatedService,
+):
+    """Apply the standard MySQL port to the connectivity meta when the service port is unset."""
+    portless = created_service.model_copy(update={"port": None})
+
+    meta = build_alters_spec(portless, "app", "users", _build_body()).data["meta"]
+
+    assert meta[CONNECTIVITY_META_PORT_KEY] == DEFAULT_MYSQL_PORT
 
 
 def test_build_alters_spec_remote_service_embeds_host_and_port(
