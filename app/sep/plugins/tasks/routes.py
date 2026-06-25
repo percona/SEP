@@ -28,12 +28,13 @@ from app.sep.deps import (
     IsAuthenticated,
     TaskAPI,
 )
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.plugins.tasks.deps import TaskDep
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 
 templates = sep_settings.TEMPLATES
 

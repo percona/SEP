@@ -62,7 +62,9 @@ def build_plugins_router(registry: AppRegistry) -> APIRouter:
     :param registry: The app registry, in activation order.
     :type registry: AppRegistry
     :return: An ``APIRouter`` mounted at ``/plugins`` with each app whose
-        ``api_router`` is set included at ``/{key}`` with ``tags=[key]``.
+        ``api_router`` is set included at ``/{key}``, tagged with the app key
+        unless the plugin's ``api_router`` already declares its own tags (then
+        those are kept and the key tag is not added).
     :rtype: APIRouter
     """
     plugins_router = APIRouter(
@@ -79,7 +81,7 @@ def build_plugins_router(registry: AppRegistry) -> APIRouter:
         plugins_router.include_router(
             app.api_router,
             prefix=f"/{app.key}",
-            tags=[app.key],
+            tags=[] if app.api_router.tags else [app.key],
             dependencies=plugin_deps,
         )
     return plugins_router
@@ -95,12 +97,14 @@ api_router.include_router(hosts_router, prefix="/sep/hosts", tags=["sep"])
 api_router.include_router(services_router, prefix="/sep/services", tags=["sep"])
 api_router.include_router(schemas_router, prefix="/sep/schemas", tags=["sep"])
 api_router.include_router(settings_router, prefix="/sep/admin/settings", tags=["sep"])
-api_router.include_router(task_stats_router, prefix="/sep/task-stats", tags=["sep"])
-api_router.include_router(task_history_router, prefix="/sep/task-history", tags=["sep"])
+api_router.include_router(task_stats_router, prefix="/sep/task-stats", tags=["tasks"])
+api_router.include_router(
+    task_history_router, prefix="/sep/task-history", tags=["tasks"]
+)
 api_router.include_router(
     periodic_tasks_router,
     prefix="/sep/periodic-tasks",
-    tags=["sep"],
+    tags=["tasks"],
     dependencies=[RequireBearerForUnsafeMethods],
 )
 api_router.include_router(

@@ -57,7 +57,7 @@ templates = sep_settings.TEMPLATES
     "/",
     dependencies=[IsAuthenticated],
     response_class=HTMLResponse,
-    deprecated=True,
+    include_in_schema=False,
 )
 async def pg_backups_index(
     request: Request,
@@ -78,7 +78,7 @@ async def pg_backups_index(
     "/",
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=HTMLResponse,
-    deprecated=True,
+    include_in_schema=False,
 )
 async def pg_backups_create(
     request: Request,
@@ -113,7 +113,7 @@ async def pg_backups_create(
     "/{task_name}",
     dependencies=[IsAuthenticated],
     response_class=HTMLResponse,
-    deprecated=True,
+    include_in_schema=False,
 )
 async def pg_backups_detail(
     task: BackupsTask,
@@ -197,7 +197,7 @@ async def pg_backups_detail(
     "/{task_name}",
     dependencies=[IsAuthenticated, IsCsrfValidated, HasNoConflictedRunningTasks],
     response_class=RedirectResponse,
-    deprecated=True,
+    include_in_schema=False,
 )
 async def pg_backups_execute(
     request: Request,
@@ -227,7 +227,7 @@ async def pg_backups_execute(
     "/{task_name}/delete",
     dependencies=[IsAuthenticated, IsCsrfValidated],
     response_class=RedirectResponse,
-    deprecated=True,
+    include_in_schema=False,
 )
 async def pg_backups_delete(
     task: BackupsTask,
