@@ -18,7 +18,7 @@
 from datetime import datetime
 from typing import Annotated, Any, ClassVar
 
-from pydantic import BaseModel, FutureDatetime, model_validator
+from pydantic import AfterValidator, BaseModel, FutureDatetime, model_validator
 
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
@@ -26,7 +26,6 @@ from app.sep.plugins.framework import derive_create_response_model
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     Choices,
-    FieldWidget,
     Forbidden,
     FormRules,
     HostRef,
@@ -91,6 +90,21 @@ def normalize_alters_target_fields(data: Any) -> Any:
         normalized["schema_id"] = None
         normalized["table_id"] = None
     return normalized
+
+
+def reject_multiline_alter(value: str) -> str:
+    """Reject newline characters in an alter command.
+
+    The value is interpolated into a single ``--alter=`` command-line flag, so a
+    newline would split it across argv entries and corrupt the generated command.
+
+    :param value: The submitted alter command.
+    :return: The validated value, unchanged.
+    :raises ValueError: When ``value`` contains a line feed or carriage return.
+    """
+    if "\n" in value or "\r" in value:
+        raise ValueError("alter must not contain newline characters")
+    return value
 
 
 class _AltersTargetFieldsMixin:
@@ -222,10 +236,10 @@ class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
 
     alter: Annotated[
         NonEmptyStr,
+        AfterValidator(reject_multiline_alter),
         Ui(
             label="Alter",
             section="alter",
-            widget=FieldWidget.TEXTAREA,
             description=(
                 "Schema modifications excluding ALTER TABLE keywords "
                 "(e.g. ADD COLUMN new_col INT, DROP COLUMN old_col)"

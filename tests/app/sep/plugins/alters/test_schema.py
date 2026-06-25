@@ -73,6 +73,15 @@ def test_alters_schema_dsn_table_conditional_gates():
     assert len(dsn_field.forbidden) == 1
 
 
+def test_alters_schema_alter_is_single_line_string():
+    """Test the alter field renders as a single-line string input, not a textarea."""
+    alter_section = next(
+        section for section in alters_schema.forms if section.title == "Alter"
+    )
+    alter_field = next(field for field in alter_section.fields if field.name == "alter")
+    assert alter_field.field_type == "string"
+
+
 def test_alters_schema_serialises_snake_case():
     """Test alters_schema JSON export uses snake_case wire format."""
     payload = alters_schema.model_dump(mode="json", by_alias=False)
@@ -169,6 +178,19 @@ def test_alters_create_rejects_dual_target_fields_from_kwargs():
             schema_name="app",
             table_name="users",
             alter="ADD COLUMN x INT",
+        )
+
+
+def test_alters_create_rejects_multiline_alter():
+    """AltersCreate rejects an alter command spanning multiple lines."""
+    with pytest.raises(ValidationError, match="must not contain newline"):
+        AltersCreate(
+            task_name="t1",
+            hostname="host1",
+            service_id=1,
+            schema_name="app",
+            table_name="users",
+            alter="ADD COLUMN x INT\nDROP COLUMN y",
         )
 
 

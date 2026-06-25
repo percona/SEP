@@ -402,6 +402,17 @@ class TestAltersApiCreate:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
+    def test_create_returns_422_for_multiline_alter(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """POST returns 422 when the alter command contains a newline."""
+        body = build_alters_write_body(alter="ADD COLUMN x INT\nDROP COLUMN y")
+
+        response = test_client.post(f"{API_BASE}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
     def test_create_stamps_form_input_on_parent_task(
         self,
         test_client,

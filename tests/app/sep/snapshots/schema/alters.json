@@ -238,7 +238,7 @@
           "label": "Alter",
           "name": "alter",
           "required": true,
-          "type": "textarea"
+          "type": "string"
         }
       ],
       "render_after_submit": false,
