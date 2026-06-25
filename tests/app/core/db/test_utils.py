@@ -15,6 +15,7 @@
 
 """Define tests for the app.core.db.utils module."""
 
+from contextlib import nullcontext
 from unittest.mock import MagicMock
 
 import pytest
@@ -60,31 +61,65 @@ def sample_table():
 class TestIdempotentInsert:
     """Test the dialect-aware ``idempotent_insert`` helper."""
 
-    def test_postgresql_returns_on_conflict_insert(self, sample_table):
-        """Assert PostgreSQL dispatch produces an ``ON CONFLICT DO NOTHING`` insert."""
-        stmt = idempotent_insert("postgresql", sample_table)
-        assert isinstance(stmt, postgresql.Insert)
-        compiled = str(stmt.compile(dialect=postgresql.dialect()))
-        assert "ON CONFLICT DO NOTHING" in compiled.upper()
+    @pytest.mark.parametrize(
+        (
+            "dialect_name",
+            "dialect",
+            "expected_cls",
+            "expected_substring",
+            "expectation",
+        ),
+        [
+            (
+                "postgresql",
+                postgresql.dialect(),
+                postgresql.Insert,
+                "ON CONFLICT DO NOTHING",
+                nullcontext(),
+            ),
+            (
+                "sqlite",
+                sqlite.dialect(),
+                sqlite.Insert,
+                "ON CONFLICT DO NOTHING",
+                nullcontext(),
+            ),
+            (
+                "mysql",
+                mysql.dialect(),
+                mysql.Insert,
+                "INSERT IGNORE",
+                nullcontext(),
+            ),
+            (
+                "oracle",
+                None,
+                None,
+                None,
+                pytest.raises(NotImplementedError, match="oracle"),
+            ),
+        ],
+        ids=["postgresql", "sqlite", "mysql", "unknown_dialect_raises"],
+    )
+    def test_idempotent_insert_dispatch(
+        self,
+        sample_table,
+        dialect_name,
+        dialect,
+        expected_cls,
+        expected_substring,
+        expectation,
+    ):
+        """Assert dialect dispatch produces the right idempotent insert, or raises for unknown dialects.
 
-    def test_sqlite_returns_on_conflict_insert(self, sample_table):
-        """Assert SQLite dispatch produces an ``ON CONFLICT DO NOTHING`` insert."""
-        stmt = idempotent_insert("sqlite", sample_table)
-        assert isinstance(stmt, sqlite.Insert)
-        compiled = str(stmt.compile(dialect=sqlite.dialect()))
-        assert "ON CONFLICT DO NOTHING" in compiled.upper()
-
-    def test_mysql_returns_insert_ignore(self, sample_table):
-        """Assert MySQL dispatch produces an ``INSERT IGNORE`` statement."""
-        stmt = idempotent_insert("mysql", sample_table)
-        assert isinstance(stmt, mysql.Insert)
-        compiled = str(stmt.compile(dialect=mysql.dialect()))
-        assert "INSERT IGNORE" in compiled.upper()
-
-    def test_unknown_dialect_raises(self, sample_table):
-        """Assert an unsupported dialect raises ``NotImplementedError``."""
-        with pytest.raises(NotImplementedError, match="oracle"):
-            idempotent_insert("oracle", sample_table)
+        PostgreSQL and SQLite emit ``ON CONFLICT DO NOTHING``; MySQL emits
+        ``INSERT IGNORE``; an unsupported dialect raises ``NotImplementedError``.
+        """
+        with expectation:
+            stmt = idempotent_insert(dialect_name, sample_table)
+            assert isinstance(stmt, expected_cls)
+            compiled = str(stmt.compile(dialect=dialect))
+            assert expected_substring in compiled.upper()
 
 
 def _compile(expr, dialect) -> str:
@@ -97,72 +132,72 @@ def _compile_postcompile(expr, dialect) -> str:
     )
 
 
-def test_func_json_extract_postgresql_single_key_renders_double_arrow():
-    """Render ``execution_request->>'task'`` for a single-element path on PostgreSQL."""
+def _assert_ordered(rendered: str, fragments: list[str]) -> None:
+    """Assert each fragment appears in ``rendered`` in the given left-to-right order.
+
+    :param rendered: the compiled SQL string under inspection.
+    :param fragments: substrings expected to appear in this exact order, each
+        strictly after the previous one.
+    """
+    pos = -1
+    for fragment in fragments:
+        index = rendered.find(fragment, pos + 1)
+        assert index != -1, (
+            f"{fragment!r} not found after position {pos} in {rendered!r}"
+        )
+        pos = index
+
+
+@pytest.mark.parametrize(
+    ("path", "ordered"),
+    [
+        (("task",), ["->>", "'task'"]),
+        (("meta", "key"), ["->", "'meta'", "->>", "'key'"]),
+    ],
+    ids=["single_key", "nested_path"],
+)
+def test_func_json_extract_postgresql_json_column_arrow_chain(path, ordered):
+    """Render the PostgreSQL ``->`` / ``->>`` arrow chain for single and nested paths.
+
+    A single-element path renders ``col ->> 'key'``; a nested path chains
+    ``->`` for the intermediate key then ``->>`` for the leaf. A native
+    ``JSON`` column uses neither ``json_extract_path_text`` nor a ``CAST``
+    wrapper.
+    """
     json_column = column("execution_request", type_=JSON)
 
-    expression = func_json_extract("postgresql", json_column, "task")
+    expression = func_json_extract("postgresql", json_column, *path)
 
     rendered = _compile(expression, postgresql.dialect())
-    assert "->>" in rendered
-    assert "'task'" in rendered
+    _assert_ordered(rendered, ordered)
     assert "json_extract_path_text" not in rendered
     assert "CAST" not in rendered.upper()
 
 
-def test_func_json_extract_postgresql_nested_path_renders_arrow_chain():
-    """Chain ``->`` then ``->>`` for a nested path on PostgreSQL."""
-    json_column = column("execution_request", type_=JSON)
-
-    expression = func_json_extract("postgresql", json_column, "meta", "key")
-
-    rendered = _compile(expression, postgresql.dialect())
-    meta_index = rendered.index("'meta'")
-    key_index = rendered.index("'key'")
-    assert "->" in rendered[:meta_index]
-    assert "->>" in rendered[meta_index:key_index]
-    assert meta_index < key_index
-    assert "json_extract_path_text" not in rendered
-
-
-def test_func_json_extract_postgresql_text_column_wraps_in_cast():
-    """Wrap ``text``-typed columns in ``CAST(... AS JSON)`` on PostgreSQL.
+@pytest.mark.parametrize(
+    ("path", "ordered_upper"),
+    [
+        (("task_name",), ["CAST", "AS JSON", "->>", "'TASK_NAME'"]),
+        (("meta", "key"), ["CAST", "AS JSON", "->", "'META'", "->>", "'KEY'"]),
+    ],
+    ids=["single_key", "nested_path"],
+)
+def test_func_json_extract_postgresql_text_column_wraps_in_cast(path, ordered_upper):
+    """Wrap ``text``-typed columns in ``CAST(... AS JSON)`` before the arrow chain.
 
     PostgreSQL does not define the ``->>`` operator on ``text``, so text
-    columns must be cast to ``json`` before the arrow chain is applied.
-    Without the cast, queries raise ``operator does not exist: text ->>
-    unknown`` at execution time — the exact failure mode this ticket fixes
-    for ``celery_periodictask.kwargs``.
+    columns must be cast to ``json`` first — without it queries raise
+    ``operator does not exist: text ->> unknown`` at execution time, the exact
+    failure mode this ticket fixes for ``celery_periodictask.kwargs``. The cast
+    sits on the root column once; for a nested path ``(a, b)`` the shape is
+    ``(CAST(col AS JSON) -> 'a') ->> 'b'`` so every operator sees a JSON LHS.
     """
     text_column = column("kwargs", type_=Text())
 
-    expression = func_json_extract("postgresql", text_column, "task_name")
+    expression = func_json_extract("postgresql", text_column, *path)
 
-    rendered = _compile(expression, postgresql.dialect())
-    assert "CAST" in rendered.upper()
-    assert "AS JSON" in rendered.upper()
-    assert "->>" in rendered
-    assert "'task_name'" in rendered
-
-
-def test_func_json_extract_postgresql_text_column_nested_path_wraps_in_cast():
-    """Wrap the root column once and chain the arrow operators on top.
-
-    For a nested path ``(a, b)`` on a ``text`` column the expected shape is
-    ``(CAST(col AS JSON) -> 'a') ->> 'b'`` — the cast sits on the root
-    column so every subsequent operator sees a JSON-typed LHS.
-    """
-    text_column = column("kwargs", type_=Text())
-
-    expression = func_json_extract("postgresql", text_column, "meta", "key")
-
-    rendered = _compile(expression, postgresql.dialect())
-    assert "CAST" in rendered.upper()
-    assert "AS JSON" in rendered.upper()
-    meta_index = rendered.index("'meta'")
-    key_index = rendered.index("'key'")
-    assert "->" in rendered[:meta_index]
-    assert "->>" in rendered[meta_index:key_index]
+    rendered = _compile(expression, postgresql.dialect()).upper()
+    _assert_ordered(rendered, ordered_upper)
 
 
 def test_func_json_extract_postgresql_jsonb_column_does_not_wrap_in_cast():
@@ -201,13 +236,21 @@ def test_func_json_extract_postgresql_auto_json_column_does_not_wrap_in_cast():
     assert "CAST" not in rendered.upper()
 
 
-def test_func_json_extract_sqlite_single_key_renders_json_extract():
-    """Render ``json_extract(col, '$.task')`` on SQLite for a single-element path."""
+@pytest.mark.parametrize(
+    ("dialect_name", "dialect"),
+    [
+        ("sqlite", sqlite.dialect()),
+        ("mysql", mysql.dialect()),
+    ],
+    ids=["sqlite", "mysql"],
+)
+def test_func_json_extract_single_key_renders_json_extract(dialect_name, dialect):
+    """Render ``json_extract(col, '$.task')`` on SQLite and MySQL for a single-element path."""
     json_column = column("execution_request", type_=JSON)
 
-    expression = func_json_extract("sqlite", json_column, "task")
+    expression = func_json_extract(dialect_name, json_column, "task")
 
-    rendered = _compile(expression, sqlite.dialect())
+    rendered = _compile(expression, dialect)
     assert "json_extract" in rendered.lower()
     assert "'$.task'" in rendered
 
@@ -221,17 +264,6 @@ def test_func_json_extract_sqlite_nested_path_renders_dotted_path():
     rendered = _compile(expression, sqlite.dialect())
     assert "json_extract" in rendered.lower()
     assert "'$.meta.key'" in rendered
-
-
-def test_func_json_extract_mysql_single_key_renders_json_extract():
-    """Render ``json_extract(col, '$.task')`` on MySQL for a single-element path."""
-    json_column = column("execution_request", type_=JSON)
-
-    expression = func_json_extract("mysql", json_column, "task")
-
-    rendered = _compile(expression, mysql.dialect())
-    assert "json_extract" in rendered.lower()
-    assert "'$.task'" in rendered
 
 
 def test_func_json_extract_postgresql_mapped_column_binds_path_as_text():
