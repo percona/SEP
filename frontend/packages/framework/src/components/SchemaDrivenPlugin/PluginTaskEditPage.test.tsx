@@ -35,6 +35,7 @@ vi.mock('@sep/api', () => ({
     error: null,
   }),
   usePluginTask: (...args: unknown[]) => mockUsePluginTask(...args),
+  useAlertConfig: () => ({ data: { available: true }, isLoading: false, isError: false }),
 }));
 
 const schema: PluginSchema = {
@@ -171,5 +172,44 @@ describe('PluginTaskEditPage', () => {
 
     expect(screen.getByText('detail page')).toBeInTheDocument();
     expect(screen.queryByText('Edit Checksum: check1')).toBeNull();
+  });
+
+  it('threads capabilities so a stored alert_on_fail survives an edit', async () => {
+    // `alert_on_fail` is excluded from the schema sections and only rendered
+    // (and seeded) when the capability is passed through. Without it the field
+    // is dropped from the submission and the backend resets it to its default.
+    const alertSchema = {
+      ...schema,
+      capabilities: { alert_on_fail: true },
+    } as unknown as PluginSchema;
+    mockUsePluginTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'check1',
+        status: 'completed',
+        data: { _form: { task_name: 'check1', title: 'hello', count: 7, alert_on_fail: true } },
+      },
+      isLoading: false,
+    });
+
+    render(
+      <SnackbarProvider>
+        <MemoryRouter initialEntries={['/plugins/checksums/task/check1/edit']}>
+          <Routes>
+            <Route
+              path="/plugins/:plugin/task/:id/edit"
+              element={<PluginTaskEditPage schema={alertSchema} pluginName="checksums" />}
+            />
+            <Route path="/plugins/:plugin/task/:id" element={<div>detail page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </SnackbarProvider>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(mockUpdateTaskMutate).toHaveBeenCalledTimes(1));
+    const [{ values }] = mockUpdateTaskMutate.mock.calls[0];
+    expect(values.alert_on_fail).toBe(true);
   });
 });

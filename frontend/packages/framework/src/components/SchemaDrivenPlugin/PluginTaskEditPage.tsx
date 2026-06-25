@@ -143,6 +143,7 @@ export function PluginTaskEditPage({
         onSubmit: handleSubmit,
         loading: updateTask.isPending,
         defaultValues: storedForm,
+        capabilities: schema.capabilities,
         renderField,
       }) ?? (
         <SchemaFormRenderer
@@ -151,6 +152,7 @@ export function PluginTaskEditPage({
           loading={updateTask.isPending}
           submitLabel="Save"
           defaultValues={storedForm}
+          capabilities={schema.capabilities}
           renderField={renderField}
         />
       )}
