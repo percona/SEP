@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { apiClient } from '@sep/api';
 import {
   Button,
@@ -11,6 +11,8 @@ import {
 } from '@mui/material';
 import type { UserRow } from '../MumUserList';
 import type { ButtonProps } from '@mui/material';
+import { useTaskStream } from '../useTaskStream';
+import type { TaskStreamState } from '../useTaskStream';
 
 const DEFAULT_DB = 'admin';
 
@@ -26,11 +28,25 @@ export function DeleteUserButton({ row, selectedTarget, onSuccess, buttonProps =
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmText, setConfirmText] = useState('');
+  const [streamState, setStreamState] = useState<TaskStreamState>({ status: 'idle' });
 
   const username = String(row?.['user'] ?? row?.['username'] ?? '');
   const dbName = String(row?.['db'] ?? DEFAULT_DB);
 
-  const handleOpen = () => { setConfirmText(''); setError(null); setOpen(true); };
+  const onStateChange = useCallback((s: TaskStreamState) => {
+    setStreamState(s);
+    if (s.status === 'success') {
+      setOpen(false);
+      onSuccess?.({ username, db: dbName || DEFAULT_DB, target: selectedTarget });
+    } else if (s.status === 'error') {
+      setError(s.message);
+      setLoading(false);
+    }
+  }, [username, dbName, selectedTarget, onSuccess]);
+
+  const { stream } = useTaskStream({ onStateChange });
+
+  const handleOpen = () => { setConfirmText(''); setError(null); setStreamState({ status: 'idle' }); setOpen(true); };
   const handleClose = () => { if (!loading) setOpen(false); };
 
   const handleDelete = async () => {
@@ -39,18 +55,17 @@ export function DeleteUserButton({ row, selectedTarget, onSuccess, buttonProps =
     setLoading(true);
     setError(null);
     try {
-      // [MUM-REPLACE] begin — dispatch delete-user task via SEP internal endpoint
-      await apiClient.post('/mum/ui/delete-user', { target: selectedTarget, username, db: dbName || DEFAULT_DB });
-      // [MUM-REPLACE] end
-      setOpen(false);
-      onSuccess?.({ username, db: dbName || DEFAULT_DB, target: selectedTarget });
+      const resp = await apiClient.post('/plugins/mum/ui/delete-user', { target: selectedTarget, username, db: dbName || DEFAULT_DB });
+      const historyId = (resp.data as Record<string, unknown>)?.['history'] as Record<string, unknown> | undefined;
+      stream(historyId?.['id'] as string);
     } catch (e) {
       const err = e as { response?: { data?: { detail?: string } }; message?: string };
       setError(err?.response?.data?.detail ?? err?.message ?? 'Failed to delete user');
-    } finally {
       setLoading(false);
     }
   };
+
+  const running = streamState.status === 'running' || loading;
 
   return (
     <>
@@ -65,15 +80,22 @@ export function DeleteUserButton({ row, selectedTarget, onSuccess, buttonProps =
             label={`Type ${username} to proceed`}
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
-            disabled={loading}
+            disabled={running}
             fullWidth
           />
-          {error && <Typography color="error" variant="body2">{error}</Typography>}
+          {running && streamState.status === 'running' && (
+            <Typography variant="body2" color="text.secondary">Deleting…</Typography>
+          )}
+          {error && (
+            <Typography color="error" variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {error}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleClose} disabled={loading}>Cancel</Button>
-          <Button onClick={handleDelete} variant="contained" color="error" disabled={loading}>
-            {loading ? 'Deleting…' : 'Delete'}
+          <Button onClick={handleClose} disabled={running}>Cancel</Button>
+          <Button onClick={handleDelete} variant="contained" color="error" disabled={running}>
+            {running ? 'Deleting…' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>
