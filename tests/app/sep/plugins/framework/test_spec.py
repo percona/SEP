@@ -834,7 +834,7 @@ class TestDerivedArgFormat:
 
 
 class _StampForm(AppFormModel):
-    """Minimal create form for the reserved-key stamp unit tests."""
+    """Declare the minimal create form the reserved-key stamp tests submit."""
 
     task_name: Annotated[str, Ui(label="Name", section="main")] = ""
 
