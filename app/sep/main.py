@@ -30,12 +30,14 @@ from pydantic import HttpUrl, ValidationError
 from starlette.staticfiles import StaticFiles
 
 from app import __summary__, __version__
+from app.api.main import api_router as top_level_api_router
 from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.celery.utils import init_periodic_tasks_db
 from app.core.config import create_app, default_lifespan, Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
+from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.settings_override.lifecycle import (
@@ -317,6 +319,7 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 lifespan = sep_lifespan
 sep_app = create_app(
+    build_health_router(get_async_session_maker),
     lifespan=lifespan,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
@@ -380,6 +383,7 @@ if {"snippets", "dipper"} & imported_plugins:
     sep_app.include_router(artifacts_router, prefix="/artifacts")
 
 sep_app.include_router(api_router)
+sep_app.include_router(top_level_api_router, include_in_schema=False)
 
 if "snippets" in imported_plugins:
     sep_app.mount(
