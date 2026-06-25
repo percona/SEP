@@ -28,10 +28,14 @@ from app.sep.plugins.archives.models import (
     SourceByQuery,
     SourceByTable,
 )
+from app.sep.plugins.archives.views import archives_views
+from app.sep.plugins.framework.form_dsl.derivation import derive_form_sections
 
 _MANUAL_PORT = 3307
 _SCHEMA_ID = 5
 _TABLE_ID = 6
+_LIMIT_DEFAULT = 1000
+_SLEEP_DEFAULT = 1
 
 
 def _valid(**overrides: Any) -> dict[str, Any]:
@@ -174,3 +178,33 @@ class TestArchivesCreateDsnDelimiters:
                     host={"mode": "manual", "dest_host": "remote", "dest_port": port}
                 )
             )
+
+
+def _field_by_name(name: str) -> Any:
+    """Return the derived schema field with ``name`` from the Advanced section."""
+    sections = derive_form_sections(ArchivesCreate, archives_views.layout)
+    advanced = next(section for section in sections if section.title == "Advanced")
+    return next(field for field in advanced.fields if field.name == name)
+
+
+class TestArchivesCreateDefaults:
+    """Cover the limit / sleep purge-script form-display defaults (SEP-1408)."""
+
+    def test_limit_schema_default_is_purge_default(self) -> None:
+        """Derive ``limit`` with the purge-script form default (1000)."""
+        assert _field_by_name("limit").default == _LIMIT_DEFAULT
+
+    def test_sleep_schema_default_is_purge_default(self) -> None:
+        """Derive ``sleep`` with the purge-script form default (1)."""
+        assert _field_by_name("sleep").default == _SLEEP_DEFAULT
+
+    def test_model_runtime_defaults_unchanged(self) -> None:
+        """Keep the model/runtime defaults ``None`` so the wire contract is intact."""
+        assert ArchivesCreate.model_fields["limit"].default is None
+        assert ArchivesCreate.model_fields["sleep"].default is None
+
+    def test_omitted_limit_sleep_resolve_to_none(self) -> None:
+        """Leave limit / sleep ``None`` when omitted, so the payload fallback runs."""
+        form = ArchivesCreate.model_validate(_valid())
+        assert form.limit is None
+        assert form.sleep is None

@@ -323,11 +323,15 @@ class ArchivesCreate(AppFormModel):
     extra_args: Annotated[
         NonEmptyStr | EmptyStrToNone, Ui(label="Extra Args", section="Advanced")
     ] = None
-    limit: Annotated[int | None, Field(ge=1), Ui(label="Limit", section="Advanced")] = (
-        None
-    )
+    limit: Annotated[
+        int | None,
+        Field(ge=1),
+        Ui(label="Limit", section="Advanced", default=1000),
+    ] = None
     sleep: Annotated[
-        int | None, Field(ge=0), Ui(label="Sleep (s)", section="Advanced")
+        int | None,
+        Field(ge=0),
+        Ui(label="Sleep (s)", section="Advanced", default=1),
     ] = None
     disable_binlog: Annotated[
         bool | None, Ui(label="Disable Binlog", section="Advanced")
