@@ -28,6 +28,7 @@ const mockDeleteMutate = vi.fn();
 const mockExecuteMutate = vi.fn();
 const mockUsePluginTask = vi.fn();
 const mockUsePluginEntityDetail = vi.fn();
+const { stopMutate } = vi.hoisted(() => ({ stopMutate: vi.fn() }));
 interface MockStatsResult {
   data: unknown;
   isLoading: boolean;
@@ -82,6 +83,20 @@ vi.mock('../../hooks', () => ({
     mutateAsync: mockExecuteMutate,
     isPending: false,
   }),
+  useStopTaskHistory: () => ({ mutate: stopMutate, isPending: false }),
+}));
+
+// Logs tab renders the real TaskHistoryTable; stub it to capture the wired
+// onStopTask handler (no other test exercises the Logs tab / this component).
+vi.mock('../TaskHistoryTable', () => ({
+  TaskHistoryTable: ({ onStopTask }: { onStopTask?: (entry: { id: number }) => void }) =>
+    onStopTask ? (
+      <button type="button" onClick={() => onStopTask({ id: 7 })}>
+        Stop row
+      </button>
+    ) : (
+      <div data-testid="task-history-table" />
+    ),
 }));
 
 vi.mock('../../hooks/useTaskStats', () => ({
@@ -644,6 +659,25 @@ describe('PluginDetailPage — StatsCard integration', () => {
     renderWithSchema(makeSchema({ stats: true }));
     expect(screen.getByText('Task information')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Could not load execution stats');
+  });
+});
+
+describe('PluginDetailPage — Logs tab stop wiring', () => {
+  beforeEach(() => {
+    stopMutate.mockReset();
+  });
+
+  it('wires the Logs-tab table Stop action to the stop-task mutation with the row id', async () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'running' },
+      isLoading: false,
+    });
+
+    renderAt('/plugins/checksums/task/FECHK/logs');
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop row' }));
+
+    expect(stopMutate).toHaveBeenCalledWith(7);
   });
 });
 
