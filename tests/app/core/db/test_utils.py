@@ -136,10 +136,8 @@ def _assert_ordered(rendered: str, fragments: list[str]) -> None:
     """Assert each fragment appears in ``rendered`` in the given left-to-right order.
 
     :param rendered: the compiled SQL string under inspection.
-    :type rendered: str
     :param fragments: substrings expected to appear in this exact order, each
         strictly after the previous one.
-    :type fragments: list[str]
     """
     pos = -1
     for fragment in fragments:
