@@ -22,8 +22,10 @@ from fastapi import APIRouter, Request, status
 from app import __summary__, __version__
 from app.api.deps import IsAuthenticatedDep
 from app.core.config import create_app, default_lifespan, settings
+from app.core.health import build_health_router
 from app.inventory.config import inventory_settings
 from app.inventory.crud import NodeManager, SchemaManager, ServiceManager, TableManager
+from app.inventory.db import get_async_session_maker
 from app.inventory.deps import SessionDep
 from app.inventory.routes import nodes, schemas, services, tables
 
@@ -49,6 +51,7 @@ async def get_summary_inventory(session: SessionDep) -> dict[str, int]:
 
 lifespan = default_lifespan
 inventory_app = create_app(
+    build_health_router(get_async_session_maker),
     summary_router,
     nodes.router,
     services.router,

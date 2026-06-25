@@ -35,6 +35,7 @@ from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.config import create_app, default_lifespan, Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
+from app.core.health import build_health_router
 from app.core.requests import RemoteAPI
 from app.core.security import crypto_timestamp_serializer
 from app.core.settings_override.lifecycle import (
@@ -290,6 +291,7 @@ async def sep_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 lifespan = sep_lifespan
 sep_app = create_app(
+    build_health_router(get_async_session_maker),
     lifespan=lifespan,
     allowed_hosts=sep_settings.ALLOWED_HOSTS,
     security_headers=sep_settings.SECURITY_HEADERS,
