@@ -48,7 +48,10 @@ templates = sep_settings.TEMPLATES
 
 
 @router.get(
-    "/", dependencies=[IsAuthenticated], response_class=HTMLResponse, include_in_schema=False
+    "/",
+    dependencies=[IsAuthenticated],
+    response_class=HTMLResponse,
+    include_in_schema=False,
 )
 async def alerts_index(
     request: Request,
@@ -104,7 +107,9 @@ async def alerts_restore(
     return JSONResponse({"status": "success", "details": results})
 
 
-@router.get("/backups/{backup_id}", dependencies=[IsAuthenticated], include_in_schema=False)
+@router.get(
+    "/backups/{backup_id}", dependencies=[IsAuthenticated], include_in_schema=False
+)
 async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONResponse:
     """Return a summary of a single backup's contents.
 
@@ -144,7 +149,9 @@ async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONRespo
 
 
 @router.post(
-    "/pagerduty", dependencies=[IsAuthenticated, IsCsrfValidated], include_in_schema=False
+    "/pagerduty",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    include_in_schema=False,
 )
 async def pagerduty_save(
     pmm_api: RequiredPMMAPIDep,
@@ -232,7 +239,9 @@ async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
         )
 
 
-@router.post("/push", dependencies=[IsAuthenticated, IsCsrfValidated], include_in_schema=False)
+@router.post(
+    "/push", dependencies=[IsAuthenticated, IsCsrfValidated], include_in_schema=False
+)
 async def alerts_push(
     pmm_api: RequiredPMMAPIDep,
     alert_templates: AlertTemplatesDep,
