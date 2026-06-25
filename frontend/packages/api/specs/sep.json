@@ -17168,6 +17168,248 @@
         ]
       }
     },
+    "/api/sep/periodic-tasks/": {
+      "get": {
+        "description": "Return the upstream periodic-task list through the SEP gateway.\n\n:param tasks_api: The Tasks API client used to fetch the upstream list.\n:return: The upstream periodic-task list, or ``[]`` when the upstream\n    payload is not a list.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "sep_list_periodic_tasks_api_sep_periodic_tasks__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "title": "Response Sep List Periodic Tasks Api Sep Periodic Tasks  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "List Periodic Tasks",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
+    "/api/sep/periodic-tasks/{periodic_task_id}": {
+      "delete": {
+        "description": "Dispatch deletion of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to delete.\n:param tasks_api: The Tasks API client used to delete the periodic task.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "sep_delete_periodic_task_api_sep_periodic_tasks__periodic_task_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodic_task_id",
+            "required": true,
+            "schema": {
+              "title": "Periodic Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "Delete Periodic Task",
+        "tags": [
+          "sep"
+        ]
+      },
+      "put": {
+        "description": "Dispatch a full-replacement update of a periodic task to the Tasks API.\n\n:param periodic_task_id: The id of the periodic task to update.\n:param tasks_api: The Tasks API client used to update the periodic task.\n:param body: The ``PeriodicTaskUpdate`` JSON body, forwarded verbatim.\n:return: The updated periodic task as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "sep_update_periodic_task_api_sep_periodic_tasks__periodic_task_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodic_task_id",
+            "required": true,
+            "schema": {
+              "title": "Periodic Task Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Sep Update Periodic Task Api Sep Periodic Tasks  Periodic Task Id  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "Update Periodic Task",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
+    "/api/sep/periodic-tasks/{task_name}/": {
+      "post": {
+        "description": "Dispatch creation of a periodic task for ``task_name`` to the Tasks API.\n\n:param task_name: The task name the new periodic schedule runs.\n:param tasks_api: The Tasks API client used to create the periodic task.\n:param body: The ``PeriodicTaskCreate`` JSON body, forwarded verbatim.\n:return: The created periodic task as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500).\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "sep_create_periodic_task_api_sep_periodic_tasks__task_name___post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_name",
+            "required": true,
+            "schema": {
+              "title": "Task Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "title": "Body",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Sep Create Periodic Task Api Sep Periodic Tasks  Task Name   Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "Create Periodic Task",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
     "/api/sep/schemas/{schema_id}/tables": {
       "get": {
         "description": "Return tables for a schema via the SEP gateway.\n\nProxies Inventory ``GET /schemas/{schema_id}/tables/`` for React\n``TableSelector`` components. Returns an empty list only when Inventory\nresponds with 404 (missing schema); other HTTP errors propagate to the\nglobal handler (matches legacy AJAX empty-selector UX for not-found only).\n\n:param schema_id: The inventory schema ID whose tables are listed.\n:type schema_id: int\n:param inventory_api: The Inventory API client used to proxy the request.\n:type inventory_api: InventoryAPI\n:param search: Optional substring filter forwarded to inventory.\n:type search: str | None\n:return: Minimal id/name options for each table in the schema.\n:rtype: list[InventorySelectorOption]",
@@ -17369,20 +17611,26 @@
     },
     "/api/sep/task-history/": {
       "get": {
-        "description": "Return merged execution history for one or more task names.\n\nEach ``task_names`` value is queried independently against the Tasks API\nwith the same ``status`` filter and a widened upstream window starting at\n``offset=0``; the SEP layer merges, sorts newest-first, then applies the\nclient ``offset`` and ``limit`` globally before responding.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:type tasks_api: TaskAPI\n:param task_names: One or more task names (repeat the query param).\n:type task_names: list[str]\n:param task_status: Optional exact status filter forwarded upstream.\n:type task_status: TaskHistoryStatusEnum | None\n:param pagination: Validated offset/limit query parameters.\n:type pagination: Pagination\n:return: Merged paginated task history across all requested names.\n:rtype: PaginatedResponse[TaskHistoryResponse]\n:raises HTTPException: When every supplied task name is empty after trimming.",
+        "description": "Return task-history rows, listing all of them or merging selected names.\n\nThree-way on ``task_names``:\n\n* **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already\n  paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.\n* **provided, at least one non-blank name** -- query each name independently\n  against the Tasks API, then merge, sort newest-first, and paginate globally.\n* **provided, every name blank after trimming** -- reject with ``422``.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:param pagination: Validated offset/limit query parameters.\n:param task_names: Zero or more task names (repeat the query param); omit to\n    list all history.\n:param task_status: Optional exact status filter forwarded upstream.\n:return: Paginated task history, either the upstream list or the merged set.\n:raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but\n    every value is empty after trimming.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``, on either the list-all passthrough or\n    the merged-history fan-out.",
         "operationId": "sep_list_merged_task_history_api_sep_task_history__get",
         "parameters": [
           {
             "in": "query",
             "name": "task_names",
-            "required": true,
+            "required": false,
             "schema": {
-              "items": {
-                "type": "string"
-              },
-              "minItems": 1,
-              "title": "Task Names",
-              "type": "array"
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Names"
             }
           },
           {
@@ -17445,9 +17693,89 @@
               }
             },
             "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
           }
         },
         "summary": "List Merged Task History",
+        "tags": [
+          "sep"
+        ]
+      }
+    },
+    "/api/sep/task-history/{task_history_id}/stop/": {
+      "post": {
+        "description": "Dispatch a stop request for a single task-history row to the Tasks API.\n\n:param task_history_id: The id of the task-history row to stop.\n:param tasks_api: The Tasks API client used to issue the stop request.\n:return: The stopped task-history row as returned by the Tasks API.\n:raises HTTPException: Re-raised unchanged for an upstream client error\n    (status < 500), e.g. a ``400`` when the task is not running.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``.",
+        "operationId": "sep_stop_task_history_api_sep_task_history__task_history_id__stop__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_history_id",
+            "required": true,
+            "schema": {
+              "title": "Task History Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Sep Stop Task History Api Sep Task History  Task History Id  Stop  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream Tasks API failure."
+          }
+        },
+        "summary": "Stop Task History",
         "tags": [
           "sep"
         ]

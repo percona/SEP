@@ -35,6 +35,7 @@ from app.sep.api.routes.app_state import router as app_state_router
 from app.sep.api.routes.apps import router as apps_router
 from app.sep.api.routes.dashboard import router as dashboard_router
 from app.sep.api.routes.hosts import router as hosts_router
+from app.sep.api.routes.periodic_tasks import router as periodic_tasks_router
 from app.sep.api.routes.schemas import router as schemas_router
 from app.sep.api.routes.services import router as services_router
 from app.sep.api.routes.settings import router as settings_router
@@ -94,6 +95,12 @@ api_router.include_router(schemas_router, prefix="/sep/schemas", tags=["sep"])
 api_router.include_router(settings_router, prefix="/sep/admin/settings", tags=["sep"])
 api_router.include_router(task_stats_router, prefix="/sep/task-stats", tags=["sep"])
 api_router.include_router(task_history_router, prefix="/sep/task-history", tags=["sep"])
+api_router.include_router(
+    periodic_tasks_router,
+    prefix="/sep/periodic-tasks",
+    tags=["sep"],
+    dependencies=[RequireBearerForUnsafeMethods],
+)
 api_router.include_router(
     app_state_router,
     prefix="/admin/apps",
