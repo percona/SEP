@@ -59,7 +59,7 @@ const MOCK_PLUGIN_SCHEMA = {
  *   /api/users/me                -> fake user profile (completes session bootstrap)
  *   /api/plugins/:name/schema    -> minimal valid PluginSchema (renders heading)
  *   /api/sep/dashboard/          -> zero counts for dashboard stat cards
- *   /api/tasks/history/          -> empty paginated response (prevents refetchInterval crash)
+ *   /api/sep/task-history/       -> empty paginated response (prevents refetchInterval crash)
  *   /api/apps/                   -> every nav app enabled (renders the full sidebar)
  *   everything else              -> 200 [] (empty task list; sufficient for smoke assertions)
  */
@@ -104,7 +104,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.includes('/tasks/history/')) {
+    if (pathname.includes('/sep/task-history/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
