@@ -79,6 +79,11 @@ def normalize_alters_target_fields(data: Any) -> Any:
     table_name = str(normalized.get("table_name") or "").strip()
     normalized["schema_id"] = schema_id
     normalized["table_id"] = table_id
+    if schema_id is not None and table_id is not None and schema_name and table_name:
+        raise ValueError(
+            "Cannot use both schema_id/table_id and "
+            "schema_name/table_name at the same time."
+        )
     if schema_id is not None and table_id is not None:
         normalized["schema_name"] = ""
         normalized["table_name"] = ""

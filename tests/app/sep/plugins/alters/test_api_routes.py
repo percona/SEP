@@ -386,6 +386,54 @@ class TestAltersApiCreate:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
+    def test_create_returns_422_when_both_target_modes_provided(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """POST returns 422 when both inventory and manual target fields are sent."""
+        body = build_alters_write_body(
+            schema_id=1,
+            table_id=13,
+            schema_name="app",
+            table_name="t1",
+        )
+
+        response = test_client.post(f"{API_BASE}/", json=body)
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        mock_task_api_dep.post.assert_not_called()
+
+    def test_create_stamps_form_input_on_parent_task(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ) -> None:
+        """POST stamps _form on the parent task so the React Edit button is enabled."""
+        configure_cascade_create_mocks(
+            mock_task_api_dep,
+            mock_inventory_api_dep,
+            created_service,
+            DEFAULT_TASK_NAME,
+        )
+
+        body = build_alters_write_body(
+            task_name=DEFAULT_TASK_NAME,
+            service_id=created_service.id,
+        )
+        response = test_client.post(
+            f"{API_BASE}/?check_connectivity=false",
+            json=body,
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        posted_data = mock_task_api_dep.post.await_args_list[0].kwargs["json"]["data"]
+        assert "_form" in posted_data
+        form_input = posted_data["_form"]
+        assert form_input["task_name"] == DEFAULT_TASK_NAME
+        assert form_input["schema_name"] == "test_schema"
+        assert form_input["table_name"] == "test_table"
+
 
 class TestAltersApiUpdate:
     """Tests for PUT /api/plugins/alters/{task_name}."""

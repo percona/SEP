@@ -63,6 +63,7 @@ from app.sep.plugins.framework import (
     maybe_record_connectivity_warning,
 )
 from app.sep.plugins.framework.api import derive_execute_route, schema_endpoint
+from app.sep.plugins.framework.spec import stamp_form_input
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
@@ -130,6 +131,7 @@ async def alters_api_create(
     """
     logger.debug("Create alters task group (JSON path): %s", body.task_name)
     parent_task = await build_alters_task(body, inventory_api)
+    stamp_form_input(parent_task, body)
     pre_checks_template = await build_pre_checks_task_payload(
         parent_task, task_api=tasks_api
     )

@@ -139,43 +139,37 @@ def test_alters_create_dsn_recursion_uses_schema_default_dsn_table() -> None:
     assert body.dsn_table == "D=percona,t=dsns"
 
 
-def test_alters_create_normalizes_legacy_dual_target_fields():
-    """Test AltersCreate prefers inventory IDs when legacy forms post both modes."""
-    body = AltersCreate.model_validate(
-        {
-            "task_name": "t1",
-            "hostname": "host1",
-            "service_id": 1,
-            "schema_id": str(LEGACY_FORM_SCHEMA_ID),
-            "table_id": str(LEGACY_FORM_TABLE_ID),
-            "schema_name": "app",
-            "table_name": "users",
-            "alter": "ADD COLUMN x INT",
-            "recursion_method": "processlist",
-        }
-    )
-    assert body.schema_id == LEGACY_FORM_SCHEMA_ID
-    assert body.table_id == LEGACY_FORM_TABLE_ID
-    assert body.schema_name == ""
-    assert body.table_name == ""
+def test_alters_create_rejects_dual_target_fields():
+    """AltersCreate rejects input that provides both inventory IDs and manual names."""
+    with pytest.raises(ValidationError, match="Cannot use both schema_id/table_id"):
+        AltersCreate.model_validate(
+            {
+                "task_name": "t1",
+                "hostname": "host1",
+                "service_id": 1,
+                "schema_id": str(LEGACY_FORM_SCHEMA_ID),
+                "table_id": str(LEGACY_FORM_TABLE_ID),
+                "schema_name": "app",
+                "table_name": "users",
+                "alter": "ADD COLUMN x INT",
+                "recursion_method": "processlist",
+            }
+        )
 
 
-def test_alters_create_normalizes_dual_target_fields_from_kwargs():
-    """Prefer inventory IDs when both target modes are passed as kwargs."""
-    body = AltersCreate(
-        task_name="t1",
-        hostname="host1",
-        service_id=1,
-        schema_id=TASK_WRITE_SCHEMA_ID,
-        table_id=TASK_WRITE_TABLE_ID,
-        schema_name="app",
-        table_name="users",
-        alter="ADD COLUMN x INT",
-    )
-    assert body.schema_id == TASK_WRITE_SCHEMA_ID
-    assert body.table_id == TASK_WRITE_TABLE_ID
-    assert body.schema_name == ""
-    assert body.table_name == ""
+def test_alters_create_rejects_dual_target_fields_from_kwargs():
+    """AltersCreate rejects kwargs that provide both inventory IDs and manual names."""
+    with pytest.raises(ValidationError, match="Cannot use both schema_id/table_id"):
+        AltersCreate(
+            task_name="t1",
+            hostname="host1",
+            service_id=1,
+            schema_id=TASK_WRITE_SCHEMA_ID,
+            table_id=TASK_WRITE_TABLE_ID,
+            schema_name="app",
+            table_name="users",
+            alter="ADD COLUMN x INT",
+        )
 
 
 def test_alters_create_rejects_empty_recursion_method():
