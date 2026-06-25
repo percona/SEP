@@ -72,9 +72,8 @@ S = TypeVar("S", bound=ScriptProtocol)
 class ScriptExecuteWrite(BaseModel):
     """Define the JSON body for ``POST .../snippet/execute``.
 
-    Mirrors :class:`~app.sep.plugins.snippets.models.SnippetExecutionRequest`: the
-    per-script frontmatter arguments go in ``args`` and are validated against the
-    script's dynamic execution model, while ``executor_host`` and ``sudo`` are
+    The per-script frontmatter arguments go in ``args`` and are validated against
+    the script's dynamic execution model, while ``executor_host`` and ``sudo`` are
     execution-level inputs the consumer's ``build_execution_meta`` reads.
 
     :param executor_host: The hostname of the executor that will run the script.
@@ -126,6 +125,10 @@ class ScriptSource(Generic[S]):
     :param list_response: Project a script into its list-row response model.
     :param static_schema: The optional plugin-level schema served at ``GET /schema``;
         when ``None`` the route is not registered.
+    :param list_response_model: The optional response model typing the derived
+        ``GET /`` as ``list[list_response_model]``; when ``None`` the list route
+        stays untyped (back-compatible — a source that does not opt in keeps the
+        original untyped list).
     """
 
     script_dir: Path
@@ -135,6 +138,7 @@ class ScriptSource(Generic[S]):
     build_execution_meta: Callable[[S, ScriptExecuteWrite], BaseModel]
     list_response: Callable[[S], BaseModel]
     static_schema: PluginSchema | None = None
+    list_response_model: type[BaseModel] | None = None
 
 
 def _validate_script_filename(filename: str) -> None:

@@ -304,6 +304,55 @@ class TestSepConfigExportYaml:
         assert "syncer-extra-secret" not in yaml_text
         assert "syncer-inline-secret" not in yaml_text
 
+    async def test_inventory_endpoint_redacted_in_yaml(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Render ``INVENTORY_ENDPOINT`` with the password masked in YAML export."""
+        from app.sep.config import sep_settings
+
+        full_url = "http://inv-user:inv-secret@inventory.internal:8080"
+        try:
+            sep_settings._set_snapshot({"INVENTORY_ENDPOINT": full_url})
+            yaml_text = api_admin_client.get(EXPORT_URL).text
+            export = yaml.safe_load(yaml_text)
+            value = export[SettingClassEnum.SEP_SETTINGS.value]["INVENTORY_ENDPOINT"]
+            assert "inv-secret" not in yaml_text
+            assert "****" in value
+            assert "inv-user" in value
+        finally:
+            sep_settings._set_snapshot({})
+
+    async def test_credential_url_export_matches_list_projection(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Dump ``INVENTORY_ENDPOINT`` to the same redacted value as the LIST endpoint."""
+        from app.sep.config import sep_settings
+
+        full_url = "http://inv-user:inv-secret@inventory.internal:8080"
+        try:
+            sep_settings._set_snapshot({"INVENTORY_ENDPOINT": full_url})
+            export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
+            list_response = api_admin_client.get(SETTINGS_LIST_URL).json()
+            for group in list_response["groups"]:
+                if group["setting_class"] != SettingClassEnum.SEP_SETTINGS.value:
+                    continue
+                for entry in group["settings"]:
+                    if entry["key"] == "INVENTORY_ENDPOINT":
+                        list_value = entry["value"]
+                        break
+                else:
+                    raise AssertionError("INVENTORY_ENDPOINT missing from LIST")
+                break
+            else:
+                raise AssertionError("SEP_SETTINGS group missing from LIST")
+            assert (
+                export[SettingClassEnum.SEP_SETTINGS.value]["INVENTORY_ENDPOINT"]
+                == list_value
+            )
+            assert "inv-secret" not in list_value
+        finally:
+            sep_settings._set_snapshot({})
+
     async def test_complex_field_renders_as_mapping(
         self, api_admin_client: TestClient
     ) -> None:
@@ -330,6 +379,42 @@ class TestSepConfigExportTasksFanOut:
             == SAMPLE_STALENESS_THRESHOLD_SECONDS
         )
         assert tasks_block["API_SECRET"] == REDACTED_SECRET
+
+    async def test_nomad_endpoint_leaf_redacted_in_tasks_export_block(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Merge a redacted ``NOMAD__endpoint`` LIST value into the export YAML."""
+        redacted_endpoint = "http://nomad-user:****@nomad.internal:4646/"
+        mock_tasks_api.get.return_value = {
+            "groups": [
+                {
+                    "setting_class": SettingClassEnum.TASKS_SETTINGS.value,
+                    "settings": [
+                        {
+                            "setting_class": SettingClassEnum.TASKS_SETTINGS.value,
+                            "key": "NOMAD__endpoint",
+                            "key_path": ["NOMAD", "endpoint"],
+                            "value": redacted_endpoint,
+                            "default_value": None,
+                            "type": "Url",
+                            "reload": "hot",
+                            "description": None,
+                            "is_secret": False,
+                            "is_complex": False,
+                            "has_override": True,
+                        }
+                    ],
+                }
+            ]
+        }
+        yaml_text = api_admin_client.get(EXPORT_URL).text
+        export = yaml.safe_load(yaml_text)
+        assert (
+            export[SettingClassEnum.TASKS_SETTINGS.value]["NOMAD__endpoint"]
+            == redacted_endpoint
+        )
+        assert "nomad-secret" not in yaml_text
+        assert "****" in yaml_text
 
     async def test_tasks_http_exception_returns_502(
         self,

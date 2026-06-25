@@ -105,11 +105,13 @@ class TestListAppsForNavigation:
     async def test_additive_fields_carry_registry_values(
         self, api_user_client: TestClient
     ) -> None:
-        """Every entry carries ``display_name`` and a ``custom_ui`` flag (False for legacy)."""
+        """Carry ``display_name`` and a boolean ``custom_ui`` flag on every entry."""
         response = api_user_client.get("/api/apps/")
-        for entry in response.json():
+        entries = {e["app_key"]: e for e in response.json()}
+        for entry in entries.values():
             assert entry["display_name"]
-            assert entry["custom_ui"] is False
+            assert isinstance(entry["custom_ui"], bool)
+        assert entries["atw"]["custom_ui"] is True
 
     async def test_group_and_nav_order_carry_registry_values(
         self, api_user_client: TestClient
@@ -123,8 +125,12 @@ class TestListAppsForNavigation:
         assert isinstance(alerts["nav_order"], int)
 
         snippets = entries["snippets"]
-        assert snippets["group"] is None
+        assert snippets["group"] == "snippets"
         assert isinstance(snippets["nav_order"], int)
+
+        atw = entries["atw"]
+        assert atw["group"] == "snippets"
+        assert isinstance(atw["nav_order"], int)
 
         inventory = entries["inventory"]
         assert inventory["group"] is None

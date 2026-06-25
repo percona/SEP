@@ -128,7 +128,7 @@ class ChecksumsForm(AppFormModel):
     ]
     service_id: Annotated[
         int,
-        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
         Ui(label="Database Host", section="Task"),
     ]
     databases: Annotated[

@@ -25,6 +25,7 @@ import AuthGuard from './components/AuthGuard';
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const AdminAppsPage = lazy(() => import('./pages/AdminAppsPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 const pluginRoutes = buildPluginRoutes();
@@ -48,6 +49,7 @@ export const router = createBrowserRouter([
           { index: true, element: <DashboardPage /> },
           ...pluginRoutes.map(({ path, element }) => ({ path, element })),
           { path: 'settings', element: <SettingsPage /> },
+          { path: 'admin/apps', element: <AdminAppsPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
       },

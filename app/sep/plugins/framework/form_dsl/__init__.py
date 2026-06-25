@@ -20,6 +20,7 @@ from app.sep.plugins.framework.form_dsl.derivation import (
     derive_form_sections,
     derive_plugin_schema,
     find_ref_marker,
+    iter_service_refs,
 )
 from app.sep.plugins.framework.form_dsl.markers import (
     ArgFormat,
@@ -61,4 +62,5 @@ __all__ = [
     "derive_form_sections",
     "derive_plugin_schema",
     "find_ref_marker",
+    "iter_service_refs",
 ]

@@ -891,6 +891,72 @@ class TestSepSettingsSecondaryClasses:
 
 
 @pytest.mark.asyncio
+class TestSepSettingsCredentialUrlRedaction:
+    """Verify that LIST and DETAIL redact embedded URL passwords on credential-bearing fields."""
+
+    _FULL_URL = "http://inv-user:inv-secret@inventory.internal:8080"
+
+    @pytest.fixture(autouse=True)
+    def _reset_snapshot(self) -> Iterator[None]:
+        """Clear override snapshots after each test."""
+        yield
+        sep_settings._set_snapshot({})
+
+    async def test_list_redacts_inventory_endpoint(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """``GET /settings/`` masks ``INVENTORY_ENDPOINT`` password components."""
+        sep_settings._set_snapshot({"INVENTORY_ENDPOINT": self._FULL_URL})
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        entry = _find_setting(
+            response.json(),
+            SettingClassEnum.SEP_SETTINGS.value,
+            "INVENTORY_ENDPOINT",
+        )
+        assert "inv-secret" not in entry["value"]
+        assert "****" in entry["value"]
+        assert "inv-user" in entry["value"]
+
+    async def test_detail_redacts_inventory_endpoint(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """``GET /settings/{class}/{key}`` masks ``INVENTORY_ENDPOINT`` passwords."""
+        sep_settings._set_snapshot({"INVENTORY_ENDPOINT": self._FULL_URL})
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/SEPSettings/INVENTORY_ENDPOINT"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        value = response.json()["value"]
+        assert "inv-secret" not in value
+        assert "****" in value
+        assert "inv-user" in value
+
+
+@pytest.mark.asyncio
+class TestSepSettingsCredentialUrlWriteback:
+    """Verify PATCH does not persist redacted URL display values over stored credentials."""
+
+    async def test_patch_redacted_inventory_endpoint_preserves_password(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Saving an unchanged redacted ``INVENTORY_ENDPOINT`` keeps the real password."""
+        full_url = "http://inv-user:inv-secret@inventory.internal:8080"
+        redacted_url = "http://inv-user:****@inventory.internal:8080"
+        try:
+            sep_settings._set_snapshot({"INVENTORY_ENDPOINT": full_url})
+            response = api_admin_client.patch(
+                "/api/sep/admin/settings/SEPSettings",
+                json={"INVENTORY_ENDPOINT": redacted_url},
+            )
+            assert response.status_code == status.HTTP_200_OK
+            assert "inv-secret" in str(sep_settings.INVENTORY_ENDPOINT)
+            assert "****" not in str(sep_settings.INVENTORY_ENDPOINT)
+        finally:
+            sep_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
 class TestSepSettingsInlineRebind:
     """Fire the SEP rebind callbacks on an inline PATCH.
 

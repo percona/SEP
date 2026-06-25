@@ -23,6 +23,7 @@ from fastapi import APIRouter
 from pytest_mock import MockerFixture
 
 from app.sep.config import Plugin, sep_settings
+from app.sep.plugins.atw.schema import atw_schema
 from app.sep.plugins.framework.apps import TaskExecutionApp
 from app.sep.plugins.framework.base import BaseApp
 from app.sep.plugins.framework.registry import (
@@ -31,6 +32,7 @@ from app.sep.plugins.framework.registry import (
     get_app_registry,
 )
 from app.sep.plugins.inventory.schema import inventory_schema
+from app.sep.plugins.tasks.schema import TASKS_PLUGIN_SCHEMA
 
 
 @pytest.fixture(autouse=True)
@@ -65,19 +67,19 @@ class TestLegacyWrapping:
 
     def test_module_name_only_derives_metadata(self) -> None:
         """A MODULE_NAME-only entry derives name/uri/css/display from the key."""
-        registry = build_app_registry([Plugin(module_name="snippets")])
-        app = registry.get("snippets")
-        assert app.name == "snippets"
-        assert app.uri_path == "/snippets"
-        assert app.css_class == "snippets"
-        assert app.display_name == "snippets"
+        registry = build_app_registry([Plugin(module_name="alters")])
+        app = registry.get("alters")
+        assert app.name == "alters"
+        assert app.uri_path == "/alters"
+        assert app.css_class == "alters"
+        assert app.display_name == "alters"
 
     def test_api_router_is_none_when_opted_out(self) -> None:
         """A plugin opting out of the API mount carries ``api_router is None``."""
         registry = build_app_registry(
-            [Plugin(name="Snippets", module_name="snippets", api_router_path=None)]
+            [Plugin(name="Alters", module_name="alters", api_router_path=None)]
         )
-        assert registry.get("snippets").api_router is None
+        assert registry.get("alters").api_router is None
 
     def test_legacy_plugin_carries_group_and_nav_order(self) -> None:
         """Carry ``group``/``nav_order`` onto the synthesized app from the plugin entry."""
@@ -98,8 +100,8 @@ class TestLegacyWrapping:
 
     def test_legacy_plugin_without_grouping_is_ungrouped(self) -> None:
         """Carry ``None`` for ``group``/``nav_order`` when the plugin omits them."""
-        registry = build_app_registry([Plugin(name="Snippets", module_name="snippets")])
-        app = registry.get("snippets")
+        registry = build_app_registry([Plugin(name="Alters", module_name="alters")])
+        app = registry.get("alters")
         assert app.group is None
         assert app.nav_order is None
 
@@ -110,22 +112,22 @@ class TestFailFast:
     def test_non_router_attribute_raises_type_error(self) -> None:
         """An ``api_router_path`` resolving to a non-``APIRouter`` raises ``TypeError``."""
         plugin = Plugin(
-            name="Snippets",
-            module_name="snippets",
+            name="Alters",
+            module_name="alters",
             api_router_path="app.sep.config.Plugin",
         )
-        with pytest.raises(TypeError, match="snippets"):
+        with pytest.raises(TypeError, match="alters"):
             build_app_registry([plugin])
 
     def test_empty_string_api_router_path_is_no_mount(self) -> None:
         """An empty-string ``api_router_path`` yields ``api_router is None``."""
         plugin = Plugin.model_construct(
             name="Ghost",
-            module_name="app.sep.plugins.snippets",
+            module_name="app.sep.plugins.alters",
             api_router_path="",
         )
         registry = build_app_registry([plugin])
-        assert registry.get("snippets").api_router is None
+        assert registry.get("alters").api_router is None
 
 
 class TestOrderAndLookup:
@@ -378,11 +380,18 @@ class TestGetAppRegistry:
         assert get_app_registry() is get_app_registry()
 
 
-BESPOKE_BASE_APP_PLUGINS = ["alerts", "inventory", "report"]
+BESPOKE_BASE_APP_PLUGINS = [
+    "alert_troubleshooting",
+    "alerts",
+    "dipper",
+    "inventory",
+    "report",
+    "tasks",
+]
 
 
 class TestBespokeBaseAppDefinitions:
-    """Tests for the alerts/inventory/report ``BaseApp`` definition wiring."""
+    """Cover the bespoke ``BaseApp`` definition wiring for every plugin in ``BESPOKE_BASE_APP_PLUGINS``."""
 
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
     def test_module_exports_bare_base_app(self, plugin: str) -> None:
@@ -404,9 +413,15 @@ class TestBespokeBaseAppDefinitions:
         """Carry ``inventory_schema`` on the inventory definition's ``app_schema``."""
         assert get_app_registry().get("inventory").app_schema is inventory_schema
 
-    @pytest.mark.parametrize("plugin", ["alerts", "report"])
+    def test_tasks_definition_carries_schema(self) -> None:
+        """Carry ``TASKS_PLUGIN_SCHEMA`` on the tasks definition's ``app_schema``."""
+        assert get_app_registry().get("tasks").app_schema is TASKS_PLUGIN_SCHEMA
+
+    @pytest.mark.parametrize(
+        "plugin", ["alert_troubleshooting", "alerts", "dipper", "report"]
+    )
     def test_schemaless_plugins_have_no_app_schema(self, plugin: str) -> None:
-        """Register the alerts and report definitions without a schema."""
+        """Register the schemaless bespoke definitions without an ``app_schema``."""
         assert get_app_registry().get(plugin).app_schema is None
 
     @pytest.mark.parametrize("plugin", BESPOKE_BASE_APP_PLUGINS)
@@ -415,3 +430,32 @@ class TestBespokeBaseAppDefinitions:
         package = importlib.import_module(f"app.sep.plugins.{plugin}")
         routes = importlib.import_module(f"app.sep.plugins.{plugin}.routes")
         assert package.router is routes.router
+
+
+class TestAtwDefinition:
+    """Cover the atw ``BaseApp`` definition (no Jinja router, no legacy re-export).
+
+    atw is kept out of ``BESPOKE_BASE_APP_PLUGINS`` because it ships no
+    ``routes.py`` Jinja router and no legacy ``router`` re-export, so the
+    parametrized router/re-export assertions there do not apply.
+    """
+
+    def test_module_exports_bare_base_app(self) -> None:
+        """Assert atw exports a bare ``BaseApp``, not a ``TaskExecutionApp``."""
+        app = importlib.import_module("app.sep.plugins.atw").app
+        assert isinstance(app, BaseApp)
+        assert not isinstance(app, TaskExecutionApp)
+
+    def test_registry_binds_api_router_without_jinja(self) -> None:
+        """Bind atw's API router by identity and mount no Jinja router."""
+        api_routes = importlib.import_module("app.sep.plugins.atw.api_routes")
+        app = get_app_registry().get("atw")
+        assert app.api_router is api_routes.router
+        assert app.jinja_router is None
+
+    def test_definition_carries_schema_and_nav_metadata(self) -> None:
+        """Carry ``atw_schema``, ``custom_ui``, and the shared snippets group."""
+        app = get_app_registry().get("atw")
+        assert app.app_schema is atw_schema
+        assert app.custom_ui is True
+        assert app.group == "snippets"

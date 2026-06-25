@@ -1,1 +1,2 @@
 packages/api/src/generated/** linguist-generated=true
+packages/api/specs/** linguist-generated=true

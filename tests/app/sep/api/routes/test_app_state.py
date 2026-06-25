@@ -243,12 +243,20 @@ class TestUpdateAppState:
         current: AppLifecycleEnum,
         target: AppLifecycleEnum,
     ) -> None:
-        """Each reachable edge updates the row and echoes the resulting state."""
+        """Each reachable edge updates the row and echoes the resulting state.
+
+        An ``ENABLING`` request resolves synchronously to ``ENABLED`` (enabling
+        has no warm-up to wait for), so that is the expected resulting state.
+        """
         override_session.add(AppState(app_key="snippets", lifecycle_state=current))
         override_session.add(
             AppRunningTask(app_key="snippets", celery_task_id="running")
         )
         await override_session.commit()
+
+        expected = (
+            AppLifecycleEnum.ENABLED if target == AppLifecycleEnum.ENABLING else target
+        )
 
         response = api_admin_client.put(
             "/api/admin/apps/snippets/state", json={"lifecycle_state": target}
@@ -257,12 +265,12 @@ class TestUpdateAppState:
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {
             "app_key": "snippets",
-            "enabled": target == AppLifecycleEnum.ENABLED,
-            "lifecycle_state": target,
+            "enabled": expected == AppLifecycleEnum.ENABLED,
+            "lifecycle_state": expected,
         }
         assert (
             await AppStateManager.current_lifecycle(override_session, "snippets")
-            is target
+            is expected
         )
 
     @pytest.mark.parametrize(("current", "target"), _ILLEGAL_EDGES)
@@ -480,6 +488,8 @@ class TestUpdateAppState:
         """The ENABLED→DISABLING edge flips an owned ``PeriodicTask.enabled`` off.
 
         Walking back to ENABLED through the transitional states re-enables it.
+        The ``ENABLING`` request finalizes synchronously to ``ENABLED``, which is
+        what re-arms the schedule.
         """
         override_session.add(
             AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.ENABLED)
@@ -508,16 +518,49 @@ class TestUpdateAppState:
         for target in (
             AppLifecycleEnum.DISABLED,
             AppLifecycleEnum.ENABLING,
-            AppLifecycleEnum.ENABLED,
         ):
             response = api_admin_client.put(
                 "/api/admin/apps/snippets/state", json={"lifecycle_state": target}
             )
             assert response.status_code == status.HTTP_200_OK
+        assert (
+            await AppStateManager.current_lifecycle(override_session, "snippets")
+            is AppLifecycleEnum.ENABLED
+        )
         task = await BasePeriodicTaskManager.first(
             celery_beat_session, name=SNIPPETS_TASK
         )
         assert task.enabled is True
+
+    async def test_enabling_finalizes_to_enabled_immediately(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """A DISABLED→ENABLING request settles straight to ENABLED in one call.
+
+        Enabling has no warm-up to wait for, so the app never lingers in
+        ENABLING (which has no driver to advance it) and the response reflects
+        the terminal ENABLED state.
+        """
+        override_session.add(
+            AppState(app_key="snippets", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_admin_client.put(
+            "/api/admin/apps/snippets/state",
+            json={"lifecycle_state": AppLifecycleEnum.ENABLING},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {
+            "app_key": "snippets",
+            "enabled": True,
+            "lifecycle_state": AppLifecycleEnum.ENABLED,
+        }
+        assert (
+            await AppStateManager.current_lifecycle(override_session, "snippets")
+            is AppLifecycleEnum.ENABLED
+        )
 
     async def test_first_toggle_creates_row_and_gates(
         self,

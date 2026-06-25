@@ -81,6 +81,8 @@ async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<
     syncValue: 5 as number,
     syncOverride: false,
     stalenessOverride: true,
+    sessionMaxAge: 3600 as number,
+    sessionOverride: true,
   };
 
   const settingsList = () => ({
@@ -94,6 +96,17 @@ async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<
             default_value: 5,
             type: 'int',
             has_override: store.syncOverride,
+          }),
+          // A nested submodel, expanded by the backend into one entry per leaf.
+          // The frontend regroups these under an expandable SESSION parent via
+          // each entry's key_path.
+          makeSetting({
+            key: 'SESSION__MAX_AGE',
+            key_path: ['SESSION', 'MAX_AGE'],
+            value: store.sessionMaxAge,
+            default_value: 3600,
+            type: 'int',
+            has_override: store.sessionOverride,
           }),
         ],
       },
@@ -138,15 +151,45 @@ async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<
     }
     if (method === 'PATCH' && pathname === '/api/sep/admin/settings/SEPSettings') {
       const body = route.request().postDataJSON() as Record<string, number>;
-      store.syncValue = body.SYNC_REFRESH_TIME;
-      store.syncOverride = true;
-      return json([makeSetting({ key: 'SYNC_REFRESH_TIME', value: store.syncValue, type: 'int' })]);
+      if ('SYNC_REFRESH_TIME' in body) {
+        store.syncValue = body.SYNC_REFRESH_TIME;
+        store.syncOverride = true;
+        return json([
+          makeSetting({
+            key: 'SYNC_REFRESH_TIME',
+            value: store.syncValue,
+            type: 'int',
+            has_override: true,
+          }),
+        ]);
+      }
+      if ('SESSION__MAX_AGE' in body) {
+        store.sessionMaxAge = body.SESSION__MAX_AGE;
+        store.sessionOverride = true;
+        return json([
+          makeSetting({
+            key: 'SESSION__MAX_AGE',
+            key_path: ['SESSION', 'MAX_AGE'],
+            value: store.sessionMaxAge,
+            type: 'int',
+            has_override: true,
+          }),
+        ]);
+      }
+      return json([]);
     }
     if (
       method === 'DELETE' &&
       pathname === '/api/sep/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS'
     ) {
       store.stalenessOverride = false;
+      return route.fulfill({ status: 204, body: '' });
+    }
+    if (
+      method === 'DELETE' &&
+      pathname === '/api/sep/admin/settings/SEPSettings/SESSION__MAX_AGE'
+    ) {
+      store.sessionOverride = false;
       return route.fulfill({ status: 204, body: '' });
     }
 
@@ -193,5 +236,32 @@ test.describe('Settings page smoke', () => {
     await page.getByLabel('Search settings').fill('STALENESS');
     await expect(page.getByTestId('setting-row-SYNC_REFRESH_TIME')).toBeHidden();
     await expect(page.getByTestId('setting-row-STALENESS_THRESHOLD_SECONDS')).toBeVisible();
+  });
+
+  test('admin can expand a nested setting, edit + save a leaf, and reset it', async ({ page }) => {
+    await mockApis(page, { isAdmin: true });
+    await page.goto('/settings');
+
+    await expect(page.getByTestId('settings-group-SEPSettings')).toBeVisible({ timeout: 10_000 });
+
+    // The nested SESSION submodel renders as a collapsed expandable parent.
+    const sessionGroup = page.getByTestId('nested-setting-group-SESSION');
+    await expect(sessionGroup).toBeVisible();
+    await expect(page.getByTestId('setting-row-SESSION__MAX_AGE')).toBeHidden();
+
+    // Expand it to reveal the per-leaf editable row.
+    await sessionGroup.getByRole('button', { name: 'SESSION nested settings' }).click();
+    const leafRow = page.getByTestId('setting-row-SESSION__MAX_AGE');
+    await expect(leafRow).toBeVisible();
+
+    // Edit + save the leaf; the PATCH is keyed by the __-delimited leaf key and
+    // the rendered value updates on success.
+    await leafRow.getByRole('spinbutton', { name: 'SESSION__MAX_AGE' }).fill('7200');
+    await leafRow.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByTestId('setting-value-SESSION__MAX_AGE')).toHaveText('7200');
+
+    // Reset the overridden leaf; its reset affordance disappears once cleared.
+    await leafRow.getByRole('button', { name: 'Reset to default' }).click();
+    await expect(leafRow.getByRole('button', { name: 'Reset to default' })).toBeHidden();
   });
 });

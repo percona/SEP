@@ -29,7 +29,6 @@ from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (
     hot_field,
-    materialize_fingerprint,
     nested_overridable_field,
 )
 from app.tasks.execution.executors.nomad import NomadExecutor
@@ -60,8 +59,9 @@ class TasksSettings(BaseYamlAppSettings):
     :param UVICORN_PORT: The port to be used by Uvicorn for running the server.
         Defaults to 8002.
     :type UVICORN_PORT: int
-    :param NOMAD: The configuration options for integrating with Nomad.
-    :type NOMAD: NomadOptions
+    :param NOMAD: The Nomad executor used to integrate with Nomad. Per-leaf
+        overrides are accepted via the settings API; the parent object itself
+        is not patchable as a whole.
     :param DATABASE: The database configuration options. Defaults to an SQLite database
         with the name 'tasks.db'.
     :type DATABASE: DatabaseOptions
@@ -82,7 +82,7 @@ class TasksSettings(BaseYamlAppSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
     UVICORN_PORT: int = 8002
-    NOMAD: NomadExecutor = hot_field(..., materializer=materialize_fingerprint)
+    NOMAD: NomadExecutor = nested_overridable_field(...)
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="tasks.db")
     SECURITY_HEADERS: SecurityHeadersOptions | None = nested_overridable_field(
         SecurityHeadersOptions(content_security_policy_strict=False), advanced=True

@@ -32,11 +32,14 @@ from app.tasks.models import TaskBackendEnum
 
 _NOMAD_A = {"endpoint": "https://nomad-a.example.org"}
 _NOMAD_B = {"endpoint": "https://nomad-b.example.org"}
+_NOMAD_WITH_CREDS = {
+    "endpoint": "http://nomad-user:nomad-secret@nomad.internal:4646",
+}
 
 
-def _override_nomad(fingerprint: dict[str, object]) -> None:
-    """Publish a NOMAD override fingerprint on the tasks proxy snapshot."""
-    tasks_settings._set_snapshot({"NOMAD": fingerprint})
+def _override_nomad(config: dict[str, object]) -> None:
+    """Publish a merged ``NomadExecutor`` NOMAD override on the tasks proxy snapshot."""
+    tasks_settings._set_snapshot({"NOMAD": NomadExecutor.model_validate(config)})
 
 
 def test_normalize_passes_through_executor() -> None:
@@ -50,6 +53,12 @@ def test_normalize_reconstructs_executor_from_mapping() -> None:
     result = normalize_nomad_config_value(_NOMAD_A)
     assert isinstance(result, NomadExecutor)
     assert str(result.endpoint).startswith("https://nomad-a.example.org")
+
+
+def test_normalize_reconstructs_executor_with_embedded_credentials() -> None:
+    """A fingerprint with embedded URL credentials rebuilds a usable executor."""
+    result = normalize_nomad_config_value(_NOMAD_WITH_CREDS)
+    assert "nomad-secret" in str(result.endpoint)
 
 
 def test_normalize_raises_on_invalid_mapping() -> None:
@@ -69,6 +78,15 @@ def test_current_raises_before_start() -> None:
     holder = NomadLifecycle(FastAPI())
     with pytest.raises(RuntimeError, match="not started"):
         _ = holder.current
+
+
+@pytest.mark.asyncio
+async def test_aenter_enters_executor_with_embedded_credentials() -> None:
+    """``__aenter__`` preserves embedded URL credentials from the override fingerprint."""
+    app = FastAPI()
+    _override_nomad(_NOMAD_WITH_CREDS)
+    async with NomadLifecycle(app) as holder:
+        assert "nomad-secret" in str(holder.current.endpoint)
 
 
 @pytest.mark.asyncio
@@ -112,7 +130,7 @@ async def test_reconcile_construction_failure_keeps_old_executor() -> None:
     _override_nomad(_NOMAD_A)
     async with NomadLifecycle(FastAPI()) as holder:
         old = holder.current
-        _override_nomad({"endpoint": "not-a-url"})
+        tasks_settings._set_snapshot({"NOMAD": {"endpoint": "not-a-url"}})
         with pytest.raises(ValidationError):
             await holder.reconcile()
         assert holder.current is old
@@ -124,13 +142,13 @@ def test_get_executor_returns_executor_unchanged_without_override() -> None:
     assert get_executor(TaskBackendEnum.NOMAD) is tasks_settings.NOMAD
 
 
-def test_get_executor_reconstructs_executor_under_override() -> None:
-    """With an override, request-less NOMAD resolution returns a usable executor."""
+def test_get_executor_returns_snapshot_executor_under_override() -> None:
+    """Return the snapshot executor for request-less NOMAD resolution under an override."""
     _override_nomad(_NOMAD_A)
     result = get_executor(TaskBackendEnum.NOMAD)
     assert isinstance(result, NomadExecutor)
     assert str(result.endpoint).startswith("https://nomad-a.example.org")
-    # The reconstructed executor can build its sync sub-client without a session.
+    # The snapshot executor can build its sync sub-client without a session.
     assert result.backend is not None
 
 

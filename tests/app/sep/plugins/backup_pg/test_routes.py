@@ -28,7 +28,7 @@ from app.sep.connectivity import (
 )
 from app.sep.main import sep_app
 from app.sep.plugins.backup_pg.deps import (
-    build_backup_task_payload_from_form,
+    build_backup_task_payload,
     get_backups_index_context,
 )
 from app.tasks.models import (
@@ -127,9 +127,7 @@ def test_pg_backups_create_skips_connectivity_check_when_opted_out(
         },
     )
 
-    sep_app.dependency_overrides[build_backup_task_payload_from_form] = (
-        lambda: fake_task_write
-    )
+    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
 
     response = test_client.post(
         "/backup_pg/", data=backup_create.model_dump(), follow_redirects=False

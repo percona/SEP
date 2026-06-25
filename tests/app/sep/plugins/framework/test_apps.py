@@ -53,6 +53,7 @@ from app.sep.plugins.framework.form_dsl import (
     ArgFormat,
     FormLayout,
     SectionLayout,
+    ServiceRef,
     Ui,
 )
 from app.sep.plugins.framework.schema import (
@@ -106,6 +107,38 @@ class _NoTaskNameForm(AppFormModel):
     """Represent a synthetic create form that omits the mandatory ``task_name`` field."""
 
     label: Annotated[str, Ui(label="Label", section="main")] = ""
+
+
+class _TwoMarkedServiceForm(AppFormModel):
+    """Represent a create form declaring two ``check_connectivity`` services."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_a: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
+        Ui(label="A", section="main"),
+    ] = None
+    service_b: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
+        Ui(label="B", section="main"),
+    ] = None
+
+
+class _TwoUnmarkedServiceForm(AppFormModel):
+    """Represent a create form declaring two unmarked services (no primary)."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    service_a: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(label="A", section="main"),
+    ] = None
+    service_b: Annotated[
+        int | None,
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,)),
+        Ui(label="B", section="main"),
+    ] = None
 
 
 class _BadArgFormatForm(AppFormModel):
@@ -412,6 +445,29 @@ class TestCreateRoute:
         )
         assert posted["alert_on_fail"] is True
 
+    def test_create_threads_alert_detail_builder(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert the app's ``alert_detail_builder`` is stamped onto the posted task."""
+        tasks_api = _make_tasks_api(created_task=_task_dict("new-task"))
+        client = _client(
+            _synth_app(alert_detail_builder="pkg.mod:builder"),
+            tasks_api,
+            regular_user,
+            inventory_api=_make_inventory_api(),
+        )
+
+        response = client.post(
+            f"{_BASE}/",
+            json={"task_name": "new-task", "service_id": 1, "host": _EXECUTOR_HOST},
+        )
+
+        assert response.status_code == status.HTTP_201_CREATED
+        create_call = next(
+            call for call in tasks_api.post.await_args_list if call.args[0] == "/"
+        )
+        assert create_call.kwargs["json"]["alert_detail_builder"] == "pkg.mod:builder"
+
     def test_create_response_model_with_context_provider_succeeds(
         self, regular_user: CasdoorUser
     ) -> None:
@@ -625,13 +681,23 @@ class TestDefinitionValidation:
         with pytest.raises(ValueError, match="layout"):
             _synth_app(views=Views(list_view=_LIST_VIEW))
 
-    def test_create_disabled_with_connectivity_check_raises(self) -> None:
-        """Assert a create-disabled app with connectivity_check is rejected."""
-        with pytest.raises(ValueError, match="connectivity_check"):
-            _synth_app(
-                capabilities=AppCapabilities(create=False),
-                connectivity_check=True,
-            )
+    def test_two_check_connectivity_services_raises(self) -> None:
+        """Reject a create_model declaring more than one check_connectivity service."""
+        with pytest.raises(ValueError, match="check_connectivity"):
+            _synth_app(create_model=_TwoMarkedServiceForm)
+
+    def test_two_unmarked_services_without_primary_raises(self) -> None:
+        """Reject two unmarked services that leave no determinable primary."""
+        with pytest.raises(ValueError, match="primary"):
+            _synth_app(create_model=_TwoUnmarkedServiceForm)
+
+    def test_single_unmarked_service_does_not_probe(self) -> None:
+        """Accept a single unmarked service as the sole primary, with no probe."""
+        assert _synth_app().connectivity_check is False
+
+    def test_marked_service_enables_probe(self) -> None:
+        """Derive ``connectivity_check`` from a ``check_connectivity`` service."""
+        assert _synth_app(connectivity_check=True).connectivity_check is True
 
     def test_create_disabled_with_create_response_model_raises(self) -> None:
         """Assert a create-disabled app with create_response_model is rejected."""

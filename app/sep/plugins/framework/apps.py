@@ -50,6 +50,7 @@ from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     derive_plugin_schema,
     FormLayout,
+    iter_service_refs,
 )
 from app.sep.plugins.framework.responses import (
     BaseTaskResponse,
@@ -201,6 +202,9 @@ class TaskExecutionApp(BaseApp):
         capabilities). Its ``layout`` is required when ``create_model`` is set.
     :param task_spec_builder: A pure ``(form, resolved) -> EnvelopeSpec`` builder
         for the three-phase create path. Defaults to ``None``.
+    :param alert_detail_builder: The ``"module:function"`` path of a plugin
+        callable that enriches the created task's failure alert, stamped onto the
+        ``TaskWrite`` by the three-phase create path. Defaults to ``None``.
     :param payload_builder: A ``(form, inventory_api) -> TaskWrite`` dependency
         used directly as the create payload, bypassing the three-phase path.
         Required for a ``schema=`` app (no ``AppFormModel`` to introspect refs).
@@ -220,8 +224,6 @@ class TaskExecutionApp(BaseApp):
         all-default :class:`AppCapabilities`.
     :param pagination: A ``make_pagination_dep(...)`` callable; when set the list
         route paginates. Defaults to ``None``.
-    :param connectivity_check: Whether the create route runs the post-creation
-        connectivity probe. Defaults to ``False``.
     :param create_form_encoded: Whether the derived create route accepts a
         form-urlencoded body (``Form()``) instead of the default JSON body
         (``Body()``). A create-route option, so it is rejected unless
@@ -299,6 +301,11 @@ class TaskExecutionApp(BaseApp):
         update guard (for example a protected-task check). Requires
         ``capabilities.update`` and is rejected alongside a full ``update_handler``.
         Defaults to ``()``.
+    :param delete_guard: Extra route dependencies (guards) appended after the auth
+        guard on the *derived* DELETE — the handler-less escape hatch for a
+        per-plugin delete guard (for example a running-task conflict check).
+        Requires ``capabilities.delete`` and is rejected alongside a full
+        ``delete_handler``. Defaults to ``()``.
     :param description: The plugin description threaded into the derived
         ``GET /schema`` (``PluginSchema.description``). Defaults to ``None``.
     :param static_mounts: Authenticated static mounts for the app's payload
@@ -312,12 +319,12 @@ class TaskExecutionApp(BaseApp):
     response_model: type[BaseModel] = BaseTaskResponse
     views: SkipValidation[Views] = Views()
     task_spec_builder: TaskSpecBuilder | None = None
+    alert_detail_builder: str | None = None
     payload_builder: Callable[..., Awaitable[TaskWrite]] | None = None
     script_source: SkipValidation[ScriptSource | None] = None
     get_task: Callable[..., Awaitable[Task]] | None = None
     capabilities: AppCapabilities = AppCapabilities()
     pagination: PaginationDependency | None = None
-    connectivity_check: bool = False
     create_form_encoded: bool = False
     cascade: SkipValidation[Cascade | None] = None
     extra_routes: tuple[APIRouter, ...] = ()
@@ -340,10 +347,29 @@ class TaskExecutionApp(BaseApp):
     create_extra_deps: tuple[params.Depends, ...] = ()
     create_response_builder: SkipValidation[TaskResponseBuilder | None] = None
     update_guard: tuple[params.Depends, ...] = ()
+    delete_guard: tuple[params.Depends, ...] = ()
     description: str | None = None
     static_mounts: tuple[StaticMount, ...] = ()
 
     _task_getter: Callable[..., Awaitable[Task]] | None = PrivateAttr(default=None)
+
+    @property
+    def connectivity_check(self) -> bool:
+        """Return whether the derived create route runs the connectivity probe.
+
+        An app probes iff the create capability is enabled and its ``create_model``
+        declares a ``check_connectivity=True`` ``ServiceRef`` (top-level or nested
+        in a one-of branch); that marked service is also the envelope's primary.
+        Replaces the former app-level flag, so a single per-reference marker drives
+        both the probe and the connectivity-service selection.
+
+        :return: ``True`` when the app derives a probing create route.
+        """
+        if not self.capabilities.create or self.create_model is None:
+            return False
+        return any(
+            ref.check_connectivity for ref in iter_service_refs(self.create_model)
+        )
 
     @model_validator(mode="after")
     def _build_api_router(self) -> Self:
@@ -362,15 +388,52 @@ class TaskExecutionApp(BaseApp):
         """Reject an internally-inconsistent definition at construction.
 
         :raises ValueError: When the schema source, the create-payload path, the
-            route knobs, the response/filter knobs, the list-view columns, or the
-            ``ArgFormat`` markers are inconsistent (see the per-aspect helpers).
+            connectivity references, the route knobs, the response/filter knobs, the
+            list-view columns, or the ``ArgFormat`` markers are inconsistent (see the
+            per-aspect helpers).
         """
         self._validate_schema_source()
         self._validate_create_path()
+        self._validate_connectivity_refs()
         self._validate_route_knobs()
         self._validate_response_knobs()
         self._validate_view_columns()
         self._validate_arg_formats()
+
+    def _validate_connectivity_refs(self) -> None:
+        """Reject an ambiguous or unselectable connectivity-service configuration.
+
+        A model-first app probes the ``check_connectivity=True`` ``ServiceRef`` and
+        makes it the envelope's primary. At most one service may be marked — a
+        second would make the probe target ambiguous — and a model declaring two or
+        more ``ServiceRef`` fields with none marked has no determinable primary. A
+        single unmarked ``ServiceRef`` is valid: it is the sole primary and the app
+        does not probe. The two-or-more-unmarked rejection is about primary
+        disambiguation, not the probe: ``assemble_envelope`` unconditionally stamps
+        the primary service onto every task's connectivity host/port and
+        ``service_name``, so the primary must be unambiguous even when no probe runs.
+
+        :raises ValueError: When more than one ``ServiceRef`` is marked
+            ``check_connectivity``, or when two or more ``ServiceRef`` fields leave
+            no determinable connectivity primary.
+        """
+        if self.create_model is None:
+            return
+        refs = list(iter_service_refs(self.create_model))
+        marked = [ref for ref in refs if ref.check_connectivity]
+        if len(marked) > 1:
+            raise ValueError(
+                "TaskExecutionApp: a create_model declares "
+                f"{len(marked)} check_connectivity=True ServiceRef fields; at most "
+                "one service is the connectivity primary — mark exactly one"
+            )
+        if not marked and len(refs) > 1:
+            raise ValueError(
+                "TaskExecutionApp: a create_model declares "
+                f"{len(refs)} ServiceRef fields with none marked "
+                "check_connectivity=True; no connectivity primary is determinable — "
+                "mark exactly one"
+            )
 
     def _validate_schema_source(self) -> None:
         """Validate the create_model / ``schema=`` source is unambiguous.
@@ -426,7 +489,7 @@ class TaskExecutionApp(BaseApp):
         :raises ValueError: When a ``schema=`` app supplies a ``task_spec_builder``;
             when ``task_spec_builder`` collides with ``script_source`` or
             ``payload_builder``; when a ``script_source`` app sets a model-first
-            create-route option (``connectivity_check``, ``create_response_model``,
+            create-route option (``create_response_model``,
             ``create_response_builder``, ``create_form_encoded``, or
             ``create_extra_deps``) the script branch would silently drop; when a
             ``payload_builder`` app also sets ``create_form_encoded`` (which governs
@@ -446,17 +509,16 @@ class TaskExecutionApp(BaseApp):
                 "exclusive"
             )
         if self.script_source is not None and (
-            self.connectivity_check
-            or self.create_response_model is not None
+            self.create_response_model is not None
             or self.create_response_builder is not None
             or self.create_form_encoded
             or self.create_extra_deps
         ):
             raise ValueError(
-                "TaskExecutionApp: connectivity_check, create_response_model, "
-                "create_response_builder, create_form_encoded, and create_extra_deps "
-                "are model-first create-route options; a script_source app derives no "
-                "create route — drop them"
+                "TaskExecutionApp: create_response_model, create_response_builder, "
+                "create_form_encoded, and create_extra_deps are model-first "
+                "create-route options; a script_source app derives no create route — "
+                "drop them"
             )
         if self.payload_builder is not None and self.task_spec_builder is not None:
             raise ValueError(
@@ -480,15 +542,14 @@ class TaskExecutionApp(BaseApp):
                 "task_spec_builder or a payload_builder"
             )
         if not self.capabilities.create and (
-            self.connectivity_check
-            or self.create_response_model is not None
+            self.create_response_model is not None
             or self.create_response_builder is not None
             or self.create_form_encoded
         ):
             raise ValueError(
-                "TaskExecutionApp: connectivity_check, create_response_model, "
-                "create_response_builder, and create_form_encoded are create-route "
-                "options; enable capabilities.create or drop them"
+                "TaskExecutionApp: create_response_model, create_response_builder, "
+                "and create_form_encoded are create-route options; enable "
+                "capabilities.create or drop them"
             )
         if self.create_response_model is not None and (
             self.create_response_builder is not None
@@ -539,6 +600,17 @@ class TaskExecutionApp(BaseApp):
                 "TaskExecutionApp: update_guard guards the derived PUT; a full "
                 "update_handler must declare its own dependencies — drop update_guard "
                 "or the update_handler"
+            )
+        if self.delete_guard and not self.capabilities.delete:
+            raise ValueError(
+                "TaskExecutionApp: delete_guard guards the derived DELETE; enable "
+                "capabilities.delete or drop delete_guard"
+            )
+        if self.delete_guard and self.delete_handler is not None:
+            raise ValueError(
+                "TaskExecutionApp: delete_guard guards the derived DELETE; a full "
+                "delete_handler must declare its own dependencies — drop delete_guard "
+                "or the delete_handler"
             )
         derives_update = self.capabilities.update and self.update_handler is None
         if derives_update and not self.capabilities.create:
@@ -672,6 +744,7 @@ class TaskExecutionApp(BaseApp):
             update_extra_deps=self.update_guard,
             delete_enabled=self.capabilities.delete,
             delete_handler=self.delete_handler,
+            delete_extra_deps=self.delete_guard,
         )
         router.include_router(crud)
 
@@ -831,9 +904,10 @@ class TaskExecutionApp(BaseApp):
         Use the ``payload_builder`` escape hatch verbatim when supplied;
         otherwise build the three-phase (Resolve → Assemble → Envelope)
         dependency over the ``create_model``, reading the envelope's ``name`` and
-        ``alert_on_fail`` from the parsed form. The body parameter is encoded as
-        JSON (``Body()``) by default, or form-urlencoded (``Form()``) when
-        ``create_form_encoded`` is set.
+        ``alert_on_fail`` from the parsed form and stamping the app's
+        ``alert_detail_builder``. The body parameter is encoded as JSON (``Body()``)
+        by default, or form-urlencoded (``Form()``) when ``create_form_encoded`` is
+        set.
 
         :return: The create-payload dependency declaring the request body.
         """
@@ -842,6 +916,7 @@ class TaskExecutionApp(BaseApp):
 
         spec_builder = self.task_spec_builder
         owner = self.owner
+        alert_detail_builder = self.alert_detail_builder
         body_marker = Form() if self.create_form_encoded else Body()
         form_param = Annotated[self.create_model, body_marker]
 
@@ -856,6 +931,7 @@ class TaskExecutionApp(BaseApp):
                 name=form.task_name,
                 owner=owner,
                 alert_on_fail=getattr(form, "alert_on_fail", False),
+                alert_detail_builder=alert_detail_builder,
             )
 
         return _create_payload

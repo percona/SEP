@@ -26,13 +26,17 @@ from app.sep.connectivity import (
     get_latest_connectivity_result,
 )
 from app.sep.main import sep_app
-from app.sep.plugins.checksums.deps import build_checksums_task_payload
+from app.sep.plugins.checksums.deps import (
+    build_checksums_task_payload,
+    get_checksums_task,
+)
 from app.sep.plugins.checksums.models import ChecksumsCreate
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedServiceFactory,
     GeneratedTaskFactory,
+    TaskFactory,
 )
 
 
@@ -182,3 +186,56 @@ def test_legacy_update_assembles_exact_args(
     assert put_json["data"]["meta"]["args"] == (
         "h=db-host,P=3306, --recursion-method=hosts --tables=db.t1"
     )
+
+
+@pytest.fixture
+def created_checksums_task():
+    """Return a fake Checksums task with renderable detail-page data."""
+    return TaskFactory.build(
+        owner=TaskOwner.CHECKSUMS,
+        data={
+            "meta": {
+                "command": "pt-table-checksum",
+                "args": "h=localhost,P=3306",
+                "target": "localhost",
+            }
+        },
+    )
+
+
+@pytest.fixture
+def _mock_get_checksums_task_dep(created_checksums_task):
+    """Mock the checksums task dependency with a built task."""
+    sep_app.dependency_overrides[get_checksums_task] = lambda: created_checksums_task
+    yield
+    sep_app.dependency_overrides = {}
+
+
+@pytest.mark.usefixtures("_mock_get_checksums_task_dep", "mock_get_username_mapping")
+def test_checksums_detail_uses_own_delete_route(
+    test_client, mock_task_api_dep, mock_inventory_api_dep, created_checksums_task
+):
+    """Assert checksums_detail renders its own delete route, not tasks_delete.
+
+    Regression guard: the shared ``run-python-form`` partial dropped its
+    ``tasks_delete`` fallback, so the rendered delete form must point at the
+    owner's ``checksums_delete`` URL carried on ``task.delete_url``.
+    """
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            {},  # /hosts/
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # history
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # running_tasks
+            [],  # stats
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
+        ]
+    )
+    mock_inventory_api_dep.get = AsyncMock(
+        return_value={"items": [], "total": 0, "offset": 0, "limit": 50}
+    )
+
+    response = test_client.get(f"/checksums/{created_checksums_task.name}")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert f"/checksums/{created_checksums_task.name}/delete" in response.text
+    assert f"/tasks/{created_checksums_task.name}/delete" not in response.text

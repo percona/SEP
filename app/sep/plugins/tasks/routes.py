@@ -16,29 +16,20 @@
 """Define routes for the Tasks Plugin."""
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Form, Request, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse
 
-from app.core.alerts.config import alert_settings
 from app.sep.config import sep_settings
 from app.sep.deps import (
     AVAILABLE_TIMEZONES,
     DefaultContext,
     ExecutorHostsCtx,
     IsAuthenticated,
-    IsCsrfValidated,
     TaskAPI,
 )
 from app.sep.plugins.tasks.deps import TaskDep
-from app.sep.plugins.tasks.models import TaskCreateRequest
-from app.tasks.models import (
-    TaskBackendEnum,
-    TaskExecuteRequest,
-    TaskHistoryStatusEnum,
-    TaskOwner,
-)
+from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -60,37 +51,12 @@ async def tasks_list(
         "/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
     )
     context["running_tasks"] = response["items"]
-    context["available_backends"] = TaskBackendEnum
-    context["available_owners"] = TaskOwner
-    context["alert_on_fail_available"] = bool(alert_settings.PROVIDERS)
     logger.debug("context: %s", context["running_tasks"])
     return templates.TemplateResponse(
         request=request,
         name="tasks/list.html.j2",
         context=context,
     )
-
-
-@router.post(
-    "/", dependencies=[IsAuthenticated, IsCsrfValidated], response_class=HTMLResponse
-)
-async def task_create(
-    request: Request,
-    create_task_form: Annotated[TaskCreateRequest, Form()],
-    tasks_api: TaskAPI,
-) -> RedirectResponse:
-    """Create task."""
-    logger.debug("Create task: %s", create_task_form)
-    task_data = create_task_form.model_dump(exclude={"payload", "fmt"})
-    task_data["data"] = await tasks_api.post(
-        "/transform/",
-        json=create_task_form.model_dump(include={"payload", "fmt"}),
-        params={"backend": create_task_form.backend},
-    )
-
-    await tasks_api.post("/", json=task_data)
-    task_path = request.url_for("tasks_detail", task_name=create_task_form.name)
-    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/{task_name}", dependencies=[IsAuthenticated], response_class=HTMLResponse)
@@ -105,14 +71,12 @@ async def tasks_detail(
     context["task"] = task
     context["tasks"] = [task]
     if not task.is_template:
-        context["periodic_tasks"] = await tasks_api.get(f"/{task.name}/periodic/")
         response = await tasks_api.get(f"/{task.name}/history/")
         context["history"] = response["items"]
         response = await tasks_api.get(
             f"/{task.name}/history/", params={"status": TaskHistoryStatusEnum.RUNNING}
         )
         context["running_tasks"] = response["items"]
-    context["available_owners"] = TaskOwner
     context["task_data"] = task.data
     context["executor_hosts"] = executor_hosts_ctx.as_template_list()
     context["AVAILABLE_TIMEZONES"] = AVAILABLE_TIMEZONES
@@ -121,29 +85,3 @@ async def tasks_detail(
         name="tasks/view.html.j2",
         context=context,
     )
-
-
-@router.post("/{task_name}", dependencies=[IsAuthenticated, IsCsrfValidated])
-async def tasks_execute(
-    request: Request,
-    task: TaskDep,
-    tasks_api: TaskAPI,
-    execute_data: Annotated[TaskExecuteRequest, Form()],
-) -> RedirectResponse:
-    """Execute task."""
-    await tasks_api.post(f"/execute/{task.name}", json=execute_data.model_dump())
-    task_path = request.url_for("tasks_detail", task_name=task.name)
-    return RedirectResponse(task_path, status_code=status.HTTP_303_SEE_OTHER)
-
-
-@router.post(
-    "/{task_name}/delete",
-    dependencies=[IsAuthenticated, IsCsrfValidated],
-)
-async def tasks_delete(
-    task: TaskDep,
-    tasks_api: TaskAPI,
-) -> RedirectResponse:
-    """Delete task."""
-    await tasks_api.delete(f"/{task.name}")
-    return RedirectResponse("/tasks", status_code=status.HTTP_303_SEE_OTHER)
