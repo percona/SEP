@@ -356,7 +356,7 @@ if {"snippets", "dipper"} & imported_plugins:
     sep_app.include_router(artifacts_router, prefix="/artifacts")
 
 sep_app.include_router(api_router)
-sep_app.include_router(top_level_api_router)
+sep_app.include_router(top_level_api_router, include_in_schema=False)
 
 if "snippets" in imported_plugins:
     sep_app.mount(
