@@ -126,8 +126,10 @@ export {
   ADMIN_APPS_QUERY_KEY,
   ADMIN_APP_MUTATION_KEY,
   useConfigExport,
+  useAppInfo,
+  APP_INFO_QUERY_KEY,
 } from './hooks';
-export type { AlertConfig, DashboardStats, EnabledApp } from './hooks';
+export type { AlertConfig, DashboardStats, EnabledApp, AppInfo } from './hooks';
 export type {
   AdminApp,
   AppStateResult,
