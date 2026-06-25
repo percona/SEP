@@ -4944,71 +4944,55 @@ export interface components {
     };
     /**
      * AltersCreate
-     * @description Represent an Alters creation form.
+     * @description Represent the single model-first declaration of the Alters create form.
+     *
+     *     This one declaration drives the JSON create/update request body, the Jinja
+     *     ``Form()`` body, and — via
+     *     :func:`~app.sep.plugins.framework.form_dsl.derive_plugin_schema` — the
+     *     ``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are
+     *     enforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /
+     *     ``Forbidden`` gates plus ``__form_rules__``), not by a decorator.
+     *
+     *     The schema-display defaults for ``dsn_table`` and ``progress`` diverge from the
+     *     request-body defaults: the body defaults both to the empty string (so the
+     *     ``dsn_table`` forbidden gate passes for non-``dsn`` recursion, and an omitted
+     *     ``progress`` emits no value), while the form renders the Percona-Toolkit DSN
+     *     table and ``time,10`` via ``Ui(default=...)``.
      *
      *     :param task_name: The name of the task to be created.
-     *     :type task_name: NonEmptyStr
      *     :param hostname: The target hostname for the task execution.
-     *     :type hostname: NonEmptyStr
      *     :param service_id: The Inventory ID of the database service to connect to.
-     *     :type service_id: int
      *     :param schema_id: The database schema ID on which the task will operate.
-     *     :type schema_id: int | None
      *     :param table_id: The table ID within the schema to be altered.
-     *     :type table_id: int | None
      *     :param schema_name: Manual schema name when ``schema_id`` is not set.
-     *     :type schema_name: str
      *     :param table_name: Manual table name when ``table_id`` is not set.
-     *     :type table_name: str
      *     :param recursion_method: The method for handling recursion.
-     *     :type recursion_method: NonEmptyStr
      *     :param alter: The specific alter command to be executed.
-     *     :type alter: NonEmptyStr
-     *     :param dsn_table: The DSN table for recursion method when using ``dsn``. When empty,
-     *         the command builder uses ``D=percona,t=dsns`` (Percona Toolkit convention).
-     *     :type dsn_table: str
+     *     :param dsn_table: The DSN table for recursion method when using ``dsn``. When
+     *         recursion is ``dsn`` and this field is omitted or empty, it defaults to
+     *         ``D=percona,t=dsns`` (Percona Toolkit convention).
      *     :param pause_file: Execution will be paused while the file specified by this param exists.
-     *     :type pause_file: str
      *     :param new_table_name: New table name before it is swapped.
-     *     :type new_table_name: str
      *     :param print_arg: Print SQL statements to STDOUT.
-     *     :type print_arg: bool
      *     :param progress: Print progress reports to STDERR while copying rows.
-     *     :type progress: str
      *     :param no_swap_tables: Swap the original table and the new, altered table.
-     *     :type no_swap_tables: bool
      *     :param no_drop_old_table: Drop the original table after renaming it.
-     *     :type no_drop_old_table: bool
      *     :param no_drop_new_table: Drop the new table if copying the original table fails.
-     *     :type no_drop_new_table: bool
      *     :param no_drop_triggers: Drop triggers on the old table.
-     *     :type no_drop_triggers: bool
      *     :param tries: How many times to try critical operations.
-     *     :type tries: str
      *     :param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.
-     *     :type set_vars: str
      *     :param critical_load: Examine SHOW GLOBAL STATUS after every chunk, and abort if the load is too high.
-     *     :type critical_load: str
      *     :param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are
      *         higher than their thresholds.
-     *     :type max_load: str
      *     :param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.
-     *     :type chunk_time: str
      *     :param max_lag: Pause the data copy until all replicas lag is less than this value.
-     *     :type max_lag: str
      *     :param max_flow_ctl: Pause when PXC flow control exceeds this value.
-     *     :type max_flow_ctl: str
      *     :param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.
-     *     :type extra_args: str
-     *     :param alert_on_fail: If True, send an alert if the task fails. Defaults to False.
-     *     :type alert_on_fail: bool
      *     :param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor
      *         (user/password): pre-checks always use this path; execute/dry-run use pt-osc's
      *         default ~/.my.cnf unless this is set to another path, then --defaults-file is added.
-     *     :type pre_checks_mysql_config_file: str
      *     :param continue_on_pre_check_failure: When True, continue to the run task even if
      *         pre-checks fail (overrides the schema's default ``on_failure="halt"`` policy).
-     *     :type continue_on_pre_check_failure: bool
      */
     AltersCreate: {
       /**
@@ -5018,53 +5002,32 @@ export interface components {
       alert_on_fail: boolean;
       /** Alter */
       alter: string;
-      /**
-       * Chunk Time
-       * @default
-       */
-      chunk_time: string;
+      /** Chunk Time */
+      chunk_time?: string | null;
       /**
        * Continue On Pre Check Failure
        * @default false
        */
       continue_on_pre_check_failure: boolean;
-      /**
-       * Critical Load
-       * @default
-       */
-      critical_load: string;
+      /** Critical Load */
+      critical_load?: string | null;
       /**
        * Dsn Table
        * @default
        */
       dsn_table: string;
-      /**
-       * Extra Args
-       * @default
-       */
-      extra_args: string;
+      /** Extra Args */
+      extra_args?: string | null;
       /** Hostname */
       hostname: string;
-      /**
-       * Max Flow Ctl
-       * @default
-       */
-      max_flow_ctl: string;
-      /**
-       * Max Lag
-       * @default
-       */
-      max_lag: string;
-      /**
-       * Max Load
-       * @default
-       */
-      max_load: string;
-      /**
-       * New Table Name
-       * @default
-       */
-      new_table_name: string;
+      /** Max Flow Ctl */
+      max_flow_ctl?: string | null;
+      /** Max Lag */
+      max_lag?: string | null;
+      /** Max Load */
+      max_load?: string | null;
+      /** New Table Name */
+      new_table_name?: string | null;
       /**
        * No Drop New Table
        * @default false
@@ -5085,11 +5048,8 @@ export interface components {
        * @default false
        */
       no_swap_tables: boolean;
-      /**
-       * Pause File
-       * @default
-       */
-      pause_file: string;
+      /** Pause File */
+      pause_file?: string | null;
       /**
        * Pre Checks Mysql Config File
        * @default ~/.my.cnf
@@ -5105,47 +5065,35 @@ export interface components {
        * @default
        */
       progress: string;
-      /** Recursion Method */
+      /**
+       * Recursion Method
+       * @default processlist
+       */
       recursion_method: string;
       /** Schema Id */
       schema_id?: number | null;
-      /**
-       * Schema Name
-       * @default
-       */
-      schema_name: string;
+      /** Schema Name */
+      schema_name?: string | null;
       /** Service Id */
       service_id: number;
-      /**
-       * Set Vars
-       * @default
-       */
-      set_vars: string;
+      /** Set Vars */
+      set_vars?: string | null;
       /** Table Id */
       table_id?: number | null;
-      /**
-       * Table Name
-       * @default
-       */
-      table_name: string;
+      /** Table Name */
+      table_name?: string | null;
       /** Task Name */
       task_name: string;
-      /**
-       * Tries
-       * @default
-       */
-      tries: string;
+      /** Tries */
+      tries?: string | null;
     };
     /**
      * AltersExecuteWrite
      * @description Represent a JSON request body for executing an alters task.
      *
      *     :param eta: Optional future datetime to schedule execution.
-     *     :type eta: FutureDatetime | None
      *     :param chain_task_names: Optional list of task names to chain after this one.
-     *     :type chain_task_names: list[str] | None
      *     :param chain_on_failure: Whether to run chained tasks even on failure.
-     *     :type chain_on_failure: bool | None
      */
     AltersExecuteWrite: {
       /** Chain On Failure */
@@ -5160,9 +5108,7 @@ export interface components {
      * @description Represent the response from POST /api/plugins/alters/{task_name}/execute.
      *
      *     :param task_name: The name of the task that was executed.
-     *     :type task_name: str
      *     :param task_id: The id of the task-history row created by the tasks API.
-     *     :type task_id: int | None
      */
     AltersExecutionResponse: {
       /** Task Id */
@@ -5172,35 +5118,57 @@ export interface components {
     };
     /**
      * AltersTaskResponse
-     * @description Represent an alters task API response.
+     * @description Represent an alters task API response for list and detail surfaces.
      *
+     *     The create/update routes return the
+     *     :data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models
+     *     derived from this base; both add ``connectivity_warning`` (and, for create,
+     *     ``pre_checks_auto_fire_warning``) per the framework's derived create-response
+     *     standard, so the always-null warning fields stay off list/detail rows.
+     *
+     *     :param name: The name of the alters task.
+     *     :param owner: The entity or user that owns the task.
+     *     :param service_type: The type of database service (always MySQL for alters).
+     *     :param status: The current execution status of the task.
      *     :param id: The unique identifier for the alters task.
-     *     :type id: int | None
      *     :param backend: The backend worker/engine executing the task.
-     *     :type backend: TaskBackendEnum
      *     :param data: The raw configuration and parameters used for the alter execution.
-     *     :type data: dict[str, Any]
      *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
      *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :type alert_on_fail: bool
      *     :param created_at: The timestamp when the task was first created.
-     *     :type created_at: datetime | None
      *     :param updated_at: The timestamp of the last modification to the task.
-     *     :type updated_at: datetime | None
      *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
      *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
-     *     :param connectivity_warning: A warning surfaced when the post-creation
-     *         database connectivity check fails. ``None`` when the check passes,
-     *         is opted out, or the task meta lacks the connectivity keys.
-     *     :type connectivity_warning: ConnectivityWarning | None
-     *     :param pre_checks_auto_fire_warning: A warning when the task group was
-     *         created but the automatic pre-checks execute call failed.
-     *     :type pre_checks_auto_fire_warning: str | None
      */
     AltersTaskResponse: {
+      /** Alert On Fail */
+      alert_on_fail: boolean;
+      backend: components['schemas']['TaskBackendEnum'];
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Protected */
+      protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
+    };
+    /**
+     * AltersTaskResponseCreate
+     * @description Represent the create response for an alters task group, carrying the post-creation connectivity warning and the automatic pre-checks auto-fire warning.
+     */
+    AltersTaskResponseCreate: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
@@ -5228,205 +5196,33 @@ export interface components {
       updated_at?: string | null;
     };
     /**
-     * AltersTaskWrite
-     * @description Represent a JSON request body for creating or updating an alters task group.
-     *
-     *     Mirrors :class:`AltersCreate` and is validated against ``alters_schema``
-     *     conditional rules (for example, ``dsn_table`` required when
-     *     ``recursion_method`` is ``"dsn"``).
-     *
-     *     :param task_name: The name of the task to be created.
-     *     :type task_name: NonEmptyStr
-     *     :param hostname: The target hostname for the task execution.
-     *     :type hostname: NonEmptyStr
-     *     :param service_id: The Inventory ID of the MySQL service to connect to.
-     *     :type service_id: int
-     *     :param schema_id: The inventory schema ID, when not using manual names.
-     *     :type schema_id: int | None
-     *     :param table_id: The inventory table ID, when not using manual names.
-     *     :type table_id: int | None
-     *     :param schema_name: Manual schema name when ``schema_id`` is not set.
-     *     :type schema_name: str
-     *     :param table_name: Manual table name when ``table_id`` is not set.
-     *     :type table_name: str
-     *     :param recursion_method: The method for handling replica discovery.
-     *     :type recursion_method: NonEmptyStr
-     *     :param alter: The specific alter command to be executed.
-     *     :type alter: NonEmptyStr
-     *     :param dsn_table: The DSN table when ``recursion_method`` is ``"dsn"``. When
-     *         recursion is ``"dsn"`` and this field is omitted or empty, it defaults to
-     *         ``D=percona,t=dsns`` (Percona Toolkit convention), matching ``alters_schema``.
-     *     :type dsn_table: str
-     *     :param pause_file: Execution pauses while this file exists.
-     *     :type pause_file: str
-     *     :param new_table_name: New table name before swap.
-     *     :type new_table_name: str
-     *     :param print_arg: Print SQL statements to STDOUT.
-     *     :type print_arg: bool
-     *     :param progress: Print progress reports to STDERR.
-     *     :type progress: str
-     *     :param no_swap_tables: Simulate without swapping tables.
-     *     :type no_swap_tables: bool
-     *     :param no_drop_old_table: Keep the original table after rename.
-     *     :type no_drop_old_table: bool
-     *     :param no_drop_new_table: Keep the new table if copy fails.
-     *     :type no_drop_new_table: bool
-     *     :param no_drop_triggers: Do not drop triggers on the old table.
-     *     :type no_drop_triggers: bool
-     *     :param tries: Retries and wait times for critical operations.
-     *     :type tries: str
-     *     :param set_vars: MySQL variables to set (comma-separated key=value pairs).
-     *     :type set_vars: str
-     *     :param critical_load: Abort when GLOBAL STATUS exceeds thresholds.
-     *     :type critical_load: str
-     *     :param max_load: Pause when GLOBAL STATUS exceeds thresholds.
-     *     :type max_load: str
-     *     :param chunk_time: Target execution time per chunk.
-     *     :type chunk_time: str
-     *     :param max_lag: Pause until replica lag falls below this value.
-     *     :type max_lag: str
-     *     :param max_flow_ctl: Pause when PXC flow control exceeds this value.
-     *     :type max_flow_ctl: str
-     *     :param extra_args: Additional pt-online-schema-change arguments.
-     *     :type extra_args: str
-     *     :param alert_on_fail: Send an alert if the task fails.
-     *     :type alert_on_fail: bool
-     *     :param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor
-     *         (user/password): pre-checks always use this path; execute/dry-run use pt-osc's
-     *         default ~/.my.cnf unless this is set to another path, then --defaults-file is added.
-     *     :type pre_checks_mysql_config_file: str
-     *     :param continue_on_pre_check_failure: When True, continue to the run task even if
-     *         pre-checks fail (overrides the schema's default ``on_failure="halt"`` policy).
-     *     :type continue_on_pre_check_failure: bool
+     * AltersTaskResponseUpdate
+     * @description Represent the update response for an alters task group, carrying the post-update connectivity warning.
      */
-    AltersTaskWrite: {
-      /**
-       * Alert On Fail
-       * @default false
-       */
+    AltersTaskResponseUpdate: {
+      /** Alert On Fail */
       alert_on_fail: boolean;
-      /** Alter */
-      alter: string;
-      /**
-       * Chunk Time
-       * @default
-       */
-      chunk_time: string;
-      /**
-       * Continue On Pre Check Failure
-       * @default false
-       */
-      continue_on_pre_check_failure: boolean;
-      /**
-       * Critical Load
-       * @default
-       */
-      critical_load: string;
-      /**
-       * Dsn Table
-       * @default
-       */
-      dsn_table: string;
-      /**
-       * Extra Args
-       * @default
-       */
-      extra_args: string;
-      /** Hostname */
-      hostname: string;
-      /**
-       * Max Flow Ctl
-       * @default
-       */
-      max_flow_ctl: string;
-      /**
-       * Max Lag
-       * @default
-       */
-      max_lag: string;
-      /**
-       * Max Load
-       * @default
-       */
-      max_load: string;
-      /**
-       * New Table Name
-       * @default
-       */
-      new_table_name: string;
-      /**
-       * No Drop New Table
-       * @default false
-       */
-      no_drop_new_table: boolean;
-      /**
-       * No Drop Old Table
-       * @default false
-       */
-      no_drop_old_table: boolean;
-      /**
-       * No Drop Triggers
-       * @default false
-       */
-      no_drop_triggers: boolean;
-      /**
-       * No Swap Tables
-       * @default false
-       */
-      no_swap_tables: boolean;
-      /**
-       * Pause File
-       * @default
-       */
-      pause_file: string;
-      /**
-       * Pre Checks Mysql Config File
-       * @default ~/.my.cnf
-       */
-      pre_checks_mysql_config_file: string;
-      /**
-       * Print Arg
-       * @default false
-       */
-      print_arg: boolean;
-      /**
-       * Progress
-       * @default
-       */
-      progress: string;
-      /**
-       * Recursion Method
-       * @default processlist
-       */
-      recursion_method: string;
-      /** Schema Id */
-      schema_id?: number | null;
-      /**
-       * Schema Name
-       * @default
-       */
-      schema_name: string;
-      /** Service Id */
-      service_id: number;
-      /**
-       * Set Vars
-       * @default
-       */
-      set_vars: string;
-      /** Table Id */
-      table_id?: number | null;
-      /**
-       * Table Name
-       * @default
-       */
-      table_name: string;
-      /** Task Name */
-      task_name: string;
-      /**
-       * Tries
-       * @default
-       */
-      tries: string;
+      backend: components['schemas']['TaskBackendEnum'];
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
+      /** Created At */
+      created_at?: string | null;
+      /** Created By */
+      created_by?: string | null;
+      /** Data */
+      data: Record<string, never>;
+      /** Id */
+      id?: number | null;
+      /** Last Updated By */
+      last_updated_by?: string | null;
+      /** Name */
+      name: string;
+      owner: components['schemas']['TaskOwner'];
+      /** Protected */
+      protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+      /** Updated At */
+      updated_at?: string | null;
     };
     /**
      * AppInfo
@@ -12134,7 +11930,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['AltersTaskWrite'];
+        'application/json': components['schemas']['AltersCreate'];
       };
     };
     responses: {
@@ -12144,7 +11940,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AltersTaskResponse'];
+          'application/json': components['schemas']['AltersTaskResponseCreate'];
         };
       };
       /** @description Validation Error */
@@ -12222,7 +12018,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['AltersTaskWrite'];
+        'application/json': components['schemas']['AltersCreate'];
       };
     };
     responses: {
@@ -12232,7 +12028,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AltersTaskResponse'];
+          'application/json': components['schemas']['AltersTaskResponseUpdate'];
         };
       };
       /** @description Validation Error */

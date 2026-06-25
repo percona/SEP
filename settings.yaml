@@ -63,10 +63,6 @@ default:
       - MODULE_NAME: atw
       - NAME: Schema Change
         MODULE_NAME: alters
-        URI_PATH: /alters
-        CSS_CLASS: alters
-        GROUP: schema_change
-        NAV_ORDER: 6
       - NAME: Archive
         MODULE_NAME: archives
         URI_PATH: /archives

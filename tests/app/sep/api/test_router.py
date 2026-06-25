@@ -15,12 +15,14 @@
 
 """Define tests for the shared SEP API router at ``/api/plugins/``."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import status
+from fastapi import APIRouter, status
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
+from pytest_mock import MockerFixture
 from starlette.routing import Match
 
 from app.sep.api.router import api_router, build_plugins_router, plugins_router
@@ -375,6 +377,27 @@ class TestPluginBearerGate:
         assert response.status_code != status.HTTP_200_OK
 
 
+def _force_legacy_synthesis(
+    mocker: MockerFixture, *, stub_router: bool = False
+) -> None:
+    """Drive ``build_app_registry`` down the legacy-synthesis path.
+
+    Every shipped plugin now exports an ``app`` definition, so the
+    ``api_router_path``-driven synthesis is exercised against a module that
+    exports no ``app``. When ``stub_router`` is set, the convention router import
+    is stubbed so synthesis can complete past a ``None``/empty ``api_router_path``.
+    """
+    mocker.patch(
+        "app.sep.plugins.framework.registry.import_module",
+        return_value=SimpleNamespace(),
+    )
+    if stub_router:
+        mocker.patch(
+            "app.sep.plugins.framework.registry.import_var",
+            return_value=APIRouter(),
+        )
+
+
 class TestApiRouterConfigDrivenLoop:
     """Test the config-driven plugin mount loop."""
 
@@ -389,8 +412,11 @@ class TestApiRouterConfigDrivenLoop:
         paths = {r.path for r in router.routes if hasattr(r, "path")}
         assert any(p.startswith("/plugins/alters/") for p in paths)
 
-    def test_plugin_without_api_router_path_is_not_mounted(self) -> None:
+    def test_plugin_without_api_router_path_is_not_mounted(
+        self, mocker: MockerFixture
+    ) -> None:
         """Assert a plugin with ``api_router_path=None`` contributes no routes."""
+        _force_legacy_synthesis(mocker, stub_router=True)
         plugin = Plugin(
             name="Alters",
             module_name="alters",
@@ -433,8 +459,11 @@ class TestApiRouterConfigDrivenLoop:
                 api_router_path="app.does.not.exist.router",
             )
 
-    def test_api_router_path_pointing_at_missing_attribute_raises(self) -> None:
+    def test_api_router_path_pointing_at_missing_attribute_raises(
+        self, mocker: MockerFixture
+    ) -> None:
         """Assert pointing at a missing attribute fails fast at construction."""
+        _force_legacy_synthesis(mocker)
         plugin = Plugin(
             name="Ghost",
             module_name="alters",
@@ -443,12 +472,15 @@ class TestApiRouterConfigDrivenLoop:
         with pytest.raises(AttributeError):
             build_plugins_router(build_app_registry([plugin]))
 
-    def test_colon_syntax_in_api_router_path_is_rejected(self) -> None:
+    def test_colon_syntax_in_api_router_path_is_rejected(
+        self, mocker: MockerFixture
+    ) -> None:
         """Assert colon-style ``module:attr`` paths are rejected.
 
         ``import_var`` uses ``rsplit('.', 1)`` so colon syntax leaves the
         module piece embedded in the attribute name and the import fails.
         """
+        _force_legacy_synthesis(mocker)
         plugin = Plugin(
             name="Bad",
             module_name="alters",
@@ -530,13 +562,16 @@ class TestApiRouterConfigDrivenLoop:
         assert any(p.startswith("/plugins/checksums/") for p in paths)
         assert any(p.startswith("/plugins/dipper/") for p in paths)
 
-    def test_build_plugins_router_skips_empty_string_path(self) -> None:
+    def test_build_plugins_router_skips_empty_string_path(
+        self, mocker: MockerFixture
+    ) -> None:
         """Assert an empty-string ``api_router_path`` is treated as no-mount.
 
         Defense-in-depth: even if a falsy non-None value reaches the loop
         (e.g. programmatic construction bypassing Pydantic), no routes are
         mounted and no confusing ``ValueError`` is raised by ``import_var``.
         """
+        _force_legacy_synthesis(mocker, stub_router=True)
         plugin = Plugin.model_construct(
             name="Ghost",
             module_name="app.sep.plugins.alters",
@@ -545,13 +580,16 @@ class TestApiRouterConfigDrivenLoop:
         router = build_plugins_router(build_app_registry([plugin]))
         assert router.routes == []
 
-    def test_build_plugins_router_raises_type_error_for_non_router(self) -> None:
+    def test_build_plugins_router_raises_type_error_for_non_router(
+        self, mocker: MockerFixture
+    ) -> None:
         """Assert importing a non-``APIRouter`` attribute raises ``TypeError``.
 
         The error must identify the offending plugin key and path so operators
         can diagnose YAML misconfigurations without reading tracebacks from
         ``include_router``.
         """
+        _force_legacy_synthesis(mocker)
         plugin = Plugin(
             name="Alters",
             module_name="alters",

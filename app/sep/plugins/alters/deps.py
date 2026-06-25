@@ -30,13 +30,7 @@ from app.core.exceptions import (
     HTTPConflictException,
 )
 from app.core.requests.remote_api import RemoteAPI
-from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.connectivity import (
-    CONNECTIVITY_META_HOST_KEY,
-    CONNECTIVITY_META_PORT_KEY,
-    CONNECTIVITY_META_SERVICE_TYPE_KEY,
-)
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
     DefaultContext,
@@ -51,9 +45,9 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from app.sep.plugins.alters.models import (
     AltersCreate,
     AltersTaskResponse,
-    AltersTaskWrite,
 )
 from app.sep.plugins.alters.schema import alters_schema
+from app.sep.plugins.alters.spec import build_alters_spec
 from app.sep.plugins.framework import (
     build_default_task_response,
     build_task_list_responses,
@@ -71,7 +65,6 @@ from app.sep.plugins.framework.cascade import (
 from app.sep.plugins.framework.schema import ChainedPredecessor
 from app.tasks.models import (
     Task,
-    TaskBackendEnum,
     TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
@@ -79,50 +72,15 @@ from app.tasks.models import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_RECURSION_DSN_TABLE = "D=percona,t=dsns"
-
-
-def _build_dsn_with_service(
-    dsn_base: str, service_address: str, service_port: int | None
-) -> str:
-    """Build a DSN string with service information (host and port) if needed.
-
-    :param dsn_base: The base DSN string (e.g., "D=schema,t=table" or "D=percona,t=dsns").
-    :type dsn_base: str
-    :param service_address: The service node address.
-    :type service_address: str
-    :param service_port: The service port, if available.
-    :type service_port: int | None
-    :return: The constructed DSN string with service information if not already present.
-    :rtype: str
-    """
-    if dsn_base.startswith(("h=", "P=")):
-        return dsn_base
-
-    service_dsn = ""
-    if service_address != "localhost":
-        service_dsn = f"h={service_address}"
-    if service_port is not None:
-        if service_dsn:
-            service_dsn = f"{service_dsn},P={service_port}"
-        else:
-            service_dsn = f"P={service_port}"
-
-    if service_dsn:
-        return f"{service_dsn},{dsn_base}"
-
-    return dsn_base
-
 
 async def _resolve_schema_table_names(
-    body: AltersCreate | AltersTaskWrite,
+    body: AltersCreate,
     inventory_api: InventoryAPI,
     service: CreatedService,
 ) -> tuple[str, str]:
     """Resolve schema and table names from inventory IDs or manual fields.
 
     :param body: The alters create/write payload.
-    :type body: AltersCreate | AltersTaskWrite
     :param inventory_api: The Inventory API client.
     :type inventory_api: InventoryAPI
     :param service: The validated MySQL service.
@@ -155,119 +113,13 @@ async def _resolve_schema_table_names(
     return schema_name, table_name
 
 
-def _assemble_alters_payload(
-    service: CreatedService,
-    schema_name: str,
-    table_name: str,
-    body: AltersCreate | AltersTaskWrite,
-) -> TaskWrite:
-    """Assemble a parent execute ``TaskWrite`` from pre-resolved inputs.
-
-    Both the Jinja form path and the JSON API path delegate here so Nomad
-    payloads are byte-identical regardless of call origin.
-
-    :param service: The validated inventory service instance.
-    :type service: CreatedService
-    :param schema_name: The target schema name.
-    :type schema_name: str
-    :param table_name: The target table name.
-    :type table_name: str
-    :param body: The alters create/write payload.
-    :type body: AltersCreate | AltersTaskWrite
-    :return: A fully constructed parent execute ``TaskWrite``.
-    :rtype: TaskWrite
-    """
-    dsn = _build_dsn_with_service(
-        f"D={schema_name},t={table_name}", service.node.address, service.port
-    )
-
-    effective_recursion_method = body.recursion_method
-    if body.recursion_method == "dsn":
-        dsn_table_base = (body.dsn_table or "").strip() or DEFAULT_RECURSION_DSN_TABLE
-        dsn_table = _build_dsn_with_service(
-            dsn_table_base, service.node.address, service.port
-        )
-        effective_recursion_method = f"dsn={dsn_table}"
-
-    mysql_defaults_path = (
-        body.pre_checks_mysql_config_file or ""
-    ).strip() or "~/.my.cnf"
-    args = []
-    if mysql_defaults_path != "~/.my.cnf":
-        args.append(f"--defaults-file={mysql_defaults_path}")
-
-    args.extend(
-        [
-            f"--alter={body.alter}",
-            dsn,
-            f"--recursion-method={effective_recursion_method}",
-        ]
-    )
-
-    optional_args = {
-        "pause_file": f"--pause-file={body.pause_file}",
-        "new_table_name": f"--new-table-name={body.new_table_name}",
-        "tries": f"--tries={body.tries}",
-        "set_vars": f"--set-vars={body.set_vars}",
-        "critical_load": f"--critical-load={body.critical_load}",
-        "max_load": f"--max-load={body.max_load}",
-        "chunk_time": f"--chunk-time={body.chunk_time}",
-        "max_lag": f"--max-lag={body.max_lag}",
-        "max_flow_ctl": f"--max-flow-ctl={body.max_flow_ctl}",
-    }
-    args.extend(arg for key, arg in optional_args.items() if getattr(body, key))
-
-    flag_args = {
-        "print_arg": "--print",
-        "no_swap_tables": "--no-swap-tables",
-        "no_drop_old_table": "--no-drop-old-table",
-        "no_drop_new_table": "--no-drop-new-table",
-        "no_drop_triggers": "--no-drop-triggers",
-    }
-    args.extend(arg for key, arg in flag_args.items() if getattr(body, key))
-
-    if body.print_arg:
-        args.append(f"--progress={body.progress}")
-
-    if body.extra_args:
-        args.extend(shlex.split(body.extra_args))
-
-    args.append("--execute")
-    return TaskWrite(
-        owner=TaskOwner.ALTERS,
-        backend=TaskBackendEnum.PROXY,
-        data={
-            "task": "run-command",
-            "meta": {
-                "command": "pt-online-schema-change",
-                "args": shlex.join(args),
-                "_command_line": f"pt-online-schema-change {shlex.join(args)}",
-                "target": body.hostname,
-                "_schema_name": schema_name,
-                "_table_name": table_name,
-                "_service_name": service.name,
-                "_service_host": service.node.address,
-                "_service_port": service.port,
-                "_pre_checks_mysql_config_file": mysql_defaults_path,
-                CONNECTIVITY_META_HOST_KEY: service.node.address,
-                CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
-                CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
-            },
-        },
-        name=body.task_name,
-        target=body.hostname,
-        alert_on_fail=body.alert_on_fail,
-    )
-
-
 async def build_alters_task(
-    body: AltersCreate | AltersTaskWrite,
+    body: AltersCreate,
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
     """Build the parent alters execute task from a form or JSON payload.
 
     :param body: The alters create/write payload.
-    :type body: AltersCreate | AltersTaskWrite
     :param inventory_api: The Inventory API client.
     :type inventory_api: InventoryAPI
     :return: A fully constructed parent execute ``TaskWrite``.
@@ -282,7 +134,7 @@ async def build_alters_task(
     schema_name, table_name = await _resolve_schema_table_names(
         body, inventory_api, service
     )
-    return _assemble_alters_payload(service, schema_name, table_name, body)
+    return build_alters_spec(service, schema_name, table_name, body)
 
 
 get_alters_task = make_task_dep(TaskOwner.ALTERS)
@@ -609,7 +461,7 @@ def alters_satellite_task_names(parent_name: str) -> list[str]:
 
 
 def resolve_predecessor_specs(
-    body: AltersCreate | AltersTaskWrite,
+    body: AltersCreate,
 ) -> list[ChainedPredecessor]:
     """Resolve chained-predecessor specs for cascade wiring, one per schema entry.
 
@@ -617,7 +469,6 @@ def resolve_predecessor_specs(
     the first schema predecessor only (the alters pre-checks task).
 
     :param body: The alters create/write payload.
-    :type body: AltersCreate | AltersTaskWrite
     :return: Ordered specs aligned with ``alters_schema.predecessors``.
     :rtype: list[ChainedPredecessor]
     """
@@ -649,7 +500,7 @@ async def cascade_create_alters_group(
     tasks_api: RemoteAPI,
     parent_task: TaskWrite,
     pre_checks_template: TaskWrite,
-    body: AltersCreate | AltersTaskWrite,
+    body: AltersCreate,
 ) -> str | None:
     """POST parent + dry-run + pre-checks, then fire the pre-checks chain.
 
@@ -666,7 +517,6 @@ async def cascade_create_alters_group(
         :func:`build_pre_checks_task_payload`.
     :type pre_checks_template: TaskWrite
     :param body: The alters create/write payload (for ``continue_on_pre_check_failure``).
-    :type body: AltersCreate | AltersTaskWrite
     :return: A user-facing warning when auto-fire of pre-checks fails, else ``None``.
     :rtype: str | None
     :raises Exception: Re-raises the underlying Tasks API error after rollback
@@ -773,7 +623,7 @@ async def cascade_update_alters_group(
     parent_existing_name: str,
     parent_task: TaskWrite,
     pre_checks_template: TaskWrite,
-    body: AltersCreate | AltersTaskWrite,
+    body: AltersCreate,
 ) -> CascadeResult:
     """PUT the parent, dry-run sibling, and pre-checks predecessor.
 
@@ -789,7 +639,6 @@ async def cascade_update_alters_group(
     :param pre_checks_template: The updated imperative pre-checks payload.
     :type pre_checks_template: TaskWrite
     :param body: The alters create/write payload (for ``continue_on_pre_check_failure``).
-    :type body: AltersCreate | AltersTaskWrite
     :return: A merged :class:`CascadeResult` across derived and predecessor legs.
     :rtype: CascadeResult
     :raises HTTPConflictException: When the update attempts to rename the parent.
@@ -998,16 +847,24 @@ def build_alters_api_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
     *,
+    response_model: type[AltersTaskResponse] = AltersTaskResponse,
     connectivity_warning: ConnectivityWarning | None = None,
     pre_checks_auto_fire_warning: str | None = None,
     username_mapping: dict[str, str] | None = None,
 ) -> AltersTaskResponse:
     """Build an alters task response object for the JSON API.
 
+    The warning fields are only carried when ``response_model`` declares them:
+    list/detail use the base :class:`~app.sep.plugins.alters.models.AltersTaskResponse`
+    (neither warning), create uses ``AltersTaskResponseCreate`` (both), and update
+    uses ``AltersTaskResponseUpdate`` (connectivity only).
+
     :param task: The alters task retrieved from the Tasks API.
     :type task: Task
     :param status: The latest known execution status for the task.
     :type status: TaskHistoryStatusEnum | None
+    :param response_model: The per-verb response model to build; defaults to the
+        list/detail base model.
     :param connectivity_warning: A warning to surface when a connectivity
         check failed during the task creation flow.
     :type connectivity_warning: ConnectivityWarning | None
@@ -1026,8 +883,16 @@ def build_alters_api_task_response(
         command_line = _command_line_from_meta(meta)
         if command_line is not None:
             meta["_command_line"] = command_line
+    warning_extras = {
+        field: value
+        for field, value in (
+            ("connectivity_warning", connectivity_warning),
+            ("pre_checks_auto_fire_warning", pre_checks_auto_fire_warning),
+        )
+        if field in response_model.model_fields
+    }
     return build_default_task_response(
-        AltersTaskResponse,
+        response_model,
         task,
         status,
         extras={
@@ -1035,8 +900,7 @@ def build_alters_api_task_response(
             "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),
             "data": data,
             "service_type": ServiceTypeEnum.MYSQL,
-            "connectivity_warning": connectivity_warning,
-            "pre_checks_auto_fire_warning": pre_checks_auto_fire_warning,
+            **warning_extras,
         },
     )
 
