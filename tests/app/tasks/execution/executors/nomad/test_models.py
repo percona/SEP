@@ -66,6 +66,8 @@ STALENESS_THRESHOLD_OVERRIDE = 300
 MULTI_CHUNK_LOG_FIRST_OFFSET = 17
 MULTI_CHUNK_LOG_SECOND_OFFSET = 42
 EXPECTED_MULTI_CHUNK_LOG_COUNT = 2
+SPLIT_FRAME_LOG_OFFSET = 99
+EXPECTED_SINGLE_TASK_LOG_COUNT = 1
 
 
 def _build_task(
@@ -2028,6 +2030,56 @@ class TestNomadLogStreaming:
         assert all(log.type == TaskLogType.STDOUT for log in logs)
         offsets = [log.offset for log in logs]
         assert offsets == sorted(offsets)
+
+    @pytest.mark.asyncio
+    async def test_consume_nomad_log_stream_split_frame_reassembly(self):
+        """Split JSON across chunks reassembles via raw_data before json.loads (step2)."""
+        full = self._nomad_log_frame(msg="split-msg", offset=SPLIT_FRAME_LOG_OFFSET)
+        split_at = full.rfind(b"}")
+        assert b"}" not in full[:split_at]
+        chunks = [full[:split_at], full[split_at:]]
+
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.raise_for_status = MagicMock()
+        mock_response.content.iter_chunks = self._make_iter_chunks(chunks)
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        executor = _build_executor()
+        alloc = self._alloc_for_logs_step2()
+        params = {
+            "task": "step2",
+            "type": TaskLogType.STDOUT,
+            "follow": "true",
+            "offset": 0,
+        }
+        queue = asyncio.Queue()
+
+        with patch.object(executor, "_request", return_value=mock_ctx):
+            state, out_alloc, stream_start = await executor._consume_nomad_log_stream(
+                alloc=alloc,
+                step="step2",
+                log_type=TaskLogType.STDOUT,
+                queue=queue,
+                params=params,
+                client_timeout=ClientTimeout(sock_read=NOMAD_DEFAULT_TIMEOUT),
+                anonymize_entities=None,
+            )
+
+        logs = await self._drain_task_logs(queue)
+
+        assert state == "running"
+        assert out_alloc is alloc
+        assert stream_start is not None
+        assert params["offset"] == SPLIT_FRAME_LOG_OFFSET
+        assert len(logs) == EXPECTED_SINGLE_TASK_LOG_COUNT
+        assert logs[0].msg == "split-msg"
+        assert logs[0].offset == SPLIT_FRAME_LOG_OFFSET
+        assert logs[0].step == "step2"
+        assert logs[0].type == TaskLogType.STDOUT
 
 
 class TestListFiles:
