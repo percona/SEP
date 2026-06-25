@@ -434,22 +434,7 @@ class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
     )
 
 
-class AltersTaskBase(BaseModel):
-    """Define the common fields shared across alters task API responses.
-
-    :param name: The name of the alters task.
-    :param owner: The entity or user that owns the task.
-    :param service_type: The type of database service (always MySQL for alters).
-    :param status: The current execution status of the task.
-    """
-
-    name: str
-    owner: TaskOwner
-    service_type: ServiceTypeEnum | None = None
-    status: TaskHistoryStatusEnum | None = None
-
-
-class AltersTaskResponse(AltersTaskBase):
+class AltersTaskResponse(BaseModel):
     """Represent an alters task API response for list and detail surfaces.
 
     The create/update routes return the
@@ -458,6 +443,10 @@ class AltersTaskResponse(AltersTaskBase):
     ``pre_checks_auto_fire_warning``) per the framework's derived create-response
     standard, so the always-null warning fields stay off list/detail rows.
 
+    :param name: The name of the alters task.
+    :param owner: The entity or user that owns the task.
+    :param service_type: The type of database service (always MySQL for alters).
+    :param status: The current execution status of the task.
     :param id: The unique identifier for the alters task.
     :param backend: The backend worker/engine executing the task.
     :param data: The raw configuration and parameters used for the alter execution.
@@ -469,6 +458,10 @@ class AltersTaskResponse(AltersTaskBase):
     :param last_updated_by: The user who last modified the task record.
     """
 
+    name: str
+    owner: TaskOwner
+    service_type: ServiceTypeEnum | None = None
+    status: TaskHistoryStatusEnum | None = None
     id: int | None = None
     backend: TaskBackendEnum
     data: dict[str, Any]
