@@ -23,10 +23,11 @@ from starlette.responses import RedirectResponse
 
 from app.sep.deps import get_task_history, IsAuthenticated, IsCsrfValidated, TaskAPI
 from app.sep.middleware import messages
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.tasks.models import TaskHistoryResponse, TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["sep", "tasks"])
+router = APIRouter(route_class=DeprecatedJinja2Route)
 
 
 @router.post("/{task_history_id}", dependencies=[IsAuthenticated, IsCsrfValidated])

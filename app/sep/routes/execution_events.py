@@ -28,7 +28,7 @@ from app.sep.deps import (
 from app.sep.utils.decorators import csrf_exempt
 from app.tasks.models import ExecutionEvent, TaskHistoryResponse
 
-router = APIRouter(tags=["sep", "tasks"])
+router = APIRouter(tags=["tasks"])
 
 
 @router.get(
