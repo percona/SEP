@@ -26,6 +26,7 @@ from pytest_mock import MockerFixture
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.plugins.framework.cascade import (
     build_derived_payload,
+    build_predecessor_chain_execute_body,
     build_predecessor_payload,
     cascade_create_independent_tasks,
     cascade_create_predecessors,
@@ -805,12 +806,63 @@ class TestBuildPredecessorPayload:
         assert pred == pred_before
 
 
+# ── build_predecessor_chain_execute_body ───────────────────────────────
+
+
+class TestBuildPredecessorChainExecuteBody:
+    """Cover the pure chain execute body builder."""
+
+    def test_empty_specs_raises_value_error(self) -> None:
+        """Reject an empty predecessor spec list."""
+        with pytest.raises(ValueError, match="at least one predecessor"):
+            build_predecessor_chain_execute_body("t1", [])
+
+    def test_single_predecessor_halt(self) -> None:
+        """Map a single predecessor to chain into the parent with halt."""
+        body = build_predecessor_chain_execute_body(
+            "t1",
+            [ChainedPredecessor(name_suffix="-pre-checks", on_failure="halt")],
+        )
+
+        assert body == {
+            "chain_task_names": ["t1"],
+            "chain_on_failure": False,
+        }
+
+    def test_single_predecessor_continue(self) -> None:
+        """Map ``on_failure="continue"`` to ``chain_on_failure=True``."""
+        body = build_predecessor_chain_execute_body(
+            "t1",
+            [ChainedPredecessor(name_suffix="-pre-checks", on_failure="continue")],
+        )
+
+        assert body == {
+            "chain_task_names": ["t1"],
+            "chain_on_failure": True,
+        }
+
+    def test_multi_predecessor_order(self) -> None:
+        """Chain remaining predecessors before the parent name."""
+        body = build_predecessor_chain_execute_body(
+            "t1",
+            [
+                ChainedPredecessor(name_suffix="-pred1"),
+                ChainedPredecessor(name_suffix="-pred2"),
+            ],
+        )
+
+        assert body == {
+            "chain_task_names": ["t1-pred2", "t1"],
+            "chain_on_failure": False,
+        }
+
+
 # ── cascade_create_predecessors ──────────────────────────────────────────
 
 
 @pytest.mark.asyncio
 class TestCascadeCreatePredecessors:
-    """Cover the predecessor cascade with chain-wiring execute."""
+    """Cover the predecessor create-only cascade."""
 
     async def test_empty_list_raises_value_error(self) -> None:
         """Reject an empty predecessor list rather than silently downgrading."""
@@ -821,8 +873,8 @@ class TestCascadeCreatePredecessors:
 
         tasks_api.post.assert_not_awaited()
 
-    async def test_single_predecessor_halt_success(self) -> None:
-        """POST parent then predecessor, then fire execute with halt → chain_on_failure=False."""
+    async def test_single_predecessor_success(self) -> None:
+        """POST parent then predecessor without firing execute."""
         tasks_api = AsyncMock(spec=RemoteAPI)
         spec = ChainedPredecessor(name_suffix="-pre-checks", on_failure="halt")
         pred_payload = _predecessor_payload()
@@ -838,32 +890,11 @@ class TestCascadeCreatePredecessors:
         assert tasks_api.post.await_args_list == [
             call("/", json=parent_payload),
             call("/", json=expected_pred_built),
-            call(
-                "/execute/t1-pre-checks",
-                json={"chain_task_names": ["t1"], "chain_on_failure": False},
-            ),
         ]
         tasks_api.delete.assert_not_awaited()
 
-    async def test_single_predecessor_continue_sets_chain_on_failure_true(
-        self,
-    ) -> None:
-        """Map ``on_failure="continue"`` to ``chain_on_failure=True`` on execute."""
-        tasks_api = AsyncMock(spec=RemoteAPI)
-        spec = ChainedPredecessor(name_suffix="-pre-checks", on_failure="continue")
-
-        await cascade_create_predecessors(
-            tasks_api, _parent_payload(), [(spec, _predecessor_payload())]
-        )
-
-        execute_call = tasks_api.post.await_args_list[-1]
-        assert execute_call == call(
-            "/execute/t1-pre-checks",
-            json={"chain_task_names": ["t1"], "chain_on_failure": True},
-        )
-
     async def test_multi_predecessor_success(self) -> None:
-        """Fire execute on the first predecessor with the chain spanning the rest then parent."""
+        """POST parent and every predecessor without firing execute."""
         tasks_api = AsyncMock(spec=RemoteAPI)
         specs = [
             ChainedPredecessor(name_suffix="-pred1"),
@@ -888,13 +919,6 @@ class TestCascadeCreatePredecessors:
             call("/", json=parent_payload),
             call("/", json=first_built),
             call("/", json=second_built),
-            call(
-                "/execute/t1-pred1",
-                json={
-                    "chain_task_names": ["t1-pred2", "t1"],
-                    "chain_on_failure": False,
-                },
-            ),
         ]
 
     async def test_parent_create_failure_no_rollback(self) -> None:
@@ -955,33 +979,13 @@ class TestCascadeCreatePredecessors:
         assert exc_info.value is exc
         assert tasks_api.delete.await_args_list == [call("/t1-a"), call("/t1")]
 
-    async def test_execute_failure_rolls_back_parent_and_predecessors(self) -> None:
-        """Roll back parent + predecessors in reverse when the execute call fails."""
-        tasks_api = AsyncMock(spec=RemoteAPI)
-        exc = HTTPException(status_code=status.HTTP_502_BAD_GATEWAY)
-        tasks_api.post.side_effect = [None, None, exc]
-        spec = ChainedPredecessor(name_suffix="-pre-checks")
-
-        with pytest.raises(HTTPException) as exc_info:
-            await cascade_create_predecessors(
-                tasks_api,
-                _parent_payload(),
-                [(spec, _predecessor_payload())],
-            )
-
-        assert exc_info.value is exc
-        assert tasks_api.delete.await_args_list == [
-            call("/t1-pre-checks"),
-            call("/t1"),
-        ]
-
     async def test_rollback_delete_failure_is_logged_and_swallowed(
         self, mocker: MockerFixture
     ) -> None:
         """Log a rollback DELETE failure at WARNING and re-raise the original exception."""
         tasks_api = AsyncMock(spec=RemoteAPI)
         original = HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        tasks_api.post.side_effect = [None, None, original]
+        tasks_api.post.side_effect = [None, original]
         tasks_api.delete.side_effect = HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE
         )
@@ -1002,7 +1006,7 @@ class TestCascadeCreatePredecessors:
             )
 
         assert exc_info.value is original
-        assert tasks_api.delete.await_args_list == [call("/t1-pre-checks"), call("/t1")]
+        assert tasks_api.delete.await_args_list == [call("/t1")]
         assert logger_warning.call_count == len(tasks_api.delete.await_args_list)
         for warning_call in logger_warning.call_args_list:
             assert "Rollback DELETE failed" in warning_call.args[0]

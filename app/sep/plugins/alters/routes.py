@@ -116,7 +116,7 @@ async def alters_create(
     *,
     check_connectivity: Annotated[bool, Depends(get_check_connectivity_flag)],
 ) -> RedirectResponse:
-    """Create the alters task group and chain pre-checks into the parent run task."""
+    """Create the alters task group (parent, dry-run, and pre-checks tasks)."""
     logger.debug("Create alters tasks: %s", form.task_name)
     parent_task = await build_alters_task(form, inventory_api)
     pre_checks_template = await build_pre_checks_task_payload(

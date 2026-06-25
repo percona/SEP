@@ -117,9 +117,8 @@ async def alters_api_create(
 ) -> AltersTaskResponseCreate:
     """Create an alters task group from a JSON payload request body.
 
-    POSTs the parent execute task, dry-run derived sibling, pre-checks
-    predecessor, and fires ``POST /execute/{name}-pre-checks`` to chain into
-    the parent run task.
+    POSTs the parent execute task, dry-run derived sibling, and pre-checks
+    predecessor. Pre-checks are started manually from the detail page.
 
     :param check_connectivity: Whether to verify the target database is
         reachable after task creation. Defaults to ``True`` so callers that
@@ -135,7 +134,7 @@ async def alters_api_create(
     pre_checks_template = await build_pre_checks_task_payload(
         parent_task, task_api=tasks_api
     )
-    pre_checks_auto_fire_warning = await cascade_create_alters_group(
+    await cascade_create_alters_group(
         tasks_api,
         parent_task,
         pre_checks_template,
@@ -153,7 +152,6 @@ async def alters_api_create(
         status=None,
         response_model=AltersTaskResponseCreate,
         connectivity_warning=connectivity_warning,
-        pre_checks_auto_fire_warning=pre_checks_auto_fire_warning,
         username_mapping=username_mapping,
     )
 

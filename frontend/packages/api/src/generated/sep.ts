@@ -332,7 +332,7 @@ export interface paths {
     put?: never;
     /**
      * Alters Create
-     * @description Create the alters task group and chain pre-checks into the parent run task.
+     * @description Create the alters task group (parent, dry-run, and pre-checks tasks).
      */
     post: operations['alters_create_alters__post'];
     delete?: never;
@@ -894,9 +894,8 @@ export interface paths {
      * Alters Api Create
      * @description Create an alters task group from a JSON payload request body.
      *
-     *     POSTs the parent execute task, dry-run derived sibling, pre-checks
-     *     predecessor, and fires ``POST /execute/{name}-pre-checks`` to chain into
-     *     the parent run task.
+     *     POSTs the parent execute task, dry-run derived sibling, and pre-checks
+     *     predecessor. Pre-checks are started manually from the detail page.
      *
      *     :param check_connectivity: Whether to verify the target database is
      *         reachable after task creation. Defaults to ``True`` so callers that
@@ -5122,9 +5121,9 @@ export interface components {
      *
      *     The create/update routes return the
      *     :data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models
-     *     derived from this base; both add ``connectivity_warning`` (and, for create,
-     *     ``pre_checks_auto_fire_warning``) per the framework's derived create-response
-     *     standard, so the always-null warning fields stay off list/detail rows.
+     *     derived from this base; both add ``connectivity_warning`` per the framework's
+     *     derived create-response standard, so the always-null warning field stays off
+     *     list/detail rows.
      *
      *     :param name: The name of the alters task.
      *     :param owner: The entity or user that owns the task.
@@ -5166,7 +5165,7 @@ export interface components {
     };
     /**
      * AltersTaskResponseCreate
-     * @description Represent the create response for an alters task group, carrying the post-creation connectivity warning and the automatic pre-checks auto-fire warning.
+     * @description Represent the create response for an alters task group, carrying the post-creation connectivity warning.
      */
     AltersTaskResponseCreate: {
       /** Alert On Fail */
@@ -5186,8 +5185,6 @@ export interface components {
       /** Name */
       name: string;
       owner: components['schemas']['TaskOwner'];
-      /** Pre Checks Auto Fire Warning */
-      pre_checks_auto_fire_warning?: string | null;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -6399,13 +6396,13 @@ export interface components {
      *     this spec when POSTing, PUTting, or DELETEing a plugin's tasks: each
      *     predecessor is created with ``data["parent"]`` linked to the parent's
      *     name (when ``parent_link`` is true) and named
-     *     ``f"{parent_name}{name_suffix}"``. After every create succeeds, the
-     *     cascade fires ``POST /execute/{first_predecessor_name}`` with
-     *     ``chain_task_names`` spanning the remaining predecessors followed by
-     *     the parent; ``chain_on_failure`` is derived from ``on_failure``
-     *     (``"halt"`` maps to ``False``, ``"continue"`` maps to ``True``). The
-     *     chain inherits ``_chain_on_failure`` chain-wide via celery's
-     *     :func:`_dispatch_chained_task`.
+     *     ``f"{parent_name}{name_suffix}"``. Create persists task records only;
+     *     when the user starts the chain, the consuming plugin fires
+     *     ``POST /execute/{first_predecessor_name}`` using
+     *     :func:`build_predecessor_chain_execute_body` for ``chain_task_names``
+     *     (remaining predecessors then parent) and ``chain_on_failure`` derived
+     *     from ``on_failure`` (``"halt"`` maps to ``False``, ``"continue"`` maps
+     *     to ``True``).
      *
      *     :param name_suffix: String appended to the parent's ``name`` to form
      *         the predecessor's name (for example ``"-pre-checks"``).
