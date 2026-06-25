@@ -16,7 +16,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type TasksComponents } from '@sep/api';
+import { apiClient, type SepComponents, type TasksComponents } from '@sep/api';
 
 export type TaskHistoryStatus = TasksComponents['schemas']['TaskHistoryStatusEnum'];
 export type TaskHistoryEntry = TasksComponents['schemas']['TaskHistoryResponse'];
@@ -24,11 +24,7 @@ export type PaginatedTaskHistory =
   TasksComponents['schemas']['PaginatedResponse_TaskHistoryResponse_'];
 
 /** Optional JSON body for ``POST .../execute`` (chain wiring, schedule ETA, etc.). */
-export interface TaskExecuteBody {
-  eta?: string;
-  chain_task_names?: string[];
-  chain_on_failure?: boolean;
-}
+export type TaskExecuteBody = SepComponents['schemas']['TaskExecuteWrite'];
 
 export const RUNNING_STATUSES: ReadonlySet<TaskHistoryStatus> = new Set(['running', 'pending']);
 
