@@ -97,7 +97,7 @@ function setupHooks(periodic: PeriodicTaskResponse[]) {
     if (String(url).includes('/available-syncers/')) {
       return { data: MOCK_SYNCERS };
     }
-    // /tasks/periodic/
+    // /sep/periodic-tasks/
     return { data: periodic };
   });
 }
@@ -265,7 +265,7 @@ describe('InventorySchedulePage', () => {
 
       await waitFor(() => expect(apiMock.post).toHaveBeenCalledTimes(1));
       const [url] = apiMock.post.mock.calls[0];
-      expect(url).toBe(`/tasks/${TASK_NAME}/periodic/`);
+      expect(url).toBe(`/sep/periodic-tasks/${TASK_NAME}/`);
     });
 
     it('shows server error from failed mutation', async () => {
@@ -344,7 +344,7 @@ describe('InventorySchedulePage', () => {
 
       await waitFor(() => expect(apiMock.put).toHaveBeenCalledTimes(1));
       const [url, body] = apiMock.put.mock.calls[0];
-      expect(url).toBe('/tasks/periodic/21');
+      expect(url).toBe('/sep/periodic-tasks/21');
       expect(body.interval).toMatchObject({ every: 10, period: 'minutes' });
     });
   });
@@ -386,7 +386,7 @@ describe('InventorySchedulePage', () => {
       expect(screen.getByRole('dialog')).toBeInTheDocument();
 
       await user.click(screen.getByTestId('inv-sched-confirm-delete-40'));
-      await waitFor(() => expect(apiMock.delete).toHaveBeenCalledWith('/tasks/periodic/40'));
+      await waitFor(() => expect(apiMock.delete).toHaveBeenCalledWith('/sep/periodic-tasks/40'));
     });
 
     it('does NOT fire DELETE when dialog is cancelled', async () => {
