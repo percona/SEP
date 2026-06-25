@@ -129,7 +129,7 @@ async def node_list(
 @router.post(
     "/sync/",
     dependencies=[IsAuthenticated, IsCsrfValidated],
-    deprecated=True,
+    include_in_schema=False,
 )
 async def sync_inventory(
     syncers: SyncersDep,
@@ -155,7 +155,7 @@ async def sync_inventory(
 
 
 @router.post(
-    "/schedule/", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True
+    "/schedule/", dependencies=[IsAuthenticated, IsCsrfValidated], include_in_schema=False
 )
 async def schedule_create(
     syncers: SyncersDep,

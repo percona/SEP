@@ -51,7 +51,15 @@ class DeprecatedJinja2Route(APIRoute):
     header mutation happens after the handler runs, so it survives
     FastAPI's short-circuit for endpoints that return a ``Response``
     directly.
+
+    Routes using this class are excluded from the generated OpenAPI schema
+    (``include_in_schema=False``) so the Swagger docs describe the
+    supported JSON API surface only.
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs["include_in_schema"] = False
+        super().__init__(*args, **kwargs)
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         """Wrap the default route handler with deprecation logging and header.

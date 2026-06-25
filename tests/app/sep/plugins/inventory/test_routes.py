@@ -128,17 +128,17 @@ def test_node_list(test_client, mock_inventory_api_dep, mock_task_api_dep):
     mock_task_api_dep.get.assert_any_await("/inventory-sync/periodic/")
 
 
-def test_jinja_sync_route_is_marked_deprecated_in_openapi():
-    """Lock in the deprecation flag for the legacy Jinja2 ``POST /inventory/sync/``.
+def test_jinja_sync_route_is_omitted_from_openapi():
+    """Legacy Jinja2 ``POST /inventory/sync/`` is excluded from the OpenAPI schema.
 
     The React control consumes the new JSON route at
     ``POST /api/plugins/inventory/sync/``; the Jinja2 trigger remains
-    functional until Wave 3 but must advertise ``deprecated: true`` in
-    OpenAPI so downstream tooling can surface the warning.
+    functional but is hidden from OpenAPI now that the supported API
+    surface is JSON-only.
     """
     openapi = sep_app.openapi()
-    operation = openapi["paths"]["/inventory/sync/"]["post"]
-    assert operation.get("deprecated") is True
+    sync_ops = openapi["paths"].get("/inventory/sync/", {})
+    assert "post" not in sync_ops
 
 
 @pytest.mark.asyncio
@@ -1623,10 +1623,10 @@ def test_node_list_renders_per_row_chip_when_token_unset(
     assert "will not run" in body
 
 
-def test_schedule_post_is_marked_deprecated(test_client):
-    """Ensure ``POST /inventory/schedule/`` carries ``deprecated: true`` in the OpenAPI schema."""
+def test_schedule_post_is_omitted_from_openapi(test_client):
+    """``POST /inventory/schedule/`` is excluded from the OpenAPI schema."""
     response = test_client.get("/openapi.json")
     assert response.status_code == status.HTTP_200_OK
     schema = response.json()
-    schedule_post = schema["paths"]["/inventory/schedule/"]["post"]
-    assert schedule_post.get("deprecated") is True
+    schedule_ops = schema["paths"].get("/inventory/schedule/", {})
+    assert "post" not in schedule_ops

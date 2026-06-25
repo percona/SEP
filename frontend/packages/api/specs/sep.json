@@ -1252,276 +1252,6 @@
         "title": "ArchivesCreate",
         "type": "object"
       },
-      "ArchivesLegacyForm": {
-        "description": "Parse the deprecated Archives HTML form's flat, urlencoded body.\n\nThe Jinja templates submit the historical flat field names (``source_db_id`` /\n``source_db_name`` / …) that predate the one-of collapse, so the derived\none-of ``ArchivesCreate`` cannot bind them directly. This model parses that\nflat body; :func:`_map_legacy_to_create` folds it into ``ArchivesCreate`` for\nthe shared spec builder, keeping the legacy path byte-identical. Conditional\nvalidation is enforced by the mapped ``ArchivesCreate``, not here.\n\n:param alias: The task name (the ``ALIAS`` in the archiver config).\n:param hostname: The executor host.\n:param service_id: The source MySQL service id.\n:param source_db_id: The source schema inventory id, or empty.\n:param source_db_name: The manually-entered source schema name.\n:param source_table_id: The source table inventory id, or empty.\n:param source_table_name: The manually-entered source table name.\n:param source_query: A custom source query.\n:param where: The WHERE clause.\n:param dest_table_id: The destination table inventory id, or empty.\n:param dest_table_name: The manually-entered destination table name.\n:param dest_file: The destination file path.\n:param swap_drop: The archive type (0-2).\n:param swp_table_suffix: The swap-table date suffix.\n:param use_index: An index hint.\n:param extra_args: Additional pt-archiver CLI arguments.\n:param limit: The maximum rows per run.\n:param sleep: The sleep between chunk operations.\n:param disable_binlog: The disable-binlog flag (0/1).\n:param disable_bulk_insert: The disable-bulk-insert flag (0/1).\n:param delete_data: The delete-without-archiving flag (0/1).\n:param dest_service_id: The destination service inventory id, or empty.\n:param dest_host: The manual destination host.\n:param dest_port: The manual destination port.\n:param dest_db_id: The destination schema inventory id, or empty.\n:param dest_db_name: The manually-entered destination schema name.\n:param alert_on_fail: Whether to alert on failure.",
-        "properties": {
-          "ALERT_ON_FAIL": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "ALIAS": {
-            "minLength": 1,
-            "title": "Alias",
-            "type": "string"
-          },
-          "DELETE_DATA": {
-            "anyOf": [
-              {
-                "maximum": 1.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Delete Data"
-          },
-          "DEST_DB_ID": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Db Id"
-          },
-          "DEST_DB_NAME": {
-            "default": "",
-            "title": "Dest Db Name",
-            "type": "string"
-          },
-          "DEST_FILE": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest File"
-          },
-          "DEST_HOST": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Host"
-          },
-          "DEST_PORT": {
-            "anyOf": [
-              {
-                "maximum": 65535.0,
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Port"
-          },
-          "DEST_SERVICE_ID": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Service Id"
-          },
-          "DEST_TABLE_ID": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Dest Table Id"
-          },
-          "DEST_TABLE_NAME": {
-            "default": "",
-            "title": "Dest Table Name",
-            "type": "string"
-          },
-          "DISABLE_BINLOG": {
-            "anyOf": [
-              {
-                "maximum": 1.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Disable Binlog"
-          },
-          "DISABLE_BULK_INSERT": {
-            "anyOf": [
-              {
-                "maximum": 1.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Disable Bulk Insert"
-          },
-          "EXTRA_ARGS": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Extra Args"
-          },
-          "HOSTNAME": {
-            "minLength": 1,
-            "title": "Hostname",
-            "type": "string"
-          },
-          "LIMIT": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Limit"
-          },
-          "SERVICE_ID": {
-            "title": "Service Id",
-            "type": "integer"
-          },
-          "SLEEP": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sleep"
-          },
-          "SOURCE_DB_ID": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Db Id"
-          },
-          "SOURCE_DB_NAME": {
-            "default": "",
-            "title": "Source Db Name",
-            "type": "string"
-          },
-          "SOURCE_QUERY": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Query"
-          },
-          "SOURCE_TABLE_ID": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Table Id"
-          },
-          "SOURCE_TABLE_NAME": {
-            "default": "",
-            "title": "Source Table Name",
-            "type": "string"
-          },
-          "SWAP_DROP": {
-            "maximum": 2.0,
-            "minimum": 0.0,
-            "title": "Swap Drop",
-            "type": "integer"
-          },
-          "SWP_TABLE_SUFFIX": {
-            "anyOf": [
-              {
-                "format": "date",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Swp Table Suffix"
-          },
-          "USE_INDEX": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Use Index"
-          },
-          "WHERE": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Where"
-          }
-        },
-        "required": [
-          "ALIAS",
-          "HOSTNAME",
-          "SERVICE_ID",
-          "SWAP_DROP"
-        ],
-        "title": "ArchivesLegacyForm",
-        "type": "object"
-      },
       "AvailableSyncer": {
         "description": "Provide template-facing metadata for an available syncer.\n\n:param name: The fully qualified ``\"module.ClassName\"`` identifier matching\n    ``BaseSyncer.get_name()`` and the value persisted in\n    ``SyncInstance.syncer``. Used as the wire identifier in form payloads.\n:type name: str\n:param display_name: The human-readable label rendered in the dropdown\n    (the syncer class's short name with any trailing ``Syncer`` suffix\n    stripped).\n:type display_name: str",
         "properties": {
@@ -1539,6 +1269,567 @@
           "display_name"
         ],
         "title": "AvailableSyncer",
+        "type": "object"
+      },
+      "BackupCreate": {
+        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the order here reproduces the hand-written schema\nbyte-for-byte. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption requires/forbidden pair, and the per-mode bool ``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
+        "properties": {
+          "alert_on_fail": {
+            "default": false,
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "alias": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "awscli_s3_upload_extra_args": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Awscli S3 Upload Extra Args"
+          },
+          "backup_dir": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backup Dir"
+          },
+          "backup_type": {
+            "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupType"
+          },
+          "binlog_alternative_host": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binlog Alternative Host"
+          },
+          "binlog_cmd": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binlog Cmd"
+          },
+          "binlog_compress_cmd": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binlog Compress Cmd"
+          },
+          "binlog_extra_args": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binlog Extra Args"
+          },
+          "binlog_prefix": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binlog Prefix"
+          },
+          "binlog_purge_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binlog Purge Days"
+          },
+          "binlog_run_all": {
+            "default": true,
+            "title": "Binlog Run All",
+            "type": "boolean"
+          },
+          "check_disk_space": {
+            "default": false,
+            "title": "Check Disk Space",
+            "type": "boolean"
+          },
+          "compress": {
+            "default": false,
+            "title": "Compress",
+            "type": "boolean"
+          },
+          "compression_algorithm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__CompressionAlgorithm"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Compression Algorithm"
+          },
+          "defaults_file": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaults File"
+          },
+          "encrypt": {
+            "default": false,
+            "title": "Encrypt",
+            "type": "boolean"
+          },
+          "encrypt_using_tmpdir": {
+            "default": false,
+            "title": "Encrypt Using Tmpdir",
+            "type": "boolean"
+          },
+          "encryption_recipient": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryption Recipient"
+          },
+          "gs_bucket": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gs Bucket"
+          },
+          "hardlink": {
+            "default": false,
+            "title": "Hardlink",
+            "type": "boolean"
+          },
+          "hostname": {
+            "minLength": 1,
+            "title": "Hostname",
+            "type": "string"
+          },
+          "logging_dir": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logging Dir"
+          },
+          "mydumper_daily_purge": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mydumper Daily Purge"
+          },
+          "mydumper_desync_pxc": {
+            "default": false,
+            "title": "Mydumper Desync Pxc",
+            "type": "boolean"
+          },
+          "mydumper_dump_triggers": {
+            "default": false,
+            "title": "Mydumper Dump Triggers",
+            "type": "boolean"
+          },
+          "mydumper_extra_args": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mydumper Extra Args"
+          },
+          "mydumper_use_numa": {
+            "default": false,
+            "title": "Mydumper Use Numa",
+            "type": "boolean"
+          },
+          "mydumper_verbose": {
+            "anyOf": [
+              {
+                "maximum": 3.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mydumper Verbose"
+          },
+          "mydumper_weekly_purge": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mydumper Weekly Purge"
+          },
+          "only_if_read_only": {
+            "default": false,
+            "title": "Only If Read Only",
+            "type": "boolean"
+          },
+          "only_if_running_replica": {
+            "default": false,
+            "title": "Only If Running Replica",
+            "type": "boolean"
+          },
+          "post_run_encrypt": {
+            "default": false,
+            "title": "Post Run Encrypt",
+            "type": "boolean"
+          },
+          "rsync_path": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rsync Path"
+          },
+          "s3_bucket": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "S3 Bucket"
+          },
+          "s3_storage_class": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "S3 Storage Class"
+          },
+          "service_id": {
+            "title": "Service Id",
+            "type": "integer"
+          },
+          "skip_s3_safety_check": {
+            "default": false,
+            "title": "Skip S3 Safety Check",
+            "type": "boolean"
+          },
+          "task_name": {
+            "minLength": 1,
+            "title": "Task Name",
+            "type": "string"
+          },
+          "upload": {
+            "items": {
+              "$ref": "#/components/schemas/UploadProvider"
+            },
+            "minItems": 1,
+            "title": "Upload",
+            "type": "array"
+          },
+          "upload_quiet": {
+            "default": false,
+            "title": "Upload Quiet",
+            "type": "boolean"
+          },
+          "use_ftwrl_guardian": {
+            "default": false,
+            "title": "Use Ftwrl Guardian",
+            "type": "boolean"
+          },
+          "xtrabackup_aes256_keyfile": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Aes256 Keyfile"
+          },
+          "xtrabackup_bin_cmd": {
+            "anyOf": [
+              {
+                "enum": [
+                  "xtrabackup",
+                  "mariadb-backup",
+                  "innobackupex"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Bin Cmd"
+          },
+          "xtrabackup_copies": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Copies"
+          },
+          "xtrabackup_defaults_file": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Defaults File"
+          },
+          "xtrabackup_desync_pxc": {
+            "default": false,
+            "title": "Xtrabackup Desync Pxc",
+            "type": "boolean"
+          },
+          "xtrabackup_extra_args": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Extra Args"
+          },
+          "xtrabackup_incremental_cycle": {
+            "anyOf": [
+              {
+                "enum": [
+                  "daily",
+                  "weekly",
+                  "2",
+                  "3",
+                  "4",
+                  "5",
+                  "6",
+                  "7"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Incremental Cycle"
+          },
+          "xtrabackup_incremental_method": {
+            "anyOf": [
+              {
+                "enum": [
+                  "less_space",
+                  "fast_restore"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Incremental Method"
+          },
+          "xtrabackup_kill_queries": {
+            "default": false,
+            "title": "Xtrabackup Kill Queries",
+            "type": "boolean"
+          },
+          "xtrabackup_kill_queries_timeout": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Kill Queries Timeout"
+          },
+          "xtrabackup_kill_query_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "select",
+                  "all"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Kill Query Type"
+          },
+          "xtrabackup_local_ssh_destination": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Local Ssh Destination"
+          },
+          "xtrabackup_lock_ddl": {
+            "default": false,
+            "title": "Xtrabackup Lock Ddl",
+            "type": "boolean"
+          },
+          "xtrabackup_prepare": {
+            "default": false,
+            "title": "Xtrabackup Prepare",
+            "type": "boolean"
+          },
+          "xtrabackup_prepare_memory": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Prepare Memory"
+          },
+          "xtrabackup_quiet": {
+            "default": false,
+            "title": "Xtrabackup Quiet",
+            "type": "boolean"
+          },
+          "xtrabackup_replica_info": {
+            "default": false,
+            "title": "Xtrabackup Replica Info",
+            "type": "boolean"
+          },
+          "xtrabackup_rsync": {
+            "default": false,
+            "title": "Xtrabackup Rsync",
+            "type": "boolean"
+          },
+          "xtrabackup_stop_replica": {
+            "default": false,
+            "title": "Xtrabackup Stop Replica",
+            "type": "boolean"
+          },
+          "xtrabackup_verify": {
+            "default": false,
+            "title": "Xtrabackup Verify",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "task_name",
+          "hostname",
+          "service_id",
+          "backup_type",
+          "upload"
+        ],
+        "title": "BackupCreate",
         "type": "object"
       },
       "BackupDerivedTaskSummary": {
@@ -2525,121 +2816,6 @@
         "title": "BatchApprovalResponse",
         "type": "object"
       },
-      "Body_alerts_push_alerts_push_post": {
-        "properties": {
-          "selected_templates": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Selected Templates",
-            "type": "array"
-          }
-        },
-        "required": [
-          "selected_templates"
-        ],
-        "title": "Body_alerts_push_alerts_push_post",
-        "type": "object"
-      },
-      "Body_alerts_restore_alerts_restore_post": {
-        "properties": {
-          "backup_id": {
-            "title": "Backup Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "backup_id"
-        ],
-        "title": "Body_alerts_restore_alerts_restore_post",
-        "type": "object"
-      },
-      "Body_alters_execute_alters__task_name__post": {
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "Body_alters_execute_alters__task_name__post",
-        "type": "object"
-      },
-      "Body_archives_execute_archives__task_name__post": {
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "Body_archives_execute_archives__task_name__post",
-        "type": "object"
-      },
       "Body_checksums_execute_checksums__task_name__post": {
         "properties": {
           "chain_on_failure": {
@@ -2742,201 +2918,6 @@
         "title": "Body_login_login_post",
         "type": "object"
       },
-      "Body_mysql_backups_execute_mysql_backups__task_name__post": {
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "Body_mysql_backups_execute_mysql_backups__task_name__post",
-        "type": "object"
-      },
-      "Body_pagerduty_save_alerts_pagerduty_post": {
-        "properties": {
-          "integration_key": {
-            "minLength": 1,
-            "title": "Integration Key",
-            "type": "string"
-          }
-        },
-        "required": [
-          "integration_key"
-        ],
-        "title": "Body_pagerduty_save_alerts_pagerduty_post",
-        "type": "object"
-      },
-      "Body_pbm_backups_execute_backup_mongo__task_name__post": {
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "Body_pbm_backups_execute_backup_mongo__task_name__post",
-        "type": "object"
-      },
-      "Body_pg_backups_execute_backup_pg__task_name__post": {
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "Body_pg_backups_execute_backup_pg__task_name__post",
-        "type": "object"
-      },
-      "Body_report_generate_pdf_report_generate_pdf_post": {
-        "properties": {
-          "full": {
-            "default": true,
-            "title": "Full",
-            "type": "boolean"
-          },
-          "refresh": {
-            "default": false,
-            "title": "Refresh",
-            "type": "boolean"
-          },
-          "since": {
-            "default": "now-7d",
-            "title": "Since",
-            "type": "string"
-          },
-          "until": {
-            "default": "now",
-            "title": "Until",
-            "type": "string"
-          }
-        },
-        "title": "Body_report_generate_pdf_report_generate_pdf_post",
-        "type": "object"
-      },
-      "Body_report_generate_report_generate_post": {
-        "properties": {
-          "full": {
-            "default": true,
-            "title": "Full",
-            "type": "boolean"
-          },
-          "refresh": {
-            "default": false,
-            "title": "Refresh",
-            "type": "boolean"
-          },
-          "since": {
-            "default": "now-7d",
-            "title": "Since",
-            "type": "string"
-          },
-          "until": {
-            "default": "now",
-            "title": "Until",
-            "type": "string"
-          }
-        },
-        "title": "Body_report_generate_report_generate_post",
-        "type": "object"
-      },
       "Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post": {
         "properties": {
           "full": {
@@ -2987,135 +2968,6 @@
           }
         },
         "title": "Body_report_report_upload_api_api_plugins_report_upload_post",
-        "type": "object"
-      },
-      "Body_report_upload_report_upload_post": {
-        "properties": {
-          "full": {
-            "default": true,
-            "title": "Full",
-            "type": "boolean"
-          },
-          "refresh": {
-            "default": false,
-            "title": "Refresh",
-            "type": "boolean"
-          },
-          "since": {
-            "default": "now-7d",
-            "title": "Since",
-            "type": "string"
-          },
-          "until": {
-            "default": "now",
-            "title": "Until",
-            "type": "string"
-          }
-        },
-        "title": "Body_report_upload_report_upload_post",
-        "type": "object"
-      },
-      "Body_restores_execute_mysql_backups_restores__task_name__post": {
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "Body_restores_execute_mysql_backups_restores__task_name__post",
-        "type": "object"
-      },
-      "Body_restores_pbm_restores_execute_backup_mongo_restores__task_name__post": {
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "Body_restores_pbm_restores_execute_backup_mongo_restores__task_name__post",
-        "type": "object"
-      },
-      "Body_sync_inventory_inventory_sync__post": {
-        "properties": {
-          "syncer": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Syncer"
-          }
-        },
-        "title": "Body_sync_inventory_inventory_sync__post",
         "type": "object"
       },
       "Body_sync_node_inventory__node_id__sync__post": {
@@ -4275,39 +4127,6 @@
         "title": "DipperExecutionResponse",
         "type": "object"
       },
-      "DipperScript": {
-        "description": "Represent a Dipper payload script stored on the SEP server filesystem.",
-        "properties": {
-          "filename": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Filename",
-            "type": "string"
-          },
-          "md5_digest": {
-            "maxLength": 32,
-            "minLength": 32,
-            "title": "Md5 Digest",
-            "type": "string"
-          },
-          "meta": {
-            "title": "Meta",
-            "type": "object"
-          },
-          "size": {
-            "exclusiveMinimum": 0.0,
-            "title": "Size",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "filename",
-          "size",
-          "md5_digest"
-        ],
-        "title": "DipperScript",
-        "type": "object"
-      },
       "EnhancedPeriodicTaskCreateRequest": {
         "description": "Define a model for creating periodic tasks compatible with the SEP app form data.\n\nThis model accepts keys prefixed with 'execute_request_' from form data, which are\nparsed by the base class into an execute_request object.\n\n:param start_time: The start time for the task execution.\n:type start_time: UTCDatetime | EmptyStrToNone\n:param enabled: Whether the task is enabled.\n:type enabled: bool | EmptyStrToNone\n:param execute_request: The execution request details for the task.\n:type execute_request: PeriodicTaskExecuteRequest | EmptyStrToNone\n:param interval: The interval schedule for the task.\n:type interval: IntervalSchedule | EmptyStrToNone\n:param crontab: The crontab schedule for the task.\n:type crontab: CrontabSchedule | EmptyStrToNone\n:param task: The SEP task name.\n:type task: str",
         "properties": {
@@ -5386,69 +5205,6 @@
           "name"
         ],
         "title": "InventorySelectorOption",
-        "type": "object"
-      },
-      "InventorySyncScheduleCreateForm": {
-        "description": "Define the form-data shape for attaching an inventory-sync schedule.\n\nMirror the ``interval_every`` / ``interval_period`` / ``cron_expression``\n/ ``cron_timezone`` field names used by the schedule template\n(``templates/inventory/partials/sync-schedule-edit-form.html.j2``) so the\nexisting template's input names continue to work, and add a ``syncer``\nfield that gets persisted into ``execute_request.meta`` as\n``{\"syncer\": <fully qualified name>}`` when set.\n\n:param syncer: Optional fully qualified syncer name (e.g.\n    ``\"app.sep.sync.syncers.pmm.PMMSyncer\"``). When set, the schedule\n    targets that syncer only; when unset, the schedule runs every\n    configured syncer.\n:type syncer: str | None\n:param enabled: Whether the schedule is enabled.\n:type enabled: bool | EmptyStrToNone\n:param interval: Populated by the validator from ``interval_every`` and\n    ``interval_period`` form fields.\n:type interval: IntervalSchedule | EmptyStrToNone\n:param crontab: Populated by the validator from ``cron_expression`` and\n    ``cron_timezone`` form fields.\n:type crontab: CrontabSchedule | EmptyStrToNone\n:param start_time: Optional UTC start time.\n:type start_time: UTCDatetime | EmptyStrToNone",
-        "properties": {
-          "crontab": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CrontabSchedule"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Crontab"
-          },
-          "enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enabled"
-          },
-          "interval": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/IntervalSchedule"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Interval"
-          },
-          "start_time": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Start Time"
-          },
-          "syncer": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Syncer"
-          }
-        },
-        "title": "InventorySyncScheduleCreateForm",
         "type": "object"
       },
       "InventorySyncStatusResponse": {
@@ -6846,6 +6602,481 @@
         ],
         "title": "ReloadClassification",
         "type": "string"
+      },
+      "RestoreCreate": {
+        "description": "Declare the model-first create/update body and ``GET /schema`` source for Restores.\n\nDeclares every restore form field once, in section order (Task, General,\nMydumper, XtraBackup, Binlog), with the DSL markers driving the derived\nschema. The previously-inherited config models (:class:`RestoreConfigAll` and\n:class:`BaseRestoreConfigServer`) stay the YAML-serialization targets the\npayload builder populates via ``extract_model_from_instance``; this model\nre-declares their fields directly so it can also carry presentation metadata.\n\nThe per-``backup_type`` section visibility is expressed in the view layout\n(``restore/views.py``), not as field-level gates: several mode-specific config\nfields carry non-``None`` defaults (``myloader_threads``, ``xb_parallel``,\n``master_port``), so a field-level ``Forbidden`` gate would reject those\ndefaults on a cross-mode restore. Keeping the model permissive preserves the\nlegacy payload contract byte-for-byte.\n\n``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying\nthe ``\"-1\"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``\nmarkers drive only the ``GET /schema`` widgets, while the conditional,\n404-tolerant resolution lives in ``deps.resolve_restore_entities``.",
+        "properties": {
+          "alert_on_fail": {
+            "default": false,
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backup_source": {
+            "minLength": 1,
+            "title": "Backup Source",
+            "type": "string"
+          },
+          "backup_type": {
+            "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupType"
+          },
+          "binlog_restore_extra_args": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binlog Restore Extra Args"
+          },
+          "custom_mysql_init_command": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Mysql Init Command"
+          },
+          "datadir": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datadir"
+          },
+          "gpg_password_file": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpg Password File"
+          },
+          "hostname": {
+            "minLength": 1,
+            "title": "Hostname",
+            "type": "string"
+          },
+          "include_databases": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Databases"
+          },
+          "incremental_dest_path": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incremental Dest Path"
+          },
+          "keyring_file_data": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keyring File Data"
+          },
+          "kill_mysql": {
+            "default": false,
+            "title": "Kill Mysql",
+            "type": "boolean"
+          },
+          "local_path": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Path"
+          },
+          "logging_dir": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logging Dir"
+          },
+          "master_ip": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Ip"
+          },
+          "master_password": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Password"
+          },
+          "master_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 3306,
+            "title": "Master Port"
+          },
+          "master_user": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master User"
+          },
+          "myloader_extra_args": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Myloader Extra Args"
+          },
+          "myloader_threads": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 4,
+            "title": "Myloader Threads"
+          },
+          "overwrite_tables": {
+            "default": false,
+            "title": "Overwrite Tables",
+            "type": "boolean"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "post_script": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Script"
+          },
+          "pre_script": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pre Script"
+          },
+          "restore_mycnf": {
+            "default": false,
+            "title": "Restore Mycnf",
+            "type": "boolean"
+          },
+          "s3_tool": {
+            "$ref": "#/components/schemas/S3Tool",
+            "default": "s3cmd"
+          },
+          "schema_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Id"
+          },
+          "service_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
+          },
+          "skip_databases": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Databases"
+          },
+          "skip_incrementals": {
+            "default": false,
+            "title": "Skip Incrementals",
+            "type": "boolean"
+          },
+          "slave_from_master": {
+            "default": false,
+            "title": "Slave From Master",
+            "type": "boolean"
+          },
+          "ssh_key": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ssh Key"
+          },
+          "ssh_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 22,
+            "title": "Ssh Port"
+          },
+          "ssh_user": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "percona",
+            "title": "Ssh User"
+          },
+          "start_file": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start File"
+          },
+          "start_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Position"
+          },
+          "stop_file": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop File"
+          },
+          "stop_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Position"
+          },
+          "task_name": {
+            "minLength": 1,
+            "title": "Task Name",
+            "type": "string"
+          },
+          "use_sql_file": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Use Sql File"
+          },
+          "wait_for_catchup": {
+            "default": false,
+            "title": "Wait For Catchup",
+            "type": "boolean"
+          },
+          "xb_parallel": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 4,
+            "title": "Xb Parallel"
+          },
+          "xb_prepare_memory": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xb Prepare Memory"
+          },
+          "xtrabackup_aes256_keyfile": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Aes256 Keyfile"
+          },
+          "xtrabackup_bin_cmd": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/XtraBackupTool"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Bin Cmd"
+          },
+          "xtrabackup_restore_args": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xtrabackup Restore Args"
+          }
+        },
+        "required": [
+          "task_name",
+          "hostname",
+          "backup_type",
+          "backup_source"
+        ],
+        "title": "RestoreCreate",
+        "type": "object"
       },
       "RestoreDerivedTaskSummary": {
         "description": "Represent one child task in a restore task group detail response.\n\n:param name: The name of the child task.\n:type name: str\n:param status: The latest execution status of the child task.\n:type status: TaskHistoryStatusEnum | None",
@@ -8421,25 +8652,6 @@
         "title": "SettingsPatch",
         "type": "object"
       },
-      "SnippetBatchApproveForm": {
-        "description": "Form-bound twin used by the legacy Jinja2 batch-approve route.",
-        "properties": {
-          "filenames": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "minItems": 1,
-            "title": "Filenames",
-            "type": "array"
-          }
-        },
-        "required": [
-          "filenames"
-        ],
-        "title": "SnippetBatchApproveForm",
-        "type": "object"
-      },
       "SnippetBatchApproveRequest": {
         "description": "Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.\n\nUnlike the Form-bound :class:`~app.sep.plugins.snippets.deps.SnippetBatchApproveForm`\ntwin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI\nparses it as JSON.\n\n:param filenames: Unique, non-empty list of snippet filenames to approve in a\n    single atomic operation. Duplicates are silently deduplicated by\n    ``UniqueList``.\n:type filenames: UniqueList[NonEmptyStr]",
         "properties": {
@@ -9784,220 +9996,6 @@
         "title": "PaginatedResponse[BackupTaskResponse]",
         "type": "object"
       },
-      "app__sep__plugins__backup_mongo__models__BackupCreate": {
-        "description": "Represent a Backup creation form with proper case-insensitive fields.\n\n:param task_name: The PBM yaml payload to parse from CLI.\n:type task_name: NonEmptyStr\n:param hostname: The PBM yaml payload to parse from CLI.\n:type hostname: NonEmptyStr\n:param service_id: Service for executing PBM.\n:type service_id: int\n:param backup_type: Type of backup activity on PBM.\n:type backup_type: BackupType\n:param alert_on_fail: If True, send an alert if the task fails. Defaults to False.\n:type alert_on_fail: bool",
-        "properties": {
-          "ALERT_ON_FAIL": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "BACKUP_COMPRESSION": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__models__CompressionAlgorithm"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Compression"
-          },
-          "BACKUP_COMPRESSION_LEVEL": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Compression Level"
-          },
-          "BACKUP_NUM_PARALLEL_COLLECTIONS": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Num Parallel Collections"
-          },
-          "BACKUP_OPLOG_SPAN_MIN": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Oplog Span Min"
-          },
-          "BACKUP_PRIORITY": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Priority"
-          },
-          "BACKUP_TIMEOUTS_STARTING_STATUS": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Timeouts Starting Status"
-          },
-          "BACKUP_TYPE": {
-            "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__models__BackupType"
-          },
-          "CREDENTIALS_PATH": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Credentials Path"
-          },
-          "HOSTNAME": {
-            "minLength": 1,
-            "title": "Hostname",
-            "type": "string"
-          },
-          "PITR_COMPRESSION": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pitr Compression"
-          },
-          "PITR_ENABLED": {
-            "default": false,
-            "title": "Pitr Enabled",
-            "type": "boolean"
-          },
-          "PITR_OPLOG_SPAN_MIN": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pitr Oplog Span Min"
-          },
-          "SERVICE_ID": {
-            "title": "Service Id",
-            "type": "integer"
-          },
-          "STORAGE_FILESYSTEM_PATH": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage Filesystem Path"
-          },
-          "STORAGE_S3_BUCKET": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage S3 Bucket"
-          },
-          "STORAGE_S3_ENDPOINT_URL": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage S3 Endpoint Url"
-          },
-          "STORAGE_S3_PREFIX": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage S3 Prefix"
-          },
-          "STORAGE_S3_REGION": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage S3 Region"
-          },
-          "STORAGE_TYPE": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Storage Type"
-          },
-          "TASK_NAME": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "TASK_NAME",
-          "HOSTNAME",
-          "SERVICE_ID",
-          "BACKUP_TYPE"
-        ],
-        "title": "BackupCreate",
-        "type": "object"
-      },
       "app__sep__plugins__backup_mongo__models__BackupExecuteWrite": {
         "description": "Represent a JSON request body for executing a backup task.\n\n:param eta: Optional future datetime to schedule execution.\n:type eta: FutureDatetime | None\n:param chain_task_names: Optional list of task names to chain after this one.\n:type chain_task_names: list[str] | None\n:param chain_on_failure: Whether to run chained tasks even on failure.\n:type chain_on_failure: bool | None",
         "properties": {
@@ -10350,151 +10348,6 @@
         "title": "CompressionAlgorithm",
         "type": "string"
       },
-      "app__sep__plugins__backup_mongo__restore__models__RestoreCreate": {
-        "description": "Represent a restore-task creation request (HTML form and shared payload input).\n\nKept alongside :class:`RestoreTaskWrite` because FastAPI form binding needs\n``service_id: NonEmptyStr | EmptyStrToNone`` (empty form field → ``None``) and\noptional restore ints with ``EmptyStrToNone``, while the JSON API uses\n``service_id: int | None`` and plain optional ints. Collapsing to one model would\nbreak empty-string form semantics unless a dedicated form adapter is proven.\n\n:param hostname: The hostname of the machine to restore to.\n:type hostname: NonEmptyStr\n:param task_name: Name of the restore task.\n:type task_name: NonEmptyStr\n:param service_id: Service identifier for the restore task.\n:type service_id: NonEmptyStr | EmptyStrToNone = None\n:param backup_type: Type of backup to restore from.\n:type backup_type: BackupType\n:param backup_source: Source location of the backup (backup name or timestamp).\n:type backup_source: NonEmptyStr\n:param restore_batch_size: Number of documents to buffer.\n:type restore_batch_size: int | None\n:param restore_num_insertion_workers: Number of insertion workers to run concurrently per collection.\n:type restore_num_insertion_workers: int | None\n:param restore_num_parallel_collections: Number of collections to process in parallel during logical restore.\n:type restore_num_parallel_collections: int | None\n:param restore_num_download_workers: Number of workers that request data chunks from storage.\n:type restore_num_download_workers: int | None\n:param restore_max_download_buffer_mb: Maximum size of in-memory buffer for downloading files from S3.\n:type restore_max_download_buffer_mb: int | None\n:param restore_download_chunk_mb: Size of data chunk in MB to download from S3 storage.\n:type restore_download_chunk_mb: int | None\n:param restore_mongod_location: Custom path to mongod binaries.\n:type restore_mongod_location: NonEmptyStr | EmptyStrToNone\n:param restore_mongod_location_map: Custom paths to mongod binaries on every node (YAML string).\n:type restore_mongod_location_map: NonEmptyStr | EmptyStrToNone\n:param credentials_path: Optional path to MongoDB URI credentials file on the Nomad node.\n:type credentials_path: NonEmptyStr | EmptyStrToNone",
-        "properties": {
-          "BACKUP_SOURCE": {
-            "minLength": 1,
-            "title": "Backup Source",
-            "type": "string"
-          },
-          "BACKUP_TYPE": {
-            "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__models__BackupType"
-          },
-          "CREDENTIALS_PATH": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Credentials Path"
-          },
-          "HOSTNAME": {
-            "minLength": 1,
-            "title": "Hostname",
-            "type": "string"
-          },
-          "RESTORE_BATCH_SIZE": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Restore Batch Size"
-          },
-          "RESTORE_DOWNLOAD_CHUNK_MB": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Restore Download Chunk Mb"
-          },
-          "RESTORE_MAX_DOWNLOAD_BUFFER_MB": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Restore Max Download Buffer Mb"
-          },
-          "RESTORE_MONGOD_LOCATION": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Restore Mongod Location"
-          },
-          "RESTORE_MONGOD_LOCATION_MAP": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Restore Mongod Location Map"
-          },
-          "RESTORE_NUM_DOWNLOAD_WORKERS": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Restore Num Download Workers"
-          },
-          "RESTORE_NUM_INSERTION_WORKERS": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Restore Num Insertion Workers"
-          },
-          "RESTORE_NUM_PARALLEL_COLLECTIONS": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Restore Num Parallel Collections"
-          },
-          "SERVICE_ID": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Service Id"
-          },
-          "TASK_NAME": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "HOSTNAME",
-          "TASK_NAME",
-          "BACKUP_TYPE",
-          "BACKUP_SOURCE"
-        ],
-        "title": "RestoreCreate",
-        "type": "object"
-      },
       "app__sep__plugins__backup_pg__models__BackupExecuteWrite": {
         "description": "Represent a JSON request body for executing a backup task.\n\n:param eta: Optional datetime to schedule execution. Must be in the future;\n    a past value is rejected with a 422 validation error.\n:param chain_task_names: Optional list of task names to chain after.\n:type chain_task_names: list[str] | None\n:param chain_on_failure: Whether to run chained tasks even on failure.\n:type chain_on_failure: bool | None",
         "properties": {
@@ -10826,567 +10679,6 @@
         "title": "BackupTaskResponse",
         "type": "object"
       },
-      "app__sep__plugins__mysql_backups__models__BackupCreate": {
-        "description": "Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.\n\nDeclares each form field once, in section order (Task, General, Mydumper,\nXtraBackup, Binlog, Encryption, Upload), with the DSL markers driving the\nderived schema. Field declaration order is load-bearing: the derived section\norder follows each section's first field, and the within-section order follows\ndeclaration order, so the order here reproduces the hand-written schema\nbyte-for-byte. The conditional gating that the legacy ``schema.py`` declared\n(per-mode ``forbidden`` gates, the upload-provider ``Contains`` gates, the\nencryption requires/forbidden pair, and the per-mode bool ``FailRule``s in\n:attr:`__form_rules__`) now lives on the model; ``AppFormModel`` extracts it\ninto the conditional-rule plan at class definition, so no\n``@apply_conditional_rules`` decorator is needed. The config sub-models\n(:class:`BackupConfigAll` and friends) stay the serialization target the\npayload builder populates, not this model's base class.\n\n:cvar __form_rules__: The per-mode bool fail rules — a truthy mode-owned bool\n    outside its mode fails validation with a per-field message.",
-        "properties": {
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "alias": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Alias"
-          },
-          "awscli_s3_upload_extra_args": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Awscli S3 Upload Extra Args"
-          },
-          "backup_dir": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Backup Dir"
-          },
-          "backup_type": {
-            "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupType"
-          },
-          "binlog_alternative_host": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binlog Alternative Host"
-          },
-          "binlog_cmd": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binlog Cmd"
-          },
-          "binlog_compress_cmd": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binlog Compress Cmd"
-          },
-          "binlog_extra_args": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binlog Extra Args"
-          },
-          "binlog_prefix": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binlog Prefix"
-          },
-          "binlog_purge_days": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binlog Purge Days"
-          },
-          "binlog_run_all": {
-            "default": true,
-            "title": "Binlog Run All",
-            "type": "boolean"
-          },
-          "check_disk_space": {
-            "default": false,
-            "title": "Check Disk Space",
-            "type": "boolean"
-          },
-          "compress": {
-            "default": false,
-            "title": "Compress",
-            "type": "boolean"
-          },
-          "compression_algorithm": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__CompressionAlgorithm"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Compression Algorithm"
-          },
-          "defaults_file": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Defaults File"
-          },
-          "encrypt": {
-            "default": false,
-            "title": "Encrypt",
-            "type": "boolean"
-          },
-          "encrypt_using_tmpdir": {
-            "default": false,
-            "title": "Encrypt Using Tmpdir",
-            "type": "boolean"
-          },
-          "encryption_recipient": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Encryption Recipient"
-          },
-          "gs_bucket": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gs Bucket"
-          },
-          "hardlink": {
-            "default": false,
-            "title": "Hardlink",
-            "type": "boolean"
-          },
-          "hostname": {
-            "minLength": 1,
-            "title": "Hostname",
-            "type": "string"
-          },
-          "logging_dir": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Logging Dir"
-          },
-          "mydumper_daily_purge": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mydumper Daily Purge"
-          },
-          "mydumper_desync_pxc": {
-            "default": false,
-            "title": "Mydumper Desync Pxc",
-            "type": "boolean"
-          },
-          "mydumper_dump_triggers": {
-            "default": false,
-            "title": "Mydumper Dump Triggers",
-            "type": "boolean"
-          },
-          "mydumper_extra_args": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mydumper Extra Args"
-          },
-          "mydumper_use_numa": {
-            "default": false,
-            "title": "Mydumper Use Numa",
-            "type": "boolean"
-          },
-          "mydumper_verbose": {
-            "anyOf": [
-              {
-                "maximum": 3.0,
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mydumper Verbose"
-          },
-          "mydumper_weekly_purge": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mydumper Weekly Purge"
-          },
-          "only_if_read_only": {
-            "default": false,
-            "title": "Only If Read Only",
-            "type": "boolean"
-          },
-          "only_if_running_replica": {
-            "default": false,
-            "title": "Only If Running Replica",
-            "type": "boolean"
-          },
-          "post_run_encrypt": {
-            "default": false,
-            "title": "Post Run Encrypt",
-            "type": "boolean"
-          },
-          "rsync_path": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rsync Path"
-          },
-          "s3_bucket": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "S3 Bucket"
-          },
-          "s3_storage_class": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "S3 Storage Class"
-          },
-          "service_id": {
-            "title": "Service Id",
-            "type": "integer"
-          },
-          "skip_s3_safety_check": {
-            "default": false,
-            "title": "Skip S3 Safety Check",
-            "type": "boolean"
-          },
-          "task_name": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
-          },
-          "upload": {
-            "items": {
-              "$ref": "#/components/schemas/UploadProvider"
-            },
-            "minItems": 1,
-            "title": "Upload",
-            "type": "array"
-          },
-          "upload_quiet": {
-            "default": false,
-            "title": "Upload Quiet",
-            "type": "boolean"
-          },
-          "use_ftwrl_guardian": {
-            "default": false,
-            "title": "Use Ftwrl Guardian",
-            "type": "boolean"
-          },
-          "xtrabackup_aes256_keyfile": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Aes256 Keyfile"
-          },
-          "xtrabackup_bin_cmd": {
-            "anyOf": [
-              {
-                "enum": [
-                  "xtrabackup",
-                  "mariadb-backup",
-                  "innobackupex"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Bin Cmd"
-          },
-          "xtrabackup_copies": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Copies"
-          },
-          "xtrabackup_defaults_file": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Defaults File"
-          },
-          "xtrabackup_desync_pxc": {
-            "default": false,
-            "title": "Xtrabackup Desync Pxc",
-            "type": "boolean"
-          },
-          "xtrabackup_extra_args": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Extra Args"
-          },
-          "xtrabackup_incremental_cycle": {
-            "anyOf": [
-              {
-                "enum": [
-                  "daily",
-                  "weekly",
-                  "2",
-                  "3",
-                  "4",
-                  "5",
-                  "6",
-                  "7"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Incremental Cycle"
-          },
-          "xtrabackup_incremental_method": {
-            "anyOf": [
-              {
-                "enum": [
-                  "less_space",
-                  "fast_restore"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Incremental Method"
-          },
-          "xtrabackup_kill_queries": {
-            "default": false,
-            "title": "Xtrabackup Kill Queries",
-            "type": "boolean"
-          },
-          "xtrabackup_kill_queries_timeout": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Kill Queries Timeout"
-          },
-          "xtrabackup_kill_query_type": {
-            "anyOf": [
-              {
-                "enum": [
-                  "select",
-                  "all"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Kill Query Type"
-          },
-          "xtrabackup_local_ssh_destination": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Local Ssh Destination"
-          },
-          "xtrabackup_lock_ddl": {
-            "default": false,
-            "title": "Xtrabackup Lock Ddl",
-            "type": "boolean"
-          },
-          "xtrabackup_prepare": {
-            "default": false,
-            "title": "Xtrabackup Prepare",
-            "type": "boolean"
-          },
-          "xtrabackup_prepare_memory": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Prepare Memory"
-          },
-          "xtrabackup_quiet": {
-            "default": false,
-            "title": "Xtrabackup Quiet",
-            "type": "boolean"
-          },
-          "xtrabackup_replica_info": {
-            "default": false,
-            "title": "Xtrabackup Replica Info",
-            "type": "boolean"
-          },
-          "xtrabackup_rsync": {
-            "default": false,
-            "title": "Xtrabackup Rsync",
-            "type": "boolean"
-          },
-          "xtrabackup_stop_replica": {
-            "default": false,
-            "title": "Xtrabackup Stop Replica",
-            "type": "boolean"
-          },
-          "xtrabackup_verify": {
-            "default": false,
-            "title": "Xtrabackup Verify",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "task_name",
-          "hostname",
-          "service_id",
-          "backup_type",
-          "upload"
-        ],
-        "title": "BackupCreate",
-        "type": "object"
-      },
       "app__sep__plugins__mysql_backups__models__BackupType": {
         "description": "Backup types.",
         "enum": [
@@ -11407,481 +10699,6 @@
         ],
         "title": "CompressionAlgorithm",
         "type": "string"
-      },
-      "app__sep__plugins__mysql_backups__restore__models__RestoreCreate": {
-        "description": "Declare the model-first create/update body and ``GET /schema`` source for Restores.\n\nDeclares every restore form field once, in section order (Task, General,\nMydumper, XtraBackup, Binlog), with the DSL markers driving the derived\nschema. The previously-inherited config models (:class:`RestoreConfigAll` and\n:class:`BaseRestoreConfigServer`) stay the YAML-serialization targets the\npayload builder populates via ``extract_model_from_instance``; this model\nre-declares their fields directly so it can also carry presentation metadata.\n\nThe per-``backup_type`` section visibility is expressed in the view layout\n(``restore/views.py``), not as field-level gates: several mode-specific config\nfields carry non-``None`` defaults (``myloader_threads``, ``xb_parallel``,\n``master_port``), so a field-level ``Forbidden`` gate would reject those\ndefaults on a cross-mode restore. Keeping the model permissive preserves the\nlegacy payload contract byte-for-byte.\n\n``service_id`` / ``schema_id`` keep their str-accepting annotation (carrying\nthe ``\"-1\"`` ``UNKNOWN_SERVICE_SENTINEL``); their ``ServiceRef`` / ``SchemaRef``\nmarkers drive only the ``GET /schema`` widgets, while the conditional,\n404-tolerant resolution lives in ``deps.resolve_restore_entities``.",
-        "properties": {
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "backup_source": {
-            "minLength": 1,
-            "title": "Backup Source",
-            "type": "string"
-          },
-          "backup_type": {
-            "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupType"
-          },
-          "binlog_restore_extra_args": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Binlog Restore Extra Args"
-          },
-          "custom_mysql_init_command": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Custom Mysql Init Command"
-          },
-          "datadir": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Datadir"
-          },
-          "gpg_password_file": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Gpg Password File"
-          },
-          "hostname": {
-            "minLength": 1,
-            "title": "Hostname",
-            "type": "string"
-          },
-          "include_databases": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Include Databases"
-          },
-          "incremental_dest_path": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Incremental Dest Path"
-          },
-          "keyring_file_data": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Keyring File Data"
-          },
-          "kill_mysql": {
-            "default": false,
-            "title": "Kill Mysql",
-            "type": "boolean"
-          },
-          "local_path": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Local Path"
-          },
-          "logging_dir": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Logging Dir"
-          },
-          "master_ip": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Master Ip"
-          },
-          "master_password": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Master Password"
-          },
-          "master_port": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": 3306,
-            "title": "Master Port"
-          },
-          "master_user": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Master User"
-          },
-          "myloader_extra_args": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Myloader Extra Args"
-          },
-          "myloader_threads": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": 4,
-            "title": "Myloader Threads"
-          },
-          "overwrite_tables": {
-            "default": false,
-            "title": "Overwrite Tables",
-            "type": "boolean"
-          },
-          "port": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port"
-          },
-          "post_script": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Post Script"
-          },
-          "pre_script": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pre Script"
-          },
-          "restore_mycnf": {
-            "default": false,
-            "title": "Restore Mycnf",
-            "type": "boolean"
-          },
-          "s3_tool": {
-            "$ref": "#/components/schemas/S3Tool",
-            "default": "s3cmd"
-          },
-          "schema_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Schema Id"
-          },
-          "service_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Service Id"
-          },
-          "skip_databases": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Skip Databases"
-          },
-          "skip_incrementals": {
-            "default": false,
-            "title": "Skip Incrementals",
-            "type": "boolean"
-          },
-          "slave_from_master": {
-            "default": false,
-            "title": "Slave From Master",
-            "type": "boolean"
-          },
-          "ssh_key": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ssh Key"
-          },
-          "ssh_port": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": 22,
-            "title": "Ssh Port"
-          },
-          "ssh_user": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": "percona",
-            "title": "Ssh User"
-          },
-          "start_file": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Start File"
-          },
-          "start_position": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Start Position"
-          },
-          "stop_file": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stop File"
-          },
-          "stop_position": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stop Position"
-          },
-          "task_name": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
-          },
-          "use_sql_file": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Use Sql File"
-          },
-          "wait_for_catchup": {
-            "default": false,
-            "title": "Wait For Catchup",
-            "type": "boolean"
-          },
-          "xb_parallel": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": 4,
-            "title": "Xb Parallel"
-          },
-          "xb_prepare_memory": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xb Prepare Memory"
-          },
-          "xtrabackup_aes256_keyfile": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Aes256 Keyfile"
-          },
-          "xtrabackup_bin_cmd": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/XtraBackupTool"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Bin Cmd"
-          },
-          "xtrabackup_restore_args": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Xtrabackup Restore Args"
-          }
-        },
-        "required": [
-          "task_name",
-          "hostname",
-          "backup_type",
-          "backup_source"
-        ],
-        "title": "RestoreCreate",
-        "type": "object"
       }
     }
   },
@@ -11909,608 +10726,6 @@
           }
         },
         "summary": "Read Root"
-      }
-    },
-    "/alert-troubleshooting/": {
-      "get": {
-        "description": "Render the Alert Troubleshooting index page.\n\nDisplay available alerts grouped by database service type in expandable\naccordion sections.\n\n:param request: The HTTP request object.\n:type request: Request\n:param context: The assembled template context with grouped alerts.\n:type context: TroubleshootingIndexContext\n:return: The rendered HTML response.\n:rtype: HTMLResponse",
-        "operationId": "troubleshooting_index_alert_troubleshooting__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Troubleshooting Index"
-      }
-    },
-    "/alert-troubleshooting/execute": {
-      "post": {
-        "description": "Execute a snippet via AJAX and return the task ID as JSON.\n\nProxy the execution request to the Tasks API and return the task history\nID for subsequent output polling. The caller passes ``snippet_filename`` as\na query parameter so nested snippet keys do not occupy a routed path segment.\n\n:param tasks_api: The authenticated Tasks API client.\n:type tasks_api: TaskAPI\n:param snippet: The validated executable snippet.\n:type snippet: AjaxExecutableSnippet\n:param execution_request_meta: The assembled execution metadata.\n:type execution_request_meta: ExecutionRequestMeta\n:return: A JSON response with the task ID and submission status.\n:rtype: JSONResponse",
-        "operationId": "troubleshooting_execute_alert_troubleshooting_execute_post",
-        "parameters": [
-          {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
-            "required": true,
-            "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Troubleshooting Execute"
-      }
-    },
-    "/alert-troubleshooting/output/{task_history_id}": {
-      "get": {
-        "description": "Poll the execution status and output for a task history entry.\n\nReturn the current task status and, when finished, the STDOUT content\nfrom the task's logs.  When the task has failed and STDERR is\navailable, include it in the ``error`` field so the client can display\nthe failure reason.\n\n:param task_history_id: The task history ID to poll.\n:type task_history_id: int\n:param tasks_api: The authenticated Tasks API client.\n:type tasks_api: TaskAPI\n:return: A JSON response with the task status, optional output, and\n    optional error.\n:rtype: JSONResponse",
-        "operationId": "troubleshooting_output_alert_troubleshooting_output__task_history_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_history_id",
-            "required": true,
-            "schema": {
-              "title": "Task History Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Troubleshooting Output"
-      }
-    },
-    "/alert-troubleshooting/{service_type}/{alert_name}": {
-      "get": {
-        "description": "Render the Alert Troubleshooting detail page for a specific alert.\n\nDisplay the alert header, shared host selector, and snippet cards with\nparameter forms for AJAX-based execution.\n\n:param request: The HTTP request object.\n:type request: Request\n:param context: The assembled template context with alert info and snippets.\n:type context: TroubleshootingDetailContext\n:return: The rendered HTML response.\n:rtype: HTMLResponse",
-        "operationId": "troubleshooting_detail_alert_troubleshooting__service_type___alert_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "alert_name",
-            "required": true,
-            "schema": {
-              "title": "Alert Name",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "service_type",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/AlertServiceType"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Troubleshooting Detail"
-      }
-    },
-    "/alerts/": {
-      "get": {
-        "deprecated": true,
-        "description": "Render the alert templates list page.",
-        "operationId": "alerts_index_alerts__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Alerts Index"
-      }
-    },
-    "/alerts/backups/{backup_id}": {
-      "get": {
-        "deprecated": true,
-        "description": "Return a summary of a single backup's contents.\n\n:param session: The async database session.\n:type session: AsyncSession\n:param backup_id: The ID of the backup to retrieve.\n:type backup_id: int\n:return: JSON with categorized backup contents.\n:rtype: JSONResponse",
-        "operationId": "alerts_backup_detail_alerts_backups__backup_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "backup_id",
-            "required": true,
-            "schema": {
-              "title": "Backup Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Alerts Backup Detail"
-      }
-    },
-    "/alerts/pagerduty": {
-      "post": {
-        "deprecated": true,
-        "description": "Create or update the PagerDuty contact point and notification policy.\n\n:param pmm_api: The PMM API client dependency.\n:type pmm_api: PMMRemoteAPI\n:param integration_key: The PagerDuty integration key from the form.\n:type integration_key: NonEmptyStr\n:return: JSON with ``status``.\n:rtype: JSONResponse",
-        "operationId": "pagerduty_save_alerts_pagerduty_post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_pagerduty_save_alerts_pagerduty_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pagerduty Save"
-      }
-    },
-    "/alerts/pagerduty/delete": {
-      "post": {
-        "deprecated": true,
-        "description": "Delete the PagerDuty contact point and remove its notification route.\n\n:param pmm_api: The PMM API client dependency.\n:type pmm_api: PMMRemoteAPI\n:return: JSON with ``status`` set to ``\"deleted\"``.\n:rtype: JSONResponse",
-        "operationId": "pagerduty_delete_alerts_pagerduty_delete_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Pagerduty Delete"
-      }
-    },
-    "/alerts/push": {
-      "post": {
-        "deprecated": true,
-        "description": "Push selected alert templates to PMM as rules.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param alert_templates: Alert templates grouped by service type.\n:type alert_templates: AlertTemplatesDep\n:param folder: The PMM alert folder.\n:type folder: Folder\n:param present_names: Set of template names present in PMM, or ``None``\n    when PMM is unreachable.\n:type present_names: set[str] | None\n:param selected: List of template names selected by the user.\n:type selected: list[str]\n:return: JSON response with per-template push results.\n:rtype: JSONResponse",
-        "operationId": "alerts_push_alerts_push_post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_alerts_push_alerts_push_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Alerts Push"
-      }
-    },
-    "/alerts/restore": {
-      "post": {
-        "deprecated": true,
-        "description": "Restore alert configuration from a selected backup.\n\n:param pmm_api: The PMM API client, or ``None`` when PMM is not configured.\n:type pmm_api: PMMRemoteAPI | None\n:param session: The async database session.\n:type session: AsyncSession\n:param backup_id: The ID of the backup to restore from.\n:type backup_id: int\n:return: JSON with restore results on success or an error envelope on failure.\n:rtype: JSONResponse",
-        "operationId": "alerts_restore_alerts_restore_post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_alerts_restore_alerts_restore_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Alerts Restore"
-      }
-    },
-    "/alters/": {
-      "get": {
-        "description": "Homepage of alters plugin.",
-        "operationId": "alters_index_alters__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Alters Index"
-      },
-      "post": {
-        "description": "Create the alters task group and chain pre-checks into the parent run task.",
-        "operationId": "alters_create_alters__post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/AltersCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Alters Create"
-      }
-    },
-    "/alters/table/{table_id}/details": {
-      "get": {
-        "description": "Get table details including create statement and keys.",
-        "operationId": "get_table_details_alters_table__table_id__details_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "table_id",
-            "required": true,
-            "schema": {
-              "title": "Table Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "syntax_highlight_style",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Syntax Highlight Style"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Table Details"
-      }
-    },
-    "/alters/{task_name}": {
-      "get": {
-        "description": "Retrieve alters task.",
-        "operationId": "alters_detail_alters__task_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Alters Detail"
-      },
-      "post": {
-        "description": "Execute alters task.",
-        "operationId": "alters_execute_alters__task_name__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_alters_execute_alters__task_name__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Alters Execute"
-      }
-    },
-    "/alters/{task_name}/delete": {
-      "post": {
-        "description": "Delete the alters task group.",
-        "operationId": "alters_delete_alters__task_name__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Alters Delete"
-      }
-    },
-    "/alters/{task_name}/update": {
-      "post": {
-        "description": "Update the alters task group.",
-        "operationId": "alters_update_alters__task_name__update_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/AltersCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Alters Update"
       }
     },
     "/api/admin/apps/": {
@@ -15716,7 +13931,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupCreate"
+                "$ref": "#/components/schemas/BackupCreate"
               }
             }
           },
@@ -15827,7 +14042,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__restore__models__RestoreCreate"
+                "$ref": "#/components/schemas/RestoreCreate"
               }
             }
           },
@@ -15974,7 +14189,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__restore__models__RestoreCreate"
+                "$ref": "#/components/schemas/RestoreCreate"
               }
             }
           },
@@ -16184,7 +14399,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupCreate"
+                "$ref": "#/components/schemas/BackupCreate"
               }
             }
           },
@@ -18019,218 +16234,6 @@
         ]
       }
     },
-    "/archives/": {
-      "get": {
-        "description": "Homepage of archives plugin.",
-        "operationId": "archives_index_archives__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Archives Index"
-      },
-      "post": {
-        "description": "Create new archives task.",
-        "operationId": "archives_create_archives__post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/ArchivesLegacyForm"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Archives Create"
-      }
-    },
-    "/archives/{task_name}": {
-      "get": {
-        "description": "Retrieve archives task.",
-        "operationId": "archives_detail_archives__task_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Archives Detail"
-      },
-      "post": {
-        "description": "Execute archives task.",
-        "operationId": "archives_execute_archives__task_name__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_archives_execute_archives__task_name__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Archives Execute"
-      }
-    },
-    "/archives/{task_name}/delete": {
-      "post": {
-        "description": "Delete archives task.",
-        "operationId": "archives_delete_archives__task_name__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Archives Delete"
-      }
-    },
-    "/archives/{task_name}/update": {
-      "post": {
-        "description": "Update archives task.",
-        "operationId": "archives_update_archives__task_name__update_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/ArchivesLegacyForm"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Archives Update"
-      }
-    },
     "/artifacts/download/{token}": {
       "get": {
         "description": "Serve an artifact file identified by a signed, time-limited token.\n\n:param token: A signed token encoding the artifact type, filename, and MD5 digest.\n:type token: str\n:return: The artifact file as a streaming response.\n:rtype: FileResponse\n:raises HTTPBadRequestException: If the token is expired, tampered, or references\n    an invalid artifact type or a path outside the permitted base directory.\n:raises HTTPNotFoundException: If the resolved file does not exist.",
@@ -18271,579 +16274,6 @@
           "sep",
           "artifacts"
         ]
-      }
-    },
-    "/backup_mongo/": {
-      "get": {
-        "description": "Homepage of PBM backup mongo plugin.",
-        "operationId": "pbm_backups_index_backup_mongo__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Pbm Backups Index"
-      },
-      "post": {
-        "description": "Create new backups task.",
-        "operationId": "pbm_backups_create_backup_mongo__post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__models__BackupCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pbm Backups Create"
-      }
-    },
-    "/backup_mongo/restores/": {
-      "get": {
-        "description": "Homepage of restores plugin.",
-        "operationId": "restores_pbm_restores_index_backup_mongo_restores__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Pbm Restores Index",
-        "tags": [
-          "restores"
-        ]
-      },
-      "post": {
-        "description": "Create new restores task.",
-        "operationId": "restores_pbm_restores_create_backup_mongo_restores__post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__restore__models__RestoreCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pbm Restores Create",
-        "tags": [
-          "restores"
-        ]
-      }
-    },
-    "/backup_mongo/restores/{task_name}": {
-      "get": {
-        "description": "Retrieve restores task.",
-        "operationId": "restores_pbm_restores_detail_backup_mongo_restores__task_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pbm Restores Detail",
-        "tags": [
-          "restores"
-        ]
-      },
-      "post": {
-        "description": "Execute restores task.",
-        "operationId": "restores_pbm_restores_execute_backup_mongo_restores__task_name__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_restores_pbm_restores_execute_backup_mongo_restores__task_name__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pbm Restores Execute",
-        "tags": [
-          "restores"
-        ]
-      }
-    },
-    "/backup_mongo/restores/{task_name}/delete": {
-      "post": {
-        "description": "Delete restores task.",
-        "operationId": "restores_pbm_restores_delete_backup_mongo_restores__task_name__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pbm Restores Delete",
-        "tags": [
-          "restores"
-        ]
-      }
-    },
-    "/backup_mongo/restores/{task_name}/update": {
-      "post": {
-        "description": "Update restores task.",
-        "operationId": "restores_pbm_restores_update_backup_mongo_restores__task_name__update_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__backup_mongo__restore__models__RestoreCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pbm Restores Update",
-        "tags": [
-          "restores"
-        ]
-      }
-    },
-    "/backup_mongo/{task_name}": {
-      "get": {
-        "description": "Retrieve backups task.",
-        "operationId": "pbm_backups_detail_backup_mongo__task_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pbm Backups Detail"
-      },
-      "post": {
-        "description": "Execute backups task.",
-        "operationId": "pbm_backups_execute_backup_mongo__task_name__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_pbm_backups_execute_backup_mongo__task_name__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pbm Backups Execute"
-      }
-    },
-    "/backup_mongo/{task_name}/delete": {
-      "post": {
-        "description": "Delete backups task.",
-        "operationId": "pbm_backups_delete_backup_mongo__task_name__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pbm Backups Delete"
-      }
-    },
-    "/backup_pg/": {
-      "get": {
-        "deprecated": true,
-        "description": "Render the PG backups plugin index page.\n\nDeprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.",
-        "operationId": "pg_backups_index_backup_pg__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Pg Backups Index"
-      },
-      "post": {
-        "deprecated": true,
-        "description": "Create new backups task.\n\nDeprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.",
-        "operationId": "pg_backups_create_backup_pg__post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/BackupPgForm"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pg Backups Create"
-      }
-    },
-    "/backup_pg/{task_name}": {
-      "get": {
-        "deprecated": true,
-        "description": "Retrieve backups task.\n\nDeprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.",
-        "operationId": "pg_backups_detail_backup_pg__task_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pg Backups Detail"
-      },
-      "post": {
-        "deprecated": true,
-        "description": "Execute backups task.\n\nDeprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.",
-        "operationId": "pg_backups_execute_backup_pg__task_name__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_pg_backups_execute_backup_pg__task_name__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pg Backups Execute"
-      }
-    },
-    "/backup_pg/{task_name}/delete": {
-      "post": {
-        "deprecated": true,
-        "description": "Delete backups task.\n\nDeprecated in favour of the React ``backup_pg`` plugin; functional until Wave 3.\n\n:param task: The PG backups task to delete, resolved by the\n    ``BackupsTask`` dependency from the ``task_name`` path param.\n:type task: BackupsTask\n:param tasks_api: The tasks-API client used to issue the delete call.\n:type tasks_api: TaskAPI\n:return: HTTP 303 redirect to the plugin index.\n:rtype: RedirectResponse",
-        "operationId": "pg_backups_delete_backup_pg__task_name__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Pg Backups Delete"
       }
     },
     "/checksums/": {
@@ -19056,135 +16486,6 @@
           }
         },
         "summary": "Checksums Update"
-      }
-    },
-    "/dipper/": {
-      "get": {
-        "description": "Render the Dipper page with service selection and execution history.",
-        "operationId": "dipper_index_dipper__get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "service_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Service Id"
-            }
-          },
-          {
-            "in": "query",
-            "name": "collector_type",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/CollectorTypeEnum",
-              "default": "environment"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Dipper Index"
-      }
-    },
-    "/dipper/execute": {
-      "post": {
-        "description": "Dispatch a dipper task for the selected service.",
-        "operationId": "dipper_execute_dipper_execute_post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "service_id",
-            "required": true,
-            "schema": {
-              "title": "Service Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "collector_type",
-            "required": false,
-            "schema": {
-              "$ref": "#/components/schemas/CollectorTypeEnum",
-              "default": "environment"
-            }
-          },
-          {
-            "in": "header",
-            "name": "referer",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Referer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DipperScript"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Dipper Execute"
       }
     },
     "/execution-events/{task_history_id}": {
@@ -19543,56 +16844,6 @@
           }
         },
         "summary": "Node Create"
-      }
-    },
-    "/inventory/schedule/": {
-      "post": {
-        "deprecated": true,
-        "description": "Attach a periodic schedule to the inventory-sync task.\n\nDeprecated in favour of the React schedule UI; functional until\nWave 3 when the Jinja2 path is retired.\n\nValidate the optional ``syncer`` field and the interval/crontab shape at\nform-submit time using ``filter_syncers_by_name`` and explicit checks so\ninvalid input fails fast with a friendly redirect rather than silently\nmisfiring inside the worker. When ``syncer`` is unset the schedule runs\nevery configured syncer; when set it targets only that syncer.\n\n:param syncers: The configured syncers from ``SyncersDep``.\n:type syncers: SyncersDep\n:param tasks_api: The Tasks API client.\n:type tasks_api: TaskAPI\n:param schedule: The submitted attach form.\n:type schedule: InventorySyncScheduleCreateForm\n:param referer: The originating page used for the redirect on success.\n:type referer: str\n:return: A 303 redirect back to the originating page.\n:rtype: RedirectResponse\n:raises HTTPBadRequestException: If ``SEP_INTERNAL_TOKEN`` is not\n    configured, the syncer name is unknown, or both / neither schedule\n    mode is supplied.",
-        "operationId": "schedule_create_inventory_schedule__post",
-        "parameters": [
-          {
-            "in": "header",
-            "name": "referer",
-            "required": false,
-            "schema": {
-              "default": "/inventory/",
-              "title": "Referer",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/InventorySyncScheduleCreateForm"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Schedule Create"
       }
     },
     "/inventory/schemas/{schema_id}": {
@@ -19979,43 +17230,6 @@
         "summary": "Sync Service"
       }
     },
-    "/inventory/sync/": {
-      "post": {
-        "deprecated": true,
-        "description": "Start inventory sync as a background task.\n\nDeprecated in favour of the React sync control at\n``POST /api/plugins/inventory/sync/``; functional until Wave 3.",
-        "operationId": "sync_inventory_inventory_sync__post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_sync_inventory_inventory_sync__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Sync Inventory"
-      }
-    },
     "/inventory/tables/{table_id}/delete": {
       "post": {
         "description": "Delete Table.",
@@ -20330,449 +17544,6 @@
         "summary": "Logout"
       }
     },
-    "/mysql_backups/": {
-      "get": {
-        "description": "Homepage of backups plugin.",
-        "operationId": "mysql_backups_index_mysql_backups__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Mysql Backups Index"
-      },
-      "post": {
-        "description": "Create new backups task.",
-        "operationId": "mysql_backups_create_mysql_backups__post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Mysql Backups Create"
-      }
-    },
-    "/mysql_backups/docs": {
-      "get": {
-        "description": "Standalone documentation page for backup configuration.",
-        "operationId": "mysql_backups_docs_mysql_backups_docs_get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Mysql Backups Docs"
-      }
-    },
-    "/mysql_backups/restores/": {
-      "get": {
-        "description": "Homepage of restores plugin.",
-        "operationId": "restores_index_mysql_backups_restores__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Restores Index"
-      },
-      "post": {
-        "description": "Create new restores task.",
-        "operationId": "restores_create_mysql_backups_restores__post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__restore__models__RestoreCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Restores Create"
-      }
-    },
-    "/mysql_backups/restores/{task_name}": {
-      "get": {
-        "description": "Retrieve restores task.",
-        "operationId": "restores_detail_mysql_backups_restores__task_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Restores Detail"
-      },
-      "post": {
-        "description": "Execute restores task.",
-        "operationId": "restores_execute_mysql_backups_restores__task_name__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_restores_execute_mysql_backups_restores__task_name__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Restores Execute"
-      }
-    },
-    "/mysql_backups/restores/{task_name}/delete": {
-      "post": {
-        "description": "Delete restores task.",
-        "operationId": "restores_delete_mysql_backups_restores__task_name__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Restores Delete"
-      }
-    },
-    "/mysql_backups/restores/{task_name}/update": {
-      "post": {
-        "description": "Update restores task.",
-        "operationId": "restores_update_mysql_backups_restores__task_name__update_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__restore__models__RestoreCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Restores Update"
-      }
-    },
-    "/mysql_backups/{task_name}": {
-      "get": {
-        "description": "Retrieve backups task.",
-        "operationId": "mysql_backups_detail_mysql_backups__task_name__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Mysql Backups Detail"
-      },
-      "post": {
-        "description": "Execute backups task.",
-        "operationId": "mysql_backups_execute_mysql_backups__task_name__post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_mysql_backups_execute_mysql_backups__task_name__post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Mysql Backups Execute"
-      }
-    },
-    "/mysql_backups/{task_name}/delete": {
-      "post": {
-        "description": "Delete backups task.",
-        "operationId": "mysql_backups_delete_mysql_backups__task_name__delete_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Mysql Backups Delete"
-      }
-    },
-    "/mysql_backups/{task_name}/update": {
-      "post": {
-        "description": "Update backups task.",
-        "operationId": "mysql_backups_update_mysql_backups__task_name__update_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "task_name",
-            "required": true,
-            "schema": {
-              "title": "Task Name",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/app__sep__plugins__mysql_backups__models__BackupCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "307": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Mysql Backups Update"
-      }
-    },
     "/periodic/": {
       "post": {
         "description": "Create periodic task.",
@@ -20933,511 +17704,6 @@
           "sep",
           "periodic-tasks"
         ]
-      }
-    },
-    "/report/": {
-      "get": {
-        "deprecated": true,
-        "description": "Render the report plugin landing page.",
-        "operationId": "report_index_report__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Report Index"
-      }
-    },
-    "/report/generate": {
-      "post": {
-        "deprecated": true,
-        "description": "Generate a report and render the HTML result page.\n\n:param request: The incoming HTTP request.\n:type request: Request\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param context: Template context.\n:type context: ReportIndexContext\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:return: Rendered HTML report.\n:rtype: HTMLResponse",
-        "operationId": "report_generate_report_generate_post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_report_generate_report_generate_post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Report Generate"
-      }
-    },
-    "/report/generate/json": {
-      "get": {
-        "deprecated": true,
-        "description": "Generate a report and return as JSON.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:param sections: Optional list of sections to include.\n:type sections: list[str] | None\n:return: JSON response with the full report data.\n:rtype: JSONResponse",
-        "operationId": "report_generate_json_report_generate_json_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "since",
-            "required": false,
-            "schema": {
-              "default": "now-7d",
-              "title": "Since",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "until",
-            "required": false,
-            "schema": {
-              "default": "now",
-              "title": "Until",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "full",
-            "required": false,
-            "schema": {
-              "default": true,
-              "title": "Full",
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
-            "name": "refresh",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Refresh",
-              "type": "boolean"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sections",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Sections"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Report Generate Json"
-      }
-    },
-    "/report/generate/pdf": {
-      "post": {
-        "deprecated": true,
-        "description": "Generate a report and return it as a downloadable PDF.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:return: PDF file response.\n:rtype: Response",
-        "operationId": "report_generate_pdf_report_generate_pdf_post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_report_generate_pdf_report_generate_pdf_post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Report Generate Pdf"
-      }
-    },
-    "/report/upload": {
-      "post": {
-        "deprecated": true,
-        "description": "Generate a report, convert to PDF, and upload to ServiceNow.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:return: JSON response with the upload result.\n:rtype: JSONResponse",
-        "operationId": "report_upload_report_upload_post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_report_upload_report_upload_post"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Report Upload"
-      }
-    },
-    "/snippets/": {
-      "get": {
-        "description": "Homepage of snippets plugin.",
-        "operationId": "snippets_index_snippets__get",
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Snippets Index"
-      }
-    },
-    "/snippets/approve": {
-      "post": {
-        "description": "Approve a snippet.",
-        "operationId": "snippets_approve_snippets_approve_post",
-        "parameters": [
-          {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
-            "required": true,
-            "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "referer",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Referer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Snippets Approve"
-      }
-    },
-    "/snippets/approve-batch": {
-      "post": {
-        "description": "Approve multiple snippets in a single atomic bulk operation.\n\nReject the whole batch if any requested filename is unknown, its file is\nmissing on disk, or it is already approved. On success, flash a summary and\nredirect back to the snippets index.\n\n:param request: The HTTP request object.\n:type request: Request\n:param user: The admin performing the action.\n:type user: User\n:param session: The active database session.\n:type session: AsyncSession\n:param body: The validated request body containing the filenames to approve.\n:type body: SnippetBatchApproveForm\n:return: A 303 redirect back to the snippets index.\n:rtype: RedirectResponse",
-        "operationId": "snippets_approve_batch_snippets_approve_batch_post",
-        "requestBody": {
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "$ref": "#/components/schemas/SnippetBatchApproveForm"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Snippets Approve Batch"
-      }
-    },
-    "/snippets/detail": {
-      "get": {
-        "description": "Retrieve and display information about a snippet.",
-        "operationId": "snippets_detail_snippets_detail_get",
-        "parameters": [
-          {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
-            "required": true,
-            "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/html": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Snippets Detail"
-      }
-    },
-    "/snippets/execute": {
-      "post": {
-        "description": "Execute a snippet.",
-        "operationId": "snippets_execute_snippets_execute_post",
-        "parameters": [
-          {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
-            "required": true,
-            "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "referer",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Referer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Snippets Execute"
-      }
-    },
-    "/snippets/refresh": {
-      "post": {
-        "description": "Refresh the snippets.",
-        "operationId": "snippets_refresh_snippets_refresh_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Snippets Refresh"
-      }
-    },
-    "/snippets/remove-approval": {
-      "post": {
-        "description": "Remove the approval of a snippet.",
-        "operationId": "snippets_remove_approval_snippets_remove_approval_post",
-        "parameters": [
-          {
-            "description": "Snippet filename (relative path under snippets root).",
-            "in": "query",
-            "name": "snippet_filename",
-            "required": true,
-            "schema": {
-              "description": "Snippet filename (relative path under snippets root).",
-              "title": "Snippet Filename",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "referer",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Referer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Snippets Remove Approval"
       }
     },
     "/stop-task/{task_history_id}": {

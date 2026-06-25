@@ -47,7 +47,7 @@ templates = sep_settings.TEMPLATES
 
 
 @router.get(
-    "/", dependencies=[IsAuthenticated], response_class=HTMLResponse, deprecated=True
+    "/", dependencies=[IsAuthenticated], response_class=HTMLResponse, include_in_schema=False
 )
 async def alerts_index(
     request: Request,
@@ -62,7 +62,7 @@ async def alerts_index(
 
 
 @router.post(
-    "/restore", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True
+    "/restore", dependencies=[IsAuthenticated, IsCsrfValidated], include_in_schema=False
 )
 async def alerts_restore(
     pmm_api: PMMAPIDep,
@@ -103,7 +103,7 @@ async def alerts_restore(
     return JSONResponse({"status": "success", "details": results})
 
 
-@router.get("/backups/{backup_id}", dependencies=[IsAuthenticated], deprecated=True)
+@router.get("/backups/{backup_id}", dependencies=[IsAuthenticated], include_in_schema=False)
 async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONResponse:
     """Return a summary of a single backup's contents.
 
@@ -143,7 +143,7 @@ async def alerts_backup_detail(session: SessionDep, backup_id: int) -> JSONRespo
 
 
 @router.post(
-    "/pagerduty", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True
+    "/pagerduty", dependencies=[IsAuthenticated, IsCsrfValidated], include_in_schema=False
 )
 async def pagerduty_save(
     pmm_api: RequiredPMMAPIDep,
@@ -193,7 +193,7 @@ async def pagerduty_save(
 @router.post(
     "/pagerduty/delete",
     dependencies=[IsAuthenticated, IsCsrfValidated],
-    deprecated=True,
+    include_in_schema=False,
 )
 async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
     """Delete the PagerDuty contact point and remove its notification route.
@@ -231,7 +231,7 @@ async def pagerduty_delete(pmm_api: RequiredPMMAPIDep) -> JSONResponse:
         )
 
 
-@router.post("/push", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True)
+@router.post("/push", dependencies=[IsAuthenticated, IsCsrfValidated], include_in_schema=False)
 async def alerts_push(
     pmm_api: RequiredPMMAPIDep,
     alert_templates: AlertTemplatesDep,
