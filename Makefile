@@ -261,4 +261,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
