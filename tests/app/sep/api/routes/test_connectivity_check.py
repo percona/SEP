@@ -163,6 +163,31 @@ class TestConnectivityCheckEndpoint:
         assert results["nomad"]["reachable"] is False
         assert results["nomad"]["status"] == "unreachable"
 
+    def test_hosts_non_502_error_marks_both_error(
+        self,
+        admin_client: TestClient,
+        mock_pmm_api: AsyncMock,
+        mock_inventory_api_dep: AsyncMock,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Mark both Tasks and Nomad error on a non-502 HTTP failure (e.g. 500).
+
+        A 500 indicates the Tasks API itself is unhealthy, not a Nomad backend
+        outage, so Tasks must not be reported reachable.
+        """
+        mock_pmm_api.check_connectivity.return_value = _reachable("pmm")
+        mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
+        mock_task_api_dep.get.side_effect = HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+        results = _results_by_service(admin_client.post(ENDPOINT).json())
+
+        assert results["tasks"]["reachable"] is False
+        assert results["tasks"]["status"] == "error"
+        assert results["nomad"]["reachable"] is False
+        assert results["nomad"]["status"] == "error"
+
     def test_hosts_connection_error_marks_both_unreachable(
         self,
         admin_client: TestClient,

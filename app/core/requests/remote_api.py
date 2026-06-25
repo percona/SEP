@@ -85,7 +85,7 @@ def _sanitize_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """
     headers = kwargs.get("headers")
     if not headers:
-        return kwargs
+        return {**kwargs}
     safe_headers = {
         key: (_REDACTED_HEADER_VALUE if key.lower() in _SENSITIVE_HEADERS else value)
         for key, value in headers.items()

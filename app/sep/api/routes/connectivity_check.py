@@ -32,7 +32,7 @@ is added.
 
 import asyncio
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 
 from app.core.requests.connectivity import (
     build_connectivity_result,
@@ -84,12 +84,13 @@ async def _probe_tasks_and_nomad(
 ) -> tuple[ConnectivityResult, ConnectivityResult]:
     """Derive both Tasks and Nomad results from a single ``/hosts/`` probe.
 
-    A ``200`` (including an empty cluster) means both are reachable. A response
-    that classifies as ``ERROR`` -- the Tasks proxy answered with an HTTP error,
-    e.g. its ``502`` when the executor backend is unreachable -- means Tasks
-    answered (reachable) but Nomad is unreachable. A connection-level / SSL /
-    timeout / auth failure to the Tasks endpoint applies to both, since Nomad
-    cannot be confirmed.
+    A ``200`` (including an empty cluster) means both are reachable. Only an
+    upstream ``502 Bad Gateway`` -- the Tasks proxy answered but its executor
+    backend is unreachable -- means Tasks is reachable while Nomad is not. Any
+    other failure (other HTTP errors such as a ``500`` indicating an unhealthy
+    Tasks API itself, plus connection-level / SSL / timeout / auth failures)
+    applies to both, since a healthy Tasks API cannot be confirmed and Nomad
+    therefore cannot be either.
 
     :param tasks_api: The authenticated Tasks API client.
     :type tasks_api: TaskAPI
@@ -100,10 +101,12 @@ async def _probe_tasks_and_nomad(
         async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
             await tasks_api.get(_HOSTS_PROBE_PATH)
     except Exception as exc:  # noqa: BLE001 -- classified, never re-raised
-        probe_status = classify_connectivity_error(exc)
-        if probe_status is ConnectivityStatusEnum.ERROR:
-            # Tasks answered with an HTTP error (e.g. a 502 mapping an executor
-            # outage), so Tasks is reachable but Nomad is not.
+        if (
+            isinstance(exc, HTTPException)
+            and exc.status_code == status.HTTP_502_BAD_GATEWAY
+        ):
+            # The Tasks proxy answered but its executor backend is down, so
+            # Tasks is reachable but Nomad is not.
             return (
                 build_connectivity_result(
                     SERVICE_TASKS, ConnectivityStatusEnum.REACHABLE
@@ -114,7 +117,9 @@ async def _probe_tasks_and_nomad(
                     detail="Executor backend unreachable.",
                 ),
             )
-        # The Tasks endpoint itself failed; Nomad cannot be confirmed either.
+        # The Tasks endpoint itself failed (HTTP 5xx other than 502, connection,
+        # SSL, timeout, or auth); Nomad cannot be confirmed either.
+        probe_status = classify_connectivity_error(exc)
         return (
             build_connectivity_result(SERVICE_TASKS, probe_status),
             build_connectivity_result(SERVICE_NOMAD, probe_status),
