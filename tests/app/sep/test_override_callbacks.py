@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from pytest_mock import MockerFixture
 from sqlalchemy_celery_beat.models import Period
 
+import app.sep.main as sep_main
 from app.core.celery.models import IntervalSchedule
 from app.core.config import PMMSettings, Settings, settings
 from app.core.requests import RemoteAPI
@@ -31,8 +32,6 @@ from app.sep.main import (
     _invalidate_pmm_clients,
     _make_remote_api_rebinder,
     _reseed_system_periodic_tasks,
-    sep_app,
-    sep_overrides_lifespan,
 )
 from app.sep.snippets.config import snippets_settings
 
@@ -137,17 +136,17 @@ async def test_reseed_callback_reseeds_beat_with_live_interval(
 @pytest.mark.asyncio
 async def test_reseed_callback_registered_for_sync_interval() -> None:
     """``sep_overrides_lifespan`` registers the snippets-interval re-seed callback."""
-    original = getattr(sep_app.state, "override_callbacks", None)
+    original = getattr(sep_main.sep_app.state, "override_callbacks", None)
     try:
-        async with sep_overrides_lifespan(FastAPI()):
-            callbacks = sep_app.state.override_callbacks
+        async with sep_main.sep_overrides_lifespan(FastAPI()):
+            callbacks = sep_main.sep_app.state.override_callbacks
         assert (
             SettingClassEnum.SNIPPETS_SETTINGS,
             "SYNC_INTERVAL",
         ) in callbacks
         assert (
             callbacks[(SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL")]
-            is _reseed_system_periodic_tasks
+            is sep_main._reseed_system_periodic_tasks
         )
     finally:
-        sep_app.state.override_callbacks = original
+        sep_main.sep_app.state.override_callbacks = original
