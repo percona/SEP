@@ -114,6 +114,30 @@ def test_build_alters_spec_localhost_service_omits_host(
     assert "h=localhost" not in args
 
 
+def test_build_alters_spec_emits_progress_without_print(
+    created_service: CreatedService,
+):
+    """Emit --progress whenever progress is set, independent of the print flag."""
+    body = _build_body(progress="time,10", print_arg=False)
+
+    args = build_alters_spec(created_service, "app", "users", body).data["meta"]["args"]
+
+    assert "--progress=time,10" in args
+    assert "--print" not in args
+
+
+def test_build_alters_spec_omits_progress_when_unset(
+    created_service: CreatedService,
+):
+    """Omit --progress when progress is empty, even with the print flag enabled."""
+    body = _build_body(progress="", print_arg=True)
+
+    args = build_alters_spec(created_service, "app", "users", body).data["meta"]["args"]
+
+    assert "--progress" not in args
+    assert "--print" in args
+
+
 def test_build_alters_spec_dsn_recursion_embeds_dsn_table(
     created_service: CreatedService,
 ):

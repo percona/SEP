@@ -346,11 +346,11 @@ async def test_build_alters_task_dsn_recursion_defaults_empty_dsn_table(
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_print_arg_adds_progress(
+async def test_build_alters_task_adds_progress_independent_of_print(
     created_alters, created_service, created_schema, created_table, mock_remote_api
 ):
-    """--progress is appended when print_arg is enabled."""
-    created_alters.print_arg = True
+    """Append --progress whenever progress is set, with or without --print."""
+    created_alters.print_arg = False
     created_alters.progress = "time,5"
     mock_remote_api.get = AsyncMock(
         side_effect=[
@@ -360,7 +360,9 @@ async def test_build_alters_task_print_arg_adds_progress(
         ]
     )
     task = await build_alters_task(created_alters, mock_remote_api)
-    assert "--progress=time,5" in task.data["meta"]["args"]
+    args = task.data["meta"]["args"]
+    assert "--progress=time,5" in args
+    assert "--print" not in args
 
 
 def test_parse_alters_task_args_missing_or_empty_args():

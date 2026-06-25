@@ -130,7 +130,7 @@ def build_alters_spec(
     }
     args.extend(arg for key, arg in flag_args.items() if getattr(body, key))
 
-    if body.print_arg:
+    if body.progress:
         args.append(f"--progress={body.progress}")
 
     if body.extra_args:
