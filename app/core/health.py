@@ -18,12 +18,11 @@
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
-from starlette import status
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
