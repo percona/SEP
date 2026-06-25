@@ -21,8 +21,9 @@ from unittest.mock import AsyncMock
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy_celery_beat.models import PeriodicTask
+from sqlalchemy_celery_beat.models import PeriodicTask, PeriodicTaskChanged
 from sqlmodel import SQLModel
 from sqlmodel.pool import StaticPool
 
@@ -42,6 +43,7 @@ from app.sep.middleware.messages.models import MessageLevel
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
 SNIPPETS_TASK = "sep__sync_snippets"
+RECONCILER_TASK = "sep__reconcile_disabling_apps"
 OVERRIDE_EVERY_MINUTES = 30
 
 
@@ -446,3 +448,212 @@ async def test_reseed_callback_failure_does_not_break_refresh_cycle(
     failing.assert_awaited_once()
     # The unrelated SEP override still took effect.
     assert sep_settings.CONNECTIVITY_CHECK_DEFAULT is sep_override
+
+
+async def _read_last_update(beat_session_maker: async_sessionmaker):
+    """Return the singleton ``PeriodicTaskChanged.last_update``, or ``None``."""
+    async with beat_session_maker() as session:
+        result = await session.execute(select(PeriodicTaskChanged.last_update))
+        return result.scalar_one_or_none()
+
+
+async def _seed_reconciler_task(beat_session_maker: async_sessionmaker) -> None:
+    """Seed the unrelated ``sep__reconcile_disabling_apps`` beat row.
+
+    Uses the interval the builder reads for the reconciler
+    (``sep_settings.APP_DRAIN.reconcile_interval``), so a re-seed's
+    get-or-create resolves to this same schedule row and leaves the task
+    untouched -- the precondition for the no-churn assertion.
+    """
+    from sqlalchemy_celery_beat.models import IntervalSchedule as BeatInterval
+
+    interval = sep_settings.APP_DRAIN.reconcile_interval
+    async with beat_session_maker() as session:
+        schedule = BeatInterval(every=interval.every, period=interval.period)
+        session.add(schedule)
+        await session.flush()
+        session.add(
+            PeriodicTask(
+                name=RECONCILER_TASK,
+                task="app.sep.app_drain.reconcile_disabling_apps",
+                enabled=True,
+                schedule_model=schedule,
+            )
+        )
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_reseed_bumps_periodic_task_changed_last_update(
+    override_session_maker: async_sessionmaker,
+    beat_session_maker: async_sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Re-seeding the snippets interval advances ``PeriodicTaskChanged.last_update``.
+
+    AC #5: Celery beat reloads on the ``last_update`` bump written by the
+    ``after_update`` listener when ``sep__sync_snippets``'s ``schedule_model`` is
+    reassigned. The live-reseed test asserts the row's new value; this asserts
+    the change-marker the running scheduler actually polls.
+    """
+    await _seed_snippets_task(beat_session_maker, every=1, enabled=True)
+    before = await _read_last_update(beat_session_maker)
+
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                key="SYNC_INTERVAL",
+                value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
+            ),
+        )
+    monkeypatch.setattr(
+        "app.core.celery.utils.get_async_session_maker",
+        lambda: beat_session_maker,
+    )
+    callbacks = {
+        (
+            SettingClassEnum.SNIPPETS_SETTINGS,
+            "SYNC_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+    }
+    try:
+        await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
+    finally:
+        snippets_settings._set_snapshot({})
+
+    after = await _read_last_update(beat_session_maker)
+    assert after is not None
+    assert before is None or after > before
+
+
+@pytest.mark.asyncio
+async def test_reseed_does_not_churn_unrelated_task(
+    override_session_maker: async_sessionmaker,
+    beat_session_maker: async_sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A snippets-only override leaves the unrelated reconciler beat row untouched.
+
+    Risk note: the callback re-runs ``init_periodic_tasks_db`` over the whole
+    task set, not just the snippets entry. Its get-or-create + upsert path must
+    not re-write a task whose schedule did not change, otherwise an unrelated
+    ``after_update`` would needlessly churn the schedule. Pin the contract: the
+    reconciler row's ``schedule_id`` (and interval) are unchanged after the
+    re-seed, while the snippets row is updated.
+    """
+    await _seed_reconciler_task(beat_session_maker)
+    await _seed_snippets_task(beat_session_maker, every=1, enabled=True)
+
+    async with beat_session_maker() as session:
+        reconciler_before = await BasePeriodicTaskManager.first(
+            session, name=RECONCILER_TASK
+        )
+        reconciler_schedule_id_before = reconciler_before.schedule_id
+
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                key="SYNC_INTERVAL",
+                value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
+            ),
+        )
+    monkeypatch.setattr(
+        "app.core.celery.utils.get_async_session_maker",
+        lambda: beat_session_maker,
+    )
+    callbacks = {
+        (
+            SettingClassEnum.SNIPPETS_SETTINGS,
+            "SYNC_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+    }
+    try:
+        await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
+    finally:
+        snippets_settings._set_snapshot({})
+
+    from sqlalchemy_celery_beat.models import Period
+
+    async with beat_session_maker() as session:
+        reconciler_after = await BasePeriodicTaskManager.first(
+            session, name=RECONCILER_TASK
+        )
+        snippets_after = await BasePeriodicTaskManager.first(
+            session, name=SNIPPETS_TASK
+        )
+    # Unrelated task: schedule not churned.
+    assert reconciler_after.schedule_id == reconciler_schedule_id_before
+    assert (
+        reconciler_after.schedule_model.every
+        == sep_settings.APP_DRAIN.reconcile_interval.every
+    )
+    # Snippets task: did update.
+    assert snippets_after.schedule_model.every == OVERRIDE_EVERY_MINUTES
+    assert snippets_after.schedule_model.period == Period.MINUTES
+
+
+@pytest.mark.asyncio
+async def test_removing_sync_interval_override_reverts_beat_to_yaml_default(
+    override_session_maker: async_sessionmaker,
+    beat_session_maker: async_sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deactivating the override reverts the beat row to the YAML default interval.
+
+    Only the add path was covered. When the override is removed the proxy
+    snapshot falls back to the ``settings.yaml`` default (``every=1`` hour); the
+    snapshot change re-fires the callback, which re-seeds ``sep__sync_snippets``
+    back to the default cadence.
+    """
+    from sqlalchemy_celery_beat.models import Period
+
+    yaml_default = snippets_settings.SYNC_INTERVAL
+    await _seed_snippets_task(beat_session_maker, every=1, enabled=True)
+    monkeypatch.setattr(
+        "app.core.celery.utils.get_async_session_maker",
+        lambda: beat_session_maker,
+    )
+    callbacks = {
+        (
+            SettingClassEnum.SNIPPETS_SETTINGS,
+            "SYNC_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+    }
+
+    try:
+        # Override in, refresh -> beat row picks up the new cadence.
+        async with override_session_maker() as session:
+            await SettingsOverrideManager.create(
+                session,
+                SettingOverride(
+                    setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                    key="SYNC_INTERVAL",
+                    value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
+                ),
+            )
+        await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
+        async with beat_session_maker() as session:
+            task = await BasePeriodicTaskManager.first(session, name=SNIPPETS_TASK)
+        assert task.schedule_model.every == OVERRIDE_EVERY_MINUTES
+
+        # Override out (deactivated), refresh -> beat row reverts to YAML default.
+        async with override_session_maker() as session:
+            await SettingsOverrideManager.update_where(
+                session,
+                {"is_active": False},
+                setting_class=SettingClassEnum.SNIPPETS_SETTINGS,
+                key="SYNC_INTERVAL",
+            )
+        await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
+    finally:
+        snippets_settings._set_snapshot({})
+
+    assert yaml_default == snippets_settings.SYNC_INTERVAL
+    async with beat_session_maker() as session:
+        task = await BasePeriodicTaskManager.first(session, name=SNIPPETS_TASK)
+    assert task.schedule_model.every == yaml_default.every
+    assert task.schedule_model.period == Period(yaml_default.period)
