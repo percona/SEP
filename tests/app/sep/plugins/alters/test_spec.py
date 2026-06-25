@@ -78,7 +78,7 @@ def test_build_alters_spec_builds_parent_execute_envelope(
 def test_build_alters_spec_remote_service_embeds_host_and_port(
     created_service: CreatedService,
 ):
-    """Prefix the target DSN with the service host and port for a remote service."""
+    """Build the target DSN with the service host and port for a remote service."""
     remote = _service_at(created_service, "10.0.0.5").model_copy(
         update={"port": REMOTE_SERVICE_PORT}
     )
@@ -117,7 +117,7 @@ def test_build_alters_spec_dsn_recursion_embeds_dsn_table(
 def test_build_alters_spec_dsn_table_prefix_passes_through(
     created_service: CreatedService,
 ):
-    """Pass an ``h=``-prefixed dsn_table through to the args unmodified."""
+    """Keep an ``h=``-prefixed dsn_table unmodified in the args."""
     body = _build_body(recursion_method="dsn", dsn_table="h=custom-host,D=d,t=t")
 
     args = build_alters_spec(created_service, "app", "users", body).data["meta"]["args"]
