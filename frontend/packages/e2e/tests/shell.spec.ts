@@ -172,16 +172,13 @@ test.describe('shell sanity smoke', () => {
     await expect(page.getByText('Welcome back, smoke')).toBeVisible();
 
     // Sidebar navigation items must be present (permanent drawer on desktop).
-    // "Schema Change" only appears in the nav (not duplicated on the dashboard),
-    // so it uniquely identifies the sidebar. "Snippets" is the collapsible group
-    // holding Snippet Manager + Collect Diagnostic Data; its child entries are
-    // unmounted until the group is expanded (Collapse uses unmountOnExit), so
-    // expand it before asserting the child nav entry renders.
-    await expect(page.getByText('Schema Change')).toBeVisible();
-    const snippetsGroup = page.getByRole('button', { name: 'Snippets', exact: true });
-    await expect(snippetsGroup).toBeVisible();
-    await snippetsGroup.click();
+    // "Snippet Manager" is now top-level, while diagnostic apps sit under the
+    // "Diagnostics" group.
     await expect(page.getByRole('button', { name: 'Snippet Manager' })).toBeVisible();
+    const diagnosticsGroup = page.getByRole('button', { name: 'Diagnostics', exact: true });
+    await expect(diagnosticsGroup).toBeVisible();
+    await diagnosticsGroup.click();
+    await expect(page.getByRole('button', { name: 'Collect Diagnostic Data' })).toBeVisible();
   });
 
   test('checksums plugin route mounts without console errors', async ({ page }) => {
