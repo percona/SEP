@@ -25,6 +25,7 @@ import { PluginDetailPage, PluginListPage } from '@sep/framework';
 import { renderInventoryDetailChildren } from './InventoryPluginNavigation';
 import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
 import { SyncControl } from './SyncControl';
+import { InventoryScheduleSummary } from './InventoryScheduleSummary';
 import { InventorySchedulePage } from './InventorySchedulePage';
 import { TargetHostsPage } from './TargetHostsPage';
 
@@ -52,26 +53,38 @@ function InventoryNodesList({
   const navigate = useNavigate();
   return (
     <>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mb: 1 }}>
-        <Button
-          variant="outlined"
-          startIcon={<DeviceHubIcon />}
-          onClick={() => navigate('../target-hosts', { relative: 'path' })}
-          data-testid="inv-target-hosts-link"
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          mb: 1,
+        }}
+      >
+        <InventoryScheduleSummary schedulingEnabled={schedulingEnabled} />
+        <Box
+          sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, flexShrink: 0, ml: 'auto' }}
         >
-          Target hosts
-        </Button>
-        {schedulingEnabled && (
           <Button
             variant="outlined"
-            startIcon={<ScheduleIcon />}
-            onClick={() => navigate('../schedule', { relative: 'path' })}
-            data-testid="inv-schedule-link"
+            startIcon={<DeviceHubIcon />}
+            onClick={() => navigate('../target-hosts', { relative: 'path' })}
+            data-testid="inv-target-hosts-link"
           >
-            Schedules
+            Target hosts
           </Button>
-        )}
-        <SyncControl />
+          {schedulingEnabled && (
+            <Button
+              variant="outlined"
+              startIcon={<ScheduleIcon />}
+              onClick={() => navigate('../schedule', { relative: 'path' })}
+              data-testid="inv-schedule-link"
+            >
+              Schedules
+            </Button>
+          )}
+          <SyncControl />
+        </Box>
       </Box>
       <PluginListPage
         schema={schema}
