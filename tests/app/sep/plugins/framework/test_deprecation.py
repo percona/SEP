@@ -102,3 +102,14 @@ def test_deprecation_emits_deprecationwarning():
 
     assert response.status_code == status.HTTP_200_OK
     assert response.headers.get("Deprecation") == "true"
+
+
+def test_deprecated_routes_omitted_from_openapi():
+    """Verify legacy Jinja routes using ``DeprecatedJinja2Route`` are omitted from the OpenAPI schema."""
+    app = _build_app()
+    spec = app.openapi()
+
+    for path in ("/legacy", "/legacy/action", "/legacy/html", "/legacy/redirect"):
+        assert path not in spec.get("paths", {}), (
+            f"{path} should be omitted from OpenAPI schema"
+        )

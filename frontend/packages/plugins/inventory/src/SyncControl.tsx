@@ -21,12 +21,21 @@ import AutorenewIcon from '@mui/icons-material/Autorenew';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { ApiError } from '@sep/api';
 import { useSnackbar } from 'notistack';
-import { useAvailableSyncers, useSyncStatus, useTriggerSync } from './hooks';
+import {
+  useAvailableSyncers,
+  useRefreshEntitiesOnSyncComplete,
+  useSyncStatus,
+  useTriggerSync,
+} from './hooks';
 
 export function SyncControl() {
   const { data: syncers = [], isLoading: syncersLoading } = useAvailableSyncers();
   const hasSyncers = !syncersLoading && syncers.length > 0;
   const { data: syncStatus } = useSyncStatus(hasSyncers);
+  // Re-fetch the visible entity list once the background sync finishes; the
+  // completion signal only arrives via the status poll above. This covers both
+  // "Sync all" and single-syncer dropdown triggers, since both share one status.
+  useRefreshEntitiesOnSyncComplete(syncStatus?.is_running);
   const triggerSync = useTriggerSync();
   const { enqueueSnackbar } = useSnackbar();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);

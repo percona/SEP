@@ -458,9 +458,9 @@ class AltersTaskResponse(BaseModel):
 
     The create/update routes return the
     :data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models
-    derived from this base; both add ``connectivity_warning`` (and, for create,
-    ``pre_checks_auto_fire_warning``) per the framework's derived create-response
-    standard, so the always-null warning fields stay off list/detail rows.
+    derived from this base; both add ``connectivity_warning`` per the framework's
+    derived create-response standard, so the always-null warning field stays off
+    list/detail rows.
 
     :param name: The name of the alters task.
     :param owner: The entity or user that owns the task.
@@ -497,10 +497,8 @@ AltersTaskResponseCreate = derive_create_response_model(
     name="AltersTaskResponseCreate",
     doc=(
         "Represent the create response for an alters task group, carrying the "
-        "post-creation connectivity warning and the automatic pre-checks "
-        "auto-fire warning."
+        "post-creation connectivity warning."
     ),
-    extra_fields={"pre_checks_auto_fire_warning": (str | None, None)},
 )
 
 AltersTaskResponseUpdate = derive_create_response_model(

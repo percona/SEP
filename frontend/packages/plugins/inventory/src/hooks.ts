@@ -15,10 +15,21 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiClient } from '@sep/api';
 
 const INVENTORY_BASE = '/plugins/inventory';
+
+/**
+ * Root query key for every inventory entity list (nodes plus the nested
+ * services/schemas/tables lists). Mirrors ``entityQueriesRootKey('inventory')``
+ * from the shared plugin task hooks; that helper is not exported, so the literal
+ * is duplicated here. Invalidating this prefix cascades to all nested
+ * ``['plugins', 'inventory', 'entity', <name>]`` lists by React Query's partial
+ * key matching.
+ */
+const INVENTORY_ENTITY_ROOT_KEY = ['plugins', 'inventory', 'entity'] as const;
 
 export interface Syncer {
   name: string;
@@ -105,6 +116,41 @@ export function useSyncStatus(enabled = true) {
   });
 }
 
+/**
+ * Re-fetch the inventory entity lists when a sync finishes.
+ *
+ * The sync runs server-side; the client only learns it completed by polling
+ * ``/sync/status/`` (see {@link useSyncStatus}). This hook watches that status
+ * and, on the ``is_running`` true → false edge, invalidates the inventory
+ * entity root key so React Query re-fetches whatever list is on screen with the
+ * freshly synced data.
+ *
+ * Edge-detection only:
+ * - It fires exactly once per running → idle transition, not on every poll
+ *   while a sync is still running.
+ * - It never fires on initial mount when no sync has run (``undefined`` while
+ *   the status is loading, and an initial ``false`` both leave the ref unset).
+ *
+ * @param isRunning current ``is_running`` value, or ``undefined`` while loading.
+ */
+export function useRefreshEntitiesOnSyncComplete(isRunning: boolean | undefined) {
+  const queryClient = useQueryClient();
+  const wasRunning = useRef(false);
+
+  useEffect(() => {
+    // Status not loaded yet — leave the previous value untouched so the first
+    // real value cannot be mistaken for a transition.
+    if (isRunning === undefined) {
+      return;
+    }
+    const transitionedToIdle = wasRunning.current && !isRunning;
+    wasRunning.current = isRunning;
+    if (transitionedToIdle) {
+      queryClient.invalidateQueries({ queryKey: INVENTORY_ENTITY_ROOT_KEY });
+    }
+  }, [isRunning, queryClient]);
+}
+
 export function useTriggerSync() {
   const queryClient = useQueryClient();
   return useMutation<unknown, Error, string | undefined>({
@@ -113,9 +159,14 @@ export function useTriggerSync() {
       const { data } = await apiClient.post(`${INVENTORY_BASE}/sync/`, body);
       return data;
     },
-    onMutate: () => {
-      // Optimistically mark as running so the button disables immediately,
-      // preventing a second POST before the status refetch returns.
+    onSuccess: () => {
+      // The sync has now started server-side: mark it running so the button
+      // stays disabled in the gap between the POST resolving (``isPending``
+      // drops) and the next status poll confirming, preventing a duplicate
+      // POST. Writing this only on success — not optimistically in onMutate —
+      // keeps a *failed* start from later reading as a genuine is_running
+      // true→false completion edge to useRefreshEntitiesOnSyncComplete. The
+      // button is already disabled while the POST is in flight via isPending.
       queryClient.setQueryData<SyncStatus>(['inventory', 'sync-status'], (prev) =>
         prev ? { ...prev, is_running: true } : { is_running: true },
       );

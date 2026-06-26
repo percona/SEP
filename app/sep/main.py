@@ -544,7 +544,7 @@ async def request_validation_exception_handler(
     )
 
 
-@sep_app.get("/login", dependencies=[IsNotAuthenticated])
+@sep_app.get("/login", dependencies=[IsNotAuthenticated], include_in_schema=False)
 async def login_form(
     request: Request, next_path: Annotated[str, Query(alias="next")] = "/"
 ) -> HTMLResponse:
@@ -559,7 +559,11 @@ async def login_form(
     )
 
 
-@sep_app.post("/login", dependencies=[IsNotAuthenticated, IsCsrfValidated])
+@sep_app.post(
+    "/login",
+    dependencies=[IsNotAuthenticated, IsCsrfValidated],
+    include_in_schema=False,
+)
 async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     next_path: Annotated[str, Query(alias="next")] = "/",
@@ -588,7 +592,9 @@ async def login(
     return response
 
 
-@sep_app.post("/logout", dependencies=[IsAuthenticated, IsCsrfValidated])
+@sep_app.post(
+    "/logout", dependencies=[IsAuthenticated, IsCsrfValidated], include_in_schema=False
+)
 async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     """Logout route."""
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
@@ -601,7 +607,7 @@ async def logout(access_token: AccessTokenCookie) -> RedirectResponse:
     return response
 
 
-@sep_app.get("/", response_class=HTMLResponse)
+@sep_app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def read_root(
     request: Request,
     context: Annotated[dict[str, Any], Depends(get_tasks_index_context)],

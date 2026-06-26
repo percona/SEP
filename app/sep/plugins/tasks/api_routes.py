@@ -42,7 +42,7 @@ from app.sep.plugins.tasks.models import (
 from app.sep.plugins.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.tasks.models import TaskBackendEnum, TaskResponse
 
-router = APIRouter()
+router = APIRouter(tags=["Task Manager"])
 schema_endpoint(router=router, plugin_schema=TASKS_PLUGIN_SCHEMA)
 
 

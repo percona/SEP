@@ -30,7 +30,7 @@ from app.sep.config import sep_settings
 from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
 from app.sep.snippets.config import snippets_settings
 
-router = APIRouter(tags=["sep", "artifacts"])
+router = APIRouter(include_in_schema=False)
 
 _BASE_DIRS = {
     ARTIFACT_TYPE_SNIPPET: lambda: snippets_settings.SNIPPETS_DIR,

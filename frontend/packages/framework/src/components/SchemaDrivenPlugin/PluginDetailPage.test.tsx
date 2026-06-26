@@ -493,6 +493,60 @@ describe('PluginDetailPage execute flow', () => {
       expect(mockExecuteMutate).toHaveBeenCalledWith({ taskName: 'pbm-backup-logical' }),
     );
   });
+
+  it('forwards executeBody from custom execute actions to the mutation', async () => {
+    mockExecuteMutate.mockReset();
+    mockExecuteMutate.mockResolvedValue({ id: 99 });
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'my-alter', status: 'completed' },
+      isLoading: false,
+    });
+
+    const executeBody = {
+      chain_task_names: ['my-alter'],
+      chain_on_failure: false,
+    };
+
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <SnackbarProvider>
+          <MemoryRouter initialEntries={['/plugins/alters/task/my-alter']}>
+            <Routes>
+              <Route
+                path="/plugins/:plugin/task/:id/*"
+                element={
+                  <PluginDetailPage
+                    schema={schema}
+                    pluginName="alters"
+                    getTaskExecuteActions={() => [
+                      {
+                        label: 'Pre-checks',
+                        taskName: 'my-alter-pre-checks',
+                        testId: 'alters-pre-checks-execute',
+                        executeBody,
+                      },
+                    ]}
+                  />
+                }
+              />
+            </Routes>
+          </MemoryRouter>
+        </SnackbarProvider>
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(screen.getByTestId('alters-pre-checks-execute'));
+
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByTestId('plugin-task-execute-confirm'));
+
+    await waitFor(() =>
+      expect(mockExecuteMutate).toHaveBeenCalledWith({
+        taskName: 'my-alter-pre-checks',
+        executeBody,
+      }),
+    );
+  });
 });
 
 function renderWithSchema(customSchema: PluginSchema, path = '/plugins/checksums/task/FECHK') {
