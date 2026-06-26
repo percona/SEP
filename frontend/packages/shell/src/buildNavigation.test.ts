@@ -37,18 +37,18 @@ function mockApp(overrides: Partial<EnabledApp> & Pick<EnabledApp, 'app_key'>): 
 /** The full registry-driven nav set, mirroring the backend nav_order scale. */
 const FULL_APP_SET: EnabledApp[] = [
   mockApp({ app_key: 'tasks', nav_order: 1 }),
-  mockApp({ app_key: 'snippets', group: 'snippets', nav_order: 2 }),
-  mockApp({ app_key: 'atw', group: 'snippets', nav_order: 3 }),
+  mockApp({ app_key: 'snippets', nav_order: 2 }),
+  mockApp({ app_key: 'atw', group: 'diagnostics', nav_order: 3 }),
   mockApp({ app_key: 'alerts', group: 'alerts', nav_order: 4 }),
   mockApp({ app_key: 'alert_troubleshooting', group: 'alerts', nav_order: 5 }),
-  mockApp({ app_key: 'alters', group: 'schema_change', nav_order: 6 }),
+  mockApp({ app_key: 'alters', nav_order: 6 }),
   mockApp({ app_key: 'checksums', nav_order: 7 }),
   mockApp({ app_key: 'mysql_backups', group: 'backups', nav_order: 8 }),
   mockApp({ app_key: 'backup_mongo', group: 'backups', nav_order: 9 }),
   mockApp({ app_key: 'backup_pg', group: 'backups', nav_order: 10 }),
   mockApp({ app_key: 'archives', nav_order: 11 }),
-  mockApp({ app_key: 'dipper', nav_order: 12 }),
-  mockApp({ app_key: 'report', nav_order: 13 }),
+  mockApp({ app_key: 'dipper', group: 'diagnostics', nav_order: 12 }),
+  mockApp({ app_key: 'report', group: 'diagnostics', nav_order: 13 }),
 ];
 
 function findLeaf(items: ReturnType<typeof buildNavigationItems>, appKey: string) {
@@ -73,21 +73,24 @@ describe('buildNavigationItems', () => {
       'Dashboard',
       'Inventory',
       'tasks',
-      'Snippets',
+      'snippets',
+      'Diagnostics',
       'Alerts',
-      'Schema Change',
+      'alters',
       'checksums',
       'Backups',
       'archives',
-      'dipper',
-      'report',
     ]);
   });
 
   it('orders children within a group by nav_order', () => {
     const items = buildNavigationItems(FULL_APP_SET);
-    const snippets = items.find((item) => item.title === 'Snippets');
-    expect(snippets?.children?.map((child) => child.appKey)).toEqual(['snippets', 'atw']);
+    const diagnostics = items.find((item) => item.title === 'Diagnostics');
+    expect(diagnostics?.children?.map((child) => child.appKey)).toEqual([
+      'atw',
+      'dipper',
+      'report',
+    ]);
     const alerts = items.find((item) => item.title === 'Alerts');
     expect(alerts?.children?.map((child) => child.appKey)).toEqual([
       'alerts',
@@ -104,7 +107,7 @@ describe('buildNavigationItems', () => {
   it('positions a group by its lowest child nav_order', () => {
     const items = buildNavigationItems(FULL_APP_SET);
     const titles = items.map((item) => item.title);
-    expect(titles.indexOf('checksums')).toBeLessThan(titles.indexOf('Backups'));
+    expect(titles.indexOf('Diagnostics')).toBeLessThan(titles.indexOf('Backups'));
   });
 
   it('overlays registry display_name on leaf items', () => {
