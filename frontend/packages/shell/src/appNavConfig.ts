@@ -33,12 +33,12 @@ import CodeIcon from '@mui/icons-material/Code';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import DescriptionIcon from '@mui/icons-material/Description';
 import TroubleshootIcon from '@mui/icons-material/Troubleshoot';
-import StorageIcon from '@mui/icons-material/Storage';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import TableChartIcon from '@mui/icons-material/TableChart';
 import BackupIcon from '@mui/icons-material/Backup';
 import ArchiveIcon from '@mui/icons-material/Archive';
 import BarChartIcon from '@mui/icons-material/BarChart';
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import ScienceIcon from '@mui/icons-material/Science';
 import ExtensionIcon from '@mui/icons-material/Extension';
@@ -106,8 +106,7 @@ export function getAppRouteMeta(appKey: string): AppRouteMeta | undefined {
 const NAV_GROUPS: Record<string, { label: string; icon: NavIcon }> = {
   backups: { label: 'Backups', icon: BackupIcon },
   alerts: { label: 'Alerts', icon: NotificationsActiveIcon },
-  schema_change: { label: 'Schema Change', icon: StorageIcon },
-  snippets: { label: 'Snippets', icon: CodeIcon },
+  diagnostics: { label: 'Diagnostics', icon: MonitorHeartIcon },
 };
 
 const DEFAULT_APP_ICON: NavIcon = ExtensionIcon;
