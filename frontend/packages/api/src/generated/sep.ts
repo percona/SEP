@@ -4593,6 +4593,11 @@ export interface components {
      *     :type service_type: str
      *     :param message: A human-readable description of the failure.
      *     :type message: str
+     *     :param task_history_id: The run-script task-history id whose log explains
+     *         the failure, or ``None`` when no task was created (e.g. the Tasks API
+     *         was unreachable). Optional for backward compatibility with existing
+     *         plugin consumers.
+     *     :type task_history_id: int | None
      */
     ConnectivityWarning: {
       /** Message */

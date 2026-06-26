@@ -25,7 +25,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.tasks.connectivity.constants import (
-    CONNECT_PHASE_MARKER,
     PROVISIONING_TIMEOUT,
 )
 from app.tasks.connectivity.models import (
@@ -56,9 +55,9 @@ from tests.app.factories import TaskFactory
 MOCK_TASK_HISTORY_ID = 42
 EXPECTED_INDEPENDENT_CALL_COUNT = 2
 MIN_POLL_ITERATIONS = 2
-# The sync call on which the payload emits ``CONNECT_PHASE_MARKER`` (earlier
-# calls are the provisioning phase with no marker).
-MARKER_EMIT_CALL = 3
+# The sync call on which the ``run-script`` task reports ``StartedAt`` (earlier
+# calls are the provisioning phase before the payload task starts).
+CONNECT_START_CALL = 3
 # ``_expire_and_fetch`` call sequence: 1 post-dispatch (RUNNING),
 # 2 post-terminal-sync (SUCCESS, no logs), 3-4 ``_fetch_fresh_task_history``
 # retries (empty, then populated).
@@ -205,6 +204,19 @@ class TestCheckConnectivityRealSession:
             force_flush=True,
             producer_offset_after=len(payload),
         )
+
+    @staticmethod
+    def _mark_run_script_started(queue_item: TaskHistory) -> None:
+        """Simulate the ``run-script`` task reporting ``StartedAt``.
+
+        Mirrors what the Nomad executor syncs into
+        ``tracking["task_states"]`` once the payload task starts — the
+        provisioning/connect boundary the poll loop keys off.
+        """
+        task_states = queue_item.execution_request.tracking.setdefault(
+            "task_states", {}
+        )
+        task_states["run-script"] = {"StartedAt": "2026-06-26T00:00:00.000000000Z"}
 
     @pytest.mark.parametrize(
         "service_type",
@@ -838,15 +850,15 @@ class TestCheckConnectivityRealSession:
         """Verify provisioning time is not charged against the connect budget.
 
         Provisioning latency (Nomad dispatch, ``run-python`` scheduling,
-        dependency install) must not count against the DB connect budget,
-        otherwise a slow provision false-negatives the check even when the DB
-        is reachable. Because Nomad reports ``RUNNING`` from dispatch onward,
-        the boundary is the payload's ``CONNECT_PHASE_MARKER``: here the task
-        is RUNNING throughout but the marker only appears after several
-        provisioning polls — more than the single-poll connect budget
-        (``request.timeout``). The check must still succeed because those
-        pre-marker polls are charged to the provisioning budget, not the
-        connect budget.
+        ``prepare-env`` dependency install) must not count against the DB
+        connect budget, otherwise a slow provision false-negatives the check
+        even when the DB is reachable. Because Nomad reports ``RUNNING`` from
+        dispatch onward, the boundary is the ``run-script`` task's
+        ``StartedAt``: here the task is RUNNING throughout but ``StartedAt``
+        only appears after several provisioning polls — more than the
+        single-poll connect budget (``request.timeout``). The check must still
+        succeed because those pre-start polls are charged to the provisioning
+        budget, not the connect budget.
         """
         request = _make_request(timeout=POLL_INTERVAL)
 
@@ -858,16 +870,11 @@ class TestCheckConnectivityRealSession:
         ) -> TaskHistory:
             assert writer_session is not None
             call_count["n"] += 1
-            if call_count["n"] < MARKER_EMIT_CALL:
+            if call_count["n"] < CONNECT_START_CALL:
                 # Provisioning: RUNNING, but the connect phase has not started.
                 queue_item.status = TaskHistoryStatusEnum.RUNNING
-            elif call_count["n"] == MARKER_EMIT_CALL:
-                await self._append_log(
-                    writer_session,
-                    queue_item.id,
-                    TaskLogType.STDERR,
-                    CONNECT_PHASE_MARKER,
-                )
+            elif call_count["n"] == CONNECT_START_CALL:
+                self._mark_run_script_started(queue_item)
                 queue_item.status = TaskHistoryStatusEnum.RUNNING
             else:
                 await self._append_log(
@@ -910,7 +917,7 @@ class TestCheckConnectivityRealSession:
     ) -> None:
         """Verify a task that never reaches the connect phase times out on provisioning.
 
-        When the payload never emits ``CONNECT_PHASE_MARKER`` (stuck
+        When the ``run-script`` task never reports ``StartedAt`` (stuck
         provisioning) the wait is bounded by ``PROVISIONING_TIMEOUT`` (not the
         connect budget), and the timeout message must distinguish a
         provisioning timeout from a connect timeout so operators can tell
@@ -922,7 +929,7 @@ class TestCheckConnectivityRealSession:
             queue_item: TaskHistory,
             writer_session: AsyncSession | None = None,
         ) -> TaskHistory:
-            # Stays RUNNING and never emits the connect-phase marker.
+            # Stays RUNNING and the run-script task never starts.
             return queue_item
 
         mock_executor = MagicMock(spec=BaseExecutor)
@@ -959,9 +966,9 @@ class TestCheckConnectivityRealSession:
     ) -> None:
         """Verify a stalled connect (post-marker) times out on the connect budget.
 
-        Once the payload emits ``CONNECT_PHASE_MARKER`` the wait is bounded by
-        the connect budget (``request.timeout``), and the message must be the
-        connect-timeout message rather than the provisioning one.
+        Once the ``run-script`` task reports ``StartedAt`` the wait is bounded
+        by the connect budget (``request.timeout``), and the message must be
+        the connect-timeout message rather than the provisioning one.
         """
         request = _make_request(timeout=POLL_INTERVAL)
 
@@ -970,12 +977,7 @@ class TestCheckConnectivityRealSession:
             writer_session: AsyncSession | None = None,
         ) -> TaskHistory:
             assert writer_session is not None
-            await self._append_log(
-                writer_session,
-                queue_item.id,
-                TaskLogType.STDERR,
-                CONNECT_PHASE_MARKER,
-            )
+            self._mark_run_script_started(queue_item)
             # Connect phase started but never completes.
             return queue_item
 
@@ -1003,66 +1005,6 @@ class TestCheckConnectivityRealSession:
         assert result.error is not None
         assert f"timed out after {request.timeout}s" in result.error
         assert "provision" not in result.error.lower()
-        # The internal marker must never leak into operator-facing output.
-        assert CONNECT_PHASE_MARKER not in result.error
-
-    async def test_stdout_marker_does_not_start_connect_phase(
-        self,
-        session: AsyncSession,
-        run_python_task: Task,
-        async_session_maker,
-    ) -> None:
-        """Verify only a stderr marker starts the connect phase.
-
-        The marker is detected on run-script stderr only; a marker echoed on
-        stdout must not trip the latch (that would also corrupt the pure-JSON
-        stdout result contract). A stdout-only marker therefore leaves the
-        check in the provisioning phase, so it times out on the provisioning
-        budget with the provisioning message.
-        """
-        request = _make_request(timeout=POLL_INTERVAL)
-
-        call_count = {"n": 0}
-
-        async def sync_task_history(
-            queue_item: TaskHistory,
-            writer_session: AsyncSession | None = None,
-        ) -> TaskHistory:
-            assert writer_session is not None
-            if call_count["n"] == 0:
-                await self._append_log(
-                    writer_session,
-                    queue_item.id,
-                    TaskLogType.STDOUT,
-                    CONNECT_PHASE_MARKER,
-                )
-            call_count["n"] += 1
-            return queue_item
-
-        mock_executor = MagicMock(spec=BaseExecutor)
-        mock_executor.sync_task_history = sync_task_history
-
-        with (
-            patch(
-                "app.tasks.connectivity.service.dispatch_queue_item",
-                side_effect=self._real_dispatch_running,
-            ),
-            patch(
-                "app.tasks.connectivity.service.get_executor_for_task",
-                return_value=mock_executor,
-            ),
-            patch(
-                "app.tasks.connectivity.service.get_async_session_maker",
-                return_value=async_session_maker,
-            ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
-        ):
-            result = await check_connectivity(session, request)
-
-        assert result.success is False
-        assert result.error is not None
-        assert str(PROVISIONING_TIMEOUT) in result.error
-        assert "provision" in result.error.lower()
 
     async def test_timeout_surfaces_partial_run_script_logs(
         self,
@@ -1074,7 +1016,7 @@ class TestCheckConnectivityRealSession:
 
         The timeout branch must include any run-script output already captured
         in the error (rather than a bare ``timed out`` message with no
-        diagnostic detail), while stripping the internal connect-phase marker.
+        diagnostic detail).
         """
         request = _make_request(timeout=POLL_INTERVAL)
         partial_output = "connecting to db-host:3306 ... still waiting"
@@ -1087,11 +1029,12 @@ class TestCheckConnectivityRealSession:
         ) -> TaskHistory:
             assert writer_session is not None
             if call_count["n"] == 0:
+                self._mark_run_script_started(queue_item)
                 await self._append_log(
                     writer_session,
                     queue_item.id,
                     TaskLogType.STDERR,
-                    f"{CONNECT_PHASE_MARKER}\n{partial_output}",
+                    partial_output,
                 )
             call_count["n"] += 1
             # Never finishes — stays RUNNING until the connect budget expires.
@@ -1121,7 +1064,6 @@ class TestCheckConnectivityRealSession:
         assert result.error is not None
         assert "timed out" in result.error
         assert partial_output in result.error
-        assert CONNECT_PHASE_MARKER not in result.error
         assert result.task_history_id is not None
 
 
@@ -1163,21 +1105,6 @@ class TestParseCheckResult:
         assert result.success is False
         assert result.error is not None
         assert "module not found" in result.error
-
-    async def test_failed_status_strips_connect_phase_marker(self):
-        """Verify the connect-phase marker is stripped from FAILED stderr.
-
-        The marker is an internal provisioning/connect boundary signal and
-        must never leak into operator-facing error output.
-        """
-        history = _make_task_history(
-            task_history_status=TaskHistoryStatusEnum.FAILED,
-            stderr=f"{CONNECT_PHASE_MARKER}\nConnection refused",
-        )
-        result = await _parse_check_result(AsyncMock(spec=AsyncSession), history)
-        assert result.success is False
-        assert result.error == "Connection refused"
-        assert CONNECT_PHASE_MARKER not in result.error
 
     async def test_failed_status_without_stderr(self):
         """Verify default error message when FAILED task has no stderr."""

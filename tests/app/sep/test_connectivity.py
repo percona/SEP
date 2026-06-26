@@ -266,7 +266,7 @@ class TestCheckAndWarnConnectivity:
                 "host": "10.0.0.1",
                 "port": 27017,
                 "service_type": "mongodb",
-                "timeout": 30,
+                "timeout": 20,
             },
         )
 

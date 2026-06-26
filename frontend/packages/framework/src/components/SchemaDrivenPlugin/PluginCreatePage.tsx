@@ -82,7 +82,7 @@ export function PluginCreatePage({
         const warning = response.connectivity_warning;
         const name = typeof response.name === 'string' ? response.name : undefined;
         if (!multi && warning && name) {
-          navigate(`../${encodeURIComponent(name)}`, {
+          navigate(`../task/${encodeURIComponent(name)}`, {
             relative: 'path',
             state: { connectivityWarning: warning },
           });

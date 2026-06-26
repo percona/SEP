@@ -25,7 +25,6 @@ from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
 from app.core.db.utils import get_async_session_maker_from_engine
-from app.tasks.connectivity.constants import CONNECT_PHASE_MARKER
 from app.tasks.connectivity.models import (
     ConnectivityCheckResponse,
     ConnectivityServiceType,
@@ -48,11 +47,23 @@ from tests.app.factories import TaskFactory
 
 MOCK_TASK_HISTORY_ID = 42
 MIN_POLL_ITERATIONS = 2
-#: ``sync_task_history`` call on which the fake executor flushes
-#: ``CONNECT_PHASE_MARKER``. Chosen so the marker arrives only after several
-#: provisioning polls have elapsed — more than the small connect budget the
-#: facet-(a) test grants — proving provisioning time is not charged to it.
-MARKER_EMIT_POLL = 4
+#: ``sync_task_history`` call on which the fake executor reports the
+#: ``run-script`` task's ``StartedAt``. Chosen so the connect phase begins only
+#: after several provisioning polls have elapsed — more than the small connect
+#: budget the facet-(a) test grants — proving provisioning time is not charged
+#: to it.
+CONNECT_START_POLL = 4
+
+
+def _mark_run_script_started(queue_item: TaskHistory) -> None:
+    """Simulate the ``run-script`` task reporting ``StartedAt``.
+
+    Mirrors what the Nomad executor syncs into ``tracking["task_states"]`` once
+    the payload task starts — the provisioning/connect boundary the poll loop
+    keys off, in place of the removed stderr marker.
+    """
+    task_states = queue_item.execution_request.tracking.setdefault("task_states", {})
+    task_states["run-script"] = {"StartedAt": "2026-06-26T00:00:00.000000000Z"}
 
 
 @pytest.fixture(autouse=True)
@@ -356,12 +367,13 @@ class TestConnectivityCheckEndpointRealSession:
         """Verify a slow-to-provision but reachable DB returns success over HTTP.
 
         The two-phase budget regression, exercised end-to-end through the route:
-        the fake executor holds the task RUNNING with no marker across several
-        provisioning polls, then flushes ``CONNECT_PHASE_MARKER`` to stderr and a
-        ``{"success": true}`` stdout chunk. The POST grants a deliberately small
-        connect budget (``POLL_INTERVAL * 2``) that the provisioning polls exceed.
-        A pre-fix single-budget loop would have timed out before the connect even
-        started; the decoupled budget must still return ``success=True``.
+        the fake executor holds the task RUNNING across several provisioning
+        polls before the ``run-script`` task reports ``StartedAt``, then flushes
+        a ``{"success": true}`` stdout chunk. The POST grants a deliberately
+        small connect budget (``POLL_INTERVAL * 2``) that the provisioning polls
+        exceed. A pre-fix single-budget loop would have timed out before the
+        connect even started; the decoupled budget must still return
+        ``success=True``.
         """
         test_session_maker = get_async_session_maker_from_engine(session.bind)
 
@@ -380,7 +392,6 @@ class TestConnectivityCheckEndpointRealSession:
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
 
-        marker_bytes = (CONNECT_PHASE_MARKER + "\n").encode()
         stdout_bytes = b'{"success": true}'
         connect_budget = POLL_INTERVAL * 2
         call_count = {"n": 0}
@@ -405,19 +416,11 @@ class TestConnectivityCheckEndpointRealSession:
             call_count["n"] += 1
             assert writer_session is not None
             n = call_count["n"]
-            if n < MARKER_EMIT_POLL:
-                # Provisioning: still RUNNING, marker not yet emitted.
+            if n < CONNECT_START_POLL:
+                # Provisioning: still RUNNING, run-script task not yet started.
                 return queue_item
-            if n == MARKER_EMIT_POLL:
-                await TaskHistoryLogWriter.append(
-                    writer_session,
-                    queue_item.id,
-                    source="run-script",
-                    stream=TaskLogType.STDERR,
-                    new_bytes=marker_bytes,
-                    force_flush=True,
-                    producer_offset_after=len(marker_bytes),
-                )
+            if n == CONNECT_START_POLL:
+                _mark_run_script_started(queue_item)
                 return queue_item
             await TaskHistoryLogWriter.append(
                 writer_session,
@@ -490,12 +493,12 @@ class TestConnectivityCheckEndpointRealSession:
     ):
         """Verify a timed-out check surfaces partial run-script output over HTTP.
 
-        End-to-end coverage of the diagnostics fix: the fake executor writes a
-        partial run-script chunk (including the connect-phase marker) then never
-        finishes, exhausting the connect budget. The response must carry
-        ``success=False``, the captured ``installing deps...`` output (the marker
-        stripped out), and the ``task_history_id`` whose persisted log the GUI
-        links — the path that previously discarded the captured output.
+        End-to-end coverage of the diagnostics fix: the fake executor reports
+        ``StartedAt`` and writes a partial run-script chunk, then never finishes,
+        exhausting the connect budget. The response must carry ``success=False``,
+        the captured ``installing deps...`` output, and the ``task_history_id``
+        whose persisted log the GUI links — the path that previously discarded
+        the captured output.
         """
         test_session_maker = get_async_session_maker_from_engine(session.bind)
 
@@ -514,7 +517,7 @@ class TestConnectivityCheckEndpointRealSession:
         tasks_app.dependency_overrides[get_session] = lambda: session
         tasks_app.dependency_overrides[get_request_executor] = lambda: mock_executor
 
-        partial_bytes = b"installing deps...\n" + (CONNECT_PHASE_MARKER + "\n").encode()
+        partial_bytes = b"installing deps...\n"
         call_count = {"n": 0}
 
         async def real_dispatch(
@@ -537,6 +540,7 @@ class TestConnectivityCheckEndpointRealSession:
             call_count["n"] += 1
             assert writer_session is not None
             if call_count["n"] == 1:
+                _mark_run_script_started(queue_item)
                 await TaskHistoryLogWriter.append(
                     writer_session,
                     queue_item.id,
@@ -546,7 +550,7 @@ class TestConnectivityCheckEndpointRealSession:
                     force_flush=True,
                     producer_offset_after=len(partial_bytes),
                 )
-            # Never flip the status: both phases exhaust and the loop times out.
+            # Never flip the status: the connect budget exhausts and times out.
             return queue_item
 
         fake_service_executor = MagicMock(spec=BaseExecutor)
@@ -594,8 +598,6 @@ class TestConnectivityCheckEndpointRealSession:
         assert data["success"] is False
         assert "timed out" in data["error"]
         assert "installing deps..." in data["error"]
-        # The internal provisioning/connect boundary marker must never leak.
-        assert CONNECT_PHASE_MARKER not in data["error"]
         assert data["task_history_id"] is not None
         assert await TaskHistoryLogManager.exists_for_task(
             session, data["task_history_id"]

@@ -142,7 +142,7 @@ describe('PluginCreatePage — post-create navigation', () => {
 
     act(() => onSuccess({ name: 'my task', connectivity_warning: warning }));
 
-    expect(mockNavigate).toHaveBeenCalledWith('../my%20task', {
+    expect(mockNavigate).toHaveBeenCalledWith('../task/my%20task', {
       relative: 'path',
       state: { connectivityWarning: warning },
     });

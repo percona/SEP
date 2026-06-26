@@ -19,24 +19,16 @@ CONNECTIVITY_META_HOST_KEY = "_connectivity_host"
 CONNECTIVITY_META_PORT_KEY = "_connectivity_port"
 CONNECTIVITY_META_SERVICE_TYPE_KEY = "_connectivity_service_type"
 
-#: Budget (seconds) for the DB connect, counted only after the payload emits
-#: :data:`CONNECT_PHASE_MARKER`. Kept strictly greater than the inner DB
-#: ``connect_timeout`` (``app/tasks/connectivity/payload.py``) so the inner
-#: connect can complete inside the outer window.
-CONNECTIVITY_CHECK_TIMEOUT = 30
+#: Budget (seconds) for the DB connect, counted only once the ``run-script``
+#: Nomad task has started (see :func:`app.tasks.connectivity.service`). Kept
+#: strictly greater than the inner DB ``connect_timeout``
+#: (``app/tasks/connectivity/payload.py``) so the inner connect can complete
+#: inside the outer window.
+CONNECTIVITY_CHECK_TIMEOUT = 20
 
 #: Budget (seconds) for the provisioning phase (Nomad dispatch + ``run-python``
-#: scheduling + dependency install), counted from dispatch until the payload
-#: emits :data:`CONNECT_PHASE_MARKER`. Decoupled from the connect budget so
-#: provisioning latency cannot false-negative a reachable DB, while still
-#: bounding a task whose payload never reaches the connect phase.
-PROVISIONING_TIMEOUT = 60
-
-#: Sentinel the payload flushes to ``run-script`` **stderr** right before the DB
-#: connect, marking the boundary between the provisioning phase (charged to
-#: :data:`PROVISIONING_TIMEOUT`) and the connect phase (charged to
-#: :data:`CONNECTIVITY_CHECK_TIMEOUT`); ``status`` cannot mark it because Nomad
-#: reports ``RUNNING`` from dispatch onward. Duplicated in
-#: ``app/tasks/connectivity/payload.py`` (runs standalone, cannot import this
-#: package); a test asserts the two stay in sync.
-CONNECT_PHASE_MARKER = "__SEP_CONNECTIVITY_CONNECT_START__"
+#: scheduling + ``prepare-env`` dependency install), counted from dispatch until
+#: the ``run-script`` task reports ``StartedAt``. Decoupled from the connect
+#: budget so provisioning latency cannot false-negative a reachable DB, while
+#: still bounding a task whose ``run-script`` step never starts.
+PROVISIONING_TIMEOUT = 45

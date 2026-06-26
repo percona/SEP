@@ -28,7 +28,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.tasks.celery import dispatch_queue_item, get_executor_for_task
 from app.tasks.connectivity.constants import (
-    CONNECT_PHASE_MARKER,
     CONNECTIVITY_CHECK_TIMEOUT,
     PROVISIONING_TIMEOUT,
 )
@@ -57,6 +56,10 @@ FRESH_FETCH_MAX_ATTEMPTS = 3
 FRESH_FETCH_INTERVAL = 0.5
 RESULT_CACHE_TTL = 300
 RESULT_CACHE_MAXSIZE = 128
+
+#: Prefix of Nomad's zero-time sentinel for an unstarted task's ``StartedAt``
+#: (``0001-01-01T00:00:00Z``); treated the same as an absent value.
+_NOMAD_ZERO_TIME = "0001-01-01"
 
 _cached_check_session_ctx: contextvars.ContextVar[AsyncSession] = (
     contextvars.ContextVar("_cached_check_session_ctx")
@@ -188,26 +191,24 @@ async def check_connectivity(
     executor = get_executor_for_task(task)
     async_session = get_async_session_maker()
     # Two independent clocks. Nomad reports ``RUNNING`` from dispatch onward, so
-    # ``status`` cannot mark when the DB connect actually begins; instead the
-    # payload flushes ``CONNECT_PHASE_MARKER`` to stderr right before
-    # connecting. Time before the marker (Nomad dispatch + ``run-python``
-    # scheduling + dependency install) is charged against ``PROVISIONING_TIMEOUT``;
-    # only post-marker time is charged against the connect budget
-    # (``request.timeout``). This stops provisioning latency from
-    # false-negativing a reachable DB while still bounding a task whose payload
-    # never reaches the connect phase.
+    # ``status`` cannot mark when the DB connect actually begins. Instead the
+    # boundary is the ``run-script`` task's ``StartedAt``: ``run-python`` runs the
+    # payload in a ``run-script`` main task preceded by a ``prepare-env`` prestart
+    # task that does the dependency install, so ``StartedAt`` flips only once all
+    # provisioning (dispatch + scheduling + ``prepare-env``) is done. Time before
+    # ``StartedAt`` is charged against ``PROVISIONING_TIMEOUT``; only time after it
+    # is charged against the connect budget (``request.timeout``). This stops
+    # provisioning latency from false-negativing a reachable DB while still
+    # bounding a task whose ``run-script`` step never starts.
     provisioning_elapsed = 0
     connect_elapsed = 0
     connect_started = False
-    scanned_logs = 0
     while queue_item.status in (
         TaskHistoryStatusEnum.PENDING,
         TaskHistoryStatusEnum.RUNNING,
     ):
         if not connect_started:
-            connect_started, scanned_logs = await _connect_phase_started(
-                session, queue_item, scanned_logs
-            )
+            connect_started = _connect_phase_started(queue_item)
         if not connect_started:
             if provisioning_elapsed >= PROVISIONING_TIMEOUT:
                 break
@@ -250,13 +251,12 @@ async def _build_timeout_response(
 ) -> ConnectivityCheckResponse:
     """Build a timeout :class:`ConnectivityCheckResponse` with any captured output.
 
-    Distinguish a provisioning timeout (the payload never emitted
-    ``CONNECT_PHASE_MARKER``, so the DB connect never started) from a connect
-    timeout (the connect phase began but did not complete) so operators can tell
-    provisioning latency apart from an unreachable DB. Surface any ``run-script``
-    output captured before the timeout instead of discarding it,
-    while still carrying ``task_history_id`` so the GUI can link the full
-    run-script log.
+    Distinguish a provisioning timeout (the ``run-script`` task never started, so
+    the DB connect never began) from a connect timeout (the connect phase began
+    but did not complete) so operators can tell provisioning latency apart from an
+    unreachable DB. Surface any ``run-script`` output captured before the timeout
+    instead of discarding it, while still carrying ``task_history_id`` so the GUI
+    can link the full run-script log.
 
     :param session: The async database session.
     :type session: AsyncSession
@@ -303,67 +303,34 @@ async def _collect_run_script_output(
     chunks = [
         log.msg async for log in _iter_run_script_logs(session, task_history) if log.msg
     ]
-    return _strip_marker("".join(chunks))
+    return "".join(chunks)
 
 
-def _strip_marker(text: str) -> str:
-    """Return ``text`` with any line equal to :data:`CONNECT_PHASE_MARKER` removed.
+def _connect_phase_started(task_history: TaskHistory) -> bool:
+    """Return whether the ``run-script`` Nomad task has started executing.
 
-    The connect-phase marker is an internal provisioning/connect boundary
-    signal; it must never leak into operator-facing error output.
+    ``run-python`` runs the connectivity payload in a ``run-script`` main task
+    preceded by a ``prepare-env`` prestart task (Nomad scheduling + dependency
+    install). The allocation reports ``RUNNING`` from dispatch onward, so status
+    cannot mark when the connect begins; ``run-script``'s ``StartedAt`` can,
+    because it flips from unset to a timestamp only once ``prepare-env`` finishes
+    and the payload task actually starts — the provisioning/connect boundary.
 
-    :param text: The raw run-script output to clean.
-    :type text: str
-    :return: ``text`` without standalone marker lines.
-    :rtype: str
-    """
-    return "\n".join(
-        line for line in text.splitlines() if line.strip() != CONNECT_PHASE_MARKER
-    )
+    ``StartedAt`` is read from ``execution_request.tracking["task_states"]``,
+    which the executor refreshes from the Nomad allocation on every poll, so this
+    needs no log read or flush. Both ``None`` and Nomad's zero-time sentinel
+    (``0001-01-01T00:00:00Z``) count as "not started".
 
-
-async def _connect_phase_started(
-    session: AsyncSession, task_history: TaskHistory, scanned: int = 0
-) -> tuple[bool, int]:
-    """Return whether the payload has emitted :data:`CONNECT_PHASE_MARKER`.
-
-    ``payload.py`` flushes the marker to ``run-script`` stderr immediately
-    before the DB connect, so its presence marks the boundary between the
-    provisioning phase and the connect phase. Only stderr is scanned
-    so a marker echoed on stdout cannot trip the latch and corrupt the pure-JSON
-    stdout result contract.
-
-    The poll loop calls this once per iteration until the marker latches, so
-    ``scanned`` carries the number of log chunks already inspected on prior
-    polls: only chunks beyond that offset are searched, keeping the per-poll
-    work proportional to *new* output rather than re-scanning the whole log
-    history (which would make provisioning polling O(n²) in chunk count).
-
-    :param session: The async database session.
-    :type session: AsyncSession
-    :param task_history: The task history row being inspected.
+    :param task_history: The task history row being polled.
     :type task_history: TaskHistory
-    :param scanned: The number of run-script log chunks already inspected on
-        previous polls; chunks at or before this index are skipped.
-    :type scanned: int
-    :return: A tuple of ``(started, scanned)`` where ``started`` is ``True``
-        once the marker appears in run-script stderr and ``scanned`` is the
-        updated count of chunks inspected (to pass back on the next poll).
-    :rtype: tuple[bool, int]
+    :return: ``True`` once the ``run-script`` task reports a real ``StartedAt``.
+    :rtype: bool
     """
-    index = 0
-    started = False
-    async for log in _iter_run_script_logs(session, task_history):
-        index += 1
-        if index <= scanned:
-            continue
-        if (
-            log.type == TaskLogType.STDERR
-            and log.msg
-            and CONNECT_PHASE_MARKER in log.msg
-        ):
-            started = True
-    return started, index
+    task_states = task_history.execution_request.tracking.get("task_states") or {}
+    started_at = (task_states.get("run-script") or {}).get("StartedAt")
+    if not started_at:
+        return False
+    return not started_at.startswith(_NOMAD_ZERO_TIME)
 
 
 async def _fetch_fresh_task_history(
@@ -504,7 +471,7 @@ async def _parse_check_result(
         async for log in _iter_run_script_logs(session, task_history):
             if log.type == TaskLogType.STDERR:
                 stderr += log.msg or ""
-        stderr = _strip_marker(stderr).strip()
+        stderr = stderr.strip()
         return ConnectivityCheckResponse(
             success=False,
             error=stderr or "Task failed",

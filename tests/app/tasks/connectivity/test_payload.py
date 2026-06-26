@@ -428,30 +428,18 @@ class TestConnectTimeoutBudget:
         )
 
 
-class TestConnectPhaseMarker:
-    """Guard the provisioning/connect boundary marker."""
+class TestMainOutputContract:
+    """Guard the ``main`` stdout/stderr contract."""
 
-    def test_marker_matches_the_shared_constant(self):
-        """Verify the payload marker matches ``constants.CONNECT_PHASE_MARKER``.
-
-        ``payload.py`` runs standalone on a Nomad client and cannot import the
-        ``app`` package, so it re-declares the literal. The Tasks poll loop
-        scans for the constant version, so the two must never drift.
-        """
-        from app.tasks.connectivity import constants, payload
-
-        assert payload.CONNECT_PHASE_MARKER == constants.CONNECT_PHASE_MARKER
-
-    def test_main_emits_marker_to_stderr_keeping_stdout_pure_json(
+    def test_main_writes_pure_json_to_stdout(
         self, tmp_path, capsys, mock_myloginpath, mock_pymysql
     ):
-        """Verify ``main`` flushes the marker to stderr and leaves stdout pure JSON.
+        """Verify ``main`` writes a single JSON document to stdout.
 
-        The Tasks poll loop detects the connect phase via the stderr marker;
-        stdout must remain a single JSON document so ``_parse_check_result``'s
-        ``json.loads`` keeps working.
+        ``_parse_check_result`` reads the result with ``json.loads`` over the
+        ``run-script`` stdout, so stdout must stay a pure JSON document.
         """
-        from app.tasks.connectivity.payload import CONNECT_PHASE_MARKER, main
+        from app.tasks.connectivity.payload import main
 
         mock_myloginpath.parse.return_value = {}
         mock_conn = MagicMock()
@@ -469,6 +457,4 @@ class TestConnectPhaseMarker:
             main()
 
         captured = capsys.readouterr()
-        assert CONNECT_PHASE_MARKER in captured.err
-        assert CONNECT_PHASE_MARKER not in captured.out
         assert json.loads(captured.out) == {"success": True}

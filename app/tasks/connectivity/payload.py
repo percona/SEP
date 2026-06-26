@@ -32,14 +32,6 @@ import sys
 #: outer window.
 CONNECT_TIMEOUT = 10
 
-#: Sentinel flushed to stderr right before the DB connect so the Tasks poll
-#: loop can tell the provisioning phase from the connect phase. Must match
-#: ``CONNECT_PHASE_MARKER`` in ``app.tasks.connectivity.constants`` — duplicated
-#: here because this script runs standalone with no access to the ``app``
-#: package; a test keeps them in sync. On stderr (not stdout) so stdout stays
-#: pure JSON for the result parser.
-CONNECT_PHASE_MARKER = "__SEP_CONNECTIVITY_CONNECT_START__"
-
 
 def check_mysql(host: str, port: int) -> dict[str, bool | str]:
     """Check MySQL connectivity via ``SELECT 1``.
@@ -170,10 +162,6 @@ def main() -> None:
     with open(args.config) as config_file:
         config = json.load(config_file)
     checker = CHECKERS[config["service_type"]]
-    # Mark the provisioning -> connect boundary. Everything up to here (Nomad
-    # scheduling, run-python startup, dependency install) is provisioning; the
-    # driver import and connect happen inside ``checker``.
-    print(CONNECT_PHASE_MARKER, file=sys.stderr, flush=True)
     result = checker(config["host"], config["port"])
     json.dump(result, sys.stdout)
 

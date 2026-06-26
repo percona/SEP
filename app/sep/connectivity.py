@@ -44,7 +44,7 @@ CACHE_TTL = 600
 #: poll loop charges only post-provisioning connect time against it; the inner
 #: DB ``connect_timeout`` (the payload's ``CONNECT_TIMEOUT``) must stay strictly
 #: below it.
-CHECK_TIMEOUT = 30
+CHECK_TIMEOUT = 20
 CACHE_MAXSIZE = 128
 
 CONNECTIVITY_META_HOST_KEY = "_connectivity_host"
