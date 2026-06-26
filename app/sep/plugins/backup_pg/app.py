@@ -62,6 +62,7 @@ app = TaskExecutionApp(
     name="backup_pg",
     display_name="PostgreSQL Backups",
     uri_path="/backup_pg",
+    group="backups",
     nav_order=10,
     description=(
         "Configure pgBackRest-based PostgreSQL backups and run incremental "

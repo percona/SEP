@@ -62,7 +62,6 @@ app = TaskExecutionApp(
     display_name="Snippet Manager",
     uri_path="/snippets",
     css_class="snippets",
-    group="snippets",
     nav_order=2,
     description="Browse, approve, and execute operational snippets.",
     owner=TaskOwner.ANY,

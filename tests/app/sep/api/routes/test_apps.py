@@ -125,11 +125,11 @@ class TestListAppsForNavigation:
         assert isinstance(alerts["nav_order"], int)
 
         snippets = entries["snippets"]
-        assert snippets["group"] == "snippets"
+        assert snippets["group"] is None
         assert isinstance(snippets["nav_order"], int)
 
         atw = entries["atw"]
-        assert atw["group"] == "snippets"
+        assert atw["group"] == "diagnostics"
         assert isinstance(atw["nav_order"], int)
 
         inventory = entries["inventory"]
