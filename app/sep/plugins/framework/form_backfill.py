@@ -38,10 +38,15 @@ from sqlalchemy.orm.attributes import flag_modified
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.inventory.db import get_async_session_maker as get_inventory_session_maker
 from app.sep.plugins.archives.app import app as archives_app
 from app.sep.plugins.backup_pg.app import app as backup_pg_app
 from app.sep.plugins.checksums.app import app as checksums_app
 from app.sep.plugins.framework.apps import TaskExecutionApp
+from app.sep.plugins.framework.form_backfill_inventory import (
+    load_service_id_lookup,
+    ServiceIdLookup,
+)
 from app.sep.plugins.framework.form_dsl import AppFormModel
 from app.sep.plugins.framework.spec import RESERVED_FORM_KEY, stamp_form_input
 from app.sep.plugins.mysql_backups.app import app as mysql_backups_app
@@ -64,10 +69,13 @@ class FormBackfillContext:
     :type log: logging.Logger
     :param dry_run: When ``True``, the orchestrator logs actions but does not persist.
     :type dry_run: bool
+    :param service_lookup: Inventory service-id resolver built once per backfill run.
+    :type service_lookup: ServiceIdLookup | None
     """
 
     log: logging.Logger
     dry_run: bool = False
+    service_lookup: ServiceIdLookup | None = None
 
 
 @dataclass
@@ -316,13 +324,7 @@ async def _persist_stamped_form(
     """
     if dry_run:
         return
-    task.sqlmodel_update(
-        _task_write_from_task(task, stamped_data).model_dump(exclude_unset=True)
-        | {
-            "last_updated_by": task.last_updated_by,
-            "updated_at": task.updated_at,
-        }
-    )
+    task.data = stamped_data
     flag_modified(task, "data")
     session.add(task)
     await session.flush()
@@ -486,7 +488,6 @@ async def run_backfill(
     :rtype: BackfillSummary
     """
     active_log = log or logger
-    ctx = FormBackfillContext(log=active_log, dry_run=dry_run)
     owner_filter = set(owners) if owners is not None else None
     entries = [
         entry
@@ -499,11 +500,19 @@ async def run_backfill(
         active_log.warning("No in-scope apps matched the requested owner filter")
         return summary
 
-    async_session = get_async_session_maker()
-    async with async_session() as session:
-        for entry in entries:
-            stats = await _backfill_app(session, entry, ctx)
-            summary.apps.append(stats)
+    inventory_session_maker = get_inventory_session_maker()
+    tasks_session_maker = get_async_session_maker()
+    async with inventory_session_maker() as inventory_session:
+        service_lookup = await load_service_id_lookup(inventory_session)
+        ctx = FormBackfillContext(
+            log=active_log,
+            dry_run=dry_run,
+            service_lookup=service_lookup,
+        )
+        async with tasks_session_maker() as session:
+            for entry in entries:
+                stats = await _backfill_app(session, entry, ctx)
+                summary.apps.append(stats)
 
     active_log.info(
         "Backfill complete (dry_run=%s): stamped=%s skipped_existing=%s "
