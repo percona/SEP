@@ -2093,6 +2093,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sep/admin/connectivity-check/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Check Connectivity
+     * @description Probe every configured external / inter-service endpoint and report status.
+     *
+     *     Run the PMM, Inventory, and Tasks/Nomad probes concurrently. Each is
+     *     isolated: one endpoint's failure is classified independently and never fails
+     *     the whole response, which always returns ``200`` with one entry per service
+     *     (``pmm``, ``inventory``, ``tasks``, ``nomad``).
+     *
+     *     :param pmm_api: The PMM client dependency, or ``None`` when unconfigured.
+     *     :type pmm_api: PMMAPIDep
+     *     :param inventory_api: The authenticated Inventory API client.
+     *     :type inventory_api: InventoryAPI
+     *     :param tasks_api: The authenticated Tasks API client.
+     *     :type tasks_api: TaskAPI
+     *     :return: One normalized connectivity result per service.
+     *     :rtype: list[ConnectivityResult]
+     */
+    post: operations['sep_check_connectivity_api_sep_admin_connectivity_check__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sep/admin/settings/': {
     parameters: {
       query?: never;
@@ -4583,6 +4617,44 @@ export interface components {
       | 'code'
       | 'actions'
       | 'schedule';
+    /**
+     * ConnectivityResult
+     * @description Represent the outcome of probing a single external / inter-service endpoint.
+     *
+     *     :param service: Stable identifier of the probed service (e.g. ``"pmm"``).
+     *     :type service: str
+     *     :param reachable: ``True`` only when the endpoint answered successfully.
+     *     :type reachable: bool
+     *     :param status: Machine-readable outcome state.
+     *     :type status: ConnectivityStatusEnum
+     *     :param detail: Human-readable status / error, free of secrets.
+     *     :type detail: str
+     *     :param version: Optional remote version string when the probe exposes one.
+     *     :type version: str | None
+     */
+    ConnectivityResult: {
+      /** Detail */
+      detail: string;
+      /** Reachable */
+      reachable: boolean;
+      /** Service */
+      service: string;
+      status: components['schemas']['ConnectivityStatusEnum'];
+      /** Version */
+      version?: string | null;
+    };
+    /**
+     * ConnectivityStatusEnum
+     * @description Enumerate the mutually-exclusive outcomes of a connectivity probe.
+     * @enum {string}
+     */
+    ConnectivityStatusEnum:
+      | 'reachable'
+      | 'auth_failed'
+      | 'error'
+      | 'unreachable'
+      | 'ssl_error'
+      | 'timeout';
     /**
      * ConnectivityWarning
      * @description Represent a connectivity-check failure on a JSON API task-creation response.
@@ -11163,6 +11235,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_check_connectivity_api_sep_admin_connectivity_check__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ConnectivityResult'][];
         };
       };
     };
