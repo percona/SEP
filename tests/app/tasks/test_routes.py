@@ -450,15 +450,11 @@ async def test_list_task_history_excludes_internal_rows_before_pagination(
 ) -> None:
     """Assert ``exclude_internal=true`` omits internal task names before applying ``limit``.
 
-    Creates one internal task (``inventory-sync``) and two user-facing tasks.
-    With ``limit=1`` and no filtering, only one row is returned.
-    With ``exclude_internal=true`` and ``limit=2``, only the two user-facing rows
-    are returned and the total reflects the filtered count, not the raw total.
+    Creates two user-facing tasks followed by one internal task
+    (``inventory-sync``). With ``limit=2`` and no filtering, the newest internal
+    row occupies one page slot. With ``exclude_internal=true`` and ``limit=2``,
+    both user-facing rows are returned and the total reflects the filtered count.
     """
-    internal_task = await TaskManager.create(
-        session,
-        TaskWrite.model_validate(TaskFactory.build(name="inventory-sync")),
-    )
     user_task_a = await TaskManager.create(
         session,
         TaskWrite.model_validate(TaskFactory.build(name="user-task-a")),
@@ -467,13 +463,24 @@ async def test_list_task_history_excludes_internal_rows_before_pagination(
         session,
         TaskWrite.model_validate(TaskFactory.build(name="user-task-b")),
     )
+    internal_task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="inventory-sync")),
+    )
 
-    await TaskHistoryManager.save(session, build_task_history(internal_task))
     await TaskHistoryManager.save(session, build_task_history(user_task_a))
     await TaskHistoryManager.save(session, build_task_history(user_task_b))
+    await TaskHistoryManager.save(session, build_task_history(internal_task))
+
+    unfiltered_response = test_client.get("/history/", params={"limit": 2})
+    assert unfiltered_response.status_code == status.HTTP_200_OK
+    unfiltered_names = {
+        item["task"]["name"] for item in unfiltered_response.json()["items"]
+    }
+    assert "inventory-sync" in unfiltered_names
 
     response = test_client.get(
-        "/history/", params={"exclude_internal": "true", "limit": 10}
+        "/history/", params={"exclude_internal": "true", "limit": 2}
     )
 
     assert response.status_code == status.HTTP_200_OK

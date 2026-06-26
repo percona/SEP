@@ -109,7 +109,7 @@ export function useTaskHistory(options: UseTaskHistoryOptions = {}) {
     offset,
     limit,
     enabled = true,
-    excludeInternal,
+    excludeInternal = false,
   } = options;
   return useQuery<PaginatedTaskHistory>({
     queryKey: ['task-history', { status: status ?? null, offset, limit, excludeInternal }],
