@@ -7396,7 +7396,6 @@ export interface components {
      *     :type has_logs: bool
      *     :param display_name: A user-meaningful label derived from the task name or
      *         execution-request metadata. Read-only; computed on serialisation.
-     *     :type display_name: str
      */
     TaskHistoryResponse: {
       /** Anonymize Mask */
@@ -7416,7 +7415,6 @@ export interface components {
        *     basename, or falls back to ``"<task> on <target>"``.
        *
        *     :return: The display label for the task history entry.
-       *     :rtype: str
        */
       readonly display_name: string;
       /**
