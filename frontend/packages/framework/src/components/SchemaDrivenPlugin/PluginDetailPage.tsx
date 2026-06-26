@@ -53,7 +53,7 @@ import { resolvePath } from '../../utils/resolvePath';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { ScheduleSummary } from '../ScheduleSummary';
-import { useExecuteTask, useTaskHistoryByNames } from '../../hooks';
+import { useExecuteTask, useTaskHistoryByNames, type TaskExecuteBody } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
 import { resolvePluginRouteBase } from './routeBase';
@@ -62,12 +62,15 @@ import { StatsCard } from './StatsCard';
 
 const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
 
+export type { TaskExecuteBody };
+
 /** One executable target on a plugin task detail action bar. */
 export interface TaskExecuteAction {
   label: string;
   taskName: string;
   testId?: string;
   confirmMessage?: string;
+  executeBody?: TaskExecuteBody;
 }
 
 export interface PluginDetailPageProps {
@@ -517,7 +520,10 @@ function ActionBar({
       return;
     }
     try {
-      await executeTask.mutateAsync({ taskName: pendingExecute.taskName });
+      await executeTask.mutateAsync({
+        taskName: pendingExecute.taskName,
+        executeBody: pendingExecute.executeBody,
+      });
       enqueueSnackbar(`${schema.display_name} task "${pendingExecute.taskName}" started`, {
         variant: 'success',
       });

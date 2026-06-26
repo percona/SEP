@@ -32,7 +32,7 @@ from tests.app.factories import TaskFactory
 API_BASE = "/api/plugins/alters"
 DEFAULT_TASK_NAME = "alter-task"
 DEFAULT_PARENT_NAME = "parent-alter"
-EXPECTED_CASCADE_CREATE_POSTS = 4
+EXPECTED_CASCADE_CREATE_POSTS = 3
 EXPECTED_CASCADE_UPDATE_PUTS = 3
 NOMAD_HOSTS = {"host1": "127.0.0.1"}
 
@@ -274,14 +274,14 @@ class TestAltersApiDetail:
 class TestAltersApiCreate:
     """Tests for POST /api/plugins/alters/."""
 
-    def test_create_posts_parent_derived_predecessor_and_chains(
+    def test_create_posts_parent_derived_and_predecessor(
         self,
         test_client,
         mock_task_api_dep,
         mock_inventory_api_dep,
         created_service,
     ) -> None:
-        """POST creates parent, dry-run, pre-checks, and fires the pre-checks chain."""
+        """POST creates parent, dry-run, and pre-checks without firing execute."""
         configure_cascade_create_mocks(
             mock_task_api_dep,
             mock_inventory_api_dep,
@@ -299,13 +299,6 @@ class TestAltersApiCreate:
 
         assert response.status_code == status.HTTP_201_CREATED
         assert mock_task_api_dep.post.await_count == EXPECTED_CASCADE_CREATE_POSTS
-        assert mock_task_api_dep.post.await_args_list[-1] == call(
-            f"/execute/{DEFAULT_TASK_NAME}-pre-checks",
-            json={
-                "chain_task_names": [DEFAULT_TASK_NAME],
-                "chain_on_failure": False,
-            },
-        )
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
         assert first_post["owner"] == TaskOwner.ALTERS.value
         assert "--execute" in first_post["data"]["meta"]["args"]
@@ -313,69 +306,8 @@ class TestAltersApiCreate:
         assert dry_run_post["name"] == f"{DEFAULT_TASK_NAME}-dry-run"
         assert "--dry-run" in dry_run_post["data"]["meta"]["args"]
         assert dry_run_post["data"]["parent"] == DEFAULT_TASK_NAME
-
-    def test_create_continue_on_pre_check_failure_sets_chain_on_failure(
-        self,
-        test_client,
-        mock_task_api_dep,
-        mock_inventory_api_dep,
-        created_service,
-    ) -> None:
-        """continue_on_pre_check_failure maps to chain_on_failure on pre-checks execute."""
-        configure_cascade_create_mocks(
-            mock_task_api_dep,
-            mock_inventory_api_dep,
-            created_service,
-            DEFAULT_TASK_NAME,
-        )
-
-        response = test_client.post(
-            f"{API_BASE}/?check_connectivity=false",
-            json=build_alters_write_body(
-                task_name=DEFAULT_TASK_NAME,
-                service_id=created_service.id,
-                continue_on_pre_check_failure=True,
-            ),
-        )
-
-        assert response.status_code == status.HTTP_201_CREATED
-        assert mock_task_api_dep.post.await_args_list[-1] == call(
-            f"/execute/{DEFAULT_TASK_NAME}-pre-checks",
-            json={
-                "chain_task_names": [DEFAULT_TASK_NAME],
-                "chain_on_failure": True,
-            },
-        )
-
-    def test_create_returns_201_with_warning_when_execute_chain_fails(
-        self,
-        test_client,
-        mock_task_api_dep,
-        mock_inventory_api_dep,
-        created_service,
-    ) -> None:
-        """Persist the task group and surface a warning when pre-checks auto-fire fails."""
-        configure_cascade_create_mocks(
-            mock_task_api_dep,
-            mock_inventory_api_dep,
-            created_service,
-            DEFAULT_TASK_NAME,
-            execute_result=HTTPException(status_code=status.HTTP_502_BAD_GATEWAY),
-        )
-        mock_task_api_dep.delete = AsyncMock(return_value=None)
-
-        response = test_client.post(
-            f"{API_BASE}/?check_connectivity=false",
-            json=build_alters_write_body(
-                task_name=DEFAULT_TASK_NAME,
-                service_id=created_service.id,
-            ),
-        )
-
-        assert response.status_code == status.HTTP_201_CREATED
-        payload = response.json()
-        assert payload["pre_checks_auto_fire_warning"] is not None
-        mock_task_api_dep.delete.assert_not_awaited()
+        pre_checks_post = mock_task_api_dep.post.await_args_list[2].kwargs["json"]
+        assert pre_checks_post["name"] == f"{DEFAULT_TASK_NAME}-pre-checks"
 
     def test_create_returns_422_missing_required_fields(
         self, test_client, mock_task_api_dep

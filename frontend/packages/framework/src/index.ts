@@ -34,7 +34,9 @@ export {
 export type { PluginFormSlotProps, RenderFormSlot } from './components/SchemaDrivenPlugin';
 export type { DeleteConfirmDialogProps } from './components/SchemaDrivenPlugin';
 export type { TaskExecuteAction } from './components/SchemaDrivenPlugin/PluginDetailPage';
+export type { TaskExecuteBody } from './hooks';
 export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';
+export { getStoredForm, STORED_FORM_KEY } from './components/SchemaDrivenPlugin';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';

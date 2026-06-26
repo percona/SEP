@@ -34,6 +34,7 @@ __all__ = [
     "CascadeFailure",
     "CascadeResult",
     "build_derived_payload",
+    "build_predecessor_chain_execute_body",
     "build_predecessor_payload",
     "cascade_create_independent_tasks",
     "cascade_create_predecessors",
@@ -395,6 +396,37 @@ def build_predecessor_payload(
     return payload
 
 
+def build_predecessor_chain_execute_body(
+    parent_name: str,
+    predecessor_specs: Sequence[ChainedPredecessor],
+) -> dict[str, Any]:
+    """Build the JSON body for ``POST /execute/{first_predecessor_name}``.
+
+    The first predecessor in ``predecessor_specs`` is the execute target;
+    ``chain_task_names`` lists any remaining predecessors followed by the
+    parent. ``chain_on_failure`` is derived from the first spec's
+    ``on_failure`` policy (``"continue"`` maps to ``True``, ``"halt"`` to
+    ``False``).
+
+    :param parent_name: The parent task name.
+    :param predecessor_specs: Ordered predecessor specs (same order as
+        :func:`cascade_create_predecessors`).
+    :return: A dict with ``chain_task_names`` and ``chain_on_failure`` ready
+        for the tasks sub-app execute endpoint.
+    :raises ValueError: When ``predecessor_specs`` is empty.
+    """
+    if not predecessor_specs:
+        raise ValueError(
+            "build_predecessor_chain_execute_body requires at least one "
+            "predecessor spec."
+        )
+    built_names = [f"{parent_name}{spec.name_suffix}" for spec in predecessor_specs]
+    return {
+        "chain_task_names": [*built_names[1:], parent_name],
+        "chain_on_failure": predecessor_specs[0].on_failure == "continue",
+    }
+
+
 async def cascade_create_predecessors(
     tasks_api: RemoteAPI,
     parent_payload: dict[str, Any],
@@ -402,7 +434,7 @@ async def cascade_create_predecessors(
         tuple[ChainedPredecessor, dict[str, Any]]
     ],
 ) -> None:
-    """POST the parent then every predecessor, then fire the chain via execute.
+    """POST the parent then every predecessor; roll back on any failure.
 
     Cascade order (parent-first, matching :func:`cascade_create_tasks`):
 
@@ -410,19 +442,17 @@ async def cascade_create_predecessors(
     2. POST each predecessor in declared order to ``/``. The payload is
        built via :func:`build_predecessor_payload` (``parent_link``
        applied, ``name`` suffixed from the parent's ``name``).
-    3. POST ``/execute/{first_predecessor_name}`` with the chain wiring:
-       ``chain_task_names`` lists the remaining predecessor names
-       followed by the parent name; ``chain_on_failure`` is derived from
-       the shared ``on_failure`` policy (``"continue"`` maps to ``True``,
-       ``"halt"`` maps to ``False``). The chain inherits
-       ``_chain_on_failure`` chain-wide via celery's
-       :func:`_dispatch_chained_task`.
 
-    On any failure (any POST or the final execute), every successfully
-    created task is DELETEd in reverse creation order. Rollback DELETEs
-    that themselves fail are logged at WARNING (matching
-    :func:`cascade_create_tasks`) and the rollback continues; the
-    original exception re-raises.
+    Chain execution is not fired here. When the user (or plugin handler)
+    starts the first predecessor, build the execute body via
+    :func:`build_predecessor_chain_execute_body` and call
+    ``POST /execute/{first_predecessor_name}``.
+
+    Every task is POSTed to the Tasks API root (``/``). On any POST
+    failure, already-created tasks are DELETEd in reverse creation order.
+    A rollback DELETE that itself fails is logged at WARNING and the
+    rollback loop continues; the original POST exception is what surfaces
+    to the caller.
 
     The empty-predecessor case is a programmer error: the consuming
     plugin should call :func:`cascade_create_tasks` (or POST the parent
@@ -453,7 +483,6 @@ async def cascade_create_predecessors(
             "callers must not invoke this helper for schemas without predecessors."
         )
     created_names = []
-    built_predecessor_payloads = []
     try:
         await tasks_api.post("/", json=parent_payload)
         created_names.append(parent_payload["name"])
@@ -461,20 +490,6 @@ async def cascade_create_predecessors(
             built = build_predecessor_payload(parent_payload, pred_payload, spec)
             await tasks_api.post("/", json=built)
             created_names.append(built["name"])
-            built_predecessor_payloads.append(built)
-        first_spec, _ = predecessor_specs_with_payloads[0]
-        first_predecessor_name = built_predecessor_payloads[0]["name"]
-        remaining_predecessor_names = [
-            payload["name"] for payload in built_predecessor_payloads[1:]
-        ]
-        chain_task_names = [*remaining_predecessor_names, parent_payload["name"]]
-        await tasks_api.post(
-            f"/execute/{first_predecessor_name}",
-            json={
-                "chain_task_names": chain_task_names,
-                "chain_on_failure": first_spec.on_failure == "continue",
-            },
-        )
     except Exception:
         for task_name in reversed(created_names):
             try:
@@ -498,8 +513,9 @@ async def cascade_create_independent_tasks(
 
     Unlike :func:`cascade_create_tasks`, the children are not derived from
     the parent via substitutions — each ``child_payload`` is fully built
-    by the caller. Unlike :func:`cascade_create_predecessors`, no chain
-    execute is fired after creation.
+    by the caller. Unlike :func:`cascade_create_predecessors`, children
+    are not named via :func:`build_predecessor_payload` or linked with
+    ``data["parent"]``.
 
     Every task is POSTed to the Tasks API root (``/``). On any POST
     failure, already-created tasks are DELETEd in reverse creation
