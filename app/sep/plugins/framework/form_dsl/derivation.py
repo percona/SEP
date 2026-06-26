@@ -43,7 +43,6 @@ from app.sep.plugins.framework.form_dsl.markers import (
     FormRules,
     Hidden,
     HostRef,
-    Option,
     Requires,
     SchemaRef,
     SectionRules,
@@ -286,8 +285,6 @@ def _derive_choices(name: str, base: Any, choices: Choices | None) -> list[Choic
                 disabled=True if opt.disabled else None,
                 disabled_reason=opt.disabled_reason,
             )
-            if isinstance(opt, Option)
-            else Choice(value=str(opt[0]), label=opt[1])
             for opt in choices.options
         ]
     if _is_enum(base):
@@ -402,9 +399,9 @@ def _branch_label(
     if disc_info is not None:
         choices = _find_marker(list(disc_info.metadata), (Choices,))
         if choices is not None:
-            for value, label in choices.options:
-                if str(value) == branch_value:
-                    return label
+            for opt in choices.options:
+                if str(opt.value) == branch_value:
+                    return opt.label
     return branch_value.replace("_", " ").title()
 
 

@@ -278,6 +278,6 @@ def _build_disabled_choices_schema():
 
 
 def test_disabled_choices_match_golden():
-    """Snapshot the disabled-choices fixture wire format under ``snapshots/form_dsl``."""
+    """Assert the disabled-choices fixture wire format under ``snapshots/form_dsl``."""
     golden = su.SNAPSHOTS_DIR / "form_dsl" / "disabled_choices.json"
     su.assert_or_update(golden, _dump(_build_disabled_choices_schema()))

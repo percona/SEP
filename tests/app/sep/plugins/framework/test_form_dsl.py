@@ -243,7 +243,7 @@ class TestChoices:
             derive_form_sections(_BadMultiWidgetModel, _SINGLE_SECTION)
 
     def test_disabled_option_derives_choice_with_disabled_fields(self) -> None:
-        """A disabled Option emits disabled=True and disabled_reason on the Choice."""
+        """Derive disabled=True and disabled_reason on the Choice for a disabled Option."""
         field = _fields_by_name(_ChoiceModelWithOptions)["swap_drop"]
         assert isinstance(field, ChoiceField)
         choices = field.choices
@@ -251,7 +251,7 @@ class TestChoices:
         assert choices[0].disabled_reason == "Not available"
 
     def test_tuple_option_in_choices_remains_selectable(self) -> None:
-        """A bare tuple in Choices derives a selectable Choice with no disabled fields."""
+        """Derive a selectable Choice with no disabled fields from a bare tuple in Choices."""
         field = _fields_by_name(_ChoiceModelWithOptions)["swap_drop"]
         assert isinstance(field, ChoiceField)
         choices = field.choices
@@ -259,7 +259,7 @@ class TestChoices:
         assert choices[1].disabled_reason is None
 
     def test_reason_without_disabled_raises_at_marker_construction(self) -> None:
-        """Creating an Option with disabled_reason but not disabled=True raises."""
+        """Raise when Option is constructed with disabled_reason but disabled=False."""
         with pytest.raises((ValueError, TypeError), match="disabled"):
             Option(value=0, label="Label", disabled_reason="reason")
 

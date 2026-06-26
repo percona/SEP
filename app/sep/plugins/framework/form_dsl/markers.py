@@ -54,6 +54,7 @@ __all__ = [
     "FormRules",
     "Hidden",
     "HostRef",
+    "Option",
     "Requires",
     "SchemaRef",
     "SectionLayout",
