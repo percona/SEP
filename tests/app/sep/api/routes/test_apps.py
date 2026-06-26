@@ -37,6 +37,7 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app
 from app.sep.models import AppLifecycleEnum, AppState
+from app.sep.plugins.framework.registry import get_app_registry
 
 
 @pytest_asyncio.fixture(name="override_session")
@@ -116,25 +117,15 @@ class TestListAppsForNavigation:
     async def test_group_and_nav_order_carry_registry_values(
         self, api_user_client: TestClient
     ) -> None:
-        """Carry ``group``/``nav_order`` for a grouped app and ``None`` for an ungrouped one."""
+        """Carry ``group``/``nav_order`` values from the plugin registry."""
         response = api_user_client.get("/api/apps/")
         entries = {e["app_key"]: e for e in response.json()}
+        registry = get_app_registry()
 
-        alerts = entries["alerts"]
-        assert alerts["group"] == "alerts"
-        assert isinstance(alerts["nav_order"], int)
-
-        snippets = entries["snippets"]
-        assert snippets["group"] == "snippets"
-        assert isinstance(snippets["nav_order"], int)
-
-        atw = entries["atw"]
-        assert atw["group"] == "snippets"
-        assert isinstance(atw["nav_order"], int)
-
-        inventory = entries["inventory"]
-        assert inventory["group"] is None
-        assert inventory["nav_order"] is None
+        for app_key, entry in entries.items():
+            definition = registry.get(app_key)
+            assert entry["group"] == definition.group
+            assert entry["nav_order"] == definition.nav_order
 
     async def test_inventory_reported_enabled(
         self, api_user_client: TestClient
