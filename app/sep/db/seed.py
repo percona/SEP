@@ -46,15 +46,13 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     """Build the SEP system periodic-task set, reading live settings per call.
 
     Computed on demand rather than baked into a module-level constant at import
-    so a HOT settings override -- specifically ``snippets_settings.SYNC_INTERVAL``
-    -- is reflected the next time the set is rebuilt (e.g. when the override
-    refresh callback re-seeds the beat schedule), without an application
+    so a HOT settings override is reflected the next time the set is rebuilt (e.g. when
+    the override refresh callback re-seeds the beat schedule), without an application
     restart. The plugin-gated schedules (``alerts`` backup, ``report``
     generation) are keyed to their own settings and are included verbatim; their
     live-reload is out of scope for SEP-1039.
 
     :return: The schedule/task pairs to seed into the Celery beat database.
-    :rtype: list[SystemPeriodicTaskSchedule]
     """
     system_tasks = [
         SystemPeriodicTaskSchedule(
