@@ -19,7 +19,6 @@ import logging.config
 from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from traceback import format_exception
-from types import SimpleNamespace
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
@@ -388,14 +387,17 @@ templates = sep_settings.TEMPLATES
 async def internal_error_handler(
     request: Request,
     exc: BaseException,
-) -> HTMLResponse:
+) -> HTMLResponse | RedirectResponse:
     """Load custom error page."""
     base_url = get_base_url(request)
     logger.exception("Unhandled exception:", exc_info=exc)
     try:
         user = await get_current_user(request)
-    except LoginRedirectException:
-        user = SimpleNamespace(is_admin=False)
+    except LoginRedirectException as redirect_exc:
+        return RedirectResponse(
+            redirect_exc.location,
+            status_code=redirect_exc.status_code,
+        )
     messages.error(
         request,
         "Internal Server Error. Please contact the administrators for help.",

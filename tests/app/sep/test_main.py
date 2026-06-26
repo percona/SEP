@@ -19,7 +19,7 @@ import importlib
 from unittest.mock import Mock
 
 import pytest
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
@@ -34,6 +34,7 @@ from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableE
 from app.sep.api.router import plugins_router
 from app.sep.config import Plugin, sep_settings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
+from app.sep.exceptions import LoginRedirectException
 from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
 from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppLifecycleEnum, AppState
@@ -494,6 +495,51 @@ class TestExceptionHandlers:
             name="error.html.j2",
             context={"exception": formatted_exception, **dummy_context},
         )
+
+    def test_internal_error_handler_redirects_for_stale_session(
+        self,
+        mocker,
+        dummy_context,
+        dummy_access_token,
+        regular_user,
+        logger_mock,
+        test_client,
+    ):
+        """Test stale-session 500 handling redirects to login."""
+        unexpected_exc = ValueError("Unexpected error")
+        redirect_exc = LoginRedirectException(
+            Request(
+                {
+                    "type": "http",
+                    "scheme": "http",
+                    "method": "GET",
+                    "path": "/",
+                    "raw_path": b"/",
+                    "query_string": b"",
+                    "headers": [],
+                    "server": ("testserver", 80),
+                    "client": ("testclient", 50000),
+                    "root_path": "",
+                    "app": sep_app,
+                }
+            )
+        )
+        mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            side_effect=unexpected_exc,
+        )
+        mocker.patch("app.sep.main.get_current_user", side_effect=redirect_exc)
+        mocker.patch("app.sep.main.get_default_context", return_value=dummy_context)
+        messages_error_mock = mocker.patch("app.sep.main.messages.error")
+
+        response = test_client.get("/", follow_redirects=False)
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/login?next=/"
+        logger_mock.exception.assert_called_once_with(
+            "Unhandled exception:", exc_info=unexpected_exc
+        )
+        messages_error_mock.assert_not_called()
 
     @pytest.mark.usefixtures("mock_get_username_mapping")
     def test_404_error(self, mocker, regular_user, test_client):
