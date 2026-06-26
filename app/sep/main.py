@@ -387,7 +387,7 @@ templates = sep_settings.TEMPLATES
 async def internal_error_handler(
     request: Request,
     exc: BaseException,
-) -> HTMLResponse:
+) -> HTMLResponse | RedirectResponse:
     """Load custom error page."""
     base_url = get_base_url(request)
     logger.exception("Unhandled exception:", exc_info=exc)

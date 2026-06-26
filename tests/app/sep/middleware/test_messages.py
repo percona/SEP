@@ -260,8 +260,9 @@ class TestMessagesMiddleware:
         [
             "totally-invalid-signature",
             "not-even-base64!@#$",
+            crypto_serializer.dumps(json.dumps([{"l": 1}])),
         ],
-        ids=["bad_signature", "garbage"],
+        ids=["bad_signature", "garbage", "validation_error"],
     )
     def test_middleware_clears_invalid_cookie(self, test_client, bad_cookie):
         """Assert an invalid messages cookie yields a normal response with the cookie cleared."""

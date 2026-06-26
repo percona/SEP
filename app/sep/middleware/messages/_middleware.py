@@ -23,6 +23,7 @@ from collections import OrderedDict
 from typing import ClassVar
 
 from itsdangerous import BadPayload, BadSignature
+from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
@@ -81,7 +82,7 @@ class MessagesMiddleware(BaseHTTPMiddleware):
                     Message.model_validate(msg)
                     for msg in json.loads(crypto_serializer.loads(old_cookie))
                 )
-            except (BadSignature, BadPayload, json.JSONDecodeError):
+            except (BadSignature, BadPayload, json.JSONDecodeError, ValidationError):
                 logger.debug("Invalid messages cookie; treating as empty")
 
         response = await call_next(request)
