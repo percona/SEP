@@ -391,7 +391,13 @@ async def internal_error_handler(
     """Load custom error page."""
     base_url = get_base_url(request)
     logger.exception("Unhandled exception:", exc_info=exc)
-    user = await get_current_user(request)
+    try:
+        user = await get_current_user(request)
+    except LoginRedirectException as redirect_exc:
+        return RedirectResponse(
+            redirect_exc.location,
+            status_code=redirect_exc.status_code,
+        )
     messages.error(
         request,
         "Internal Server Error. Please contact the administrators for help.",
