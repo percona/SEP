@@ -43,6 +43,7 @@ from app.sep.plugins.archives.app import app as archives_app
 from app.sep.plugins.backup_pg.app import app as backup_pg_app
 from app.sep.plugins.checksums.app import app as checksums_app
 from app.sep.plugins.framework.apps import TaskExecutionApp
+from app.sep.plugins.framework.form_backfill_backup_pg import reconstruct_backup_pg_form
 from app.sep.plugins.framework.form_backfill_checksums import reconstruct_checksums_form
 from app.sep.plugins.framework.form_backfill_inventory import (
     load_service_id_lookup,
@@ -264,7 +265,7 @@ def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
     entries: list[tuple[TaskExecutionApp, FormReconstructor]] = [
         (archives_app, _noop_reconstructor),
         (checksums_app, reconstruct_checksums_form),
-        (backup_pg_app, _noop_reconstructor),
+        (backup_pg_app, reconstruct_backup_pg_form),
         (mysql_backups_app, _noop_reconstructor),
         (mysql_restores_app, _noop_reconstructor),
     ]
