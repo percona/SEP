@@ -43,6 +43,7 @@ from app.sep.plugins.archives.app import app as archives_app
 from app.sep.plugins.backup_pg.app import app as backup_pg_app
 from app.sep.plugins.checksums.app import app as checksums_app
 from app.sep.plugins.framework.apps import TaskExecutionApp
+from app.sep.plugins.framework.form_backfill_checksums import reconstruct_checksums_form
 from app.sep.plugins.framework.form_backfill_inventory import (
     load_service_id_lookup,
     ServiceIdLookup,
@@ -262,7 +263,7 @@ def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
     """
     entries: list[tuple[TaskExecutionApp, FormReconstructor]] = [
         (archives_app, _noop_reconstructor),
-        (checksums_app, _noop_reconstructor),
+        (checksums_app, reconstruct_checksums_form),
         (backup_pg_app, _noop_reconstructor),
         (mysql_backups_app, _noop_reconstructor),
         (mysql_restores_app, _noop_reconstructor),
@@ -414,6 +415,33 @@ def _backfill_single_task(
     return _TaskBackfillOutcome("stamped", write.data)
 
 
+async def _rollback_backfill_session(
+    session: AsyncSession,
+    ctx: FormBackfillContext,
+    *,
+    app_name: str,
+    task_name: str,
+) -> None:
+    """Roll back a failed per-task persist without aborting the batch.
+
+    Rollback failures are logged and swallowed so a broken session cannot crash
+    the remainder of the app batch.
+
+    :param session: The tasks database session to reset.
+    :param ctx: Shared backfill context for error logging.
+    :param app_name: The in-scope app name for log context.
+    :param task_name: The task whose persist step failed.
+    """
+    try:
+        await session.rollback()
+    except Exception:
+        ctx.log.exception(
+            "[%s] %s: rollback failed after persist error; continuing batch",
+            app_name,
+            task_name,
+        )
+
+
 async def _backfill_app(
     session: AsyncSession,
     entry: _BackfillApp,
@@ -459,7 +487,12 @@ async def _backfill_app(
                     RESERVED_FORM_KEY,
                 )
                 if not ctx.dry_run:
-                    await session.rollback()
+                    await _rollback_backfill_session(
+                        session,
+                        ctx,
+                        app_name=entry.app_name,
+                        task_name=task.name,
+                    )
                 stats.skipped_error += 1
             else:
                 stats.stamped += 1
