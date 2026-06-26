@@ -560,7 +560,7 @@ class TestSepTaskHistoryListAll:
         )
         assert response.status_code == status.HTTP_200_OK
         call_params = mock_task_api_dep.get.call_args.kwargs["params"]
-        assert call_params.get("exclude_internal") is True
+        assert call_params.get("exclude_internal") == "true"
 
     def test_exclude_internal_not_forwarded_by_default(
         self,

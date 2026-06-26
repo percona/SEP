@@ -80,7 +80,7 @@ async def list_merged_task_history(
             "offset": pagination.offset,
             "limit": pagination.limit,
             **({"status": task_status.value} if task_status is not None else {}),
-            **({"exclude_internal": True} if exclude_internal else {}),
+            **({"exclude_internal": "true"} if exclude_internal else {}),
         }
         try:
             payload = await tasks_api.get("/history/", params=params)
