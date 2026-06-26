@@ -53,7 +53,12 @@ import { resolvePath } from '../../utils/resolvePath';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { ScheduleSummary } from '../ScheduleSummary';
-import { useExecuteTask, useStopTaskHistory, useTaskHistoryByNames, type TaskExecuteBody } from '../../hooks';
+import {
+  useExecuteTask,
+  useStopTaskHistory,
+  useTaskHistoryByNames,
+  type TaskExecuteBody,
+} from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
 import { resolvePluginRouteBase } from './routeBase';
