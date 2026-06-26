@@ -160,7 +160,7 @@ describe('DashboardPage', () => {
     expect(btn).toHaveAttribute('data-task-link', `/tasks/${encodeURIComponent('some-task')}`);
   });
 
-  it('routes RESTORES owner to /tasks without task name', async () => {
+  it('routes RESTORES owner to /tasks/:taskName', async () => {
     mockUseTaskHistory.mockReturnValue({
       ...EMPTY_HISTORY,
       data: {
@@ -169,7 +169,7 @@ describe('DashboardPage', () => {
     });
     renderDashboard();
     const btn = await screen.findByRole('button', { name: 'run-python' });
-    expect(btn).toHaveAttribute('data-task-link', '/tasks');
+    expect(btn).toHaveAttribute('data-task-link', `/tasks/${encodeURIComponent('restore-task')}`);
   });
 
   it('navigates to the task link when the task name button is clicked', async () => {

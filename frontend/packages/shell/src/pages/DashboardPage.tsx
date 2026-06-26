@@ -51,7 +51,7 @@ const OWNER_ROUTE_MAP: Record<string, (taskName: string) => string> = {
   ALTERS: (n) => `/schema-change/alters/task/${encodeURIComponent(n)}`,
   ARCHIVER: (n) => `/plugins/archives/task/${encodeURIComponent(n)}`,
   BACKUPS: (n) => `/plugins/mysql_backups/task/${encodeURIComponent(n)}`,
-  RESTORES: () => `/tasks`,
+  RESTORES: (n) => `/tasks/${encodeURIComponent(n)}`,
   CHECKSUMS: (n) => `/plugins/checksums/task/${encodeURIComponent(n)}`,
   BACKUP_MONGO: (n) => `/backups/mongodb/backups/task/${encodeURIComponent(n)}`,
   RESTORE_MONGO: (n) => `/backups/mongodb/restores/task/${encodeURIComponent(n)}`,
