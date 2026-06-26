@@ -186,7 +186,7 @@
       },
       "ChainedPredecessor": {
         "additionalProperties": false,
-        "description": "Represent a chained predecessor task that runs before the parent.\n\nThe cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes\nthis spec when POSTing, PUTting, or DELETEing a plugin's tasks: each\npredecessor is created with ``data[\"parent\"]`` linked to the parent's\nname (when ``parent_link`` is true) and named\n``f\"{parent_name}{name_suffix}\"``. After every create succeeds, the\ncascade fires ``POST /execute/{first_predecessor_name}`` with\n``chain_task_names`` spanning the remaining predecessors followed by\nthe parent; ``chain_on_failure`` is derived from ``on_failure``\n(``\"halt\"`` maps to ``False``, ``\"continue\"`` maps to ``True``). The\nchain inherits ``_chain_on_failure`` chain-wide via celery's\n:func:`_dispatch_chained_task`.\n\n:param name_suffix: String appended to the parent's ``name`` to form\n    the predecessor's name (for example ``\"-pre-checks\"``).\n:type name_suffix: NonEmptyStr\n:param on_failure: Chain semantics when the predecessor terminates\n    non-successfully. ``\"halt\"`` (default) stops the chain;\n    ``\"continue\"`` lets the chain continue regardless. Translates to\n    the boolean ``chain_on_failure`` flag at execute time.\n:type on_failure: Literal[\"halt\", \"continue\"]\n:param parent_link: When true, set ``data[\"parent\"]`` on the\n    predecessor payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "description": "Represent a chained predecessor task that runs before the parent.\n\nThe cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes\nthis spec when POSTing, PUTting, or DELETEing a plugin's tasks: each\npredecessor is created with ``data[\"parent\"]`` linked to the parent's\nname (when ``parent_link`` is true) and named\n``f\"{parent_name}{name_suffix}\"``. Create persists task records only;\nwhen the user starts the chain, the consuming plugin fires\n``POST /execute/{first_predecessor_name}`` using\n:func:`build_predecessor_chain_execute_body` for ``chain_task_names``\n(remaining predecessors then parent) and ``chain_on_failure`` derived\nfrom ``on_failure`` (``\"halt\"`` maps to ``False``, ``\"continue\"`` maps\nto ``True``).\n\n:param name_suffix: String appended to the parent's ``name`` to form\n    the predecessor's name (for example ``\"-pre-checks\"``).\n:type name_suffix: NonEmptyStr\n:param on_failure: Chain semantics when the predecessor terminates\n    non-successfully. ``\"halt\"`` (default) stops the chain;\n    ``\"continue\"`` lets the chain continue regardless. Translates to\n    the boolean ``chain_on_failure`` flag at execute time.\n:type on_failure: Literal[\"halt\", \"continue\"]\n:param parent_link: When true, set ``data[\"parent\"]`` on the\n    predecessor payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
         "properties": {
           "name_suffix": {
             "minLength": 1,
@@ -3014,7 +3014,7 @@
     "/api/plugins/tasks/": {
       "get": {
         "description": "List task definitions for the read-only plugin UI.\n\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:return: Task rows for the schema-driven list view.\n:rtype: list[TaskListResponse]",
-        "operationId": "tasks_tasks_api_list_api_plugins_tasks__get",
+        "operationId": "task_manager_tasks_api_list_api_plugins_tasks__get",
         "responses": {
           "200": {
             "content": {
@@ -3023,7 +3023,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TaskListResponse"
                   },
-                  "title": "Response Tasks Tasks Api List Api Plugins Tasks  Get",
+                  "title": "Response Task Manager Tasks Api List Api Plugins Tasks  Get",
                   "type": "array"
                 }
               }
@@ -3033,14 +3033,14 @@
         },
         "summary": "Tasks Api List",
         "tags": [
-          "tasks"
+          "Task Manager"
         ]
       }
     },
     "/api/plugins/tasks/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "tasks_get_schema_api_plugins_tasks_schema_get",
+        "operationId": "task_manager_get_schema_api_plugins_tasks_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -3055,14 +3055,14 @@
         },
         "summary": "Get Schema",
         "tags": [
-          "tasks"
+          "Task Manager"
         ]
       }
     },
     "/api/plugins/tasks/{task_name}": {
       "get": {
         "description": "Return the per-task detail bundle for the read-only plugin UI.\n\n:param task: The task definition resolved by name.\n:type task: Task\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:param executor_hosts_ctx: Executor hosts enriched with inventory labels.\n:type executor_hosts_ctx: ExecutorHostsCtx\n:return: Task definition, history, periodic schedules, and executor hosts.\n:rtype: TaskDetailResponse",
-        "operationId": "tasks_tasks_api_detail_api_plugins_tasks__task_name__get",
+        "operationId": "task_manager_tasks_api_detail_api_plugins_tasks__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3114,7 +3114,7 @@
         },
         "summary": "Tasks Api Detail",
         "tags": [
-          "tasks"
+          "Task Manager"
         ]
       }
     }

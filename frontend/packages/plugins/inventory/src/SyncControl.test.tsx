@@ -200,4 +200,54 @@ describe('SyncControl', () => {
       await screen.findByText(/Failed to start sync/i);
     });
   });
+
+  describe('entity-list refresh on completion', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    function hasEntityInvalidation(spy: ReturnType<typeof vi.fn>) {
+      return spy.mock.calls.some(([arg]) => {
+        const key = (arg as { queryKey?: unknown })?.queryKey;
+        return (
+          Array.isArray(key) &&
+          key[0] === 'plugins' &&
+          key[1] === 'inventory' &&
+          key[2] === 'entity'
+        );
+      });
+    }
+
+    function hasStatusInvalidation(spy: ReturnType<typeof vi.fn>) {
+      return spy.mock.calls.some(([arg]) => {
+        const key = (arg as { queryKey?: unknown })?.queryKey;
+        return Array.isArray(key) && key[0] === 'inventory' && key[1] === 'sync-status';
+      });
+    }
+
+    it('does not invalidate entity lists when the sync POST fails (no phantom completion edge)', async () => {
+      const user = userEvent.setup();
+      // Status endpoint reports idle throughout; only a real running→idle edge
+      // should refresh the lists, and a failed start never runs server-side.
+      stubGet([{ name: 'myapp.MySyncer', display_name: 'My Syncer' }], false);
+      await stubPost(400, { detail: 'Unknown syncer' });
+
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      const invalidate = vi.spyOn(client, 'invalidateQueries');
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>
+          <SnackbarProvider>{children}</SnackbarProvider>
+        </QueryClientProvider>
+      );
+
+      render(<SyncControl />, { wrapper });
+      await user.click(await screen.findByRole('button', { name: /sync all/i }));
+      await screen.findByText(/Unknown syncer/i);
+
+      // Wait until the mutation has settled (onSettled invalidates sync-status);
+      // by then any spurious entity invalidation would have fired too.
+      await waitFor(() => expect(hasStatusInvalidation(invalidate)).toBe(true));
+      expect(hasEntityInvalidation(invalidate)).toBe(false);
+    });
+  });
 });

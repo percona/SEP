@@ -416,7 +416,7 @@ async def test_get_alters_index_context(mocker):
     )
 
 
-EXPECTED_CASCADE_CREATE_POSTS = 4
+EXPECTED_CASCADE_CREATE_POSTS = 3
 
 
 def _cascade_parent_task(name: str = "t1") -> TaskWrite:
@@ -491,8 +491,8 @@ def test_resolve_predecessor_specs_first_continues_when_user_overrides():
 
 
 @pytest.mark.asyncio
-async def test_cascade_create_alters_group_posts_three_tasks_and_chains():
-    """Test cascade_create_alters_group POSTs parent, dry-run, pre-checks, and chains execute."""
+async def test_cascade_create_alters_group_posts_three_tasks():
+    """Test cascade_create_alters_group POSTs parent, dry-run, and pre-checks only."""
     tasks_api = AsyncMock(spec=RemoteAPI)
     body = AltersCreate(
         task_name="t1",
@@ -510,64 +510,7 @@ async def test_cascade_create_alters_group_posts_three_tasks_and_chains():
         body,
     )
 
-    assert tasks_api.post.await_args_list[-1] == call(
-        "/execute/t1-pre-checks",
-        json={"chain_task_names": ["t1"], "chain_on_failure": False},
-    )
     assert len(tasks_api.post.await_args_list) == EXPECTED_CASCADE_CREATE_POSTS
-    tasks_api.delete.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_cascade_create_alters_group_continue_on_pre_check_failure():
-    """Test cascade_create_alters_group sets chain_on_failure when user opts into continue."""
-    tasks_api = AsyncMock(spec=RemoteAPI)
-    body = AltersCreate(
-        task_name="t1",
-        hostname="host1",
-        service_id=1,
-        schema_name="app",
-        table_name="users",
-        alter="ADD COLUMN x INT",
-        continue_on_pre_check_failure=True,
-    )
-
-    await cascade_create_alters_group(
-        tasks_api,
-        _cascade_parent_task(),
-        _cascade_pre_checks_template(),
-        body,
-    )
-
-    assert tasks_api.post.await_args_list[-1] == call(
-        "/execute/t1-pre-checks",
-        json={"chain_task_names": ["t1"], "chain_on_failure": True},
-    )
-
-
-@pytest.mark.asyncio
-async def test_cascade_create_alters_group_keeps_tasks_when_execute_fails():
-    """Test execute failure returns a warning and does not roll back persisted tasks."""
-    tasks_api = AsyncMock(spec=RemoteAPI)
-    exc = HTTPException(status_code=status.HTTP_502_BAD_GATEWAY)
-    tasks_api.post.side_effect = [None, None, None, exc]
-    body = AltersCreate(
-        task_name="t1",
-        hostname="host1",
-        service_id=1,
-        schema_name="app",
-        table_name="users",
-        alter="ADD COLUMN x INT",
-    )
-
-    warning = await cascade_create_alters_group(
-        tasks_api,
-        _cascade_parent_task(),
-        _cascade_pre_checks_template(),
-        body,
-    )
-
-    assert warning is not None
     tasks_api.delete.assert_not_awaited()
 
 

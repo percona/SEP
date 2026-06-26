@@ -178,4 +178,26 @@ describe('useExecuteTask', () => {
       {},
     );
   });
+
+  it('posts an optional execute body for chain wiring', async () => {
+    const executeBody = {
+      chain_task_names: ['my-alter'],
+      chain_on_failure: true,
+    };
+    const { result } = renderHook(() => useExecuteTask('alters'), {
+      wrapper: wrapper(),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        taskName: 'my-alter-pre-checks',
+        executeBody,
+      });
+    });
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/plugins/alters/my-alter-pre-checks/execute',
+      executeBody,
+    );
+  });
 });
