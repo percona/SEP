@@ -567,7 +567,7 @@ class TestSepTaskHistoryListAll:
         test_client: TestClient,
         mock_task_api_dep: AsyncMock,
     ) -> None:
-        """Do not include ``exclude_internal`` in upstream params when not requested."""
+        """Omit ``exclude_internal`` from upstream params when the option is not requested."""
         mock_task_api_dep.get.return_value = {
             "items": [],
             "total": 0,

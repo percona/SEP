@@ -449,20 +449,14 @@ class TaskHistoryManager(BaseSQLModelManager):
         """Return paginated all-history, optionally excluding internal maintenance tasks.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
         :param pagination: Validated offset/limit window for this page.
-        :type pagination: Pagination
         :param status: Optional exact status filter.
-        :type status: TaskHistoryStatusEnum | None
         :param exclude_internal: When ``True``, omit rows whose task name belongs to
             :data:`~app.tasks.models.INTERNAL_TASK_NAMES` before counting and
             pagination, so ``limit=5`` always returns five user-facing rows.
             Defaults to ``False``.
-        :type exclude_internal: bool
         :param query_options: Additional SQLAlchemy query options to apply.
-        :type query_options: Sequence
         :return: Paginated task-history response.
-        :rtype: PaginatedResponse[TaskHistory]
         """
         extra = ()
         if exclude_internal:

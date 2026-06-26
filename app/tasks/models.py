@@ -1000,7 +1000,6 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     :type has_logs: bool
     :param display_name: A user-meaningful label derived from the task name or
         execution-request metadata. Read-only; computed on serialisation.
-    :type display_name: str
     """
 
     task: TaskResponse
@@ -1017,7 +1016,6 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
         basename, or falls back to ``"<task> on <target>"``.
 
         :return: The display label for the task history entry.
-        :rtype: str
         """
         task = getattr(self, "task", None)
         task_name = task.name if task else self.execution_request.task
