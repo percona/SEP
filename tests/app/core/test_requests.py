@@ -327,6 +327,26 @@ async def test_request_debug_log_redacts_url_credentials(caplog):
     assert all(password not in msg for msg in sending)
 
 
+@pytest.mark.asyncio
+async def test_response_debug_log_redacts_url_credentials(caplog):
+    """The response debug log masks a password embedded in the endpoint URL."""
+    password = "hunter2"
+    api = RemoteAPI(endpoint=f"http://user:{password}@localhost:8000/")
+    with aioresponses() as m:
+        m.get(
+            "http://user:hunter2@localhost:8000/ping",
+            status=status.HTTP_200_OK,
+            payload={"ok": True},
+        )
+        with caplog.at_level("DEBUG", logger=api.logger.name):
+            async with api:
+                await api.get("ping")
+    response = [r.getMessage() for r in caplog.records if "response" in r.getMessage()]
+    assert response, "expected a response debug log line"
+    assert all(password not in msg for msg in response)
+    assert any("****" in msg for msg in response)
+
+
 def test_create_ssl_context_without_certfile():
     """create_ssl_context returns a context without load_cert_chain when no cert."""
     ctx = BaseRemoteAPI.create_ssl_context()

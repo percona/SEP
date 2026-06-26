@@ -81,6 +81,7 @@ async def get_pmm_api() -> PMMRemoteAPI | None:
         endpoint=settings.PMM.endpoint,
         api_key=settings.PMM.api_key,
         verify_ssl=settings.PMM.verify_ssl,
+        ssl_cafile=settings.SSL_CAFILE,
     )
 
 

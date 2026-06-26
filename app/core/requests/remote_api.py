@@ -720,7 +720,7 @@ class RemoteAPI(BaseRemoteAPI):
                 response_data = await response.json()
                 self.logger.debug(
                     "RemoteAPI (%s): %s request to %s response (%s): %s",
-                    self.endpoint,
+                    redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,
@@ -731,7 +731,7 @@ class RemoteAPI(BaseRemoteAPI):
                 response_content = response.content
                 self.logger.exception(
                     "RemoteAPI (%s): %s request to %s response content (%s): %s",
-                    self.endpoint,
+                    redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,

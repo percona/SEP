@@ -73,6 +73,7 @@ class TestGetPmmApi:
             mock_settings.PMM.endpoint = "https://pmm.example.com"
             mock_settings.PMM.api_key = "secret-key"
             mock_settings.PMM.verify_ssl = True
+            mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
             mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
             result = await get_pmm_api()
         assert result is mock_client
@@ -81,6 +82,7 @@ class TestGetPmmApi:
             endpoint="https://pmm.example.com",
             api_key="secret-key",
             verify_ssl=True,
+            ssl_cafile="/etc/ssl/ca.pem",
         )
 
 
