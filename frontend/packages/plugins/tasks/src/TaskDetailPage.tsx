@@ -44,6 +44,7 @@ import {
   SEP_TABLE_CLASS,
   TaskHistoryTable,
   TaskLogViewer,
+  useStopTaskHistory,
   type TaskHistoryEntry,
 } from '@sep/framework';
 import { useTaskDetail } from './hooks';
@@ -137,7 +138,14 @@ export function TaskDetailPage() {
   const { taskName: rawTaskName } = useParams<{ taskName: string }>();
   const taskName = rawTaskName;
   const { data, isLoading, error } = useTaskDetail(taskName);
+  const stop = useStopTaskHistory();
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
+
+  const handleStopTask = (entry: TaskHistoryEntry) => {
+    if (entry.id !== null && entry.id !== undefined) {
+      stop.mutate(entry.id);
+    }
+  };
 
   const task = data?.task;
   const isTemplate = task?.is_template ?? false;
@@ -207,6 +215,8 @@ export function TaskDetailPage() {
               hideTaskNameColumn
               disablePolling
               onViewLogs={setLogsEntry}
+              onStopTask={handleStopTask}
+              isStopping={stop.isPending}
             />
           </Box>
 
@@ -229,6 +239,8 @@ export function TaskDetailPage() {
             hideTaskNameColumn
             disablePolling
             onViewLogs={setLogsEntry}
+            onStopTask={handleStopTask}
+            isStopping={stop.isPending}
             onChainItemClick={(chainTaskName) => {
               navigate(`../${encodeURIComponent(chainTaskName)}`);
             }}
