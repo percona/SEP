@@ -38,6 +38,7 @@ from app.sep.plugins.framework.form_dsl import (
     FormLayout,
     FormRules,
     HostRef,
+    Option,
     SchemaRef,
     SectionLayout,
     SectionRules,
@@ -238,3 +239,45 @@ def test_one_of_fixture_matches_golden():
     """Snapshot the one-of fixture wire format under ``snapshots/form_dsl``."""
     golden = su.SNAPSHOTS_DIR / "form_dsl" / "one_of.json"
     su.assert_or_update(golden, _dump(_build_one_of_schema()))
+
+
+class _DisabledChoicesForm(AppFormModel):
+    """Exercise disabled-option derivation via ``Option``."""
+
+    archive_type: Annotated[
+        int,
+        Choices(
+            (
+                (0, "Purge Only"),
+                Option(
+                    value=1,
+                    label="Swap & Drop",
+                    disabled=True,
+                    disabled_reason="Not available yet",
+                ),
+            )
+        ),
+        Ui(label="Archive Type", section="main"),
+    ] = 0
+
+
+_DISABLED_CHOICES_LAYOUT = FormLayout(
+    sections=[SectionLayout(key="main", title="Main")],
+)
+
+
+def _build_disabled_choices_schema():
+    """Assemble the disabled-choices fixture ``PluginSchema``."""
+    return derive_plugin_schema(
+        _DisabledChoicesForm,
+        _DISABLED_CHOICES_LAYOUT,
+        name="disabled_choices",
+        display_name="Disabled Choices",
+        list_view=ListView(columns=[Column(key="name", label="Name")]),
+    )
+
+
+def test_disabled_choices_match_golden():
+    """Assert the disabled-choices fixture wire format under ``snapshots/form_dsl``."""
+    golden = su.SNAPSHOTS_DIR / "form_dsl" / "disabled_choices.json"
+    su.assert_or_update(golden, _dump(_build_disabled_choices_schema()))
