@@ -101,7 +101,7 @@ function mapHistoryToRecentTask(item: TaskHistoryEntry): RecentTask {
   const builder = OWNER_ROUTE_MAP[owner] ?? OWNER_ROUTE_MAP['ANY'];
   return {
     id: item.id ?? 0,
-    name: item.display_name ?? taskName,
+    name: item.display_name,
     link: builder(taskName),
     target: item.execution_request.target,
     status: item.status ?? 'pending',
