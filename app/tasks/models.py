@@ -958,6 +958,23 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
     version: int = SQLField(default=0, nullable=False)
 
 
+GENERIC_EXECUTOR_TASK_NAMES: frozenset[str] = frozenset(
+    {
+        "run-python",
+        "exec-artifact",
+        "exec-python-artifact",
+    }
+)
+
+INTERNAL_TASK_NAMES: frozenset[str] = frozenset(
+    {
+        "inventory-sync",
+        "tasks__sync_running_tasks",
+        "tasks__check_nomad_cert_expiry",
+    }
+)
+
+
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """Represent a task history API response.
 
@@ -981,10 +998,39 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
         Populated by list/retrieve routes; defaults to ``False``.
     :type has_logs: bool
+    :param display_name: A user-meaningful label derived from the task name or
+        execution-request metadata. Read-only; computed on serialisation.
+    :type display_name: str
     """
 
     task: TaskResponse
     has_logs: bool = False
+
+    @computed_field
+    @property
+    def display_name(self) -> str:
+        """Return a user-meaningful display label for this task history row.
+
+        For normal tasks, returns ``task.name``. For generic executor templates
+        (``run-python``, ``exec-artifact``, ``exec-python-artifact``), derives a
+        more descriptive label from snippet filename metadata, a ``file://`` payload
+        basename, or falls back to ``"<task> on <target>"``.
+
+        :return: The display label for the task history entry.
+        :rtype: str
+        """
+        task = getattr(self, "task", None)
+        task_name = task.name if task else self.execution_request.task
+        if task_name not in GENERIC_EXECUTOR_TASK_NAMES:
+            return task_name
+        meta = self.execution_request.meta or {}
+        snippet_fn = meta.get("_snippet_filename") or meta.get("snippet_filename")
+        if snippet_fn:
+            return snippet_fn
+        payload = self.execution_request.payload
+        if payload and payload.startswith("file://"):
+            return Path(payload.replace("file://", "", 1)).name
+        return f"{self.execution_request.task} on {self.execution_request.target}"
 
 
 class TaskStats(BaseModel):

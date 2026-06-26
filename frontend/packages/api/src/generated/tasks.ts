@@ -1365,6 +1365,9 @@ export interface components {
      *         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
      *         Populated by list/retrieve routes; defaults to ``False``.
      *     :type has_logs: bool
+     *     :param display_name: A user-meaningful label derived from the task name or
+     *         execution-request metadata. Read-only; computed on serialisation.
+     *     :type display_name: str
      */
     TaskHistoryResponse: {
       /** Anonymize Mask */
@@ -1374,6 +1377,19 @@ export interface components {
        * Format: date-time
        */
       created_at?: string;
+      /**
+       * Display Name
+       * @description Return a user-meaningful display label for this task history row.
+       *
+       *     For normal tasks, returns ``task.name``. For generic executor templates
+       *     (``run-python``, ``exec-artifact``, ``exec-python-artifact``), derives a
+       *     more descriptive label from snippet filename metadata, a ``file://`` payload
+       *     basename, or falls back to ``"<task> on <target>"``.
+       *
+       *     :return: The display label for the task history entry.
+       *     :rtype: str
+       */
+      readonly display_name: string;
       /**
        * Duration
        * @description Return the duration of the task execution in seconds.
@@ -1963,6 +1979,7 @@ export interface operations {
     parameters: {
       query?: {
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+        exclude_internal?: boolean;
         offset?: number;
         limit?: number;
       };

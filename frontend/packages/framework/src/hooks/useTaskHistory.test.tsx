@@ -122,6 +122,22 @@ describe('useTaskHistory', () => {
     expect(url).toBe('/sep/task-history/');
     expect(mockApiGet.mock.calls.every(([u]) => !String(u).startsWith('/tasks/'))).toBe(true);
   });
+
+  it('sends exclude_internal=true when excludeInternal option is set', async () => {
+    renderHook(() => useTaskHistory({ excludeInternal: true }), { wrapper: wrapper() });
+    await waitFor(() => {
+      expect(mockApiGet).toHaveBeenCalledWith('/sep/task-history/', {
+        params: { exclude_internal: true },
+      });
+    });
+  });
+
+  it('omits exclude_internal from params when excludeInternal is not set', async () => {
+    renderHook(() => useTaskHistory(), { wrapper: wrapper() });
+    await waitFor(() => expect(mockApiGet).toHaveBeenCalled());
+    const params = mockApiGet.mock.calls[0][1]?.params ?? {};
+    expect(params).not.toHaveProperty('exclude_internal');
+  });
 });
 
 describe('useStopTaskHistory', () => {

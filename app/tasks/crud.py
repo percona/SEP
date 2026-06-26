@@ -34,6 +34,7 @@ from app.core.utils.date_time import utc_now
 from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     DispatchLock,
+    INTERNAL_TASK_NAMES,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -435,6 +436,51 @@ class TaskHistoryManager(BaseSQLModelManager):
         )
         return PaginatedResponse.from_pagination(items, total, pagination)
 
+    @classmethod
+    async def list_all_history_paginated(
+        cls,
+        session: AsyncSession,
+        *,
+        pagination: Pagination,
+        status: TaskHistoryStatusEnum | None = None,
+        exclude_internal: bool = False,
+        query_options: Sequence = (),
+    ) -> PaginatedResponse[TaskHistory]:
+        """Return paginated all-history, optionally excluding internal maintenance tasks.
+
+        :param session: The SQLAlchemy asynchronous session to use for query execution.
+        :type session: AsyncSession
+        :param pagination: Validated offset/limit window for this page.
+        :type pagination: Pagination
+        :param status: Optional exact status filter.
+        :type status: TaskHistoryStatusEnum | None
+        :param exclude_internal: When ``True``, omit rows whose task name belongs to
+            :data:`~app.tasks.models.INTERNAL_TASK_NAMES` before counting and
+            pagination, so ``limit=5`` always returns five user-facing rows.
+            Defaults to ``False``.
+        :type exclude_internal: bool
+        :param query_options: Additional SQLAlchemy query options to apply.
+        :type query_options: Sequence
+        :return: Paginated task-history response.
+        :rtype: PaginatedResponse[TaskHistory]
+        """
+        extra = ()
+        if exclude_internal:
+            internal_ids = (
+                select(Task.id)
+                .where(col(Task.name).in_(INTERNAL_TASK_NAMES))
+                .scalar_subquery()
+            )
+            extra = (col(TaskHistory.task_id).not_in(internal_ids),)
+        return await cls.list_paginated(
+            session,
+            *extra,
+            select_related=(TaskHistory.task,),
+            query_options=list(query_options),
+            pagination=pagination,
+            status=status,
+        )
+
     @staticmethod
     def _latest_status_from_history_statuses(
         statuses: Sequence[TaskHistoryStatusEnum | None],
@@ -499,7 +545,7 @@ class TaskHistoryManager(BaseSQLModelManager):
         )
         result = await cls._exec(session, query)
         rows = result.all()
-        statuses_by_name: dict[str, TaskHistoryStatusEnum | None] = dict(rows)
+        statuses_by_name = dict(rows)
 
         return {name: statuses_by_name.get(name) for name in unique_names}
 
@@ -622,7 +668,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             source are yielded.
         :type source: str | None
         :yield: Matching ``TaskHistoryLog`` chunk rows, oldest first.
-        :rtype: AsyncGenerator[TaskHistoryLog, None]
         """
         query = select(TaskHistoryLog).where(
             col(TaskHistoryLog.task_history_id) == task_history_id,
@@ -698,7 +743,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             given stream are yielded.
         :type stream: TaskLogType | None
         :yield: Matching ``TaskHistoryLog`` chunk rows, newest first per stream.
-        :rtype: AsyncGenerator[TaskHistoryLog, None]
         """
         query = select(TaskHistoryLog).where(
             col(TaskHistoryLog.task_history_id) == task_history_id,

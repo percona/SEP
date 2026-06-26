@@ -55,7 +55,7 @@ from app.tasks.models import (
     TaskLogType,
     TaskWrite,
 )
-from tests.app.factories import TaskFactory
+from tests.app.factories import build_task_history, TaskFactory
 
 MOCK_FILE_SIZE = 1024
 PAGINATION_TASK_COUNT = 3
@@ -442,6 +442,68 @@ async def test_list_task_history_empty_does_not_crash(test_client):
 
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_excludes_internal_rows_before_pagination(
+    test_client, session
+) -> None:
+    """Assert ``exclude_internal=true`` omits internal task names before applying ``limit``.
+
+    Creates one internal task (``inventory-sync``) and two user-facing tasks.
+    With ``limit=1`` and no filtering, only one row is returned.
+    With ``exclude_internal=true`` and ``limit=2``, only the two user-facing rows
+    are returned and the total reflects the filtered count, not the raw total.
+    """
+    internal_task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="inventory-sync")),
+    )
+    user_task_a = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="user-task-a")),
+    )
+    user_task_b = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="user-task-b")),
+    )
+
+    await TaskHistoryManager.save(session, build_task_history(internal_task))
+    await TaskHistoryManager.save(session, build_task_history(user_task_a))
+    await TaskHistoryManager.save(session, build_task_history(user_task_b))
+
+    response = test_client.get(
+        "/history/", params={"exclude_internal": "true", "limit": 10}
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    returned_names = {item["task"]["name"] for item in data["items"]}
+    expected_user_task_count = 2
+    assert "inventory-sync" not in returned_names
+    assert "user-task-a" in returned_names
+    assert "user-task-b" in returned_names
+    assert data["total"] == expected_user_task_count
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_internal_rows_visible_without_flag(
+    test_client, session
+) -> None:
+    """Assert the default ``GET /history/`` still returns internal task rows."""
+    internal_task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="inventory-sync")),
+    )
+
+    await TaskHistoryManager.save(session, build_task_history(internal_task))
+
+    response = test_client.get("/history/")
+
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    returned_names = {item["task"]["name"] for item in data["items"]}
+    assert "inventory-sync" in returned_names
 
 
 @pytest.mark.asyncio
