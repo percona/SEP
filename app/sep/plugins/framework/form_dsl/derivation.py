@@ -43,6 +43,7 @@ from app.sep.plugins.framework.form_dsl.markers import (
     FormRules,
     Hidden,
     HostRef,
+    Option,
     Requires,
     SchemaRef,
     SectionRules,
@@ -279,7 +280,15 @@ def _derive_choices(name: str, base: Any, choices: Choices | None) -> list[Choic
     """
     if choices is not None:
         return [
-            Choice(value=str(value), label=label) for value, label in choices.options
+            Choice(
+                value=str(opt.value),
+                label=opt.label,
+                disabled=True if opt.disabled else None,
+                disabled_reason=opt.disabled_reason,
+            )
+            if isinstance(opt, Option)
+            else Choice(value=str(opt[0]), label=opt[1])
+            for opt in choices.options
         ]
     if _is_enum(base):
         return [
@@ -366,7 +375,7 @@ def _union_model_members(annotation: Any) -> list[type[BaseModel]]:
     current = _strip_annotated(annotation)
     if get_origin(current) not in (Union, UnionType):
         return []
-    members: list[type[BaseModel]] = []
+    members = []
     for member_arg in get_args(current):
         member = _strip_annotated(member_arg)
         if member is _NONE_TYPE:
@@ -427,7 +436,7 @@ def _derive_branch_leaves(
     disc_key: str,
 ) -> list[BaseField]:
     """Derive prefixed leaf fields for one union branch model."""
-    leaves: list[BaseField] = []
+    leaves = []
     for leaf_name, leaf_info in member_model.model_fields.items():
         if leaf_name == disc_key:
             continue
@@ -463,7 +472,7 @@ def _derive_one_of_from_union(
             f"field {name!r} declares a discriminated union with {len(members)} "
             "branch model(s); one_of requires at least two branches"
         )
-    branches: list[OneOfBranch] = []
+    branches = []
     for member in members:
         disc_info = member.model_fields.get(disc_key)
         if disc_info is None:
@@ -516,7 +525,7 @@ def _derive_multi_ref_one_of(
         "requires": _gates(metadata, Requires) or None,
         "forbidden": _gates(metadata, Forbidden) or None,
     }
-    branches: list[OneOfBranch] = []
+    branches = []
     for ref in ref_markers:
         ref_type = type(ref)
         branch_meta = _REF_BRANCH_META.get(ref_type)
@@ -679,7 +688,7 @@ def _derive_field_specs(model: type["AppFormModel"]) -> list[_FieldSpec]:
     applies: it is omitted from the derived schema (the framework renders it from a
     capability instead) and so needs no ``Ui`` presentation metadata.
     """
-    consumed_mode_fields: set[str] = set()
+    consumed_mode_fields = set()
     for name, field_info in model.model_fields.items():
         metadata = list(field_info.metadata)
         ref_markers = [item for item in metadata if isinstance(item, _REF_TYPES)]
@@ -712,14 +721,14 @@ def _runtime_form_fields(model: type["AppFormModel"]) -> list[BaseField | OneOfG
     Discriminated unions and multi-reference fields must surface as
     :class:`OneOfGroup` containers so branch-selection rules are synthesised.
     """
-    consumed_mode_fields: set[str] = set()
+    consumed_mode_fields = set()
     for name, field_info in model.model_fields.items():
         metadata = list(field_info.metadata)
         ref_markers = [item for item in metadata if isinstance(item, _REF_TYPES)]
         if len(ref_markers) > 1:
             consumed_mode_fields.add(f"{name}_mode")
 
-    fields: list[BaseField | OneOfGroup] = []
+    fields = []
     for name, field_info in model.model_fields.items():
         if name in consumed_mode_fields:
             continue
