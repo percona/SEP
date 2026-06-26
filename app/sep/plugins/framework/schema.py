@@ -923,13 +923,13 @@ class ChainedPredecessor(SchemaBaseModel):
     this spec when POSTing, PUTting, or DELETEing a plugin's tasks: each
     predecessor is created with ``data["parent"]`` linked to the parent's
     name (when ``parent_link`` is true) and named
-    ``f"{parent_name}{name_suffix}"``. After every create succeeds, the
-    cascade fires ``POST /execute/{first_predecessor_name}`` with
-    ``chain_task_names`` spanning the remaining predecessors followed by
-    the parent; ``chain_on_failure`` is derived from ``on_failure``
-    (``"halt"`` maps to ``False``, ``"continue"`` maps to ``True``). The
-    chain inherits ``_chain_on_failure`` chain-wide via celery's
-    :func:`_dispatch_chained_task`.
+    ``f"{parent_name}{name_suffix}"``. Create persists task records only;
+    when the user starts the chain, the consuming plugin fires
+    ``POST /execute/{first_predecessor_name}`` using
+    :func:`build_predecessor_chain_execute_body` for ``chain_task_names``
+    (remaining predecessors then parent) and ``chain_on_failure`` derived
+    from ``on_failure`` (``"halt"`` maps to ``False``, ``"continue"`` maps
+    to ``True``).
 
     :param name_suffix: String appended to the parent's ``name`` to form
         the predecessor's name (for example ``"-pre-checks"``).

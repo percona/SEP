@@ -29,6 +29,7 @@ wiring, or status-code conventions:
 
 import functools
 import inspect
+import logging
 import typing
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
@@ -67,6 +68,8 @@ from app.tasks.models import (
     TaskOwner,
     TaskWrite,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "ListFilters",
@@ -1194,7 +1197,13 @@ def derive_crud_routes(
     async def _detail(
         tasks_api: TaskAPI, task: Annotated[Task, Depends(get_task)]
     ) -> BaseModel:
-        task_status = await get_task_latest_status(tasks_api, task.name)
+        try:
+            task_status = await get_task_latest_status(tasks_api, task.name)
+        except ValueError:
+            raise
+        except Exception:
+            logger.exception("Failed to fetch history for task %s", task.name)
+            task_status = None
         builder = await _bind_context(detail_builder, context_provider)
         return builder(task, status=task_status)
 

@@ -16,12 +16,15 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type TasksComponents } from '@sep/api';
+import { apiClient, type SepComponents, type TasksComponents } from '@sep/api';
 
 export type TaskHistoryStatus = TasksComponents['schemas']['TaskHistoryStatusEnum'];
 export type TaskHistoryEntry = TasksComponents['schemas']['TaskHistoryResponse'];
 export type PaginatedTaskHistory =
   TasksComponents['schemas']['PaginatedResponse_TaskHistoryResponse_'];
+
+/** Optional JSON body for ``POST .../execute`` (chain wiring, schedule ETA, etc.). */
+export type TaskExecuteBody = SepComponents['schemas']['TaskExecuteWrite'];
 
 export const RUNNING_STATUSES: ReadonlySet<TaskHistoryStatus> = new Set(['running', 'pending']);
 
@@ -192,11 +195,11 @@ export function useStopTaskHistory() {
 export function useExecuteTask(pluginName: string) {
   const queryClient = useQueryClient();
   const pluginPath = pluginName.split('/').map(encodeURIComponent).join('/');
-  return useMutation<unknown, Error, { taskName: string }>({
-    mutationFn: async ({ taskName }) => {
+  return useMutation<unknown, Error, { taskName: string; executeBody?: TaskExecuteBody }>({
+    mutationFn: async ({ taskName, executeBody }) => {
       const { data } = await apiClient.post<unknown>(
         `/plugins/${pluginPath}/${encodeURIComponent(taskName)}/execute`,
-        {},
+        executeBody ?? {},
       );
       return data;
     },

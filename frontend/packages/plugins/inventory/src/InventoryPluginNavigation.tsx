@@ -174,6 +174,14 @@ export function InventoryBreadcrumbs({ schema }: { schema: PluginSchema }) {
 
   const prefix = useMemo(() => inventoryMountPrefix(location.pathname), [location.pathname]);
 
+  // Flat read-only views (e.g. ``/inventory/target-hosts``) are not drill-down
+  // entities, so they bypass the nested/flat entity parsing below and get a
+  // simple ``Inventory → <view>`` trail.
+  const isTargetHostsView = useMemo(
+    () => Boolean(prefix) && location.pathname.replace(/\/+$/, '') === `${prefix}/target-hosts`,
+    [location.pathname, prefix],
+  );
+
   const nested = useMemo(
     () => (prefix ? parseNestedInventoryPath(location.pathname, prefix) : null),
     [location.pathname, prefix],
@@ -318,6 +326,13 @@ export function InventoryBreadcrumbs({ schema }: { schema: PluginSchema }) {
       return [] as ReactNode[];
     }
 
+    if (isTargetHostsView) {
+      return [
+        crumbLink('inv', `${prefix}/nodes`, 'Inventory'),
+        crumbCurrent('target-hosts', 'Target hosts'),
+      ];
+    }
+
     if (nested) {
       return crumbsFromNestedPath(prefix, nested.pairs, breadcrumbDisplayRecord as Row | undefined);
     }
@@ -419,7 +434,15 @@ export function InventoryBreadcrumbs({ schema }: { schema: PluginSchema }) {
     }
 
     return out;
-  }, [breadcrumbDisplayRecord, entityName, id, nested, prefix, schema?.entities]);
+  }, [
+    breadcrumbDisplayRecord,
+    entityName,
+    id,
+    isTargetHostsView,
+    nested,
+    prefix,
+    schema?.entities,
+  ]);
 
   if (items.length === 0) {
     return null;

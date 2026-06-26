@@ -118,7 +118,7 @@ export default function DashboardPage() {
       value: statsQuery.data?.targets ?? 0,
       icon: DeviceHubIcon,
       color: 'error.main',
-      to: '/tasks',
+      to: '/inventory/target-hosts',
     },
   ];
 

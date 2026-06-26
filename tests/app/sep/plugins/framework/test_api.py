@@ -1606,8 +1606,8 @@ class TestDeriveCrudRoutesDetail:
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_detail_propagates_history_error(self, regular_user: CasdoorUser) -> None:
-        """Assert an upstream history error surfaces, not swallowed to None."""
+    def test_detail_degrades_on_history_error(self, regular_user: CasdoorUser) -> None:
+        """Assert an upstream history error degrades to ``status=None``."""
         tasks_api = _make_tasks_api(
             detail_task=_task_dict("t1"),
             history_error=HTTPConflictException(),
@@ -1616,7 +1616,10 @@ class TestDeriveCrudRoutesDetail:
 
         response = client.get(f"{_CRUD_BASE_URL}/t1")
 
-        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["name"] == "t1"
+        assert body["status"] is None
 
 
 class TestDeriveCrudRoutesCreate:

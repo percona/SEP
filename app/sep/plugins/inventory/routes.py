@@ -51,6 +51,7 @@ from app.sep.deps import (
 from app.sep.inventory import Node, Schema, Service, SourceEnum, Table
 from app.sep.middleware import messages
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.plugins.inventory.deps import (
     build_available_syncers,
     filter_syncers_by_name,
@@ -68,7 +69,7 @@ from app.sep.plugins.inventory.sync import (
 from app.tasks.connectivity.models import ConnectivityCheckResponse
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 
 CONNECTABLE_SERVICE_TYPES = frozenset(
@@ -129,7 +130,7 @@ async def node_list(
 @router.post(
     "/sync/",
     dependencies=[IsAuthenticated, IsCsrfValidated],
-    deprecated=True,
+    include_in_schema=False,
 )
 async def sync_inventory(
     syncers: SyncersDep,
@@ -155,7 +156,9 @@ async def sync_inventory(
 
 
 @router.post(
-    "/schedule/", dependencies=[IsAuthenticated, IsCsrfValidated], deprecated=True
+    "/schedule/",
+    dependencies=[IsAuthenticated, IsCsrfValidated],
+    include_in_schema=False,
 )
 async def schedule_create(
     syncers: SyncersDep,
