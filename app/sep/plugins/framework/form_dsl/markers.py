@@ -291,13 +291,23 @@ class Choices:
 
     def __post_init__(self) -> None:
         """Normalize options to ``Option`` instances so the marker stays hashable."""
+        normalized: list[Option] = []
+        for opt in self.options:
+            if isinstance(opt, Option):
+                normalized.append(opt)
+                continue
+            try:
+                value, label = opt
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "Choices options must be Option or (value, label) tuples"
+                ) from exc
+            normalized.append(Option(value=value, label=label))
+
         object.__setattr__(
             self,
             "options",
-            tuple(
-                opt if isinstance(opt, Option) else Option(value=opt[0], label=opt[1])
-                for opt in self.options
-            ),
+            tuple(normalized),
         )
 
 

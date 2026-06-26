@@ -258,6 +258,14 @@ class TestChoices:
         assert choices[1].disabled is None
         assert choices[1].disabled_reason is None
 
+    @pytest.mark.parametrize("invalid_option", [("single",), ("one", "two", "three")])
+    def test_choices_marker_rejects_invalid_tuple_option(
+        self, invalid_option: tuple[str, ...]
+    ) -> None:
+        """Raise on tuple options that do not contain exactly value and label."""
+        with pytest.raises(ValueError, match="Choices options"):
+            Choices((invalid_option,))
+
     def test_reason_without_disabled_raises_at_marker_construction(self) -> None:
         """Raise when Option is constructed with disabled_reason but disabled=False."""
         with pytest.raises((ValueError, TypeError), match="disabled"):
