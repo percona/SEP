@@ -169,13 +169,12 @@ const TARGETS: SidebarTarget[] = [
   { label: 'Task Manager', urlPattern: /\/tasks(\/|$)/, sentinel: heading(GENERIC_PLUGIN_HEADING) },
   {
     label: 'Snippet Manager',
-    group: 'Snippets',
     urlPattern: /\/snippets(\/|$)/,
     sentinel: heading('Snippet Manager'),
   },
   {
     label: 'Collect Diagnostic Data',
-    group: 'Snippets',
+    group: 'Diagnostics',
     urlPattern: /\/atw(\/|$)/,
     sentinel: heading('Collect Diagnostic Data'),
   },
@@ -208,6 +207,7 @@ const TARGETS: SidebarTarget[] = [
   { label: 'Archives', urlPattern: /\/plugins\/archives(\/|$)/, sentinel: heading('Archives') },
   {
     label: 'Dipper Data Collection',
+    group: 'Diagnostics',
     urlPattern: /\/dipper(\/|$)/,
     sentinel: heading(GENERIC_PLUGIN_HEADING),
   },
