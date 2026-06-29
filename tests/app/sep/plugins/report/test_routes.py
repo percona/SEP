@@ -203,8 +203,7 @@ class TestReportGenerate:
 
         body = response.text
         assert "generate/pdf" in body
-        assert 'name="since" value="now-30d"' in body
-        assert 'name="until" value="now-1d"' in body
+        assert 'name="report_json"' in body
         assert "Download PDF" in body
 
     def test_returns_503_when_pmm_unavailable(self, test_client):
@@ -395,130 +394,71 @@ class TestReportGenerateJSON:
 
 
 class TestReportGeneratePDF:
-    """Test POST /report/generate/pdf (PDF report generation)."""
+    """Test POST /report/generate/pdf (PDF from report snapshot)."""
 
     _PDF_URL = "/report/generate/pdf"
 
-    def test_returns_200_with_pdf(self, test_client, mock_pmm_api):
-        """Assert a generated report is returned as a PDF download."""
+    def test_returns_200_with_pdf(self, test_client):
+        """Assert the report snapshot is returned as a PDF download."""
         report = make_report()
         pdf_bytes = b"%PDF-1.4 fake content"
         with (
             patch(
-                "app.sep.plugins.report.routes.generate_report",
-                new_callable=AsyncMock,
-                return_value=report,
-            ),
-            patch(
                 "app.sep.plugins.report.routes.generate_pdf_report",
                 new_callable=AsyncMock,
                 return_value=pdf_bytes,
-            ),
+            ) as mock_pdf,
+            patch(
+                "app.sep.plugins.report.routes.generate_report",
+                new_callable=AsyncMock,
+            ) as mock_generate,
         ):
-            response = test_client.post(self._PDF_URL)
+            response = test_client.post(
+                self._PDF_URL,
+                data={"report_json": report.model_dump_json()},
+            )
 
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"] == "application/pdf"
         assert response.content == pdf_bytes
+        mock_pdf.assert_awaited_once()
+        mock_generate.assert_not_awaited()
 
-    def test_content_disposition_header(self, test_client, mock_pmm_api):
+    def test_content_disposition_header(self, test_client):
         """Assert Content-Disposition header contains the expected filename."""
         report = make_report()
-        with (
-            patch(
-                "app.sep.plugins.report.routes.generate_report",
-                new_callable=AsyncMock,
-                return_value=report,
-            ),
-            patch(
-                "app.sep.plugins.report.routes.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
+        with patch(
+            "app.sep.plugins.report.routes.generate_pdf_report",
+            new_callable=AsyncMock,
+            return_value=b"%PDF-1.4",
         ):
-            response = test_client.post(self._PDF_URL)
+            response = test_client.post(
+                self._PDF_URL,
+                data={"report_json": report.model_dump_json()},
+            )
 
         disposition = response.headers["content-disposition"]
         assert "Health_and_Security_Report_2026-03-31.pdf" in disposition
         assert disposition.startswith("attachment")
 
-    def test_passes_default_parameters(self, test_client, mock_pmm_api):
-        """Assert default since/until/full/refresh values are forwarded."""
+    def test_returns_500_on_pdf_error(self, test_client):
+        """Assert 500 when PDF rendering fails."""
         report = make_report()
-        with (
-            patch(
-                "app.sep.plugins.report.routes.generate_report",
-                new_callable=AsyncMock,
-                return_value=report,
-            ) as mock_gen,
-            patch(
-                "app.sep.plugins.report.routes.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-        ):
-            test_client.post(self._PDF_URL)
-
-        _, kwargs = mock_gen.call_args
-        assert kwargs["since"] == "now-7d"
-        assert kwargs["until"] == "now"
-        assert kwargs["full"] is True
-        assert kwargs["refresh"] is False
-
-    def test_passes_custom_parameters(self, test_client, mock_pmm_api):
-        """Assert custom form parameters are forwarded to generate_report."""
-        report = make_report(full=True, refresh=True)
-        with (
-            patch(
-                "app.sep.plugins.report.routes.generate_report",
-                new_callable=AsyncMock,
-                return_value=report,
-            ) as mock_gen,
-            patch(
-                "app.sep.plugins.report.routes.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-        ):
-            test_client.post(
-                self._PDF_URL,
-                data={
-                    "since": "now-30d",
-                    "until": "now-1d",
-                    "full": "true",
-                    "refresh": "true",
-                },
-            )
-
-        _, kwargs = mock_gen.call_args
-        assert kwargs["since"] == "now-30d"
-        assert kwargs["until"] == "now-1d"
-        assert kwargs["full"] is True
-        assert kwargs["refresh"] is True
-
-    def test_returns_503_when_pmm_unavailable(self, test_client):
-        """Assert 503 is returned when PMM is not configured."""
-        sep_app.dependency_overrides[get_pmm_api] = lambda: None
-        try:
-            response = test_client.post(self._PDF_URL)
-            assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        finally:
-            sep_app.dependency_overrides = {}
-
-    def test_returns_500_on_generation_error(self, test_client, mock_pmm_api):
-        """Assert 500 is returned when report generation raises an exception."""
         with patch(
-            "app.sep.plugins.report.routes.generate_report",
+            "app.sep.plugins.report.routes.generate_pdf_report",
             new_callable=AsyncMock,
-            side_effect=RuntimeError("collection failed"),
+            side_effect=RuntimeError("render failed"),
         ):
-            response = test_client.post(self._PDF_URL)
+            response = test_client.post(
+                self._PDF_URL,
+                data={"report_json": report.model_dump_json()},
+            )
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class TestReportUpload:
-    """Test POST /report/upload (ServiceNow upload)."""
+    """Test POST /report/upload (ServiceNow upload from report snapshot)."""
 
     _UPLOAD_URL = "/report/upload"
 
@@ -529,16 +469,11 @@ class TestReportUpload:
         yield
         sep_app.dependency_overrides.pop(require_upload_configured, None)
 
-    def test_returns_200_with_json(self, test_client, mock_pmm_api):
-        """Assert a successful upload returns 200 with JSON."""
+    def test_returns_200_with_json(self, test_client):
+        """Assert a successful snapshot upload returns 200 with JSON."""
         report = make_report()
         upload_result = {"status": "ok", "id": "12345"}
         with (
-            patch(
-                "app.sep.plugins.report.routes.generate_report",
-                new_callable=AsyncMock,
-                return_value=report,
-            ),
             patch(
                 "app.sep.plugins.report.routes.generate_pdf_report",
                 new_callable=AsyncMock,
@@ -548,101 +483,35 @@ class TestReportUpload:
                 "app.sep.plugins.report.routes.upload_pdf_report",
                 new_callable=AsyncMock,
                 return_value=upload_result,
-            ),
+            ) as mock_upload,
+            patch(
+                "app.sep.plugins.report.routes.generate_report",
+                new_callable=AsyncMock,
+            ) as mock_generate,
         ):
-            response = test_client.post(self._UPLOAD_URL)
+            response = test_client.post(
+                self._UPLOAD_URL,
+                data={"report_json": report.model_dump_json()},
+            )
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == upload_result
-
-    def test_passes_default_parameters(self, test_client, mock_pmm_api):
-        """Assert default form parameters are forwarded."""
-        report = make_report()
-        with (
-            patch(
-                "app.sep.plugins.report.routes.generate_report",
-                new_callable=AsyncMock,
-                return_value=report,
-            ) as mock_gen,
-            patch(
-                "app.sep.plugins.report.routes.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-            patch(
-                "app.sep.plugins.report.routes.upload_pdf_report",
-                new_callable=AsyncMock,
-                return_value={},
-            ),
-        ):
-            test_client.post(self._UPLOAD_URL)
-
-        _, kwargs = mock_gen.call_args
-        assert kwargs["since"] == "now-7d"
-        assert kwargs["until"] == "now"
-        assert kwargs["full"] is True
-        assert kwargs["refresh"] is False
-
-    def test_passes_custom_parameters(self, test_client, mock_pmm_api):
-        """Assert custom form parameters are forwarded to generate_report."""
-        report = make_report(full=True, refresh=True)
-        with (
-            patch(
-                "app.sep.plugins.report.routes.generate_report",
-                new_callable=AsyncMock,
-                return_value=report,
-            ) as mock_gen,
-            patch(
-                "app.sep.plugins.report.routes.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-            patch(
-                "app.sep.plugins.report.routes.upload_pdf_report",
-                new_callable=AsyncMock,
-                return_value={},
-            ),
-        ):
-            test_client.post(
-                self._UPLOAD_URL,
-                data={
-                    "since": "now-30d",
-                    "until": "now-1d",
-                    "full": "true",
-                    "refresh": "true",
-                },
-            )
-
-        _, kwargs = mock_gen.call_args
-        assert kwargs["since"] == "now-30d"
-        assert kwargs["until"] == "now-1d"
-        assert kwargs["full"] is True
-        assert kwargs["refresh"] is True
-
-    def test_returns_503_when_pmm_unavailable(self, test_client):
-        """Assert 503 when PMM is not configured."""
-        sep_app.dependency_overrides[get_pmm_api] = lambda: None
-        try:
-            response = test_client.post(self._UPLOAD_URL)
-            assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        finally:
-            sep_app.dependency_overrides = {}
+        mock_upload.assert_awaited_once()
+        mock_generate.assert_not_awaited()
 
     def test_returns_503_when_upload_not_configured(self, test_client, mock_pmm_api):
         """Assert 503 when upload settings are missing."""
         sep_app.dependency_overrides.pop(require_upload_configured, None)
-        response = test_client.post(self._UPLOAD_URL)
+        response = test_client.post(
+            self._UPLOAD_URL,
+            data={"report_json": make_report().model_dump_json()},
+        )
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
-    def test_returns_500_on_upload_error(self, test_client, mock_pmm_api):
-        """Assert 500 when the upload service raises an exception."""
+    def test_returns_500_on_upload_error(self, test_client):
+        """Assert 500 when snapshot upload fails."""
         report = make_report()
         with (
-            patch(
-                "app.sep.plugins.report.routes.generate_report",
-                new_callable=AsyncMock,
-                return_value=report,
-            ),
             patch(
                 "app.sep.plugins.report.routes.generate_pdf_report",
                 new_callable=AsyncMock,
@@ -654,6 +523,9 @@ class TestReportUpload:
                 side_effect=RuntimeError("upload failed"),
             ),
         ):
-            response = test_client.post(self._UPLOAD_URL)
+            response = test_client.post(
+                self._UPLOAD_URL,
+                data={"report_json": report.model_dump_json()},
+            )
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR

@@ -17,7 +17,7 @@
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type * as ReactRouterDom from 'react-router-dom';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -46,6 +46,10 @@ function renderWithProviders(ui: ReactNode, initialPath = '/') {
 }
 
 describe('ReportFormPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('renders heading and generate button', () => {
     renderWithProviders(<ReportFormPage />);
     expect(screen.getByRole('heading', { name: /health.*security report/i })).toBeInTheDocument();

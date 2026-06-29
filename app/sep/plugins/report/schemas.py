@@ -15,7 +15,11 @@
 
 """Define the JSON API request and response models for the report plugin."""
 
+from typing import Any
+
 from pydantic import BaseModel
+
+from app.sep.plugins.report.models import ReportData
 
 
 class ReportGenerateWrite(BaseModel):
@@ -41,3 +45,35 @@ class ReportGenerateWrite(BaseModel):
     until: str = "now"
     full: bool = True
     refresh: bool = False
+
+
+class ReportSnapshotWrite(BaseModel):
+    """Define report snapshot body for PDF/upload jobs.
+
+    :param report: Generated report snapshot reused for PDF/upload work.
+    :type report: ReportData
+    """
+
+    report: ReportData
+
+
+class ReportJobResponse(BaseModel):
+    """Expose async report artifact job state.
+
+    :param job_id: Celery task identifier.
+    :type job_id: str
+    :param status: Lowercase Celery task state.
+    :type status: str
+    :param pdf_ready: Whether the PDF artifact exists and is downloadable.
+    :type pdf_ready: bool
+    :param result: Successful job result payload, if available.
+    :type result: dict[str, Any] | None
+    :param error: Failed job error text, if available.
+    :type error: str | None
+    """
+
+    job_id: str
+    status: str
+    pdf_ready: bool = False
+    result: dict[str, Any] | None = None
+    error: str | None = None

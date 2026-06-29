@@ -600,30 +600,31 @@ class TestGenerateHealthReportCooperativeCancel:
         generate.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_stops_before_upload_on_cancel(self, mocker):
-        """A cancel after generation skips the PDF render and upload."""
+    async def test_scheduled_upload_reuses_generated_report(self, mocker):
+        """Scheduled upload renders/uploads same report without second collection."""
+        report = self._mock_report()
         mocker.patch(
             "app.sep.plugins.report.deps.get_pmm_api",
             new=AsyncMock(return_value=MagicMock()),
         )
+        mock_settings = mocker.patch("app.sep.config.sep_settings")
+        mock_settings.HEALTH_REPORT.is_upload_configured = True
         generate = mocker.patch(
             "app.sep.plugins.report.service.generate_report",
-            new=AsyncMock(return_value=self._mock_report()),
+            new=AsyncMock(return_value=report),
         )
         generate_pdf = mocker.patch(
             "app.sep.plugins.report.service.generate_pdf_report",
-            new=AsyncMock(),
+            new=AsyncMock(return_value=b"%PDF-1.4"),
         )
         upload = mocker.patch(
             "app.sep.plugins.report.service.upload_pdf_report",
-            new=AsyncMock(),
+            new=AsyncMock(return_value={"sys_id": "abc123", "status": "uploaded"}),
         )
-        mocker.patch(
-            f"{MODULE}.should_cancel", new=AsyncMock(side_effect=[False, True])
-        )
+        mocker.patch(f"{MODULE}.should_cancel", new=AsyncMock(return_value=False))
 
         await sep_celery._generate_health_report(upload=True)
 
         generate.assert_awaited_once()
-        generate_pdf.assert_not_awaited()
-        upload.assert_not_awaited()
+        generate_pdf.assert_awaited_once_with(report)
+        upload.assert_awaited_once_with(report, b"%PDF-1.4")

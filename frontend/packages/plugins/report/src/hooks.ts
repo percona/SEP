@@ -18,20 +18,38 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
 import { downloadBlob } from '@sep/framework';
-import type { ReportConfig, ReportData, ReportParams, UploadResult } from './types';
-
-// The PDF and upload endpoints do not accept a `sections` filter (the backend
-// Form params for those routes omit it). Use this type to make the omission
-// explicit rather than silently dropping it.
-type ReportPdfParams = Omit<ReportParams, 'sections'>;
+import type { ReportConfig, ReportData, ReportJobResponse, ReportParams, UploadResult } from './types';
 
 const API_BASE = '/plugins/report';
+const POLL_INTERVAL_MS = 1_000;
+const POLL_TIMEOUT_MS = 120_000;
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function pollJob(
+  jobPath: string,
+  done: (job: ReportJobResponse) => boolean,
+): Promise<ReportJobResponse> {
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const { data } = await apiClient.get<ReportJobResponse>(jobPath);
+    if (data.status === 'failure' || data.status === 'failed') {
+      throw new Error(data.error || 'Report job failed');
+    }
+    if (done(data)) {
+      return data;
+    }
+    await delay(POLL_INTERVAL_MS);
+  }
+  throw new Error('Report job timed out');
+}
 
 export function useGenerateReport(params: ReportParams | null) {
   return useQuery<ReportData>({
     queryKey: ['report', 'generate', params],
     queryFn: async () => {
-      // params is guaranteed non-null when enabled (params !== null guard below)
       const p = params as ReportParams;
       const { data } = await apiClient.get<ReportData>(`${API_BASE}/generate/json`, {
         params: {
@@ -41,10 +59,7 @@ export function useGenerateReport(params: ReportParams | null) {
           refresh: p.refresh,
           ...(p.sections?.length ? { sections: p.sections } : {}),
         },
-        // FastAPI's `sections: list[str] | None = Query()` only reads bracket-less
-        // repeated params (`sections=advisors&sections=alerts`). Axios's default
-        // serializer emits `sections[]=…`, which the backend ignores (binds None →
-        // "all sections"). `indexes: null` drops the brackets so the filter applies.
+        // FastAPI binds repeated bracket-less params: sections=a&sections=b.
         paramsSerializer: { indexes: null },
       });
       return data;
@@ -54,17 +69,17 @@ export function useGenerateReport(params: ReportParams | null) {
 }
 
 export function useDownloadPdf() {
-  return useMutation<void, Error, ReportPdfParams>({
-    mutationFn: async (params) => {
-      const body = new URLSearchParams({
-        since: params.since,
-        until: params.until,
-        full: String(params.full),
-        refresh: String(params.refresh),
+  return useMutation<void, Error, ReportData>({
+    mutationFn: async (report) => {
+      const { data: job } = await apiClient.post<ReportJobResponse>(`${API_BASE}/pdf-jobs`, {
+        report,
       });
-      const { data } = await apiClient.post<Blob>(`${API_BASE}/generate/pdf`, body, {
+      await pollJob(
+        `${API_BASE}/pdf-jobs/${job.job_id}`,
+        (nextJob) => nextJob.status === 'success' && nextJob.pdf_ready,
+      );
+      const { data } = await apiClient.get<Blob>(`${API_BASE}/pdf-jobs/${job.job_id}/pdf`, {
         responseType: 'blob',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       });
       downloadBlob(data, 'Health_and_Security_Report.pdf');
     },
@@ -72,18 +87,16 @@ export function useDownloadPdf() {
 }
 
 export function useUploadToServiceNow() {
-  return useMutation<UploadResult, Error, ReportPdfParams>({
-    mutationFn: async (params) => {
-      const body = new URLSearchParams({
-        since: params.since,
-        until: params.until,
-        full: String(params.full),
-        refresh: String(params.refresh),
+  return useMutation<UploadResult, Error, ReportData>({
+    mutationFn: async (report) => {
+      const { data: job } = await apiClient.post<ReportJobResponse>(`${API_BASE}/upload-jobs`, {
+        report,
       });
-      const { data } = await apiClient.post<UploadResult>(`${API_BASE}/upload`, body, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      });
-      return data;
+      const finished = await pollJob(
+        `${API_BASE}/upload-jobs/${job.job_id}`,
+        (nextJob) => nextJob.status === 'success',
+      );
+      return (finished.result as UploadResult | null) ?? { status: 'uploaded' };
     },
   });
 }

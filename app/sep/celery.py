@@ -18,6 +18,7 @@
 import asyncio
 import logging
 from pathlib import Path
+from typing import Any
 
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -147,6 +148,51 @@ def should_skip_snippet(snippet_path: Path) -> bool:
 
 
 @owned_by("report")
+@celery.task(bind=True)
+def render_report_pdf_job(self: Any, report_json: dict) -> dict[str, str]:
+    """Render a PDF artifact from a stored report JSON snapshot.
+
+    :param self: Bound Celery task instance.
+    :type self: Any
+    :param report_json: Serialized report snapshot.
+    :type report_json: dict
+    :return: PDF artifact path and download filename.
+    :rtype: dict[str, str]
+    """
+    from app.sep.plugins.report.job_service import (
+        report_pdf_filename,
+        report_pdf_path,
+    )
+    from app.sep.plugins.report.models import ReportData
+    from app.sep.plugins.report.service import generate_pdf_report
+
+    report = ReportData.model_validate(report_json)
+    pdf_bytes = celery.loop.run_until_complete(generate_pdf_report(report))
+    path = report_pdf_path(self.request.id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(pdf_bytes)
+    return {"pdf_path": str(path), "filename": report_pdf_filename(report)}
+
+
+@owned_by("report")
+@celery.task
+def upload_report_snapshot_job(report_json: dict) -> dict:
+    """Render and upload a PDF from a report JSON snapshot.
+
+    :param report_json: Serialized report snapshot.
+    :type report_json: dict
+    :return: ServiceNow upload response payload.
+    :rtype: dict
+    """
+    from app.sep.plugins.report.models import ReportData
+    from app.sep.plugins.report.service import generate_pdf_report, upload_pdf_report
+
+    report = ReportData.model_validate(report_json)
+    pdf_bytes = celery.loop.run_until_complete(generate_pdf_report(report))
+    return celery.loop.run_until_complete(upload_pdf_report(report, pdf_bytes))
+
+
+@owned_by("report")
 @celery.task
 def generate_health_report(
     since: str = "now-7d",
@@ -157,7 +203,23 @@ def generate_health_report(
     refresh: bool = False,
     upload: bool = False,
 ) -> None:
-    """Define Celery task to generate a periodic PMM health report."""
+    """Define Celery task to generate a periodic PMM health report.
+
+    :param since: Relative start of the report period.
+    :type since: str
+    :param until: Relative end of the report period.
+    :type until: str
+    :param sections: Optional list of sections to include.
+    :type sections: list[str] | None
+    :param full: Include all check results and full backup history.
+    :type full: bool
+    :param refresh: Force advisor refresh before fetching results.
+    :type refresh: bool
+    :param upload: Upload generated report to ServiceNow.
+    :type upload: bool
+    :return: None.
+    :rtype: None
+    """
     celery.loop.run_until_complete(
         _generate_health_report(
             since=since,
@@ -185,6 +247,21 @@ async def _generate_health_report(
     configured the report is rendered to PDF and uploaded.  If *upload* is
     requested but credentials are incomplete a warning is logged.  Upload
     failures are logged but do not prevent the task from completing.
+
+    :param since: Relative start of the report period.
+    :type since: str
+    :param until: Relative end of the report period.
+    :type until: str
+    :param full: Include all check results and full backup history.
+    :type full: bool
+    :param refresh: Force advisor refresh before fetching results.
+    :type refresh: bool
+    :param sections: Optional list of sections to include.
+    :type sections: list[str] | None
+    :param upload: Upload generated report to ServiceNow.
+    :type upload: bool
+    :return: None.
+    :rtype: None
     """
     from app.sep.config import sep_settings
     from app.sep.plugins.report.deps import get_pmm_api

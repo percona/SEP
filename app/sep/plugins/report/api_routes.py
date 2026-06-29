@@ -18,28 +18,32 @@
 Mounted at ``/api/plugins/report/`` via ``plugins_router`` in
 ``app/sep/api/router.py``. ``api_router`` applies session/Bearer auth;
 ``plugins_router`` applies ``RequireBearerForUnsafeMethods`` on POST/PUT/PATCH/DELETE.
+
 Route layout:
 
-* ``GET  /config``          — return upload configuration status
-* ``GET  /generate/json``   — generate report and return as JSON
-* ``POST /generate/pdf``    — generate report and return as PDF download
-* ``POST /upload``          — generate report, convert to PDF, upload to ServiceNow
+* ``GET  /config``             — return upload configuration status
+* ``GET  /generate/json``      — generate report and return as JSON
+* ``POST /pdf-jobs``           — enqueue PDF generation from report JSON snapshot
+* ``GET  /pdf-jobs/{id}``      — return PDF job status
+* ``GET  /pdf-jobs/{id}/pdf``  — download ready PDF artifact
+* ``POST /upload-jobs``        — enqueue ServiceNow upload from report JSON snapshot
+* ``GET  /upload-jobs/{id}``   — return upload job status
 """
 
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Query, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Body, HTTPException, Query, status
+from fastapi.responses import FileResponse, JSONResponse
 
+from app.celery import celery
+from app.sep.celery import render_report_pdf_job, upload_report_snapshot_job
 from app.sep.config import sep_settings
 from app.sep.deps import IsApiAuthenticated
-from app.sep.plugins.report.deps import IsUploadConfigured, RequiredPMMAPIDep
+from app.sep.plugins.report.deps import RequiredPMMAPIDep
+from app.sep.plugins.report.job_service import report_pdf_path
 from app.sep.plugins.report.models import REPORT_SECTIONS
-from app.sep.plugins.report.service import (
-    generate_pdf_report,
-    generate_report,
-    upload_pdf_report,
-)
+from app.sep.plugins.report.schemas import ReportJobResponse, ReportSnapshotWrite
+from app.sep.plugins.report.service import generate_report
 
 router = APIRouter()
 
@@ -49,9 +53,7 @@ def _filter_sections(sections: list[str] | None) -> list[str] | None:
 
     :param sections: Optional list of requested section names.
     :type sections: list[str] | None
-    :return: Filtered list, ``None`` when no sections were requested, or when
-        every requested name was invalid (falls back to all sections in
-        :func:`generate_report`).
+    :return: Filtered section names, ``None`` when no valid filter remains.
     :rtype: list[str] | None
     """
     if sections:
@@ -60,11 +62,34 @@ def _filter_sections(sections: list[str] | None) -> list[str] | None:
     return sections
 
 
+def _job_response(job_id: str, *, pdf: bool = False) -> ReportJobResponse:
+    """Build API response for a Celery-backed report job.
+
+    :param job_id: Celery task identifier.
+    :type job_id: str
+    :param pdf: Whether to include PDF artifact readiness.
+    :type pdf: bool
+    :return: Job status response.
+    :rtype: ReportJobResponse
+    """
+    result = celery.AsyncResult(job_id)
+    response = ReportJobResponse(
+        job_id=job_id,
+        status=result.status.lower(),
+        pdf_ready=pdf and report_pdf_path(job_id).is_file(),
+    )
+    if result.successful():
+        response.result = result.result
+    elif result.failed():
+        response.error = str(result.result)
+    return response
+
+
 @router.get("/config", dependencies=[IsApiAuthenticated])
 async def report_config() -> JSONResponse:
     """Return upload configuration status.
 
-    :return: JSON with ``upload_disabled_reasons`` — empty list means upload is ready.
+    :return: JSON response with ``upload_disabled_reasons``.
     :rtype: JSONResponse
     """
     return JSONResponse(
@@ -86,7 +111,7 @@ async def report_generate_json_api(
 ) -> JSONResponse:
     """Generate a report and return as JSON.
 
-    :param pmm_api: The PMM API client.
+    :param pmm_api: PMM API client dependency.
     :type pmm_api: PMMRemoteAPI
     :param since: Relative start of the report period.
     :type since: str
@@ -94,11 +119,11 @@ async def report_generate_json_api(
     :type until: str
     :param full: Include all check results and full backup history.
     :type full: bool
-    :param refresh: Force a refresh of advisor checks before fetching results.
+    :param refresh: Force advisor refresh before fetching results.
     :type refresh: bool
     :param sections: Optional list of sections to include.
     :type sections: list[str] | None
-    :return: JSON response with the full report data.
+    :return: JSON response with full report data.
     :rtype: JSONResponse
     """
     report = await generate_report(
@@ -112,69 +137,84 @@ async def report_generate_json_api(
     return JSONResponse(content=report.model_dump(mode="json"))
 
 
-@router.post("/generate/pdf", dependencies=[IsApiAuthenticated])
-async def report_generate_pdf_api(
-    pmm_api: RequiredPMMAPIDep,
-    since: Annotated[str, Form()] = "now-7d",
-    until: Annotated[str, Form()] = "now",
-    *,
-    full: Annotated[bool, Form()] = True,
-    refresh: Annotated[bool, Form()] = False,
-) -> Response:
-    """Generate a report and return it as a downloadable PDF.
+@router.post("/pdf-jobs", dependencies=[IsApiAuthenticated])
+async def report_start_pdf_job_api(
+    body: Annotated[ReportSnapshotWrite, Body()],
+) -> ReportJobResponse:
+    """Enqueue PDF rendering from a report JSON snapshot.
 
-    :param pmm_api: The PMM API client.
-    :type pmm_api: PMMRemoteAPI
-    :param since: Relative start of the report period.
-    :type since: str
-    :param until: Relative end of the report period.
-    :type until: str
-    :param full: Include all check results and full backup history.
-    :type full: bool
-    :param refresh: Force a refresh of advisor checks before fetching results.
-    :type refresh: bool
+    :param body: Request body containing the report snapshot.
+    :type body: ReportSnapshotWrite
+    :return: PDF job status response.
+    :rtype: ReportJobResponse
+    """
+    result = render_report_pdf_job.delay(body.report.model_dump(mode="json"))
+    return _job_response(result.id, pdf=True)
+
+
+@router.get("/pdf-jobs/{job_id}", dependencies=[IsApiAuthenticated])
+async def report_pdf_job_api(job_id: str) -> ReportJobResponse:
+    """Return PDF job status.
+
+    :param job_id: Celery task identifier.
+    :type job_id: str
+    :return: PDF job status response.
+    :rtype: ReportJobResponse
+    """
+    return _job_response(job_id, pdf=True)
+
+
+@router.get("/pdf-jobs/{job_id}/pdf", dependencies=[IsApiAuthenticated])
+async def report_download_pdf_api(job_id: str) -> FileResponse:
+    """Download a ready PDF artifact for a report job.
+
+    :param job_id: Celery task identifier.
+    :type job_id: str
     :return: PDF file response.
-    :rtype: Response
+    :rtype: FileResponse
+    :raises HTTPException: If the PDF artifact is not ready.
     """
-    report = await generate_report(
-        pmm_api, since=since, until=until, full=full, refresh=refresh
-    )
-    pdf_bytes = await generate_pdf_report(report)
-    filename = f"Health_and_Security_Report_{report.metadata.generated_at:%Y-%m-%d}.pdf"
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    result = celery.AsyncResult(job_id)
+    path = report_pdf_path(job_id)
+    if not result.successful() or not path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="PDF is not ready",
+        )
+    filename = "Health_and_Security_Report.pdf"
+    if isinstance(result.result, dict) and result.result.get("filename"):
+        filename = result.result["filename"]
+    return FileResponse(path, media_type="application/pdf", filename=filename)
 
 
-@router.post("/upload", dependencies=[IsApiAuthenticated, IsUploadConfigured])
-async def report_upload_api(
-    pmm_api: RequiredPMMAPIDep,
-    since: Annotated[str, Form()] = "now-7d",
-    until: Annotated[str, Form()] = "now",
-    *,
-    full: Annotated[bool, Form()] = True,
-    refresh: Annotated[bool, Form()] = False,
-) -> JSONResponse:
-    """Generate a report, convert to PDF, and upload to ServiceNow.
+@router.post("/upload-jobs", dependencies=[IsApiAuthenticated])
+async def report_start_upload_job_api(
+    body: Annotated[ReportSnapshotWrite, Body()],
+) -> ReportJobResponse:
+    """Enqueue ServiceNow upload from a report JSON snapshot.
 
-    :param pmm_api: The PMM API client.
-    :type pmm_api: PMMRemoteAPI
-    :param since: Relative start of the report period.
-    :type since: str
-    :param until: Relative end of the report period.
-    :type until: str
-    :param full: Include all check results and full backup history.
-    :type full: bool
-    :param refresh: Force a refresh of advisor checks before fetching results.
-    :type refresh: bool
-    :return: JSON response with the upload result.
-    :rtype: JSONResponse
+    :param body: Request body containing the report snapshot.
+    :type body: ReportSnapshotWrite
+    :return: Upload job status response.
+    :rtype: ReportJobResponse
+    :raises HTTPException: If ServiceNow upload is not configured.
     """
-    report = await generate_report(
-        pmm_api, since=since, until=until, full=full, refresh=refresh
-    )
-    pdf_bytes = await generate_pdf_report(report)
-    result = await upload_pdf_report(report, pdf_bytes)
-    return JSONResponse(content=result)
+    if not sep_settings.HEALTH_REPORT.is_upload_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Upload is not configured",
+        )
+    result = upload_report_snapshot_job.delay(body.report.model_dump(mode="json"))
+    return _job_response(result.id)
+
+
+@router.get("/upload-jobs/{job_id}", dependencies=[IsApiAuthenticated])
+async def report_upload_job_api(job_id: str) -> ReportJobResponse:
+    """Return ServiceNow upload job status.
+
+    :param job_id: Celery task identifier.
+    :type job_id: str
+    :return: Upload job status response.
+    :rtype: ReportJobResponse
+    """
+    return _job_response(job_id)

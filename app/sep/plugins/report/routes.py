@@ -26,7 +26,7 @@ from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 
 from .deps import IsUploadConfigured, ReportIndexContext, RequiredPMMAPIDep
-from .models import REPORT_SECTIONS
+from .models import REPORT_SECTIONS, ReportData
 from .service import (
     generate_pdf_report,
     generate_report,
@@ -46,7 +46,15 @@ templates = sep_settings.TEMPLATES
     include_in_schema=False,
 )
 async def report_index(request: Request, context: ReportIndexContext) -> HTMLResponse:
-    """Render the report plugin landing page."""
+    """Render the report plugin landing page.
+
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :param context: Template context for the landing page.
+    :type context: ReportIndexContext
+    :return: Rendered report landing page.
+    :rtype: HTMLResponse
+    """
     return templates.TemplateResponse(request, "report/index.html.j2", context)
 
 
@@ -92,6 +100,7 @@ async def report_generate(
         {
             "report": report,
             "service_names": SERVICE_NAMES,
+            "report_json": report.model_dump_json(),
             "report_params": {
                 "since": since,
                 "until": until,
@@ -151,31 +160,16 @@ async def report_generate_json(
     include_in_schema=False,
 )
 async def report_generate_pdf(
-    pmm_api: RequiredPMMAPIDep,
-    since: Annotated[str, Form()] = "now-7d",
-    until: Annotated[str, Form()] = "now",
-    *,
-    full: Annotated[bool, Form()] = True,
-    refresh: Annotated[bool, Form()] = False,
+    report_json: Annotated[str, Form()],
 ) -> Response:
     """Generate a report and return it as a downloadable PDF.
 
-    :param pmm_api: The PMM API client.
-    :type pmm_api: PMMRemoteAPI
-    :param since: Relative start of the report period.
-    :type since: str
-    :param until: Relative end of the report period.
-    :type until: str
-    :param full: Include all check results and full backup history.
-    :type full: bool
-    :param refresh: Force a refresh of advisor checks before fetching results.
-    :type refresh: bool
+    :param report_json: Existing report JSON snapshot.
+    :type report_json: str
     :return: PDF file response.
     :rtype: Response
     """
-    report = await generate_report(
-        pmm_api, since=since, until=until, full=full, refresh=refresh
-    )
+    report = ReportData.model_validate_json(report_json)
     pdf_bytes = await generate_pdf_report(report)
     filename = f"Health_and_Security_Report_{report.metadata.generated_at:%Y-%m-%d}.pdf"
     return Response(
@@ -192,31 +186,16 @@ async def report_generate_pdf(
     include_in_schema=False,
 )
 async def report_upload(
-    pmm_api: RequiredPMMAPIDep,
-    since: Annotated[str, Form()] = "now-7d",
-    until: Annotated[str, Form()] = "now",
-    *,
-    full: Annotated[bool, Form()] = True,
-    refresh: Annotated[bool, Form()] = False,
+    report_json: Annotated[str, Form()],
 ) -> JSONResponse:
     """Generate a report, convert to PDF, and upload to ServiceNow.
 
-    :param pmm_api: The PMM API client.
-    :type pmm_api: PMMRemoteAPI
-    :param since: Relative start of the report period.
-    :type since: str
-    :param until: Relative end of the report period.
-    :type until: str
-    :param full: Include all check results and full backup history.
-    :type full: bool
-    :param refresh: Force a refresh of advisor checks before fetching results.
-    :type refresh: bool
+    :param report_json: Existing report JSON snapshot.
+    :type report_json: str
     :return: JSON response with the upload result.
     :rtype: JSONResponse
     """
-    report = await generate_report(
-        pmm_api, since=since, until=until, full=full, refresh=refresh
-    )
+    report = ReportData.model_validate_json(report_json)
     pdf_bytes = await generate_pdf_report(report)
     result = await upload_pdf_report(report, pdf_bytes)
     return JSONResponse(content=result)

@@ -113,7 +113,7 @@ export function ReportResultPage() {
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" useFlexGap>
         <Button
           variant="contained"
-          onClick={() => downloadPdf.mutate(params)}
+          onClick={() => downloadPdf.mutate(report)}
           disabled={downloadPdf.isPending}
         >
           {downloadPdf.isPending ? 'Generating PDF…' : 'Download PDF'}
@@ -123,7 +123,7 @@ export function ReportResultPage() {
           <span>
             <Button
               variant="outlined"
-              onClick={() => upload.mutate(params)}
+              onClick={() => upload.mutate(report)}
               disabled={uploadDisabled}
             >
               {upload.isPending ? 'Uploading…' : 'Upload to ServiceNow'}
