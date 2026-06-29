@@ -24,6 +24,7 @@ import pytest
 from app.sep.plugins.checksums.app import app as checksums_app
 from app.sep.plugins.framework.form_backfill import (
     _backfill_app,
+    _backfill_single_task,
     _BackfillApp,
     _persist_stamped_form,
     _rollback_backfill_session,
@@ -45,6 +46,11 @@ def _minimal_task(*, data: dict) -> Task:
         last_updated_by="original-user",
         updated_at=datetime(2024, 1, 1, tzinfo=UTC),
     )
+
+
+def _reconstructor_must_not_run(_task: Task, _ctx: FormBackfillContext) -> dict:
+    """Fail fast when the orchestrator invokes a reconstructor unexpectedly."""
+    raise AssertionError("reconstructor must not run")
 
 
 @pytest.mark.asyncio
@@ -141,6 +147,138 @@ async def test_backfill_app_continues_when_persist_and_rollback_fail():
     assert stats.stamped == 1
     assert session.commit.await_count == expected_commit_attempts
     session.rollback.assert_awaited_once()
+
+
+def test_backfill_single_task_skips_existing_form_stamp():
+    """Re-running the pipeline must not overwrite an existing ``data['_form']`` stamp."""
+    task = _minimal_task(
+        data={"meta": {}, RESERVED_FORM_KEY: {"task_name": "already-stamped"}},
+    )
+    entry = _BackfillApp(app=checksums_app, reconstructor=_reconstructor_must_not_run)
+    ctx = FormBackfillContext(log=logging.getLogger("test"))
+
+    outcome = _backfill_single_task(task, entry, ctx)
+
+    assert outcome.label == "skipped_existing"
+    assert outcome.stamped_data is None
+    assert task.data[RESERVED_FORM_KEY] == {"task_name": "already-stamped"}
+
+
+def test_backfill_single_task_skips_invalid_reconstructed_form():
+    """A reconstructed body that fails ``create_model`` validation is not stamped."""
+    task = _minimal_task(data={"meta": {}})
+
+    def _invalid_body(_task: Task, _ctx: FormBackfillContext) -> dict:
+        return {
+            "task_name": "",
+            "hostname": "executor-1",
+            "service_id": 1,
+        }
+
+    entry = _BackfillApp(app=checksums_app, reconstructor=_invalid_body)
+    ctx = FormBackfillContext(log=logging.getLogger("test"))
+
+    outcome = _backfill_single_task(task, entry, ctx)
+
+    assert outcome.label == "skipped_invalid"
+    assert outcome.stamped_data is None
+    assert RESERVED_FORM_KEY not in task.data
+
+
+@pytest.mark.asyncio
+async def test_backfill_single_task_stamp_preserves_audit_fields_on_persist():
+    """A successful stamp plus persist must leave audit attribution untouched."""
+    task = _minimal_task(data={"meta": {"command": "pt-table-checksum"}})
+
+    def _valid_body(_task: Task, _ctx: FormBackfillContext) -> dict:
+        return {
+            "task_name": _task.name,
+            "hostname": "executor-1",
+            "service_id": 1,
+            "recursion_method": "processlist",
+        }
+
+    entry = _BackfillApp(app=checksums_app, reconstructor=_valid_body)
+    ctx = FormBackfillContext(log=logging.getLogger("test"))
+    session = MagicMock()
+    session.flush = AsyncMock()
+
+    outcome = _backfill_single_task(task, entry, ctx)
+
+    assert outcome.label == "stamped"
+    assert outcome.stamped_data is not None
+    await _persist_stamped_form(session, task, outcome.stamped_data, dry_run=False)
+
+    assert task.data[RESERVED_FORM_KEY]["task_name"] == "legacy-task"
+    assert task.last_updated_by == "original-user"
+    assert task.updated_at == datetime(2024, 1, 1, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+async def test_backfill_app_records_mixed_outcomes_without_aborting():
+    """Mixed per-task outcomes in one batch must all be counted independently."""
+    stamped_payload = {"meta": {}, RESERVED_FORM_KEY: {"task_name": "stamped"}}
+    session = MagicMock()
+    session.commit = AsyncMock()
+    session.flush = AsyncMock()
+    entry = _BackfillApp(app=checksums_app, reconstructor=lambda _t, _c: None)
+    ctx = FormBackfillContext(log=logging.getLogger("test"))
+    outcomes = [
+        _TaskBackfillOutcome("skipped_existing"),
+        _TaskBackfillOutcome("skipped_unreconstructable"),
+        _TaskBackfillOutcome("skipped_invalid"),
+        _TaskBackfillOutcome("skipped_error"),
+        _TaskBackfillOutcome("stamped", stamped_payload),
+    ]
+
+    with (
+        patch(
+            "app.sep.plugins.framework.form_backfill.TaskManager.list_active",
+            new_callable=AsyncMock,
+            return_value=[_minimal_task(data={"meta": {}}) for _ in outcomes],
+        ),
+        patch(
+            "app.sep.plugins.framework.form_backfill._backfill_single_task",
+            side_effect=outcomes,
+        ),
+    ):
+        stats = await _backfill_app(session, entry, ctx)
+
+    assert stats.skipped_existing == 1
+    assert stats.skipped_unreconstructable == 1
+    assert stats.skipped_invalid == 1
+    assert stats.skipped_error == 1
+    assert stats.stamped == 1
+    assert stats.processed == len(outcomes)
+    session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_backfill_app_dry_run_never_commits():
+    """Dry-run mode must not commit even when tasks are stamped in memory."""
+    stamped_payload = {"meta": {}, RESERVED_FORM_KEY: {"task_name": "dry-run"}}
+    session = MagicMock()
+    session.commit = AsyncMock()
+    session.flush = AsyncMock()
+    entry = _BackfillApp(app=checksums_app, reconstructor=lambda _t, _c: None)
+    ctx = FormBackfillContext(log=logging.getLogger("test"), dry_run=True)
+
+    with (
+        patch(
+            "app.sep.plugins.framework.form_backfill.TaskManager.list_active",
+            new_callable=AsyncMock,
+            return_value=[_minimal_task(data={"meta": {}})],
+        ),
+        patch(
+            "app.sep.plugins.framework.form_backfill._backfill_single_task",
+            return_value=_TaskBackfillOutcome("stamped", stamped_payload),
+        ),
+    ):
+        stats = await _backfill_app(session, entry, ctx)
+
+    assert stats.stamped == 1
+    session.commit.assert_not_awaited()
+    session.flush.assert_not_awaited()
 
 
 def test_main_cli_help_exits_zero(capsys):
