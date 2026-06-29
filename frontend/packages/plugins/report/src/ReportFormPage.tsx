@@ -201,7 +201,9 @@ export function ReportFormPage() {
                   </MenuItem>
                 ))}
               </Select>
-              <FormHelperText>Filters the generated report, PDF, and ServiceNow upload.</FormHelperText>
+              <FormHelperText>
+                Filters the generated report, PDF, and ServiceNow upload.
+              </FormHelperText>
             </FormControl>
           )}
         />

@@ -136,7 +136,9 @@ describe('ReportResultPage', () => {
       return Promise.resolve({ data: MOCK_REPORT });
     });
 
-    renderWithProviders(<ReportResultPage />, { params: { since: 'now-7d', until: 'now', full: true, refresh: false } });
+    renderWithProviders(<ReportResultPage />, {
+      params: { since: 'now-7d', until: 'now', full: true, refresh: false },
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /health.*security report/i })).toBeInTheDocument();
@@ -161,7 +163,9 @@ describe('ReportResultPage', () => {
       }
       return Promise.resolve({ data: MOCK_REPORT });
     });
-    mockedApi.post.mockResolvedValue({ data: { job_id: 'job-1', status: 'pending', pdf_ready: false } });
+    mockedApi.post.mockResolvedValue({
+      data: { job_id: 'job-1', status: 'pending', pdf_ready: false },
+    });
 
     vi.stubGlobal('URL', {
       ...URL,
@@ -169,7 +173,9 @@ describe('ReportResultPage', () => {
       revokeObjectURL: vi.fn(),
     });
 
-    renderWithProviders(<ReportResultPage />, { params: { since: 'now-7d', until: 'now', full: true, refresh: false } });
+    renderWithProviders(<ReportResultPage />, {
+      params: { since: 'now-7d', until: 'now', full: true, refresh: false },
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /download pdf/i })).toBeInTheDocument();
@@ -207,7 +213,9 @@ describe('ReportResultPage', () => {
       return Promise.resolve({ data: { job_id: 'job-2', status: 'pending', pdf_ready: false } });
     });
 
-    renderWithProviders(<ReportResultPage />, { params: { since: 'now-7d', until: 'now', full: true, refresh: false } });
+    renderWithProviders(<ReportResultPage />, {
+      params: { since: 'now-7d', until: 'now', full: true, refresh: false },
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /upload to servicenow/i })).toBeInTheDocument();
@@ -232,7 +240,9 @@ describe('ReportResultPage', () => {
       return Promise.resolve({ data: MOCK_REPORT });
     });
 
-    renderWithProviders(<ReportResultPage />, { params: { since: 'now-7d', until: 'now', full: true, refresh: false } });
+    renderWithProviders(<ReportResultPage />, {
+      params: { since: 'now-7d', until: 'now', full: true, refresh: false },
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /upload to servicenow/i })).toBeDisabled();

@@ -284,7 +284,9 @@ class TestReportJobApi:
             patch(f"{_API}.generate_report", new_callable=AsyncMock) as mock_generate,
         ):
             mock_delay.return_value.id = "job-1"
-            response = test_client.post(self._PDF_JOBS_URL, json={"report": report_json})
+            response = test_client.post(
+                self._PDF_JOBS_URL, json={"report": report_json}
+            )
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["job_id"] == "job-1"

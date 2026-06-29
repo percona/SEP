@@ -18,12 +18,7 @@
 export { ReportPlugin } from './ReportPlugin';
 export { ReportFormPage } from './ReportFormPage';
 export { ReportResultPage } from './ReportResultPage';
-export {
-  useGenerateReport,
-  useDownloadPdf,
-  useUploadToServiceNow,
-  useReportConfig,
-} from './hooks';
+export { useGenerateReport, useDownloadPdf, useUploadToServiceNow, useReportConfig } from './hooks';
 export type {
   ReportParams,
   ReportData,

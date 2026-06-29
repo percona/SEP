@@ -18,7 +18,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
 import { downloadBlob } from '@sep/framework';
-import type { ReportConfig, ReportData, ReportJobResponse, ReportParams, UploadResult } from './types';
+import type {
+  ReportConfig,
+  ReportData,
+  ReportJobResponse,
+  ReportParams,
+  UploadResult,
+} from './types';
 
 const API_BASE = '/plugins/report';
 const POLL_INTERVAL_MS = 1_000;
