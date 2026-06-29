@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define ``AppFormModel``, the single-declaration base for model-first plugins."""
+"""Define ``AppFormModel`` and ``TaskFormModel``, the single-declaration bases for model-first plugins."""
 
 from typing import Annotated, Any, ClassVar
 

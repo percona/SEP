@@ -245,6 +245,10 @@ class ArchivesCreate(TaskFormModel):
     ``hostname`` Task-section fields and the ``alert_on_fail`` capability control
     are inherited from :class:`TaskFormModel`.
 
+    :param task_name: The human-readable task name; required and non-empty
+        (inherited from :class:`TaskFormModel`).
+    :param hostname: The executor host the task runs on; required and non-empty
+        (inherited from :class:`TaskFormModel`).
     :param service_id: The inventory id of the source MySQL service (the host whose
         rows are archived; the connectivity probe targets it).
     :param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.
