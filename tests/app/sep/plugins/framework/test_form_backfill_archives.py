@@ -354,6 +354,73 @@ def test_reconstruct_archives_form_returns_none_without_purge_list():
     assert reconstruct_archives_form(task, _ctx(lookup)) is None
 
 
+def test_reconstruct_archives_form_returns_none_when_not_run_python():
+    """Skip tasks that are not ``run-python`` archiver rows."""
+    lookup = _lookup(
+        _service(1, name="src-svc", address="src-host", port=3306),
+    )
+    task = _legacy_archives_task(
+        purge_item={
+            "ALIAS": "arch-x",
+            "SOURCE_DB": "src_db",
+            "SOURCE_TABLE": "src_table",
+            "DEST_TABLE": "dst_table",
+            "SWAP_DROP": 0,
+            "WHERE": "id < 1",
+        },
+    )
+    task.data["task"] = "run-command"
+
+    assert reconstruct_archives_form(task, _ctx(lookup)) is None
+
+
+def test_reconstruct_archives_form_returns_none_when_missing_target():
+    """Skip tasks whose executor host is absent from ``meta['target']``."""
+    lookup = _lookup(
+        _service(1, name="src-svc", address="src-host", port=3306),
+    )
+    task = _legacy_archives_task(
+        target="",
+        purge_item={
+            "ALIAS": "arch-x",
+            "SOURCE_DB": "src_db",
+            "SOURCE_TABLE": "src_table",
+            "DEST_TABLE": "dst_table",
+            "SWAP_DROP": 0,
+            "WHERE": "id < 1",
+        },
+    )
+
+    assert reconstruct_archives_form(task, _ctx(lookup)) is None
+
+
+def test_backfill_single_task_skips_archives_swap_drop_invalid():
+    """Reject legacy SWAP_DROP tasks at create-model validation."""
+    lookup = _lookup(
+        _service(8, name="src-svc", address="src-host", port=3306),
+    )
+    task = _legacy_archives_task(
+        purge_item={
+            "ALIAS": "arch-swap",
+            "SOURCE_DB": "src_db",
+            "SOURCE_TABLE": "src_table",
+            "DEST_TABLE": "dst_table",
+            "SWAP_DROP": SwapDropEnum.SWAP_DROP.value,
+            "WHERE": "id < 50",
+        },
+    )
+    entry = _BackfillApp(app=archives_app, reconstructor=reconstruct_archives_form)
+    ctx = FormBackfillContext(
+        log=__import__("logging").getLogger("test"),
+        service_lookup=lookup,
+    )
+
+    outcome = _backfill_single_task(task, entry, ctx)
+
+    assert outcome.label == "skipped_invalid"
+    assert outcome.stamped_data is None
+
+
 def test_backfill_single_task_stamps_archives_form():
     """Run the orchestrator pipeline for a reconstructable archives task."""
     expected_service_id = 8

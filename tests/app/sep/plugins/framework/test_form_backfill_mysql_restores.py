@@ -202,6 +202,84 @@ def test_reconstruct_mysql_restores_form_mydumper_resolves_service_and_schema():
     RestoreCreate.model_validate(body)
 
 
+def test_reconstruct_mysql_restores_form_binlog_happy_path():
+    """Rebuild a Binlog restore body without destination service fields."""
+    expected_start_position = 4
+    service_lookup, schema_lookup = _lookups()
+    task = _legacy_restore_task(
+        backup_type=BackupType.BINLOG,
+        backup_source="host.example.com:/backups/binlog",
+        all_servers={
+            "START_FILE": "binlog.0001",
+            "START_POSITION": expected_start_position,
+            "LOCAL_PATH": "/tmp/binlog-restore",
+            "BINLOG_RESTORE_EXTRA_ARGS": "--verbose",
+        },
+    )
+
+    body = reconstruct_mysql_restores_form(task, _ctx(service_lookup, schema_lookup))
+
+    assert body is not None
+    assert body["backup_type"] == BackupType.BINLOG.value
+    assert body["backup_source"] == "host.example.com:/backups/binlog"
+    assert body["start_file"] == "binlog.0001"
+    assert body["start_position"] == expected_start_position
+    assert body["local_path"] == "/tmp/binlog-restore"
+    assert body["binlog_restore_extra_args"] == "--verbose"
+    assert "service_id" not in body
+    RestoreCreate.model_validate(body)
+
+
+def test_reconstruct_mysql_restores_form_mydumper_omits_schema_id_when_ambiguous():
+    """Keep Mydumper restores when schema resolution is ambiguous."""
+    expected_service_id = 4
+    service_lookup, schema_lookup = _lookups(
+        _service(
+            expected_service_id,
+            name="mysql-prod",
+            address="10.0.0.5",
+            port=3306,
+        ),
+        schemas=(
+            _schema(1, service_id=expected_service_id, name="appdb"),
+            _schema(2, service_id=expected_service_id, name="appdb"),
+        ),
+    )
+    task = _legacy_restore_task(
+        backup_type=BackupType.MYDUMPER,
+        backup_source="host.example.com:/backups/mydumper",
+        dest_host="10.0.0.5",
+        dest_port=3306,
+        database="appdb",
+    )
+
+    body = reconstruct_mysql_restores_form(task, _ctx(service_lookup, schema_lookup))
+
+    assert body is not None
+    assert body["service_id"] == str(expected_service_id)
+    assert "schema_id" not in body
+    RestoreCreate.model_validate(body)
+
+
+def test_reconstruct_mysql_restores_form_mydumper_ignores_service_name_when_dest_host_set():
+    """Resolve Mydumper destination by host/port, not ``meta['_service_name']``."""
+    service_lookup, schema_lookup = _lookups(
+        _service(1, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _legacy_restore_task(
+        backup_type=BackupType.MYDUMPER,
+        backup_source="host.example.com:/backups/mydumper",
+        dest_host="10.0.0.9",
+        dest_port=3306,
+        service_name="mysql-prod",
+    )
+
+    assert (
+        reconstruct_mysql_restores_form(task, _ctx(service_lookup, schema_lookup))
+        is None
+    )
+
+
 def test_reconstruct_mysql_restores_form_returns_none_for_mydumper_without_service():
     """Skip Mydumper tasks whose destination host cannot be matched in inventory."""
     service_lookup, schema_lookup = _lookups(

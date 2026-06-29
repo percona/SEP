@@ -222,6 +222,17 @@ def test_reconstruct_backup_pg_form_returns_none_when_service_unresolved():
     assert reconstruct_backup_pg_form(task, _ctx(lookup)) is None
 
 
+def test_reconstruct_backup_pg_form_returns_none_when_not_run_python():
+    """Skip tasks that are not ``run-python`` backup_pg rows."""
+    lookup = _lookup(
+        _service(1, name="pg-prod", address="db.internal", port=5432),
+    )
+    task = _legacy_backup_pg_task()
+    task.data["task"] = "run-command"
+
+    assert reconstruct_backup_pg_form(task, _ctx(lookup)) is None
+
+
 def test_backfill_single_task_stamps_backup_pg_form():
     """Run the orchestrator pipeline for a reconstructable backup_pg task."""
     expected_service_id = 5

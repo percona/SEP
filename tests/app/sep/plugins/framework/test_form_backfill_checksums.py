@@ -189,6 +189,39 @@ def test_reconstruct_checksums_form_returns_none_for_non_checksums_command():
     assert reconstruct_checksums_form(task, _ctx(lookup)) is None
 
 
+def test_reconstruct_checksums_form_returns_none_when_missing_target():
+    """Skip tasks whose executor host is absent from ``meta['target']``."""
+    lookup = _lookup(
+        _service(42, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _legacy_checksums_task(
+        args="h=10.0.0.5,P=3306, --recursion-method=processlist"
+    )
+    task.data["meta"]["target"] = ""
+
+    assert reconstruct_checksums_form(task, _ctx(lookup)) is None
+
+
+def test_reconstruct_checksums_form_dsn_recursion_happy_path():
+    """Rebuild a body when legacy args expanded ``dsn`` recursion."""
+    lookup = _lookup(
+        _service(42, name="mysql-prod", address="10.0.0.5", port=3306),
+    )
+    task = _legacy_checksums_task(
+        args=(
+            "h=10.0.0.5,P=3306, --recursion-method="
+            "dsn=h=10.0.0.5,P=3306,D=percona,t=custom_dsns"
+        ),
+    )
+
+    body = reconstruct_checksums_form(task, _ctx(lookup))
+
+    assert body is not None
+    assert body["recursion_method"] == "dsn"
+    assert body["dsn_table"] == "D=percona,t=custom_dsns"
+    ChecksumsForm.model_validate(body)
+
+
 def test_backfill_single_task_stamps_checksums_form():
     """Run the orchestrator pipeline for a reconstructable checksums task."""
     expected_service_id = 7

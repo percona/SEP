@@ -24,6 +24,7 @@ from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_P
 from app.sep.plugins.framework.form_backfill_inventory import (
     default_port_for_service_type,
     meta_service_hints,
+    SchemaIdLookup,
     ServiceIdLookup,
 )
 
@@ -198,3 +199,30 @@ def test_meta_service_hints_honors_explicit_host_and_port_overrides():
     assert host == "db.internal"
     assert port == expected_port
     assert service_name is None
+
+
+def _schema(schema_id: int, *, service_id: int, name: str) -> SimpleNamespace:
+    """Build a minimal inventory schema record for lookup tests."""
+    return SimpleNamespace(id=schema_id, service_id=service_id, name=name)
+
+
+def test_resolve_schema_id_by_service_and_name():
+    """Resolve a unique schema name on a parent service."""
+    expected_schema_id = 15
+    lookup = SchemaIdLookup.from_schemas(
+        [_schema(expected_schema_id, service_id=4, name="appdb")]
+    )
+
+    assert lookup.resolve(service_id=4, schema_name="appdb") == expected_schema_id
+
+
+def test_resolve_schema_id_returns_none_for_ambiguous_name():
+    """Skip restores when multiple schemas share a name on one service."""
+    lookup = SchemaIdLookup.from_schemas(
+        [
+            _schema(1, service_id=4, name="appdb"),
+            _schema(2, service_id=4, name="appdb"),
+        ]
+    )
+
+    assert lookup.resolve(service_id=4, schema_name="appdb") is None

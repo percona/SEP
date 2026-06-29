@@ -204,6 +204,38 @@ def test_reconstruct_mysql_backups_form_binlog_alternative_host():
     BackupCreate.model_validate(body)
 
 
+def test_reconstruct_mysql_backups_form_mydumper_happy_path():
+    """Round-trip mydumper-specific fields from persisted YAML."""
+    expected_service_id = 3
+    lookup = _lookup(
+        _service(
+            expected_service_id,
+            name="mysql-prod",
+            address="10.0.0.5",
+            port=3306,
+        ),
+    )
+    task = _legacy_mysql_backup_task(
+        backup_type=BackupType.MYDUMPER,
+        upload=["GSUTIL"],
+        all_servers={
+            "MYDUMPER_VERBOSE": 1,
+            "MYDUMPER_EXTRA_ARGS": "--foo",
+            "GS_BUCKET": "gs-bucket",
+        },
+    )
+
+    body = reconstruct_mysql_backups_form(task, _ctx(lookup))
+
+    assert body is not None
+    assert body["backup_type"] == BackupType.MYDUMPER.value
+    assert body["mydumper_verbose"] == 1
+    assert body["mydumper_extra_args"] == "--foo"
+    assert body["gs_bucket"] == "gs-bucket"
+    assert body["upload"] == ["gsutil"]
+    BackupCreate.model_validate(body)
+
+
 def test_reconstruct_mysql_backups_form_returns_none_when_not_run_python():
     """Skip tasks that are not ``run-python`` backup rows."""
     lookup = _lookup(
