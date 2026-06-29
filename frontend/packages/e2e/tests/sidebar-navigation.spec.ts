@@ -265,9 +265,7 @@ test.describe('sidebar navigation wiring', () => {
     // Wait for the lazy Inventory page to actually mount before navigating away.
     // The URL flips synchronously on click while the chunk is still resolving, so
     // without this sentinel the Dashboard click can be swallowed mid-load.
-    await expect(
-      page.getByRole('heading', { name: GENERIC_PLUGIN_HEADING }).first(),
-    ).toBeVisible({ timeout: LAZY_TIMEOUT });
+    await expect(heading(GENERIC_PLUGIN_HEADING)(page)).toBeVisible({ timeout: LAZY_TIMEOUT });
 
     await page.getByRole('button', { name: 'Dashboard' }).click();
     await expect(page).toHaveURL(/\/$/, { timeout: LAZY_TIMEOUT });
