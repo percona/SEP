@@ -42,6 +42,7 @@ _EXPLICIT_FORM_KEYS = frozenset(
         "backup_source",
         "service_id",
         "schema_id",
+        "alert_on_fail",
     }
 )
 _PARSE_ONLY_KEYS = frozenset(
@@ -177,6 +178,7 @@ def reconstruct_mysql_restores_form(
         "hostname": hostname.strip(),
         "backup_type": normalized_backup_type,
         "backup_source": backup_source.strip(),
+        "alert_on_fail": task.alert_on_fail,
         **form_fields,
     }
     if service_id is not None:

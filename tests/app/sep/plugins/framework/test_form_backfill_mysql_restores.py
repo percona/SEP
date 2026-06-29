@@ -98,6 +98,7 @@ def _legacy_restore_task(
     service_port: int = 3306,
     service_name: str = "mysql-prod",
     all_servers: dict[str, object] | None = None,
+    alert_on_fail: bool = False,
 ) -> Task:
     """Build a legacy mysql restores task row without ``data['_form']``."""
     server_list_entry: dict[str, object] = {
@@ -131,7 +132,20 @@ def _legacy_restore_task(
         },
         backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.RESTORES,
+        alert_on_fail=alert_on_fail,
     )
+
+
+def test_reconstruct_mysql_restores_form_preserves_alert_on_fail():
+    """Carry ``task.alert_on_fail`` into the reconstructed create body."""
+    service_lookup, schema_lookup = _lookups()
+    task = _legacy_restore_task(alert_on_fail=True)
+
+    body = reconstruct_mysql_restores_form(task, _ctx(service_lookup, schema_lookup))
+
+    assert body is not None
+    assert body["alert_on_fail"] is True
+    RestoreCreate.model_validate(body)
 
 
 def test_reconstruct_mysql_restores_form_xtrabackup_happy_path():
@@ -235,6 +249,7 @@ def test_backfill_single_task_stamps_mysql_restores_form():
         backup_source="host.example.com:/backups/mydumper",
         dest_host="10.0.0.5",
         dest_port=3306,
+        alert_on_fail=True,
     )
     entry = _BackfillApp(
         app=mysql_restores_app, reconstructor=reconstruct_mysql_restores_form
@@ -254,3 +269,4 @@ def test_backfill_single_task_stamps_mysql_restores_form():
     assert stamped_form["service_id"] == str(expected_service_id)
     assert stamped_form["backup_type"] == BackupType.MYDUMPER.value
     assert stamped_form["backup_source"] == "host.example.com:/backups/mydumper"
+    assert stamped_form["alert_on_fail"] is True

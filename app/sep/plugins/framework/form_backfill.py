@@ -43,6 +43,7 @@ from app.sep.plugins.archives.app import app as archives_app
 from app.sep.plugins.backup_pg.app import app as backup_pg_app
 from app.sep.plugins.checksums.app import app as checksums_app
 from app.sep.plugins.framework.apps import TaskExecutionApp
+from app.sep.plugins.framework.form_backfill_archives import reconstruct_archives_form
 from app.sep.plugins.framework.form_backfill_backup_pg import reconstruct_backup_pg_form
 from app.sep.plugins.framework.form_backfill_checksums import reconstruct_checksums_form
 from app.sep.plugins.framework.form_backfill_inventory import (
@@ -197,27 +198,13 @@ class _BackfillApp:
         return self.app.create_model
 
 
-def _noop_reconstructor(
-    _task: Task, _ctx: FormBackfillContext
-) -> dict[str, Any] | None:
-    """Return ``None`` until the per-app reconstructor adapter is wired.
-
-    :param _task: The legacy task row (unused by the placeholder).
-    :param _ctx: Shared backfill context (unused by the placeholder).
-    :return: Always ``None``.
-    """
-    return None
-
-
 def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
     """Return the in-scope apps and their reconstructors.
-
-    Per-app adapters replace the placeholder reconstructors in follow-up work.
 
     :return: The apps whose legacy tasks are eligible for ``data['_form']`` backfill.
     """
     entries: list[tuple[TaskExecutionApp, FormReconstructor]] = [
-        (archives_app, _noop_reconstructor),
+        (archives_app, reconstruct_archives_form),
         (checksums_app, reconstruct_checksums_form),
         (backup_pg_app, reconstruct_backup_pg_form),
         (mysql_backups_app, reconstruct_mysql_backups_form),
