@@ -16,10 +16,12 @@
 """Define tests for base SEP dependencies."""
 
 from collections import OrderedDict
+from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.testclient import TestClient
 from itsdangerous import BadSignature
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -970,32 +972,74 @@ class TestRejectIfProtected:
 
 
 class TestProtectedTaskGuard:
-    """Test the protected_task_guard dependency factory."""
+    """Test the protected_task_guard dependency factory.
 
-    @pytest.mark.asyncio
-    async def test_guard_rejects_protected_task(self) -> None:
-        """Assert the built dependency raises 409 for a protected task."""
+    These exercise the factory through real FastAPI dependency resolution: the
+    built guard is mounted on a probe route so ``Depends(task_dep)`` actually
+    resolves the supplied dependency. This validates that the factory is wired
+    to ``task_dep`` (the mock is awaited), not just that the inner rejection
+    body works.
+    """
+
+    @staticmethod
+    def _build_client(
+        task: Task, *, action: str = "edit"
+    ) -> tuple[TestClient, list[bool]]:
+        """Mount ``protected_task_guard(task_dep)`` on a probe route.
+
+        Builds a real async ``task_dep`` that records each invocation, so the
+        returned ``calls`` list proves FastAPI resolved the guard through
+        ``Depends(task_dep)`` rather than the guard reaching the task by another
+        path.
+
+        :param task: The task the resolved dependency should return.
+        :type task: Task
+        :param action: The action verb forwarded to the guard factory.
+        :type action: str
+        :return: The test client and the per-request invocation record.
+        :rtype: tuple[TestClient, list[bool]]
+        """
+        calls: list[bool] = []
+
+        async def task_dep() -> Task:
+            calls.append(True)
+            return task
+
+        guard = protected_task_guard(task_dep, action=action)
+        app = FastAPI()
+
+        @app.get("/probe")
+        async def _probe(resolved: Annotated[Task, Depends(guard)]) -> dict[str, str]:
+            return {"name": resolved.name}
+
+        return TestClient(app), calls
+
+    def test_guard_rejects_protected_task(self) -> None:
+        """Assert the built dependency resolves task_dep then raises 409."""
         task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=True)
-        guard = protected_task_guard(AsyncMock(return_value=task))
-        with pytest.raises(HTTPConflictException) as exc_info:
-            await guard(task=task)
-        assert exc_info.value.detail == "Cannot edit a protected task."
+        client, calls = self._build_client(task)
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Cannot edit a protected task."
+        assert calls == [True]
 
-    @pytest.mark.asyncio
-    async def test_guard_delete_verb(self) -> None:
+    def test_guard_delete_verb(self) -> None:
         """Assert action='delete' propagates to the built dependency message."""
         task = TaskFactory.build(owner=TaskOwner.ALTERS, protected=True)
-        guard = protected_task_guard(AsyncMock(return_value=task), action="delete")
-        with pytest.raises(HTTPConflictException) as exc_info:
-            await guard(task=task)
-        assert exc_info.value.detail == "Cannot delete a protected task."
+        client, calls = self._build_client(task, action="delete")
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Cannot delete a protected task."
+        assert calls == [True]
 
-    @pytest.mark.asyncio
-    async def test_guard_passes_unprotected_task(self) -> None:
+    def test_guard_passes_unprotected_task(self) -> None:
         """Assert the built dependency returns an unprotected task unchanged."""
         task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=False)
-        guard = protected_task_guard(AsyncMock(return_value=task))
-        assert await guard(task=task) is task
+        client, calls = self._build_client(task)
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"name": task.name}
+        assert calls == [True]
 
 
 class TestExecutorHostsContext:
