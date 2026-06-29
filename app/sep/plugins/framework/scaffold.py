@@ -35,9 +35,17 @@ import keyword
 import re
 import sys
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
-FLAVORS = ("task", "script", "base")
+
+class Flavor(StrEnum):
+    """Represent the supported scaffold flavors."""
+
+    TASK = "task"
+    SCRIPT = "script"
+    BASE = "base"
+
 
 _NAME_PATTERN = re.compile(r"^[a-z_][a-z0-9_]*$")
 _PLACEHOLDER = re.compile(r"<<\s*(\w+)\s*>>")
@@ -54,7 +62,7 @@ class ScaffoldResult:
     """Carry the outcome of a single scaffold run for the caller's summary.
 
     :param name: The scaffolded app's module name.
-    :param flavor: The flavor rendered (one of :data:`FLAVORS`).
+    :param flavor: The flavor rendered.
     :param app_dir: The generated package directory under ``app/sep/plugins``.
     :param tests_dir: The generated test package directory under ``tests``.
     :param written: Every file the render wrote, in render order.
@@ -63,7 +71,7 @@ class ScaffoldResult:
     """
 
     name: str
-    flavor: str
+    flavor: Flavor
     app_dir: Path
     tests_dir: Path
     written: list[Path]
@@ -145,7 +153,7 @@ def _render(text: str, context: dict[str, str], source: Path) -> str:
     return _PLACEHOLDER.sub(replace, text)
 
 
-def render_app(name: str, flavor: str, context: dict[str, str]) -> list[Path]:
+def render_app(name: str, flavor: Flavor, context: dict[str, str]) -> list[Path]:
     """Render every template for ``flavor`` into the app and test trees.
 
     :param name: The app's module name.
@@ -266,21 +274,19 @@ def write_settings_entry(name: str) -> bool:
     return changed
 
 
-def scaffold_app(name: str, flavor: str) -> ScaffoldResult:
+def scaffold_app(name: str, flavor: Flavor) -> ScaffoldResult:
     """Validate, refuse to clobber, render, and register a new app disabled.
 
     The clobber guard fires before any write, so a rerun against an existing
     plugin writes nothing — no templates and no ``settings.yaml`` edit.
 
     :param name: The new app's module name.
-    :param flavor: The flavor to render (one of :data:`FLAVORS`).
+    :param flavor: The flavor to render.
     :return: The scaffold outcome for the caller's summary.
-    :raises ValueError: When the name or flavor is invalid.
+    :raises ValueError: When the name is invalid.
     :raises FileExistsError: When the app or test package directory already exists.
     """
     validate_name(name)
-    if flavor not in FLAVORS:
-        raise ValueError(f"unknown flavor {flavor!r}; choose from {', '.join(FLAVORS)}")
     app_dir = PLUGINS_DIR / name
     tests_dir = TESTS_DIR / name
     for existing in (app_dir, tests_dir):
@@ -314,8 +320,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--type",
-        choices=FLAVORS,
-        default="task",
+        choices=list(Flavor),
+        default=Flavor.TASK,
+        type=Flavor,
         help="the app flavor to generate (default: task)",
     )
     return parser

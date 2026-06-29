@@ -74,7 +74,9 @@ def tmp_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @contextmanager
-def _scaffolded(name: str, flavor: str) -> Iterator[scaffold.ScaffoldResult]:
+def _scaffolded(
+    name: str, flavor: scaffold.Flavor
+) -> Iterator[scaffold.ScaffoldResult]:
     """Yield a scaffolded ``name``, removing the trees and module entries on exit."""
     try:
         yield scaffold.scaffold_app(name, flavor)
@@ -131,7 +133,7 @@ def test_type_defaults_to_task() -> None:
     """Assert ``--type`` defaults to the ``task`` flavor when omitted."""
     args = scaffold.build_parser().parse_args(["--name", "demo"])
 
-    assert args.type == "task"
+    assert args.type == scaffold.Flavor.TASK
 
 
 def test_unknown_flavor_rejected() -> None:
@@ -168,7 +170,7 @@ def test_refuses_to_clobber_existing_plugin(tmp_settings: Path) -> None:
     before = tmp_settings.read_text()
     try:
         with pytest.raises(FileExistsError):
-            scaffold.scaffold_app(name, "task")
+            scaffold.scaffold_app(name, scaffold.Flavor.TASK)
 
         assert tmp_settings.read_text() == before
         assert not (scaffold.TESTS_DIR / name).exists()
@@ -184,7 +186,7 @@ def test_refuses_to_clobber_existing_tests_package(tmp_settings: Path) -> None:
     before = tmp_settings.read_text()
     try:
         with pytest.raises(FileExistsError):
-            scaffold.scaffold_app(name, "task")
+            scaffold.scaffold_app(name, scaffold.Flavor.TASK)
 
         assert tmp_settings.read_text() == before
         assert not (scaffold.PLUGINS_DIR / name).exists()
@@ -195,7 +197,7 @@ def test_refuses_to_clobber_existing_tests_package(tmp_settings: Path) -> None:
 def test_registers_app_disabled(tmp_settings: Path) -> None:
     """Write the registration entry disabled under the default ``SEP.PLUGINS``."""
     name = "_scaffold_smoke_disabled"
-    with _scaffolded(name, "task"):
+    with _scaffolded(name, scaffold.Flavor.TASK):
         assert (
             f"      - MODULE_NAME: {name}\n        ENABLED: false\n"
             in tmp_settings.read_text()
@@ -254,7 +256,7 @@ def test_task_flavor_scaffolds_conformant_app(
 ) -> None:
     """Assert a scaffolded ``task`` app imports, conforms, and serves its CRUD surface."""
     name = "_scaffold_smoke_task"
-    with _scaffolded(name, "task"):
+    with _scaffolded(name, scaffold.Flavor.TASK):
         importlib.import_module(f"app.sep.plugins.{name}")
         registry = build_app_registry([Plugin(module_name=name)])
         app = registry.get(name)
@@ -284,7 +286,7 @@ def test_script_flavor_scaffolds_snippet_routes(
 ) -> None:
     """Assert a scaffolded ``script`` app derives the ``/snippet/*`` routes, no Jinja."""
     name = "_scaffold_smoke_script"
-    with _scaffolded(name, "script"):
+    with _scaffolded(name, scaffold.Flavor.SCRIPT):
         importlib.import_module(f"app.sep.plugins.{name}")
         registry = build_app_registry([Plugin(module_name=name)])
         app = registry.get(name)
@@ -320,7 +322,7 @@ def test_base_flavor_scaffolds_api_first_app(
 ) -> None:
     """Assert a scaffolded API-first ``base`` app exposes ``/schema`` and a sample route."""
     name = "_scaffold_smoke_base"
-    with _scaffolded(name, "base"):
+    with _scaffolded(name, scaffold.Flavor.BASE):
         importlib.import_module(f"app.sep.plugins.{name}")
         registry = build_app_registry([Plugin(module_name=name)])
         app = registry.get(name)
