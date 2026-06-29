@@ -1712,7 +1712,8 @@ export interface paths {
      *     :type job_id: str
      *     :return: PDF file response.
      *     :rtype: FileResponse
-     *     :raises HTTPException: If the PDF artifact is not ready.
+     *     :raises HTTPInternalServerErrorException: If the Celery job failed.
+     *     :raises HTTPConflictException: If the PDF artifact is not ready yet.
      */
     get: operations['report_report_download_pdf_api_api_plugins_report_pdf_jobs__job_id__pdf_get'];
     put?: never;
@@ -1740,7 +1741,7 @@ export interface paths {
      *     :type body: ReportSnapshotWrite
      *     :return: Upload job status response.
      *     :rtype: ReportJobResponse
-     *     :raises HTTPException: If ServiceNow upload is not configured.
+     *     :raises HTTPServiceUnavailableException: If ServiceNow upload is not configured.
      */
     post: operations['report_report_start_upload_job_api_api_plugins_report_upload_jobs_post'];
     delete?: never;

@@ -986,7 +986,7 @@
     },
     "/api/plugins/report/pdf-jobs/{job_id}/pdf": {
       "get": {
-        "description": "Download a ready PDF artifact for a report job.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: PDF file response.\n:rtype: FileResponse\n:raises HTTPException: If the PDF artifact is not ready.",
+        "description": "Download a ready PDF artifact for a report job.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: PDF file response.\n:rtype: FileResponse\n:raises HTTPInternalServerErrorException: If the Celery job failed.\n:raises HTTPConflictException: If the PDF artifact is not ready yet.",
         "operationId": "report_report_download_pdf_api_api_plugins_report_pdf_jobs__job_id__pdf_get",
         "parameters": [
           {
@@ -1027,7 +1027,7 @@
     },
     "/api/plugins/report/upload-jobs": {
       "post": {
-        "description": "Enqueue ServiceNow upload from a report JSON snapshot.\n\n:param body: Request body containing the report snapshot.\n:type body: ReportSnapshotWrite\n:return: Upload job status response.\n:rtype: ReportJobResponse\n:raises HTTPException: If ServiceNow upload is not configured.",
+        "description": "Enqueue ServiceNow upload from a report JSON snapshot.\n\n:param body: Request body containing the report snapshot.\n:type body: ReportSnapshotWrite\n:return: Upload job status response.\n:rtype: ReportJobResponse\n:raises HTTPServiceUnavailableException: If ServiceNow upload is not configured.",
         "operationId": "report_report_start_upload_job_api_api_plugins_report_upload_jobs_post",
         "requestBody": {
           "content": {
