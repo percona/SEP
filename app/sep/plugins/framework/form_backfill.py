@@ -46,11 +46,16 @@ from app.sep.plugins.framework.apps import TaskExecutionApp
 from app.sep.plugins.framework.form_backfill_backup_pg import reconstruct_backup_pg_form
 from app.sep.plugins.framework.form_backfill_checksums import reconstruct_checksums_form
 from app.sep.plugins.framework.form_backfill_inventory import (
+    load_schema_id_lookup,
     load_service_id_lookup,
+    SchemaIdLookup,
     ServiceIdLookup,
 )
 from app.sep.plugins.framework.form_backfill_mysql_backups import (
     reconstruct_mysql_backups_form,
+)
+from app.sep.plugins.framework.form_backfill_mysql_restores import (
+    reconstruct_mysql_restores_form,
 )
 from app.sep.plugins.framework.form_dsl import AppFormModel
 from app.sep.plugins.framework.spec import RESERVED_FORM_KEY, stamp_form_input
@@ -71,16 +76,15 @@ class FormBackfillContext:
     """Carry shared state for per-app form reconstructors.
 
     :param log: Logger used for per-task skip and error messages.
-    :type log: logging.Logger
     :param dry_run: When ``True``, the orchestrator logs actions but does not persist.
-    :type dry_run: bool
     :param service_lookup: Inventory service-id resolver built once per backfill run.
-    :type service_lookup: ServiceIdLookup | None
+    :param schema_lookup: Inventory schema-id resolver built once per backfill run.
     """
 
     log: logging.Logger
     dry_run: bool = False
     service_lookup: ServiceIdLookup | None = None
+    schema_lookup: SchemaIdLookup | None = None
 
 
 @dataclass
@@ -88,19 +92,12 @@ class AppBackfillStats:
     """Represent backfill outcome counters for a single in-scope app.
 
     :param app_name: The registry :attr:`~app.sep.plugins.framework.apps.TaskExecutionApp.name`.
-    :type app_name: str
     :param owner: The task owner filter used when listing tasks.
-    :type owner: TaskOwner
     :param stamped: Tasks that received a new ``data['_form']`` stamp.
-    :type stamped: int
     :param skipped_existing: Tasks that already had ``data['_form']``.
-    :type skipped_existing: int
     :param skipped_unreconstructable: Tasks whose reconstructor returned ``None``.
-    :type skipped_unreconstructable: int
     :param skipped_invalid: Tasks whose reconstructed body failed ``create_model`` validation.
-    :type skipped_invalid: int
     :param skipped_error: Tasks whose reconstructor, stamp step, or persistence raised.
-    :type skipped_error: int
     """
 
     app_name: str
@@ -113,11 +110,7 @@ class AppBackfillStats:
 
     @property
     def processed(self) -> int:
-        """Return the total number of tasks considered for this app.
-
-        :return: The sum of stamped and skipped counters.
-        :rtype: int
-        """
+        """Return the total number of tasks considered for this app."""
         return (
             self.stamped
             + self.skipped_existing
@@ -132,9 +125,7 @@ class BackfillSummary:
     """Represent the aggregate outcome of a full backfill run.
 
     :param apps: Per-app outcome counters.
-    :type apps: list[AppBackfillStats]
     :param dry_run: Whether the run operated in dry-run mode (no database writes).
-    :type dry_run: bool
     """
 
     apps: list[AppBackfillStats] = field(default_factory=list)
@@ -142,47 +133,27 @@ class BackfillSummary:
 
     @property
     def stamped(self) -> int:
-        """Return the total number of tasks stamped across all apps.
-
-        :return: The summed ``stamped`` counter.
-        :rtype: int
-        """
+        """Return the total number of tasks stamped across all apps."""
         return sum(app.stamped for app in self.apps)
 
     @property
     def skipped_existing(self) -> int:
-        """Return tasks skipped because ``data['_form']`` was already present.
-
-        :return: The summed ``skipped_existing`` counter.
-        :rtype: int
-        """
+        """Return tasks skipped because ``data['_form']`` was already present."""
         return sum(app.skipped_existing for app in self.apps)
 
     @property
     def skipped_unreconstructable(self) -> int:
-        """Return tasks whose reconstructor could not produce a body.
-
-        :return: The summed ``skipped_unreconstructable`` counter.
-        :rtype: int
-        """
+        """Return tasks whose reconstructor could not produce a body."""
         return sum(app.skipped_unreconstructable for app in self.apps)
 
     @property
     def skipped_invalid(self) -> int:
-        """Return tasks whose reconstructed body failed validation.
-
-        :return: The summed ``skipped_invalid`` counter.
-        :rtype: int
-        """
+        """Return tasks whose reconstructed body failed validation."""
         return sum(app.skipped_invalid for app in self.apps)
 
     @property
     def skipped_error(self) -> int:
-        """Return tasks that raised during reconstruction or stamping.
-
-        :return: The summed ``skipped_error`` counter.
-        :rtype: int
-        """
+        """Return tasks that raised during reconstruction or stamping."""
         return sum(app.skipped_error for app in self.apps)
 
 
@@ -191,10 +162,8 @@ class _TaskBackfillOutcome:
     """Hold the result of the reconstruct → validate → stamp pipeline for one task.
 
     :param label: The outcome counter name (for example ``"stamped"``).
-    :type label: str
     :param stamped_data: The stamped task ``data`` dict to persist, or ``None`` when
         the task was skipped.
-    :type stamped_data: dict[str, Any] | None
     """
 
     label: str
@@ -206,9 +175,7 @@ class _BackfillApp:
     """Bind a :class:`~app.sep.plugins.framework.apps.TaskExecutionApp` to its reconstructor.
 
     :param app: The in-scope task app definition.
-    :type app: TaskExecutionApp
     :param reconstructor: The per-app legacy form reconstructor.
-    :type reconstructor: FormReconstructor
     """
 
     app: TaskExecutionApp
@@ -216,29 +183,17 @@ class _BackfillApp:
 
     @property
     def app_name(self) -> str:
-        """Return the app's registry name.
-
-        :return: The bound app's ``name``.
-        :rtype: str
-        """
+        """Return the app's registry name."""
         return self.app.name
 
     @property
     def owner(self) -> TaskOwner:
-        """Return the task owner the app lists tasks by.
-
-        :return: The bound app's ``owner``.
-        :rtype: TaskOwner
-        """
+        """Return the task owner the app lists tasks by."""
         return self.app.owner
 
     @property
     def create_model(self) -> type[AppFormModel]:
-        """Return the app's create/update form model.
-
-        :return: The bound app's ``create_model``.
-        :rtype: type[AppFormModel]
-        """
+        """Return the app's create/update form model."""
         return self.app.create_model
 
 
@@ -248,11 +203,8 @@ def _noop_reconstructor(
     """Return ``None`` until the per-app reconstructor adapter is wired.
 
     :param _task: The legacy task row (unused by the placeholder).
-    :type _task: Task
     :param _ctx: Shared backfill context (unused by the placeholder).
-    :type _ctx: FormBackfillContext
     :return: Always ``None``.
-    :rtype: dict[str, Any] | None
     """
     return None
 
@@ -263,14 +215,13 @@ def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
     Per-app adapters replace the placeholder reconstructors in follow-up work.
 
     :return: The apps whose legacy tasks are eligible for ``data['_form']`` backfill.
-    :rtype: tuple[_BackfillApp, ...]
     """
     entries: list[tuple[TaskExecutionApp, FormReconstructor]] = [
         (archives_app, _noop_reconstructor),
         (checksums_app, reconstruct_checksums_form),
         (backup_pg_app, reconstruct_backup_pg_form),
         (mysql_backups_app, reconstruct_mysql_backups_form),
-        (mysql_restores_app, _noop_reconstructor),
+        (mysql_restores_app, reconstruct_mysql_restores_form),
     ]
     return tuple(
         _BackfillApp(app=app, reconstructor=reconstructor)
@@ -285,11 +236,8 @@ def _task_write_from_task(task: Task, data: dict[str, Any]) -> TaskWrite:
     """Build a ``TaskWrite`` envelope from an existing task row and ``data`` payload.
 
     :param task: The persisted task row.
-    :type task: Task
     :param data: The ``data`` dict to carry on the write (including any stamp).
-    :type data: dict[str, Any]
     :return: A ``TaskWrite`` suitable for :meth:`~app.tasks.crud.TaskManager.update`.
-    :rtype: TaskWrite
     """
     return TaskWrite(
         name=task.name,
@@ -319,13 +267,9 @@ async def _persist_stamped_form(
     discard stamps from earlier tasks in the same app batch.
 
     :param session: The tasks database session.
-    :type session: AsyncSession
     :param task: The task row being updated.
-    :type task: Task
     :param stamped_data: The task ``data`` dict including the new ``_form`` key.
-    :type stamped_data: dict[str, Any]
     :param dry_run: When ``True``, skip staging any database changes.
-    :type dry_run: bool
     """
     if dry_run:
         return
@@ -343,13 +287,9 @@ def _backfill_single_task(
     """Run the reconstruct → validate → stamp pipeline for one task.
 
     :param task: The legacy task row to backfill.
-    :type task: Task
     :param entry: The in-scope app definition and reconstructor.
-    :type entry: _BackfillApp
     :param ctx: Shared backfill context.
-    :type ctx: FormBackfillContext
     :return: The outcome label and optional stamped ``data`` dict to persist.
-    :rtype: _TaskBackfillOutcome
     """
     if RESERVED_FORM_KEY in task.data:
         ctx.log.debug(
@@ -454,13 +394,9 @@ async def _backfill_app(
     """Backfill all legacy tasks for a single in-scope app.
 
     :param session: The tasks database session.
-    :type session: AsyncSession
     :param entry: The app definition and reconstructor.
-    :type entry: _BackfillApp
     :param ctx: Shared backfill context.
-    :type ctx: FormBackfillContext
     :return: Per-app outcome counters.
-    :rtype: AppBackfillStats
     """
     stats = AppBackfillStats(app_name=entry.app_name, owner=entry.owner)
     tasks = await TaskManager.list_active(session, owner=entry.owner)
@@ -516,13 +452,9 @@ async def run_backfill(
 
     :param owners: When set, limit the run to these task owners; otherwise all
         in-scope apps are processed.
-    :type owners: Sequence[TaskOwner] | None
     :param dry_run: Log actions without persisting stamped forms.
-    :type dry_run: bool
     :param log: Logger for progress and skip messages; defaults to this module's logger.
-    :type log: logging.Logger | None
     :return: Aggregate counters for the run.
-    :rtype: BackfillSummary
     """
     active_log = log or logger
     owner_filter = set(owners) if owners is not None else None
@@ -541,10 +473,12 @@ async def run_backfill(
     tasks_session_maker = get_async_session_maker()
     async with inventory_session_maker() as inventory_session:
         service_lookup = await load_service_id_lookup(inventory_session)
+        schema_lookup = await load_schema_id_lookup(inventory_session)
         ctx = FormBackfillContext(
             log=active_log,
             dry_run=dry_run,
             service_lookup=service_lookup,
+            schema_lookup=schema_lookup,
         )
         async with tasks_session_maker() as session:
             for entry in entries:
@@ -568,9 +502,7 @@ def _owner_from_cli(value: str) -> TaskOwner:
     """Parse a CLI ``--owner`` value into a :class:`TaskOwner`.
 
     :param value: The owner enum name or value (for example ``CHECKSUMS``).
-    :type value: str
     :return: The matching :class:`TaskOwner` member.
-    :rtype: TaskOwner
     :raises argparse.ArgumentTypeError: When ``value`` does not name a known owner.
     """
     normalized = value.strip().upper()
@@ -587,7 +519,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     """Return the CLI argument parser for the backfill entry point.
 
     :return: A parser exposing ``--dry-run``, ``--owner``, and ``--verbose``.
-    :rtype: argparse.ArgumentParser
     """
     parser = argparse.ArgumentParser(
         description=(
@@ -623,9 +554,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """CLI entry point for the legacy form backfill.
 
     :param argv: Optional argument vector; defaults to ``sys.argv[1:]``.
-    :type argv: Sequence[str] | None
     :return: Exit code ``0`` (the batch never fails on per-task errors).
-    :rtype: int
     """
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
