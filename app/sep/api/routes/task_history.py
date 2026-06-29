@@ -44,15 +44,18 @@ router = APIRouter()
 async def list_merged_task_history(
     tasks_api: TaskAPI,
     pagination: PaginationDep,
+    *,
     task_names: Annotated[list[str] | None, Query()] = None,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
+    exclude_internal: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[TaskHistoryResponse]:
     """Return task-history rows, listing all of them or merging selected names.
 
     Three-way on ``task_names``:
 
     * **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already
-      paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.
+      paginated, forwarding the ``status`` filter, ``exclude_internal`` flag, and
+      client ``offset`` / ``limit``.
     * **provided, at least one non-blank name** -- query each name independently
       against the Tasks API, then merge, sort newest-first, and paginate globally.
     * **provided, every name blank after trimming** -- reject with ``422``.
@@ -62,6 +65,9 @@ async def list_merged_task_history(
     :param task_names: Zero or more task names (repeat the query param); omit to
         list all history.
     :param task_status: Optional exact status filter forwarded upstream.
+    :param exclude_internal: When ``True``, forward the filter to the upstream
+        list-all path so internal maintenance tasks are excluded before pagination.
+        Not forwarded on the ``task_names`` merge path. Defaults to ``False``.
     :return: Paginated task history, either the upstream list or the merged set.
     :raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but
         every value is empty after trimming.
@@ -74,6 +80,7 @@ async def list_merged_task_history(
             "offset": pagination.offset,
             "limit": pagination.limit,
             **({"status": task_status.value} if task_status is not None else {}),
+            **({"exclude_internal": "true"} if exclude_internal else {}),
         }
         try:
             payload = await tasks_api.get("/history/", params=params)

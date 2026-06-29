@@ -379,16 +379,18 @@ async def _populate_has_logs(
 async def list_task_history(
     session: SessionDep,
     pagination: PaginationDep,
+    *,
     task_status: Annotated[TaskHistoryStatusEnum | None, Query(alias="status")] = None,
+    exclude_internal: Annotated[bool, Query()] = False,
 ) -> PaginatedResponse[TaskHistory]:
     """List all task history records."""
     logger.debug("Listing task history")
-    response = await TaskHistoryManager.list_paginated(
+    response = await TaskHistoryManager.list_all_history_paginated(
         session,
-        select_related=(TaskHistory.task,),
         query_options=[undefer(TaskHistory.execution_request)],
         pagination=pagination,
         status=task_status,
+        exclude_internal=exclude_internal,
     )
     await _populate_has_logs(session, response.items)
     return response
