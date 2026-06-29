@@ -3350,15 +3350,18 @@ export interface components {
     };
     /**
      * ArchivesCreate
-     * @description Represent an Archives creation form as a model-first ``AppFormModel``.
+     * @description Represent an Archives creation form as a model-first ``TaskFormModel``.
      *
      *     Source, destination, and destination-host are discriminated-union one-of groups;
      *     the schema / table / database references are collapsed free-solo fields
-     *     (``int`` inventory id or free-typed ``str`` name). The ``alert_on_fail``
-     *     capability control is inherited from :class:`AppFormModel`.
+     *     (``int`` inventory id or free-typed ``str`` name). The ``task_name`` /
+     *     ``hostname`` Task-section fields and the ``alert_on_fail`` capability control
+     *     are inherited from :class:`TaskFormModel`.
      *
-     *     :param task_name: The task name (and the ``ALIAS`` in the archiver config).
-     *     :param hostname: The executor host the task runs on.
+     *     :param task_name: The human-readable task name; required and non-empty
+     *         (inherited from :class:`TaskFormModel`).
+     *     :param hostname: The executor host the task runs on; required and non-empty
+     *         (inherited from :class:`TaskFormModel`).
      *     :param service_id: The inventory id of the source MySQL service (the host whose
      *         rows are archived; the connectivity probe targets it).
      *     :param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.
@@ -3820,10 +3823,11 @@ export interface components {
      *
      *     Field declaration order is load-bearing: it drives the derived form's
      *     section and field order. ``backup_type`` is not a form field — the spec
-     *     builder injects :attr:`BackupType.PGBACKREST`. The ``alert_on_fail``
-     *     capability control is inherited from :class:`AppFormModel` (``Hidden``,
-     *     off-schema). ``extra="forbid"`` rejects unknown fields (for example a stale
-     *     FE submitting ``host`` / ``port``, which the payload pins itself).
+     *     builder injects :attr:`BackupType.PGBACKREST`. The ``task_name`` / ``hostname``
+     *     Task-section fields and the ``alert_on_fail`` capability control are inherited
+     *     from :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema).
+     *     ``extra="forbid"`` rejects unknown fields (for example a stale FE submitting
+     *     ``host`` / ``port``, which the payload pins itself).
      */
     BackupPgForm: {
       /**
@@ -4360,8 +4364,9 @@ export interface components {
      *     the order here reproduces the historical arg string byte-for-byte. ``progress``
      *     is declared last to land at the end of the value args, and ``Ui(order=...)``
      *     pins the Advanced section's display order where it diverges from declaration
-     *     order. The ``alert_on_fail`` capability control is inherited from
-     *     :class:`AppFormModel` (``Hidden``, off-schema).
+     *     order. The ``task_name`` / ``hostname`` Task-section fields and the
+     *     ``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`
+     *     (``alert_on_fail`` is ``Hidden``, off-schema).
      */
     ChecksumsForm: {
       /**
