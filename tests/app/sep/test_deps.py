@@ -63,6 +63,8 @@ from app.sep.deps import (
     get_username_mapping,
     is_bearer_authenticated,
     PROTECTED_APP_KEYS,
+    protected_task_guard,
+    reject_if_protected,
     require_app_enabled,
     require_bearer_for_unsafe_methods,
 )
@@ -936,6 +938,64 @@ class TestCheckForConflictedRunningTasks:
             ]
         )
         await check_for_conflicted_running_tasks("test-task", mock_api)
+
+
+class TestRejectIfProtected:
+    """Test the shared reject_if_protected check."""
+
+    def test_protected_task_raises_edit_message(self) -> None:
+        """Assert a protected task raises 409 with the default edit message."""
+        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=True)
+        with pytest.raises(HTTPConflictException) as exc_info:
+            reject_if_protected(task)
+        assert exc_info.value.detail == "Cannot edit a protected task."
+
+    def test_protected_task_raises_delete_message(self) -> None:
+        """Assert action='delete' yields the delete-specific 409 message."""
+        task = TaskFactory.build(owner=TaskOwner.ALTERS, protected=True)
+        with pytest.raises(HTTPConflictException) as exc_info:
+            reject_if_protected(task, action="delete")
+        assert exc_info.value.detail == "Cannot delete a protected task."
+
+    def test_unprotected_task_returns_same_task(self) -> None:
+        """Assert an unprotected task is returned unchanged."""
+        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=False)
+        assert reject_if_protected(task) is task
+
+    def test_protected_none_returns_task(self) -> None:
+        """Assert a falsy/None protected flag does not raise."""
+        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task.protected = None
+        assert reject_if_protected(task, action="delete") is task
+
+
+class TestProtectedTaskGuard:
+    """Test the protected_task_guard dependency factory."""
+
+    @pytest.mark.asyncio
+    async def test_guard_rejects_protected_task(self) -> None:
+        """Assert the built dependency raises 409 for a protected task."""
+        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=True)
+        guard = protected_task_guard(AsyncMock(return_value=task))
+        with pytest.raises(HTTPConflictException) as exc_info:
+            await guard(task=task)
+        assert exc_info.value.detail == "Cannot edit a protected task."
+
+    @pytest.mark.asyncio
+    async def test_guard_delete_verb(self) -> None:
+        """Assert action='delete' propagates to the built dependency message."""
+        task = TaskFactory.build(owner=TaskOwner.ALTERS, protected=True)
+        guard = protected_task_guard(AsyncMock(return_value=task), action="delete")
+        with pytest.raises(HTTPConflictException) as exc_info:
+            await guard(task=task)
+        assert exc_info.value.detail == "Cannot delete a protected task."
+
+    @pytest.mark.asyncio
+    async def test_guard_passes_unprotected_task(self) -> None:
+        """Assert the built dependency returns an unprotected task unchanged."""
+        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=False)
+        guard = protected_task_guard(AsyncMock(return_value=task))
+        assert await guard(task=task) is task
 
 
 class TestExecutorHostsContext:

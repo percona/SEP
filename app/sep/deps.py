@@ -1220,3 +1220,48 @@ async def check_for_conflicted_running_tasks(
 
 
 HasNoConflictedRunningTasks = Depends(check_for_conflicted_running_tasks)
+
+
+def reject_if_protected(task: Task, *, action: str = "edit") -> Task:
+    """Return the task unchanged or raise 409 when it is protected.
+
+    Shared protected-task check for task-based plugins. Composable inline by
+    dependencies that must run earlier gates (for example ``alters`` resolving a
+    satellite path to its parent) before rejecting protected tasks.
+
+    :param task: The resolved task to gate.
+    :type task: Task
+    :param action: The action verb for the 409 detail (``"edit"`` or ``"delete"``).
+    :type action: str
+    :raises HTTPConflictException: If the task is marked as protected.
+    :return: The unprotected task.
+    :rtype: Task
+    """
+    if task.protected:
+        raise HTTPConflictException(f"Cannot {action} a protected task.")
+    return task
+
+
+def protected_task_guard(
+    task_dep: Callable[..., Awaitable[Task]],
+    *,
+    action: str = "edit",
+) -> Callable[..., Awaitable[Task]]:
+    """Build a dependency that rejects protected tasks with HTTP 409.
+
+    Parameterized on the plugin's task-fetch dependency and the action verb so a
+    single helper serves every task plugin. Attach the returned callable to a
+    derived PUT via ``update_guard`` or expose it as an ``Annotated`` type alias.
+
+    :param task_dep: The plugin's task-fetch dependency used to resolve the task.
+    :type task_dep: Callable[..., Awaitable[Task]]
+    :param action: The action verb for the 409 detail (``"edit"`` or ``"delete"``).
+    :type action: str
+    :return: A FastAPI dependency that returns the task or raises 409.
+    :rtype: Callable[..., Awaitable[Task]]
+    """
+
+    async def _guard(task: Annotated[Task, Depends(task_dep)]) -> Task:
+        return reject_if_protected(task, action=action)
+
+    return _guard

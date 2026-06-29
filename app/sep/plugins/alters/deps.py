@@ -38,6 +38,7 @@ from app.sep.deps import (
     get_created_entity,
     get_tasks_context,
     InventoryAPI,
+    reject_if_protected,
     TaskAPI,
 )
 from app.sep.inventory import CreatedService
@@ -725,9 +726,7 @@ async def get_unprotected_alters_task(
     """
     parent_task = await resolve_alters_parent_task(task_name, tasks_api)
     ensure_alters_update_addresses_parent(task_name, parent_task)
-    if parent_task.protected:
-        raise HTTPConflictException("Cannot edit a protected task.")
-    return parent_task
+    return reject_if_protected(parent_task)
 
 
 UnprotectedAltersTask = Annotated[Task, Depends(get_unprotected_alters_task)]
@@ -781,9 +780,7 @@ async def get_deletable_alters_parent_task(
     """
     parent_task = await resolve_alters_parent_task(task_name, tasks_api)
     await check_for_conflicted_running_tasks(parent_task.name, tasks_api)
-    if parent_task.protected:
-        raise HTTPConflictException("Cannot delete a protected task.")
-    return parent_task
+    return reject_if_protected(parent_task, action="delete")
 
 
 DeletableAltersParent = Annotated[Task, Depends(get_deletable_alters_parent_task)]
