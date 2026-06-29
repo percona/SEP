@@ -46,6 +46,7 @@ import {
   type TaskHistoryEntry,
 } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
+import { useStopTaskHistory } from '../../hooks';
 
 /** Fields always hidden from the dynamic form. */
 const HIDDEN_FORM_FIELDS = new Set(['script_preview']);
@@ -147,6 +148,7 @@ export function SnippetExecutionAccordion({
   const schemaQuery = useSnippetAccordionSchema(snippetFilename, expanded);
   const executionMutation = useSnippetAccordionExecution(snippetFilename);
   const historyQuery = useSnippetAccordionHistory(snippetFilename, showHistory);
+  const stop = useStopTaskHistory();
 
   const displayTitle = title ?? snippetFilename;
 
@@ -255,6 +257,20 @@ export function SnippetExecutionAccordion({
                 isLoading={historyQuery.isLoading}
                 hideTaskNameColumn
                 onViewLogs={setLogsEntry}
+                onStopTask={(entry) => {
+                  if (entry.id !== null && entry.id !== undefined) {
+                    // This accordion's history is keyed under
+                    // ['snippets', filename, 'history'] and does not poll, so the
+                    // stop hook's ['task-history'] invalidation never reaches it;
+                    // refetch this query directly once the stop succeeds.
+                    stop.mutate(entry.id, {
+                      onSuccess: () => {
+                        historyQuery.refetch();
+                      },
+                    });
+                  }
+                }}
+                isStopping={stop.isPending}
               />
             )}
           </>
