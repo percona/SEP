@@ -387,10 +387,16 @@ templates = sep_settings.TEMPLATES
 async def internal_error_handler(
     request: Request,
     exc: BaseException,
-) -> HTMLResponse | RedirectResponse:
+) -> HTMLResponse | JSONResponse | RedirectResponse:
     """Load custom error page."""
-    base_url = get_base_url(request)
     logger.exception("Unhandled exception:", exc_info=exc)
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES):
+        return JSONResponse(
+            {"detail": "Internal Server Error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    base_url = get_base_url(request)
     try:
         user = await get_current_user(request)
     except LoginRedirectException as redirect_exc:
