@@ -1051,7 +1051,7 @@
             "type": "string"
           },
           "display_name": {
-            "description": "Return a user-meaningful display label for this task history row.\n\nFor normal tasks, returns ``task.name``. For generic executor templates\n(``run-python``, ``exec-artifact``, ``exec-python-artifact``), derives a\nmore descriptive label from snippet filename metadata, a ``file://`` payload\nbasename, or falls back to ``\"<task> on <target>\"``.\n\n:return: The display label for the task history entry.",
+            "description": "Return a user-meaningful display label for this task history row.\n\nFor normal tasks, returns ``task.name``. For generic executor templates\n(``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a\n``\"<source>/<filename> on <target>\"`` label so otherwise-identical rows\nare distinguishable: the filename comes from the snippet metadata or the\n``file://`` payload basename, the source directory from whichever of those\ncarries one, and the target from the execution request. Falls back to\n``\"<task> on <target>\"`` when no filename is available.\n\n:return: The display label for the task history entry.",
             "readOnly": true,
             "title": "Display Name",
             "type": "string"

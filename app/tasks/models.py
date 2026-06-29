@@ -1011,9 +1011,12 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
         """Return a user-meaningful display label for this task history row.
 
         For normal tasks, returns ``task.name``. For generic executor templates
-        (``run-python``, ``exec-artifact``, ``exec-python-artifact``), derives a
-        more descriptive label from snippet filename metadata, a ``file://`` payload
-        basename, or falls back to ``"<task> on <target>"``.
+        (``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a
+        ``"<source>/<filename> on <target>"`` label so otherwise-identical rows
+        are distinguishable: the filename comes from the snippet metadata or the
+        ``file://`` payload basename, the source directory from whichever of those
+        carries one, and the target from the execution request. Falls back to
+        ``"<task> on <target>"`` when no filename is available.
 
         :return: The display label for the task history entry.
         """
@@ -1022,12 +1025,22 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
             return task_name
         meta = self.execution_request.meta or {}
         snippet_fn = meta.get("_snippet_filename") or meta.get("snippet_filename")
-        if snippet_fn:
-            return snippet_fn
         payload = self.execution_request.payload
-        if payload and payload.startswith("file://"):
-            return Path(payload.removeprefix("file://")).name
-        return f"{self.execution_request.task} on {self.execution_request.target}"
+        payload_path = (
+            payload.removeprefix("file://")
+            if payload and payload.startswith("file://")
+            else None
+        )
+        target = self.execution_request.target
+        source = snippet_fn or payload_path
+        if not source:
+            return f"{self.execution_request.task} on {target}"
+        source_dir = Path(source).parent.name or (
+            Path(payload_path).parent.name if payload_path else ""
+        )
+        leaf = Path(source).name
+        label = f"{source_dir}/{leaf}" if source_dir else leaf
+        return f"{label} on {target}"
 
 
 class TaskStats(BaseModel):

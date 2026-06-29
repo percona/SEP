@@ -974,13 +974,16 @@ class TestTaskHistoryResponseDisplayName:
     def test_generic_executor_uses_underscore_snippet_filename_from_meta(
         self, run_python_task: Task
     ) -> None:
-        """Assert ``_snippet_filename`` in meta takes precedence over the raw task name."""
+        """Assert ``_snippet_filename`` drives the label as ``<dir>/<file> on <target>``."""
         req = TaskExecutionRequest(
             task="run-python",
             target="node-1",
             meta={"_snippet_filename": "diag/slow-query.sh"},
         )
-        assert self._history(run_python_task, req).display_name == "diag/slow-query.sh"
+        assert (
+            self._history(run_python_task, req).display_name
+            == "diag/slow-query.sh on node-1"
+        )
 
     def test_generic_executor_uses_legacy_snippet_filename_key(
         self, run_python_task: Task
@@ -989,7 +992,7 @@ class TestTaskHistoryResponseDisplayName:
         req = TaskExecutionRequest(
             task="run-python", target="node-1", meta={"snippet_filename": "legacy.sh"}
         )
-        assert self._history(run_python_task, req).display_name == "legacy.sh"
+        assert self._history(run_python_task, req).display_name == "legacy.sh on node-1"
 
     def test_generic_executor_fallback_to_task_on_target(
         self, run_python_task: Task
@@ -1000,16 +1003,48 @@ class TestTaskHistoryResponseDisplayName:
             self._history(run_python_task, req).display_name == "run-python on node-1"
         )
 
-    def test_generic_executor_file_payload_uses_basename(
+    def test_generic_executor_file_payload_uses_source_dir_and_basename(
         self, exec_artifact_task: Task
     ) -> None:
-        """Assert a ``file://`` payload yields the base filename as the display label."""
+        """Assert a ``file://`` payload yields ``<dir>/<file> on <target>``."""
         req = TaskExecutionRequest(
             task="exec-artifact",
             target="node-1",
             payload="file:///plugins/backup/script.sh",
         )
-        assert self._history(exec_artifact_task, req).display_name == "script.sh"
+        assert (
+            self._history(exec_artifact_task, req).display_name
+            == "backup/script.sh on node-1"
+        )
+
+    def test_generic_executor_system_payload_without_snippet_filename(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert a system ``file://`` payload surfaces its owning directory."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="db-1",
+            payload="file://app/tasks/connectivity/payload.py",
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "connectivity/payload.py on db-1"
+        )
+
+    def test_generic_executor_bare_snippet_borrows_source_dir_from_payload(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert a bare snippet filename borrows its directory from the payload path."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="db-2",
+            meta={"_snippet_filename": "payload.py"},
+            payload="file://app/sep/sync/syncers/system_facts/payload.py",
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "system_facts/payload.py on db-2"
+        )
 
     def test_generic_executor_non_file_payload_falls_back_to_task_on_target(
         self, exec_artifact_task: Task

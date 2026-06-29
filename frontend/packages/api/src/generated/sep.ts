@@ -7410,9 +7410,12 @@ export interface components {
        * @description Return a user-meaningful display label for this task history row.
        *
        *     For normal tasks, returns ``task.name``. For generic executor templates
-       *     (``run-python``, ``exec-artifact``, ``exec-python-artifact``), derives a
-       *     more descriptive label from snippet filename metadata, a ``file://`` payload
-       *     basename, or falls back to ``"<task> on <target>"``.
+       *     (``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a
+       *     ``"<source>/<filename> on <target>"`` label so otherwise-identical rows
+       *     are distinguishable: the filename comes from the snippet metadata or the
+       *     ``file://`` payload basename, the source directory from whichever of those
+       *     carries one, and the target from the execution request. Falls back to
+       *     ``"<task> on <target>"`` when no filename is available.
        *
        *     :return: The display label for the task history entry.
        */
