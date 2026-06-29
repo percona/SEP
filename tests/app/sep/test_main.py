@@ -533,6 +533,9 @@ class TestExceptionHandlers:
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == "/login?next=/"
+        assert f'{sep_settings.SESSION.COOKIE_NAME}=""' in response.headers.get(
+            "set-cookie", ""
+        )
         logger_mock.exception.assert_called_once_with(
             "Unhandled exception:", exc_info=unexpected_exc
         )
@@ -597,6 +600,9 @@ class TestExceptionHandlers:
         response = test_client.get(non_existent_path, follow_redirects=False)
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == f"/login?next={non_existent_path}"
+        assert f'{sep_settings.SESSION.COOKIE_NAME}=""' in response.headers.get(
+            "set-cookie", ""
+        )
 
     def test_request_validation_error_handler_redirects_with_flash(
         self, mocker, dummy_context, test_client

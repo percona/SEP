@@ -397,6 +397,7 @@ async def internal_error_handler(
         return RedirectResponse(
             redirect_exc.location,
             status_code=redirect_exc.status_code,
+            headers=redirect_exc.headers,
         )
     messages.error(
         request,
@@ -438,6 +439,7 @@ async def custom_404_handler(
         return RedirectResponse(
             redirect_exc.location,
             status_code=redirect_exc.status_code,
+            headers=redirect_exc.headers,
         )
     async with get_async_session_maker()() as session:
         default_context = await get_default_context(request, user, base_url, session)
