@@ -49,6 +49,9 @@ from app.sep.plugins.framework.form_backfill_inventory import (
     load_service_id_lookup,
     ServiceIdLookup,
 )
+from app.sep.plugins.framework.form_backfill_mysql_backups import (
+    reconstruct_mysql_backups_form,
+)
 from app.sep.plugins.framework.form_dsl import AppFormModel
 from app.sep.plugins.framework.spec import RESERVED_FORM_KEY, stamp_form_input
 from app.sep.plugins.mysql_backups.app import app as mysql_backups_app
@@ -266,7 +269,7 @@ def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
         (archives_app, _noop_reconstructor),
         (checksums_app, reconstruct_checksums_form),
         (backup_pg_app, reconstruct_backup_pg_form),
-        (mysql_backups_app, _noop_reconstructor),
+        (mysql_backups_app, reconstruct_mysql_backups_form),
         (mysql_restores_app, _noop_reconstructor),
     ]
     return tuple(
