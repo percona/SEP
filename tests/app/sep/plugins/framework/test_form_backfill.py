@@ -29,6 +29,7 @@ from app.sep.plugins.framework.form_backfill import (
     _rollback_backfill_session,
     _TaskBackfillOutcome,
     FormBackfillContext,
+    main,
 )
 from app.sep.plugins.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner
@@ -140,3 +141,15 @@ async def test_backfill_app_continues_when_persist_and_rollback_fail():
     assert stats.stamped == 1
     assert session.commit.await_count == expected_commit_attempts
     session.rollback.assert_awaited_once()
+
+
+def test_main_cli_help_exits_zero(capsys):
+    """The module entry point exposes the documented CLI flags."""
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--help"])
+
+    assert exc_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "--dry-run" in help_text
+    assert "--owner" in help_text
+    assert "--verbose" in help_text
