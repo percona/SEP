@@ -48,6 +48,7 @@ function makeEntry(
   return {
     id,
     status,
+    display_name: `task-${id}`,
     started_at: new Date(Date.UTC(2026, 0, 1, 0, id)).toISOString(),
     finished_at:
       status === 'running' || status === 'pending'

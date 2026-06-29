@@ -33,6 +33,7 @@ function makeEntry(
   return {
     id,
     status,
+    display_name: `task-${id}`,
     started_at: startedAt,
     finished_at: finishedAt,
     duration,
