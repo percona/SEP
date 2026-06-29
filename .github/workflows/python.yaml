@@ -81,6 +81,8 @@ jobs:
         run: poetry sync --no-root --with syncmysql
       - name: Run tests
         run: make test PYTEST_MARKERS='not postgres' COV=${{ matrix.python == '3.11.9' && '1' || '0' }}
+      - name: Scaffold conformance check
+        run: make startapp-check
       - name: Generate coverage comment data
         id: coverage_comment
         if: matrix.python == '3.11.9' && github.event_name == 'pull_request'
