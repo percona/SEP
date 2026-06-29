@@ -24,6 +24,7 @@ import { useTaskDetail } from './hooks';
 import type { TaskDetailBundle, TaskDetailTask } from './types';
 
 const navigate = vi.fn();
+const { stopMutate } = vi.hoisted(() => ({ stopMutate: vi.fn() }));
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -53,16 +54,23 @@ vi.mock('@sep/framework', () => ({
     data,
     onViewLogs,
     onChainItemClick,
+    onStopTask,
   }: {
     data?: TaskHistoryEntry[];
     onViewLogs?: (entry: TaskHistoryEntry) => void;
     onChainItemClick?: (taskName: string) => void;
+    onStopTask?: (entry: TaskHistoryEntry) => void;
   }) => (
     <div data-testid="task-history-table">
       <span>rows: {data?.length ?? 0}</span>
       {data?.[0] && onViewLogs ? (
         <button type="button" onClick={() => onViewLogs(data[0])}>
           View logs
+        </button>
+      ) : null}
+      {data?.[0] && onStopTask ? (
+        <button type="button" onClick={() => onStopTask(data[0])}>
+          Stop {String(data[0].id)}
         </button>
       ) : null}
       {onChainItemClick ? (
@@ -75,6 +83,7 @@ vi.mock('@sep/framework', () => ({
   TaskLogViewer: ({ taskHistoryId }: { taskHistoryId: number }) => (
     <div data-testid="task-log-viewer">logs for {taskHistoryId}</div>
   ),
+  useStopTaskHistory: () => ({ mutate: stopMutate, isPending: false }),
 }));
 
 const mockUseTaskDetail = vi.mocked(useTaskDetail);
@@ -206,6 +215,15 @@ describe('TaskDetailPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open chain task' }));
 
     expect(navigate).toHaveBeenCalledWith('../chained-task');
+  });
+
+  it('wires the Stop button to the stop-task mutation with the row id', () => {
+    renderPage();
+
+    // Running table's first row is the running entry (id 11).
+    fireEvent.click(screen.getByRole('button', { name: 'Stop 11' }));
+
+    expect(stopMutate).toHaveBeenCalledWith(11);
   });
 
   it('hides execution sections for template tasks', () => {
