@@ -327,6 +327,23 @@ class TestReportJobApi:
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
+    def test_download_returns_500_when_job_failed(self, test_client, tmp_path):
+        """GET /pdf-jobs/{id}/pdf returns 500 when the Celery job failed."""
+        with (
+            patch(
+                f"{_API}.celery.AsyncResult",
+                return_value=self._async_result(
+                    status_="FAILURE",
+                    failed=True,
+                    result=RuntimeError("render crashed"),
+                ),
+            ),
+            patch(f"{_API}.report_pdf_path", return_value=tmp_path / "missing.pdf"),
+        ):
+            response = test_client.get(f"{self._PDF_JOBS_URL}/job-1/pdf")
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
     def test_upload_job_uses_snapshot_without_generate_report(self, test_client):
         """Upload job start sends report JSON snapshot, no PMM recollection."""
         report_json = make_report().model_dump(mode="json")

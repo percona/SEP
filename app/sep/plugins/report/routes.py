@@ -20,7 +20,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
+from pydantic import ValidationError
 
+from app.core.exceptions import HTTPUnprocessableEntityException
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
@@ -168,8 +170,12 @@ async def report_generate_pdf(
     :type report_json: str
     :return: PDF file response.
     :rtype: Response
+    :raises HTTPUnprocessableEntityException: If the report snapshot is invalid.
     """
-    report = ReportData.model_validate_json(report_json)
+    try:
+        report = ReportData.model_validate_json(report_json)
+    except ValidationError as exc:
+        raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
     pdf_bytes = await generate_pdf_report(report)
     filename = f"Health_and_Security_Report_{report.metadata.generated_at:%Y-%m-%d}.pdf"
     return Response(
@@ -194,8 +200,12 @@ async def report_upload(
     :type report_json: str
     :return: JSON response with the upload result.
     :rtype: JSONResponse
+    :raises HTTPUnprocessableEntityException: If the report snapshot is invalid.
     """
-    report = ReportData.model_validate_json(report_json)
+    try:
+        report = ReportData.model_validate_json(report_json)
+    except ValidationError as exc:
+        raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
     pdf_bytes = await generate_pdf_report(report)
     result = await upload_pdf_report(report, pdf_bytes)
     return JSONResponse(content=result)

@@ -32,10 +32,15 @@ Route layout:
 
 from typing import Annotated
 
-from fastapi import APIRouter, Body, HTTPException, Query, status
+from fastapi import APIRouter, Body, Query
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.celery import celery
+from app.core.exceptions import (
+    HTTPConflictException,
+    HTTPInternalServerErrorException,
+    HTTPServiceUnavailableException,
+)
 from app.sep.celery import render_report_pdf_job, upload_report_snapshot_job
 from app.sep.config import sep_settings
 from app.sep.deps import IsApiAuthenticated
@@ -172,15 +177,15 @@ async def report_download_pdf_api(job_id: str) -> FileResponse:
     :type job_id: str
     :return: PDF file response.
     :rtype: FileResponse
-    :raises HTTPException: If the PDF artifact is not ready.
+    :raises HTTPInternalServerErrorException: If the Celery job failed.
+    :raises HTTPConflictException: If the PDF artifact is not ready yet.
     """
     result = celery.AsyncResult(job_id)
+    if result.failed():
+        raise HTTPInternalServerErrorException(detail="PDF generation failed")
     path = report_pdf_path(job_id)
     if not result.successful() or not path.is_file():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="PDF is not ready",
-        )
+        raise HTTPConflictException(detail="PDF is not ready")
     filename = "Health_and_Security_Report.pdf"
     if isinstance(result.result, dict) and result.result.get("filename"):
         filename = result.result["filename"]
@@ -197,12 +202,11 @@ async def report_start_upload_job_api(
     :type body: ReportSnapshotWrite
     :return: Upload job status response.
     :rtype: ReportJobResponse
-    :raises HTTPException: If ServiceNow upload is not configured.
+    :raises HTTPServiceUnavailableException: If ServiceNow upload is not configured.
     """
     if not sep_settings.HEALTH_REPORT.is_upload_configured:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Upload is not configured",
+        raise HTTPServiceUnavailableException(
+            detail="Report upload is not configured"
         )
     result = upload_report_snapshot_job.delay(body.report.model_dump(mode="json"))
     return _job_response(result.id)

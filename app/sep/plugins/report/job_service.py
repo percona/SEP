@@ -17,9 +17,10 @@
 
 from pathlib import Path
 
+from app import BASE_DIR
 from app.sep.plugins.report.models import ReportData
 
-REPORT_ARTIFACT_DIR = Path("data") / "health-reports"
+REPORT_ARTIFACT_DIR = BASE_DIR / "data" / "health-reports"
 
 
 def report_pdf_path(job_id: str) -> Path:

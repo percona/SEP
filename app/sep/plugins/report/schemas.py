@@ -23,13 +23,12 @@ from app.sep.plugins.report.models import ReportData
 
 
 class ReportGenerateWrite(BaseModel):
-    """Define shared JSON body parameters for report generation API routes.
+    """Define shared JSON body parameters for report generation.
 
-    Request body for ``POST /api/plugins/report/generate/pdf`` and
-    ``POST /api/plugins/report/upload`` only. ``GET /api/plugins/report/generate``
-    uses explicit query parameters (``since``, ``until``, ``full``, ``refresh``,
-    ``sections``) and does not use this model. Legacy Jinja JSON remains at
-    ``GET /report/generate/json``.
+    Used by the periodic health-report Celery task. The JSON API uses
+    explicit query parameters (``since``, ``until``, ``full``, ``refresh``,
+    ``sections``) and the snapshot-based job endpoints use
+    :class:`ReportSnapshotWrite`.
 
     :param since: Relative start of the report period (e.g. ``now-7d``).
     :type since: str

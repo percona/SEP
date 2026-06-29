@@ -171,7 +171,7 @@ def render_report_pdf_job(self: Any, report_json: dict) -> dict[str, str]:
     path = report_pdf_path(self.request.id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(pdf_bytes)
-    return {"pdf_path": str(path), "filename": report_pdf_filename(report)}
+    return {"filename": report_pdf_filename(report)}
 
 
 @owned_by("report")
