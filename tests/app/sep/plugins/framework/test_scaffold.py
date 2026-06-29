@@ -176,6 +176,22 @@ def test_refuses_to_clobber_existing_plugin(tmp_settings: Path) -> None:
         shutil.rmtree(app_dir, ignore_errors=True)
 
 
+def test_refuses_to_clobber_existing_tests_package(tmp_settings: Path) -> None:
+    """Raise before any write when only the target test package already exists."""
+    name = "_scaffold_smoke_clobber_tests"
+    tests_dir = scaffold.TESTS_DIR / name
+    tests_dir.mkdir(parents=True)
+    before = tmp_settings.read_text()
+    try:
+        with pytest.raises(FileExistsError):
+            scaffold.scaffold_app(name, "task")
+
+        assert tmp_settings.read_text() == before
+        assert not (scaffold.PLUGINS_DIR / name).exists()
+    finally:
+        shutil.rmtree(tests_dir, ignore_errors=True)
+
+
 def test_registers_app_disabled(tmp_settings: Path) -> None:
     """Write the registration entry disabled under the default ``SEP.PLUGINS``."""
     name = "_scaffold_smoke_disabled"
@@ -196,6 +212,38 @@ def test_summary_points_to_app_manager_without_changelog(
         out = capsys.readouterr().out
         assert "Admin App Manager" in out
         assert "changelog" not in out.lower()
+    finally:
+        shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
+        shutil.rmtree(scaffold.TESTS_DIR / name, ignore_errors=True)
+
+
+def test_summary_notes_preexisting_registration(
+    tmp_settings: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Report the registration as pre-existing when the settings entry already exists."""
+    name = "_scaffold_smoke_preregistered"
+    tmp_settings.write_text(
+        scaffold.insert_plugin_entry(tmp_settings.read_text(), name)[0]
+    )
+    try:
+        assert scaffold.main(["--name", name, "--type", "task"]) == 0
+        out = capsys.readouterr().out
+        assert "already registered" in out.lower()
+        assert "Admin App Manager" in out
+    finally:
+        shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
+        shutil.rmtree(scaffold.TESTS_DIR / name, ignore_errors=True)
+
+
+def test_main_reports_missing_plugins_block_without_traceback(
+    tmp_settings: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Exit non-zero with a clean error, not a traceback, when registration fails."""
+    name = "_scaffold_smoke_noblock"
+    tmp_settings.write_text("development:\n  SEP:\n    PLUGINS:\n")
+    try:
+        assert scaffold.main(["--name", name, "--type", "task"]) == 1
+        assert "error:" in capsys.readouterr().err
     finally:
         shutil.rmtree(scaffold.PLUGINS_DIR / name, ignore_errors=True)
         shutil.rmtree(scaffold.TESTS_DIR / name, ignore_errors=True)

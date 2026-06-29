@@ -276,23 +276,25 @@ def scaffold_app(name: str, flavor: str) -> ScaffoldResult:
     :param flavor: The flavor to render (one of :data:`FLAVORS`).
     :return: The scaffold outcome for the caller's summary.
     :raises ValueError: When the name or flavor is invalid.
-    :raises FileExistsError: When ``app/sep/plugins/<name>/`` already exists.
+    :raises FileExistsError: When the app or test package directory already exists.
     """
     validate_name(name)
     if flavor not in FLAVORS:
         raise ValueError(f"unknown flavor {flavor!r}; choose from {', '.join(FLAVORS)}")
     app_dir = PLUGINS_DIR / name
-    if app_dir.exists():
-        raise FileExistsError(
-            f"{app_dir} already exists; refusing to overwrite an existing plugin"
-        )
+    tests_dir = TESTS_DIR / name
+    for existing in (app_dir, tests_dir):
+        if existing.exists():
+            raise FileExistsError(
+                f"{existing} already exists; refusing to overwrite an existing plugin"
+            )
     written = render_app(name, flavor, _build_context(name))
     settings_changed = write_settings_entry(name)
     return ScaffoldResult(
         name=name,
         flavor=flavor,
         app_dir=app_dir,
-        tests_dir=TESTS_DIR / name,
+        tests_dir=tests_dir,
         written=written,
         settings_changed=settings_changed,
     )
@@ -324,12 +326,18 @@ def _print_summary(result: ScaffoldResult) -> None:
 
     :param result: The scaffold outcome to summarise.
     """
+    if result.settings_changed:
+        registration = f"Registered {result.name!r} DISABLED in settings.yaml."
+    else:
+        registration = (
+            f"{result.name!r} was already registered in settings.yaml; left unchanged."
+        )
     sys.stdout.write(
         f"Scaffolded {result.flavor!r} app {result.name!r}:\n"
         f"  app:   {result.app_dir}\n"
         f"  tests: {result.tests_dir}\n"
-        f"\nRegistered {result.name!r} DISABLED in settings.yaml. Enable it from the "
-        "Admin App Manager (Settings -> Apps) once you have filled in the skeleton.\n"
+        f"\n{registration} Enable it from the Admin App Manager (Settings -> Apps) "
+        "once you have filled in the skeleton.\n"
     )
 
 
@@ -337,7 +345,8 @@ def main(argv: list[str] | None = None) -> int:
     """Run the scaffolder CLI.
 
     :param argv: The argument vector, or ``None`` to read ``sys.argv``.
-    :return: The process exit code (``0`` on success, ``1`` on a clobber).
+    :return: The process exit code (``0`` on success, ``1`` on a clobber or a
+        render/registration failure).
     """
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -347,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(error))
     try:
         result = scaffold_app(args.name, args.type)
-    except FileExistsError as error:
+    except (FileExistsError, ValueError) as error:
         sys.stderr.write(f"error: {error}\n")
         return 1
     _print_summary(result)
