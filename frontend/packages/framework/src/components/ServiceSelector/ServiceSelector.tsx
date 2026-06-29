@@ -15,9 +15,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useFormContext } from 'react-hook-form';
-import { AutoCompleteInput } from '@percona/percona-ui';
+import { useEffect } from 'react';
+import { Controller, useFormContext } from 'react-hook-form';
+import Autocomplete from '@mui/material/Autocomplete';
+import Box from '@mui/material/Box';
+import CircularProgress from '@mui/material/CircularProgress';
+import TextField from '@mui/material/TextField';
 import { useServices, type ServiceOption, type ServiceType } from '../../hooks/useServices';
+import { extractId } from '../../utils/extractId';
+import { isHydratedReferenceOption, resolveReferenceOption } from '../../utils/referenceOption';
 import { FreeSoloSelect } from '../FreeSoloSelect';
 
 const EMPTY_OPTIONS: ServiceOption[] = [];
@@ -49,6 +55,102 @@ const getServiceOptionLabel = (opt: ServiceOption) => `${opt.name} (${opt.type})
 
 const isOptionEqualToValue = (a: ServiceOption, b: ServiceOption) => a.id === b.id;
 
+interface InventoryServiceAutocompleteProps {
+  name: string;
+  label: string;
+  required?: boolean;
+  services: readonly ServiceOption[];
+  isLoading: boolean;
+  isError: boolean;
+  disabled?: boolean;
+  helperText?: string;
+}
+
+/**
+ * Inventory-only service picker. Hydrates persisted scalar ids from
+ * ``data['_form']`` into ``ServiceOption`` objects once services load so edit
+ * forms show ``name (type)`` instead of ``undefined (undefined)``.
+ */
+function InventoryServiceAutocomplete({
+  name,
+  label,
+  required,
+  services,
+  isLoading,
+  isError,
+  disabled,
+  helperText,
+}: InventoryServiceAutocompleteProps) {
+  const { control, setValue, watch } = useFormContext();
+  const storedValue = watch(name);
+
+  useEffect(() => {
+    if (isHydratedReferenceOption(storedValue)) {
+      return;
+    }
+    const id = extractId(storedValue);
+    if (id === null) {
+      return;
+    }
+    const match = services.find((service) => service.id === id);
+    if (match) {
+      setValue(name, match, { shouldDirty: false, shouldValidate: false });
+    }
+  }, [storedValue, services, name, setValue]);
+
+  return (
+    <Controller
+      name={name}
+      control={control}
+      rules={required ? { required: `${label} is required` } : undefined}
+      render={({ field, fieldState: { error: fieldError } }) => (
+        <Autocomplete<ServiceOption, false, false, false>
+          value={resolveReferenceOption(field.value, services)}
+          onChange={(_event, next) => field.onChange(next)}
+          onBlur={field.onBlur}
+          options={services as ServiceOption[]}
+          loading={isLoading}
+          disabled={disabled || isError}
+          getOptionLabel={getOptionLabel}
+          isOptionEqualToValue={isOptionEqualToValue}
+          noOptionsText={isLoading ? 'Loading services…' : 'No services available'}
+          data-testid={`${name}-autocomplete`}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              inputRef={field.ref}
+              label={label}
+              required={required}
+              error={isError || !!fieldError}
+              helperText={fieldError?.message ?? helperText}
+              size="small"
+              InputProps={{
+                ...params.InputProps,
+                endAdornment: (
+                  <>
+                    {isLoading ? <CircularProgress color="inherit" size={20} /> : null}
+                    {params.InputProps.endAdornment}
+                  </>
+                ),
+              }}
+            />
+          )}
+          renderOption={(props, option) => {
+            const { key, ...rest } = props as {
+              key?: string;
+            } & React.HTMLAttributes<HTMLLIElement>;
+            return (
+              <Box component="li" key={key} {...rest}>
+                {getOptionLabel(option)}
+              </Box>
+            );
+          }}
+        />
+      )}
+    />
+  );
+}
+
 export function ServiceSelector({
   name,
   label,
@@ -58,8 +160,6 @@ export function ServiceSelector({
   helperText,
   allowCustom,
 }: ServiceSelectorProps) {
-  const { control } = useFormContext();
-
   const {
     data: services = EMPTY_OPTIONS,
     isLoading,
@@ -93,24 +193,15 @@ export function ServiceSelector({
   }
 
   return (
-    <AutoCompleteInput<ServiceOption>
+    <InventoryServiceAutocomplete
       name={name}
       label={label}
-      control={control}
-      isRequired={required}
-      loading={isLoading}
-      disabled={disabled || isError}
-      options={services}
-      controllerProps={{
-        name,
-        rules: required ? { required: `${label} is required` } : undefined,
-      }}
-      autoCompleteProps={{
-        getOptionLabel,
-        isOptionEqualToValue,
-        noOptionsText: isLoading ? 'Loading services…' : 'No services available',
-      }}
-      textFieldProps={{ helperText: text, error: isError }}
+      required={required}
+      services={services}
+      isLoading={isLoading}
+      isError={isError}
+      disabled={disabled}
+      helperText={text}
     />
   );
 }
