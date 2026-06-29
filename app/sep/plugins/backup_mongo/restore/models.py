@@ -34,11 +34,10 @@ from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.backup_mongo.models import BackupType
 from app.sep.plugins.framework.form_dsl import (
-    AppFormModel,
     Choices,
     FieldWidget,
-    HostRef,
     ServiceRef,
+    TaskFormModel,
     Ui,
 )
 from app.tasks.models import (
@@ -301,19 +300,21 @@ def restore_config_restore_from_form(
     return RestoreConfigRestore.model_validate(restore_config_dict)
 
 
-class RestoreForm(AppFormModel):
+class RestoreForm(TaskFormModel):
     """Define the model-first schema source for the MongoDB Restores ``GET /schema``.
 
     The single source the derived ``GET /schema`` form renders from, driven by the
     :class:`Ui` / reference / :class:`Choices` markers. It is *not* the JSON request
     body — :class:`RestoreTaskWrite` is — and is never validated as one;
     field-declaration order reproduces the schema's section and field order (Task,
-    Restore Options). The ``alert_on_fail`` capability control is inherited from
-    :class:`AppFormModel` (``Hidden``, off-schema).
+    Restore Options). The ``task_name`` / ``hostname`` Task-section fields and the
+    ``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`
+    (``alert_on_fail`` is ``Hidden``, off-schema). The inherited ``NonEmptyStr`` type
+    is schema-equivalent to the bare ``str`` previously declared here — the deriver
+    emits no min-length constraint — and this form is never validated as a body, so
+    the type change is inert.
     """
 
-    task_name: Annotated[str, Ui(label="Task Name", section="Task")]
-    hostname: Annotated[str, HostRef(), Ui(label="Executor Host", section="Task")]
     service_id: Annotated[
         int | None,
         ServiceRef(service_types=(ServiceTypeEnum.MONGODB,)),

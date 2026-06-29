@@ -59,6 +59,7 @@ from app.sep.plugins.framework.form_dsl import (
     SectionRules,
     ServiceRef,
     TableRef,
+    TaskFormModel,
     Ui,
 )
 from app.sep.plugins.framework.responses import (
@@ -148,6 +149,7 @@ __all__ = [
     "TaskExecuteWrite",
     "TaskExecutionApp",
     "TaskExecutionResponse",
+    "TaskFormModel",
     "Ui",
     "Views",
     "absent",

@@ -39,7 +39,7 @@ from app.sep.plugins.framework.form_dsl.markers import (
     TableRef,
     Ui,
 )
-from app.sep.plugins.framework.form_dsl.model import AppFormModel
+from app.sep.plugins.framework.form_dsl.model import AppFormModel, TaskFormModel
 
 __all__ = [
     "AppFormModel",
@@ -57,6 +57,7 @@ __all__ = [
     "SectionRules",
     "ServiceRef",
     "TableRef",
+    "TaskFormModel",
     "Ui",
     "check_form_conformance",
     "derive_form_sections",
