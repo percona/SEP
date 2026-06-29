@@ -33,6 +33,7 @@ app = BaseApp(
     display_name="Dipper Data Collection",
     uri_path="/dipper",
     css_class="dipper",
+    group="diagnostics",
     nav_order=12,
     api_router=api_router,
     jinja_router=jinja_router,

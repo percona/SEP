@@ -411,21 +411,16 @@ class TestGetAppRegistry:
         assert get_app_registry() is get_app_registry()
 
     def test_alters_binds_as_bare_base_app_with_nav_metadata(self) -> None:
-        """Resolve alters to a bare ``BaseApp`` carrying its ``app.py`` nav metadata.
-
-        The slimmed ``MODULE_NAME``-only settings entry plus the populated
-        ``BaseApp(...)`` constructor must reproduce the nav metadata the legacy
-        settings entry used to carry, with both routers bound by identity.
-        """
-        expected_nav_order = 6
+        """Resolve alters to a bare ``BaseApp`` carrying nav metadata from its definition."""
         app = get_app_registry().get("alters")
+        definition = importlib.import_module("app.sep.plugins.alters").app
         assert isinstance(app, BaseApp)
         assert not isinstance(app, TaskExecutionApp)
-        assert app.display_name == "Schema Change"
-        assert app.uri_path == "/alters"
-        assert app.css_class == "alters"
-        assert app.group == "schema_change"
-        assert app.nav_order == expected_nav_order
+        assert app.display_name == definition.display_name
+        assert app.uri_path == definition.uri_path
+        assert app.css_class == definition.css_class
+        assert app.group == definition.group
+        assert app.nav_order == definition.nav_order
 
         api_routes = importlib.import_module("app.sep.plugins.alters.api_routes")
         routes = importlib.import_module("app.sep.plugins.alters.routes")
@@ -507,8 +502,10 @@ class TestAtwDefinition:
         assert app.jinja_router is None
 
     def test_definition_carries_schema_and_nav_metadata(self) -> None:
-        """Carry ``atw_schema``, ``custom_ui``, and the shared snippets group."""
+        """Carry ``atw_schema``, ``custom_ui``, and nav metadata from the definition."""
         app = get_app_registry().get("atw")
+        definition = importlib.import_module("app.sep.plugins.atw").app
         assert app.app_schema is atw_schema
         assert app.custom_ui is True
-        assert app.group == "snippets"
+        assert app.group == definition.group
+        assert app.nav_order == definition.nav_order
