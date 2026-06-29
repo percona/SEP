@@ -25,6 +25,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import BaseManager, BaseSQLModelManager
 from app.core.db.utils import func_json_extract, idempotent_insert
@@ -34,7 +35,9 @@ from app.core.utils.date_time import utc_now
 from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     DispatchLock,
+    GENERIC_EXECUTOR_TASK_NAMES,
     INTERNAL_TASK_NAMES,
+    SYSTEM_USER,
     Task,
     TaskBackendEnum,
     TaskHistory,
@@ -46,6 +49,8 @@ from app.tasks.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+SYSTEM_EXECUTOR_IDS = frozenset({SYSTEM_USER, str(SERVICE_PRINCIPAL_ID)})
 
 
 class TaskManager(BaseSQLModelManager):
@@ -451,10 +456,13 @@ class TaskHistoryManager(BaseSQLModelManager):
         :param session: The SQLAlchemy asynchronous session to use for query execution.
         :param pagination: Validated offset/limit window for this page.
         :param status: Optional exact status filter.
-        :param exclude_internal: When ``True``, omit rows whose task name belongs to
-            :data:`~app.tasks.models.INTERNAL_TASK_NAMES` before counting and
-            pagination, so ``limit=5`` always returns five user-facing rows.
-            Defaults to ``False``.
+        :param exclude_internal: When ``True``, omit system-internal rows before
+            counting and pagination, so ``limit=5`` always returns five user-facing
+            rows. Two kinds are dropped: rows whose task name belongs to
+            :data:`~app.tasks.models.INTERNAL_TASK_NAMES`, and system-initiated
+            generic-executor runs -- a generic-executor task (e.g. ``run-python``)
+            executed by a non-human identity in :data:`SYSTEM_EXECUTOR_IDS`, such as
+            connectivity checks and scheduler syncs. Defaults to ``False``.
         :param query_options: Additional SQLAlchemy query options to apply.
         :return: Paginated task-history response.
         """
@@ -465,7 +473,21 @@ class TaskHistoryManager(BaseSQLModelManager):
                 .where(col(Task.name).in_(INTERNAL_TASK_NAMES))
                 .scalar_subquery()
             )
-            extra = (col(TaskHistory.task_id).not_in(internal_ids),)
+            generic_executor_ids = (
+                select(Task.id)
+                .where(col(Task.name).in_(GENERIC_EXECUTOR_TASK_NAMES))
+                .scalar_subquery()
+            )
+            system_generic_history_ids = (
+                select(TaskHistory.id)
+                .where(col(TaskHistory.task_id).in_(generic_executor_ids))
+                .where(col(TaskHistory.executed_by).in_(SYSTEM_EXECUTOR_IDS))
+                .scalar_subquery()
+            )
+            extra = (
+                col(TaskHistory.task_id).not_in(internal_ids),
+                col(TaskHistory.id).not_in(system_generic_history_ids),
+            )
         return await cls.list_paginated(
             session,
             *extra,

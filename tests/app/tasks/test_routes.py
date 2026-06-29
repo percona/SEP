@@ -29,7 +29,7 @@ from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, SERVICE_PRINCIPAL_ID
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.pagination import DEFAULT_PAGINATION_LIMIT
 from app.core.pmm import _background_tasks
@@ -47,6 +47,7 @@ from app.tasks.main import tasks_app
 from app.tasks.models import (
     DispatchLock,
     ExecutionEvent,
+    SYSTEM_USER,
     Task,
     TaskBackendEnum,
     TaskExecutionRequest,
@@ -511,6 +512,61 @@ async def test_list_task_history_internal_rows_visible_without_flag(
     data = response.json()
     returned_names = {item["task"]["name"] for item in data["items"]}
     assert "inventory-sync" in returned_names
+
+
+@pytest.mark.asyncio
+async def test_list_task_history_excludes_system_run_generic_executor_rows(
+    test_client, session
+) -> None:
+    """Assert ``exclude_internal`` drops system-run generic-executor rows, keeps user ones.
+
+    A ``run-python`` execution by a real user is a snippet run and stays visible;
+    the same template run by a system identity (``SYSTEM`` or the service
+    principal, e.g. connectivity checks and scheduler syncs) is dropped.
+    """
+    user_task = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="user-task")),
+    )
+    run_python = await TaskManager.create(
+        session,
+        TaskWrite.model_validate(TaskFactory.build(name="run-python")),
+    )
+
+    user_snippet_run = build_task_history(run_python)
+    user_snippet_run.executed_by = "alice"
+    await TaskHistoryManager.save(session, user_snippet_run)
+
+    system_run = build_task_history(run_python)
+    system_run.executed_by = SYSTEM_USER
+    await TaskHistoryManager.save(session, system_run)
+
+    service_run = build_task_history(run_python)
+    service_run.executed_by = str(SERVICE_PRINCIPAL_ID)
+    await TaskHistoryManager.save(session, service_run)
+
+    await TaskHistoryManager.save(session, build_task_history(user_task))
+
+    unfiltered = test_client.get("/history/", params={"limit": 10})
+    assert unfiltered.status_code == status.HTTP_200_OK
+    unfiltered_executors = {item["executed_by"] for item in unfiltered.json()["items"]}
+    assert SYSTEM_USER in unfiltered_executors
+    assert str(SERVICE_PRINCIPAL_ID) in unfiltered_executors
+
+    response = test_client.get(
+        "/history/", params={"exclude_internal": "true", "limit": 10}
+    )
+    assert response.status_code == status.HTTP_200_OK
+    data = response.json()
+    executors = [item["executed_by"] for item in data["items"]]
+    names = [item["task"]["name"] for item in data["items"]]
+    expected_visible_count = 2
+    assert SYSTEM_USER not in executors
+    assert str(SERVICE_PRINCIPAL_ID) not in executors
+    assert "alice" in executors
+    assert names.count("run-python") == 1
+    assert "user-task" in names
+    assert data["total"] == expected_visible_count
 
 
 @pytest.mark.asyncio
