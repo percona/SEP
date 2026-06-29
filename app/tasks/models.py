@@ -1017,8 +1017,7 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
 
         :return: The display label for the task history entry.
         """
-        task = getattr(self, "task", None)
-        task_name = task.name if task else self.execution_request.task
+        task_name = self.task.name
         if task_name not in GENERIC_EXECUTOR_TASK_NAMES:
             return task_name
         meta = self.execution_request.meta or {}
@@ -1027,7 +1026,7 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
             return snippet_fn
         payload = self.execution_request.payload
         if payload and payload.startswith("file://"):
-            return Path(payload.replace("file://", "", 1)).name
+            return Path(payload.removeprefix("file://")).name
         return f"{self.execution_request.task} on {self.execution_request.target}"
 
 

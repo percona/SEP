@@ -470,7 +470,7 @@ class TaskHistoryManager(BaseSQLModelManager):
             session,
             *extra,
             select_related=(TaskHistory.task,),
-            query_options=list(query_options),
+            query_options=query_options,
             pagination=pagination,
             status=status,
         )
