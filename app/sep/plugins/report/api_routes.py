@@ -205,9 +205,7 @@ async def report_start_upload_job_api(
     :raises HTTPServiceUnavailableException: If ServiceNow upload is not configured.
     """
     if not sep_settings.HEALTH_REPORT.is_upload_configured:
-        raise HTTPServiceUnavailableException(
-            detail="Report upload is not configured"
-        )
+        raise HTTPServiceUnavailableException(detail="Report upload is not configured")
     result = upload_report_snapshot_job.delay(body.report.model_dump(mode="json"))
     return _job_response(result.id)
 
