@@ -500,8 +500,6 @@ class TestExceptionHandlers:
         self,
         mocker,
         dummy_context,
-        dummy_access_token,
-        regular_user,
         logger_mock,
         test_client,
     ):
@@ -529,7 +527,6 @@ class TestExceptionHandlers:
             side_effect=unexpected_exc,
         )
         mocker.patch("app.sep.main.get_current_user", side_effect=redirect_exc)
-        mocker.patch("app.sep.main.get_default_context", return_value=dummy_context)
         messages_error_mock = mocker.patch("app.sep.main.messages.error")
 
         response = test_client.get("/", follow_redirects=False)
