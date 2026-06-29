@@ -25,6 +25,8 @@ import {
   useDipperPluginSchema,
 } from './hooks';
 
+const { stopMutate } = vi.hoisted(() => ({ stopMutate: vi.fn() }));
+
 vi.mock('notistack', () => ({
   useSnackbar: () => ({ enqueueSnackbar: vi.fn() }),
 }));
@@ -70,20 +72,28 @@ vi.mock('@sep/framework', async () => {
     TaskHistoryTable: ({
       data,
       onViewLogs,
+      onStopTask,
     }: {
       data: Array<{ id: number; status: string; task?: { name: string } }>;
       onViewLogs: (entry: unknown) => void;
+      onStopTask?: (entry: { id: number }) => void;
     }) => (
       <div>
         <span>history rows: {data.length}</span>
         <button type="button" onClick={() => onViewLogs(data[0])}>
           View logs
         </button>
+        {data[0] && onStopTask ? (
+          <button type="button" onClick={() => onStopTask(data[0])}>
+            Stop {String(data[0].id)}
+          </button>
+        ) : null}
       </div>
     ),
     TaskLogViewer: ({ taskHistoryId }: { taskHistoryId: number }) => (
       <div>logs for {taskHistoryId}</div>
     ),
+    useStopTaskHistory: () => ({ mutate: stopMutate, isPending: false }),
   };
 });
 
@@ -170,5 +180,18 @@ describe('DipperPlugin', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View logs' }));
 
     expect(screen.getByText('logs for 42')).toBeInTheDocument();
+  });
+
+  it('wires the Stop button to the stop-task mutation with the row id', () => {
+    render(<DipperPlugin />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop 42' }));
+
+    // Wired with a per-call onSuccess that refetches the dipper-keyed history,
+    // since the stop hook only invalidates ['task-history'].
+    expect(stopMutate).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
   });
 });
