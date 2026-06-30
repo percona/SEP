@@ -1251,11 +1251,8 @@ def protected_task_guard(
     derived PUT via ``update_guard`` or expose it as an ``Annotated`` type alias.
 
     :param task_dep: The plugin's task-fetch dependency used to resolve the task.
-    :type task_dep: Callable[..., Awaitable[Task]]
     :param action: The action verb for the 409 detail (``"edit"`` or ``"delete"``).
-    :type action: str
     :return: A FastAPI dependency that returns the task or raises 409.
-    :rtype: Callable[..., Awaitable[Task]]
     """
 
     async def _guard(task: Annotated[Task, Depends(task_dep)]) -> Task:
