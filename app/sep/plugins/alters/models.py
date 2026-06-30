@@ -183,7 +183,7 @@ class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
 
     task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="task")]
     hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="task")
+        NonEmptyStr, HostRef(), Ui(label="Execution Host", section="task")
     ]
     service_id: Annotated[
         int,
