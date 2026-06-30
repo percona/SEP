@@ -405,7 +405,9 @@ class SnippetsSettings(BaseYamlSettings):
         DEFAULT_INTERPRETERS
     )
     USE_MAGIC: bool = False
-    SYNC_INTERVAL: IntervalSchedule = IntervalSchedule(every=1, period=Period.HOURS)
+    SYNC_INTERVAL: IntervalSchedule = hot_field(
+        IntervalSchedule(every=1, period=Period.HOURS)
+    )
     ENABLE_MANUAL_SYNC: bool = hot_field(default=False)
     SYNC_ON_STARTUP: bool = True
     PREVIEW_MAX_CHARS: PositiveInt = hot_field(10000)
