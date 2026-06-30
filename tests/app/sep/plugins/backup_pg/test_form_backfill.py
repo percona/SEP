@@ -22,15 +22,15 @@ import yaml
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
 from app.sep.plugins.backup_pg.app import app as backup_pg_app
+from app.sep.plugins.backup_pg.form_backfill import (
+    _extract_stanza_from_meta,
+    reconstruct_backup_pg_form,
+)
 from app.sep.plugins.backup_pg.models import BackupPgForm, BackupType
 from app.sep.plugins.framework.form_backfill import (
     _backfill_single_task,
     _BackfillApp,
     FormBackfillContext,
-)
-from app.sep.plugins.framework.form_backfill_backup_pg import (
-    _extract_stanza_from_meta,
-    reconstruct_backup_pg_form,
 )
 from app.sep.plugins.framework.form_backfill_inventory import ServiceIdLookup
 from app.sep.plugins.framework.spec import RESERVED_FORM_KEY

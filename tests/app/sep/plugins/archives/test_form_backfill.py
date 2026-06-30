@@ -23,15 +23,15 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
 from app.sep.plugins.archives.app import app as archives_app
 from app.sep.plugins.archives.constants import SwapDropEnum
+from app.sep.plugins.archives.form_backfill import (
+    _load_archives_config,
+    reconstruct_archives_form,
+)
 from app.sep.plugins.archives.models import ArchivesCreate
 from app.sep.plugins.framework.form_backfill import (
     _backfill_single_task,
     _BackfillApp,
     FormBackfillContext,
-)
-from app.sep.plugins.framework.form_backfill_archives import (
-    _load_archives_config,
-    reconstruct_archives_form,
 )
 from app.sep.plugins.framework.form_backfill_inventory import ServiceIdLookup
 from app.sep.plugins.framework.spec import RESERVED_FORM_KEY
