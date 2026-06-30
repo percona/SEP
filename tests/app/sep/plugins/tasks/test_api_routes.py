@@ -49,7 +49,7 @@ def build_task_payload(**overrides: Any) -> dict:
     return task.model_dump(mode="json")
 
 
-class TestTasksPluginSchemaEndpoint:
+class TestTasksAppSchemaEndpoint:
     """Tests for GET /api/plugins/tasks/schema."""
 
     def test_schema_returns_200(self, test_client):

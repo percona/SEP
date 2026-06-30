@@ -49,7 +49,7 @@ from app.sep.plugins.framework.conformance import (
 )
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
-    derive_plugin_schema,
+    derive_app_schema,
     FormLayout,
     SectionLayout,
     Ui,
@@ -151,7 +151,7 @@ def _post_root_router() -> APIRouter:
 
 def _derived_payload(*, capabilities: Capabilities) -> dict:
     """Return the wire payload of a schema derived from ``_CleanForm``."""
-    schema = derive_plugin_schema(
+    schema = derive_app_schema(
         _CleanForm,
         _LAYOUT,
         name="synthetic",
@@ -240,7 +240,7 @@ class _HiddenControlForm(AppFormModel):
 
 def test_no_duplicate_control_silent_when_control_excluded_from_schema():
     """Assert excluding the capability-rendered field clears the duplicate violation."""
-    schema = derive_plugin_schema(
+    schema = derive_app_schema(
         _HiddenControlForm,
         _LAYOUT,
         name="synthetic",

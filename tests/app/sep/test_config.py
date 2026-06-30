@@ -23,8 +23,8 @@ import pytest
 from pydantic import ValidationError
 
 from app.sep.config import (
+    App,
     AppDrainSettings,
-    Plugin,
     SEPSettings,
     SessionOptions,
     SyncerExtraKwargs,
@@ -144,17 +144,17 @@ class TestPerSyncerPMMRemoved:
 
 
 class TestPluginModuleNameResolution:
-    """``Plugin.MODULE_NAME`` resolution after the legacy backup shim removal."""
+    """``App.MODULE_NAME`` resolution after the legacy backup shim removal."""
 
     @pytest.mark.parametrize("legacy_value", ["backup", "backups"])
     def test_legacy_backup_names_are_rejected(self, legacy_value: str):
         """Legacy ``backup``/``backups`` no longer remap and fail module validation."""
         with pytest.raises(ValidationError, match="No module named"):
-            Plugin(name="MySQL Backups", module_name=legacy_value)
+            App(name="MySQL Backups", module_name=legacy_value)
 
     def test_modern_value_resolves(self):
         """The modern ``mysql_backups`` value resolves normally."""
-        plugin = Plugin(name="MySQL Backups", module_name="mysql_backups")
+        plugin = App(name="MySQL Backups", module_name="mysql_backups")
         assert plugin.module_name == "app.sep.plugins.mysql_backups"
 
     @pytest.mark.parametrize(
@@ -168,27 +168,27 @@ class TestPluginModuleNameResolution:
         self, sibling_value: str, expected_module: str
     ):
         """Sibling plugins whose names begin with ``backup`` resolve unchanged."""
-        plugin = Plugin(name="Backups", module_name=sibling_value)
+        plugin = App(name="Backups", module_name=sibling_value)
         assert plugin.module_name == expected_module
 
 
 class TestPluginNameOptional:
-    """Test the MODULE_NAME-only ``Plugin`` shrink (``name`` optional)."""
+    """Test the MODULE_NAME-only ``App`` shrink (``name`` optional)."""
 
     def test_plugin_constructs_without_name(self) -> None:
         """A MODULE_NAME-only entry validates with ``name`` absent."""
-        plugin = Plugin(module_name="checksums")
+        plugin = App(module_name="checksums")
         assert plugin.name is None
 
     def test_name_absent_leaves_derived_metadata_empty(self) -> None:
         """Without a name, ``uri_path``/``css_class`` stay empty for the registry."""
-        plugin = Plugin(module_name="checksums")
+        plugin = App(module_name="checksums")
         assert plugin.uri_path == ""
         assert plugin.css_class == ""
 
     def test_name_still_seeds_derived_metadata(self) -> None:
         """A supplied name keeps driving the slugified defaults."""
-        plugin = Plugin(name="Snippet Manager", module_name="snippets")
+        plugin = App(name="Snippet Manager", module_name="snippets")
         assert plugin.uri_path == "/snippet-manager"
         assert plugin.css_class == "snippet-manager"
 

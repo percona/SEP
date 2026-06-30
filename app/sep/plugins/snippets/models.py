@@ -39,7 +39,7 @@ from datetime import datetime
 from pydantic import BaseModel, computed_field, Field
 
 from app.core.utils.fields import NonEmptyStr, UniqueList
-from app.sep.plugins.framework.schema import PluginDeploymentCapabilities
+from app.sep.plugins.framework.schema import AppDeploymentCapabilities
 from app.sep.snippets.config import SnippetSudoOption
 from app.sep.snippets.models.snippet import Snippet
 
@@ -227,7 +227,7 @@ class RefreshResponse(BaseModel):
     refreshed_at: datetime
 
 
-class SnippetsCapabilitiesResponse(PluginDeploymentCapabilities):
+class SnippetsCapabilitiesResponse(AppDeploymentCapabilities):
     """Represent per-deployment capability flags for the Snippets plugin.
 
     Exposes flags that gate the visibility of admin-only UI affordances
@@ -236,7 +236,7 @@ class SnippetsCapabilitiesResponse(PluginDeploymentCapabilities):
 
     Distinct from :class:`~app.sep.plugins.framework.schema.Capabilities`,
     which describes static UI feature flags on
-    :attr:`~app.sep.plugins.framework.schema.PluginSchema.capabilities`
+    :attr:`~app.sep.plugins.framework.schema.AppSchema.capabilities`
     (chaining, scheduling, alert_on_fail). This model is the per-
     deployment runtime counterpart returned by ``GET /capabilities``.
 

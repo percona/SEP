@@ -149,7 +149,7 @@ class TestSnippetsApiList:
 
 
 @pytest.mark.asyncio
-class TestSnippetsPluginSchema:
+class TestSnippetsAppSchema:
     """Tests for ``GET /api/plugins/snippets/schema``."""
 
     async def test_returns_static_plugin_schema(self, test_client):

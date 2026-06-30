@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the PluginSchema for the ATW plugin."""
+"""Define the AppSchema for the ATW plugin."""
 
 from app.sep.plugins.atw.models import ATWCategory, ParentCategory
 from app.sep.plugins.framework.rules import (
@@ -26,13 +26,13 @@ from app.sep.plugins.framework.rules import (
     truthy,
 )
 from app.sep.plugins.framework.schema import (
+    AppSchema,
     Choice,
     ChoiceField,
     Column,
     DetailView,
     FormSection,
     ListView,
-    PluginSchema,
 )
 
 _PARENT_CATEGORY_CHOICES = [
@@ -69,7 +69,7 @@ def _atw_category_browser_fail_rules() -> list[FailRule]:
     return rules
 
 
-atw_schema = PluginSchema(
+atw_schema = AppSchema(
     name="atw",
     display_name="Collect Diagnostic Data",
     description=(

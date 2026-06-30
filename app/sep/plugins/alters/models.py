@@ -121,7 +121,7 @@ class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
 
     This one declaration drives the JSON create/update request body, the Jinja
     ``Form()`` body, and — via
-    :func:`~app.sep.plugins.framework.form_dsl.derive_plugin_schema` — the
+    :func:`~app.sep.plugins.framework.form_dsl.derive_app_schema` — the
     ``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are
     enforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /
     ``Forbidden`` gates plus ``__form_rules__``), not by a decorator.

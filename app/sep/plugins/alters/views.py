@@ -20,7 +20,7 @@ Section *membership* and *order* are declared on
 field-declaration order); what lives here is the part the model cannot express:
 the section titles, the list columns, the detail layout, and the UI capability
 flags. These feed the derived ``GET /schema`` and are carried over from the
-previous hand-written ``PluginSchema`` so the schema wire format is preserved.
+previous hand-written ``AppSchema`` so the schema wire format is preserved.
 """
 
 from app.sep.plugins.framework.apps import Views

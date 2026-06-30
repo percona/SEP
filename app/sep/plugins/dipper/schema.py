@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define PluginSchema objects for the Dipper plugin."""
+"""Define AppSchema objects for the Dipper plugin."""
 
 from typing import cast
 from urllib.parse import urlencode
@@ -21,6 +21,7 @@ from urllib.parse import urlencode
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.schema import (
     AnyField,
+    AppSchema,
     BoolField,
     Capabilities,
     Choice,
@@ -33,7 +34,6 @@ from app.sep.plugins.framework.schema import (
     FormSection,
     HostField,
     ListView,
-    PluginSchema,
     ScriptPreviewField,
     ServiceField,
 )
@@ -47,7 +47,7 @@ _EXECUTOR_HOST_FIELD_NAME = "executor_host"
 _SUDO_FIELD_NAME = "sudo"
 _SCRIPT_PREVIEW_FIELD_NAME = "script_preview"
 
-dipper_schema = PluginSchema(
+dipper_schema = AppSchema(
     name="dipper",
     display_name="Collect Diagnostic Data",
     description="Run diagnostic data collection scripts on managed database hosts.",
@@ -158,7 +158,7 @@ def build_dipper_form_schema(
     defaults: dict[str, str] | None = None,
     node_options: list[str] | None = None,
     service_options: list[str] | None = None,
-) -> PluginSchema:
+) -> AppSchema:
     """Build the Dipper execution form schema for a selected service/script.
 
     Parameters marked ``hidden`` are omitted from the schema.
@@ -183,7 +183,6 @@ def build_dipper_form_schema(
     :param service_options: Optional PMM service names rendered as a ``service`` dropdown.
     :type service_options: list[str] | None
     :return: The assembled plugin form schema.
-    :rtype: PluginSchema
     """
     options_by_field = {"node": node_options, "service": service_options}
     parameter_sections: dict[str, list[AnyField]] = {}
@@ -259,7 +258,7 @@ def build_dipper_form_schema(
     )
     forms.append(FormSection(title="Execution", fields=execution_fields))
 
-    return PluginSchema(
+    return AppSchema(
         name="dipper",
         display_name=script.title,
         description=script.description or dipper_schema.description,

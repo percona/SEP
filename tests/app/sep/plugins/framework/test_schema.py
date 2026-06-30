@@ -21,8 +21,8 @@ from pydantic import ValidationError
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.rules import FailRule, present
 from app.sep.plugins.framework.schema import (
-    _declared_field_names_from_forms,
-    _iter_section_fields,
+    AppEntitySchema,
+    AppSchema,
     BoolField,
     Capabilities,
     ChainedPredecessor,
@@ -31,6 +31,7 @@ from app.sep.plugins.framework.schema import (
     Column,
     ColumnFormat,
     DateTimeField,
+    declared_field_names_from_forms,
     DerivedTask,
     DetailField,
     DetailHighlightLanguage,
@@ -41,12 +42,11 @@ from app.sep.plugins.framework.schema import (
     FormSection,
     HostField,
     IntegerField,
+    iter_section_fields,
     ListView,
     MultiChoiceField,
     OneOfBranch,
     OneOfGroup,
-    PluginEntitySchema,
-    PluginSchema,
     SchemaField,
     ScriptPreviewField,
     ServiceField,
@@ -65,7 +65,7 @@ def _minimal_list_view() -> ListView:
     return ListView(columns=[Column(key="id", label="ID")])
 
 
-_CHECKSUMS_LIKE_SCHEMA = PluginSchema(
+_CHECKSUMS_LIKE_SCHEMA = AppSchema(
     name="checksums",
     display_name="Checksums",
     description="Run pt-table-checksum to verify data consistency.",
@@ -157,8 +157,8 @@ _CHECKSUMS_LIKE_SCHEMA = PluginSchema(
 
 
 def test_plugin_schema_constructs_with_minimal_fields():
-    """Construct a minimal ``PluginSchema`` with no forms and one column."""
-    schema = PluginSchema(
+    """Construct a minimal ``AppSchema`` with no forms and one column."""
+    schema = AppSchema(
         name="minimal",
         display_name="Minimal",
         forms=[],
@@ -171,8 +171,8 @@ def test_plugin_schema_constructs_with_minimal_fields():
 
 
 def test_plugin_schema_entities_mode_omits_root_list_view():
-    """Construct a ``PluginSchema`` with ``entities`` set and no root ``list_view``."""
-    entity = PluginEntitySchema(
+    """Construct an ``AppSchema`` with ``entities`` set and no root ``list_view``."""
+    entity = AppEntitySchema(
         name="things",
         display_name="Things",
         forms=[
@@ -183,7 +183,7 @@ def test_plugin_schema_entities_mode_omits_root_list_view():
         ],
         list_view=_minimal_list_view(),
     )
-    schema = PluginSchema(
+    schema = AppSchema(
         name="multi",
         display_name="Multi",
         entities=[entity],
@@ -195,7 +195,7 @@ def test_plugin_schema_entities_mode_omits_root_list_view():
 
 def test_plugin_entity_schema_detail_highlights_round_trip():
     """Round-trip detail highlight hints through snake_case JSON (wire format)."""
-    entity = PluginEntitySchema.model_validate(
+    entity = AppEntitySchema.model_validate(
         {
             "name": "things",
             "display_name": "Things",
@@ -214,9 +214,9 @@ def test_plugin_entity_schema_detail_highlights_round_trip():
 
 
 def test_plugin_entity_schema_rejects_duplicate_field_names():
-    """Reject a ``PluginEntitySchema`` with duplicate field ``name`` values across sections."""
+    """Reject an ``AppEntitySchema`` with duplicate field ``name`` values across sections."""
     with pytest.raises(ValueError, match="duplicate field name"):
-        PluginEntitySchema(
+        AppEntitySchema(
             name="dup",
             display_name="Dup",
             forms=[
@@ -234,8 +234,8 @@ def test_plugin_entity_schema_rejects_duplicate_field_names():
 
 
 def test_plugin_schema_constructs_with_all_capabilities_on():
-    """Construct a ``PluginSchema`` with every capability flag enabled."""
-    schema = PluginSchema(
+    """Construct an ``AppSchema`` with every capability flag enabled."""
+    schema = AppSchema(
         name="caps",
         display_name="Caps",
         forms=[],
@@ -428,9 +428,9 @@ def test_base_field_name_pattern_accepts_valid_identifiers(valid_name):
 
 @pytest.mark.parametrize("invalid_name", ["-foo", "foo bar", "", "1foo", "9"])
 def test_plugin_schema_name_pattern_rejects_invalid_identifiers(invalid_name):
-    """Reject ``PluginSchema.name`` values that violate the identifier pattern."""
+    """Reject ``AppSchema.name`` values that violate the identifier pattern."""
     with pytest.raises(ValidationError):
-        PluginSchema(
+        AppSchema(
             name=invalid_name,
             display_name="X",
             forms=[],
@@ -454,7 +454,7 @@ def test_schema_base_model_rejects_unknown_keys():
 
 
 def test_plugin_schema_serialises_to_snake_case_json():
-    """Serialise ``PluginSchema`` to snake_case JSON matching the React contract."""
+    """Serialise ``AppSchema`` to snake_case JSON matching the React contract."""
     dumped = _CHECKSUMS_LIKE_SCHEMA.model_dump(mode="json", by_alias=True)
 
     assert "display_name" in dumped
@@ -522,10 +522,10 @@ def test_each_field_type_discriminator_serialises_as_type_key(
 
 
 def test_plugin_schema_round_trips_through_json():
-    """Round-trip ``PluginSchema`` through JSON back into concrete field subclasses."""
+    """Serialize ``AppSchema`` through JSON and back into concrete field subclasses."""
     dumped = _CHECKSUMS_LIKE_SCHEMA.model_dump(mode="json", by_alias=True)
 
-    rehydrated = PluginSchema.model_validate(dumped)
+    rehydrated = AppSchema.model_validate(dumped)
 
     assert isinstance(rehydrated.forms[0].fields[0], ServiceField)
     assert isinstance(rehydrated.forms[0].fields[1], StringField)
@@ -536,9 +536,9 @@ def test_plugin_schema_round_trips_through_json():
 
 
 def test_plugin_schema_accepts_snake_case_python_construction():
-    """Accept snake_case Python kwargs when constructing a ``PluginSchema``."""
+    """Accept snake_case Python kwargs when constructing an ``AppSchema``."""
     expected_min_length = 3
-    schema = PluginSchema(
+    schema = AppSchema(
         name="p",
         display_name="P",
         task_type="python",
@@ -560,9 +560,9 @@ def test_plugin_schema_accepts_snake_case_python_construction():
 
 
 def test_plugin_schema_accepts_snake_case_json_input():
-    """Accept snake_case JSON input when validating a ``PluginSchema``."""
+    """Accept snake_case JSON input when validating an ``AppSchema``."""
     expected_min_length = 3
-    schema = PluginSchema.model_validate(
+    schema = AppSchema.model_validate(
         {
             "name": "p",
             "display_name": "P",
@@ -594,7 +594,7 @@ def test_plugin_schema_accepts_snake_case_json_input():
 def test_plugin_schema_rejects_camel_case_json_input():
     """Reject camelCase JSON input — alias generator is intentionally absent."""
     with pytest.raises(ValidationError):
-        PluginSchema.model_validate(
+        AppSchema.model_validate(
             {
                 "name": "p",
                 "displayName": "P",
@@ -641,9 +641,9 @@ def test_service_field_service_types_round_trip():
 
 
 def test_plugin_schema_rejects_duplicate_field_names_across_sections():
-    """Reject a ``PluginSchema`` with duplicate field ``name`` values across sections."""
+    """Reject an ``AppSchema`` with duplicate field ``name`` values across sections."""
     with pytest.raises(ValidationError, match="duplicate field name"):
-        PluginSchema(
+        AppSchema(
             name="p",
             display_name="P",
             forms=[
@@ -661,8 +661,8 @@ def test_plugin_schema_rejects_duplicate_field_names_across_sections():
 
 
 def test_plugin_schema_accepts_unique_names_across_sections():
-    """Accept a ``PluginSchema`` whose field ``name`` values are unique across sections."""
-    schema = PluginSchema(
+    """Accept an ``AppSchema`` whose field ``name`` values are unique across sections."""
+    schema = AppSchema(
         name="p",
         display_name="P",
         forms=[
@@ -1085,8 +1085,8 @@ class TestConditionalRulePrimitivesAcceptance:
         assert len(section.cardinality_rules) == 1
 
     def test_plugin_schema_accepts_top_level_fail_when(self) -> None:
-        """Plugin schema accepts top level fail when."""
-        schema = PluginSchema(
+        """Check the app schema accepts a top-level ``fail_when``."""
+        schema = AppSchema(
             name="t",
             display_name="T",
             forms=[
@@ -1123,12 +1123,12 @@ class TestConditionalRulePrimitivesAcceptance:
 
 
 class TestSchemaTier2ReferenceResolution:
-    """Verify Tier-2 PluginSchema-level field-reference checks fire."""
+    """Verify Tier-2 AppSchema-level field-reference checks fire."""
 
     def test_unknown_field_in_basefield_requires_rejected(self) -> None:
         """Unknown field in basefield requires rejected."""
         with pytest.raises(ValidationError, match="unknown field 'NOT_THERE'"):
-            PluginSchema(
+            AppSchema(
                 name="t",
                 display_name="T",
                 forms=[
@@ -1165,7 +1165,7 @@ class TestSchemaTier2ReferenceResolution:
                 r"that does not exist"
             ),
         ):
-            PluginSchema(
+            AppSchema(
                 name="t",
                 display_name="T",
                 forms=[
@@ -1188,7 +1188,7 @@ class TestSchemaTier2ReferenceResolution:
     def test_unknown_field_in_section_cardinality_rejected(self) -> None:
         """Unknown field in section cardinality rejected."""
         with pytest.raises(ValidationError, match="unknown field 'gone'"):
-            PluginSchema(
+            AppSchema(
                 name="t",
                 display_name="T",
                 forms=[
@@ -1210,7 +1210,7 @@ class TestSchemaTier2ReferenceResolution:
     def test_unknown_field_in_schema_fail_when_rejected(self) -> None:
         """Unknown field in schema fail when rejected."""
         with pytest.raises(ValidationError, match="unknown field 'unknown'"):
-            PluginSchema(
+            AppSchema(
                 name="t",
                 display_name="T",
                 forms=[
@@ -1233,7 +1233,7 @@ class TestSchemaTier2ReferenceResolution:
 
         References span sections; the resolver covers the whole schema tree.
         """
-        schema = PluginSchema(
+        schema = AppSchema(
             name="t",
             display_name="T",
             forms=[
@@ -1261,7 +1261,7 @@ class TestSchemaTier2ReferenceResolution:
     def test_hyphenated_field_in_rule_rejected(self) -> None:
         """Edge case for the Python-identifier requirement on rule fields."""
         with pytest.raises(ValidationError, match="no hyphens"):
-            PluginSchema(
+            AppSchema(
                 name="t",
                 display_name="T",
                 forms=[
@@ -1285,7 +1285,7 @@ class TestSchemaTier2ReferenceResolution:
     def test_hyphenated_basefield_self_target_rejected(self) -> None:
         """Edge case — implicit self target also enforces the rule."""
         with pytest.raises(ValidationError, match="no hyphens"):
-            PluginSchema(
+            AppSchema(
                 name="t",
                 display_name="T",
                 forms=[
@@ -1309,7 +1309,7 @@ class TestSchemaTier2ReferenceResolution:
     def test_existing_unique_field_check_still_fires(self) -> None:
         """Edge case #7 — duplicate-name check runs alongside the new resolver."""
         with pytest.raises(ValidationError, match="duplicate field name"):
-            PluginSchema(
+            AppSchema(
                 name="t",
                 display_name="T",
                 forms=[
@@ -1330,7 +1330,7 @@ class TestSchemaTier2ReferenceResolution:
     def test_unknown_field_in_section_forbidden_rejected(self) -> None:
         """Section ``forbidden`` referencing a missing field is rejected."""
         with pytest.raises(ValidationError, match="unknown field 'NOT_THERE'"):
-            PluginSchema(
+            AppSchema(
                 name="t",
                 display_name="T",
                 forms=[
@@ -1345,7 +1345,7 @@ class TestSchemaTier2ReferenceResolution:
 
     def test_section_forbidden_referencing_own_child_field_accepted(self) -> None:
         """Section gate referencing one of its own fields validates clean."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="t",
             display_name="T",
             forms=[
@@ -1368,7 +1368,7 @@ class TestSchemaTier2ReferenceResolution:
         Mirrors ``BaseField`` cross-section semantics — the resolver walks the
         plugin-wide field-name set, not just the section's own children.
         """
-        schema = PluginSchema(
+        schema = AppSchema(
             name="t",
             display_name="T",
             forms=[
@@ -1394,7 +1394,7 @@ class TestSchemaTier2ReferenceResolution:
         that ``getattr`` lookups at predicate-eval time succeed.
         """
         with pytest.raises(ValidationError, match="no hyphens"):
-            PluginSchema(
+            AppSchema(
                 name="t",
                 display_name="T",
                 forms=[
@@ -1412,7 +1412,7 @@ class TestSchemaTier2ReferenceResolution:
             )
 
 
-# ── DerivedTask primitive and PluginSchema.derived (SEP-1074) ────────────
+# ── DerivedTask primitive and AppSchema.derived ────────────
 
 
 class TestDerivedTask:
@@ -1462,12 +1462,12 @@ class TestDerivedTask:
         assert reparsed == spec
 
 
-class TestPluginSchemaDerivedField:
-    """Cover the new ``derived`` field on ``PluginSchema``."""
+class TestAppSchemaDerivedField:
+    """Cover the new ``derived`` field on ``AppSchema``."""
 
     def test_defaults_to_none(self) -> None:
         """Confirm ``derived`` is ``None`` by default (BC regression guard)."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="minimal",
             display_name="Minimal",
             forms=[],
@@ -1478,7 +1478,7 @@ class TestPluginSchemaDerivedField:
 
     def test_with_derived_round_trips_through_json(self) -> None:
         """Round-trip a schema carrying ``derived`` losslessly via JSON."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="cascade-demo",
             display_name="Cascade Demo",
             forms=[],
@@ -1490,7 +1490,7 @@ class TestPluginSchemaDerivedField:
                 ),
             ],
         )
-        reparsed = PluginSchema.model_validate(schema.model_dump(mode="json"))
+        reparsed = AppSchema.model_validate(schema.model_dump(mode="json"))
 
         assert reparsed == schema
 
@@ -1501,7 +1501,7 @@ class TestPluginSchemaDerivedField:
         sharing a literal value with a form field name must not trigger the
         duplicate-name check.
         """
-        schema = PluginSchema(
+        schema = AppSchema(
             name="cascade-demo",
             display_name="Cascade Demo",
             forms=[
@@ -1521,7 +1521,7 @@ class TestPluginSchemaDerivedField:
         with pytest.raises(
             ValidationError, match="Duplicate derived name_suffix values"
         ):
-            PluginSchema(
+            AppSchema(
                 name="cascade-demo",
                 display_name="Cascade Demo",
                 forms=[],
@@ -1533,7 +1533,7 @@ class TestPluginSchemaDerivedField:
             )
 
 
-# ── ChainedPredecessor primitive and PluginSchema.predecessors (SEP-1123) ──
+# ── ChainedPredecessor primitive and AppSchema.predecessors ──
 
 
 class TestChainedPredecessor:
@@ -1584,12 +1584,12 @@ class TestChainedPredecessor:
         assert reparsed == spec
 
 
-class TestPluginSchemaPredecessorsField:
-    """Cover the new ``predecessors`` field on ``PluginSchema``."""
+class TestAppSchemaPredecessorsField:
+    """Cover the new ``predecessors`` field on ``AppSchema``."""
 
     def test_defaults_to_none(self) -> None:
         """Confirm ``predecessors`` is ``None`` by default (BC regression guard)."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="minimal",
             display_name="Minimal",
             forms=[],
@@ -1606,7 +1606,7 @@ class TestPluginSchemaPredecessorsField:
         empty lists at construction time, so plugins can pass either form
         without surprising consumers.
         """
-        schema = PluginSchema(
+        schema = AppSchema(
             name="chain-demo",
             display_name="Chain Demo",
             forms=[],
@@ -1618,7 +1618,7 @@ class TestPluginSchemaPredecessorsField:
 
     def test_with_predecessors_round_trips_through_json(self) -> None:
         """Round-trip a schema carrying ``predecessors`` losslessly via JSON."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="chain-demo",
             display_name="Chain Demo",
             forms=[],
@@ -1627,7 +1627,7 @@ class TestPluginSchemaPredecessorsField:
                 ChainedPredecessor(name_suffix="-pre-checks", on_failure="halt"),
             ],
         )
-        reparsed = PluginSchema.model_validate(schema.model_dump(mode="json"))
+        reparsed = AppSchema.model_validate(schema.model_dump(mode="json"))
 
         assert reparsed == schema
 
@@ -1638,7 +1638,7 @@ class TestPluginSchemaPredecessorsField:
         namespace, so sharing a literal value with a form field name must
         not trigger the duplicate-name check.
         """
-        schema = PluginSchema(
+        schema = AppSchema(
             name="chain-demo",
             display_name="Chain Demo",
             forms=[
@@ -1659,7 +1659,7 @@ class TestPluginSchemaPredecessorsField:
             ValidationError,
             match="Duplicate predecessors name_suffix values",
         ):
-            PluginSchema(
+            AppSchema(
                 name="chain-demo",
                 display_name="Chain Demo",
                 forms=[],
@@ -1673,7 +1673,7 @@ class TestPluginSchemaPredecessorsField:
     def test_mixed_on_failure_rejected(self) -> None:
         """Reject a predecessors list with mixed ``on_failure`` values."""
         with pytest.raises(ValidationError, match="Mixed on_failure policies"):
-            PluginSchema(
+            AppSchema(
                 name="chain-demo",
                 display_name="Chain Demo",
                 forms=[],
@@ -1686,7 +1686,7 @@ class TestPluginSchemaPredecessorsField:
 
     def test_consistent_on_failure_accepted(self) -> None:
         """Accept a predecessors list whose entries share an ``on_failure`` value."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="chain-demo",
             display_name="Chain Demo",
             forms=[],
@@ -1702,7 +1702,7 @@ class TestPluginSchemaPredecessorsField:
 
     def test_single_entry_does_not_trigger_duplicate_error(self) -> None:
         """Pass a single-entry predecessors list through without false-positive duplicate."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="chain-demo",
             display_name="Chain Demo",
             forms=[],
@@ -1719,7 +1719,7 @@ class TestPluginSchemaPredecessorsField:
             ValidationError,
             match="name_suffix values shared between derived and predecessors",
         ):
-            PluginSchema(
+            AppSchema(
                 name="chain-demo",
                 display_name="Chain Demo",
                 forms=[],
@@ -1730,7 +1730,7 @@ class TestPluginSchemaPredecessorsField:
 
     def test_disjoint_suffixes_with_derived_accepted(self) -> None:
         """Accept ``derived`` and ``predecessors`` when their suffixes do not overlap."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="chain-demo",
             display_name="Chain Demo",
             forms=[],
@@ -1855,9 +1855,9 @@ def test_detail_section_accepts_empty_fields_list():
 def test_plugin_schema_task_type_requires_detail_view():
     """Refuse to construct a task-style plugin without ``detail_view``."""
     with pytest.raises(ValidationError, match="detail_view is required"):
-        PluginSchema(
+        AppSchema(
             name="task-plugin",
-            display_name="Task Plugin",
+            display_name="Task App",
             task_type="some-root-task",
             forms=[],
             list_view=_minimal_list_view(),
@@ -1866,9 +1866,9 @@ def test_plugin_schema_task_type_requires_detail_view():
 
 def test_plugin_schema_task_type_with_empty_detail_view_sections_allowed():
     """Allow ``DetailView(sections=[])`` as the opt-out form for task-style plugins."""
-    schema = PluginSchema(
+    schema = AppSchema(
         name="task-plugin",
-        display_name="Task Plugin",
+        display_name="Task App",
         task_type="some-root-task",
         forms=[],
         list_view=_minimal_list_view(),
@@ -1881,7 +1881,7 @@ def test_plugin_schema_task_type_with_empty_detail_view_sections_allowed():
 
 def test_plugin_schema_without_task_type_allows_missing_detail_view():
     """Legacy plugins with no ``task_type`` can still omit ``detail_view``."""
-    schema = PluginSchema(
+    schema = AppSchema(
         name="legacy",
         display_name="Legacy",
         forms=[],
@@ -1893,10 +1893,10 @@ def test_plugin_schema_without_task_type_allows_missing_detail_view():
 
 
 def test_plugin_schema_detail_view_round_trips_through_json():
-    """Round-trip a task-style ``PluginSchema`` carrying a populated ``detail_view``."""
-    schema = PluginSchema(
+    """Serialize a task-style ``AppSchema`` carrying a populated ``detail_view`` through JSON and back."""
+    schema = AppSchema(
         name="task-plugin",
-        display_name="Task Plugin",
+        display_name="Task App",
         task_type="root-task",
         forms=[],
         list_view=_minimal_list_view(),
@@ -1913,7 +1913,7 @@ def test_plugin_schema_detail_view_round_trips_through_json():
     )
 
     dumped = schema.model_dump(mode="json", by_alias=True)
-    rehydrated = PluginSchema.model_validate(dumped)
+    rehydrated = AppSchema.model_validate(dumped)
 
     assert rehydrated.detail_view == schema.detail_view
 
@@ -2028,14 +2028,14 @@ class TestOneOfGroup:
     def testiter_section_fields_expands_branches(self) -> None:
         """Expand one-of branches when iterating section leaf fields."""
         section = FormSection(title="S", fields=[_sample_one_of_group()])
-        names = [field.name for field in _iter_section_fields(section)]
+        names = [field.name for field in iter_section_fields(section)]
 
         assert names == ["source.source_db_id", "source.source_query"]
 
     def test_declared_field_names_includes_discriminator(self) -> None:
         """Include the discriminator path in declared rule-reference names."""
         section = FormSection(title="S", fields=[_sample_one_of_group()])
-        names = _declared_field_names_from_forms([section])
+        names = declared_field_names_from_forms([section])
 
         assert "source.mode" in names
         assert "source.source_db_id" in names
@@ -2073,7 +2073,7 @@ class TestOneOfGroup:
             ],
         )
         section = FormSection(title="T", fields=[group])
-        _ = PluginEntitySchema(
+        _ = AppEntitySchema(
             name="e",
             display_name="E",
             forms=[section],
@@ -2084,7 +2084,7 @@ class TestOneOfGroup:
         """Reject a rule that names a one-of group, hinting at a model_validator."""
         group = _sample_one_of_group()
         with pytest.raises(ValueError, match="one-of group field 'source'"):
-            PluginSchema(
+            AppSchema(
                 name="archives",
                 display_name="Archives",
                 forms=[FormSection(title="Source", fields=[group])],
@@ -2102,7 +2102,7 @@ class TestOneOfGroup:
         """Reject a leaf name that collides outside one-of branch reuse."""
         group = _sample_one_of_group()
         with pytest.raises(ValueError, match="duplicate field name"):
-            PluginEntitySchema(
+            AppEntitySchema(
                 name="e",
                 display_name="E",
                 forms=[
@@ -2152,7 +2152,7 @@ class TestOneOfGroup:
             ],
         )
         with pytest.raises(ValueError, match="duplicate field name"):
-            PluginEntitySchema(
+            AppEntitySchema(
                 name="e",
                 display_name="E",
                 forms=[
@@ -2223,7 +2223,7 @@ class TestOneOfGroup:
                 )
             ],
         )
-        schema = PluginSchema(
+        schema = AppSchema(
             name="p",
             display_name="P",
             task_type="t",

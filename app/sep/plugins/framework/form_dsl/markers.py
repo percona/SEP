@@ -412,9 +412,9 @@ class FormRules:
 
     :param sections: Section-scoped rules keyed by section key. Defaults to an
         empty mapping.
-    :param fail_when: Plugin-scoped predicate-only invariants. Defaults to an
+    :param fail_when: App-scoped predicate-only invariants. Defaults to an
         empty tuple.
-    :param cardinality_rules: Plugin-scoped cardinality constraints. Defaults to
+    :param cardinality_rules: App-scoped cardinality constraints. Defaults to
         an empty tuple.
     """
 

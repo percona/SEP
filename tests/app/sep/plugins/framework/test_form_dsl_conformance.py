@@ -19,18 +19,18 @@ from pydantic import BaseModel
 
 from app.sep.plugins.framework.form_dsl import check_form_conformance
 from app.sep.plugins.framework.schema import (
+    AppSchema,
     Column,
     FormSection,
     IntegerField,
     ListView,
-    PluginSchema,
     StringField,
 )
 
 
-def _schema(*fields) -> PluginSchema:
+def _schema(*fields) -> AppSchema:
     """Return a minimal task-style schema whose single section holds ``fields``."""
-    return PluginSchema(
+    return AppSchema(
         name="p",
         display_name="P",
         forms=[FormSection(title="S", fields=list(fields))],

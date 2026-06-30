@@ -22,7 +22,7 @@ import pytest
 from fastapi import APIRouter
 from pytest_mock import MockerFixture
 
-from app.sep.config import Plugin, sep_settings
+from app.sep.config import App, sep_settings
 from app.sep.plugins.atw.schema import atw_schema
 from app.sep.plugins.framework.apps import TaskExecutionApp
 from app.sep.plugins.framework.base import BaseApp
@@ -61,11 +61,11 @@ def _force_legacy_synthesis(mocker: MockerFixture) -> None:
 
 
 class TestLegacyWrapping:
-    """Tests for synthesizing a ``BaseApp`` from a legacy ``Plugin``."""
+    """Tests for synthesizing a ``BaseApp`` from a legacy ``App``."""
 
     def test_legacy_plugin_wrapped_with_metadata(self) -> None:
         """A plugin with no ``app`` export is wrapped from its settings entry."""
-        registry = build_app_registry([Plugin(name="Snippets", module_name="snippets")])
+        registry = build_app_registry([App(name="Snippets", module_name="snippets")])
         app = registry.get("snippets")
         assert app is not None
         assert app.name == "Snippets"
@@ -77,7 +77,7 @@ class TestLegacyWrapping:
 
     def test_legacy_plugin_resolves_both_routers(self) -> None:
         """The synthesized app carries the resolved Jinja and API routers."""
-        registry = build_app_registry([Plugin(name="Snippets", module_name="snippets")])
+        registry = build_app_registry([App(name="Snippets", module_name="snippets")])
         app = registry.get("snippets")
         assert isinstance(app.jinja_router, APIRouter)
         assert isinstance(app.api_router, APIRouter)
@@ -85,7 +85,7 @@ class TestLegacyWrapping:
     def test_module_name_only_derives_metadata(self, mocker: MockerFixture) -> None:
         """A MODULE_NAME-only entry derives name/uri/css/display from the key."""
         _force_legacy_synthesis(mocker)
-        registry = build_app_registry([Plugin(module_name="alters")])
+        registry = build_app_registry([App(module_name="alters")])
         app = registry.get("alters")
         assert app.name == "alters"
         assert app.uri_path == "/alters"
@@ -96,7 +96,7 @@ class TestLegacyWrapping:
         """A plugin opting out of the API mount carries ``api_router is None``."""
         _force_legacy_synthesis(mocker)
         registry = build_app_registry(
-            [Plugin(name="Alters", module_name="alters", api_router_path=None)]
+            [App(name="Alters", module_name="alters", api_router_path=None)]
         )
         assert registry.get("alters").api_router is None
 
@@ -105,7 +105,7 @@ class TestLegacyWrapping:
         nav_order = 5
         registry = build_app_registry(
             [
-                Plugin(
+                App(
                     name="Snippets",
                     module_name="snippets",
                     group="alerts",
@@ -122,14 +122,14 @@ class TestLegacyWrapping:
     ) -> None:
         """Carry ``None`` for ``group``/``nav_order`` when the plugin omits them."""
         _force_legacy_synthesis(mocker)
-        registry = build_app_registry([Plugin(name="Alters", module_name="alters")])
+        registry = build_app_registry([App(name="Alters", module_name="alters")])
         app = registry.get("alters")
         assert app.group is None
         assert app.nav_order is None
 
 
 class TestFailFast:
-    """Tests for the fail-fast carried over from ``build_plugins_router``."""
+    """Tests for the fail-fast carried over from ``build_apps_router``."""
 
     def test_non_router_attribute_raises_type_error(
         self, mocker: MockerFixture
@@ -139,10 +139,10 @@ class TestFailFast:
             "app.sep.plugins.framework.registry.import_module",
             return_value=SimpleNamespace(),
         )
-        plugin = Plugin(
+        plugin = App(
             name="Alters",
             module_name="alters",
-            api_router_path="app.sep.config.Plugin",
+            api_router_path="app.sep.config.App",
         )
         with pytest.raises(TypeError, match="alters"):
             build_app_registry([plugin])
@@ -152,7 +152,7 @@ class TestFailFast:
     ) -> None:
         """An empty-string ``api_router_path`` yields ``api_router is None``."""
         _force_legacy_synthesis(mocker)
-        plugin = Plugin.model_construct(
+        plugin = App.model_construct(
             name="Ghost",
             module_name="app.sep.plugins.alters",
             api_router_path="",
@@ -168,9 +168,9 @@ class TestOrderAndLookup:
         """``keys()`` mirrors the activation-list order (OpenAPI-critical)."""
         registry = build_app_registry(
             [
-                Plugin(name="Inventory", module_name="inventory"),
-                Plugin(name="Snippet Manager", module_name="snippets"),
-                Plugin(name="Checksums", module_name="checksums"),
+                App(name="Inventory", module_name="inventory"),
+                App(name="Snippet Manager", module_name="snippets"),
+                App(name="Checksums", module_name="checksums"),
             ]
         )
         assert registry.keys() == ["inventory", "snippets", "checksums"]
@@ -179,24 +179,20 @@ class TestOrderAndLookup:
         """Iterating the registry yields ``BaseApp`` entries in order."""
         registry = build_app_registry(
             [
-                Plugin(name="Inventory", module_name="inventory"),
-                Plugin(name="Snippet Manager", module_name="snippets"),
+                App(name="Inventory", module_name="inventory"),
+                App(name="Snippet Manager", module_name="snippets"),
             ]
         )
         assert [app.key for app in registry] == ["inventory", "snippets"]
 
     def test_protected_app_surfaces_like_any_other(self) -> None:
         """The protected ``inventory`` app is a normal registry entry."""
-        registry = build_app_registry(
-            [Plugin(name="Inventory", module_name="inventory")]
-        )
+        registry = build_app_registry([App(name="Inventory", module_name="inventory")])
         assert registry.get("inventory") is not None
 
     def test_get_returns_none_for_unknown_key(self) -> None:
         """An unconfigured key resolves to ``None``."""
-        registry = build_app_registry(
-            [Plugin(name="Inventory", module_name="inventory")]
-        )
+        registry = build_app_registry([App(name="Inventory", module_name="inventory")])
         assert registry.get("nonexistent") is None
 
 
@@ -227,7 +223,7 @@ class TestDefinitionCollection:
         )
         self._patch_definition(mocker, definition)
 
-        registry = build_app_registry([Plugin(module_name="checksums")])
+        registry = build_app_registry([App(module_name="checksums")])
         app = registry.get("checksums")
         assert app.key == "checksums"
         assert app.enabled is True
@@ -248,7 +244,7 @@ class TestDefinitionCollection:
         self._patch_definition(mocker, definition)
 
         registry = build_app_registry(
-            [Plugin(name="Yaml Override", module_name="checksums")]
+            [App(name="Yaml Override", module_name="checksums")]
         )
         app = registry.get("checksums")
         assert app.name == "Yaml Override"
@@ -267,7 +263,7 @@ class TestDefinitionCollection:
         self._patch_definition(mocker, definition)
 
         registry = build_app_registry(
-            [Plugin(name="Yaml Override", module_name="checksums")]
+            [App(name="Yaml Override", module_name="checksums")]
         )
         app = registry.get("checksums")
         assert app.name == "Yaml Override"
@@ -278,7 +274,7 @@ class TestDefinitionCollection:
         definition = BaseApp(name="internal", uri_path="/def-path")
         self._patch_definition(mocker, definition)
 
-        registry = build_app_registry([Plugin(module_name="checksums", enabled=False)])
+        registry = build_app_registry([App(module_name="checksums", enabled=False)])
         assert registry.get("checksums").enabled is False
 
     def test_definition_grouping_used_when_yaml_silent(
@@ -291,7 +287,7 @@ class TestDefinitionCollection:
         )
         self._patch_definition(mocker, definition)
 
-        registry = build_app_registry([Plugin(module_name="checksums")])
+        registry = build_app_registry([App(module_name="checksums")])
         app = registry.get("checksums")
         assert app.group == "backups"
         assert app.nav_order == nav_order
@@ -305,11 +301,7 @@ class TestDefinitionCollection:
         self._patch_definition(mocker, definition)
 
         registry = build_app_registry(
-            [
-                Plugin(
-                    module_name="checksums", group="schema_change", nav_order=nav_order
-                )
-            ]
+            [App(module_name="checksums", group="schema_change", nav_order=nav_order)]
         )
         app = registry.get("checksums")
         assert app.group == "schema_change"
@@ -326,7 +318,7 @@ class TestDefinitionCollection:
         self._patch_definition(mocker, definition)
 
         registry = build_app_registry(
-            [Plugin(name="Yaml Override", module_name="checksums")]
+            [App(name="Yaml Override", module_name="checksums")]
         )
         app = registry.get("checksums")
         assert app.group == "backups"
@@ -342,7 +334,7 @@ class TestDefinitionCollection:
         self._patch_definition(mocker, definition)
 
         registry = build_app_registry(
-            [Plugin(module_name="checksums", group=None, nav_order=None)]
+            [App(module_name="checksums", group=None, nav_order=None)]
         )
         app = registry.get("checksums")
         assert app.group is None
@@ -365,7 +357,7 @@ class TestScopedKeyDerivation:
         self._patch_definition(
             mocker, BaseApp(name="internal", uri_path="/mysql_backups/restores")
         )
-        registry = build_app_registry([Plugin(module_name="mysql_backups.restore")])
+        registry = build_app_registry([App(module_name="mysql_backups.restore")])
         assert registry.keys() == ["mysql_backups/restore"]
 
     def test_top_level_module_keeps_single_segment_key(
@@ -373,7 +365,7 @@ class TestScopedKeyDerivation:
     ) -> None:
         """Keep a top-level ``MODULE_NAME`` single-segment key unchanged."""
         self._patch_definition(mocker, BaseApp(name="internal", uri_path="/checksums"))
-        registry = build_app_registry([Plugin(module_name="checksums")])
+        registry = build_app_registry([App(module_name="checksums")])
         assert registry.keys() == ["checksums"]
 
     def test_explicit_definition_key_overrides_derivation(
@@ -388,7 +380,7 @@ class TestScopedKeyDerivation:
                 uri_path="/mysql_backups/restores",
             ),
         )
-        registry = build_app_registry([Plugin(module_name="mysql_backups.restore")])
+        registry = build_app_registry([App(module_name="mysql_backups.restore")])
         assert registry.get("mysql_backups/restores") is not None
         assert registry.get("mysql_backups/restore") is None
 

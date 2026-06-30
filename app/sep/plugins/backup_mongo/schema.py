@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Derive the PluginSchema for the backup_mongo plugin model-first.
+"""Derive the AppSchema for the backup_mongo plugin model-first.
 
 The schema is derived from the model-first
 :class:`~app.sep.plugins.backup_mongo.models.BackupForm` plus the
@@ -26,7 +26,7 @@ logical, physical, and status siblings.
 
 from app.sep.plugins.backup_mongo.models import BackupForm, BackupType
 from app.sep.plugins.backup_mongo.views import backup_mongo_views
-from app.sep.plugins.framework.form_dsl import derive_plugin_schema
+from app.sep.plugins.framework.form_dsl import derive_app_schema
 from app.sep.plugins.framework.schema import DerivedTask
 
 BACKUP_MONGO_DERIVED = [
@@ -55,7 +55,7 @@ BACKUP_MONGO_DERIVED = [
     ),
 ]
 
-backup_mongo_schema = derive_plugin_schema(
+backup_mongo_schema = derive_app_schema(
     BackupForm,
     backup_mongo_views.layout,
     name="backup_mongo",

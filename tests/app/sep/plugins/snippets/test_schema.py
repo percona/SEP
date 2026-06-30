@@ -297,9 +297,9 @@ class TestVisibilityGates:
 
 @pytest.mark.asyncio
 async def test_build_snippet_schema_with_gated_field_validates(create_snippet):
-    """A gated, identifier-safe parameter builds a valid PluginSchema.
+    """Build a valid AppSchema from a gated, identifier-safe parameter.
 
-    Regression guard: ``build_snippet_schema`` constructs a ``PluginSchema``,
+    Regression guard: ``build_snippet_schema`` constructs an ``AppSchema``,
     whose validator folds each gated field's own name into the gate's reference
     set and rejects hyphenated names. This exercises that full construction so a
     gate that produces an invalid schema fails here rather than as a 500 at
