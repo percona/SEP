@@ -15,7 +15,7 @@
 
 """Define the JSON API router for the Dipper plugin.
 
-Mounted at ``/api/plugins/dipper/`` via ``plugins_router`` in
+Mounted at ``/api/plugins/dipper/`` via ``apps_router`` in
 ``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
 level and redeclared per route for safety. Route layout:
 
@@ -51,7 +51,7 @@ from app.sep.plugins.dipper.models import (
 )
 from app.sep.plugins.dipper.schema import build_dipper_form_schema, dipper_schema
 from app.sep.plugins.framework.api import schema_endpoint
-from app.sep.plugins.framework.schema import PluginSchema
+from app.sep.plugins.framework.schema import AppSchema
 from app.sep.plugins.snippets.models import ScriptPreviewResponse
 
 logger = logging.getLogger(__name__)
@@ -111,7 +111,7 @@ async def dipper_api_form_schema(
     inventory_api: InventoryAPI,
     executor_hosts: ExecutorHosts,
     pmm_api: PMMAPIDep,
-) -> PluginSchema:
+) -> AppSchema:
     """Return the selected Dipper payload's dynamic execution schema.
 
     :param service_id: Inventory ID of the database service.
@@ -126,7 +126,7 @@ async def dipper_api_form_schema(
         configured (injected via ``PMMAPIDep``).
     :type pmm_api: PMMRemoteAPI | None
     :return: Context-specific schema including payload parameters.
-    :rtype: PluginSchema
+    :rtype: AppSchema
     """
     service_data = await inventory_api.get(f"/services/{service_id}")
     service = CreatedService.model_validate(service_data)

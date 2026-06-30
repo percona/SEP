@@ -15,7 +15,7 @@
 
 """Define the JSON API router for the alerts plugin.
 
-Mounted at ``/api/plugins/alerts/`` via ``plugins_router`` in
+Mounted at ``/api/plugins/alerts/`` via ``apps_router`` in
 ``app/sep/api/router.py`` through the ``api_routes.py`` convention validator
 in ``app/sep/config.py``. Each route redeclares ``IsApiAuthenticated`` so the
 OpenAPI surface is explicit and survives changes to the parent router.

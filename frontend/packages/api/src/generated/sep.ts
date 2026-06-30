@@ -1111,7 +1111,7 @@ export interface paths {
      *         configured (injected via ``PMMAPIDep``).
      *     :type pmm_api: PMMRemoteAPI | None
      *     :return: Context-specific schema including payload parameters.
-     *     :rtype: PluginSchema
+     *     :rtype: AppSchema
      */
     get: operations['dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get'];
     put?: never;
@@ -2948,7 +2948,7 @@ export interface components {
      *
      *     This one declaration drives the JSON create/update request body, the Jinja
      *     ``Form()`` body, and — via
-     *     :func:`~app.sep.plugins.framework.form_dsl.derive_plugin_schema` — the
+     *     :func:`~app.sep.plugins.framework.form_dsl.derive_app_schema` — the
      *     ``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are
      *     enforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /
      *     ``Forbidden`` gates plus ``__form_rules__``), not by a decorator.
@@ -3223,6 +3223,56 @@ export interface components {
       updated_at?: string | null;
     };
     /**
+     * AppEntitySchema
+     * @description Describe one CRUD entity for a multi-entity schema-driven plugin.
+     *
+     *     Used when a plugin exposes several independent resources (for example
+     *     inventory nodes, services, schemas, and tables), each with its own list
+     *     view and create/edit forms. Task-style plugins omit ``entities`` and use
+     *     the root ``forms`` / ``list_view`` instead.
+     *
+     *     :param name: URL segment and API key for the entity (for example ``nodes``).
+     *     :type name: NonEmptyStr
+     *     :param display_name: Human-readable title for this entity's screens.
+     *     :type display_name: NonEmptyStr
+     *     :param description: Optional helper text for this entity. Defaults to
+     *         ``None``.
+     *     :type description: NonEmptyStr | None
+     *     :param forms: Form sections for create (and edit when the UI supports it).
+     *     :type forms: list[FormSection]
+     *     :param list_view: Column configuration for this entity's list table.
+     *     :type list_view: ListView
+     *     :param detail_highlights: Optional per-field syntax highlighter hints for
+     *         detail pages. Keys are field names; values are highlighting languages.
+     *         Defaults to an empty mapping.
+     *     :type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]
+     *     :param cardinality_rules: Optional entity-wide cross-field cardinality
+     *         constraints. Defaults to ``None``.
+     *     :type cardinality_rules: list[CardinalityRule] | None
+     *     :param fail_when: Optional entity-wide predicate-only invariants.
+     *         Defaults to ``None``.
+     *     :type fail_when: list[FailRule] | None
+     */
+    AppEntitySchema: {
+      /** Cardinality Rules */
+      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
+      /** Description */
+      description?: string | null;
+      /** Detail Highlights */
+      detail_highlights?: {
+        [key: string]: components['schemas']['DetailHighlightLanguage'];
+      };
+      /** Display Name */
+      display_name: string;
+      /** Fail When */
+      fail_when?: components['schemas']['FailRule'][] | null;
+      /** Forms */
+      forms: components['schemas']['FormSection'][];
+      list_view: components['schemas']['ListView'];
+      /** Name */
+      name: string;
+    };
+    /**
      * AppInfo
      * @description Represent the response of ``GET /api/sep/app-info``.
      *
@@ -3326,6 +3376,84 @@ export interface components {
      * @enum {string}
      */
     AppLifecycleEnum: 'ENABLED' | 'DISABLED' | 'ENABLING' | 'DISABLING';
+    /**
+     * AppSchema
+     * @description Represent a plugin's complete schema: form sections, list view, capabilities.
+     *
+     *     :param name: The plugin identifier; must match Python identifier rules,
+     *         optionally with internal hyphens.
+     *     :type name: NonEmptyStr
+     *     :param display_name: The human-readable plugin title displayed in the UI.
+     *     :type display_name: NonEmptyStr
+     *     :param description: Optional helper text describing the plugin's
+     *         purpose. Defaults to ``None``.
+     *     :type description: NonEmptyStr | None
+     *     :param task_type: Optional task-type identifier used when creating tasks
+     *         via the shared task API. Defaults to ``None``.
+     *     :type task_type: NonEmptyStr | None
+     *     :param forms: Form sections for single-entity / task plugins. Defaults to
+     *         an empty list when ``entities`` is used instead.
+     *     :type forms: list[FormSection]
+     *     :param capabilities: Optional plugin-level feature flags. Defaults to
+     *         ``None``.
+     *     :type capabilities: Capabilities | None
+     *     :param list_view: List-view configuration when ``entities`` is unset
+     *         (single-entity / task plugins). Ignored when ``entities`` is set.
+     *     :type list_view: ListView | None
+     *     :param detail_view: Optional declarative layout for the task detail page's
+     *         section cards (task-style plugins only; ignored when ``entities`` is
+     *         set). Optional at the model layer for backwards compatibility. A
+     *         forward-looking guard refuses to load a plugin that sets
+     *         ``task_type`` without declaring ``detail_view``. Defaults to ``None``.
+     *     :type detail_view: DetailView | None
+     *     :param entities: Optional list of CRUD entities for multi-resource plugins.
+     *         When non-empty, the React shell renders one list/create/detail flow
+     *         per entity. Defaults to ``None`` (legacy single-entity mode).
+     *     :type entities: list[AppEntitySchema] | None
+     *     :param cardinality_rules: Optional plugin-wide cross-field cardinality
+     *         constraints (task-style plugins only; ignored when ``entities`` is set).
+     *         Defaults to ``None``.
+     *     :type cardinality_rules: list[CardinalityRule] | None
+     *     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
+     *         plugins only; ignored when ``entities`` is set). Defaults to ``None``.
+     *     :type fail_when: list[FailRule] | None
+     *     :param derived: Optional declarative specs for sibling tasks derived from
+     *         the parent task on cascade. Consumed by
+     *         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+     *         across the parent and N derived siblings. Defaults to ``None``.
+     *     :type derived: list[DerivedTask] | None
+     *     :param predecessors: Optional declarative specs for tasks that must run
+     *         before the parent. Consumed by
+     *         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+     *         across the predecessors and the parent, including the chain wiring
+     *         applied at execute time. Defaults to ``None``.
+     *     :type predecessors: list[ChainedPredecessor] | None
+     */
+    AppSchema: {
+      capabilities?: components['schemas']['Capabilities'] | null;
+      /** Cardinality Rules */
+      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
+      /** Derived */
+      derived?: components['schemas']['DerivedTask'][] | null;
+      /** Description */
+      description?: string | null;
+      detail_view?: components['schemas']['DetailView'] | null;
+      /** Display Name */
+      display_name: string;
+      /** Entities */
+      entities?: components['schemas']['AppEntitySchema'][] | null;
+      /** Fail When */
+      fail_when?: components['schemas']['FailRule'][] | null;
+      /** Forms */
+      forms?: components['schemas']['FormSection'][];
+      list_view?: components['schemas']['ListView'] | null;
+      /** Name */
+      name: string;
+      /** Predecessors */
+      predecessors?: components['schemas']['ChainedPredecessor'][] | null;
+      /** Task Type */
+      task_type?: string | null;
+    };
     /**
      * AppStateResponse
      * @description Represent the toggle endpoint's response.
@@ -4807,7 +4935,7 @@ export interface components {
      * DetailView
      * @description Declare the per-section detail-page layout for a task-style plugin.
      *
-     *     Mirrors the role of :attr:`PluginSchema.list_view` for the list table:
+     *     Mirrors the role of :attr:`AppSchema.list_view` for the list table:
      *     the React framework reads ``detail_view`` to render the task detail
      *     page's section cards instead of inferring structure from the runtime
      *     ``task.data`` shape.
@@ -5826,134 +5954,6 @@ export interface components {
      * @enum {string}
      */
     PgBackRestBackupType: 'incr' | 'diff';
-    /**
-     * PluginEntitySchema
-     * @description Describe one CRUD entity for a multi-entity schema-driven plugin.
-     *
-     *     Used when a plugin exposes several independent resources (for example
-     *     inventory nodes, services, schemas, and tables), each with its own list
-     *     view and create/edit forms. Task-style plugins omit ``entities`` and use
-     *     the root ``forms`` / ``list_view`` instead.
-     *
-     *     :param name: URL segment and API key for the entity (for example ``nodes``).
-     *     :type name: NonEmptyStr
-     *     :param display_name: Human-readable title for this entity's screens.
-     *     :type display_name: NonEmptyStr
-     *     :param description: Optional helper text for this entity. Defaults to
-     *         ``None``.
-     *     :type description: NonEmptyStr | None
-     *     :param forms: Form sections for create (and edit when the UI supports it).
-     *     :type forms: list[FormSection]
-     *     :param list_view: Column configuration for this entity's list table.
-     *     :type list_view: ListView
-     *     :param detail_highlights: Optional per-field syntax highlighter hints for
-     *         detail pages. Keys are field names; values are highlighting languages.
-     *         Defaults to an empty mapping.
-     *     :type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]
-     *     :param cardinality_rules: Optional entity-wide cross-field cardinality
-     *         constraints. Defaults to ``None``.
-     *     :type cardinality_rules: list[CardinalityRule] | None
-     *     :param fail_when: Optional entity-wide predicate-only invariants.
-     *         Defaults to ``None``.
-     *     :type fail_when: list[FailRule] | None
-     */
-    PluginEntitySchema: {
-      /** Cardinality Rules */
-      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
-      /** Description */
-      description?: string | null;
-      /** Detail Highlights */
-      detail_highlights?: {
-        [key: string]: components['schemas']['DetailHighlightLanguage'];
-      };
-      /** Display Name */
-      display_name: string;
-      /** Fail When */
-      fail_when?: components['schemas']['FailRule'][] | null;
-      /** Forms */
-      forms: components['schemas']['FormSection'][];
-      list_view: components['schemas']['ListView'];
-      /** Name */
-      name: string;
-    };
-    /**
-     * PluginSchema
-     * @description Represent a plugin's complete schema: form sections, list view, capabilities.
-     *
-     *     :param name: The plugin identifier; must match Python identifier rules,
-     *         optionally with internal hyphens.
-     *     :type name: NonEmptyStr
-     *     :param display_name: The human-readable plugin title displayed in the UI.
-     *     :type display_name: NonEmptyStr
-     *     :param description: Optional helper text describing the plugin's
-     *         purpose. Defaults to ``None``.
-     *     :type description: NonEmptyStr | None
-     *     :param task_type: Optional task-type identifier used when creating tasks
-     *         via the shared task API. Defaults to ``None``.
-     *     :type task_type: NonEmptyStr | None
-     *     :param forms: Form sections for single-entity / task plugins. Defaults to
-     *         an empty list when ``entities`` is used instead.
-     *     :type forms: list[FormSection]
-     *     :param capabilities: Optional plugin-level feature flags. Defaults to
-     *         ``None``.
-     *     :type capabilities: Capabilities | None
-     *     :param list_view: List-view configuration when ``entities`` is unset
-     *         (single-entity / task plugins). Ignored when ``entities`` is set.
-     *     :type list_view: ListView | None
-     *     :param detail_view: Optional declarative layout for the task detail page's
-     *         section cards (task-style plugins only; ignored when ``entities`` is
-     *         set). Optional at the model layer for backwards compatibility. A
-     *         forward-looking guard refuses to load a plugin that sets
-     *         ``task_type`` without declaring ``detail_view``. Defaults to ``None``.
-     *     :type detail_view: DetailView | None
-     *     :param entities: Optional list of CRUD entities for multi-resource plugins.
-     *         When non-empty, the React shell renders one list/create/detail flow
-     *         per entity. Defaults to ``None`` (legacy single-entity mode).
-     *     :type entities: list[PluginEntitySchema] | None
-     *     :param cardinality_rules: Optional plugin-wide cross-field cardinality
-     *         constraints (task-style plugins only; ignored when ``entities`` is set).
-     *         Defaults to ``None``.
-     *     :type cardinality_rules: list[CardinalityRule] | None
-     *     :param fail_when: Optional plugin-wide predicate-only invariants (task-style
-     *         plugins only; ignored when ``entities`` is set). Defaults to ``None``.
-     *     :type fail_when: list[FailRule] | None
-     *     :param derived: Optional declarative specs for sibling tasks derived from
-     *         the parent task on cascade. Consumed by
-     *         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
-     *         across the parent and N derived siblings. Defaults to ``None``.
-     *     :type derived: list[DerivedTask] | None
-     *     :param predecessors: Optional declarative specs for tasks that must run
-     *         before the parent. Consumed by
-     *         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
-     *         across the predecessors and the parent, including the chain wiring
-     *         applied at execute time. Defaults to ``None``.
-     *     :type predecessors: list[ChainedPredecessor] | None
-     */
-    PluginSchema: {
-      capabilities?: components['schemas']['Capabilities'] | null;
-      /** Cardinality Rules */
-      cardinality_rules?: components['schemas']['CardinalityRule'][] | null;
-      /** Derived */
-      derived?: components['schemas']['DerivedTask'][] | null;
-      /** Description */
-      description?: string | null;
-      detail_view?: components['schemas']['DetailView'] | null;
-      /** Display Name */
-      display_name: string;
-      /** Entities */
-      entities?: components['schemas']['PluginEntitySchema'][] | null;
-      /** Fail When */
-      fail_when?: components['schemas']['FailRule'][] | null;
-      /** Forms */
-      forms?: components['schemas']['FormSection'][];
-      list_view?: components['schemas']['ListView'] | null;
-      /** Name */
-      name: string;
-      /** Predecessors */
-      predecessors?: components['schemas']['ChainedPredecessor'][] | null;
-      /** Task Type */
-      task_type?: string | null;
-    };
     /**
      * PluginTaskResponse
      * @description Represent a single plugin task entry returned by ``GET /api/plugins/inventory/``.
@@ -7104,7 +7104,7 @@ export interface components {
      *
      *     Distinct from :class:`~app.sep.plugins.framework.schema.Capabilities`,
      *     which describes static UI feature flags on
-     *     :attr:`~app.sep.plugins.framework.schema.PluginSchema.capabilities`
+     *     :attr:`~app.sep.plugins.framework.schema.AppSchema.capabilities`
      *     (chaining, scheduling, alert_on_fail). This model is the per-
      *     deployment runtime counterpart returned by ``GET /capabilities``.
      *
@@ -8204,7 +8204,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -8525,7 +8525,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -8743,7 +8743,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -8915,7 +8915,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -9067,7 +9067,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -9217,7 +9217,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -9400,7 +9400,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -9619,7 +9619,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -9827,7 +9827,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
       /** @description Validation Error */
@@ -9856,7 +9856,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -9979,7 +9979,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -10373,7 +10373,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -10523,7 +10523,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -10889,7 +10889,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };
@@ -11106,7 +11106,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
       /** @description Validation Error */
@@ -11155,7 +11155,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['PluginSchema'];
+          'application/json': components['schemas']['AppSchema'];
         };
       };
     };

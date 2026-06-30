@@ -18,16 +18,16 @@
 The registry is the single iteration source for both mount loops and every
 ``SEP.PLUGINS`` metadata consumer. It imports each activated module and either
 uses its exported ``app`` definition or synthesizes an implicit
-:class:`~app.sep.plugins.framework.base.BaseApp` from the legacy ``Plugin``
+:class:`~app.sep.plugins.framework.base.BaseApp` from the legacy ``App``
 settings entry, so legacy and definition-based apps coexist.
 
 :func:`get_app_registry` is a lazy ``@lru_cache`` accessor rather than an eager
 module-level singleton: building the registry imports every plugin module, and
 two consumers (``app/sep/deps.py`` and ``app/sep/db/seed.py``) are themselves
 imported before plugin modules can be safely imported. The lazy accessor defers
-the build to first call -- the same point ``plugins_router`` is built today,
+the build to first call -- the same point ``apps_router`` is built today,
 after ``deps``/``config`` finish importing -- mirroring the filesystem-probe
-trick in ``Plugin._default_api_router_from_convention`` that avoids circular
+trick in ``App._default_api_router_from_convention`` that avoids circular
 imports through plugin ``__init__`` modules.
 """
 
@@ -38,7 +38,7 @@ from importlib import import_module
 from fastapi import APIRouter
 
 from app.core.utils import import_var
-from app.sep.config import Plugin, sep_settings
+from app.sep.config import App, sep_settings
 from app.sep.plugins.framework.base import BaseApp
 
 
@@ -93,14 +93,14 @@ def _derive_app_key(module_name: str) -> str:
     return module_name.removeprefix("app.sep.plugins.").replace(".", "/")
 
 
-def _synthesize_legacy_app(plugin: Plugin, auto_key: str) -> BaseApp:
-    """Wrap a legacy ``Plugin`` settings entry as an implicit ``BaseApp``.
+def _synthesize_legacy_app(plugin: App, auto_key: str) -> BaseApp:
+    """Wrap a legacy ``App`` settings entry as an implicit ``BaseApp``.
 
-    Preserve the fail-fast ``TypeError`` that ``build_plugins_router`` raised
+    Preserve the fail-fast ``TypeError`` that ``build_apps_router`` raised
     when ``api_router_path`` resolves to a non-``APIRouter``.
 
     :param plugin: The legacy plugin settings entry.
-    :type plugin: Plugin
+    :type plugin: App
     :param auto_key: The scoped app key derived from the module path.
     :return: The synthesized app.
     :rtype: BaseApp
@@ -109,7 +109,7 @@ def _synthesize_legacy_app(plugin: Plugin, auto_key: str) -> BaseApp:
     api_router = import_var(plugin.api_router_path) if plugin.api_router_path else None
     if api_router is not None and not isinstance(api_router, APIRouter):
         raise TypeError(
-            f"Plugin '{auto_key}': '{plugin.api_router_path}' must resolve to an"
+            f"App '{auto_key}': '{plugin.api_router_path}' must resolve to an"
             f" APIRouter, got {type(api_router).__name__}"
         )
     return BaseApp(
@@ -126,11 +126,11 @@ def _synthesize_legacy_app(plugin: Plugin, auto_key: str) -> BaseApp:
     )
 
 
-def _bind_definition(definition: BaseApp, plugin: Plugin, auto_key: str) -> BaseApp:
+def _bind_definition(definition: BaseApp, plugin: App, auto_key: str) -> BaseApp:
     """Bind an exported ``BaseApp`` definition to its activation entry.
 
     Stamp the activation-list facts (``key``, ``enabled``) and let explicit
-    legacy ``Plugin`` keys override the definition's descriptive metadata, so an
+    legacy ``App`` keys override the definition's descriptive metadata, so an
     un-migrated ``settings.yaml`` entry keeps controlling the transition. A
     definition that sets its own ``key`` keeps it; otherwise the module-derived
     scoped key is stamped.
@@ -138,7 +138,7 @@ def _bind_definition(definition: BaseApp, plugin: Plugin, auto_key: str) -> Base
     :param definition: The app definition exported by the module.
     :type definition: BaseApp
     :param plugin: The activation entry for the module.
-    :type plugin: Plugin
+    :type plugin: App
     :param auto_key: The scoped app key derived from the module path.
     :return: The bound app.
     :rtype: BaseApp
@@ -161,7 +161,7 @@ def _bind_definition(definition: BaseApp, plugin: Plugin, auto_key: str) -> Base
     return definition.model_copy(update=overrides)
 
 
-def build_app_registry(plugins: Iterable[Plugin]) -> AppRegistry:
+def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
     """Build an :class:`AppRegistry` from an activation list.
 
     Import each module and either use its exported ``app`` definition or
@@ -169,7 +169,7 @@ def build_app_registry(plugins: Iterable[Plugin]) -> AppRegistry:
     the activation list -- unit tests call it directly.
 
     :param plugins: The ``SEP.PLUGINS`` activation entries, in order.
-    :type plugins: Iterable[Plugin]
+    :type plugins: Iterable[App]
     :return: The ordered registry.
     :rtype: AppRegistry
     """

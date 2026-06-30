@@ -1,6 +1,242 @@
 {
   "components": {
     "schemas": {
+      "AppEntitySchema": {
+        "additionalProperties": false,
+        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:type name: NonEmptyStr\n:param display_name: Human-readable title for this entity's screens.\n:type display_name: NonEmptyStr\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:type description: NonEmptyStr | None\n:param forms: Form sections for create (and edit when the UI supports it).\n:type forms: list[FormSection]\n:param list_view: Column configuration for this entity's list table.\n:type list_view: ListView\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.\n:type fail_when: list[FailRule] | None",
+        "properties": {
+          "cardinality_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CardinalityRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality Rules"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "detail_highlights": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DetailHighlightLanguage"
+            },
+            "title": "Detail Highlights",
+            "type": "object"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "fail_when": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FailRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail When"
+          },
+          "forms": {
+            "items": {
+              "$ref": "#/components/schemas/FormSection"
+            },
+            "title": "Forms",
+            "type": "array"
+          },
+          "list_view": {
+            "$ref": "#/components/schemas/ListView"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "forms",
+          "list_view"
+        ],
+        "title": "AppEntitySchema",
+        "type": "object"
+      },
+      "AppSchema": {
+        "additionalProperties": false,
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:type entities: list[AppEntitySchema] | None\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None",
+        "properties": {
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Capabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cardinality_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CardinalityRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality Rules"
+          },
+          "derived": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DerivedTask"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "detail_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetailView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "entities": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AppEntitySchema"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entities"
+          },
+          "fail_when": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FailRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail When"
+          },
+          "forms": {
+            "items": {
+              "$ref": "#/components/schemas/FormSection"
+            },
+            "title": "Forms",
+            "type": "array"
+          },
+          "list_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ListView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "predecessors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ChainedPredecessor"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predecessors"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
+          }
+        },
+        "required": [
+          "name",
+          "display_name"
+        ],
+        "title": "AppSchema",
+        "type": "object"
+      },
       "BoolField": {
         "additionalProperties": false,
         "description": "Represent a boolean toggle field.\n\n:param field_type: The discriminator literal; always ``\"bool\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"bool\"]",
@@ -630,7 +866,7 @@
       },
       "DetailView": {
         "additionalProperties": false,
-        "description": "Declare the per-section detail-page layout for a task-style plugin.\n\nMirrors the role of :attr:`PluginSchema.list_view` for the list table:\nthe React framework reads ``detail_view`` to render the task detail\npage's section cards instead of inferring structure from the runtime\n``task.data`` shape.\n\n:param sections: Ordered list of sections rendered on the detail page.\n    An empty list is valid; the frontend renders no section cards.\n    Section titles must be unique within a view so the React key can\n    be derived from the title without positional disambiguation.\n:type sections: list[DetailSection]",
+        "description": "Declare the per-section detail-page layout for a task-style plugin.\n\nMirrors the role of :attr:`AppSchema.list_view` for the list table:\nthe React framework reads ``detail_view`` to render the task detail\npage's section cards instead of inferring structure from the runtime\n``task.data`` shape.\n\n:param sections: Ordered list of sections rendered on the detail page.\n    An empty list is valid; the frontend renders no section cards.\n    Section titles must be unique within a view so the React key can\n    be derived from the title without positional disambiguation.\n:type sections: list[DetailSection]",
         "properties": {
           "sections": {
             "items": {
@@ -1680,242 +1916,6 @@
         "title": "OneOfGroup",
         "type": "object"
       },
-      "PluginEntitySchema": {
-        "additionalProperties": false,
-        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:type name: NonEmptyStr\n:param display_name: Human-readable title for this entity's screens.\n:type display_name: NonEmptyStr\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:type description: NonEmptyStr | None\n:param forms: Form sections for create (and edit when the UI supports it).\n:type forms: list[FormSection]\n:param list_view: Column configuration for this entity's list table.\n:type list_view: ListView\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.\n:type fail_when: list[FailRule] | None",
-        "properties": {
-          "cardinality_rules": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/CardinalityRule"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cardinality Rules"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "detail_highlights": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/DetailHighlightLanguage"
-            },
-            "title": "Detail Highlights",
-            "type": "object"
-          },
-          "display_name": {
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "fail_when": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/FailRule"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fail When"
-          },
-          "forms": {
-            "items": {
-              "$ref": "#/components/schemas/FormSection"
-            },
-            "title": "Forms",
-            "type": "array"
-          },
-          "list_view": {
-            "$ref": "#/components/schemas/ListView"
-          },
-          "name": {
-            "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "display_name",
-          "forms",
-          "list_view"
-        ],
-        "title": "PluginEntitySchema",
-        "type": "object"
-      },
-      "PluginSchema": {
-        "additionalProperties": false,
-        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:type entities: list[PluginEntitySchema] | None\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None",
-        "properties": {
-          "capabilities": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Capabilities"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "cardinality_rules": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/CardinalityRule"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cardinality Rules"
-          },
-          "derived": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/DerivedTask"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Derived"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "detail_view": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DetailView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "display_name": {
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "entities": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/PluginEntitySchema"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entities"
-          },
-          "fail_when": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/FailRule"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fail When"
-          },
-          "forms": {
-            "items": {
-              "$ref": "#/components/schemas/FormSection"
-            },
-            "title": "Forms",
-            "type": "array"
-          },
-          "list_view": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ListView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "name": {
-            "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
-            "title": "Name",
-            "type": "string"
-          },
-          "predecessors": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/ChainedPredecessor"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predecessors"
-          },
-          "task_type": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Type"
-          }
-        },
-        "required": [
-          "name",
-          "display_name"
-        ],
-        "title": "PluginSchema",
-        "type": "object"
-      },
       "SchemaField": {
         "additionalProperties": false,
         "description": "Represent an inventory database-schema selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``ServiceField``); the React renderer\ncascades schema options from the selected service. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"schema\"]\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:type depends_on: NonEmptyStr\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    cascaded inventory options. Optional, defaulting to ``None`` (options\n    only). Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas. The\n    built-in SchemaFormRenderer does not yet consume the flag; the\n    free-solo widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
@@ -2839,7 +2839,7 @@
     },
     "/api/plugins/dipper/form-schema": {
       "get": {
-        "description": "Return the selected Dipper payload's dynamic execution schema.\n\n:param service_id: Inventory ID of the database service.\n:type service_id: int\n:param collector_type: Which collector variant to render.\n:type collector_type: CollectorTypeEnum\n:param inventory_api: Async client for the inventory sub-app.\n:type inventory_api: RemoteAPI\n:param executor_hosts: Available executor hosts keyed by hostname.\n:type executor_hosts: dict\n:param pmm_api: The configured PMM API client, or ``None`` when PMM is not\n    configured (injected via ``PMMAPIDep``).\n:type pmm_api: PMMRemoteAPI | None\n:return: Context-specific schema including payload parameters.\n:rtype: PluginSchema",
+        "description": "Return the selected Dipper payload's dynamic execution schema.\n\n:param service_id: Inventory ID of the database service.\n:type service_id: int\n:param collector_type: Which collector variant to render.\n:type collector_type: CollectorTypeEnum\n:param inventory_api: Async client for the inventory sub-app.\n:type inventory_api: RemoteAPI\n:param executor_hosts: Available executor hosts keyed by hostname.\n:type executor_hosts: dict\n:param pmm_api: The configured PMM API client, or ``None`` when PMM is not\n    configured (injected via ``PMMAPIDep``).\n:type pmm_api: PMMRemoteAPI | None\n:return: Context-specific schema including payload parameters.\n:rtype: AppSchema",
         "operationId": "dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get",
         "parameters": [
           {
@@ -2865,7 +2865,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginSchema"
+                  "$ref": "#/components/schemas/AppSchema"
                 }
               }
             },
@@ -2897,7 +2897,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginSchema"
+                  "$ref": "#/components/schemas/AppSchema"
                 }
               }
             },

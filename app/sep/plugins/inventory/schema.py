@@ -13,10 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the PluginSchema for the Inventory plugin."""
+"""Define the AppSchema for the Inventory plugin."""
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.schema import (
+    AppEntitySchema,
+    AppSchema,
     Capabilities,
     Choice,
     ChoiceField,
@@ -26,8 +28,6 @@ from app.sep.plugins.framework.schema import (
     FormSection,
     IntegerField,
     ListView,
-    PluginEntitySchema,
-    PluginSchema,
     StringField,
     TextAreaField,
     YamlField,
@@ -38,7 +38,7 @@ _SERVICE_TYPE_CHOICES = [
     for t in ServiceTypeEnum
 ]
 
-_nodes_entity = PluginEntitySchema(
+_nodes_entity = AppEntitySchema(
     name="nodes",
     display_name="Nodes",
     description="Physical or logical hosts tracked in inventory.",
@@ -84,7 +84,7 @@ _nodes_entity = PluginEntitySchema(
     ),
 )
 
-_services_entity = PluginEntitySchema(
+_services_entity = AppEntitySchema(
     name="services",
     display_name="Services",
     description="Database services attached to nodes.",
@@ -131,7 +131,7 @@ _services_entity = PluginEntitySchema(
     ),
 )
 
-_schemas_entity = PluginEntitySchema(
+_schemas_entity = AppEntitySchema(
     name="schemas",
     display_name="Schemas",
     description="Database schemas within a service.",
@@ -161,7 +161,7 @@ _schemas_entity = PluginEntitySchema(
     ),
 )
 
-_tables_entity = PluginEntitySchema(
+_tables_entity = AppEntitySchema(
     name="tables",
     display_name="Tables",
     description="Tables within a schema.",
@@ -206,7 +206,7 @@ _tables_entity = PluginEntitySchema(
     },
 )
 
-inventory_schema = PluginSchema(
+inventory_schema = AppSchema(
     name="inventory",
     display_name="Inventory",
     description="Manage nodes, services, database schemas, and tables.",

@@ -25,8 +25,8 @@ from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from starlette.routing import Match
 
-from app.sep.api.router import api_router, build_plugins_router, plugins_router
-from app.sep.config import Plugin, sep_settings
+from app.sep.api.router import api_router, apps_router, build_apps_router
+from app.sep.config import App, sep_settings
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
     get_api_authenticated_user,
@@ -52,19 +52,19 @@ class TestApiRouterComposition:
 
     def test_plugins_router_prefix(self) -> None:
         """Assert the plugins sub-router carries the ``/plugins`` prefix."""
-        assert plugins_router.prefix == "/plugins"
+        assert apps_router.prefix == "/plugins"
 
     def test_atw_router_registered_under_plugins(self) -> None:
         """Assert the ATW schema route is resolvable under ``/plugins/atw``."""
         plugin_paths = {
-            route.path for route in plugins_router.routes if hasattr(route, "path")
+            route.path for route in apps_router.routes if hasattr(route, "path")
         }
         assert "/plugins/atw/schema" in plugin_paths
 
     def test_checksums_router_registered_under_plugins(self) -> None:
         """Assert the checksums schema route is resolvable under ``/plugins/checksums``."""
         plugin_paths = {
-            route.path for route in plugins_router.routes if hasattr(route, "path")
+            route.path for route in apps_router.routes if hasattr(route, "path")
         }
         assert "/plugins/checksums/schema" in plugin_paths
 
@@ -72,7 +72,7 @@ class TestApiRouterComposition:
         """Assert routes contributed by the checksums sub-router expose the ``checksums`` tag."""
         checksums_route_tags = [
             route.tags
-            for route in plugins_router.routes
+            for route in apps_router.routes
             if hasattr(route, "path") and "checksums" in route.path
         ]
         assert checksums_route_tags
@@ -245,13 +245,13 @@ class TestPluginBearerGate:
         assert response.status_code != status.HTTP_401_UNAUTHORIZED
 
     def test_bearer_gate_is_on_plugins_router_only(self) -> None:
-        """The gate is wired into plugins_router, not the broader api_router.
+        """The gate is wired into apps_router, not the broader api_router.
 
         Regression guard against accidentally Bearer-gating /api/sep/*
         (dashboard, hosts, task-stats) which serve cookie-authenticated
         React reads.
         """
-        plugin_deps = [dep.dependency for dep in plugins_router.dependencies]
+        plugin_deps = [dep.dependency for dep in apps_router.dependencies]
         api_deps = [dep.dependency for dep in api_router.dependencies]
         assert require_bearer_for_unsafe_methods in plugin_deps
         assert require_bearer_for_unsafe_methods not in api_deps
@@ -403,12 +403,12 @@ class TestApiRouterConfigDrivenLoop:
 
     def test_plugin_with_api_router_path_is_mounted(self) -> None:
         """Assert a plugin with ``api_router_path`` set produces mounted routes."""
-        plugin = Plugin(
+        plugin = App(
             name="Alters",
             module_name="alters",
             api_router_path="app.sep.plugins.alters.api_routes.router",
         )
-        router = build_plugins_router(build_app_registry([plugin]))
+        router = build_apps_router(build_app_registry([plugin]))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
         assert any(p.startswith("/plugins/alters/") for p in paths)
 
@@ -417,28 +417,28 @@ class TestApiRouterConfigDrivenLoop:
     ) -> None:
         """Assert a plugin with ``api_router_path=None`` contributes no routes."""
         _force_legacy_synthesis(mocker, stub_router=True)
-        plugin = Plugin(
+        plugin = App(
             name="Alters",
             module_name="alters",
             api_router_path=None,
         )
-        router = build_plugins_router(build_app_registry([plugin]))
+        router = build_apps_router(build_app_registry([plugin]))
         assert router.routes == []
 
     def test_empty_plugins_iterable_produces_empty_router(self) -> None:
         """Assert no plugins → no plugin routes (only the prefix)."""
-        router = build_plugins_router(build_app_registry([]))
+        router = build_apps_router(build_app_registry([]))
         assert router.prefix == "/plugins"
         assert router.routes == []
 
     def test_mounted_plugin_routes_carry_module_basename_tag(self) -> None:
         """Assert each mounted plugin's routes carry ``tags=[module_basename]``."""
-        plugin = Plugin(
+        plugin = App(
             name="Alters",
             module_name="alters",
             api_router_path="app.sep.plugins.alters.api_routes.router",
         )
-        router = build_plugins_router(build_app_registry([plugin]))
+        router = build_apps_router(build_app_registry([plugin]))
         tagged = [
             r.tags for r in router.routes if hasattr(r, "path") and "alters" in r.path
         ]
@@ -446,14 +446,14 @@ class TestApiRouterConfigDrivenLoop:
         assert all("alters" in tags for tags in tagged)
 
     def test_invalid_api_router_path_module_raises(self) -> None:
-        """Assert a non-importable module path fails fast at Plugin construction.
+        """Assert a non-importable module path fails fast at App construction.
 
         With ``api_router_path`` typed as ``StrImportableAttribute | None``,
         Pydantic validates the module component at model construction time so
-        the error surfaces before ``build_plugins_router`` is ever called.
+        the error surfaces before ``build_apps_router`` is ever called.
         """
         with pytest.raises(ValidationError):
-            Plugin(
+            App(
                 name="Ghost",
                 module_name="snippets",
                 api_router_path="app.does.not.exist.router",
@@ -464,13 +464,13 @@ class TestApiRouterConfigDrivenLoop:
     ) -> None:
         """Assert pointing at a missing attribute fails fast at construction."""
         _force_legacy_synthesis(mocker)
-        plugin = Plugin(
+        plugin = App(
             name="Ghost",
             module_name="alters",
             api_router_path="app.sep.plugins.alters.api_routes.does_not_exist",
         )
         with pytest.raises(AttributeError):
-            build_plugins_router(build_app_registry([plugin]))
+            build_apps_router(build_app_registry([plugin]))
 
     def test_colon_syntax_in_api_router_path_is_rejected(
         self, mocker: MockerFixture
@@ -481,13 +481,13 @@ class TestApiRouterConfigDrivenLoop:
         module piece embedded in the attribute name and the import fails.
         """
         _force_legacy_synthesis(mocker)
-        plugin = Plugin(
+        plugin = App(
             name="Bad",
             module_name="alters",
             api_router_path="app.sep.plugins.alters.api_routes:router",
         )
         with pytest.raises((ImportError, AttributeError, ModuleNotFoundError)):
-            build_plugins_router(build_app_registry([plugin]))
+            build_apps_router(build_app_registry([plugin]))
 
     def test_plugin_omitting_api_router_path_auto_derives_for_known_module(
         self,
@@ -496,19 +496,19 @@ class TestApiRouterConfigDrivenLoop:
         for module, expected in (
             ("dipper", "app.sep.plugins.dipper.api_routes.router"),
         ):
-            plugin = Plugin(name=module.title(), module_name=module)
+            plugin = App(name=module.title(), module_name=module)
             assert plugin.api_router_path == expected
 
     def test_plugin_omitting_api_router_path_auto_derives_for_alters(
         self,
     ) -> None:
         """Assert convention derives ``api_router_path`` once alters ships API routes."""
-        plugin = Plugin(name="Alters", module_name="alters")
+        plugin = App(name="Alters", module_name="alters")
         assert plugin.api_router_path == "app.sep.plugins.alters.api_routes.router"
 
     def test_explicit_null_api_router_path_opts_out(self) -> None:
         """Assert explicit ``null`` input wins over convention auto-derive."""
-        plugin = Plugin.model_validate(
+        plugin = App.model_validate(
             {
                 "name": "Checksums",
                 "module_name": "checksums",
@@ -520,7 +520,7 @@ class TestApiRouterConfigDrivenLoop:
     def test_explicit_string_api_router_path_wins_over_convention(self) -> None:
         """Assert explicit string wins over the conventional path."""
         custom = "app.sep.plugins.dipper.api_routes.router"
-        plugin = Plugin(
+        plugin = App(
             name="Checksums",
             module_name="checksums",
             api_router_path=custom,
@@ -537,26 +537,26 @@ class TestApiRouterConfigDrivenLoop:
         ``uri_path`` / ``css_class`` and no ``api_router_path``.
         """
         plugins = [
-            Plugin(
+            App(
                 name="Snippet Manager",
                 module_name="snippets",
                 uri_path="/snippets",
                 css_class="snippets",
             ),
-            Plugin(
+            App(
                 name="Checksums",
                 module_name="checksums",
                 uri_path="/checksums",
                 css_class="checksums",
             ),
-            Plugin(
+            App(
                 name="Dipper Data Collection",
                 module_name="dipper",
                 uri_path="/dipper",
                 css_class="dipper",
             ),
         ]
-        router = build_plugins_router(build_app_registry(plugins))
+        router = build_apps_router(build_app_registry(plugins))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
         assert any(p.startswith("/plugins/snippets/") for p in paths)
         assert any(p.startswith("/plugins/checksums/") for p in paths)
@@ -572,12 +572,12 @@ class TestApiRouterConfigDrivenLoop:
         mounted and no confusing ``ValueError`` is raised by ``import_var``.
         """
         _force_legacy_synthesis(mocker, stub_router=True)
-        plugin = Plugin.model_construct(
+        plugin = App.model_construct(
             name="Ghost",
             module_name="app.sep.plugins.alters",
             api_router_path="",
         )
-        router = build_plugins_router(build_app_registry([plugin]))
+        router = build_apps_router(build_app_registry([plugin]))
         assert router.routes == []
 
     def test_build_plugins_router_raises_type_error_for_non_router(
@@ -590,29 +590,29 @@ class TestApiRouterConfigDrivenLoop:
         ``include_router``.
         """
         _force_legacy_synthesis(mocker)
-        plugin = Plugin(
+        plugin = App(
             name="Alters",
             module_name="alters",
-            api_router_path="app.sep.config.Plugin",
+            api_router_path="app.sep.config.App",
         )
         with pytest.raises(TypeError, match="alters"):
-            build_plugins_router(build_app_registry([plugin]))
+            build_apps_router(build_app_registry([plugin]))
 
     def test_plugin_api_router_path_rejects_bad_module_at_parse(self) -> None:
         """Assert an explicit ``api_router_path`` with a non-importable module raises ``ValidationError``.
 
         Errors should be caught at settings construction, not at application
-        startup when ``build_plugins_router`` is first called.
+        startup when ``build_apps_router`` is first called.
         """
         with pytest.raises(ValidationError):
-            Plugin(
+            App(
                 name="Ghost",
                 module_name="checksums",
                 api_router_path="not.a.real.module.router",
             )
 
     def test_module_level_plugins_router_matches_settings(self) -> None:
-        """Assert module-level ``plugins_router`` mirrors ``sep_settings.PLUGINS``."""
+        """Assert module-level ``apps_router`` mirrors ``sep_settings.PLUGINS``."""
         expected_keys = {
             app.key
             for app in build_app_registry(sep_settings.PLUGINS)
@@ -630,7 +630,7 @@ class TestApiRouterConfigDrivenLoop:
 
         seen_prefixes = {
             owning_key(r.path)
-            for r in plugins_router.routes
+            for r in apps_router.routes
             if hasattr(r, "path") and r.path.startswith("/plugins/")
         }
         assert expected_keys

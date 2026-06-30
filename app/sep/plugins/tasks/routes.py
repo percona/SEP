@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define routes for the Tasks Plugin."""
+"""Define routes for the Tasks App."""
 
 import logging
 
@@ -45,7 +45,7 @@ async def tasks_list(
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Homepage of Tasks Plugin."""
+    """Homepage of Tasks App."""
     response = await tasks_api.get("/")
     context["tasks"] = response["items"]
     response = await tasks_api.get(

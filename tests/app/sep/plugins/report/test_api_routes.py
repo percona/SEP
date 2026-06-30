@@ -15,7 +15,7 @@
 
 """HTTP integration tests for the report plugin JSON API routes.
 
-Mounted at ``/api/plugins/report/`` via ``plugins_router`` in
+Mounted at ``/api/plugins/report/`` via ``apps_router`` in
 ``app/sep/api/router.py``.
 """
 
@@ -524,14 +524,14 @@ class TestReportApiBearerAuthGate:
     def test_pdf_with_cookie_only_returns_401(
         self, api_admin_client_no_bearer, mock_pmm_api
     ):
-        """POST /generate/pdf without Bearer is rejected by plugins_router gate."""
+        """POST /generate/pdf without Bearer is rejected by apps_router gate."""
         response = api_admin_client_no_bearer.post(f"{API_BASE}/generate/pdf")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_upload_with_cookie_only_returns_401(
         self, api_admin_client_no_bearer, mock_pmm_api
     ):
-        """POST /upload without Bearer is rejected by plugins_router gate."""
+        """POST /upload without Bearer is rejected by apps_router gate."""
         sep_app.dependency_overrides[require_upload_configured] = lambda: None
         try:
             response = api_admin_client_no_bearer.post(f"{API_BASE}/upload")

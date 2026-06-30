@@ -74,14 +74,14 @@ from app.sep.plugins.framework.rules import (
     xor_,
 )
 from app.sep.plugins.framework.schema import (
+    AppEntitySchema,
+    AppSchema,
     Column,
     DetailView,
     FormSection,
     ListView,
     OneOfBranch,
     OneOfGroup,
-    PluginEntitySchema,
-    PluginSchema,
     StringField,
 )
 
@@ -94,12 +94,12 @@ def _build_schema(
     schema_cardinality: list[CardinalityRule] | None = None,
     schema_fail: list[FailRule] | None = None,
     extra_fields: list[StringField] | None = None,
-) -> PluginSchema:
+) -> AppSchema:
     """Build a one-section schema around ``field`` with optional rule sets."""
     section_fields = [field]
     if extra_fields:
         section_fields.extend(extra_fields)
-    return PluginSchema(
+    return AppSchema(
         name="test",
         display_name="Test",
         forms=[
@@ -956,7 +956,7 @@ class TestCardinalityPatterns:
     def _make_body(self, rule: CardinalityRule, *fields: str) -> type:
         """Make body."""
         schema_fields = [StringField(name=name, label=name) for name in fields]
-        schema = PluginSchema(
+        schema = AppSchema(
             name="test",
             display_name="T",
             forms=[FormSection(title="S", fields=schema_fields)],
@@ -1076,7 +1076,7 @@ class TestWorkedExamples:
 
     def _build_dsn_table_body(self) -> type:
         """Build dsn table body."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="alters",
             display_name="Alters",
             forms=[
@@ -1117,7 +1117,7 @@ class TestWorkedExamples:
 
     def test_archives_where_required_unless_swap_drop(self) -> None:
         """Worked example #3 — `where` requires + forbidden mirror."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="archives",
             display_name="Archives",
             forms=[
@@ -1158,7 +1158,7 @@ class TestWorkedExamples:
 
     def test_archives_tables_are_different_fail_rule(self) -> None:
         """Worked example #4 — predicate-only invariant via FailRule."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="archives",
             display_name="Archives",
             forms=[
@@ -1198,7 +1198,7 @@ class TestWorkedExamples:
 
     def test_archives_dest_file_co_located_cardinality_rules(self) -> None:
         """Worked example #5 — three co-located CardinalityRules."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="archives",
             display_name="Archives",
             forms=[
@@ -1281,7 +1281,7 @@ class TestMultipleRulesSameScope:
 
     def test_two_rules_both_fire(self) -> None:
         """Two rules both fire."""
-        schema = PluginSchema(
+        schema = AppSchema(
             name="t",
             display_name="T",
             forms=[
@@ -1321,16 +1321,16 @@ class TestMultipleRulesSameScope:
         assert "rule two fired" in joined
 
 
-# ── Multi-entity PluginSchema + rule plan extraction ─────────────────────
+# ── Multi-entity AppSchema + rule plan extraction ─────────────────────
 
 
-def _multi_entity_two_alpha_beta_schema() -> PluginSchema:
+def _multi_entity_two_alpha_beta_schema() -> AppSchema:
     """Build a minimal two-entity schema; ``alpha`` carries a requires gate on ``x``."""
-    return PluginSchema(
+    return AppSchema(
         name="p",
         display_name="P",
         entities=[
-            PluginEntitySchema(
+            AppEntitySchema(
                 name="alpha",
                 display_name="Alpha",
                 forms=[
@@ -1348,7 +1348,7 @@ def _multi_entity_two_alpha_beta_schema() -> PluginSchema:
                 ],
                 list_view=ListView(columns=[Column(key="x", label="X")]),
             ),
-            PluginEntitySchema(
+            AppEntitySchema(
                 name="beta",
                 display_name="Beta",
                 forms=[
@@ -1375,7 +1375,7 @@ class TestMultiEntityRulePlan:
     def test_extract_unknown_entity_name(self) -> None:
         """Unknown ``entity_name`` raises with known entity list."""
         schema = _multi_entity_two_alpha_beta_schema()
-        with pytest.raises(ValueError, match="not a PluginEntitySchema.name"):
+        with pytest.raises(ValueError, match="not a AppEntitySchema.name"):
             _extract_rule_plan(schema, entity_name="gamma")
 
     def test_extract_scopes_rules_to_named_entity(self) -> None:
@@ -1546,8 +1546,8 @@ class TestOneOfGroupRules:
     """Branch-selection enforcement synthesised from :class:`OneOfGroup`."""
 
     @staticmethod
-    def _source_one_of_schema() -> PluginSchema:
-        return PluginSchema(
+    def _source_one_of_schema() -> AppSchema:
+        return AppSchema(
             name="p",
             display_name="P",
             task_type="t",
@@ -1591,8 +1591,8 @@ class TestOneOfGroupRules:
         )
 
     @staticmethod
-    def _shared_leaf_one_of_schema() -> PluginSchema:
-        return PluginSchema(
+    def _shared_leaf_one_of_schema() -> AppSchema:
+        return AppSchema(
             name="p",
             display_name="P",
             task_type="t",

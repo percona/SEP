@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Derive the PluginSchema for the Alters plugin model-first.
+"""Derive the AppSchema for the Alters plugin model-first.
 
 The schema is derived from the model-first
 :class:`~app.sep.plugins.alters.models.AltersCreate` plus the
@@ -28,7 +28,7 @@ The schema ``display_name`` is ``"Alters"`` — distinct from the navigation lab
 
 from app.sep.plugins.alters.models import AltersCreate
 from app.sep.plugins.alters.views import alters_views
-from app.sep.plugins.framework.form_dsl import derive_plugin_schema
+from app.sep.plugins.framework.form_dsl import derive_app_schema
 from app.sep.plugins.framework.schema import ChainedPredecessor, DerivedTask
 
 ALTERS_DERIVED = [
@@ -45,7 +45,7 @@ ALTERS_PREDECESSORS = [
     ),
 ]
 
-alters_schema = derive_plugin_schema(
+alters_schema = derive_app_schema(
     AltersCreate,
     alters_views.layout,
     name="alters",

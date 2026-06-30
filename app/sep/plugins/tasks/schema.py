@@ -16,13 +16,13 @@
 """Define the read-only plugin schema for Tasks."""
 
 from app.sep.plugins.framework.schema import (
+    AppSchema,
     Column,
     ColumnFormat,
     ListView,
-    PluginSchema,
 )
 
-TASKS_PLUGIN_SCHEMA = PluginSchema(
+TASKS_PLUGIN_SCHEMA = AppSchema(
     name="tasks",
     display_name="Task Manager",
     description=(

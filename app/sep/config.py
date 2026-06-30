@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 _LEGACY_BACKUP_MODULE_NAMES = frozenset({"backup", "backups"})
 
 
-class Plugin(BaseCaseInsensitiveModel):
+class App(BaseCaseInsensitiveModel):
     """Represent a SEP plugin.
 
     This model defines the structure for a plugin, including its name, module,
@@ -132,7 +132,7 @@ class Plugin(BaseCaseInsensitiveModel):
     api_router_path: StrImportableAttribute | None = None
 
     def __eq__(self, other: Any) -> bool:
-        if isinstance(other, Plugin):
+        if isinstance(other, App):
             return self.module_name == other.module_name
         raise NotImplementedError
 
@@ -154,7 +154,7 @@ class Plugin(BaseCaseInsensitiveModel):
         """
         if v in _LEGACY_BACKUP_MODULE_NAMES:
             logger.warning(
-                "Plugin MODULE_NAME %r is deprecated; remapping to "
+                "App MODULE_NAME %r is deprecated; remapping to "
                 "'mysql_backups'. The legacy value will not be supported "
                 "in the next version — update settings.yaml to use "
                 "'mysql_backups'.",
@@ -205,7 +205,7 @@ class Plugin(BaseCaseInsensitiveModel):
         during settings construction without triggering circular imports
         through plugin ``__init__`` modules. Fail-fast on a missing
         ``router`` attribute is still enforced later in
-        ``build_plugins_router`` via ``import_var``.
+        ``build_apps_router`` via ``import_var``.
 
         :return: ``self`` with ``api_router_path`` populated when the
             plugin module ships an ``api_routes.py`` file.
@@ -528,7 +528,7 @@ class SEPSettings(BaseYamlAppSettings):
     :type TASKS_ENDPOINT: CredentialHttpUrl
     :param PLUGINS: A list of plugins used by SEP. Defaults to an empty list with
         duplicates removed.
-    :type PLUGINS: UniqueList[Plugin]
+    :type PLUGINS: UniqueList[App]
     :param PROXY_HEADERS: Whether to use proxy headers (like ``X-Forwarded-For``).
         Defaults to ``False``.
     :type PROXY_HEADERS: bool
@@ -583,7 +583,7 @@ class SEPSettings(BaseYamlAppSettings):
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
     TASKS_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
-    PLUGINS: UniqueList[Plugin] = UniqueList()
+    PLUGINS: UniqueList[App] = UniqueList()
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
     SYNCERS: UniqueList[SyncOptions] = UniqueList()

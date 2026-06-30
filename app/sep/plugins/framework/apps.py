@@ -48,7 +48,7 @@ from app.sep.plugins.framework.connectivity import CONNECTIVITY_WARNING_FIELD
 from app.sep.plugins.framework.deps import make_task_dep
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
-    derive_plugin_schema,
+    derive_app_schema,
     FormLayout,
     iter_service_refs,
 )
@@ -58,12 +58,12 @@ from app.sep.plugins.framework.responses import (
     TaskResponseBuilder,
 )
 from app.sep.plugins.framework.schema import (
+    AppSchema,
     Capabilities,
     ChainedPredecessor,
     DerivedTask,
     DetailView,
     ListView,
-    PluginSchema,
 )
 from app.sep.plugins.framework.script_source import ScriptSource
 from app.sep.plugins.framework.spec import (
@@ -308,7 +308,7 @@ class TaskExecutionApp(BaseApp):
         Requires ``capabilities.delete`` and is rejected alongside a full
         ``delete_handler``. Defaults to ``()``.
     :param description: The plugin description threaded into the derived
-        ``GET /schema`` (``PluginSchema.description``). Defaults to ``None``.
+        ``GET /schema`` (``AppSchema.description``). Defaults to ``None``.
     :param static_mounts: Authenticated static mounts for the app's payload
         directories, collected from the registry and mounted in ``app/sep/main.py``
         through :class:`~app.sep.utils.static.AuthenticatedStaticFiles`. Defaults to
@@ -767,7 +767,7 @@ class TaskExecutionApp(BaseApp):
 
         return router
 
-    def _resolve_plugin_schema(self) -> PluginSchema:
+    def _resolve_plugin_schema(self) -> AppSchema:
         """Return the schema, either the ``schema=`` passthrough or a derived one.
 
         :return: The plugin schema the derived routes register and serve.
@@ -776,7 +776,7 @@ class TaskExecutionApp(BaseApp):
             return self.app_schema
 
         cascade = self.cascade or Cascade()
-        return derive_plugin_schema(
+        return derive_app_schema(
             self.create_model,
             self.views.layout,
             name=self.name,

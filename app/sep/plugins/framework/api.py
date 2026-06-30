@@ -53,7 +53,7 @@ from app.sep.plugins.framework.responses import (
     TaskExecutionResponse,
     TaskResponseBuilder,
 )
-from app.sep.plugins.framework.schema import PluginSchema
+from app.sep.plugins.framework.schema import AppSchema
 from app.sep.plugins.framework.script_source import (
     make_script_dep,
     ScriptExecuteWrite,
@@ -87,11 +87,11 @@ ListDetailResponseT = TypeVar("ListDetailResponseT", bound=BaseModel)
 CreateResponseT = TypeVar("CreateResponseT", bound=BaseModel)
 
 
-def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
+def schema_endpoint(router: APIRouter, plugin_schema: AppSchema) -> None:
     """Register a ``GET /schema`` route on ``router`` that returns ``plugin_schema``.
 
     Call this once from the module that owns the plugin's ``APIRouter``
-    (typically under the shared ``plugins_router`` tree in
+    (typically under the shared ``apps_router`` tree in
     ``app/sep/api/router.py``); the route then resolves at
     ``/api/plugins/{plugin}/schema`` once the plugin router is included with
     the matching prefix. The helper itself does not set a prefix.
@@ -140,7 +140,7 @@ def schema_endpoint(router: APIRouter, plugin_schema: PluginSchema) -> None:
         response_model_exclude_none=True,
         dependencies=[IsApiAuthenticated],
     )
-    async def get_schema() -> PluginSchema:
+    async def get_schema() -> AppSchema:
         """Return the plugin schema captured at registration time.
 
         :return: The plugin schema instance.
@@ -261,11 +261,11 @@ def _reject_contextless_builders(
             )
 
 
-def _create_response_name(plugin_schema: PluginSchema) -> str:
+def _create_response_name(plugin_schema: AppSchema) -> str:
     """Return the ``<App>CreateResponse`` OpenAPI component name for the schema.
 
     Treat both ``-`` and ``_`` in ``plugin_schema.name`` as word boundaries
-    (``PluginSchema.name`` permits hyphens), capitalise each word, and append
+    (``AppSchema.name`` permits hyphens), capitalise each word, and append
     ``CreateResponse`` — so ``"mysql_backups"`` yields
     ``MysqlBackupsCreateResponse``.
 
@@ -325,7 +325,7 @@ def capabilities_endpoint(
       a plugin needs that. ``async def`` providers are rejected at
       registration to keep the contract sync-only for now.
     - The new endpoint is intentionally separate from
-      :class:`~app.sep.plugins.framework.schema.PluginSchema.capabilities`,
+      :class:`~app.sep.plugins.framework.schema.AppSchema.capabilities`,
       which describes static UI feature flags (chaining, scheduling,
       alert_on_fail). The two surfaces are not unified: schema-side
       ``Capabilities`` is per-plugin compile-time posture, capability
@@ -472,7 +472,7 @@ def _resolve_create_response_model(
     base_model: type[BaseModel],
     *,
     connectivity_check: bool,
-    plugin_schema: PluginSchema,
+    plugin_schema: AppSchema,
 ) -> type[BaseModel]:
     """Resolve the response model shared by the create and derived-update routes.
 
@@ -516,7 +516,7 @@ def _resolve_create_response_model(
 def _register_create_route(
     router: APIRouter,
     *,
-    plugin_schema: PluginSchema,
+    plugin_schema: AppSchema,
     base_builder: TaskResponseBuilder[ListDetailResponseT],
     create_payload: Callable[..., Awaitable[TaskWrite]],
     create_response_builder: TaskResponseBuilder[CreateResponseT] | None,
@@ -616,7 +616,7 @@ def _register_create_route(
 def _register_update_route(
     router: APIRouter,
     *,
-    plugin_schema: PluginSchema,
+    plugin_schema: AppSchema,
     get_task: Callable[..., Awaitable[Task]],
     base_builder: TaskResponseBuilder[ListDetailResponseT],
     create_payload: Callable[..., Awaitable[TaskWrite]],
@@ -760,7 +760,7 @@ def _register_delete_route(
 def _register_mutation_routes(
     router: APIRouter,
     *,
-    plugin_schema: PluginSchema,
+    plugin_schema: AppSchema,
     detail_path: str,
     get_task: Callable[..., Awaitable[Task]],
     detail_builder: TaskResponseBuilder[Any],
@@ -1009,7 +1009,7 @@ def _register_list_route(
 
 
 def derive_crud_routes(
-    plugin_schema: PluginSchema,
+    plugin_schema: AppSchema,
     *,
     task_owner: TaskOwner,
     get_task: Callable[..., Awaitable[Task]],
@@ -1436,7 +1436,7 @@ def derive_script_routes(source: ScriptSource[Any], *, name: str) -> APIRouter:
         response_model_exclude_none=True,
         dependencies=[IsApiAuthenticated],
     )
-    async def script_schema(script: script_param) -> PluginSchema:
+    async def script_schema(script: script_param) -> AppSchema:
         """Return the per-script form schema synthesised from its parameters."""
         return source.build_form_schema(script)
 

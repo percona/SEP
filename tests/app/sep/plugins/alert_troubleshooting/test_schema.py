@@ -26,14 +26,14 @@ class TestStaticSchema:
     """Tests against the in-memory ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA constant."""
 
     def test_has_correct_name(self):
-        """Plugin schema identifies as alert_troubleshooting."""
+        """App schema identifies as alert_troubleshooting."""
         assert ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.name == "alert_troubleshooting"
         assert (
             ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.display_name == "Alert Troubleshooting"
         )
 
     def test_has_no_forms(self):
-        """Plugin schema declares no editable forms (browse-only plugin)."""
+        """App schema declares no editable forms (browse-only plugin)."""
         assert ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA.forms == []
 
     def test_listview_columns(self):

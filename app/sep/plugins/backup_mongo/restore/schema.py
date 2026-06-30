@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Derive the PluginSchema for the backup_mongo restores plugin model-first.
+"""Derive the AppSchema for the backup_mongo restores plugin model-first.
 
 The schema is derived from the model-first
 :class:`~app.sep.plugins.backup_mongo.restore.models.RestoreForm` plus the
@@ -24,9 +24,9 @@ bundle. A restore's children are independent, fully-built payloads (not
 
 from app.sep.plugins.backup_mongo.restore.models import RestoreForm
 from app.sep.plugins.backup_mongo.restore.views import restore_views
-from app.sep.plugins.framework.form_dsl import derive_plugin_schema
+from app.sep.plugins.framework.form_dsl import derive_app_schema
 
-restore_mongo_schema = derive_plugin_schema(
+restore_mongo_schema = derive_app_schema(
     RestoreForm,
     restore_views.layout,
     name="backup_mongo_restores",

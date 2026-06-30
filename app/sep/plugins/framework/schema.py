@@ -17,6 +17,9 @@
 
 __all__ = [
     "AnyField",
+    "AppDeploymentCapabilities",
+    "AppEntitySchema",
+    "AppSchema",
     "BaseField",
     "BoolField",
     "Capabilities",
@@ -40,9 +43,6 @@ __all__ = [
     "MultiChoiceField",
     "OneOfBranch",
     "OneOfGroup",
-    "PluginDeploymentCapabilities",
-    "PluginEntitySchema",
-    "PluginSchema",
     "SchemaBaseModel",
     "SchemaField",
     "ScriptPreviewField",
@@ -836,7 +836,7 @@ class DetailSection(SchemaBaseModel):
 class DetailView(SchemaBaseModel):
     """Declare the per-section detail-page layout for a task-style plugin.
 
-    Mirrors the role of :attr:`PluginSchema.list_view` for the list table:
+    Mirrors the role of :attr:`AppSchema.list_view` for the list table:
     the React framework reads ``detail_view`` to render the task detail
     page's section cards instead of inferring structure from the runtime
     ``task.data`` shape.
@@ -1231,7 +1231,7 @@ def _collect_fail_rule_errors(
         )
 
 
-class PluginEntitySchema(SchemaBaseModel):
+class AppEntitySchema(SchemaBaseModel):
     """Describe one CRUD entity for a multi-entity schema-driven plugin.
 
     Used when a plugin exposes several independent resources (for example
@@ -1280,7 +1280,7 @@ class PluginEntitySchema(SchemaBaseModel):
         return self
 
 
-class PluginSchema(SchemaBaseModel):
+class AppSchema(SchemaBaseModel):
     """Represent a plugin's complete schema: form sections, list view, capabilities.
 
     :param name: The plugin identifier; must match Python identifier rules,
@@ -1312,7 +1312,7 @@ class PluginSchema(SchemaBaseModel):
     :param entities: Optional list of CRUD entities for multi-resource plugins.
         When non-empty, the React shell renders one list/create/detail flow
         per entity. Defaults to ``None`` (legacy single-entity mode).
-    :type entities: list[PluginEntitySchema] | None
+    :type entities: list[AppEntitySchema] | None
     :param cardinality_rules: Optional plugin-wide cross-field cardinality
         constraints (task-style plugins only; ignored when ``entities`` is set).
         Defaults to ``None``.
@@ -1341,7 +1341,7 @@ class PluginSchema(SchemaBaseModel):
     capabilities: Capabilities | None = None
     list_view: ListView | None = None
     detail_view: DetailView | None = None
-    entities: list[PluginEntitySchema] | None = None
+    entities: list[AppEntitySchema] | None = None
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
     derived: list[DerivedTask] | None = None
@@ -1360,13 +1360,13 @@ class PluginSchema(SchemaBaseModel):
         any section cards.
 
         :return: The validated plugin schema instance.
-        :rtype: PluginSchema
+        :rtype: AppSchema
         :raises ValueError: When ``task_type`` is set and ``detail_view``
             is unset.
         """
         if self.task_type is not None and self.detail_view is None:
             raise ValueError(
-                "PluginSchema.detail_view is required when task_type is set "
+                "AppSchema.detail_view is required when task_type is set "
                 "(declare DetailView(sections=[]) to render no section cards)"
             )
         return self
@@ -1453,7 +1453,7 @@ class PluginSchema(SchemaBaseModel):
         the failure surfaces at plugin load rather than on first cascade.
 
         :return: The validated plugin schema instance.
-        :rtype: PluginSchema
+        :rtype: AppSchema
         :raises ValueError: When the two lists share at least one
             ``name_suffix`` value.
         """
@@ -1477,7 +1477,7 @@ class PluginSchema(SchemaBaseModel):
         Otherwise root ``forms`` are validated (task-style plugins).
 
         :return: The validated plugin schema instance.
-        :rtype: PluginSchema
+        :rtype: AppSchema
         :raises ValueError: If duplicate field names appear in the same form
             set, or if neither ``entities`` nor ``list_view`` is usable.
         """
@@ -1496,7 +1496,7 @@ class PluginSchema(SchemaBaseModel):
 
         Performs Tier-2 validation: walks every BaseField ``requires`` /
         ``forbidden`` rule, every FormSection ``cardinality_rules`` /
-        ``fail_when`` rule, and every PluginSchema- or PluginEntitySchema-scope
+        ``fail_when`` rule, and every AppSchema- or AppEntitySchema-scope
         rule. For each, it collects the predicate's referenced fields plus the
         rule's target ``fields`` / ``error_fields`` / implicit-self target (for
         BaseField gates) and verifies each name resolves to a known field
@@ -1505,7 +1505,7 @@ class PluginSchema(SchemaBaseModel):
         runtime.
 
         :return: The validated plugin schema instance.
-        :rtype: PluginSchema
+        :rtype: AppSchema
         :raises ValueError: If any rule references a field that does not
             exist in the schema, or whose name contains a hyphen.
         """
@@ -1514,7 +1514,7 @@ class PluginSchema(SchemaBaseModel):
             for entity_index, entity in enumerate(self.entities):
                 declared_field_names = _declared_field_names_from_forms(entity.forms)
                 group_field_names = _one_of_group_names_from_forms(entity.forms)
-                entity_label = f"PluginEntitySchema[{entity_index}] {entity.name!r}"
+                entity_label = f"AppEntitySchema[{entity_index}] {entity.name!r}"
                 for section_index, section in enumerate(entity.forms):
                     section_label = (
                         f"{entity_label} FormSection[{section_index}] {section.title!r}"
@@ -1594,7 +1594,7 @@ class PluginSchema(SchemaBaseModel):
                     errors,
                     group_field_names=group_field_names,
                 )
-            schema_label = f"PluginSchema {self.name!r}"
+            schema_label = f"AppSchema {self.name!r}"
             _collect_cardinality_rule_errors(
                 self.cardinality_rules,
                 schema_label,
@@ -1614,12 +1614,12 @@ class PluginSchema(SchemaBaseModel):
         return self
 
 
-class PluginDeploymentCapabilities(BaseModel):
+class AppDeploymentCapabilities(BaseModel):
     """Serve as the base class for plugin ``GET /capabilities`` response models.
 
     Inherit from this class when defining the response model for a plugin's
     ``capabilities_endpoint()`` provider.  The marker lets consumers
     statically identify deployment-capabilities models and distinguishes them
     from :class:`Capabilities`, which describes static UI feature flags on
-    :attr:`PluginSchema.capabilities` (chaining, scheduling, alert_on_fail).
+    :attr:`AppSchema.capabilities` (chaining, scheduling, alert_on_fail).
     """

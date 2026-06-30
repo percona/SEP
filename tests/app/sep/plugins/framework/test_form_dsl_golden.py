@@ -32,7 +32,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     Choices,
-    derive_plugin_schema,
+    derive_app_schema,
     FieldWidget,
     Forbidden,
     FormLayout,
@@ -157,8 +157,8 @@ _SYNTHETIC_LAYOUT = FormLayout(
 
 
 def _build_synthetic_schema():
-    """Assemble the synthetic coverage ``PluginSchema``."""
-    return derive_plugin_schema(
+    """Assemble the synthetic coverage ``AppSchema``."""
+    return derive_app_schema(
         _SyntheticForm,
         _SYNTHETIC_LAYOUT,
         name="synthetic",
@@ -225,8 +225,8 @@ _ONE_OF_LAYOUT = FormLayout(
 
 
 def _build_one_of_schema():
-    """Assemble the one-of DSL fixture ``PluginSchema``."""
-    return derive_plugin_schema(
+    """Assemble the one-of DSL fixture ``AppSchema``."""
+    return derive_app_schema(
         _OneOfForm,
         _ONE_OF_LAYOUT,
         name="one_of_fixture",
@@ -267,8 +267,8 @@ _DISABLED_CHOICES_LAYOUT = FormLayout(
 
 
 def _build_disabled_choices_schema():
-    """Assemble the disabled-choices fixture ``PluginSchema``."""
-    return derive_plugin_schema(
+    """Assemble the disabled-choices fixture ``AppSchema``."""
+    return derive_app_schema(
         _DisabledChoicesForm,
         _DISABLED_CHOICES_LAYOUT,
         name="disabled_choices",
