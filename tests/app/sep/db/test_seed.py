@@ -213,7 +213,7 @@ def test_builder_reads_sync_interval_at_call_time() -> None:
     """``get_system_periodic_tasks`` reflects the live ``SYNC_INTERVAL`` override.
 
     Built per call, so a DB-backed override published to the proxy snapshot is
-    honored without a restart -- the heart of SEP-1039.
+    honored without a restart.
     """
     from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
     from app.sep.snippets.config import snippets_settings
