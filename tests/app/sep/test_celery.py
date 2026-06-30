@@ -636,7 +636,9 @@ class TestReportSnapshotJobs:
 
     def test_render_pdf_invalid_snapshot_sets_failure_meta(self, mocker) -> None:
         """Invalid PDF snapshot stores safe structured FAILURE metadata."""
-        update_state = mocker.patch.object(sep_celery.render_report_pdf_job, "update_state")
+        update_state = mocker.patch.object(
+            sep_celery.render_report_pdf_job, "update_state"
+        )
 
         with pytest.raises(Ignore):
             sep_celery.render_report_pdf_job.run({})
