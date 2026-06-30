@@ -153,7 +153,10 @@ describe('SettingsPage', () => {
       expect(screen.queryByTestId('setting-row-SYNC_REFRESH_TIME')).not.toBeInTheDocument(),
     );
     expect(screen.getByTestId('setting-row-STALENESS_THRESHOLD_SECONDS')).toBeInTheDocument();
-  });
+    // The settings search has no debounce (synchronous onChange + pure filter), so
+    // fake timers don't apply. Under full-suite parallel load this test can exceed
+    // the default 5000ms purely from CPU contention; raise its budget.
+  }, 15_000);
 
   it('hides advanced and non-hot rows by default, revealing advanced on demand', async () => {
     renderPage();

@@ -20,11 +20,20 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import FastAPI
 from pytest_mock import MockerFixture
+from sqlalchemy_celery_beat.models import Period
 
+import app.sep.main as sep_main
+from app.core.celery.models import IntervalSchedule
 from app.core.config import PMMSettings, Settings, settings
 from app.core.requests import RemoteAPI
+from app.core.settings_override.models import SettingClassEnum
 from app.sep.config import sep_settings
-from app.sep.main import _invalidate_pmm_clients, _make_remote_api_rebinder
+from app.sep.main import (
+    _invalidate_pmm_clients,
+    _make_remote_api_rebinder,
+    _reseed_system_periodic_tasks,
+)
+from app.sep.snippets.config import snippets_settings
 
 
 @pytest.mark.asyncio
@@ -90,3 +99,54 @@ async def test_invalidate_pmm_clients_noop_without_endpoint(
     await _invalidate_pmm_clients({})
 
     invalidate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reseed_callback_reseeds_beat_with_live_interval(
+    mocker: MockerFixture,
+) -> None:
+    """The snippets callback re-seeds the beat schedule from the live interval.
+
+    It rebuilds the task set (reading the overridden ``SYNC_INTERVAL`` from the
+    proxy snapshot) and re-invokes ``init_periodic_tasks_db`` under the ``sep__``
+    prefix, so the ``sep__sync_snippets`` beat row reflects the new cadence on
+    beat's next tick.
+    """
+    reseed = mocker.patch("app.sep.main.init_periodic_tasks_db", new_callable=AsyncMock)
+    snippets_settings._set_snapshot(
+        {"SYNC_INTERVAL": IntervalSchedule(every=15, period=Period.MINUTES)}
+    )
+    try:
+        await _reseed_system_periodic_tasks({})
+    finally:
+        snippets_settings._set_snapshot({})
+
+    reseed.assert_awaited_once()
+    tasks, prefix = reseed.await_args.args
+    assert prefix == "sep__"
+    snippets = next(
+        schedule
+        for schedule in tasks
+        for task in schedule.tasks
+        if task.name == "sep__sync_snippets"
+    )
+    assert snippets.schedule == IntervalSchedule(every=15, period=Period.MINUTES)
+
+
+@pytest.mark.asyncio
+async def test_reseed_callback_registered_for_sync_interval() -> None:
+    """``sep_overrides_lifespan`` registers the snippets-interval re-seed callback."""
+    original = getattr(sep_main.sep_app.state, "override_callbacks", None)
+    try:
+        async with sep_main.sep_overrides_lifespan(FastAPI()):
+            callbacks = sep_main.sep_app.state.override_callbacks
+        assert (
+            SettingClassEnum.SNIPPETS_SETTINGS,
+            "SYNC_INTERVAL",
+        ) in callbacks
+        assert (
+            callbacks[(SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL")]
+            is sep_main._reseed_system_periodic_tasks
+        )
+    finally:
+        sep_main.sep_app.state.override_callbacks = original
