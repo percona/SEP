@@ -34,6 +34,7 @@ from app.api.main import api_router as top_level_api_router
 from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
+from app.core.celery.utils import init_periodic_tasks_db
 from app.core.config import create_app, default_lifespan, Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.core.health import build_health_router
@@ -52,7 +53,7 @@ from app.sep.api.router import api_router
 from app.sep.celery import sync_snippets
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.db import get_async_session_maker
-from app.sep.db.seed import init_sep_db
+from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
     get_base_url,
@@ -164,6 +165,27 @@ async def _invalidate_pmm_clients(_: Mapping[str, object]) -> None:
         await settings.invalidate_client(str(endpoint))
 
 
+async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
+    """Re-seed the SEP beat schedule after a ``SnippetsSettings`` override.
+
+    Rebuilds the system periodic-task set via
+    :func:`app.sep.db.seed.get_system_periodic_tasks` -- which reads the now-live
+    ``snippets_settings.SYNC_INTERVAL`` from the refreshed proxy snapshot -- and
+    re-invokes :func:`app.core.celery.utils.init_periodic_tasks_db` under the
+    ``sep__`` prefix. The seeding is idempotent (get-or-create plus upsert by task
+    name); its update path reassigns only ``task`` / ``schedule_model`` / extra
+    kwargs, so the ``enabled`` gating state written by
+    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating` is preserved.
+    Updating the ``IntervalSchedule`` of ``sep__sync_snippets`` bumps
+    ``PeriodicTaskChanged.last_update``, so Celery beat reloads the schedule on
+    its next scheduler tick without a restart.
+
+    :param _: The new effective ``SnippetsSettings`` snapshot mapping (unused --
+        the interval is re-read from the proxy by the task-set builder).
+    """
+    await init_periodic_tasks_db(get_system_periodic_tasks(), "sep__")
+
+
 @asynccontextmanager
 async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Wire the SEP-side settings override refresher into a lifespan.
@@ -221,6 +243,10 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ssl_certfile=tasks_settings.SSL_CERTFILE,
         ),
         (SettingClassEnum.SETTINGS, "PMM"): _invalidate_pmm_clients,
+        (
+            SettingClassEnum.SNIPPETS_SETTINGS,
+            "SYNC_INTERVAL",
+        ): _reseed_system_periodic_tasks,
     }
     # On ``sep_app``'s state, not the lifespan's parent ``app``: requests to
     # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
@@ -387,11 +413,24 @@ templates = sep_settings.TEMPLATES
 async def internal_error_handler(
     request: Request,
     exc: BaseException,
-) -> HTMLResponse:
+) -> HTMLResponse | JSONResponse | RedirectResponse:
     """Load custom error page."""
-    base_url = get_base_url(request)
     logger.exception("Unhandled exception:", exc_info=exc)
-    user = await get_current_user(request)
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES):
+        return JSONResponse(
+            {"detail": "Internal Server Error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    base_url = get_base_url(request)
+    try:
+        user = await get_current_user(request)
+    except LoginRedirectException as redirect_exc:
+        return RedirectResponse(
+            redirect_exc.location,
+            status_code=redirect_exc.status_code,
+            headers=redirect_exc.headers,
+        )
     messages.error(
         request,
         "Internal Server Error. Please contact the administrators for help.",
@@ -432,6 +471,7 @@ async def custom_404_handler(
         return RedirectResponse(
             redirect_exc.location,
             status_code=redirect_exc.status_code,
+            headers=redirect_exc.headers,
         )
     async with get_async_session_maker()() as session:
         default_context = await get_default_context(request, user, base_url, session)

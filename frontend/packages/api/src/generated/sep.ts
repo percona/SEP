@@ -2601,7 +2601,8 @@ export interface paths {
      *     Three-way on ``task_names``:
      *
      *     * **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already
-     *       paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.
+     *       paginated, forwarding the ``status`` filter, ``exclude_internal`` flag, and
+     *       client ``offset`` / ``limit``.
      *     * **provided, at least one non-blank name** -- query each name independently
      *       against the Tasks API, then merge, sort newest-first, and paginate globally.
      *     * **provided, every name blank after trimming** -- reject with ``422``.
@@ -2611,6 +2612,9 @@ export interface paths {
      *     :param task_names: Zero or more task names (repeat the query param); omit to
      *         list all history.
      *     :param task_status: Optional exact status filter forwarded upstream.
+     *     :param exclude_internal: When ``True``, forward the filter to the upstream
+     *         list-all path so internal maintenance tasks are excluded before pagination.
+     *         Not forwarded on the ``task_names`` merge path. Defaults to ``False``.
      *     :return: Paginated task history, either the upstream list or the merged set.
      *     :raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but
      *         every value is empty after trimming.
@@ -3350,15 +3354,18 @@ export interface components {
     };
     /**
      * ArchivesCreate
-     * @description Represent an Archives creation form as a model-first ``AppFormModel``.
+     * @description Represent an Archives creation form as a model-first ``TaskFormModel``.
      *
      *     Source, destination, and destination-host are discriminated-union one-of groups;
      *     the schema / table / database references are collapsed free-solo fields
-     *     (``int`` inventory id or free-typed ``str`` name). The ``alert_on_fail``
-     *     capability control is inherited from :class:`AppFormModel`.
+     *     (``int`` inventory id or free-typed ``str`` name). The ``task_name`` /
+     *     ``hostname`` Task-section fields and the ``alert_on_fail`` capability control
+     *     are inherited from :class:`TaskFormModel`.
      *
-     *     :param task_name: The task name (and the ``ALIAS`` in the archiver config).
-     *     :param hostname: The executor host the task runs on.
+     *     :param task_name: The human-readable task name; required and non-empty
+     *         (inherited from :class:`TaskFormModel`).
+     *     :param hostname: The executor host the task runs on; required and non-empty
+     *         (inherited from :class:`TaskFormModel`).
      *     :param service_id: The inventory id of the source MySQL service (the host whose
      *         rows are archived; the connectivity probe targets it).
      *     :param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.
@@ -3820,10 +3827,11 @@ export interface components {
      *
      *     Field declaration order is load-bearing: it drives the derived form's
      *     section and field order. ``backup_type`` is not a form field — the spec
-     *     builder injects :attr:`BackupType.PGBACKREST`. The ``alert_on_fail``
-     *     capability control is inherited from :class:`AppFormModel` (``Hidden``,
-     *     off-schema). ``extra="forbid"`` rejects unknown fields (for example a stale
-     *     FE submitting ``host`` / ``port``, which the payload pins itself).
+     *     builder injects :attr:`BackupType.PGBACKREST`. The ``task_name`` / ``hostname``
+     *     Task-section fields and the ``alert_on_fail`` capability control are inherited
+     *     from :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema).
+     *     ``extra="forbid"`` rejects unknown fields (for example a stale FE submitting
+     *     ``host`` / ``port``, which the payload pins itself).
      */
     BackupPgForm: {
       /**
@@ -4360,8 +4368,9 @@ export interface components {
      *     the order here reproduces the historical arg string byte-for-byte. ``progress``
      *     is declared last to land at the end of the value args, and ``Ui(order=...)``
      *     pins the Advanced section's display order where it diverges from declaration
-     *     order. The ``alert_on_fail`` capability control is inherited from
-     *     :class:`AppFormModel` (``Hidden``, off-schema).
+     *     order. The ``task_name`` / ``hostname`` Task-section fields and the
+     *     ``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`
+     *     (``alert_on_fail`` is ``Hidden``, off-schema).
      */
     ChecksumsForm: {
       /**
@@ -7390,6 +7399,8 @@ export interface components {
      *         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
      *         Populated by list/retrieve routes; defaults to ``False``.
      *     :type has_logs: bool
+     *     :param display_name: A user-meaningful label derived from the task name or
+     *         execution-request metadata. Read-only; computed on serialisation.
      */
     TaskHistoryResponse: {
       /** Anonymize Mask */
@@ -7399,6 +7410,21 @@ export interface components {
        * Format: date-time
        */
       created_at?: string;
+      /**
+       * Display Name
+       * @description Return a user-meaningful display label for this task history row.
+       *
+       *     For normal tasks, returns ``task.name``. For generic executor templates
+       *     (``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a
+       *     ``"<source>/<filename> on <target>"`` label so otherwise-identical rows
+       *     are distinguishable: the filename comes from the snippet metadata or the
+       *     ``file://`` payload basename, the source directory from whichever of those
+       *     carries one, and the target from the execution request. Falls back to
+       *     ``"<task> on <target>"`` when no filename is available.
+       *
+       *     :return: The display label for the task history entry.
+       */
+      readonly display_name: string;
       /**
        * Duration
        * @description Return the duration of the task execution in seconds.
@@ -11664,6 +11690,7 @@ export interface operations {
       query?: {
         task_names?: string[] | null;
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+        exclude_internal?: boolean;
         offset?: number;
         limit?: number;
       };

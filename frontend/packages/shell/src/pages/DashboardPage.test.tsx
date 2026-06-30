@@ -18,7 +18,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('../contexts/auth', () => ({
   useAuth: () => ({ user: { username: 'dba' } }),
@@ -34,17 +34,34 @@ vi.mock('@sep/api', async (importOriginal) => ({
   }),
 }));
 
+const mockUseTaskHistory = vi.fn();
+
 vi.mock('@sep/framework', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sep/framework')>()),
-  useTaskHistory: () => ({
-    data: { items: [] },
-    isLoading: false,
-    isError: false,
-    error: null,
-  }),
+  useTaskHistory: (...args: unknown[]) => mockUseTaskHistory(...args),
 }));
 
 import DashboardPage from './DashboardPage';
+
+const EMPTY_HISTORY = {
+  data: { items: [] },
+  isLoading: false,
+  isError: false,
+  error: null,
+};
+
+function makeItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 1,
+    display_name: 'run-python',
+    task: { name: 'run-python', owner: 'ANY' },
+    execution_request: { target: 'db1', task: 'run-python', payload: null, meta: {} },
+    status: 'success',
+    started_at: '2026-01-01T00:00:00Z',
+    has_logs: false,
+    ...overrides,
+  };
+}
 
 function renderDashboard() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -63,6 +80,10 @@ function renderDashboard() {
   return router;
 }
 
+beforeEach(() => {
+  mockUseTaskHistory.mockReturnValue(EMPTY_HISTORY);
+});
+
 describe('DashboardPage', () => {
   it('links the Targets stat card to the inventory target-hosts view', async () => {
     const router = renderDashboard();
@@ -75,6 +96,101 @@ describe('DashboardPage', () => {
 
     await waitFor(() => {
       expect(router.state.location.pathname).toBe('/inventory/target-hosts');
+    });
+  });
+
+  it('requests task history with excludeInternal and limit 5', () => {
+    renderDashboard();
+    expect(mockUseTaskHistory).toHaveBeenCalledWith({ limit: 5, excludeInternal: true });
+  });
+
+  it('renders display_name as the task name button', async () => {
+    mockUseTaskHistory.mockReturnValue({
+      ...EMPTY_HISTORY,
+      data: { items: [makeItem({ display_name: 'my_snippet.py' })] },
+    });
+    renderDashboard();
+    expect(await screen.findByRole('button', { name: 'my_snippet.py' })).toBeInTheDocument();
+  });
+
+  it('derives task link from owner BACKUP_MONGO', async () => {
+    mockUseTaskHistory.mockReturnValue({
+      ...EMPTY_HISTORY,
+      data: {
+        items: [
+          makeItem({
+            display_name: 'my-backup',
+            task: { name: 'backup-task', owner: 'BACKUP_MONGO' },
+          }),
+        ],
+      },
+    });
+    renderDashboard();
+    const btn = await screen.findByRole('button', { name: 'my-backup' });
+    expect(btn).toHaveAttribute(
+      'data-task-link',
+      `/backups/mongodb/backups/task/${encodeURIComponent('backup-task')}`,
+    );
+  });
+
+  it('derives task link from owner ALTERS', async () => {
+    mockUseTaskHistory.mockReturnValue({
+      ...EMPTY_HISTORY,
+      data: {
+        items: [makeItem({ task: { name: 'pt-osc', owner: 'ALTERS' } })],
+      },
+    });
+    renderDashboard();
+    const btn = await screen.findByRole('button', { name: 'run-python' });
+    expect(btn).toHaveAttribute(
+      'data-task-link',
+      `/schema-change/alters/task/${encodeURIComponent('pt-osc')}`,
+    );
+  });
+
+  it('falls back to /tasks/<name> for unknown owner via ANY', async () => {
+    mockUseTaskHistory.mockReturnValue({
+      ...EMPTY_HISTORY,
+      data: {
+        items: [makeItem({ task: { name: 'some-task', owner: 'UNKNOWN_OWNER' } })],
+      },
+    });
+    renderDashboard();
+    const btn = await screen.findByRole('button', { name: 'run-python' });
+    expect(btn).toHaveAttribute('data-task-link', `/tasks/${encodeURIComponent('some-task')}`);
+  });
+
+  it('routes RESTORES owner to /tasks/:taskName', async () => {
+    mockUseTaskHistory.mockReturnValue({
+      ...EMPTY_HISTORY,
+      data: {
+        items: [makeItem({ task: { name: 'restore-task', owner: 'RESTORES' } })],
+      },
+    });
+    renderDashboard();
+    const btn = await screen.findByRole('button', { name: 'run-python' });
+    expect(btn).toHaveAttribute('data-task-link', `/tasks/${encodeURIComponent('restore-task')}`);
+  });
+
+  it('navigates to the task link when the task name button is clicked', async () => {
+    mockUseTaskHistory.mockReturnValue({
+      ...EMPTY_HISTORY,
+      data: {
+        items: [
+          makeItem({
+            display_name: 'my-alter',
+            task: { name: 'my-alter', owner: 'ALTERS' },
+          }),
+        ],
+      },
+    });
+    const router = renderDashboard();
+
+    const btn = await screen.findByRole('button', { name: 'my-alter' });
+    fireEvent.click(btn);
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe('/schema-change/alters/task/my-alter');
     });
   });
 });

@@ -18,7 +18,7 @@
 import pytest
 from pydantic import SecretStr
 
-from app.api.deps import _SERVICE_PRINCIPAL_ID, get_current_admin, get_current_user
+from app.api.deps import get_current_admin, get_current_user, SERVICE_PRINCIPAL_ID
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
@@ -64,7 +64,7 @@ async def test_get_current_user_internal_token_match(casdoor_mock, mocker):
     assert user.username == "sep-service"
     assert user.is_admin is False
     assert user.access_token == secret
-    assert user.id == _SERVICE_PRINCIPAL_ID
+    assert user.id == SERVICE_PRINCIPAL_ID
     casdoor_mock.introspect_token.assert_not_called()
 
 
