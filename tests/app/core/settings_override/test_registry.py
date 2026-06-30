@@ -190,9 +190,14 @@ def test_nested_overridable_field_names_tasks_settings() -> None:
 
 
 def test_hot_field_names_snippets_settings() -> None:
-    """``SnippetsSettings`` ships its three HOT preview / sync fields."""
+    """Expose the HOT preview / sync fields and the sync interval on ``SnippetsSettings``."""
     assert hot_field_names(SnippetsSettings) == frozenset(
-        {"ENABLE_MANUAL_SYNC", "PREVIEW_MAX_CHARS", "PREVIEW_MAX_LINES"}
+        {
+            "ENABLE_MANUAL_SYNC",
+            "PREVIEW_MAX_CHARS",
+            "PREVIEW_MAX_LINES",
+            "SYNC_INTERVAL",
+        }
     )
 
 

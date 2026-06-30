@@ -15,9 +15,12 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { useEffect } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useServices, type ServiceOption, type ServiceType } from '../../hooks/useServices';
+import { extractId } from '../../utils/extractId';
+import { isHydratedReferenceOption, resolveReferenceOption } from '../../utils/referenceOption';
 import { FreeSoloSelect } from '../FreeSoloSelect';
 
 const EMPTY_OPTIONS: ServiceOption[] = [];
@@ -58,7 +61,8 @@ export function ServiceSelector({
   helperText,
   allowCustom,
 }: ServiceSelectorProps) {
-  const { control } = useFormContext();
+  const { control, setValue, watch } = useFormContext();
+  const storedValue = watch(name);
 
   const {
     data: services = EMPTY_OPTIONS,
@@ -74,6 +78,20 @@ export function ServiceSelector({
     : empty
       ? 'No services available'
       : helperText;
+
+  useEffect(() => {
+    if (allowCustom || isHydratedReferenceOption(storedValue)) {
+      return;
+    }
+    const id = extractId(storedValue);
+    if (id === null) {
+      return;
+    }
+    const match = services.find((service) => service.id === id);
+    if (match) {
+      setValue(name, match, { shouldDirty: false, shouldValidate: false });
+    }
+  }, [allowCustom, storedValue, services, name, setValue]);
 
   if (allowCustom) {
     return (
@@ -109,6 +127,7 @@ export function ServiceSelector({
         getOptionLabel,
         isOptionEqualToValue,
         noOptionsText: isLoading ? 'Loading services…' : 'No services available',
+        value: resolveReferenceOption(storedValue, services),
       }}
       textFieldProps={{ helperText: text, error: isError }}
     />
