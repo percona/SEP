@@ -22,30 +22,6 @@ from pydantic import BaseModel
 from app.sep.plugins.report.models import ReportData
 
 
-class ReportGenerateWrite(BaseModel):
-    """Define shared JSON body parameters for report generation.
-
-    Used by the periodic health-report Celery task. The JSON API uses
-    explicit query parameters (``since``, ``until``, ``full``, ``refresh``,
-    ``sections``) and the snapshot-based job endpoints use
-    :class:`ReportSnapshotWrite`.
-
-    :param since: Relative start of the report period (e.g. ``now-7d``).
-    :type since: str
-    :param until: Relative end of the report period (e.g. ``now``).
-    :type until: str
-    :param full: Include all check results and full backup history.
-    :type full: bool
-    :param refresh: Force a refresh of advisor checks before fetching results.
-    :type refresh: bool
-    """
-
-    since: str = "now-7d"
-    until: str = "now"
-    full: bool = True
-    refresh: bool = False
-
-
 class ReportSnapshotWrite(BaseModel):
     """Define report snapshot body for PDF/upload jobs.
 
