@@ -50,7 +50,7 @@ class TestApiRouterComposition:
         """Assert ``IsApiAuthenticated`` is declared at router level."""
         assert IsApiAuthenticated in api_router.dependencies
 
-    def test_plugins_router_prefix(self) -> None:
+    def test_apps_router_prefix(self) -> None:
         """Assert the plugins sub-router carries the ``/plugins`` prefix."""
         assert apps_router.prefix == "/plugins"
 
@@ -78,7 +78,7 @@ class TestApiRouterComposition:
         assert checksums_route_tags
         assert all("checksums" in tags for tags in checksums_route_tags)
 
-    def test_plugins_router_included_via_api_router(self) -> None:
+    def test_apps_router_included_via_api_router(self) -> None:
         """Assert checksums and inventory plugin schema routes resolve on ``sep_app``.
 
         Both plugins mount under ``/api/plugins/{name}/schema`` on the composed
@@ -244,7 +244,7 @@ class TestPluginBearerGate:
         response = cookie_only_client.options("/api/plugins/checksums/schema")
         assert response.status_code != status.HTTP_401_UNAUTHORIZED
 
-    def test_bearer_gate_is_on_plugins_router_only(self) -> None:
+    def test_bearer_gate_is_on_apps_router_only(self) -> None:
         """The gate is wired into apps_router, not the broader api_router.
 
         Regression guard against accidentally Bearer-gating /api/sep/*
@@ -562,7 +562,7 @@ class TestApiRouterConfigDrivenLoop:
         assert any(p.startswith("/plugins/checksums/") for p in paths)
         assert any(p.startswith("/plugins/dipper/") for p in paths)
 
-    def test_build_plugins_router_skips_empty_string_path(
+    def test_build_apps_router_skips_empty_string_path(
         self, mocker: MockerFixture
     ) -> None:
         """Assert an empty-string ``api_router_path`` is treated as no-mount.
@@ -580,7 +580,7 @@ class TestApiRouterConfigDrivenLoop:
         router = build_apps_router(build_app_registry([plugin]))
         assert router.routes == []
 
-    def test_build_plugins_router_raises_type_error_for_non_router(
+    def test_build_apps_router_raises_type_error_for_non_router(
         self, mocker: MockerFixture
     ) -> None:
         """Assert importing a non-``APIRouter`` attribute raises ``TypeError``.
@@ -611,7 +611,7 @@ class TestApiRouterConfigDrivenLoop:
                 api_router_path="not.a.real.module.router",
             )
 
-    def test_module_level_plugins_router_matches_settings(self) -> None:
+    def test_module_level_apps_router_matches_settings(self) -> None:
         """Assert module-level ``apps_router`` mirrors ``sep_settings.PLUGINS``."""
         expected_keys = {
             app.key

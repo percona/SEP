@@ -1462,7 +1462,7 @@ class TestDerivedTask:
         assert reparsed == spec
 
 
-class TestPluginSchemaDerivedField:
+class TestAppSchemaDerivedField:
     """Cover the new ``derived`` field on ``AppSchema``."""
 
     def test_defaults_to_none(self) -> None:
@@ -1584,7 +1584,7 @@ class TestChainedPredecessor:
         assert reparsed == spec
 
 
-class TestPluginSchemaPredecessorsField:
+class TestAppSchemaPredecessorsField:
     """Cover the new ``predecessors`` field on ``AppSchema``."""
 
     def test_defaults_to_none(self) -> None:
