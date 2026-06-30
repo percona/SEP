@@ -171,7 +171,7 @@ def test_plugin_schema_constructs_with_minimal_fields():
 
 
 def test_plugin_schema_entities_mode_omits_root_list_view():
-    """Construct a ``AppSchema`` with ``entities`` set and no root ``list_view``."""
+    """Construct an ``AppSchema`` with ``entities`` set and no root ``list_view``."""
     entity = AppEntitySchema(
         name="things",
         display_name="Things",
@@ -214,7 +214,7 @@ def test_plugin_entity_schema_detail_highlights_round_trip():
 
 
 def test_plugin_entity_schema_rejects_duplicate_field_names():
-    """Reject a ``AppEntitySchema`` with duplicate field ``name`` values across sections."""
+    """Reject an ``AppEntitySchema`` with duplicate field ``name`` values across sections."""
     with pytest.raises(ValueError, match="duplicate field name"):
         AppEntitySchema(
             name="dup",
@@ -234,7 +234,7 @@ def test_plugin_entity_schema_rejects_duplicate_field_names():
 
 
 def test_plugin_schema_constructs_with_all_capabilities_on():
-    """Construct a ``AppSchema`` with every capability flag enabled."""
+    """Construct an ``AppSchema`` with every capability flag enabled."""
     schema = AppSchema(
         name="caps",
         display_name="Caps",
@@ -536,7 +536,7 @@ def test_plugin_schema_round_trips_through_json():
 
 
 def test_plugin_schema_accepts_snake_case_python_construction():
-    """Accept snake_case Python kwargs when constructing a ``AppSchema``."""
+    """Accept snake_case Python kwargs when constructing an ``AppSchema``."""
     expected_min_length = 3
     schema = AppSchema(
         name="p",
@@ -560,7 +560,7 @@ def test_plugin_schema_accepts_snake_case_python_construction():
 
 
 def test_plugin_schema_accepts_snake_case_json_input():
-    """Accept snake_case JSON input when validating a ``AppSchema``."""
+    """Accept snake_case JSON input when validating an ``AppSchema``."""
     expected_min_length = 3
     schema = AppSchema.model_validate(
         {
@@ -641,7 +641,7 @@ def test_service_field_service_types_round_trip():
 
 
 def test_plugin_schema_rejects_duplicate_field_names_across_sections():
-    """Reject a ``AppSchema`` with duplicate field ``name`` values across sections."""
+    """Reject an ``AppSchema`` with duplicate field ``name`` values across sections."""
     with pytest.raises(ValidationError, match="duplicate field name"):
         AppSchema(
             name="p",
@@ -661,7 +661,7 @@ def test_plugin_schema_rejects_duplicate_field_names_across_sections():
 
 
 def test_plugin_schema_accepts_unique_names_across_sections():
-    """Accept a ``AppSchema`` whose field ``name`` values are unique across sections."""
+    """Accept an ``AppSchema`` whose field ``name`` values are unique across sections."""
     schema = AppSchema(
         name="p",
         display_name="P",

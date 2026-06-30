@@ -1470,7 +1470,7 @@ def _extract_rule_plan(
         if entity is None:
             known = ", ".join(sorted(e.name for e in schema.entities))
             raise ValueError(
-                f"entity_name {entity_name!r} is not a AppEntitySchema.name "
+                f"entity_name {entity_name!r} is not an AppEntitySchema.name "
                 f"on this schema; known entities: {known}"
             )
         entity_label = f"AppEntitySchema[{entity_index}] {entity.name!r}"

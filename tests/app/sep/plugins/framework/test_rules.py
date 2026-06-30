@@ -1375,7 +1375,7 @@ class TestMultiEntityRulePlan:
     def test_extract_unknown_entity_name(self) -> None:
         """Unknown ``entity_name`` raises with known entity list."""
         schema = _multi_entity_two_alpha_beta_schema()
-        with pytest.raises(ValueError, match="not a AppEntitySchema.name"):
+        with pytest.raises(ValueError, match="not an AppEntitySchema.name"):
             _extract_rule_plan(schema, entity_name="gamma")
 
     def test_extract_scopes_rules_to_named_entity(self) -> None:

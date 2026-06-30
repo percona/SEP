@@ -40,7 +40,7 @@ SNIPPETS_TASK = "sep__sync_snippets"
 
 
 def _plugin(key: str, *, enabled: bool = True) -> App:
-    """Build a ``App`` activation entry for ``key``."""
+    """Build an ``App`` activation entry for ``key``."""
     return App(module_name=key, enabled=enabled)
 
 
