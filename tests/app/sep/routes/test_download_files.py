@@ -168,9 +168,15 @@ class TestListTaskHistoryFiles:
         assert response.json() == {}
 
     def test_propagates_other_http_exceptions(
-        self, test_client, mock_tasks_api_dep, task_history_response
+        self,
+        mocker,
+        test_client,
+        regular_user,
+        mock_tasks_api_dep,
+        task_history_response,
     ):
         """Assert HTTP errors other than 400/409 are re-raised, not silently returned as {}."""
+        mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
         mock_tasks_api_dep.get.side_effect = HTTPException(
             status_code=HTTP_500_INTERNAL_SERVER_ERROR
         )
