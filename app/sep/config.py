@@ -15,7 +15,6 @@
 
 """Define SEP settings."""
 
-import logging
 from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
@@ -65,8 +64,6 @@ from app.core.utils.fields import (
 )
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
-
-logger = logging.getLogger(__name__)
 
 
 class App(BaseCaseInsensitiveModel):
@@ -247,32 +244,29 @@ class SessionOptions(BaseModel):
     PATH: URIPath | None = None
 
 
-def _drop_removed_syncer_pmm(data: Any) -> Any:
-    """Warn on and drop a removed per-syncer ``pmm`` override key.
+def _reject_removed_syncer_pmm(data: Any) -> Any:
+    """Reject a removed per-syncer ``pmm`` override key.
 
     The per-syncer ``pmm:`` override was removed in SEP-1477; PMM synchronizers now
     read the top-level ``PMM`` section directly. A leftover ``pmm`` key (any case) is
-    dropped with a ``WARNING`` rather than silently honored, so upgraded deployments
-    get a startup signal. ``SEPSettings.add_syncer_extra_kwargs`` re-validates each
-    merged ``SyncOptions``, so a ``pmm`` carried via ``SYNCER_EXTRA_KWARGS`` may log
-    this warning twice -- acceptable, dedup is not worth the complexity.
+    rejected with a ``ValueError`` -- which pydantic wraps into a ``ValidationError``
+    -- so upgraded deployments fail fast at startup instead of silently honoring dead
+    config. ``SEPSettings.add_syncer_extra_kwargs`` re-validates each merged
+    ``SyncOptions``, so a ``pmm`` carried via ``SYNCER_EXTRA_KWARGS`` is rejected there
+    too.
 
     :param data: The raw input mapping passed to the model.
-    :return: The input with any ``pmm`` key removed (unchanged if not a mapping).
+    :return: The input unchanged when no ``pmm`` key is present.
+    :raises ValueError: When the input carries a ``pmm`` key (any case).
     """
     if isinstance(data, dict) and any(
         isinstance(k, str) and k.lower() == "pmm" for k in data
     ):
-        logger.warning(
+        raise ValueError(
             "Per-syncer 'pmm:' override is no longer honored (removed in SEP-1477); "
             "PMM synchronizers read the top-level 'PMM' section. Remove the stale "
             "'pmm' key from SEP.SYNCERS / SEP.SYNCER_EXTRA_KWARGS."
         )
-        return {
-            k: v
-            for k, v in data.items()
-            if not (isinstance(k, str) and k.lower() == "pmm")
-        }
     return data
 
 
@@ -283,13 +277,14 @@ class SyncerExtraKwargs(BaseLowercaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def warn_removed_pmm(cls, data: Any) -> Any:
-        """Warn on and drop a removed per-syncer ``pmm`` override key.
+    def reject_removed_pmm(cls, data: Any) -> Any:
+        """Reject a removed per-syncer ``pmm`` override key.
 
         :param data: The raw input mapping passed to the model.
-        :return: The input with any ``pmm`` key removed.
+        :return: The input unchanged when no ``pmm`` key is present.
+        :raises ValueError: When the input carries a ``pmm`` key.
         """
-        return _drop_removed_syncer_pmm(data)
+        return _reject_removed_syncer_pmm(data)
 
 
 class SyncOptions(BaseLowercaseModel):
@@ -314,13 +309,14 @@ class SyncOptions(BaseLowercaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def warn_removed_pmm(cls, data: Any) -> Any:
-        """Warn on and drop a removed per-syncer ``pmm`` override key.
+    def reject_removed_pmm(cls, data: Any) -> Any:
+        """Reject a removed per-syncer ``pmm`` override key.
 
         :param data: The raw input mapping passed to the model.
-        :return: The input with any ``pmm`` key removed.
+        :return: The input unchanged when no ``pmm`` key is present.
+        :raises ValueError: When the input carries a ``pmm`` key.
         """
-        return _drop_removed_syncer_pmm(data)
+        return _reject_removed_syncer_pmm(data)
 
     @field_validator("syncer", mode="before")
     @classmethod
@@ -638,30 +634,30 @@ class SEPSettings(BaseYamlAppSettings):
 
     @model_validator(mode="before")
     @classmethod
-    def warn_removed_sep_pmm(cls, data: Any) -> Any:
-        """Warn on and drop a removed ``SEP.PMM`` section.
+    def reject_removed_sep_pmm(cls, data: Any) -> Any:
+        """Reject a removed ``SEP.PMM`` section.
 
         ``SEP.PMM`` was removed in SEP-1477; PMM connection/auth config now lives
-        only under the top-level ``PMM`` section. A leftover ``PMM`` key under
-        ``SEP`` (any case) is dropped with a ``WARNING`` so upgraded deployments get
-        a startup signal instead of silently carrying dead config.
+        only under the top-level ``PMM`` section, and the alerts fields it used to
+        carry moved to the alerts-owned ``SEP.ALERTS`` section. A leftover ``PMM``
+        key under ``SEP`` (any case, including the ``SEP__PMM__*`` env-var path) is
+        rejected with a ``ValueError`` -- which pydantic wraps into a
+        ``ValidationError`` -- so upgraded deployments fail fast at startup instead
+        of silently carrying dead config.
 
         :param data: The raw input mapping passed to the model.
-        :return: The input with any top-level ``PMM`` key removed.
+        :return: The input unchanged when no top-level ``PMM`` key is present.
+        :raises ValueError: When the input carries a ``PMM`` key.
         """
         if isinstance(data, dict) and any(
             isinstance(k, str) and k.lower() == "pmm" for k in data
         ):
-            logger.warning(
+            raise ValueError(
                 "The 'SEP.PMM' section was removed (SEP-1477); PMM connection config "
-                "now lives only under the top-level 'PMM' section. Remove the stale "
-                "'SEP.PMM' block from settings.yaml."
+                "now lives only under the top-level 'PMM' section, and its alerts "
+                "fields moved to the 'SEP.ALERTS' section. Remove the stale 'SEP.PMM' "
+                "block from settings.yaml."
             )
-            return {
-                k: v
-                for k, v in data.items()
-                if not (isinstance(k, str) and k.lower() == "pmm")
-            }
         return data
 
     @model_validator(mode="after")

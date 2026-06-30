@@ -15,7 +15,6 @@
 
 """Define tests for the app.sep.config module."""
 
-import logging
 from datetime import timedelta
 from string import Template
 
@@ -89,58 +88,34 @@ class TestDeprecatedPMMRemoved:
         """``SEPSettings`` no longer declares a ``PMM`` field."""
         assert "PMM" not in SEPSettings.model_fields
 
-    def test_stray_sep_pmm_mapping_is_ignored_with_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ):
-        """A leftover ``SEP.PMM`` mapping is dropped but logs a removal warning.
+    def test_stray_sep_pmm_mapping_is_rejected(self):
+        """A leftover ``SEP.PMM`` mapping is rejected at construction.
 
         Connection config must now come from the top-level ``PMM`` section. The
-        stale ``SEP.PMM`` block has no effect (``extra='ignore'`` drops it), but a
-        ``WARNING`` is emitted so upgraded deployments get a startup signal instead
-        of silently carrying dead config.
+        stale ``SEP.PMM`` block (including the ``SEP__PMM__*`` env-var path) is
+        rejected with a ``ValidationError`` so upgraded deployments fail fast at
+        startup instead of silently carrying dead config.
         """
-        with caplog.at_level(logging.WARNING, logger="app.sep.config"):
-            settings = SEPSettings(PMM={"ENDPOINT": "https://pmm.example.com"})
-        assert not hasattr(settings, "PMM")
-        assert "PMM" not in settings.model_fields_set
-        assert any(
-            "SEP.PMM" in r.message and r.levelno == logging.WARNING
-            for r in caplog.records
-        )
+        with pytest.raises(ValidationError, match="SEP.PMM"):
+            SEPSettings(PMM={"ENDPOINT": "https://pmm.example.com"})
 
-    def test_no_warning_without_stray_pmm(self, caplog: pytest.LogCaptureFixture):
-        """A clean ``SEPSettings`` build emits no ``SEP.PMM`` removal warning."""
-        with caplog.at_level(logging.WARNING, logger="app.sep.config"):
-            SEPSettings()
-        assert not any("SEP.PMM" in r.message for r in caplog.records)
+    def test_clean_build_without_stray_pmm(self):
+        """A clean ``SEPSettings`` build (no ``PMM`` key) constructs without error."""
+        assert SEPSettings() is not None
 
 
 class TestPerSyncerPMMRemoved:
     """The per-syncer ``pmm:`` override is gone; PMM syncers read top-level ``PMM``."""
 
-    def test_stray_pmm_on_syncer_is_dropped_with_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ):
-        """A leftover ``pmm`` key on a ``SYNCERS[]`` entry is dropped and warns."""
-        with caplog.at_level(logging.WARNING, logger="app.sep.config"):
-            syncer = SyncOptions(
-                syncer="PMMSyncer", pmm={"endpoint": "https://pmm.example.com"}
-            )
-        assert "pmm" not in syncer.model_dump()
-        assert any(
-            "pmm" in r.message and r.levelno == logging.WARNING for r in caplog.records
-        )
+    def test_stray_pmm_on_syncer_is_rejected(self):
+        """A leftover ``pmm`` key on a ``SYNCERS[]`` entry is rejected."""
+        with pytest.raises(ValidationError, match="pmm"):
+            SyncOptions(syncer="PMMSyncer", pmm={"endpoint": "https://pmm.example.com"})
 
-    def test_stray_pmm_on_extra_kwargs_is_dropped_with_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ):
-        """A leftover ``pmm`` key in ``SYNCER_EXTRA_KWARGS`` is dropped and warns."""
-        with caplog.at_level(logging.WARNING, logger="app.sep.config"):
-            extra = SyncerExtraKwargs(pmm={"api_key": "secret"})
-        assert "pmm" not in extra.model_dump()
-        assert any(
-            "pmm" in r.message and r.levelno == logging.WARNING for r in caplog.records
-        )
+    def test_stray_pmm_on_extra_kwargs_is_rejected(self):
+        """A leftover ``pmm`` key in ``SYNCER_EXTRA_KWARGS`` is rejected."""
+        with pytest.raises(ValidationError, match="pmm"):
+            SyncerExtraKwargs(pmm={"api_key": "secret"})
 
 
 class TestPluginModuleNameResolution:
