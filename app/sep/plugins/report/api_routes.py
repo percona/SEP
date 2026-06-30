@@ -81,7 +81,7 @@ def _job_response(job_id: str, *, pdf: bool = False) -> ReportJobResponse:
         else:
             response.result = job_result
     elif result.failed():
-        logger.warning("Report job %s failed: %r", job_id, result.result)
+        logger.warning("Report job %s failed", job_id)
         if isinstance(result.result, dict) and result.result.get("error"):
             response.error = str(result.result["error"])
             errors = result.result.get("errors")
@@ -191,10 +191,14 @@ async def report_download_pdf_api(job_id: str) -> Response:
     if not isinstance(encoded_pdf, str):
         raise HTTPConflictException(detail="PDF is not ready")
     filename = "Health_and_Security_Report.pdf"
-    if result.result.get("filename"):
+    if isinstance(result.result.get("filename"), str) and result.result["filename"]:
         filename = result.result["filename"]
+    try:
+        pdf_bytes = base64.b64decode(encoded_pdf)
+    except Exception:
+        raise HTTPInternalServerErrorException(detail="PDF artifact is corrupt")
     return Response(
-        content=base64.b64decode(encoded_pdf),
+        content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

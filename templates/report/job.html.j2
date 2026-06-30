@@ -62,8 +62,12 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 }
                 return;
             }
-            if (job.status === "failure") {
+            if (job.status === "failure" || job.status === "revoked") {
                 statusEl.textContent = job.error || "Report job failed.";
+                return;
+            }
+            if (job.status !== "pending" && job.status !== "started" && job.status !== "retry") {
+                statusEl.textContent = job.error || "Report job ended unexpectedly.";
                 return;
             }
             statusEl.textContent = `Report job ${job.status}.`;

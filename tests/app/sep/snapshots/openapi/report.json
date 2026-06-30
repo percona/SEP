@@ -620,7 +620,8 @@
           "result": {
             "anyOf": [
               {
-                "type": "object"
+                "type": "object",
+                "additionalProperties": true
               },
               {
                 "type": "null"

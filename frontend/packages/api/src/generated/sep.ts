@@ -6570,7 +6570,7 @@ export interface components {
        */
       pdf_ready: boolean;
       /** Result */
-      result?: Record<string, never> | null;
+      result?: Record<string, unknown> | null;
       /** Status */
       status: string;
     };

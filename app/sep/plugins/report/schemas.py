@@ -17,7 +17,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.sep.plugins.report.models import ReportData
 
@@ -50,5 +50,5 @@ class ReportJobResponse(BaseModel):
     job_id: str
     status: str
     pdf_ready: bool = False
-    result: dict[str, Any] | None = None
+    result: dict[str, Any] | None = Field(default=None, json_schema_extra={"additionalProperties": True})
     error: str | None = None
