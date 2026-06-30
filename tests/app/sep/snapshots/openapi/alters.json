@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "AltersCreate": {
-        "description": "Represent the single model-first declaration of the Alters create form.\n\nThis one declaration drives the JSON create/update request body, the Jinja\n``Form()`` body, and — via\n:func:`~app.sep.plugins.framework.form_dsl.derive_plugin_schema` — the\n``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are\nenforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /\n``Forbidden`` gates plus ``__form_rules__``), not by a decorator.\n\nThe schema-display defaults for ``dsn_table`` and ``progress`` diverge from the\nrequest-body defaults: the body defaults both to the empty string (so the\n``dsn_table`` forbidden gate passes for non-``dsn`` recursion, and an omitted\n``progress`` emits no value), while the form renders the Percona-Toolkit DSN\ntable and ``time,10`` via ``Ui(default=...)``.\n\n:param task_name: The name of the task to be created.\n:param hostname: The target hostname for the task execution.\n:param service_id: The Inventory ID of the database service to connect to.\n:param schema_id: The database schema ID on which the task will operate.\n:param table_id: The table ID within the schema to be altered.\n:param schema_name: Manual schema name when ``schema_id`` is not set.\n:param table_name: Manual table name when ``table_id`` is not set.\n:param recursion_method: The method for handling recursion.\n:param alter: The specific alter command to be executed.\n:param dsn_table: The DSN table for recursion method when using ``dsn``. When\n    recursion is ``dsn`` and this field is omitted or empty, it defaults to\n    ``D=percona,t=dsns`` (Percona Toolkit convention).\n:param pause_file: Execution will be paused while the file specified by this param exists.\n:param new_table_name: New table name before it is swapped.\n:param print_arg: Print SQL statements to STDOUT.\n:param progress: Print progress reports to STDERR while copying rows.\n:param no_swap_tables: Swap the original table and the new, altered table.\n:param no_drop_old_table: Drop the original table after renaming it.\n:param no_drop_new_table: Drop the new table if copying the original table fails.\n:param no_drop_triggers: Drop triggers on the old table.\n:param tries: How many times to try critical operations.\n:param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.\n:param critical_load: Examine SHOW GLOBAL STATUS after every chunk, and abort if the load is too high.\n:param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are\n    higher than their thresholds.\n:param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.\n:param max_lag: Pause the data copy until all replicas lag is less than this value.\n:param max_flow_ctl: Pause when PXC flow control exceeds this value.\n:param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.\n:param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor\n    (user/password): pre-checks always use this path; execute/dry-run use pt-osc's\n    default ~/.my.cnf unless this is set to another path, then --defaults-file is added.\n:param continue_on_pre_check_failure: When True, continue to the run task even if\n    pre-checks fail (overrides the schema's default ``on_failure=\"halt\"`` policy).",
+        "description": "Represent the single model-first declaration of the Alters create form.\n\nThis one declaration drives the JSON create/update request body, the Jinja\n``Form()`` body, and — via\n:func:`~app.sep.plugins.framework.form_dsl.derive_app_schema` — the\n``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are\nenforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /\n``Forbidden`` gates plus ``__form_rules__``), not by a decorator.\n\nThe schema-display defaults for ``dsn_table`` and ``progress`` diverge from the\nrequest-body defaults: the body defaults both to the empty string (so the\n``dsn_table`` forbidden gate passes for non-``dsn`` recursion, and an omitted\n``progress`` emits no value), while the form renders the Percona-Toolkit DSN\ntable and ``time,10`` via ``Ui(default=...)``.\n\n:param task_name: The name of the task to be created.\n:param hostname: The target hostname for the task execution.\n:param service_id: The Inventory ID of the database service to connect to.\n:param schema_id: The database schema ID on which the task will operate.\n:param table_id: The table ID within the schema to be altered.\n:param schema_name: Manual schema name when ``schema_id`` is not set.\n:param table_name: Manual table name when ``table_id`` is not set.\n:param recursion_method: The method for handling recursion.\n:param alter: The specific alter command to be executed.\n:param dsn_table: The DSN table for recursion method when using ``dsn``. When\n    recursion is ``dsn`` and this field is omitted or empty, it defaults to\n    ``D=percona,t=dsns`` (Percona Toolkit convention).\n:param pause_file: Execution will be paused while the file specified by this param exists.\n:param new_table_name: New table name before it is swapped.\n:param print_arg: Print SQL statements to STDOUT.\n:param progress: Print progress reports to STDERR while copying rows.\n:param no_swap_tables: Swap the original table and the new, altered table.\n:param no_drop_old_table: Drop the original table after renaming it.\n:param no_drop_new_table: Drop the new table if copying the original table fails.\n:param no_drop_triggers: Drop triggers on the old table.\n:param tries: How many times to try critical operations.\n:param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.\n:param critical_load: Examine SHOW GLOBAL STATUS after every chunk, and abort if the load is too high.\n:param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are\n    higher than their thresholds.\n:param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.\n:param max_lag: Pause the data copy until all replicas lag is less than this value.\n:param max_flow_ctl: Pause when PXC flow control exceeds this value.\n:param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.\n:param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor\n    (user/password): pre-checks always use this path; execute/dry-run use pt-osc's\n    default ~/.my.cnf unless this is set to another path, then --defaults-file is added.\n:param continue_on_pre_check_failure: When True, continue to the run task even if\n    pre-checks fail (overrides the schema's default ``on_failure=\"halt\"`` policy).",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -674,6 +674,242 @@
         "title": "AltersTaskResponseUpdate",
         "type": "object"
       },
+      "AppEntitySchema": {
+        "additionalProperties": false,
+        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:type name: NonEmptyStr\n:param display_name: Human-readable title for this entity's screens.\n:type display_name: NonEmptyStr\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:type description: NonEmptyStr | None\n:param forms: Form sections for create (and edit when the UI supports it).\n:type forms: list[FormSection]\n:param list_view: Column configuration for this entity's list table.\n:type list_view: ListView\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.\n:type fail_when: list[FailRule] | None",
+        "properties": {
+          "cardinality_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CardinalityRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality Rules"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "detail_highlights": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DetailHighlightLanguage"
+            },
+            "title": "Detail Highlights",
+            "type": "object"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "fail_when": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FailRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail When"
+          },
+          "forms": {
+            "items": {
+              "$ref": "#/components/schemas/FormSection"
+            },
+            "title": "Forms",
+            "type": "array"
+          },
+          "list_view": {
+            "$ref": "#/components/schemas/ListView"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "display_name",
+          "forms",
+          "list_view"
+        ],
+        "title": "AppEntitySchema",
+        "type": "object"
+      },
+      "AppSchema": {
+        "additionalProperties": false,
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None",
+        "properties": {
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Capabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cardinality_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CardinalityRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cardinality Rules"
+          },
+          "derived": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DerivedTask"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derived"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "detail_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DetailView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "entities": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AppEntitySchema"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entities"
+          },
+          "fail_when": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FailRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fail When"
+          },
+          "forms": {
+            "items": {
+              "$ref": "#/components/schemas/FormSection"
+            },
+            "title": "Forms",
+            "type": "array"
+          },
+          "list_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ListView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "predecessors": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ChainedPredecessor"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predecessors"
+          },
+          "task_type": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Type"
+          }
+        },
+        "required": [
+          "name",
+          "display_name"
+        ],
+        "title": "AppSchema",
+        "type": "object"
+      },
       "BoolField": {
         "additionalProperties": false,
         "description": "Represent a boolean toggle field.\n\n:param field_type: The discriminator literal; always ``\"bool\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"bool\"]",
@@ -1329,7 +1565,7 @@
       },
       "DetailView": {
         "additionalProperties": false,
-        "description": "Declare the per-section detail-page layout for a task-style plugin.\n\nMirrors the role of :attr:`PluginSchema.list_view` for the list table:\nthe React framework reads ``detail_view`` to render the task detail\npage's section cards instead of inferring structure from the runtime\n``task.data`` shape.\n\n:param sections: Ordered list of sections rendered on the detail page.\n    An empty list is valid; the frontend renders no section cards.\n    Section titles must be unique within a view so the React key can\n    be derived from the title without positional disambiguation.\n:type sections: list[DetailSection]",
+        "description": "Declare the per-section detail-page layout for a task-style plugin.\n\nMirrors the role of :attr:`AppSchema.list_view` for the list table:\nthe React framework reads ``detail_view`` to render the task detail\npage's section cards instead of inferring structure from the runtime\n``task.data`` shape.\n\n:param sections: Ordered list of sections rendered on the detail page.\n    An empty list is valid; the frontend renders no section cards.\n    Section titles must be unique within a view so the React key can\n    be derived from the title without positional disambiguation.\n:type sections: list[DetailSection]",
         "properties": {
           "sections": {
             "items": {
@@ -2299,242 +2535,6 @@
           "branches"
         ],
         "title": "OneOfGroup",
-        "type": "object"
-      },
-      "PluginEntitySchema": {
-        "additionalProperties": false,
-        "description": "Describe one CRUD entity for a multi-entity schema-driven plugin.\n\nUsed when a plugin exposes several independent resources (for example\ninventory nodes, services, schemas, and tables), each with its own list\nview and create/edit forms. Task-style plugins omit ``entities`` and use\nthe root ``forms`` / ``list_view`` instead.\n\n:param name: URL segment and API key for the entity (for example ``nodes``).\n:type name: NonEmptyStr\n:param display_name: Human-readable title for this entity's screens.\n:type display_name: NonEmptyStr\n:param description: Optional helper text for this entity. Defaults to\n    ``None``.\n:type description: NonEmptyStr | None\n:param forms: Form sections for create (and edit when the UI supports it).\n:type forms: list[FormSection]\n:param list_view: Column configuration for this entity's list table.\n:type list_view: ListView\n:param detail_highlights: Optional per-field syntax highlighter hints for\n    detail pages. Keys are field names; values are highlighting languages.\n    Defaults to an empty mapping.\n:type detail_highlights: dict[NonEmptyStr, DetailHighlightLanguage]\n:param cardinality_rules: Optional entity-wide cross-field cardinality\n    constraints. Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional entity-wide predicate-only invariants.\n    Defaults to ``None``.\n:type fail_when: list[FailRule] | None",
-        "properties": {
-          "cardinality_rules": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/CardinalityRule"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cardinality Rules"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "detail_highlights": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/DetailHighlightLanguage"
-            },
-            "title": "Detail Highlights",
-            "type": "object"
-          },
-          "display_name": {
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "fail_when": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/FailRule"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fail When"
-          },
-          "forms": {
-            "items": {
-              "$ref": "#/components/schemas/FormSection"
-            },
-            "title": "Forms",
-            "type": "array"
-          },
-          "list_view": {
-            "$ref": "#/components/schemas/ListView"
-          },
-          "name": {
-            "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "display_name",
-          "forms",
-          "list_view"
-        ],
-        "title": "PluginEntitySchema",
-        "type": "object"
-      },
-      "PluginSchema": {
-        "additionalProperties": false,
-        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:type entities: list[PluginEntitySchema] | None\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None",
-        "properties": {
-          "capabilities": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/Capabilities"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "cardinality_rules": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/CardinalityRule"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cardinality Rules"
-          },
-          "derived": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/DerivedTask"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Derived"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "detail_view": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DetailView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "display_name": {
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "entities": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/PluginEntitySchema"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entities"
-          },
-          "fail_when": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/FailRule"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fail When"
-          },
-          "forms": {
-            "items": {
-              "$ref": "#/components/schemas/FormSection"
-            },
-            "title": "Forms",
-            "type": "array"
-          },
-          "list_view": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ListView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "name": {
-            "minLength": 1,
-            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
-            "title": "Name",
-            "type": "string"
-          },
-          "predecessors": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/ChainedPredecessor"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predecessors"
-          },
-          "task_type": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Type"
-          }
-        },
-        "required": [
-          "name",
-          "display_name"
-        ],
-        "title": "PluginSchema",
         "type": "object"
       },
       "SchemaField": {
@@ -3542,7 +3542,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PluginSchema"
+                  "$ref": "#/components/schemas/AppSchema"
                 }
               }
             },

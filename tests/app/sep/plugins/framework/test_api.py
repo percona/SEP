@@ -73,6 +73,7 @@ from app.sep.plugins.framework.rules import (
     truthy,
 )
 from app.sep.plugins.framework.schema import (
+    AppSchema,
     BoolField,
     Capabilities,
     Choice,
@@ -91,7 +92,6 @@ from app.sep.plugins.framework.schema import (
     IntegerField,
     ListView,
     MultiChoiceField,
-    PluginSchema,
     SchemaField,
     ServiceField,
     StringField,
@@ -102,7 +102,7 @@ from app.sep.plugins.framework.schema import (
 from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
 from tests.app.factories import TaskFactory
 
-_TEST_SCHEMA = PluginSchema(
+_TEST_SCHEMA = AppSchema(
     name="test-schema-endpoint",
     display_name="Test Schema Endpoint",
     forms=[
@@ -115,7 +115,7 @@ _TEST_SCHEMA = PluginSchema(
 )
 
 
-_ALL_FIELDS_SCHEMA = PluginSchema(
+_ALL_FIELDS_SCHEMA = AppSchema(
     name="test-all-fields",
     display_name="Test All Fields",
     description="Schema instance exercising every concrete field class.",
@@ -181,7 +181,7 @@ _ALL_FIELDS_SCHEMA = PluginSchema(
 )
 
 
-_EMPTY_FORMS_SCHEMA = PluginSchema(
+_EMPTY_FORMS_SCHEMA = AppSchema(
     name="test-empty-forms",
     display_name="Test Empty Forms",
     forms=[],
@@ -220,17 +220,17 @@ def _mount_plugin_router(plugin_router: APIRouter, plugin_prefix: str) -> FastAP
         on the shared plugins router (for example ``/test-schema-endpoint``).
     :return: A ``FastAPI`` application instance with the composed router tree.
     """
-    plugins_router = APIRouter(prefix="/plugins")
-    plugins_router.include_router(plugin_router, prefix=plugin_prefix)
+    apps_router = APIRouter(prefix="/plugins")
+    apps_router.include_router(plugin_router, prefix=plugin_prefix)
     api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
-    api_router.include_router(plugins_router)
+    api_router.include_router(apps_router)
     app = FastAPI()
     app.include_router(api_router)
     _register_login_placeholder(app)
     return app
 
 
-def _build_composed_app(schema: PluginSchema, plugin_prefix: str) -> FastAPI:
+def _build_composed_app(schema: AppSchema, plugin_prefix: str) -> FastAPI:
     """Build a fresh FastAPI app exposing ``schema_endpoint`` over a schema.
 
     :param schema: The plugin schema the helper registers on the plugin router.
@@ -298,12 +298,12 @@ class TestSchemaEndpointRouterComposition:
         assert get_api_authenticated_user in callables
 
     def test_route_declares_response_model(self) -> None:
-        """Assert the route wires ``response_model=PluginSchema`` for OpenAPI."""
+        """Assert the route wires ``response_model=AppSchema`` for OpenAPI."""
         router = APIRouter()
         schema_endpoint(router, _TEST_SCHEMA)
 
         [route] = [r for r in router.routes if isinstance(r, APIRoute)]
-        assert route.response_model is PluginSchema
+        assert route.response_model is AppSchema
 
     def test_route_response_model_emits_by_alias(self) -> None:
         """Assert the route pins ``response_model_by_alias=True`` explicitly."""
@@ -416,7 +416,7 @@ class TestSchemaEndpointAuthenticated:
         assert "field_type" not in body["forms"][0]["fields"][0]
 
     def test_openapi_documents_response_schema(self, authed_client: TestClient) -> None:
-        """Assert the OpenAPI spec documents the ``PluginSchema`` response."""
+        """Assert the OpenAPI spec documents the ``AppSchema`` response."""
         openapi = authed_client.get("/openapi.json").json()
 
         path = openapi["paths"]["/api/plugins/test-schema-endpoint/schema"]
@@ -430,7 +430,7 @@ class TestSchemaEndpointAuthenticated:
         assert {"display_name", "list_view", "forms"} <= property_keys
 
     def test_openapi_documents_detail_view(self, authed_client: TestClient) -> None:
-        """Assert OpenAPI surfaces ``PluginSchema.detail_view`` + DetailView models.
+        """Assert OpenAPI surfaces ``AppSchema.detail_view`` + DetailView models.
 
         Regression guard: ``detail_view`` must remain visible to the generated
         TypeScript client. If the field is renamed or dropped without updating
@@ -441,7 +441,7 @@ class TestSchemaEndpointAuthenticated:
 
         components = openapi["components"]["schemas"]
         plugin_schema = next(
-            v for k, v in components.items() if k.endswith("PluginSchema")
+            v for k, v in components.items() if k.endswith("AppSchema")
         )
         assert "detail_view" in plugin_schema["properties"]
 
@@ -498,14 +498,14 @@ class TestSchemaEndpointAllFieldsRoundTrip:
             "/api/plugins/test-all-fields/schema"
         ).json()
 
-        reparsed = PluginSchema.model_validate(body)
+        reparsed = AppSchema.model_validate(body)
         assert reparsed == _ALL_FIELDS_SCHEMA
 
 
 # ── Conditional-rule primitives wire-shape regression (SEP-1071) ────────
 
 
-_CONDITIONAL_RULES_SCHEMA = PluginSchema(
+_CONDITIONAL_RULES_SCHEMA = AppSchema(
     name="test-conditional-rules",
     display_name="Test Conditional Rules",
     forms=[
@@ -564,7 +564,7 @@ class TestConditionalRulePrimitivesWireShape:
             "/api/plugins/test-conditional-rules/schema"
         ).json()
 
-        # PluginSchema-scope primitive
+        # AppSchema-scope primitive
         assert "fail_when" in body
         assert isinstance(body["fail_when"], list)
 
@@ -630,7 +630,7 @@ class TestSchemaResponseExcludeNone:
 # ── DerivedTask cascade primitive wire-shape regression (SEP-1074) ──────
 
 
-_DERIVED_SCHEMA = PluginSchema(
+_DERIVED_SCHEMA = AppSchema(
     name="test-derived",
     display_name="Test Derived",
     forms=[
@@ -1102,7 +1102,7 @@ _PAGE_LIMIT = 2
 _PAGE_TOTAL = 10
 
 
-_SYNTHETIC_SCHEMA = PluginSchema(
+_SYNTHETIC_SCHEMA = AppSchema(
     name="test-derive-crud",
     display_name="Test Derive CRUD",
     forms=[

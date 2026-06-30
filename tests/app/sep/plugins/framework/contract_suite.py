@@ -126,10 +126,10 @@ def mount_app(app_def: TaskExecutionApp) -> FastAPI:
         ``/api/plugins{uri_path}`` behind the ``IsApiAuthenticated`` router guard.
     :return: A fresh ``FastAPI`` app carrying only this definition's routes.
     """
-    plugins_router = APIRouter(prefix="/plugins")
-    plugins_router.include_router(app_def.api_router, prefix=app_def.uri_path)
+    apps_router = APIRouter(prefix="/plugins")
+    apps_router.include_router(app_def.api_router, prefix=app_def.uri_path)
     api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
-    api_router.include_router(plugins_router)
+    api_router.include_router(apps_router)
     app = FastAPI()
     app.include_router(api_router)
 

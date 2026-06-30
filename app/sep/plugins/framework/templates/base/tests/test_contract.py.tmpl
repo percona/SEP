@@ -32,10 +32,10 @@ _BASE = "/api/plugins/<< name >>"
 
 def _client(user: CasdoorUser) -> TestClient:
     """Mount the app's API router behind the production auth guard."""
-    plugins_router = APIRouter(prefix="/plugins")
-    plugins_router.include_router(<< name >>_app.api_router, prefix=<< name >>_app.uri_path)
+    apps_router = APIRouter(prefix="/plugins")
+    apps_router.include_router(<< name >>_app.api_router, prefix=<< name >>_app.uri_path)
     api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
-    api_router.include_router(plugins_router)
+    api_router.include_router(apps_router)
     fastapi_app = FastAPI()
     fastapi_app.include_router(api_router)
     fastapi_app.dependency_overrides[get_api_authenticated_user] = lambda: user

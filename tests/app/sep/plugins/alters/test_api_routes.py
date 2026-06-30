@@ -163,7 +163,7 @@ def _clear_connectivity_caches():
     clear_connectivity_caches()
 
 
-class TestAltersPluginSchemaEndpoint:
+class TestAltersAppSchemaEndpoint:
     """Tests for GET /api/plugins/alters/schema."""
 
     def test_schema_returns_200(self, test_client):

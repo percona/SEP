@@ -43,6 +43,7 @@ from app.sep.plugins.framework.rules import (
 )
 from app.sep.plugins.framework.schema import (
     AnyField,
+    AppSchema,
     BoolField,
     Choice,
     ChoiceField,
@@ -54,7 +55,6 @@ from app.sep.plugins.framework.schema import (
     HostField,
     IntegerField,
     ListView,
-    PluginSchema,
     ScriptPreviewField,
     StringField,
 )
@@ -70,7 +70,7 @@ _SUDO_FIELD_NAME = "sudo"
 _SCRIPT_PREVIEW_FIELD_NAME = "script_preview"
 
 
-SNIPPETS_PLUGIN_SCHEMA = PluginSchema(
+SNIPPETS_PLUGIN_SCHEMA = AppSchema(
     name="snippets",
     display_name="Snippet Manager",
     description=(
@@ -250,7 +250,7 @@ def field_for(parameter: SnippetMetaParameter) -> AnyField:
     return field
 
 
-def build_snippet_schema(snippet: Snippet) -> PluginSchema:
+def build_snippet_schema(snippet: Snippet) -> AppSchema:
     """Synthesise the per-snippet form schema for a single snippet.
 
     The schema includes one form section per parameter group declared in
@@ -263,7 +263,6 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
     :param snippet: The snippet whose schema to synthesise.
     :type snippet: Snippet
     :return: The fully-validated plugin schema for this single snippet.
-    :rtype: PluginSchema
     """
     parameter_sections: dict[str, list[AnyField]] = {}
     for parameter in snippet.validated_parameters.visible_parameters:
@@ -332,7 +331,7 @@ def build_snippet_schema(snippet: Snippet) -> PluginSchema:
         )
     )
 
-    return PluginSchema(
+    return AppSchema(
         name="snippets",
         display_name=snippet.title,
         description=snippet.description or None,

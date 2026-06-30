@@ -40,7 +40,7 @@ from pydantic import BaseModel
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.utils.fields import NonEmptyStr
-from app.sep.plugins.framework.schema import PluginSchema
+from app.sep.plugins.framework.schema import AppSchema
 
 
 @runtime_checkable
@@ -118,7 +118,7 @@ class ScriptSource(Generic[S]):
     :param load_script: Resolve a single script by filename; raise
         :class:`~app.core.exceptions.HTTPNotFoundException` when it is absent.
     :param list_scripts: Return every currently-discovered script (disk or DB).
-    :param build_form_schema: Synthesise a per-script :class:`PluginSchema` from the
+    :param build_form_schema: Synthesise a per-script :class:`AppSchema` from the
         script's frontmatter parameters.
     :param build_execution_meta: Assemble the execution-meta model the framework
         posts to the Tasks API, from the script and the validated request body.
@@ -134,10 +134,10 @@ class ScriptSource(Generic[S]):
     script_dir: Path
     load_script: Callable[[str], Awaitable[S]]
     list_scripts: Callable[[], Awaitable[Sequence[S]]]
-    build_form_schema: Callable[[S], PluginSchema]
+    build_form_schema: Callable[[S], AppSchema]
     build_execution_meta: Callable[[S, ScriptExecuteWrite], BaseModel]
     list_response: Callable[[S], BaseModel]
-    static_schema: PluginSchema | None = None
+    static_schema: AppSchema | None = None
     list_response_model: type[BaseModel] | None = None
 
 

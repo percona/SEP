@@ -20,7 +20,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.sep.plugins.framework.schema import PluginSchema
+from app.sep.plugins.framework.schema import AppSchema
 
 
 class BaseApp(BaseModel):
@@ -28,7 +28,7 @@ class BaseApp(BaseModel):
 
     Authored directly by a declarative app (``app = BaseApp(...)``) or
     synthesized by :func:`app.sep.plugins.framework.registry.build_app_registry`
-    from a legacy ``Plugin`` settings entry, so legacy and definition-based apps
+    from a legacy ``App`` settings entry, so legacy and definition-based apps
     share one shape. ``enabled`` is an activation-list fact stamped by the
     registry rather than author-set; ``display_name`` defaults to ``name``.
     ``key`` is stamped from the module path (scoped for nested sub-apps) when
@@ -62,7 +62,6 @@ class BaseApp(BaseModel):
     :type jinja_router: APIRouter | None
     :param app_schema: The plugin's schema definition, aliased ``schema`` for
         authoring; ``None`` for legacy-wrapped apps.
-    :type app_schema: PluginSchema | None
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
@@ -79,7 +78,7 @@ class BaseApp(BaseModel):
     custom_ui: bool = False
     api_router: APIRouter | None = None
     jinja_router: APIRouter | None = None
-    app_schema: PluginSchema | None = Field(default=None, alias="schema")
+    app_schema: AppSchema | None = Field(default=None, alias="schema")
 
     @model_validator(mode="before")
     @classmethod

@@ -16,13 +16,13 @@
 """Define the plugin schema for the Alert Troubleshooting plugin."""
 
 from app.sep.plugins.framework.schema import (
+    AppSchema,
     Column,
     DetailView,
     ListView,
-    PluginSchema,
 )
 
-ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA = PluginSchema(
+ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA = AppSchema(
     name="alert_troubleshooting",
     display_name="Alert Troubleshooting",
     description=(

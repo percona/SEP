@@ -20,7 +20,7 @@ Section *membership* and *order* are declared on
 and field-declaration order); what lives here is the part the model cannot
 express: the section titles, the collapse/whole-section-hide metadata, the list
 columns, and the UI capability flags. These feed the derived ``GET /schema`` and
-are carried over verbatim from the previous hand-written ``PluginSchema`` so the
+are carried over verbatim from the previous hand-written ``AppSchema`` so the
 schema wire format is unchanged.
 """
 

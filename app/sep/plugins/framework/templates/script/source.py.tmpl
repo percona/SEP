@@ -39,7 +39,7 @@ from app.sep.plugins.framework.schema import (
     Column,
     FormSection,
     ListView,
-    PluginSchema,
+    AppSchema,
     StringField,
 )
 from app.sep.plugins.framework.script_source import ScriptExecuteWrite, ScriptSource
@@ -85,13 +85,13 @@ async def _list_scripts() -> Sequence[<< class_prefix >>Script]:
     ]
 
 
-def _build_form_schema(script: << class_prefix >>Script) -> PluginSchema:
+def _build_form_schema(script: << class_prefix >>Script) -> AppSchema:
     """Build the per-script form schema from its execution model's fields."""
     fields = [
         StringField(name=field_name, label=field_name)
         for field_name in script.get_execution_model().model_fields
     ]
-    return PluginSchema(
+    return AppSchema(
         name="<< name >>",
         display_name="<< display_name >>",
         forms=[FormSection(title="Parameters", fields=fields)],
@@ -118,9 +118,9 @@ def _list_row(script: << class_prefix >>Script) -> << class_prefix >>ListRow:
     )
 
 
-def _static_schema() -> PluginSchema:
+def _static_schema() -> AppSchema:
     """Build the plugin-level schema served at ``GET /schema``."""
-    return PluginSchema(
+    return AppSchema(
         name="<< name >>", display_name="<< display_name >>", list_view=_LIST_VIEW
     )
 

@@ -13,16 +13,16 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the ``PluginSchema`` for the << display_name >> app."""
+"""Define the ``AppSchema`` for the << display_name >> app."""
 
 from app.sep.plugins.framework.schema import (
     Column,
     DetailView,
     ListView,
-    PluginSchema,
+    AppSchema,
 )
 
-<< name >>_schema = PluginSchema(
+<< name >>_schema = AppSchema(
     name="<< name >>",
     display_name="<< display_name >>",
     description="TODO: describe the << display_name >> app.",

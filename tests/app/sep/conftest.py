@@ -85,7 +85,7 @@ def test_client(regular_user: CasdoorUser, session: AsyncSession) -> TestClient:
 
     Overrides ``require_bearer_for_unsafe_methods`` so cookie-only JSON
     mutations under ``/api/plugins/*`` are not blocked by the framework
-    Bearer gate. Plugin-local ``test_client`` overrides MUST
+    Bearer gate. App-local ``test_client`` overrides MUST
     mirror this override; see :func:`api_admin_client_no_bearer` for the
     negative-path fixture that leaves the gate intact.
 

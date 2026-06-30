@@ -55,7 +55,7 @@ from app.core.exceptions import (
 from app.core.security import crypto_timestamp_serializer
 from app.sep.artifact_constants import ARTIFACT_DOWNLOAD_SALT, ARTIFACT_TYPE_SNIPPET
 from app.sep.db import get_async_session_maker
-from app.sep.plugins.framework.schema import PluginSchema
+from app.sep.plugins.framework.schema import AppSchema
 from app.sep.plugins.framework.script_source import ScriptExecuteWrite, ScriptSource
 from app.sep.plugins.snippets.deps import (
     build_snippet_execution_meta,
@@ -196,7 +196,7 @@ async def _list_scripts() -> list[SnippetScript]:
     return [SnippetScript(snippet) for snippet in snippets]
 
 
-def _build_form_schema(script: SnippetScript) -> PluginSchema:
+def _build_form_schema(script: SnippetScript) -> AppSchema:
     """Build the per-snippet form schema from the snippet's parameters."""
     return build_snippet_schema(script.snippet)
 

@@ -40,7 +40,7 @@ from fastapi.testclient import TestClient
 
 from app.core.requests.remote_api import RemoteAPI
 from app.models import CasdoorUser
-from app.sep.config import Plugin
+from app.sep.config import App
 from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
 from app.sep.plugins.framework import scaffold
 from app.sep.plugins.framework.apps import TaskExecutionApp
@@ -102,10 +102,10 @@ def _task_conformance(app: TaskExecutionApp) -> list[str]:
 
 def _mount_api_first(app_def: BaseApp, user: CasdoorUser) -> TestClient:
     """Mount a ``BaseApp``'s API router behind the production auth guard."""
-    plugins_router = APIRouter(prefix="/plugins")
-    plugins_router.include_router(app_def.api_router, prefix=app_def.uri_path)
+    apps_router = APIRouter(prefix="/plugins")
+    apps_router.include_router(app_def.api_router, prefix=app_def.uri_path)
     api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
-    api_router.include_router(plugins_router)
+    api_router.include_router(apps_router)
     fastapi_app = FastAPI()
     fastapi_app.include_router(api_router)
     fastapi_app.dependency_overrides[get_api_authenticated_user] = lambda: user
@@ -258,7 +258,7 @@ def test_task_flavor_scaffolds_conformant_app(
     name = "_scaffold_smoke_task"
     with _scaffolded(name, scaffold.Flavor.TASK):
         importlib.import_module(f"app.sep.plugins.{name}")
-        registry = build_app_registry([Plugin(module_name=name)])
+        registry = build_app_registry([App(module_name=name)])
         app = registry.get(name)
         assert isinstance(app, TaskExecutionApp)
         assert app.jinja_router is None
@@ -288,7 +288,7 @@ def test_script_flavor_scaffolds_snippet_routes(
     name = "_scaffold_smoke_script"
     with _scaffolded(name, scaffold.Flavor.SCRIPT):
         importlib.import_module(f"app.sep.plugins.{name}")
-        registry = build_app_registry([Plugin(module_name=name)])
+        registry = build_app_registry([App(module_name=name)])
         app = registry.get(name)
         assert isinstance(app, TaskExecutionApp)
         assert app.jinja_router is None
@@ -324,7 +324,7 @@ def test_base_flavor_scaffolds_api_first_app(
     name = "_scaffold_smoke_base"
     with _scaffolded(name, scaffold.Flavor.BASE):
         importlib.import_module(f"app.sep.plugins.{name}")
-        registry = build_app_registry([Plugin(module_name=name)])
+        registry = build_app_registry([App(module_name=name)])
         app = registry.get(name)
         assert app is not None
         assert app.jinja_router is None
