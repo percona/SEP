@@ -671,9 +671,11 @@ class SEPSettings(BaseYamlAppSettings):
             dotenv_settings,
             file_secret_settings,
         )
-        for source in (env_settings, dotenv_settings):
-            if "plugins" in getattr(source, "env_vars", {}):
-                _warn_legacy_apps_key()
+        if any(
+            "plugins" in getattr(source, "env_vars", {})
+            for source in (env_settings, dotenv_settings)
+        ):
+            _warn_legacy_apps_key()
         return sources
 
     @computed_field
