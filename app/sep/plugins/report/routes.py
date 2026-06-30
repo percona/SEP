@@ -28,8 +28,8 @@ from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 
 from .deps import IsUploadConfigured, ReportIndexContext, RequiredPMMAPIDep
-from .job_service import report_pdf_filename
-from .models import REPORT_SECTIONS, ReportData
+from .job_service import filter_report_sections, report_pdf_filename
+from .models import ReportData
 from .service import (
     generate_report,
     SERVICE_NAMES,
@@ -147,10 +147,13 @@ async def report_generate_json(
     :return: JSON response with the full report data.
     :rtype: JSONResponse
     """
-    if sections:
-        sections = [s for s in sections if s in REPORT_SECTIONS] or None
     report = await generate_report(
-        pmm_api, since=since, until=until, full=full, refresh=refresh, sections=sections
+        pmm_api,
+        since=since,
+        until=until,
+        full=full,
+        refresh=refresh,
+        sections=filter_report_sections(sections),
     )
     return JSONResponse(content=report.model_dump(mode="json"))
 
