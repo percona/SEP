@@ -32,10 +32,9 @@ from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.form_dsl import (
-    AppFormModel,
     Choices,
-    HostRef,
     ServiceRef,
+    TaskFormModel,
     Ui,
 )
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
@@ -105,7 +104,7 @@ class BackupConfig(BaseCaseInsensitiveModel):
     server_list: list[BackupConfigServer]
 
 
-class BackupPgForm(AppFormModel):
+class BackupPgForm(TaskFormModel):
     """Define the model-first create/update body and schema source for backup_pg.
 
     The single source of the JSON request body (the field types and defaults the
@@ -118,18 +117,15 @@ class BackupPgForm(AppFormModel):
 
     Field declaration order is load-bearing: it drives the derived form's
     section and field order. ``backup_type`` is not a form field — the spec
-    builder injects :attr:`BackupType.PGBACKREST`. The ``alert_on_fail``
-    capability control is inherited from :class:`AppFormModel` (``Hidden``,
-    off-schema). ``extra="forbid"`` rejects unknown fields (for example a stale
-    FE submitting ``host`` / ``port``, which the payload pins itself).
+    builder injects :attr:`BackupType.PGBACKREST`. The ``task_name`` / ``hostname``
+    Task-section fields and the ``alert_on_fail`` capability control are inherited
+    from :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema).
+    ``extra="forbid"`` rejects unknown fields (for example a stale FE submitting
+    ``host`` / ``port``, which the payload pins itself).
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
-    hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
-    ]
     service_id: Annotated[
         int,
         ServiceRef(
