@@ -28,7 +28,8 @@ import type {
 
 const API_BASE = '/plugins/report';
 const POLL_INTERVAL_MS = 1_000;
-const POLL_TIMEOUT_MS = 120_000;
+const ACTIVE_JOB_STATES = new Set(['pending', 'received', 'started', 'retry']);
+const TERMINAL_JOB_STATES = new Set(['success', 'failure', 'revoked']);
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -38,18 +39,26 @@ async function pollJob(
   jobPath: string,
   done: (job: ReportJobResponse) => boolean,
 ): Promise<ReportJobResponse> {
-  const deadline = Date.now() + POLL_TIMEOUT_MS;
-  while (Date.now() < deadline) {
+  for (;;) {
     const { data } = await apiClient.get<ReportJobResponse>(jobPath);
-    if (data.status === 'failure' || data.status === 'failed') {
+    const status = data.status.toLowerCase();
+    if (status === 'success') {
+      if (done(data)) {
+        return data;
+      }
+      throw new Error(data.error || 'Report job completed without required result');
+    }
+    if (status === 'failure') {
       throw new Error(data.error || 'Report job failed');
     }
-    if (done(data)) {
-      return data;
+    if (status === 'revoked') {
+      throw new Error(data.error || 'Report job was revoked');
+    }
+    if (!ACTIVE_JOB_STATES.has(status) && !TERMINAL_JOB_STATES.has(status)) {
+      throw new Error(data.error || `Report job entered unexpected state: ${data.status}`);
     }
     await delay(POLL_INTERVAL_MS);
   }
-  throw new Error('Report job timed out');
 }
 
 export function useGenerateReport(params: ReportParams | null) {
