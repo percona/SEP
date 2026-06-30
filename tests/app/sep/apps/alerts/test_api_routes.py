@@ -88,7 +88,7 @@ def api_client(test_client: TestClient, session: AsyncSession) -> TestClient:
 
     Set a default ``Authorization: Bearer`` header so requests satisfy the
     framework-level ``RequireBearerForUnsafeMethods`` guard on the
-    ``/api/plugins`` router (SEP-1242) — the guard inspects the raw request
+    ``/api/plugins`` router — the guard inspects the raw request
     header, not the (overridden) user dep, so without this header cookie-only
     mutations would (correctly) 401.
     """

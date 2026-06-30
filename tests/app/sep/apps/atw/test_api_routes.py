@@ -312,7 +312,7 @@ class TestAtwSchemaEndpoint:
     def test_atw_schema_category_browser_has_parent_category_fail_rules(
         self, test_client: TestClient
     ) -> None:
-        """Category Browser section exposes SEP-1071 fail_when for parent/category pairs."""
+        """Verify the Category Browser section exposes fail_when for parent/category pairs."""
         response = test_client.get("/api/plugins/atw/schema")
 
         assert response.status_code == status.HTTP_200_OK

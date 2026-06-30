@@ -29,7 +29,7 @@ from app.sep.apps.mysql_backups.models import (
 def _base_payload(backup_type: BackupType, **overrides) -> dict:
     """Build a minimal valid ``BackupCreate`` kwargs dict.
 
-    ``upload`` is required and non-empty per the SEP-1061 explicit
+    ``upload`` is required and non-empty per the explicit
     MultiChoice contract; the default pair (S3 + ``s3_bucket``) keeps the
     bidirectional validator happy so each test can override ``upload`` /
     bucket fields only when that is the assertion under test.
@@ -250,7 +250,7 @@ class TestUploadProviderGate:
     def test_empty_upload_list_rejected(self):
         """``upload=[]`` violates the explicit MultiChoice contract → 422.
 
-        Per SEP-1061 codex feedback: the React multichoice field initialises
+        Per review feedback: the React multichoice field initialises
         to ``[]``; a missing or empty selection must surface 422 instead of
         silently falling back to a legacy bucket-inference path. The
         ``min_length=1`` constraint on ``BackupCreate.upload`` enforces this.

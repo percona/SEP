@@ -76,7 +76,7 @@ class AlertTemplate(BaseModel):
     :param default_threshold: The default numeric threshold displayed and configured
         in the UI. This is independent of ``expression`` — the bundled PromQL expression
         may embed its own comparison value. ``default_threshold`` is UI metadata that
-        the alert management UI (SEP-779) uses to pre-populate the threshold input.
+        the alert management UI uses to pre-populate the threshold input.
     :type default_threshold: float
     :param severity: The severity level of the alert.
     :type severity: AlertSeverity

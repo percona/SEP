@@ -197,7 +197,7 @@ class TestPcsCollectPmmMysqlApikeyHidden:
 
 
 class TestPcsCollectPmmMysqlListVisibility:
-    """Hide date/HA/DBaaS fields in list-services mode (SEP-1319)."""
+    """Hide date/HA/DBaaS fields in list-services mode."""
 
     _GATED_PARAMETERS = ("start", "end", "ha", "ha_name", "dbaas")
 

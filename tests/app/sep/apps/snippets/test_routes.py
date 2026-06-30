@@ -606,7 +606,7 @@ class TestSnippetsExecuteVisibilityGates:
 
     Complements the unit coverage on ``get_validated_execution_args`` in
     ``test_deps.py`` by directly posting a hidden-field value through the live
-    legacy form route — the path a non-browser client would abuse (SEP-1364).
+    legacy form route — the path a non-browser client would abuse.
     """
 
     @pytest.mark.asyncio

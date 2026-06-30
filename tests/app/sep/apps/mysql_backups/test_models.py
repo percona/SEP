@@ -42,7 +42,7 @@ class TestXtrabackupQuietField:
     def test_survives_config_all_round_trip(self):
         """True value persists when BackupConfigAll serialises and re-validates itself.
 
-        Regression guard for the SEP-1239 pattern: ``BackupConfigAll`` uses
+        Regression guard for the pattern: ``BackupConfigAll`` uses
         ``extra='ignore'``, so any field missing from the class is silently
         dropped on re-validation.  The field must be declared on
         ``BackupConfigAll`` — not only on ``BackupCreate`` — or it vanishes
@@ -85,7 +85,7 @@ class TestUploadQuietField:
     def test_survives_config_all_round_trip(self):
         """True value persists when BackupConfigAll serialises and re-validates itself.
 
-        Regression guard for the SEP-1239 pattern: ``BackupConfigAll`` uses
+        Regression guard for the pattern: ``BackupConfigAll`` uses
         ``extra='ignore'``, so any field missing from the class is silently
         dropped on re-validation.  The field must be declared on
         ``BackupConfigAll`` — not only on ``BackupCreate`` — or it vanishes

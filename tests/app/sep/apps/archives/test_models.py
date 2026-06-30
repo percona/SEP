@@ -188,7 +188,7 @@ def _field_by_name(name: str) -> Any:
 
 
 class TestArchivesCreateDefaults:
-    """Cover the limit / sleep purge-script form-display defaults (SEP-1408)."""
+    """Cover the limit / sleep purge-script form-display defaults."""
 
     def test_limit_schema_default_is_purge_default(self) -> None:
         """Derive ``limit`` with the purge-script form default (1000)."""
