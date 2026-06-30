@@ -1706,14 +1706,14 @@ export interface paths {
     };
     /**
      * Report Download Pdf Api
-     * @description Download a ready PDF artifact for a report job.
+     * @description Download a ready PDF result for a report job.
      *
      *     :param job_id: Celery task identifier.
      *     :type job_id: str
      *     :return: PDF file response.
-     *     :rtype: FileResponse
+     *     :rtype: Response
      *     :raises HTTPInternalServerErrorException: If the Celery job failed.
-     *     :raises HTTPConflictException: If the PDF artifact is not ready yet.
+     *     :raises HTTPConflictException: If the PDF result is not ready yet.
      */
     get: operations['report_report_download_pdf_api_api_plugins_report_pdf_jobs__job_id__pdf_get'];
     put?: never;
@@ -6546,13 +6546,13 @@ export interface components {
     };
     /**
      * ReportJobResponse
-     * @description Expose async report artifact job state.
+     * @description Expose async report job state.
      *
      *     :param job_id: Celery task identifier.
      *     :type job_id: str
      *     :param status: Lowercase Celery task state.
      *     :type status: str
-     *     :param pdf_ready: Whether the PDF artifact exists and is downloadable.
+     *     :param pdf_ready: Whether the PDF result exists and is downloadable.
      *     :type pdf_ready: bool
      *     :param result: Successful job result payload, if available.
      *     :type result: dict[str, Any] | None

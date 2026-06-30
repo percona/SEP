@@ -6523,7 +6523,7 @@
         "type": "object"
       },
       "ReportJobResponse": {
-        "description": "Expose async report artifact job state.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:param status: Lowercase Celery task state.\n:type status: str\n:param pdf_ready: Whether the PDF artifact exists and is downloadable.\n:type pdf_ready: bool\n:param result: Successful job result payload, if available.\n:type result: dict[str, Any] | None\n:param error: Failed job error text, if available.\n:type error: str | None",
+        "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:param status: Lowercase Celery task state.\n:type status: str\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:type pdf_ready: bool\n:param result: Successful job result payload, if available.\n:type result: dict[str, Any] | None\n:param error: Failed job error text, if available.\n:type error: str | None",
         "properties": {
           "error": {
             "anyOf": [
@@ -14594,7 +14594,7 @@
     },
     "/api/plugins/report/pdf-jobs/{job_id}/pdf": {
       "get": {
-        "description": "Download a ready PDF artifact for a report job.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: PDF file response.\n:rtype: FileResponse\n:raises HTTPInternalServerErrorException: If the Celery job failed.\n:raises HTTPConflictException: If the PDF artifact is not ready yet.",
+        "description": "Download a ready PDF result for a report job.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: PDF file response.\n:rtype: Response\n:raises HTTPInternalServerErrorException: If the Celery job failed.\n:raises HTTPConflictException: If the PDF result is not ready yet.",
         "operationId": "report_report_download_pdf_api_api_plugins_report_pdf_jobs__job_id__pdf_get",
         "parameters": [
           {
