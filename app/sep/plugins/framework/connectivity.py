@@ -47,16 +47,12 @@ class ConnectivityWarning(BaseModel):
     """Represent a connectivity-check failure on a JSON API task-creation response.
 
     :param target: The Nomad node the task targets.
-    :type target: str
     :param service_type: The lowercase database service type (e.g. ``mysql``).
-    :type service_type: str
     :param message: A human-readable description of the failure.
-    :type message: str
     :param task_history_id: The run-script task-history id whose log explains
         the failure, or ``None`` when no task was created (e.g. the Tasks API
         was unreachable). Optional for backward compatibility with existing
         plugin consumers.
-    :type task_history_id: int | None
     """
 
     target: str
@@ -83,17 +79,11 @@ async def record_connectivity_warning(
     reflecting JSON-path results the same way it reflects form-path ones.
 
     :param tasks_api: Authenticated Tasks API client.
-    :type tasks_api: RemoteAPI
     :param target: The Nomad node name.
-    :type target: str
     :param host: The database host address.
-    :type host: str
     :param port: The database port.
-    :type port: int
     :param service_type: The lowercase service type (e.g. ``mysql``).
-    :type service_type: str
     :return: ``None`` on success or a populated ``ConnectivityWarning`` on failure.
-    :rtype: ConnectivityWarning | None
     """
     success, error, task_history_id = await _fetch_connectivity_result(
         tasks_api, target, host, port, service_type
@@ -124,14 +114,10 @@ async def maybe_record_connectivity_warning(
     inspecting ``meta`` themselves.
 
     :param tasks_api: Authenticated Tasks API client.
-    :type tasks_api: RemoteAPI
     :param meta: The ``task.data["meta"]`` mapping from the created task.
-    :type meta: dict[str, Any]
     :param check_connectivity: If ``False``, skip both the Tasks API call and
         the snapshot write. Honors the per-task opt-out from the JSON API.
-    :type check_connectivity: bool
     :return: ``None`` when skipped or successful; ``ConnectivityWarning`` on failure.
-    :rtype: ConnectivityWarning | None
     """
     if not check_connectivity:
         return None

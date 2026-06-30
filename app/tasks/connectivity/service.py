@@ -82,15 +82,10 @@ async def _cached_check_connectivity(
     codebase (see ``app/core/auth/providers/casdoor.py``).
 
     :param target: The Nomad node name.
-    :type target: str
     :param host: The database host address.
-    :type host: str
     :param port: The database port.
-    :type port: int
     :param service_type: The database service type.
-    :type service_type: ConnectivityServiceType
     :return: A tuple of ``(success, error)``.
-    :rtype: tuple[bool, str | None]
     """
     session = _cached_check_session_ctx.get()
     request = ConnectivityCheckWrite(
@@ -120,17 +115,11 @@ async def check_connectivity_with_cache(
     does not participate in the cache key.
 
     :param session: The async database session.
-    :type session: AsyncSession
     :param target: The Nomad node name.
-    :type target: str
     :param host: The database host address.
-    :type host: str
     :param port: The database port.
-    :type port: int
     :param service_type: The database service type.
-    :type service_type: ConnectivityServiceType
     :return: A tuple of ``(success, error)``.
-    :rtype: tuple[bool, str | None]
     """
     token = _cached_check_session_ctx.set(session)
     try:
@@ -146,11 +135,8 @@ async def check_connectivity(
     """Dispatch a Nomad connectivity check and wait for the result.
 
     :param session: The async database session.
-    :type session: AsyncSession
     :param request: The connectivity check request parameters.
-    :type request: ConnectivityCheckWrite
     :return: The connectivity check result.
-    :rtype: ConnectivityCheckResponse
     """
     task = await get_executable_task_by_name(session, "run-python")
 
@@ -190,16 +176,10 @@ async def check_connectivity(
 
     executor = get_executor_for_task(task)
     async_session = get_async_session_maker()
-    # Two independent clocks. Nomad reports ``RUNNING`` from dispatch onward, so
-    # ``status`` cannot mark when the DB connect actually begins. Instead the
-    # boundary is the ``run-script`` task's ``StartedAt``: ``run-python`` runs the
-    # payload in a ``run-script`` main task preceded by a ``prepare-env`` prestart
-    # task that does the dependency install, so ``StartedAt`` flips only once all
-    # provisioning (dispatch + scheduling + ``prepare-env``) is done. Time before
-    # ``StartedAt`` is charged against ``PROVISIONING_TIMEOUT``; only time after it
-    # is charged against the connect budget (``request.timeout``). This stops
-    # provisioning latency from false-negativing a reachable DB while still
-    # bounding a task whose ``run-script`` step never starts.
+    # Nomad reports ``RUNNING`` from dispatch onward, so the run-script task's
+    # ``StartedAt`` (not ``status``) marks where the DB connect begins — see
+    # ``_connect_phase_started``. Time before it is charged against
+    # ``PROVISIONING_TIMEOUT``, time after against the connect budget below.
     provisioning_elapsed = 0
     connect_elapsed = 0
     connect_started = False
@@ -259,16 +239,11 @@ async def _build_timeout_response(
     can link the full run-script log.
 
     :param session: The async database session.
-    :type session: AsyncSession
     :param task_history_id: The ID of the timed-out check task.
-    :type task_history_id: int
     :param provisioning: Whether the connect phase never started (provisioning
         timeout) rather than began but stalled (connect timeout) at timeout.
-    :type provisioning: bool
     :param connect_timeout: The connect budget in seconds (``request.timeout``).
-    :type connect_timeout: int
     :return: A failure response with a descriptive error and ``task_history_id``.
-    :rtype: ConnectivityCheckResponse
     """
     if provisioning:
         message = (
@@ -293,11 +268,8 @@ async def _collect_run_script_output(
     """Return the concatenated ``run-script`` stdout/stderr captured so far.
 
     :param session: The async database session.
-    :type session: AsyncSession
     :param task_history_id: The ID of the task history row to read.
-    :type task_history_id: int
     :return: The concatenated run-script output, or an empty string if none.
-    :rtype: str
     """
     task_history = await _expire_and_fetch(session, task_history_id)
     chunks = [
@@ -322,11 +294,10 @@ def _connect_phase_started(task_history: TaskHistory) -> bool:
     (``0001-01-01T00:00:00Z``) count as "not started".
 
     :param task_history: The task history row being polled.
-    :type task_history: TaskHistory
     :return: ``True`` once the ``run-script`` task reports a real ``StartedAt``.
-    :rtype: bool
     """
-    task_states = task_history.execution_request.tracking.get("task_states") or {}
+    tracking = task_history.execution_request.tracking or {}
+    task_states = tracking.get("task_states") or {}
     started_at = (task_states.get("run-script") or {}).get("StartedAt")
     if not started_at:
         return False
@@ -349,11 +320,8 @@ async def _fetch_fresh_task_history(
     not yet committed by the time the handler reaches this point.
 
     :param session: The async database session.
-    :type session: AsyncSession
     :param task_history_id: The ID of the task history row to refresh.
-    :type task_history_id: int
     :return: The freshest task history row available within the retry budget.
-    :rtype: TaskHistory
     """
     task_history = await _expire_and_fetch(session, task_history_id)
     for _ in range(FRESH_FETCH_MAX_ATTEMPTS - 1):
@@ -390,12 +358,9 @@ async def _expire_and_fetch(session: AsyncSession, task_history_id: int) -> Task
     raise ``MissingGreenlet`` against the async driver.
 
     :param session: The async database session.
-    :type session: AsyncSession
     :param task_history_id: The ID of the task history row to reload.
-    :type task_history_id: int
     :return: A freshly-loaded task history row with
         ``execution_request`` materialised.
-    :rtype: TaskHistory
     """
     await session.commit()
     cached = await TaskHistoryManager.get_or_404(session, id=task_history_id)
@@ -416,11 +381,8 @@ async def _iter_run_script_logs(
     """Yield ``run-script`` logs from either legacy or chunked storage.
 
     :param session: The async database session.
-    :type session: AsyncSession
     :param task_history: The task history row being inspected.
-    :type task_history: TaskHistory
     :return: An async generator yielding log chunks for the ``run-script`` source.
-    :rtype: AsyncGenerator[TaskLog, None]
     """
     iter_logs = getattr(task_history, "iter_logs", None)
     if callable(iter_logs):
@@ -438,12 +400,9 @@ async def _has_run_script_logs(
     """Return whether ``task_history`` has any ``run-script`` step output.
 
     :param session: The async database session.
-    :type session: AsyncSession
     :param task_history: The task history record to inspect.
-    :type task_history: TaskHistory
     :return: ``True`` if a non-empty stdout or stderr log exists for the
         ``run-script`` step, ``False`` otherwise.
-    :rtype: bool
     """
     async for log in _iter_run_script_logs(session, task_history):
         if log.msg:
@@ -457,11 +416,8 @@ async def _parse_check_result(
     """Extract connectivity result from task logs.
 
     :param session: The async database session.
-    :type session: AsyncSession
     :param task_history: The completed task history record.
-    :type task_history: TaskHistory
     :return: The parsed connectivity check result.
-    :rtype: ConnectivityCheckResponse
     """
     if task_history.id is None:
         raise RuntimeError("_parse_check_result called with unsaved TaskHistory")

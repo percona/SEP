@@ -48,6 +48,7 @@ import {
   type DetailSection,
   type PluginEntitySchema,
   type PluginSchema,
+  type SepComponents,
 } from '@sep/api';
 import { resolvePath } from '../../utils/resolvePath';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
@@ -309,20 +310,20 @@ function DetailViewSectionCard({
  * omitted when no ``task_history_id`` is present (e.g. the Tasks API was
  * unreachable, so no task ran).
  */
-function ConnectivityWarningAlert({ warning }: { warning: Record<string, unknown> }) {
+function ConnectivityWarningAlert({
+  warning,
+}: {
+  warning: SepComponents['schemas']['ConnectivityWarning'];
+}) {
   const [logOpen, setLogOpen] = useState(false);
-  const message =
-    typeof warning.message === 'string' && warning.message
-      ? warning.message
-      : 'Connectivity check returned a warning for this task.';
-  const taskHistoryId =
-    typeof warning.task_history_id === 'number' ? warning.task_history_id : null;
+  const message = warning.message || 'Connectivity check returned a warning for this task.';
+  const taskHistoryId = warning.task_history_id ?? null;
 
   return (
     <>
       <Alert
         severity="warning"
-        sx={{ mb: 3 }}
+        sx={{ mb: 3, whiteSpace: 'pre-wrap' }}
         action={
           taskHistoryId !== null ? (
             <Button
@@ -386,7 +387,9 @@ function OverviewTab({
       {connectivityWarning !== null &&
         connectivityWarning !== undefined &&
         typeof connectivityWarning === 'object' && (
-          <ConnectivityWarningAlert warning={connectivityWarning as Record<string, unknown>} />
+          <ConnectivityWarningAlert
+            warning={connectivityWarning as SepComponents['schemas']['ConnectivityWarning']}
+          />
         )}
 
       <SectionCard title="Task information">

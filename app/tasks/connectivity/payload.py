@@ -42,11 +42,8 @@ def check_mysql(host: str, port: int) -> dict[str, bool | str]:
     (codes 2xxx) and any other exception remain failures.
 
     :param host: The database host address.
-    :type host: str
     :param port: The database port number.
-    :type port: int
     :return: A dict with ``success`` and optionally ``error``.
-    :rtype: dict[str, bool | str]
     """
     import myloginpath
     import pymysql
@@ -83,11 +80,8 @@ def check_postgresql(host: str, port: int) -> dict[str, bool | str]:
     failures (``pgcode`` not set) and any other exception remain failures.
 
     :param host: The database host address.
-    :type host: str
     :param port: The database port number.
-    :type port: int
     :return: A dict with ``success`` and optionally ``error``.
-    :rtype: dict[str, bool | str]
     """
     import psycopg2
 
@@ -117,11 +111,8 @@ def check_mongodb(host: str, port: int) -> dict[str, bool | str]:
     ``ServerSelectionTimeoutError`` and any other exception remain failures.
 
     :param host: The database host address.
-    :type host: str
     :param port: The database port number.
-    :type port: int
     :return: A dict with ``success`` and optionally ``error``.
-    :rtype: dict[str, bool | str]
     """
     import pymongo
 

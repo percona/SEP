@@ -427,6 +427,41 @@ class TestConnectTimeoutBudget:
             == CONNECT_TIMEOUT * 1000
         )
 
+    def test_sep_and_tasks_connect_budgets_match(self):
+        """Verify the SEP-side and Tasks-side connect budgets cannot drift.
+
+        SEP sends ``CHECK_TIMEOUT`` as ``request.timeout``; the Tasks API charges
+        the connect phase against ``CONNECTIVITY_CHECK_TIMEOUT``. They are
+        declared in separate modules with no shared source, so this pins them
+        equal to catch a silent drift.
+        """
+        from app.sep.connectivity import CHECK_TIMEOUT
+        from app.tasks.connectivity.constants import CONNECTIVITY_CHECK_TIMEOUT
+
+        assert CHECK_TIMEOUT == CONNECTIVITY_CHECK_TIMEOUT
+
+    def test_total_server_budget_stays_under_remote_read_timeout(self):
+        """Verify the worst-case server wait stays under the client read timeout.
+
+        SEP's ``RemoteAPI`` holds the request open with ``sock_read=120`` while
+        the Tasks API waits up to ``PROVISIONING_TIMEOUT`` plus the connect
+        budget. If that sum approaches 120s the call surfaces as "Could not reach
+        the Tasks API" instead of the diagnostic timeout response, so keep a
+        comfortable margin below the read timeout.
+        """
+        from annotated_types import Le
+
+        from app.tasks.connectivity.constants import PROVISIONING_TIMEOUT
+        from app.tasks.connectivity.models import ConnectivityCheckWrite
+
+        timeout_field = ConnectivityCheckWrite.model_fields["timeout"]
+        max_connect_budget = next(
+            meta.le for meta in timeout_field.metadata if isinstance(meta, Le)
+        )
+        # ``ClientTimeout(sock_read=...)`` in ``app/core/requests/remote_api.py``.
+        remote_api_sock_read = 120
+        assert PROVISIONING_TIMEOUT + max_connect_budget < remote_api_sock_read
+
 
 class TestMainOutputContract:
     """Guard the ``main`` stdout/stderr contract."""
