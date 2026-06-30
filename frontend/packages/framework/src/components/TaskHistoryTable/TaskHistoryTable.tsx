@@ -410,6 +410,7 @@ function PresentationalTaskHistoryTable({
   resolveUserName,
   onViewLogs,
   onStopTask,
+  isStopping,
   onDownloadFiles,
   onChainItemClick,
   hideTaskNameColumn,
@@ -428,7 +429,7 @@ function PresentationalTaskHistoryTable({
       onChainItemClick={onChainItemClick}
       hideTaskNameColumn={hideTaskNameColumn}
       onConfirmStop={onConfirmStop}
-      isStopping={false}
+      isStopping={!!isStopping}
       canStop={canStop}
     />
   );

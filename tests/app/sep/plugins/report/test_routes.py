@@ -220,8 +220,11 @@ class TestReportGenerate:
             sep_app.dependency_overrides = {}
 
     @pytest.mark.usefixtures("_mock_report_index_context")
-    def test_returns_500_on_generation_error(self, test_client, mock_pmm_api):
+    def test_returns_500_on_generation_error(
+        self, mocker, test_client, regular_user, mock_pmm_api
+    ):
         """Assert 500 is returned when report generation raises an exception."""
+        mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -382,8 +385,11 @@ class TestReportGenerateJSON:
         finally:
             sep_app.dependency_overrides = {}
 
-    def test_returns_500_on_generation_error(self, test_client, mock_pmm_api):
+    def test_returns_500_on_generation_error(
+        self, mocker, test_client, regular_user, mock_pmm_api
+    ):
         """Assert 500 is returned when report generation raises an exception."""
+        mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -505,8 +511,11 @@ class TestReportGeneratePDF:
         finally:
             sep_app.dependency_overrides = {}
 
-    def test_returns_500_on_generation_error(self, test_client, mock_pmm_api):
+    def test_returns_500_on_generation_error(
+        self, mocker, test_client, regular_user, mock_pmm_api
+    ):
         """Assert 500 is returned when report generation raises an exception."""
+        mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
         with patch(
             "app.sep.plugins.report.routes.generate_report",
             new_callable=AsyncMock,
@@ -634,8 +643,11 @@ class TestReportUpload:
         response = test_client.post(self._UPLOAD_URL)
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
-    def test_returns_500_on_upload_error(self, test_client, mock_pmm_api):
+    def test_returns_500_on_upload_error(
+        self, mocker, test_client, regular_user, mock_pmm_api
+    ):
         """Assert 500 when the upload service raises an exception."""
+        mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
         report = make_report()
         with (
             patch(

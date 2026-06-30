@@ -35,6 +35,7 @@ from app.sep.plugins.framework.form_dsl import (
     FormRules,
     Hidden,
     HostRef,
+    Option,
     Requires,
     SchemaRef,
     SectionLayout,
@@ -43,6 +44,7 @@ from app.sep.plugins.framework.form_dsl import (
     TableRef,
     Ui,
 )
+from app.sep.plugins.framework.form_dsl.derivation import build_runtime_schema
 from app.sep.plugins.framework.rules import (
     CardinalityRule,
     F,
@@ -163,6 +165,24 @@ class _ChoiceModel(AppFormModel):
     ] = 0
 
 
+class _ChoiceModelWithOptions(AppFormModel):
+    swap_drop: Annotated[
+        int,
+        Choices(
+            (
+                Option(
+                    value=0,
+                    label="Purge Only",
+                    disabled=True,
+                    disabled_reason="Not available",
+                ),
+                (1, "Swap & Drop"),
+            )
+        ),
+        Ui(label="Archive Type", section="s"),
+    ] = 0
+
+
 class _BadChoiceModel(AppFormModel):
     kind: Annotated[int, Ui(label="K", section="s", widget=FieldWidget.CHOICE)] = 0
 
@@ -221,6 +241,35 @@ class TestChoices:
         """Reject ``widget=MULTI_CHOICE`` on a scalar (non-list) field."""
         with pytest.raises(ValueError, match="not a list"):
             derive_form_sections(_BadMultiWidgetModel, _SINGLE_SECTION)
+
+    def test_disabled_option_derives_choice_with_disabled_fields(self) -> None:
+        """Derive disabled=True and disabled_reason on the Choice for a disabled Option."""
+        field = _fields_by_name(_ChoiceModelWithOptions)["swap_drop"]
+        assert isinstance(field, ChoiceField)
+        choices = field.choices
+        assert choices[0].disabled is True
+        assert choices[0].disabled_reason == "Not available"
+
+    def test_tuple_option_in_choices_remains_selectable(self) -> None:
+        """Derive a selectable Choice with no disabled fields from a bare tuple in Choices."""
+        field = _fields_by_name(_ChoiceModelWithOptions)["swap_drop"]
+        assert isinstance(field, ChoiceField)
+        choices = field.choices
+        assert choices[1].disabled is None
+        assert choices[1].disabled_reason is None
+
+    @pytest.mark.parametrize("invalid_option", [("single",), ("one", "two", "three")])
+    def test_choices_marker_rejects_invalid_tuple_option(
+        self, invalid_option: tuple[str, ...]
+    ) -> None:
+        """Raise on tuple options that do not contain exactly value and label."""
+        with pytest.raises(ValueError, match="Choices options"):
+            Choices((invalid_option,))
+
+    def test_reason_without_disabled_raises_at_marker_construction(self) -> None:
+        """Raise when Option is constructed with disabled_reason but disabled=False."""
+        with pytest.raises((ValueError, TypeError), match="disabled"):
+            Option(value=0, label="Label", disabled_reason="reason")
 
 
 class _RefModel(AppFormModel):
@@ -359,8 +408,6 @@ class TestOneOfDerivation:
 
     def test_runtime_schema_surfaces_one_of_for_union(self) -> None:
         """Include a one-of group in the runtime schema for branch rule synthesis."""
-        from app.sep.plugins.framework.form_dsl.derivation import build_runtime_schema
-
         schema = build_runtime_schema(_SourceUnionModel)
         groups = [f for f in schema.forms[0].fields if isinstance(f, OneOfGroup)]
         assert len(groups) == 1
