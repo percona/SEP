@@ -19,6 +19,7 @@ import json
 
 from sqlmodel import col
 
+from app.core.celery.models import CrontabSchedule
 from app.core.celery.utils import (
     init_periodic_tasks_db,
     SystemPeriodicTaskData,
@@ -42,6 +43,15 @@ _report_plugin_enabled = any(
 )
 
 SYSTEM_PERIODIC_TASKS = [
+    SystemPeriodicTaskSchedule(
+        schedule=CrontabSchedule(minute="0", hour="4"),
+        tasks=[
+            SystemPeriodicTaskData(
+                name="sep__celery_backend_cleanup",
+                task_name="celery.backend_cleanup",
+            ),
+        ],
+    ),
     SystemPeriodicTaskSchedule(
         schedule=sep_settings.APP_DRAIN.reconcile_interval,
         tasks=[

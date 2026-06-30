@@ -27,6 +27,7 @@ from sqlmodel import SQLModel
 
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
+from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep import periodic_tasks as periodic_tasks_module
@@ -37,6 +38,7 @@ from app.sep.models import AppLifecycleEnum, AppState
 from app.sep.plugins.framework.registry import get_app_registry
 
 SNIPPETS_TASK = "sep__sync_snippets"
+CELERY_RESULT_EXPIRES_SECONDS = 3600
 
 
 def _plugin(key: str, *, enabled: bool = True) -> Plugin:
@@ -196,6 +198,24 @@ def test_reconciler_seeded_as_ungated_system_task() -> None:
     ]
     assert len(reconcilers) == 1
     assert reconcilers[0].owner_app_key is None
+
+
+def test_celery_backend_cleanup_seeded_as_ungated_system_task() -> None:
+    """The Celery result backend cleanup task is seeded and never gated off."""
+    cleanups = [
+        task
+        for schedule in seed_module.SYSTEM_PERIODIC_TASKS
+        for task in schedule.tasks
+        if task.task_name == "celery.backend_cleanup"
+    ]
+    assert len(cleanups) == 1
+    assert cleanups[0].name == "sep__celery_backend_cleanup"
+    assert cleanups[0].owner_app_key is None
+
+
+def test_celery_result_expires_configured() -> None:
+    """Celery results have a TTL so result backends do not grow forever."""
+    assert settings.CELERY.result_expires == CELERY_RESULT_EXPIRES_SECONDS
 
 
 @pytest_asyncio.fixture(name="beat_maker")

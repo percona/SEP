@@ -238,6 +238,7 @@ development:
       PROCESSED_FOLDER: data/celery/processed
       CONTROL_FOLDER: data/celery/control
     RESULT_BACKEND: file://data/celery/results
+    RESULT_EXPIRES: 3600
     RESULT_PERSISTENT: True
     BEAT_DBURI: "sqlite:///schedule.db"
   ALERTING:
@@ -267,6 +268,7 @@ production_docker:
     BEAT_SCHEMA: sep
     BROKER_URL: redis://redis:6379/0
     RESULT_BACKEND: redis://redis:6379/1
+    RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
   DATABASE:
     ENGINE: postgresql
