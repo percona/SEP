@@ -16,10 +16,12 @@
 """Define tests for base SEP dependencies."""
 
 from collections import OrderedDict
+from typing import Annotated
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.testclient import TestClient
 from itsdangerous import BadSignature
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -63,6 +65,8 @@ from app.sep.deps import (
     get_username_mapping,
     is_bearer_authenticated,
     PROTECTED_APP_KEYS,
+    protected_task_guard,
+    reject_if_protected,
     require_app_enabled,
     require_bearer_for_unsafe_methods,
 )
@@ -936,6 +940,106 @@ class TestCheckForConflictedRunningTasks:
             ]
         )
         await check_for_conflicted_running_tasks("test-task", mock_api)
+
+
+class TestRejectIfProtected:
+    """Test the shared reject_if_protected check."""
+
+    def test_protected_task_raises_edit_message(self) -> None:
+        """Assert a protected task raises 409 with the default edit message."""
+        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=True)
+        with pytest.raises(HTTPConflictException) as exc_info:
+            reject_if_protected(task)
+        assert exc_info.value.detail == "Cannot edit a protected task."
+
+    def test_protected_task_raises_delete_message(self) -> None:
+        """Assert action='delete' yields the delete-specific 409 message."""
+        task = TaskFactory.build(owner=TaskOwner.ALTERS, protected=True)
+        with pytest.raises(HTTPConflictException) as exc_info:
+            reject_if_protected(task, action="delete")
+        assert exc_info.value.detail == "Cannot delete a protected task."
+
+    def test_unprotected_task_returns_same_task(self) -> None:
+        """Assert an unprotected task is returned unchanged."""
+        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=False)
+        assert reject_if_protected(task) is task
+
+    def test_protected_none_returns_task(self) -> None:
+        """Assert a falsy/None protected flag does not raise."""
+        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task.protected = None
+        assert reject_if_protected(task, action="delete") is task
+
+
+class TestProtectedTaskGuard:
+    """Test the protected_task_guard dependency factory.
+
+    These exercise the factory through real FastAPI dependency resolution: the
+    built guard is mounted on a probe route so ``Depends(task_dep)`` actually
+    resolves the supplied dependency. This validates that the factory is wired
+    to ``task_dep`` (the mock is awaited), not just that the inner rejection
+    body works.
+    """
+
+    @staticmethod
+    def _build_client(
+        task: Task, *, action: str = "edit"
+    ) -> tuple[TestClient, list[bool]]:
+        """Mount ``protected_task_guard(task_dep)`` on a probe route.
+
+        Builds a real async ``task_dep`` that records each invocation, so the
+        returned ``calls`` list proves FastAPI resolved the guard through
+        ``Depends(task_dep)`` rather than the guard reaching the task by another
+        path.
+
+        :param task: The task the resolved dependency should return.
+        :type task: Task
+        :param action: The action verb forwarded to the guard factory.
+        :type action: str
+        :return: The test client and the per-request invocation record.
+        :rtype: tuple[TestClient, list[bool]]
+        """
+        calls: list[bool] = []
+
+        async def task_dep() -> Task:
+            calls.append(True)
+            return task
+
+        guard = protected_task_guard(task_dep, action=action)
+        app = FastAPI()
+
+        @app.get("/probe")
+        async def _probe(resolved: Annotated[Task, Depends(guard)]) -> dict[str, str]:
+            return {"name": resolved.name}
+
+        return TestClient(app), calls
+
+    def test_guard_rejects_protected_task(self) -> None:
+        """Assert the built dependency resolves task_dep then raises 409."""
+        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=True)
+        client, calls = self._build_client(task)
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Cannot edit a protected task."
+        assert calls == [True]
+
+    def test_guard_delete_verb(self) -> None:
+        """Assert action='delete' propagates to the built dependency message."""
+        task = TaskFactory.build(owner=TaskOwner.ALTERS, protected=True)
+        client, calls = self._build_client(task, action="delete")
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Cannot delete a protected task."
+        assert calls == [True]
+
+    def test_guard_passes_unprotected_task(self) -> None:
+        """Assert the built dependency returns an unprotected task unchanged."""
+        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=False)
+        client, calls = self._build_client(task)
+        response = client.get("/probe")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"name": task.name}
+        assert calls == [True]
 
 
 class TestExecutorHostsContext:
