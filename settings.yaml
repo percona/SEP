@@ -266,6 +266,7 @@ production_docker:
     BEAT_DBURI: postgresql://postgres:xxx@sep-db:5432
     BEAT_SCHEMA: sep
     BROKER_URL: redis://redis:6379/0
+    RESULT_BACKEND: redis://redis:6379/1
     WORKER_STATE_DB: celery_worker_state
   DATABASE:
     ENGINE: postgresql
