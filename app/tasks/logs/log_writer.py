@@ -555,7 +555,7 @@ class TaskHistoryLogWriter:
             max_rows=tasks_config.tasks_settings.LOG_STREAM_EVICTION_MAX_ROWS,
         )
         if deleted:
-            logger.info(
+            logger.debug(
                 "taskhistory_log stream capped",
                 extra={
                     "event": "taskhistory_log_stream_capped",

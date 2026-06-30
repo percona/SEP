@@ -873,10 +873,13 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         ``(task_history_id, source, stream)``, oldest first, bounded to
         ``max_rows`` per call. Does NOT commit: the caller (the writer's
         ``append``) owns the transaction so eviction stays atomic with the chunk
-        insert and the version-CAS. PostgreSQL/SQLite ``DELETE`` has no ``LIMIT``,
-        so the bound is applied via an ``id IN (SELECT ... ORDER BY end_offset
-        LIMIT)`` subquery served by the
-        ``(task_history_id, source, stream, end_offset)`` index.
+        insert and the version-CAS. ``DELETE`` has no ``LIMIT`` clause, so the
+        bound is applied via an ``id IN (SELECT ... ORDER BY end_offset LIMIT)``
+        subquery served by the ``(task_history_id, source, stream, end_offset)``
+        index. That id-select is nested one extra level (a derived table) because
+        MySQL rejects referencing the delete target in an uncorrelated subquery
+        (error 1093); the wrapper forces materialization and is transparent on
+        PostgreSQL and SQLite.
 
         :param session: The SQLAlchemy asynchronous session to use for query
             execution.
@@ -888,7 +891,7 @@ class TaskHistoryLogManager(BaseSQLModelManager):
         :param max_rows: The maximum number of chunk rows to delete in this call.
         :return: The number of chunk rows deleted.
         """
-        subquery = (
+        limited_ids = (
             select(col(TaskHistoryLog.id))
             .where(
                 col(TaskHistoryLog.task_history_id) == task_history_id,
@@ -898,10 +901,11 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             )
             .order_by(col(TaskHistoryLog.end_offset))
             .limit(max_rows)
+            .subquery()
         )
         stmt = (
             delete(TaskHistoryLog)
-            .where(col(TaskHistoryLog.id).in_(subquery))
+            .where(col(TaskHistoryLog.id).in_(select(limited_ids.c.id)))
             .execution_options(synchronize_session=False)
         )
         result = await session.exec(stmt)
