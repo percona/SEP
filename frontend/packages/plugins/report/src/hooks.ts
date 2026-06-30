@@ -27,38 +27,53 @@ import type {
 } from './types';
 
 const API_BASE = '/plugins/report';
-const POLL_INTERVAL_MS = 1_000;
+const REPORT_JOB_POLL_INTERVAL_MS = 1_000;
+const DEFAULT_PDF_FILENAME = 'Health_and_Security_Report.pdf';
 const ACTIVE_JOB_STATES = new Set(['pending', 'received', 'started', 'retry']);
-const TERMINAL_JOB_STATES = new Set(['success', 'failure', 'revoked']);
 
-function delay(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+function filenameFromContentDisposition(header: string | undefined): string | null {
+  const match = /filename="([^"]+)"/.exec(header ?? '');
+  return match?.[1] ?? null;
 }
 
-async function pollJob(
-  jobPath: string,
-  done: (job: ReportJobResponse) => boolean,
-): Promise<ReportJobResponse> {
-  for (;;) {
-    const { data } = await apiClient.get<ReportJobResponse>(jobPath);
-    const status = data.status.toLowerCase();
-    if (status === 'success') {
-      if (done(data)) {
-        return data;
-      }
-      throw new Error(data.error || 'Report job completed without required result');
-    }
-    if (status === 'failure') {
-      throw new Error(data.error || 'Report job failed');
-    }
-    if (status === 'revoked') {
-      throw new Error(data.error || 'Report job was revoked');
-    }
-    if (!ACTIVE_JOB_STATES.has(status) && !TERMINAL_JOB_STATES.has(status)) {
-      throw new Error(data.error || `Report job entered unexpected state: ${data.status}`);
-    }
-    await delay(POLL_INTERVAL_MS);
+function filenameFromJob(job: ReportJobResponse | null | undefined): string | null {
+  const filename = (job?.result as Record<string, unknown> | null | undefined)?.filename;
+  return typeof filename === 'string' && filename.trim() ? filename : null;
+}
+
+function reportJobPath(kind: 'pdf' | 'upload', jobId: string): string {
+  return `${API_BASE}/${kind === 'pdf' ? 'pdf-jobs' : 'upload-jobs'}/${jobId}`;
+}
+
+export function isReportJobActive(job: ReportJobResponse | null | undefined): boolean {
+  return ACTIVE_JOB_STATES.has(job?.status.toLowerCase() ?? '');
+}
+
+export function reportJobError(job: ReportJobResponse | null | undefined): string | null {
+  const status = job?.status.toLowerCase();
+  if (status === 'failure') {
+    return job?.error || 'Report job failed';
   }
+  if (status === 'revoked') {
+    return job?.error || 'Report job was revoked';
+  }
+  if (status && status !== 'success' && !ACTIVE_JOB_STATES.has(status)) {
+    return job?.error || `Report job entered unexpected state: ${job?.status}`;
+  }
+  return null;
+}
+
+function useReportJob(kind: 'pdf' | 'upload', jobId: string | null) {
+  return useQuery<ReportJobResponse>({
+    queryKey: ['report', kind, 'job', jobId],
+    enabled: Boolean(jobId),
+    queryFn: async () => {
+      const { data } = await apiClient.get<ReportJobResponse>(reportJobPath(kind, jobId as string));
+      return data;
+    },
+    refetchInterval: (query) =>
+      isReportJobActive(query.state.data) ? REPORT_JOB_POLL_INTERVAL_MS : false,
+  });
 }
 
 export function useGenerateReport(params: ReportParams | null) {
@@ -83,37 +98,59 @@ export function useGenerateReport(params: ReportParams | null) {
   });
 }
 
-export function useDownloadPdf() {
-  return useMutation<void, Error, ReportData>({
+export function useStartPdfJob() {
+  return useMutation<ReportJobResponse, Error, ReportData>({
     mutationFn: async (report) => {
       const { data: job } = await apiClient.post<ReportJobResponse>(`${API_BASE}/pdf-jobs`, {
         report,
       });
-      await pollJob(
-        `${API_BASE}/pdf-jobs/${job.job_id}`,
-        (nextJob) => nextJob.status === 'success' && nextJob.pdf_ready,
-      );
-      const { data } = await apiClient.get<Blob>(`${API_BASE}/pdf-jobs/${job.job_id}/pdf`, {
-        responseType: 'blob',
-      });
-      downloadBlob(data, 'Health_and_Security_Report.pdf');
+      return job;
     },
   });
 }
 
-export function useUploadToServiceNow() {
-  return useMutation<UploadResult, Error, ReportData>({
+export function usePdfJob(jobId: string | null) {
+  return useReportJob('pdf', jobId);
+}
+
+export function useDownloadReportPdf() {
+  return useMutation<void, Error, { job: ReportJobResponse }>({
+    mutationFn: async ({ job }) => {
+      if (job.status.toLowerCase() !== 'success' || !job.pdf_ready) {
+        throw new Error(reportJobError(job) || 'PDF is not ready');
+      }
+      const response = await apiClient.get<Blob>(`${API_BASE}/pdf-jobs/${job.job_id}/pdf`, {
+        responseType: 'blob',
+      });
+      const filename =
+        filenameFromContentDisposition(response.headers['content-disposition']) ??
+        filenameFromJob(job) ??
+        DEFAULT_PDF_FILENAME;
+      downloadBlob(response.data, filename);
+    },
+  });
+}
+
+export function useStartUploadJob() {
+  return useMutation<ReportJobResponse, Error, ReportData>({
     mutationFn: async (report) => {
       const { data: job } = await apiClient.post<ReportJobResponse>(`${API_BASE}/upload-jobs`, {
         report,
       });
-      const finished = await pollJob(
-        `${API_BASE}/upload-jobs/${job.job_id}`,
-        (nextJob) => nextJob.status === 'success',
-      );
-      return (finished.result as UploadResult | null) ?? { status: 'uploaded' };
+      return job;
     },
   });
+}
+
+export function useUploadJob(jobId: string | null) {
+  return useReportJob('upload', jobId);
+}
+
+export function uploadJobResult(job: ReportJobResponse | null | undefined): UploadResult | null {
+  if (job?.status.toLowerCase() !== 'success') {
+    return null;
+  }
+  return (job.result as UploadResult | null) ?? { status: 'uploaded' };
 }
 
 // Probe whether ServiceNow upload is configured. Returns empty disabled_reasons

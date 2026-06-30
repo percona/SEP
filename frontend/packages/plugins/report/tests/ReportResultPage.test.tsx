@@ -156,16 +156,35 @@ describe('ReportResultPage', () => {
     expect(screen.getByText(/node-1/)).toBeInTheDocument();
   });
 
-  it('fires useDownloadPdf mutation on PDF button click', async () => {
+  it('starts a PDF job and downloads with the server filename', async () => {
+    const originalCreateElement = document.createElement.bind(document);
+    const anchor = originalCreateElement('a');
+    vi.spyOn(anchor, 'click').mockImplementation(() => undefined);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName, options) =>
+      tagName === 'a' ? anchor : originalCreateElement(tagName, options),
+    );
     mockedApi.get.mockImplementation((url: string) => {
       if (url.includes('/plugins/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
       if (url.endsWith('/plugins/report/pdf-jobs/job-1/pdf')) {
-        return Promise.resolve({ data: new Blob(['%PDF'], { type: 'application/pdf' }) });
+        return Promise.resolve({
+          data: new Blob(['%PDF'], { type: 'application/pdf' }),
+          headers: {
+            'content-disposition':
+              'attachment; filename="Health_and_Security_Report_2026-05-28.pdf"',
+          },
+        });
       }
       if (url.endsWith('/plugins/report/pdf-jobs/job-1')) {
-        return Promise.resolve({ data: { job_id: 'job-1', status: 'success', pdf_ready: true } });
+        return Promise.resolve({
+          data: {
+            job_id: 'job-1',
+            status: 'success',
+            pdf_ready: true,
+            result: { filename: 'Health_and_Security_Report_2026-05-28.pdf' },
+          },
+        });
       }
       return Promise.resolve({ data: MOCK_REPORT });
     });
@@ -193,6 +212,9 @@ describe('ReportResultPage', () => {
       expect(mockedApi.post).toHaveBeenCalledWith('/plugins/report/pdf-jobs', {
         report: MOCK_REPORT,
       });
+    });
+    await waitFor(() => {
+      expect(anchor.download).toBe('Health_and_Security_Report_2026-05-28.pdf');
     });
   });
 
@@ -231,23 +253,16 @@ describe('ReportResultPage', () => {
       expect(screen.getByRole('button', { name: /download pdf/i })).toBeInTheDocument();
     });
 
-    vi.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(1).mockReturnValue(121_000);
-    const timerSpy = vi.spyOn(window, 'setTimeout').mockImplementation((handler: TimerHandler) => {
-      if (typeof handler === 'function') {
-        handler();
-      }
-      return 1;
-    });
-
     fireEvent.click(screen.getByRole('button', { name: /download pdf/i }));
-    for (let i = 0; i < 10; i += 1) {
-      await Promise.resolve();
-    }
-    timerSpy.mockRestore();
 
-    expect(mockedApi.get).toHaveBeenCalledWith('/plugins/report/pdf-jobs/job-1/pdf', {
-      responseType: 'blob',
-    });
+    await waitFor(
+      () => {
+        expect(mockedApi.get).toHaveBeenCalledWith('/plugins/report/pdf-jobs/job-1/pdf', {
+          responseType: 'blob',
+        });
+      },
+      { timeout: 2_500 },
+    );
   });
 
   it('reports revoked PDF jobs as terminal failures', async () => {
@@ -284,7 +299,7 @@ describe('ReportResultPage', () => {
     });
   });
 
-  it('fires useUploadToServiceNow mutation on upload button click', async () => {
+  it('starts an upload job on upload button click', async () => {
     let uploadStarted = false;
     mockedApi.get.mockImplementation((url: string) => {
       if (url.includes('/plugins/report/config')) {
