@@ -41,6 +41,29 @@ def test_alters_schema_declares_cascade_primitives():
     assert alters_schema.predecessors[0].on_failure == "halt"
 
 
+def test_alters_schema_execution_section_host_labels():
+    """Test detail_view Execution section distinguishes execution vs database host."""
+    assert alters_schema.detail_view is not None
+    execution = next(
+        section
+        for section in alters_schema.detail_view.sections
+        if section.title == "Execution"
+    )
+    fields = {field.label: field.path for field in execution.fields}
+    assert fields["Execution Host"] == "data.meta.target"
+    assert fields["Database Host"] == "data.meta._service_host"
+    assert "Target" not in fields
+
+
+def test_alters_schema_form_hostname_label():
+    """Test create form hostname field is labeled Execution Host."""
+    task_section = next(
+        section for section in alters_schema.forms if section.title == "Task"
+    )
+    hostname = next(field for field in task_section.fields if field.name == "hostname")
+    assert hostname.label == "Execution Host"
+
+
 def test_alters_schema_data_target_mutual_exclusion_gates():
     """Test Data section gates hide inventory vs manual target fields."""
     data_section = next(
