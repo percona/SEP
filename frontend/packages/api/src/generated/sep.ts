@@ -6887,7 +6887,8 @@ export interface components {
       | 'MessagesSettings'
       | 'Settings'
       | 'AlertSettings'
-      | 'AnonymizerSettings';
+      | 'AnonymizerSettings'
+      | 'AlertsSettings';
     /**
      * SettingClassGroup
      * @description One settings-class group in the LIST response.
