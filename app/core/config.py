@@ -94,8 +94,9 @@ def _sanitize_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     """
     safe: dict[str, Any] = {}
     for key, value in kwargs.items():
-        redacted = redact_credential_url(str(value))
-        safe[key] = redacted if redacted != str(value) else value
+        raw = str(value)
+        redacted = redact_credential_url(raw)
+        safe[key] = redacted if redacted != raw else value
     return safe
 
 

@@ -87,8 +87,8 @@ def classify_connectivity_error(exc: BaseException) -> ConnectivityStatusEnum:
     """Map a probe exception to its :class:`ConnectivityStatusEnum` outcome.
 
     Order matters: :class:`TimeoutError` and the aiohttp SSL errors are both
-    :class:`OSError` subclasses, so they are checked before the generic
-    ``OSError`` (unreachable) arm.
+    :class:`OSError` subclasses, so they are checked before falling through to
+    the generic unreachable outcome.
 
     :param exc: The exception raised while probing the endpoint.
     :type exc: BaseException
@@ -105,8 +105,6 @@ def classify_connectivity_error(exc: BaseException) -> ConnectivityStatusEnum:
         return ConnectivityStatusEnum.ERROR
     if isinstance(exc, ClientSSLError | ssl.SSLError):
         return ConnectivityStatusEnum.SSL_ERROR
-    if isinstance(exc, OSError):
-        return ConnectivityStatusEnum.UNREACHABLE
     return ConnectivityStatusEnum.UNREACHABLE
 
 

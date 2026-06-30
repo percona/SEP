@@ -38,6 +38,7 @@ from app.core.exceptions import (
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.models import CasdoorUser
+from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import Plugin, sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import (
@@ -56,6 +57,7 @@ from app.sep.deps import (
     get_executor_hosts,
     get_executor_hosts_context,
     get_inventory_api,
+    get_pmm_api,
     get_task_by_name,
     get_task_history,
     get_tasks_api,
@@ -504,6 +506,48 @@ class TestGetTasksApi:
         result = await gen.__anext__()
         assert result is mock_authenticated
         mock_client.auth.assert_called_once_with("test-token")
+
+
+class TestGetPmmApi:
+    """Test the ``get_pmm_api`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_endpoint_not_configured(self):
+        """Assert ``None`` is returned when PMM endpoint is not set."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = None
+            mock_settings.PMM.api_key = None
+            result = await get_pmm_api()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_api_key_not_configured(self):
+        """Assert ``None`` is returned when PMM API key is not set."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = None
+            result = await get_pmm_api()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_configured(self):
+        """Assert a ``PMMRemoteAPI`` is returned when PMM is configured."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = True
+            mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
+            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
+            result = await get_pmm_api()
+        assert result is mock_client
+        mock_settings.get_remote_api.assert_awaited_once_with(
+            PMMRemoteAPI,
+            endpoint="https://pmm.example.com",
+            api_key="secret-key",
+            verify_ssl=True,
+            ssl_cafile="/etc/ssl/ca.pem",
+        )
 
 
 class TestGetExecutorHosts:

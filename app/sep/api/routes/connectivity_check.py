@@ -41,8 +41,7 @@ from app.core.requests.connectivity import (
     ConnectivityStatusEnum,
     PROBE_TIMEOUT_SECONDS,
 )
-from app.sep.deps import InventoryAPI, TaskAPI
-from app.sep.plugins.alerts.deps import PMMAPIDep
+from app.sep.deps import InventoryAPI, PMMAPIDep, TaskAPI
 
 router = APIRouter()
 
