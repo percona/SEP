@@ -172,13 +172,13 @@ def should_skip_snippet(snippet_path: Path) -> bool:
 
 @owned_by("report")
 @celery.task(bind=True)
-def render_report_pdf_job(self: Any, report_json: dict) -> dict[str, str]:
+def render_report_pdf_job(self: Any, report_json: dict[str, Any]) -> dict[str, str]:
     """Render a PDF artifact from a stored report JSON snapshot.
 
     :param self: Bound Celery task instance.
     :type self: Any
     :param report_json: Serialized report snapshot.
-    :type report_json: dict
+    :type report_json: dict[str, Any]
     :return: Base64-encoded PDF payload and download filename.
     :rtype: dict[str, str]
     """
@@ -201,15 +201,17 @@ def render_report_pdf_job(self: Any, report_json: dict) -> dict[str, str]:
 
 @owned_by("report")
 @celery.task(bind=True)
-def upload_report_snapshot_job(self: Any, report_json: dict) -> dict:
+def upload_report_snapshot_job(
+    self: Any, report_json: dict[str, Any]
+) -> dict[str, Any]:
     """Render and upload a PDF from a report JSON snapshot.
 
     :param self: Bound Celery task instance.
     :type self: Any
     :param report_json: Serialized report snapshot.
-    :type report_json: dict
+    :type report_json: dict[str, Any]
     :return: ServiceNow upload response payload.
-    :rtype: dict
+    :rtype: dict[str, Any]
     """
     from app.sep.plugins.report.models import ReportData
     from app.sep.plugins.report.service import generate_pdf_report, upload_pdf_report
