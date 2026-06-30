@@ -54,6 +54,7 @@ __all__ = [
     "FormRules",
     "Hidden",
     "HostRef",
+    "Option",
     "Requires",
     "SchemaRef",
     "SectionLayout",
@@ -239,24 +240,74 @@ class HostRef:
 
 
 @dataclass(frozen=True, slots=True)
+class Option:
+    """Represent a single choice option with an optional disabled state.
+
+    Use inside :class:`Choices` when one or more options should be rendered
+    non-selectable with an explanatory tooltip.  Bare ``(value, label)`` tuples
+    inside :class:`Choices` remain supported and are treated as enabled options.
+
+    :param value: The value submitted when the option is selected. Stringified
+        to match :attr:`~app.sep.plugins.framework.schema.Choice.value`.
+    :param label: The human-readable label displayed for the option.
+    :param disabled: When ``True``, the option is rendered non-selectable.
+        UI hint only; server-side rejection of disabled values remains the
+        consuming app's :class:`~app.sep.plugins.framework.rules.FormRules`
+        responsibility. Defaults to ``False``.
+    :param disabled_reason: Explanatory text surfaced in a tooltip when the
+        option is non-selectable. May only be set together with
+        ``disabled=True``.
+    """
+
+    value: object
+    label: str
+    disabled: bool = False
+    disabled_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        """Validate that disabled_reason is only set when disabled is True."""
+        if self.disabled_reason is not None and not self.disabled:
+            raise ValueError("disabled_reason may only be set when disabled is True")
+
+
+@dataclass(frozen=True, slots=True)
 class Choices:
-    """Provide explicit ``(value, label)`` options for a choice field.
+    """Provide explicit options for a choice field.
 
     Always wins over type-derived options, and is required for choices whose
     labels are not derivable from the type (an ``int`` rendered as a dropdown,
     a ``Literal`` whose strings carry no display text). Values are stringified
     to match :attr:`~app.sep.plugins.framework.schema.Choice.value`.
 
-    :param options: Ordered ``(value, label)`` pairs; declaration order is the
-        wire order.
+    Options may be bare ``(value, label)`` tuples or :class:`Option` instances.
+    Use :class:`Option` when one or more options should be rendered
+    non-selectable (see :attr:`Option.disabled` / :attr:`Option.disabled_reason`).
+
+    :param options: Ordered options; declaration order is the wire order.
+        Each entry is either a ``(value, label)`` tuple or an :class:`Option`.
     """
 
-    options: tuple[tuple[object, str], ...]
+    options: tuple[tuple[object, str] | Option, ...]
 
     def __post_init__(self) -> None:
-        """Normalize options to a tuple of pairs so the marker stays hashable."""
+        """Normalize options to ``Option`` instances so the marker stays hashable."""
+        normalized: list[Option] = []
+        for opt in self.options:
+            if isinstance(opt, Option):
+                normalized.append(opt)
+                continue
+            try:
+                value, label = opt
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "Choices options must be Option or (value, label) tuples"
+                ) from exc
+            normalized.append(Option(value=value, label=label))
+
         object.__setattr__(
-            self, "options", tuple((value, label) for value, label in self.options)
+            self,
+            "options",
+            tuple(normalized),
         )
 
 

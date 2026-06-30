@@ -25,15 +25,14 @@ from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.archives.constants import SwapDropEnum
 from app.sep.plugins.framework import (
-    AppFormModel,
     Choices,
     Forbidden,
     FormRules,
-    HostRef,
     Requires,
     SchemaRef,
     ServiceRef,
     TableRef,
+    TaskFormModel,
     Ui,
 )
 from app.sep.plugins.framework.form_dsl import Hidden
@@ -237,16 +236,19 @@ _ARCHIVES_FORM_RULES = FormRules(
 )
 
 
-class ArchivesCreate(AppFormModel):
-    """Represent an Archives creation form as a model-first ``AppFormModel``.
+class ArchivesCreate(TaskFormModel):
+    """Represent an Archives creation form as a model-first ``TaskFormModel``.
 
     Source, destination, and destination-host are discriminated-union one-of groups;
     the schema / table / database references are collapsed free-solo fields
-    (``int`` inventory id or free-typed ``str`` name). The ``alert_on_fail``
-    capability control is inherited from :class:`AppFormModel`.
+    (``int`` inventory id or free-typed ``str`` name). The ``task_name`` /
+    ``hostname`` Task-section fields and the ``alert_on_fail`` capability control
+    are inherited from :class:`TaskFormModel`.
 
-    :param task_name: The task name (and the ``ALIAS`` in the archiver config).
-    :param hostname: The executor host the task runs on.
+    :param task_name: The human-readable task name; required and non-empty
+        (inherited from :class:`TaskFormModel`).
+    :param hostname: The executor host the task runs on; required and non-empty
+        (inherited from :class:`TaskFormModel`).
     :param service_id: The inventory id of the source MySQL service (the host whose
         rows are archived; the connectivity probe targets it).
     :param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.
@@ -267,10 +269,6 @@ class ArchivesCreate(AppFormModel):
 
     __form_rules__ = _ARCHIVES_FORM_RULES
 
-    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
-    hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
-    ]
     service_id: Annotated[
         int,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),

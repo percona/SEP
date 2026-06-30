@@ -24,7 +24,10 @@ import yaml
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
-from app.sep.plugins.archives.alerts import ALERT_DETAIL_BUILDER
+from app.sep.plugins.archives.alerts import (
+    ALERT_DETAIL_BUILDER,
+    ARCHIVER_TRACE_PLACEHOLDER,
+)
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import (
     _encode_anonymize_mask,
@@ -749,8 +752,6 @@ class TestTaskHistory:
         self, execution_request: TaskExecutionRequest, mocker
     ) -> None:
         """Render the placeholder for a missing STDERR trace, never an empty block."""
-        from app.sep.plugins.archives.alerts import ARCHIVER_TRACE_PLACEHOLDER
-
         history = TaskHistory(
             id=1075,
             task_id=1,
@@ -933,6 +934,142 @@ class TestTaskHistoryResponse:
         response = TaskHistoryResponse.model_validate(history)
 
         assert response.has_logs is True
+
+
+class TestTaskHistoryResponseDisplayName:
+    """Test ``TaskHistoryResponse.display_name`` derivation."""
+
+    @pytest.fixture
+    def normal_task(self) -> Task:
+        """Return a Task with a plain user-defined name."""
+        return TaskFactory.build(id=1, name="backup-task", data={"key": "val"})
+
+    @pytest.fixture
+    def run_python_task(self) -> Task:
+        """Return a run-python generic executor Task."""
+        return TaskFactory.build(id=2, name="run-python", data={"key": "val"})
+
+    @pytest.fixture
+    def exec_artifact_task(self) -> Task:
+        """Return an exec-artifact generic executor Task."""
+        return TaskFactory.build(id=3, name="exec-artifact", data={"key": "val"})
+
+    def _history(
+        self, task: Task, execution_request: TaskExecutionRequest
+    ) -> TaskHistoryResponse:
+        history = TaskHistory(
+            id=1,
+            task_id=task.id,
+            task=task,
+            execution_request=execution_request,
+            status=TaskHistoryStatusEnum.SUCCESS,
+        )
+        return TaskHistoryResponse.model_validate(history)
+
+    def test_normal_task_returns_task_name(self, normal_task: Task) -> None:
+        """Assert a regular task returns its ``task.name`` as the display label."""
+        req = TaskExecutionRequest(task="backup-task", target="node-1")
+        assert self._history(normal_task, req).display_name == "backup-task"
+
+    def test_generic_executor_uses_underscore_snippet_filename_from_meta(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert ``_snippet_filename`` drives the label as ``<dir>/<file> on <target>``."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="node-1",
+            meta={"_snippet_filename": "diag/slow-query.sh"},
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "diag/slow-query.sh on node-1"
+        )
+
+    def test_generic_executor_uses_legacy_snippet_filename_key(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert bare ``snippet_filename`` key is accepted when underscore variant absent."""
+        req = TaskExecutionRequest(
+            task="run-python", target="node-1", meta={"snippet_filename": "legacy.sh"}
+        )
+        assert self._history(run_python_task, req).display_name == "legacy.sh on node-1"
+
+    def test_generic_executor_fallback_to_task_on_target(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert the fallback label is ``<task> on <target>`` when no snippet filename."""
+        req = TaskExecutionRequest(task="run-python", target="node-1")
+        assert (
+            self._history(run_python_task, req).display_name == "run-python on node-1"
+        )
+
+    def test_generic_executor_file_payload_uses_source_dir_and_basename(
+        self, exec_artifact_task: Task
+    ) -> None:
+        """Assert a ``file://`` payload yields ``<dir>/<file> on <target>``."""
+        req = TaskExecutionRequest(
+            task="exec-artifact",
+            target="node-1",
+            payload="file:///plugins/backup/script.sh",
+        )
+        assert (
+            self._history(exec_artifact_task, req).display_name
+            == "backup/script.sh on node-1"
+        )
+
+    def test_generic_executor_system_payload_without_snippet_filename(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert a system ``file://`` payload surfaces its owning directory."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="db-1",
+            payload="file://app/tasks/connectivity/payload.py",
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "connectivity/payload.py on db-1"
+        )
+
+    def test_generic_executor_bare_snippet_borrows_source_dir_from_payload(
+        self, run_python_task: Task
+    ) -> None:
+        """Assert a bare snippet filename borrows its directory from the payload path."""
+        req = TaskExecutionRequest(
+            task="run-python",
+            target="db-2",
+            meta={"_snippet_filename": "payload.py"},
+            payload="file://app/sep/sync/syncers/system_facts/payload.py",
+        )
+        assert (
+            self._history(run_python_task, req).display_name
+            == "system_facts/payload.py on db-2"
+        )
+
+    def test_generic_executor_non_file_payload_falls_back_to_task_on_target(
+        self, exec_artifact_task: Task
+    ) -> None:
+        """Assert a non-file:// payload is ignored for basename derivation."""
+        req = TaskExecutionRequest(
+            task="exec-artifact", target="node-1", payload="inline-value"
+        )
+        assert (
+            self._history(exec_artifact_task, req).display_name
+            == "exec-artifact on node-1"
+        )
+
+    def test_empty_meta_does_not_crash(self, run_python_task: Task) -> None:
+        """Assert an empty meta dict falls back gracefully without raising."""
+        req = TaskExecutionRequest(task="run-python", target="node-1", meta={})
+        result = self._history(run_python_task, req).display_name
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_none_meta_does_not_crash(self, run_python_task: Task) -> None:
+        """Assert a None meta falls back gracefully without raising."""
+        req = TaskExecutionRequest(task="run-python", target="node-1", meta=None)
+        result = self._history(run_python_task, req).display_name
+        assert isinstance(result, str)
 
 
 class TestTaskStats:

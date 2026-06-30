@@ -84,9 +84,15 @@ class TestListTaskExecutionEvents:
         )
 
     def test_propagates_tasks_api_error(
-        self, test_client, mock_tasks_api_dep, task_history_response
+        self,
+        mocker,
+        test_client,
+        regular_user,
+        mock_tasks_api_dep,
+        task_history_response,
     ):
         """Assert an upstream Tasks API server error propagates to the response."""
+        mocker.patch("app.sep.main.get_current_user", return_value=regular_user)
         mock_tasks_api_dep.get.side_effect = HTTPException(
             status_code=HTTP_500_INTERNAL_SERVER_ERROR
         )

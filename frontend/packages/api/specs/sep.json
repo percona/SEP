@@ -1030,7 +1030,7 @@
         "type": "object"
       },
       "ArchivesCreate": {
-        "description": "Represent an Archives creation form as a model-first ``AppFormModel``.\n\nSource, destination, and destination-host are discriminated-union one-of groups;\nthe schema / table / database references are collapsed free-solo fields\n(``int`` inventory id or free-typed ``str`` name). The ``alert_on_fail``\ncapability control is inherited from :class:`AppFormModel`.\n\n:param task_name: The task name (and the ``ALIAS`` in the archiver config).\n:param hostname: The executor host the task runs on.\n:param service_id: The inventory id of the source MySQL service (the host whose\n    rows are archived; the connectivity probe targets it).\n:param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.\n:param source: The source rows, by schema+table or by query.\n:param destination: The destination table or file; ``None`` when ``delete_data``.\n:param host: The destination host, by service or manual entry; ``None`` reuses\n    the source host.\n:param swp_table_suffix: The swap-table date suffix (SWAP_ARCHIVE_DROP only).\n:param where: The WHERE clause filtering rows; required unless SWAP_DROP.\n:param use_index: An index hint to optimise the query.\n:param extra_args: Additional pt-archiver CLI arguments.\n:param limit: The maximum rows per archiver run.\n:param sleep: The sleep duration between chunk operations (seconds).\n:param disable_binlog: Whether to disable binary logging for the operation.\n:param disable_bulk_insert: Whether to disable the bulk-insert optimisation.\n:param delete_data: Whether to delete source rows without archiving them.",
+        "description": "Represent an Archives creation form as a model-first ``TaskFormModel``.\n\nSource, destination, and destination-host are discriminated-union one-of groups;\nthe schema / table / database references are collapsed free-solo fields\n(``int`` inventory id or free-typed ``str`` name). The ``task_name`` /\n``hostname`` Task-section fields and the ``alert_on_fail`` capability control\nare inherited from :class:`TaskFormModel`.\n\n:param task_name: The human-readable task name; required and non-empty\n    (inherited from :class:`TaskFormModel`).\n:param hostname: The executor host the task runs on; required and non-empty\n    (inherited from :class:`TaskFormModel`).\n:param service_id: The inventory id of the source MySQL service (the host whose\n    rows are archived; the connectivity probe targets it).\n:param swap_drop: The archive type; only ``PURGE_ONLY`` is currently supported.\n:param source: The source rows, by schema+table or by query.\n:param destination: The destination table or file; ``None`` when ``delete_data``.\n:param host: The destination host, by service or manual entry; ``None`` reuses\n    the source host.\n:param swp_table_suffix: The swap-table date suffix (SWAP_ARCHIVE_DROP only).\n:param where: The WHERE clause filtering rows; required unless SWAP_DROP.\n:param use_index: An index hint to optimise the query.\n:param extra_args: Additional pt-archiver CLI arguments.\n:param limit: The maximum rows per archiver run.\n:param sleep: The sleep duration between chunk operations (seconds).\n:param disable_binlog: Whether to disable binary logging for the operation.\n:param disable_bulk_insert: Whether to disable the bulk-insert optimisation.\n:param delete_data: Whether to delete source rows without archiving them.",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -2133,7 +2133,7 @@
       },
       "BackupPgForm": {
         "additionalProperties": false,
-        "description": "Define the model-first create/update body and schema source for backup_pg.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the JSON create contract; the form-display defaults that\ndiffer from the model default (the pgBackRest tool paths, the default backup\ntype) are carried on ``Ui(default=...)`` so the runtime payload stays\nunchanged while the schema renders those form defaults.\n\nField declaration order is load-bearing: it drives the derived form's\nsection and field order. ``backup_type`` is not a form field — the spec\nbuilder injects :attr:`BackupType.PGBACKREST`. The ``alert_on_fail``\ncapability control is inherited from :class:`AppFormModel` (``Hidden``,\noff-schema). ``extra=\"forbid\"`` rejects unknown fields (for example a stale\nFE submitting ``host`` / ``port``, which the payload pins itself).",
+        "description": "Define the model-first create/update body and schema source for backup_pg.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the JSON create contract; the form-display defaults that\ndiffer from the model default (the pgBackRest tool paths, the default backup\ntype) are carried on ``Ui(default=...)`` so the runtime payload stays\nunchanged while the schema renders those form defaults.\n\nField declaration order is load-bearing: it drives the derived form's\nsection and field order. ``backup_type`` is not a form field — the spec\nbuilder injects :attr:`BackupType.PGBACKREST`. The ``task_name`` / ``hostname``\nTask-section fields and the ``alert_on_fail`` capability control are inherited\nfrom :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema).\n``extra=\"forbid\"`` rejects unknown fields (for example a stale FE submitting\n``host`` / ``port``, which the payload pins itself).",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -3071,7 +3071,7 @@
         "type": "object"
       },
       "ChecksumsForm": {
-        "description": "Define the model-first create/update body and schema source for Checksums.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the previous hand-written request body; the form-display\ndefaults that differ from the model default are carried on ``Ui(default=...)``.\n\nField declaration order is load-bearing. The framework assembles the\n``pt-table-checksum`` CLI args as all ``ArgFormat`` value args (in field order)\nfollowed by all flag args (in field order), and derives the form section order\n(Task, Data, Recursion, Flags, Advanced) from each section's first field — so\nthe order here reproduces the historical arg string byte-for-byte. ``progress``\nis declared last to land at the end of the value args, and ``Ui(order=...)``\npins the Advanced section's display order where it diverges from declaration\norder. The ``alert_on_fail`` capability control is inherited from\n:class:`AppFormModel` (``Hidden``, off-schema).",
+        "description": "Define the model-first create/update body and schema source for Checksums.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the previous hand-written request body; the form-display\ndefaults that differ from the model default are carried on ``Ui(default=...)``.\n\nField declaration order is load-bearing. The framework assembles the\n``pt-table-checksum`` CLI args as all ``ArgFormat`` value args (in field order)\nfollowed by all flag args (in field order), and derives the form section order\n(Task, Data, Recursion, Flags, Advanced) from each section's first field — so\nthe order here reproduces the historical arg string byte-for-byte. ``progress``\nis declared last to land at the end of the value args, and ``Ui(order=...)``\npins the Advanced section's display order where it diverges from declaration\norder. The ``task_name`` / ``hostname`` Task-section fields and the\n``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`\n(``alert_on_fail`` is ``Hidden``, off-schema).",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -8616,7 +8616,7 @@
         "type": "object"
       },
       "TaskHistoryResponse": {
-        "description": "Represent a task history API response.\n\n:param execution_request: The request that triggered the task execution.\n:type execution_request: TaskExecutionRequest\n:param status: The status of the task execution.\n:type status: TaskHistoryStatusEnum\n:param started_at: The datetime when the task execution started.\n:type started_at: UTCDatetime | None\n:param finished_at: The datetime when the task execution finished.\n:type finished_at: UTCDatetime | None\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:type anonymize_mask: int | None\n:param task: The task associated with this execution history.\n:type task: TaskResponse\n:param executed_by: The user ID of the user who executed the task.\n:type executed_by: str | None\n:param has_logs: Whether this task history has any readable log content --\n    either a chunk-store row or a legacy ``tracking[\"task_logs\"]`` blob.\n    Populated by list/retrieve routes; defaults to ``False``.\n:type has_logs: bool",
+        "description": "Represent a task history API response.\n\n:param execution_request: The request that triggered the task execution.\n:type execution_request: TaskExecutionRequest\n:param status: The status of the task execution.\n:type status: TaskHistoryStatusEnum\n:param started_at: The datetime when the task execution started.\n:type started_at: UTCDatetime | None\n:param finished_at: The datetime when the task execution finished.\n:type finished_at: UTCDatetime | None\n:param anonymize_mask: The bitmask representing PII entities to be anonymized in\n    logs and files generated by the execution. Defaults to None, meaning it uses\n    the value defined in the associated task's :attr:`Task.anonymize_mask`.\n:type anonymize_mask: int | None\n:param task: The task associated with this execution history.\n:type task: TaskResponse\n:param executed_by: The user ID of the user who executed the task.\n:type executed_by: str | None\n:param has_logs: Whether this task history has any readable log content --\n    either a chunk-store row or a legacy ``tracking[\"task_logs\"]`` blob.\n    Populated by list/retrieve routes; defaults to ``False``.\n:type has_logs: bool\n:param display_name: A user-meaningful label derived from the task name or\n    execution-request metadata. Read-only; computed on serialisation.",
         "properties": {
           "anonymize_mask": {
             "anyOf": [
@@ -8632,6 +8632,12 @@
           "created_at": {
             "format": "date-time",
             "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Return a user-meaningful display label for this task history row.\n\nFor normal tasks, returns ``task.name``. For generic executor templates\n(``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a\n``\"<source>/<filename> on <target>\"`` label so otherwise-identical rows\nare distinguishable: the filename comes from the snippet metadata or the\n``file://`` payload basename, the source directory from whichever of those\ncarries one, and the target from the execution request. Falls back to\n``\"<task> on <target>\"`` when no filename is available.\n\n:return: The display label for the task history entry.",
+            "readOnly": true,
+            "title": "Display Name",
             "type": "string"
           },
           "duration": {
@@ -8725,7 +8731,8 @@
           "id",
           "execution_request",
           "task",
-          "duration"
+          "duration",
+          "display_name"
         ],
         "title": "TaskHistoryResponse",
         "type": "object"
@@ -15304,7 +15311,7 @@
     },
     "/api/sep/task-history/": {
       "get": {
-        "description": "Return task-history rows, listing all of them or merging selected names.\n\nThree-way on ``task_names``:\n\n* **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already\n  paginated, forwarding the ``status`` filter and client ``offset`` / ``limit``.\n* **provided, at least one non-blank name** -- query each name independently\n  against the Tasks API, then merge, sort newest-first, and paginate globally.\n* **provided, every name blank after trimming** -- reject with ``422``.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:param pagination: Validated offset/limit query parameters.\n:param task_names: Zero or more task names (repeat the query param); omit to\n    list all history.\n:param task_status: Optional exact status filter forwarded upstream.\n:return: Paginated task history, either the upstream list or the merged set.\n:raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but\n    every value is empty after trimming.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``, on either the list-all passthrough or\n    the merged-history fan-out.",
+        "description": "Return task-history rows, listing all of them or merging selected names.\n\nThree-way on ``task_names``:\n\n* **omitted** (``None``) -- proxy the upstream ``GET /history/`` list, already\n  paginated, forwarding the ``status`` filter, ``exclude_internal`` flag, and\n  client ``offset`` / ``limit``.\n* **provided, at least one non-blank name** -- query each name independently\n  against the Tasks API, then merge, sort newest-first, and paginate globally.\n* **provided, every name blank after trimming** -- reject with ``422``.\n\n:param tasks_api: The Tasks API client used to fetch upstream history.\n:param pagination: Validated offset/limit query parameters.\n:param task_names: Zero or more task names (repeat the query param); omit to\n    list all history.\n:param task_status: Optional exact status filter forwarded upstream.\n:param exclude_internal: When ``True``, forward the filter to the upstream\n    list-all path so internal maintenance tasks are excluded before pagination.\n    Not forwarded on the ``task_names`` merge path. Defaults to ``False``.\n:return: Paginated task history, either the upstream list or the merged set.\n:raises HTTPUnprocessableEntityException: When ``task_names`` is supplied but\n    every value is empty after trimming.\n:raises HTTPBadGatewayException: For an upstream server error (status >= 500)\n    or a connection-level ``OSError``, on either the list-all passthrough or\n    the merged-history fan-out.",
         "operationId": "tasks_list_merged_task_history_api_sep_task_history__get",
         "parameters": [
           {
@@ -15340,6 +15347,16 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "exclude_internal",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Exclude Internal",
+              "type": "boolean"
             }
           },
           {

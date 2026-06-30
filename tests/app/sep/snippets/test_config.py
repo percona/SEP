@@ -20,8 +20,15 @@ import re
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
+from sqlalchemy_celery_beat.models import Period
 
-from app.sep.snippets.config import SnippetSudoOption
+from app.core.celery.models import IntervalSchedule
+from app.core.settings_override.registry import (
+    is_hot_reloadable,
+    materialize_override_value,
+)
+from app.sep.snippets.config import SnippetsSettings, SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippet, SUDO_INPUT_NAME
 
 EXECUTOR_HOSTS = frozenset({("host1", "host1")})
@@ -308,3 +315,42 @@ class TestToFormOptionalExecutorHosts:
         assert 'id="troubleshoot-test"' in html
         assert "Executor Host" not in html
         assert "Parameters" in html
+
+
+class TestSyncIntervalHotField:
+    """``SYNC_INTERVAL`` is HOT-reloadable so a DB override takes effect live."""
+
+    def test_sync_interval_is_hot_reloadable(self) -> None:
+        """``SYNC_INTERVAL`` is declared HOT via ``hot_field``."""
+        assert is_hot_reloadable(SnippetsSettings, "SYNC_INTERVAL") is True
+
+    def test_materializes_dict_override_to_interval_schedule(self) -> None:
+        """A raw dict override coerces to an ``IntervalSchedule`` snapshot value."""
+        field_info = SnippetsSettings.model_fields["SYNC_INTERVAL"]
+        value = materialize_override_value(
+            SnippetsSettings,
+            "SYNC_INTERVAL",
+            field_info,
+            {"every": 30, "period": "minutes"},
+        )
+        assert value == IntervalSchedule(every=30, period=Period.MINUTES)
+
+    def test_materializes_string_override_to_interval_schedule(self) -> None:
+        """A raw string override coerces via ``IntervalSchedule.create_from_str``."""
+        field_info = SnippetsSettings.model_fields["SYNC_INTERVAL"]
+        value = materialize_override_value(
+            SnippetsSettings, "SYNC_INTERVAL", field_info, "every 15 minutes"
+        )
+        assert value == IntervalSchedule(every=15, period=Period.MINUTES)
+
+    @pytest.mark.parametrize(
+        "bad",
+        [{"every": 0, "period": "minutes"}, {"every": -1, "period": "hours"}, "junk"],
+    )
+    def test_invalid_override_rejected(self, bad: Any) -> None:
+        """Non-positive or unparseable overrides fail coercion (caller logs+skips)."""
+        field_info = SnippetsSettings.model_fields["SYNC_INTERVAL"]
+        with pytest.raises((ValidationError, ValueError)):
+            materialize_override_value(
+                SnippetsSettings, "SYNC_INTERVAL", field_info, bad
+            )

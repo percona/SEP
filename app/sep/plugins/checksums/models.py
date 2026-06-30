@@ -22,11 +22,10 @@ from pydantic import BaseModel
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.form_dsl import (
-    AppFormModel,
     ArgFormat,
     Choices,
-    HostRef,
     ServiceRef,
+    TaskFormModel,
     Ui,
 )
 
@@ -102,7 +101,7 @@ class ChecksumsCreate(BaseModel):
     alert_on_fail: bool = False
 
 
-class ChecksumsForm(AppFormModel):
+class ChecksumsForm(TaskFormModel):
     """Define the model-first create/update body and schema source for Checksums.
 
     The single source of the JSON request body (the field types and defaults the
@@ -118,14 +117,11 @@ class ChecksumsForm(AppFormModel):
     the order here reproduces the historical arg string byte-for-byte. ``progress``
     is declared last to land at the end of the value args, and ``Ui(order=...)``
     pins the Advanced section's display order where it diverges from declaration
-    order. The ``alert_on_fail`` capability control is inherited from
-    :class:`AppFormModel` (``Hidden``, off-schema).
+    order. The ``task_name`` / ``hostname`` Task-section fields and the
+    ``alert_on_fail`` capability control are inherited from :class:`TaskFormModel`
+    (``alert_on_fail`` is ``Hidden``, off-schema).
     """
 
-    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
-    hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
-    ]
     service_id: Annotated[
         int,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),
