@@ -23,7 +23,6 @@ import yaml
 from fastapi import Depends, Form, HTTPException, status
 
 from app.core.exceptions import (
-    HTTPConflictException,
     HTTPInternalServerErrorException,
     HTTPNotFoundException,
 )
@@ -36,6 +35,7 @@ from app.sep.deps import (
     get_task_by_name,
     get_tasks_context,
     InventoryAPI,
+    protected_task_guard,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
@@ -648,12 +648,7 @@ async def get_restore_parent_task(
 RestoreParentTask = Annotated[Task, Depends(get_restore_parent_task)]
 
 
-async def get_unprotected_restore_parent_task(task: RestoreParentTask) -> Task:
-    """Return a restore parent task or raise 409 when the task is protected."""
-    if task.protected:
-        raise HTTPConflictException("Cannot edit a protected task.")
-    return task
-
+get_unprotected_restore_parent_task = protected_task_guard(get_restore_parent_task)
 
 UnprotectedRestoreParentTask = Annotated[
     Task,

@@ -32,6 +32,7 @@ from app.sep.deps import (
     ExecutorHostsCtx,
     get_tasks_context,
     InventoryAPI,
+    protected_task_guard,
     TaskAPI,
 )
 from app.sep.plugins.backup_pg.models import (
@@ -83,16 +84,7 @@ get_backups_task = make_task_dep(TaskOwner.BACKUP_PG)
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
 
-async def get_unprotected_backups_task(task: BackupsTask) -> Task:
-    """Return a backup_pg task or raise 409 when the task is protected.
-
-    :param task: The backup_pg task resolved from the path parameter.
-    :raises HTTPConflictException: If the task is marked as protected.
-    """
-    if task.protected:
-        raise HTTPConflictException("Cannot edit a protected task.")
-    return task
-
+get_unprotected_backups_task = protected_task_guard(get_backups_task)
 
 UnprotectedBackupsTask = Annotated[Task, Depends(get_unprotected_backups_task)]
 

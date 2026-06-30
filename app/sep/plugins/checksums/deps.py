@@ -22,7 +22,6 @@ from typing import Annotated, Any
 
 from fastapi import Depends, Form
 
-from app.core.exceptions import HTTPConflictException
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -36,6 +35,7 @@ from app.sep.deps import (
     get_created_entity,
     get_tasks_context,
     InventoryAPI,
+    protected_task_guard,
     TaskAPI,
 )
 from app.sep.inventory import CreatedService
@@ -314,17 +314,7 @@ get_checksums_task = make_task_dep(TaskOwner.CHECKSUMS)
 ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
 
 
-async def get_unprotected_checksums_task(task: ChecksumsTask) -> Task:
-    """Return a checksums task or raise 409 when the task is protected.
-
-    :param task: The checksums task resolved from the path parameter.
-    :type task: ChecksumsTask
-    :raises HTTPConflictException: If the task is marked as protected.
-    """
-    if task.protected:
-        raise HTTPConflictException("Cannot edit a protected task.")
-    return task
-
+get_unprotected_checksums_task = protected_task_guard(get_checksums_task)
 
 UnprotectedChecksumsTask = Annotated[Task, Depends(get_unprotected_checksums_task)]
 
