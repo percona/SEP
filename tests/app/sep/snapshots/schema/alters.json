@@ -26,8 +26,12 @@
             "path": "data.meta._command_line"
           },
           {
-            "label": "Target",
+            "label": "Execution Host",
             "path": "data.meta.target"
+          },
+          {
+            "label": "Database Host",
+            "path": "data.meta._service_host"
           },
           {
             "label": "Schema",
