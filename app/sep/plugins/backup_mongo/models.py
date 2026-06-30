@@ -315,9 +315,9 @@ class BackupForm(TaskFormModel):
     (Task, Storage, Point-in-Time Recovery, Backup Options). The ``task_name`` /
     ``hostname`` Task-section fields and the ``alert_on_fail`` capability control are
     inherited from :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``,
-    off-schema). The inherited ``NonEmptyStr`` type is schema-equivalent to the bare
-    ``str`` previously declared here — the deriver emits no min-length constraint —
-    and this form is never validated as a body, so the type change is inert.
+    off-schema). The inherited ``NonEmptyStr`` type is used for those two fields,
+    the deriver emits no min-length constraint, and this form is never validated as
+    a request body.
     """
 
     service_id: Annotated[

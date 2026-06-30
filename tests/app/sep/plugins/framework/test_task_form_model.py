@@ -15,8 +15,8 @@
 
 """Test ``TaskFormModel`` — the shared base providing the Task identity fields.
 
-SEP-1425 lifts the ``task_name`` / ``hostname`` Task-section fields off every
-task-based plugin form onto a single ``TaskFormModel`` base, mirroring how
+Lift the ``task_name`` / ``hostname`` Task-section fields off every task-based
+plugin form onto a single ``TaskFormModel`` base, mirroring how
 ``alert_on_fail`` is centralised on ``AppFormModel``.
 """
 
@@ -63,7 +63,7 @@ _PLUGIN_FORMS = [
 # section *key*, so reparenting alters onto ``TaskFormModel`` would split its
 # single Task section into two same-titled sections (``"Task"`` for the two
 # inherited fields, ``"task"`` for the rest), changing its ``GET /schema``
-# output — which SEP-1425 forbids. Migrating it would require rewriting the
+# output. Migrating it would require rewriting the
 # section key on every other alters field too, beyond this ticket's scope.
 
 
