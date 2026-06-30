@@ -9967,7 +9967,7 @@
   "paths": {
     "/api/admin/apps/": {
       "get": {
-        "description": "List every configured app with its current enabled state.\n\nReturns one entry per ``SEP.PLUGINS`` entry, in declaration order. Apps with\nno row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);\nprotected apps (``inventory``) are forced to ``ENABLED`` and reported with\n``toggleable=False``. The list is non-paginated: app cardinality is bounded\n(<20).\n\n:param session: The database session.\n:type session: SessionDep\n:return: The per-app info list.\n:rtype: list[AppInfoResponse]",
+        "description": "List every configured app with its current enabled state.\n\nReturns one entry per ``SEP.APPS`` entry, in declaration order. Apps with\nno row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);\nprotected apps (``inventory``) are forced to ``ENABLED`` and reported with\n``toggleable=False``. The list is non-paginated: app cardinality is bounded\n(<20).\n\n:param session: The database session.\n:type session: SessionDep\n:return: The per-app info list.\n:rtype: list[AppInfoResponse]",
         "operationId": "admin_list_apps_api_admin_apps__get",
         "responses": {
           "200": {

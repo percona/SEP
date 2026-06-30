@@ -386,7 +386,7 @@ class TestScopedKeyDerivation:
 
 
 class TestGetAppRegistry:
-    """Tests for the lazy cached accessor over ``sep_settings.PLUGINS``."""
+    """Tests for the lazy cached accessor over ``sep_settings.APPS``."""
 
     def test_returns_registry_over_configured_plugins(self) -> None:
         """The accessor builds a registry covering every configured plugin."""
@@ -394,7 +394,7 @@ class TestGetAppRegistry:
         assert isinstance(registry, AppRegistry)
         expected = [
             p.module_name.removeprefix("app.sep.plugins.").replace(".", "/")
-            for p in sep_settings.PLUGINS
+            for p in sep_settings.APPS
         ]
         assert registry.keys() == expected
 

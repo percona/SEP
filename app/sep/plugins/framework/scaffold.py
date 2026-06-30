@@ -19,7 +19,7 @@ Run as ``python -m app.sep.plugins.framework.scaffold --name <name> [--type
 task|script|base]`` (driven by ``make startapp``). The engine validates the
 module name, refuses to clobber an existing plugin, renders the flavor's
 templates into ``app/sep/plugins/<name>/`` and ``tests/app/sep/plugins/<name>/``,
-and registers the app **disabled** under the ``default:`` ``SEP.PLUGINS`` block so
+and registers the app **disabled** under the ``default:`` ``SEP.APPS`` block so
 an admin enables it from the App Manager rather than the scaffolder activating it.
 
 Templates carry ``<< var >>`` placeholders substituted by plain string
@@ -197,52 +197,52 @@ def _find_default_section(lines: list[str]) -> int:
     )
 
 
-def _find_plugins_key(lines: list[str], default_index: int) -> int:
-    """Return the index of the ``PLUGINS:`` key inside the ``default:`` section.
+def _find_apps_key(lines: list[str], default_index: int) -> int:
+    """Return the index of the ``APPS:`` key inside the ``default:`` section.
 
     :param lines: The settings file split into lines.
     :param default_index: The index of the ``default:`` key to scan forward from.
-    :return: The index of the ``PLUGINS:`` line inside the ``default:`` section.
-    :raises ValueError: When the ``default:`` section declares no ``PLUGINS`` block.
+    :return: The index of the ``APPS:`` line inside the ``default:`` section.
+    :raises ValueError: When the ``default:`` section declares no ``APPS`` block.
     """
     for index in range(default_index + 1, len(lines)):
         line = lines[index]
         if _indent_width(line) == 0 and line.strip():
             break
-        if line.strip() == "PLUGINS:":
+        if line.strip() == "APPS:":
             return index
     raise ValueError(
-        "settings.yaml 'default:' section has no SEP.PLUGINS block; cannot register "
+        "settings.yaml 'default:' section has no SEP.APPS block; cannot register "
         "the app"
     )
 
 
-def _default_plugins_span(lines: list[str]) -> tuple[int, int]:
-    """Return the ``[start, end)`` line span of the default ``SEP.PLUGINS`` list body.
+def _default_apps_span(lines: list[str]) -> tuple[int, int]:
+    """Return the ``[start, end)`` line span of the default ``SEP.APPS`` list body.
 
-    ``start`` is the first entry line after ``PLUGINS:``; ``end`` is one past the
-    last list line (the next key at the ``PLUGINS:`` indent or shallower ends it),
+    ``start`` is the first entry line after ``APPS:``; ``end`` is one past the
+    last list line (the next key at the ``APPS:`` indent or shallower ends it),
     so an insertion at ``end`` appends after the final entry.
 
     :param lines: The settings file split into lines.
     :return: The ``(start, end)`` index span of the list body.
     """
-    plugins_index = _find_plugins_key(lines, _find_default_section(lines))
-    plugins_indent = _indent_width(lines[plugins_index])
-    start = plugins_index + 1
+    apps_index = _find_apps_key(lines, _find_default_section(lines))
+    apps_indent = _indent_width(lines[apps_index])
+    start = apps_index + 1
     end = start
     for index in range(start, len(lines)):
         line = lines[index]
         if not line.strip():
             continue
-        if _indent_width(line) <= plugins_indent:
+        if _indent_width(line) <= apps_indent:
             break
         end = index + 1
     return start, end
 
 
-def insert_plugin_entry(settings_text: str, name: str) -> tuple[str, bool]:
-    """Insert a disabled ``MODULE_NAME`` entry under the default ``SEP.PLUGINS`` block.
+def insert_app_entry(settings_text: str, name: str) -> tuple[str, bool]:
+    """Insert a disabled ``MODULE_NAME`` entry under the default ``SEP.APPS`` block.
 
     A pure text transform — PyYAML cannot round-trip the file's comments, so the
     list body is edited line by line. Inserting a name that already has an entry is
@@ -251,10 +251,10 @@ def insert_plugin_entry(settings_text: str, name: str) -> tuple[str, bool]:
     :param settings_text: The full ``settings.yaml`` contents.
     :param name: The module name to register disabled.
     :return: The (possibly unchanged) text and whether it was modified.
-    :raises ValueError: When the default ``SEP.PLUGINS`` block is absent.
+    :raises ValueError: When the default ``SEP.APPS`` block is absent.
     """
     lines = settings_text.splitlines(keepends=True)
-    start, end = _default_plugins_span(lines)
+    start, end = _default_apps_span(lines)
     existing = re.compile(rf"\s*-?\s*MODULE_NAME:\s*{re.escape(name)}\s*$")
     if any(existing.match(line) for line in lines[start:end]):
         return settings_text, False
@@ -268,7 +268,7 @@ def write_settings_entry(name: str) -> bool:
     :param name: The module name to register.
     :return: Whether the file was modified.
     """
-    new_text, changed = insert_plugin_entry(SETTINGS_FILE.read_text(), name)
+    new_text, changed = insert_app_entry(SETTINGS_FILE.read_text(), name)
     if changed:
         SETTINGS_FILE.write_text(new_text)
     return changed

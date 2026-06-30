@@ -115,8 +115,8 @@ def test_discover_returns_alerts_migrations_dir():
 
 
 def test_discover_ignores_sep_settings_plugins(monkeypatch):
-    """Discovery does not consult ``sep_settings.PLUGINS``."""
-    monkeypatch.setattr(sep_settings, "PLUGINS", [])
+    """Assert discovery does not consult ``sep_settings.APPS``."""
+    monkeypatch.setattr(sep_settings, "APPS", [])
     version_dirs = discover_plugin_migrations_and_models()
     alerts_versions = str(
         Path(plugins_pkg.__path__[0]) / "alerts" / "migrations" / "versions"

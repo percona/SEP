@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 from pydantic import (
+    AliasChoices,
     AliasGenerator,
     BaseModel,
     computed_field,
@@ -37,6 +38,8 @@ from pydantic import (
     PositiveInt,
     SecretStr,
 )
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import (
@@ -496,6 +499,14 @@ class AppDrainSettings(BaseLowercaseModel):
         return value
 
 
+def _warn_legacy_apps_key() -> None:
+    """Emit a deprecation warning for the legacy ``SEP.PLUGINS`` config key."""
+    logger.warning(
+        "The SEP.PLUGINS / SEP__PLUGINS config key is deprecated and will be "
+        "removed in a future release; use SEP.APPS / SEP__APPS instead.",
+    )
+
+
 class SEPSettings(BaseYamlAppSettings):
     """Define settings for SEP.
 
@@ -526,7 +537,7 @@ class SEPSettings(BaseYamlAppSettings):
     :type INVENTORY_ENDPOINT: CredentialHttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
     :type TASKS_ENDPOINT: CredentialHttpUrl
-    :param PLUGINS: A list of plugins used by SEP. Defaults to an empty list with
+    :param APPS: A list of apps used by SEP. Defaults to an empty list with
         duplicates removed.
     :param PROXY_HEADERS: Whether to use proxy headers (like ``X-Forwarded-For``).
         Defaults to ``False``.
@@ -581,7 +592,10 @@ class SEPSettings(BaseYamlAppSettings):
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
     TASKS_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
-    PLUGINS: UniqueList[App] = UniqueList()
+    APPS: UniqueList[App] = Field(
+        default_factory=UniqueList,
+        validation_alias=AliasChoices("APPS", "PLUGINS"),
+    )
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
@@ -614,6 +628,53 @@ class SEPSettings(BaseYamlAppSettings):
                 "Use PMM__FRONTEND (top-level) or SEP__PMM__FRONTEND instead.",
             )
         return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_legacy_plugins_key(cls, data: Any) -> Any:
+        """Emit a deprecation warning when the legacy ``PLUGINS`` key is set via YAML or init.
+
+        :param data: The raw input data.
+        :return: The input data unchanged.
+        """
+        if isinstance(data, dict) and "PLUGINS" in data:
+            _warn_legacy_apps_key()
+        return data
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: EnvSettingsSource,
+        dotenv_settings: DotEnvSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Emit a deprecation warning when the legacy ``SEP__PLUGINS`` env key supplies the app list.
+
+        The before-validator covers the YAML / init path but never sees an
+        env-only legacy key: the environment source keys the value by the field
+        name ``APPS``, not the matched alias. Detect the stripped legacy key
+        here so the deprecation warning is airtight for the env source too.
+
+        :param settings_cls: The settings class being configured.
+        :param init_settings: The init-arguments source.
+        :param env_settings: The environment-variable source.
+        :param dotenv_settings: The dotenv-file source.
+        :param file_secret_settings: The file-secret source.
+        :return: The source tuple from the base implementation, unchanged.
+        """
+        sources = super().settings_customise_sources(
+            settings_cls,
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
+        for source in (env_settings, dotenv_settings):
+            if "plugins" in getattr(source, "env_vars", {}):
+                _warn_legacy_apps_key()
+        return sources
 
     @computed_field
     @cached_property
