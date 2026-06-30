@@ -414,11 +414,24 @@ templates = sep_settings.TEMPLATES
 async def internal_error_handler(
     request: Request,
     exc: BaseException,
-) -> HTMLResponse:
+) -> HTMLResponse | JSONResponse | RedirectResponse:
     """Load custom error page."""
-    base_url = get_base_url(request)
     logger.exception("Unhandled exception:", exc_info=exc)
-    user = await get_current_user(request)
+    if request.url.path.startswith(JSON_API_PATH_PREFIXES):
+        return JSONResponse(
+            {"detail": "Internal Server Error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    base_url = get_base_url(request)
+    try:
+        user = await get_current_user(request)
+    except LoginRedirectException as redirect_exc:
+        return RedirectResponse(
+            redirect_exc.location,
+            status_code=redirect_exc.status_code,
+            headers=redirect_exc.headers,
+        )
     messages.error(
         request,
         "Internal Server Error. Please contact the administrators for help.",
@@ -459,6 +472,7 @@ async def custom_404_handler(
         return RedirectResponse(
             redirect_exc.location,
             status_code=redirect_exc.status_code,
+            headers=redirect_exc.headers,
         )
     async with get_async_session_maker()() as session:
         default_context = await get_default_context(request, user, base_url, session)

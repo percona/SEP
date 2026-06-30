@@ -42,6 +42,12 @@ export interface TaskHistoryTableProps {
   onViewLogs?: (entry: TaskHistoryEntry) => void;
   /** Action callback: stop a running task. */
   onStopTask?: (entry: TaskHistoryEntry) => void;
+  /**
+   * Whether a stop request is currently in flight (presentational mode only).
+   * Drives the Stop button's spinner/disabled state; defaults to `false`. The
+   * connected variant derives this from its internal mutation instead.
+   */
+  isStopping?: boolean;
   /** Action callback: open download dialog. */
   onDownloadFiles?: (entry: TaskHistoryEntry) => void;
   /** Action callback: navigate to chained task by name. */

@@ -1,0 +1,43 @@
+{
+  "display_name": "Disabled Choices",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "choices": [
+            {
+              "label": "Purge Only",
+              "value": "0"
+            },
+            {
+              "disabled": true,
+              "disabled_reason": "Not available yet",
+              "label": "Swap & Drop",
+              "value": "1"
+            }
+          ],
+          "default": 0,
+          "label": "Archive Type",
+          "name": "archive_type",
+          "required": false,
+          "type": "choice"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Main"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "disabled_choices"
+}

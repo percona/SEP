@@ -39,7 +39,6 @@ app = BaseApp(
     display_name="Schema Change",
     uri_path="/alters",
     css_class="alters",
-    group="schema_change",
     nav_order=6,
     api_router=api_router,
     jinja_router=jinja_router,
