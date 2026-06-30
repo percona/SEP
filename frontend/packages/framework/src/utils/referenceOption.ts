@@ -24,9 +24,9 @@ export interface ReferenceOption {
 }
 
 /**
- * Return whether ``value`` is a fully hydrated inventory option object.
+ * Return whether `value` is a fully hydrated inventory option object.
  *
- * Persisted ``data['_form']`` bodies store reference fields as scalar ids;
+ * Persisted `data['_form']` bodies store reference fields as scalar ids;
  * live create/edit forms store the richer option object until submit coercion.
  */
 export function isHydratedReferenceOption(value: unknown): value is ReferenceOption {
@@ -43,8 +43,8 @@ export function isHydratedReferenceOption(value: unknown): value is ReferenceOpt
  * Resolve a stored reference value into an inventory option for display.
  *
  * Accepts a scalar id (number or numeric string), a partially populated option
- * object, or an already hydrated option. Returns ``null`` when the id cannot be
- * matched in ``options`` yet (for example while services are still loading).
+ * object, or an already hydrated option. Returns `null` when the id cannot be
+ * matched in `options` yet (for example while services are still loading).
  */
 export function resolveReferenceOption<T extends ReferenceOption>(
   stored: unknown,
