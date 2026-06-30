@@ -19,8 +19,11 @@ import asyncio
 import base64
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
+from celery import states
+from celery.exceptions import Ignore
+from pydantic import ValidationError
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -34,6 +37,25 @@ from app.sep.snippets.models.snippet import Snippet
 from app.sep.snippets.utils import guess_mime_type
 
 logger = logging.getLogger(__name__)
+
+
+def _fail_invalid_report_snapshot(self: Any, exc: ValidationError) -> NoReturn:
+    """Store structured validation failure metadata for report snapshot tasks.
+
+    :param self: Bound Celery task instance.
+    :type self: Any
+    :param exc: Pydantic validation error.
+    :type exc: ValidationError
+    :raises Ignore: Stops task execution after storing FAILURE metadata.
+    """
+    self.update_state(
+        state=states.FAILURE,
+        meta={
+            "error": "Invalid report snapshot",
+            "errors": exc.errors(),
+        },
+    )
+    raise Ignore from exc
 
 
 @owned_by("snippets")
@@ -166,7 +188,10 @@ def render_report_pdf_job(self: Any, report_json: dict) -> dict[str, str]:
     from app.sep.plugins.report.models import ReportData
     from app.sep.plugins.report.service import generate_pdf_report
 
-    report = ReportData.model_validate(report_json)
+    try:
+        report = ReportData.model_validate(report_json)
+    except ValidationError as exc:
+        _fail_invalid_report_snapshot(self, exc)
     pdf_bytes = celery.loop.run_until_complete(generate_pdf_report(report))
     return {
         "pdf": base64.b64encode(pdf_bytes).decode("ascii"),
@@ -175,10 +200,12 @@ def render_report_pdf_job(self: Any, report_json: dict) -> dict[str, str]:
 
 
 @owned_by("report")
-@celery.task
-def upload_report_snapshot_job(report_json: dict) -> dict:
+@celery.task(bind=True)
+def upload_report_snapshot_job(self: Any, report_json: dict) -> dict:
     """Render and upload a PDF from a report JSON snapshot.
 
+    :param self: Bound Celery task instance.
+    :type self: Any
     :param report_json: Serialized report snapshot.
     :type report_json: dict
     :return: ServiceNow upload response payload.
@@ -187,7 +214,10 @@ def upload_report_snapshot_job(report_json: dict) -> dict:
     from app.sep.plugins.report.models import ReportData
     from app.sep.plugins.report.service import generate_pdf_report, upload_pdf_report
 
-    report = ReportData.model_validate(report_json)
+    try:
+        report = ReportData.model_validate(report_json)
+    except ValidationError as exc:
+        _fail_invalid_report_snapshot(self, exc)
     pdf_bytes = celery.loop.run_until_complete(generate_pdf_report(report))
     return celery.loop.run_until_complete(upload_pdf_report(report, pdf_bytes))
 
