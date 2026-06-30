@@ -16,6 +16,7 @@
 """Define Celery tasks and utilities for the SEP app."""
 
 import asyncio
+import base64
 import logging
 from pathlib import Path
 from typing import Any
@@ -156,22 +157,21 @@ def render_report_pdf_job(self: Any, report_json: dict) -> dict[str, str]:
     :type self: Any
     :param report_json: Serialized report snapshot.
     :type report_json: dict
-    :return: PDF artifact path and download filename.
+    :return: Base64-encoded PDF payload and download filename.
     :rtype: dict[str, str]
     """
     from app.sep.plugins.report.job_service import (
         report_pdf_filename,
-        report_pdf_path,
     )
     from app.sep.plugins.report.models import ReportData
     from app.sep.plugins.report.service import generate_pdf_report
 
     report = ReportData.model_validate(report_json)
     pdf_bytes = celery.loop.run_until_complete(generate_pdf_report(report))
-    path = report_pdf_path(self.request.id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(pdf_bytes)
-    return {"filename": report_pdf_filename(report)}
+    return {
+        "pdf": base64.b64encode(pdf_bytes).decode("ascii"),
+        "filename": report_pdf_filename(report),
+    }
 
 
 @owned_by("report")

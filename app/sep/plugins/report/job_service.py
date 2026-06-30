@@ -13,25 +13,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Helpers for report artifact jobs."""
+"""Helpers for report jobs."""
 
-from pathlib import Path
-
-from app import BASE_DIR
 from app.sep.plugins.report.models import ReportData
-
-REPORT_ARTIFACT_DIR = BASE_DIR / "data" / "health-reports"
-
-
-def report_pdf_path(job_id: str) -> Path:
-    """Return PDF artifact path for a Celery report job.
-
-    :param job_id: Celery task identifier.
-    :type job_id: str
-    :return: Filesystem path for the rendered PDF artifact.
-    :rtype: Path
-    """
-    return REPORT_ARTIFACT_DIR / f"{job_id}.pdf"
 
 
 def report_pdf_filename(report: ReportData) -> str:

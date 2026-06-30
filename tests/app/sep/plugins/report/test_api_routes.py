@@ -19,6 +19,7 @@ Mounted at ``/api/plugins/report/`` via ``plugins_router`` in
 ``app/sep/api/router.py``.
 """
 
+import base64
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -293,20 +294,18 @@ class TestReportJobApi:
         mock_delay.assert_called_once_with(report_json)
         mock_generate.assert_not_awaited()
 
-    def test_download_ready_pdf(self, test_client, tmp_path):
-        """GET /pdf-jobs/{id}/pdf returns stored PDF artifact."""
-        pdf_path = tmp_path / "report.pdf"
-        pdf_path.write_bytes(b"%PDF-1.4 fake")
-        with (
-            patch(
-                f"{_API}.celery.AsyncResult",
-                return_value=self._async_result(
-                    status_="SUCCESS",
-                    successful=True,
-                    result={"filename": "report.pdf"},
-                ),
+    def test_download_ready_pdf(self, test_client):
+        """GET /pdf-jobs/{id}/pdf returns PDF from Celery result payload."""
+        with patch(
+            f"{_API}.celery.AsyncResult",
+            return_value=self._async_result(
+                status_="SUCCESS",
+                successful=True,
+                result={
+                    "filename": "report.pdf",
+                    "pdf": base64.b64encode(b"%PDF-1.4 fake").decode("ascii"),
+                },
             ),
-            patch(f"{_API}.report_pdf_path", return_value=pdf_path),
         ):
             response = test_client.get(f"{self._PDF_JOBS_URL}/job-1/pdf")
 
@@ -314,31 +313,25 @@ class TestReportJobApi:
         assert response.headers["content-type"] == "application/pdf"
         assert response.content == b"%PDF-1.4 fake"
 
-    def test_download_returns_409_when_pdf_not_ready(self, test_client, tmp_path):
+    def test_download_returns_409_when_pdf_not_ready(self, test_client):
         """GET /pdf-jobs/{id}/pdf returns conflict until artifact exists."""
-        with (
-            patch(
-                f"{_API}.celery.AsyncResult",
-                return_value=self._async_result(status_="PENDING"),
-            ),
-            patch(f"{_API}.report_pdf_path", return_value=tmp_path / "missing.pdf"),
+        with patch(
+            f"{_API}.celery.AsyncResult",
+            return_value=self._async_result(status_="PENDING"),
         ):
             response = test_client.get(f"{self._PDF_JOBS_URL}/job-1/pdf")
 
         assert response.status_code == status.HTTP_409_CONFLICT
 
-    def test_download_returns_500_when_job_failed(self, test_client, tmp_path):
+    def test_download_returns_500_when_job_failed(self, test_client):
         """GET /pdf-jobs/{id}/pdf returns 500 when the Celery job failed."""
-        with (
-            patch(
-                f"{_API}.celery.AsyncResult",
-                return_value=self._async_result(
-                    status_="FAILURE",
-                    failed=True,
-                    result=RuntimeError("render crashed"),
-                ),
+        with patch(
+            f"{_API}.celery.AsyncResult",
+            return_value=self._async_result(
+                status_="FAILURE",
+                failed=True,
+                result=RuntimeError("render crashed"),
             ),
-            patch(f"{_API}.report_pdf_path", return_value=tmp_path / "missing.pdf"),
         ):
             response = test_client.get(f"{self._PDF_JOBS_URL}/job-1/pdf")
 
