@@ -13,13 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Derive ``PluginSchema`` form objects from a create model's fields and markers.
+"""Derive ``AppSchema`` form objects from a create model's fields and markers.
 
 The functions here read each field's :class:`~pydantic.fields.FieldInfo`
 (annotation, default, ``metadata``) and emit the existing
 :class:`~app.sep.plugins.framework.schema.BaseField` /
 :class:`~app.sep.plugins.framework.schema.FormSection` /
-:class:`~app.sep.plugins.framework.schema.PluginSchema` objects, so the wire
+:class:`~app.sep.plugins.framework.schema.AppSchema` objects, so the wire
 format is byte-identical to a hand-written schema.
 """
 
@@ -52,6 +52,7 @@ from app.sep.plugins.framework.form_dsl.markers import (
 )
 from app.sep.plugins.framework.rules import FieldGate
 from app.sep.plugins.framework.schema import (
+    AppSchema,
     BaseField,
     BoolField,
     Choice,
@@ -66,7 +67,6 @@ from app.sep.plugins.framework.schema import (
     MultiChoiceField,
     OneOfBranch,
     OneOfGroup,
-    PluginSchema,
     SchemaField,
     ServiceField,
     StringField,
@@ -80,8 +80,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "build_runtime_schema",
+    "derive_app_schema",
     "derive_form_sections",
-    "derive_plugin_schema",
     "find_ref_marker",
     "iter_service_refs",
     "resolve_base",
@@ -817,7 +817,7 @@ def derive_form_sections(
     return sections
 
 
-def derive_plugin_schema(
+def derive_app_schema(
     model: type["AppFormModel"],
     layout: FormLayout,
     *,
@@ -830,8 +830,8 @@ def derive_plugin_schema(
     detail_view: Any = None,
     derived: Any = None,
     predecessors: Any = None,
-) -> PluginSchema:
-    """Assemble the full ``PluginSchema`` for a model-first plugin.
+) -> AppSchema:
+    """Assemble the full ``AppSchema`` for a model-first plugin.
 
     Derives the form sections from ``model`` and ``layout`` and the plugin-level
     rules from the model's ``__form_rules__``; the non-form metadata
@@ -853,7 +853,7 @@ def derive_plugin_schema(
     :return: The fully-assembled, validated plugin schema.
     """
     rules = getattr(model, "__form_rules__", FormRules())
-    return PluginSchema(
+    return AppSchema(
         name=name,
         display_name=display_name,
         description=description,
@@ -869,8 +869,8 @@ def derive_plugin_schema(
     )
 
 
-def build_runtime_schema(model: type["AppFormModel"]) -> PluginSchema:
-    """Return a single-section ``PluginSchema`` for runtime rule-plan extraction.
+def build_runtime_schema(model: type["AppFormModel"]) -> AppSchema:
+    """Return a single-section ``AppSchema`` for runtime rule-plan extraction.
 
     Section-scoped and plugin-scoped rules are hoisted to plugin scope because
     the runtime rule plan is flat — rule placement is irrelevant to evaluation,
@@ -886,7 +886,7 @@ def build_runtime_schema(model: type["AppFormModel"]) -> PluginSchema:
     for section_rules in rules.sections.values():
         fail_when.extend(section_rules.fail_when)
         cardinality.extend(section_rules.cardinality_rules)
-    return PluginSchema(
+    return AppSchema(
         name="app_form_model_runtime",
         display_name="app_form_model_runtime",
         forms=[FormSection(title="rules", fields=fields)],

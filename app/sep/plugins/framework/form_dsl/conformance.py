@@ -17,7 +17,7 @@
 
 This is a transitional, warning-level drift detector for plugins that still
 declare their form fields twice (a Pydantic create model and a hand-written
-:class:`~app.sep.plugins.framework.schema.PluginSchema`). It compares the
+:class:`~app.sep.plugins.framework.schema.AppSchema`). It compares the
 cheaply-derivable surface — field presence, scalar field kind, required-ness, and
 default — and never blocks. A silent (empty) result means "no presence, kind, or
 required disagreement", **not** "wire-identical": choice/reference/widget kinds,
@@ -32,7 +32,7 @@ from typing import Any, get_origin, Literal, TYPE_CHECKING
 from pydantic_core import PydanticUndefined
 
 from app.sep.plugins.framework.form_dsl.derivation import resolve_base
-from app.sep.plugins.framework.schema import BaseField, PluginSchema
+from app.sep.plugins.framework.schema import AppSchema, BaseField
 
 if TYPE_CHECKING:
     from app.sep.plugins.framework.form_dsl.model import AppFormModel
@@ -71,7 +71,7 @@ def _natural_kind(annotation: Any) -> str | None:
 
 
 def _schema_form_fields(
-    schema: PluginSchema, entity_name: str | None
+    schema: AppSchema, entity_name: str | None
 ) -> dict[str, BaseField]:
     """Return the schema's create-form fields keyed by name.
 
@@ -97,7 +97,7 @@ def _schema_form_fields(
 
 
 def check_form_conformance(
-    model: type["AppFormModel"], schema: PluginSchema, *, entity_name: str | None = None
+    model: type["AppFormModel"], schema: AppSchema, *, entity_name: str | None = None
 ) -> list[str]:
     """Return human-readable disagreements between ``model`` and ``schema``.
 

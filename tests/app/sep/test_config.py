@@ -24,9 +24,9 @@ from pydantic import ValidationError
 
 from app.core.config import PMMSettings
 from app.sep.config import (
-    _DeprecatedPMMConfig,
+    App,
     AppDrainSettings,
-    Plugin,
+    DeprecatedPMMConfig,
     SEPSettings,
     SessionOptions,
 )
@@ -120,18 +120,18 @@ class TestForwardDeprecatedPMMFields:
         core_pmm = PMMSettings()
         with patch("app.sep.config.settings") as mock_settings:
             mock_settings.PMM = core_pmm
-            SEPSettings(PMM=_DeprecatedPMMConfig())
+            SEPSettings(PMM=DeprecatedPMMConfig())
         assert mock_settings.PMM is core_pmm
 
 
 class TestPluginModuleNameDeprecation:
-    """Test the legacy ``backup``/``backups`` MODULE_NAME shim on ``Plugin``."""
+    """Test the legacy ``backup``/``backups`` MODULE_NAME shim on ``App``."""
 
     @pytest.mark.parametrize("legacy_value", ["backup", "backups"])
     def test_legacy_value_is_remapped_to_mysql_backups(self, legacy_value: str):
         """Assert legacy aliases resolve to ``mysql_backups`` and log a deprecation warning."""
         with patch("app.sep.config.logger") as mock_logger:
-            plugin = Plugin(name="MySQL Backups", module_name=legacy_value)
+            plugin = App(name="MySQL Backups", module_name=legacy_value)
         assert plugin.module_name == "app.sep.plugins.mysql_backups"
         mock_logger.warning.assert_called_once()
         rendered = mock_logger.warning.call_args.args[0] % tuple(
@@ -144,7 +144,7 @@ class TestPluginModuleNameDeprecation:
     def test_modern_value_resolves_without_warning(self):
         """Assert the modern ``mysql_backups`` value resolves normally with no warning."""
         with patch("app.sep.config.logger") as mock_logger:
-            plugin = Plugin(name="MySQL Backups", module_name="mysql_backups")
+            plugin = App(name="MySQL Backups", module_name="mysql_backups")
         assert plugin.module_name == "app.sep.plugins.mysql_backups"
         mock_logger.warning.assert_not_called()
 
@@ -160,28 +160,28 @@ class TestPluginModuleNameDeprecation:
     ):
         """Assert sibling plugins whose names begin with ``backup`` are unaffected."""
         with patch("app.sep.config.logger") as mock_logger:
-            plugin = Plugin(name="Backups", module_name=sibling_value)
+            plugin = App(name="Backups", module_name=sibling_value)
         assert plugin.module_name == expected_module
         mock_logger.warning.assert_not_called()
 
 
 class TestPluginNameOptional:
-    """Test the MODULE_NAME-only ``Plugin`` shrink (``name`` optional)."""
+    """Test the MODULE_NAME-only ``App`` shrink (``name`` optional)."""
 
     def test_plugin_constructs_without_name(self) -> None:
         """A MODULE_NAME-only entry validates with ``name`` absent."""
-        plugin = Plugin(module_name="checksums")
+        plugin = App(module_name="checksums")
         assert plugin.name is None
 
     def test_name_absent_leaves_derived_metadata_empty(self) -> None:
         """Without a name, ``uri_path``/``css_class`` stay empty for the registry."""
-        plugin = Plugin(module_name="checksums")
+        plugin = App(module_name="checksums")
         assert plugin.uri_path == ""
         assert plugin.css_class == ""
 
     def test_name_still_seeds_derived_metadata(self) -> None:
         """A supplied name keeps driving the slugified defaults."""
-        plugin = Plugin(name="Snippet Manager", module_name="snippets")
+        plugin = App(name="Snippet Manager", module_name="snippets")
         assert plugin.uri_path == "/snippet-manager"
         assert plugin.css_class == "snippet-manager"
 

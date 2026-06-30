@@ -122,7 +122,7 @@ def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
     return AsyncMock(side_effect=_mock_get)
 
 
-class TestRestoreMongoPluginSchemaEndpoint:
+class TestRestoreMongoAppSchemaEndpoint:
     """Tests for GET /api/plugins/backup_mongo/restores/schema."""
 
     def test_schema_returns_200(self, test_client):

@@ -17,8 +17,8 @@
 
 from app.sep.plugins.framework.form_dsl.conformance import check_form_conformance
 from app.sep.plugins.framework.form_dsl.derivation import (
+    derive_app_schema,
     derive_form_sections,
-    derive_plugin_schema,
     find_ref_marker,
     iter_service_refs,
 )
@@ -62,8 +62,8 @@ __all__ = [
     "TaskFormModel",
     "Ui",
     "check_form_conformance",
+    "derive_app_schema",
     "derive_form_sections",
-    "derive_plugin_schema",
     "find_ref_marker",
     "iter_service_refs",
 ]

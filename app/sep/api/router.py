@@ -33,7 +33,7 @@ from fastapi import APIRouter, Depends
 
 from app.sep.api.routes.app_info import router as app_info_router
 from app.sep.api.routes.app_state import router as app_state_router
-from app.sep.api.routes.apps import router as apps_router
+from app.sep.api.routes.apps import router as apps_catalog_router
 from app.sep.api.routes.dashboard import router as dashboard_router
 from app.sep.api.routes.hosts import router as hosts_router
 from app.sep.api.routes.periodic_tasks import router as periodic_tasks_router
@@ -52,7 +52,7 @@ from app.sep.deps import (
 from app.sep.plugins.framework.registry import AppRegistry, get_app_registry
 
 
-def build_plugins_router(registry: AppRegistry) -> APIRouter:
+def build_apps_router(registry: AppRegistry) -> APIRouter:
     """Build the ``/plugins`` sub-router by iterating the app registry.
 
     Mirror the Jinja UI mount loop in ``app/sep/main.py`` so future
@@ -67,7 +67,7 @@ def build_plugins_router(registry: AppRegistry) -> APIRouter:
         those are kept and the key tag is not added).
     :rtype: APIRouter
     """
-    plugins_router = APIRouter(
+    apps_router = APIRouter(
         prefix="/plugins", dependencies=[RequireBearerForUnsafeMethods]
     )
     for app in registry:
@@ -78,19 +78,19 @@ def build_plugins_router(registry: AppRegistry) -> APIRouter:
             if app.key in PROTECTED_APP_KEYS
             else [Depends(require_app_enabled(app.key))]
         )
-        plugins_router.include_router(
+        apps_router.include_router(
             app.api_router,
             prefix=f"/{app.key}",
             tags=[] if app.api_router.tags else [app.key],
             dependencies=plugin_deps,
         )
-    return plugins_router
+    return apps_router
 
 
-plugins_router = build_plugins_router(get_app_registry())
+apps_router = build_apps_router(get_app_registry())
 
 api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
-api_router.include_router(plugins_router)
+api_router.include_router(apps_router)
 api_router.include_router(app_info_router, prefix="/sep/app-info", tags=["sep"])
 api_router.include_router(dashboard_router, prefix="/sep/dashboard", tags=["sep"])
 api_router.include_router(hosts_router, prefix="/sep/hosts", tags=["sep"])
@@ -113,4 +113,4 @@ api_router.include_router(
     tags=["admin"],
     dependencies=[IsApiAdmin, RequireBearerForUnsafeMethods],
 )
-api_router.include_router(apps_router, prefix="/apps", tags=["apps"])
+api_router.include_router(apps_catalog_router, prefix="/apps", tags=["apps"])

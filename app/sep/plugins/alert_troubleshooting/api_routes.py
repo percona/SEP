@@ -15,7 +15,7 @@
 
 """Define the JSON API router for the Alert Troubleshooting plugin.
 
-Mounted at ``/api/plugins/alert_troubleshooting/`` via ``plugins_router`` in
+Mounted at ``/api/plugins/alert_troubleshooting/`` via ``apps_router`` in
 ``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
 level and redeclared per route for safety. Route layout:
 

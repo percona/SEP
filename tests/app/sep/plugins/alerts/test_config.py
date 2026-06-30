@@ -18,7 +18,7 @@
 from unittest.mock import MagicMock, patch
 
 from app.core.celery.models import IntervalSchedule, Period
-from app.sep.config import _DeprecatedPMMConfig
+from app.sep.config import DeprecatedPMMConfig
 from app.sep.plugins.alerts.config import _create_alerts_pmm_config, AlertsPMMConfig
 
 DEFAULT_BACKUP_RETENTION = 10
@@ -50,7 +50,7 @@ class TestCreateAlertsPMMConfig:
 
     def test_reads_fields_from_deprecated_config(self):
         """Assert alerts fields are read from ``sep_settings.PMM``."""
-        mock_pmm = MagicMock(spec=_DeprecatedPMMConfig)
+        mock_pmm = MagicMock(spec=DeprecatedPMMConfig)
         mock_pmm.backup_retention = CUSTOM_BACKUP_RETENTION
         mock_pmm.alert_folder_name = "Custom"
         mock_pmm.backup_interval = IntervalSchedule(every=12, period=Period.HOURS)
@@ -69,7 +69,7 @@ class TestCreateAlertsPMMConfig:
 
     def test_defaults_when_no_alerts_fields_set(self):
         """Assert defaults used when no alerts fields explicitly set."""
-        mock_pmm = MagicMock(spec=_DeprecatedPMMConfig)
+        mock_pmm = MagicMock(spec=DeprecatedPMMConfig)
         mock_pmm.backup_retention = 10
         mock_pmm.alert_folder_name = "SEP Alerts"
         mock_pmm.backup_interval = IntervalSchedule(every=24, period=Period.HOURS)

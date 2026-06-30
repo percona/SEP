@@ -27,8 +27,8 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.form_dsl import (
     AppFormModel,
     Choices,
+    derive_app_schema,
     derive_form_sections,
-    derive_plugin_schema,
     FieldWidget,
     Forbidden,
     FormLayout,
@@ -637,7 +637,7 @@ class TestScopeAttribution:
 
     def test_rules_attach_to_correct_scope(self) -> None:
         """Attach section rules to the section and untagged rules to the plugin."""
-        schema = derive_plugin_schema(
+        schema = derive_app_schema(
             _ScopeModel,
             _SINGLE_SECTION,
             name="m",

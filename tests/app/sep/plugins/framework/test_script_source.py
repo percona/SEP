@@ -51,10 +51,10 @@ from app.sep.plugins.framework.conformance import (
 )
 from app.sep.plugins.framework.form_dsl import AppFormModel, Ui
 from app.sep.plugins.framework.schema import (
+    AppSchema,
     Column,
     FormSection,
     ListView,
-    PluginSchema,
     StringField,
 )
 from app.sep.plugins.framework.script_source import ScriptExecuteWrite
@@ -74,9 +74,9 @@ _SCRIPT_PARAMS: dict[str, dict[str, type]] = {
 _LIST_VIEW = ListView(columns=[Column(key="filename", label="Filename")])
 
 
-def _plugin_schema() -> PluginSchema:
+def _plugin_schema() -> AppSchema:
     """Build a minimal valid plugin-level schema for the static-schema cases."""
-    return PluginSchema(
+    return AppSchema(
         name="fixture-scripts", display_name="Fixture Scripts", list_view=_LIST_VIEW
     )
 
@@ -126,10 +126,10 @@ class _FixtureMeta(BaseModel):
     args: dict[str, object]
 
 
-def _build_form_schema(script: _FixtureScript) -> PluginSchema:
+def _build_form_schema(script: _FixtureScript) -> AppSchema:
     """Build a per-script schema whose form mirrors the script's parameters."""
     fields = [StringField(name=name, label=name) for name in script.params]
-    return PluginSchema(
+    return AppSchema(
         name="fixture-scripts",
         display_name="Fixture Scripts",
         forms=[FormSection(title="Parameters", fields=fields)],
@@ -180,7 +180,7 @@ def _extra_router() -> APIRouter:
 def _make_source(
     scripts_dir: Path,
     *,
-    static_schema: PluginSchema | None = None,
+    static_schema: AppSchema | None = None,
     list_response_model: type[BaseModel] | None = None,
 ) -> ScriptSource:
     """Build a ``ScriptSource`` whose hooks read the fixture script directory."""

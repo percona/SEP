@@ -46,7 +46,7 @@ class AlertsPMMConfig(BaseLowercaseModel):
 def _create_alerts_pmm_config() -> AlertsPMMConfig:
     """Create an ``AlertsPMMConfig`` from the deprecated ``SEP.PMM`` YAML section.
 
-    Read alerts-specific fields from ``sep_settings.PMM`` (a ``_DeprecatedPMMConfig``
+    Read alerts-specific fields from ``sep_settings.PMM`` (a ``DeprecatedPMMConfig``
     instance that includes both connection and alerts fields) and validate them
     into an ``AlertsPMMConfig`` instance.
 

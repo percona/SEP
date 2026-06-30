@@ -57,11 +57,11 @@ from app.sep.plugins.framework.form_dsl import (
     Ui,
 )
 from app.sep.plugins.framework.schema import (
+    AppSchema,
     BoolField,
     Column,
     FormSection,
     ListView,
-    PluginSchema,
 )
 from app.tasks.models import Task, TaskWrite
 from tests.app.factories import (
@@ -174,7 +174,7 @@ def _extra_router() -> APIRouter:
     return router
 
 
-_PASSTHROUGH_SCHEMA = PluginSchema(
+_PASSTHROUGH_SCHEMA = AppSchema(
     name="synthetic-app",
     display_name="Synthetic App",
     forms=[FormSection(title="Options", fields=[BoolField(name="flag", label="Flag")])],
@@ -343,7 +343,7 @@ class TestSchemaEndpoint:
     def test_schema_returns_derived_plugin_schema(
         self, regular_user: CasdoorUser
     ) -> None:
-        """Assert the schema route returns the derived ``PluginSchema``."""
+        """Assert the schema route returns the derived ``AppSchema``."""
         client = _client(_synth_app(), _make_tasks_api(), regular_user)
 
         response = client.get(f"{_BASE}/schema")
