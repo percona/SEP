@@ -20,7 +20,6 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -1558,7 +1557,7 @@ class TestTaskHistoryLogManagerDeleteAgedBatch:
         locker_maker = get_async_session_maker_from_engine(postgres_engine)
         async with locker_maker() as locker:
             await locker.exec(
-                text("SELECT id FROM taskhistory_log FOR UPDATE SKIP LOCKED")
+                select(col(TaskHistoryLog.id)).with_for_update(skip_locked=True)
             )
             # Session B must skip the locked rows rather than block/deadlock.
             deleted = await TaskHistoryLogManager.delete_aged_batch(
