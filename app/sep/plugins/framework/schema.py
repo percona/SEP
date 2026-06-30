@@ -1312,7 +1312,6 @@ class AppSchema(SchemaBaseModel):
     :param entities: Optional list of CRUD entities for multi-resource plugins.
         When non-empty, the React shell renders one list/create/detail flow
         per entity. Defaults to ``None`` (legacy single-entity mode).
-    :type entities: list[AppEntitySchema] | None
     :param cardinality_rules: Optional plugin-wide cross-field cardinality
         constraints (task-style plugins only; ignored when ``entities`` is set).
         Defaults to ``None``.
@@ -1360,7 +1359,6 @@ class AppSchema(SchemaBaseModel):
         any section cards.
 
         :return: The validated plugin schema instance.
-        :rtype: AppSchema
         :raises ValueError: When ``task_type`` is set and ``detail_view``
             is unset.
         """
@@ -1453,7 +1451,6 @@ class AppSchema(SchemaBaseModel):
         the failure surfaces at plugin load rather than on first cascade.
 
         :return: The validated plugin schema instance.
-        :rtype: AppSchema
         :raises ValueError: When the two lists share at least one
             ``name_suffix`` value.
         """
@@ -1477,7 +1474,6 @@ class AppSchema(SchemaBaseModel):
         Otherwise root ``forms`` are validated (task-style plugins).
 
         :return: The validated plugin schema instance.
-        :rtype: AppSchema
         :raises ValueError: If duplicate field names appear in the same form
             set, or if neither ``entities`` nor ``list_view`` is usable.
         """
@@ -1505,7 +1501,6 @@ class AppSchema(SchemaBaseModel):
         runtime.
 
         :return: The validated plugin schema instance.
-        :rtype: AppSchema
         :raises ValueError: If any rule references a field that does not
             exist in the schema, or whose name contains a hyphen.
         """

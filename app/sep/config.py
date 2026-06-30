@@ -528,7 +528,6 @@ class SEPSettings(BaseYamlAppSettings):
     :type TASKS_ENDPOINT: CredentialHttpUrl
     :param PLUGINS: A list of plugins used by SEP. Defaults to an empty list with
         duplicates removed.
-    :type PLUGINS: UniqueList[App]
     :param PROXY_HEADERS: Whether to use proxy headers (like ``X-Forwarded-For``).
         Defaults to ``False``.
     :type PROXY_HEADERS: bool

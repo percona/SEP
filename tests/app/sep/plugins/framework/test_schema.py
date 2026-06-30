@@ -522,7 +522,7 @@ def test_each_field_type_discriminator_serialises_as_type_key(
 
 
 def test_plugin_schema_round_trips_through_json():
-    """Round-trip ``AppSchema`` through JSON back into concrete field subclasses."""
+    """Serialize ``AppSchema`` through JSON and back into concrete field subclasses."""
     dumped = _CHECKSUMS_LIKE_SCHEMA.model_dump(mode="json", by_alias=True)
 
     rehydrated = AppSchema.model_validate(dumped)
@@ -1085,7 +1085,7 @@ class TestConditionalRulePrimitivesAcceptance:
         assert len(section.cardinality_rules) == 1
 
     def test_plugin_schema_accepts_top_level_fail_when(self) -> None:
-        """App schema accepts top level fail when."""
+        """Check the app schema accepts a top-level ``fail_when``."""
         schema = AppSchema(
             name="t",
             display_name="T",
@@ -1412,7 +1412,7 @@ class TestSchemaTier2ReferenceResolution:
             )
 
 
-# ── DerivedTask primitive and AppSchema.derived (SEP-1074) ────────────
+# ── DerivedTask primitive and AppSchema.derived ────────────
 
 
 class TestDerivedTask:
@@ -1533,7 +1533,7 @@ class TestAppSchemaDerivedField:
             )
 
 
-# ── ChainedPredecessor primitive and AppSchema.predecessors (SEP-1123) ──
+# ── ChainedPredecessor primitive and AppSchema.predecessors ──
 
 
 class TestChainedPredecessor:
@@ -1893,7 +1893,7 @@ def test_plugin_schema_without_task_type_allows_missing_detail_view():
 
 
 def test_plugin_schema_detail_view_round_trips_through_json():
-    """Round-trip a task-style ``AppSchema`` carrying a populated ``detail_view``."""
+    """Serialize a task-style ``AppSchema`` carrying a populated ``detail_view`` through JSON and back."""
     schema = AppSchema(
         name="task-plugin",
         display_name="Task App",

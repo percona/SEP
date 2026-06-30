@@ -263,7 +263,6 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
     :param snippet: The snippet whose schema to synthesise.
     :type snippet: Snippet
     :return: The fully-validated plugin schema for this single snippet.
-    :rtype: AppSchema
     """
     parameter_sections: dict[str, list[AnyField]] = {}
     for parameter in snippet.validated_parameters.visible_parameters:

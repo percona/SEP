@@ -100,7 +100,6 @@ def _synthesize_legacy_app(plugin: App, auto_key: str) -> BaseApp:
     when ``api_router_path`` resolves to a non-``APIRouter``.
 
     :param plugin: The legacy plugin settings entry.
-    :type plugin: App
     :param auto_key: The scoped app key derived from the module path.
     :return: The synthesized app.
     :rtype: BaseApp
@@ -138,7 +137,6 @@ def _bind_definition(definition: BaseApp, plugin: App, auto_key: str) -> BaseApp
     :param definition: The app definition exported by the module.
     :type definition: BaseApp
     :param plugin: The activation entry for the module.
-    :type plugin: App
     :param auto_key: The scoped app key derived from the module path.
     :return: The bound app.
     :rtype: BaseApp
@@ -169,7 +167,6 @@ def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
     the activation list -- unit tests call it directly.
 
     :param plugins: The ``SEP.PLUGINS`` activation entries, in order.
-    :type plugins: Iterable[App]
     :return: The ordered registry.
     :rtype: AppRegistry
     """

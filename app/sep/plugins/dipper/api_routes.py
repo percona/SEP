@@ -126,7 +126,6 @@ async def dipper_api_form_schema(
         configured (injected via ``PMMAPIDep``).
     :type pmm_api: PMMRemoteAPI | None
     :return: Context-specific schema including payload parameters.
-    :rtype: AppSchema
     """
     service_data = await inventory_api.get(f"/services/{service_id}")
     service = CreatedService.model_validate(service_data)

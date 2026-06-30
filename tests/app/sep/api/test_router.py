@@ -245,7 +245,7 @@ class TestPluginBearerGate:
         assert response.status_code != status.HTTP_401_UNAUTHORIZED
 
     def test_bearer_gate_is_on_apps_router_only(self) -> None:
-        """The gate is wired into apps_router, not the broader api_router.
+        """Check the Bearer gate is wired into apps_router, not the broader api_router.
 
         Regression guard against accidentally Bearer-gating /api/sep/*
         (dashboard, hosts, task-stats) which serve cookie-authenticated

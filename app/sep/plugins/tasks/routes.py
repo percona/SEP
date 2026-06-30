@@ -45,7 +45,13 @@ async def tasks_list(
     context: DefaultContext,
     tasks_api: TaskAPI,
 ) -> HTMLResponse:
-    """Homepage of Tasks App."""
+    """Render the Tasks app homepage with the current and running task lists.
+
+    :param request: The incoming request used to render the template response.
+    :param context: The default template context for the page.
+    :param tasks_api: Client used to fetch the task and history lists.
+    :return: The rendered Tasks list page.
+    """
     response = await tasks_api.get("/")
     context["tasks"] = response["items"]
     response = await tasks_api.get(

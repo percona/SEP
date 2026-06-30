@@ -62,7 +62,6 @@ class BaseApp(BaseModel):
     :type jinja_router: APIRouter | None
     :param app_schema: The plugin's schema definition, aliased ``schema`` for
         authoring; ``None`` for legacy-wrapped apps.
-    :type app_schema: AppSchema | None
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)

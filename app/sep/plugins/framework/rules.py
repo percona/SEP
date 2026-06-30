@@ -1278,7 +1278,7 @@ class _PreparedRule:
 
 @dataclass(frozen=True, slots=True)
 class RulePlan:
-    """Flat list of every conditional rule extracted from a plugin schema.
+    """Hold a flat list of every conditional rule extracted from a plugin schema.
 
     :ivar rules: One :class:`_PreparedRule` per declarative rule across the
         schema's BaseField, FormSection, and AppSchema scopes.
@@ -1440,7 +1440,6 @@ def _extract_rule_plan(
     tier-1 schema validation.
 
     :param schema: The plugin schema to extract rules from.
-    :type schema: AppSchema
     :param entity_name: When ``schema.entities`` is set, the entity segment
         whose rules to extract. Must be ``None`` when ``schema.entities`` is
         unset.
@@ -1739,7 +1738,7 @@ def _validate_plan_against_model_fields(
 
 
 class ConditionalRulesModel(BaseModel):
-    """Base class for plugin ``Write`` models that opt into runtime rule enforcement.
+    """Provide the base class for plugin ``Write`` models that opt into runtime rule enforcement.
 
     Subclasses combine inheritance from this base with the
     :func:`apply_conditional_rules` decorator. The decorator extracts a
@@ -1792,7 +1791,6 @@ def apply_conditional_rules(
 
     :param schema: The plugin schema whose declarative rules drive runtime
         enforcement.
-    :type schema: AppSchema
     :param entity_name: Required for multi-entity schemas; must be ``None``
         for legacy task-style schemas.
     :type entity_name: str | None

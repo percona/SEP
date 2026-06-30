@@ -183,7 +183,6 @@ def build_dipper_form_schema(
     :param service_options: Optional PMM service names rendered as a ``service`` dropdown.
     :type service_options: list[str] | None
     :return: The assembled plugin form schema.
-    :rtype: AppSchema
     """
     options_by_field = {"node": node_options, "service": service_options}
     parameter_sections: dict[str, list[AnyField]] = {}

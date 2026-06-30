@@ -524,14 +524,14 @@ class TestReportApiBearerAuthGate:
     def test_pdf_with_cookie_only_returns_401(
         self, api_admin_client_no_bearer, mock_pmm_api
     ):
-        """POST /generate/pdf without Bearer is rejected by apps_router gate."""
+        """Reject POST /generate/pdf without Bearer at the apps_router gate."""
         response = api_admin_client_no_bearer.post(f"{API_BASE}/generate/pdf")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_upload_with_cookie_only_returns_401(
         self, api_admin_client_no_bearer, mock_pmm_api
     ):
-        """POST /upload without Bearer is rejected by apps_router gate."""
+        """Reject POST /upload without Bearer at the apps_router gate."""
         sep_app.dependency_overrides[require_upload_configured] = lambda: None
         try:
             response = api_admin_client_no_bearer.post(f"{API_BASE}/upload")
