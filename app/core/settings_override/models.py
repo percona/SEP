@@ -57,6 +57,7 @@ class SettingClassEnum(StrEnum):
     SETTINGS = "Settings"
     ALERT_SETTINGS = "AlertSettings"
     ANONYMIZER_SETTINGS = "AnonymizerSettings"
+    ALERTS_SETTINGS = "AlertsSettings"
 
 
 class SettingOverride(BaseSQLModel, table=True):

@@ -639,7 +639,8 @@
           "MessagesSettings",
           "Settings",
           "AlertSettings",
-          "AnonymizerSettings"
+          "AnonymizerSettings",
+          "AlertsSettings"
         ],
         "title": "SettingClassEnum",
         "type": "string"

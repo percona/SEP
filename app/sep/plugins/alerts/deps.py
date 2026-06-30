@@ -30,7 +30,7 @@ from app.core.exceptions import (
 from app.core.pagination import make_pagination_dep, Pagination
 from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
 from app.sep.deps import DefaultContext, SessionDep
-from app.sep.plugins.alerts.config import alerts_pmm_config
+from app.sep.plugins.alerts.config import alerts_settings
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.loader import get_alert_templates
 from app.sep.plugins.alerts.models import AlertBackup, AlertTemplate, ServiceType
@@ -148,7 +148,7 @@ async def find_or_create_alert_folder(pmm_api: PMMRemoteAPI) -> Folder:
     :param pmm_api: The PMM API client.
     :return: The existing or newly created folder.
     """
-    folder_name = alerts_pmm_config.alert_folder_name
+    folder_name = alerts_settings.ALERT_FOLDER_NAME
     folders = await pmm_api.list_folders()
     for folder in folders:
         if folder.title == folder_name:

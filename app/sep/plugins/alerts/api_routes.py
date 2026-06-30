@@ -42,7 +42,7 @@ from app.core.exceptions import (
 )
 from app.core.pagination import PaginatedResponse
 from app.sep.deps import IsApiAuthenticated, SessionDep
-from app.sep.plugins.alerts.config import alerts_pmm_config
+from app.sep.plugins.alerts.config import alerts_settings
 from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.plugins.alerts.deps import (
     AlertsBackupsPaginationDep,
@@ -385,7 +385,7 @@ async def alerts_api_push(
                     template_name=template.name,
                     folder_uid=folder.uid,
                     for_duration=DEFAULT_FOR_DURATION,
-                    group=alerts_pmm_config.alert_folder_name,
+                    group=alerts_settings.ALERT_FOLDER_NAME,
                 )
             except (HTTPException, OSError):
                 logger.debug("Rule already exists for %s", name, exc_info=True)
@@ -410,7 +410,7 @@ async def alerts_api_push(
                 template_name=template.name,
                 folder_uid=folder.uid,
                 for_duration=DEFAULT_FOR_DURATION,
-                group=alerts_pmm_config.alert_folder_name,
+                group=alerts_settings.ALERT_FOLDER_NAME,
             )
             results.append(
                 PushItemResult(
@@ -435,7 +435,7 @@ async def alerts_api_push(
                     template_name=template.name,
                     folder_uid=folder.uid,
                     for_duration=DEFAULT_FOR_DURATION,
-                    group=alerts_pmm_config.alert_folder_name,
+                    group=alerts_settings.ALERT_FOLDER_NAME,
                 )
                 results.append(
                     PushItemResult(
