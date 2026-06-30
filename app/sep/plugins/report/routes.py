@@ -22,18 +22,17 @@ from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
 
-from app.core.exceptions import HTTPUnprocessableEntityException
+from app.sep.celery import render_report_pdf_job, upload_report_snapshot_job
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 
 from .deps import IsUploadConfigured, ReportIndexContext, RequiredPMMAPIDep
+from .job_service import report_pdf_filename
 from .models import REPORT_SECTIONS, ReportData
 from .service import (
-    generate_pdf_report,
     generate_report,
     SERVICE_NAMES,
-    upload_pdf_report,
 )
 
 logger = logging.getLogger(__name__)
@@ -162,50 +161,78 @@ async def report_generate_json(
     include_in_schema=False,
 )
 async def report_generate_pdf(
+    request: Request,
+    context: ReportIndexContext,
     report_json: Annotated[str, Form()],
 ) -> Response:
-    """Generate a report and return it as a downloadable PDF.
+    """Enqueue PDF rendering and render an async job status page.
 
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :param context: Template context.
+    :type context: ReportIndexContext
     :param report_json: Existing report JSON snapshot.
     :type report_json: str
-    :return: PDF file response.
-    :rtype: Response
-    :raises HTTPUnprocessableEntityException: If the report snapshot is invalid.
+    :return: Rendered job status page.
+    :rtype: HTMLResponse
     """
     try:
         report = ReportData.model_validate_json(report_json)
     except ValidationError as exc:
-        raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
-    pdf_bytes = await generate_pdf_report(report)
-    filename = f"Health_and_Security_Report_{report.metadata.generated_at:%Y-%m-%d}.pdf"
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    result = render_report_pdf_job.delay(report.model_dump(mode="json"))
+    context.update(
+        {
+            "job_id": result.id,
+            "job_title": "PDF generation started",
+            "job_description": f"Rendering {report_pdf_filename(report)}.",
+            "poll_url": str(request.url_for("report_pdf_job_api", job_id=result.id)),
+            "download_url": str(
+                request.url_for("report_download_pdf_api", job_id=result.id)
+            ),
+            "success_message": "PDF is ready.",
+            "back_url": str(request.url_for("report_index")),
+        }
     )
+    return templates.TemplateResponse(request, "report/job.html.j2", context)
 
 
 @router.post(
     "/upload",
     dependencies=[IsAuthenticated, IsCsrfValidated, IsUploadConfigured],
-    response_class=JSONResponse,
+    response_class=HTMLResponse,
     include_in_schema=False,
 )
 async def report_upload(
+    request: Request,
+    context: ReportIndexContext,
     report_json: Annotated[str, Form()],
-) -> JSONResponse:
-    """Generate a report, convert to PDF, and upload to ServiceNow.
+) -> Response:
+    """Enqueue PDF upload and render an async job status page.
 
+    :param request: The incoming HTTP request.
+    :type request: Request
+    :param context: Template context.
+    :type context: ReportIndexContext
     :param report_json: Existing report JSON snapshot.
     :type report_json: str
-    :return: JSON response with the upload result.
-    :rtype: JSONResponse
-    :raises HTTPUnprocessableEntityException: If the report snapshot is invalid.
+    :return: Rendered job status page.
+    :rtype: HTMLResponse
     """
     try:
         report = ReportData.model_validate_json(report_json)
     except ValidationError as exc:
-        raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
-    pdf_bytes = await generate_pdf_report(report)
-    result = await upload_pdf_report(report, pdf_bytes)
-    return JSONResponse(content=result)
+        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    result = upload_report_snapshot_job.delay(report.model_dump(mode="json"))
+    context.update(
+        {
+            "job_id": result.id,
+            "job_title": "ServiceNow upload started",
+            "job_description": f"Uploading {report_pdf_filename(report)}.",
+            "poll_url": str(request.url_for("report_upload_job_api", job_id=result.id)),
+            "download_url": None,
+            "success_message": "Report uploaded to ServiceNow.",
+            "back_url": str(request.url_for("report_index")),
+        }
+    )
+    return templates.TemplateResponse(request, "report/job.html.j2", context)
