@@ -83,11 +83,11 @@ class App(BaseCaseInsensitiveModel):
     path and set default values based on the plugin's name.
 
     :param name: The name of the plugin. Optional: a MODULE_NAME-only entry
-        omits it and the :class:`app.sep.plugins.framework.registry.AppRegistry`
+        omits it and the :class:`app.sep.apps.framework.registry.AppRegistry`
         derives descriptive metadata from the module basename instead.
     :type name: str | None
     :param module_name: The name of the module associated with the plugin. This field is
-        automatically prefixed with ``app.sep.plugins.`` during validation.
+        automatically prefixed with ``app.sep.apps.`` during validation.
     :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
@@ -108,7 +108,7 @@ class App(BaseCaseInsensitiveModel):
         shipping enabled. Set ``ENABLED: false`` to seed a plugin disabled.
     :type enabled: bool
     :param api_router_path: Optional dot-separated import path to the plugin's
-        JSON ``APIRouter`` instance (e.g. ``"app.sep.plugins.checksums.api_routes.router"``).
+        JSON ``APIRouter`` instance (e.g. ``"app.sep.apps.checksums.api_routes.router"``).
         When set, the router is mounted under ``/api/plugins/{key}`` by the
         shared API router loop. Three input states:
 
@@ -142,14 +142,14 @@ class App(BaseCaseInsensitiveModel):
         """Resolve the full module path for the plugin.
 
         This method takes the module name provided and prefixes it with
-        ``app.sep.plugins.`` to resolve the full import path. Legacy MySQL
+        ``app.sep.apps.`` to resolve the full import path. Legacy MySQL
         backups plugin names (``backup``, ``backups``) are remapped to
         ``mysql_backups`` with a deprecation warning before prefixing; the
         legacy aliases will not be supported in the next version.
 
         :param v: The module name to resolve.
         :type v: str
-        :return: The full module path with the ``app.sep.plugins.`` prefix.
+        :return: The full module path with the ``app.sep.apps.`` prefix.
         :rtype: str
         """
         if v in _LEGACY_BACKUP_MODULE_NAMES:
@@ -161,7 +161,7 @@ class App(BaseCaseInsensitiveModel):
                 v,
             )
             v = "mysql_backups"
-        return f"app.sep.plugins.{v}"
+        return f"app.sep.apps.{v}"
 
     @field_validator("module_name")
     @classmethod
@@ -175,12 +175,12 @@ class App(BaseCaseInsensitiveModel):
         still constructing. A filesystem probe keeps construction import-free; the
         real import happens when the registry is built, after settings are ready.
 
-        :param v: The resolved ``app.sep.plugins.``-prefixed module path.
+        :param v: The resolved ``app.sep.apps.``-prefixed module path.
         :return: The validated module path.
         :raises ValueError: When no module file or package exists at the path.
         """
-        relative = v.removeprefix("app.sep.plugins.")
-        target = Path(__file__).parent / "plugins" / Path(*relative.split("."))
+        relative = v.removeprefix("app.sep.apps.")
+        target = Path(__file__).parent / "apps" / Path(*relative.split("."))
         if (target / "__init__.py").is_file() or target.with_suffix(".py").is_file():
             return v
         raise ValueError(f"No module named {v}")
@@ -213,10 +213,10 @@ class App(BaseCaseInsensitiveModel):
         """
         if "api_router_path" in self.model_fields_set:
             return self
-        relative = self.module_name.removeprefix("app.sep.plugins.")
+        relative = self.module_name.removeprefix("app.sep.apps.")
         candidate_file = (
             Path(__file__).parent
-            / "plugins"
+            / "apps"
             / Path(*relative.split("."))
             / "api_routes.py"
         )

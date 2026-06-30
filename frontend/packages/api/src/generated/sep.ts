@@ -241,7 +241,7 @@ export interface paths {
      * @description Return everything the React list page needs in a single call.
      *
      *     Mirror the data assembled for the deprecated Jinja index view
-     *     (:func:`app.sep.plugins.alerts.deps.get_alerts_index_context`) as JSON:
+     *     (:func:`app.sep.apps.alerts.deps.get_alerts_index_context`) as JSON:
      *     alert templates grouped by service type, PMM connectivity, the PagerDuty
      *     contact-point status, and the most recent backups.
      *
@@ -340,7 +340,7 @@ export interface paths {
      * Alerts Api Pagerduty Save
      * @description Create or update the PagerDuty contact point and notification route.
      *
-     *     Mirror :func:`app.sep.plugins.alerts.routes.pagerduty_save` over JSON.
+     *     Mirror :func:`app.sep.apps.alerts.routes.pagerduty_save` over JSON.
      *
      *     :param payload: PagerDuty save request body.
      *     :type payload: PagerDutyRequest
@@ -397,9 +397,9 @@ export interface paths {
      * Alerts Api Push
      * @description Push selected alert templates to PMM as rules.
      *
-     *     Mirror :func:`app.sep.plugins.alerts.routes.alerts_push` over JSON.
+     *     Mirror :func:`app.sep.apps.alerts.routes.alerts_push` over JSON.
      *     Preserve the conflict-retry path: on ``create_rule`` collision call
-     *     :func:`app.sep.plugins.alerts.restore.delete_conflicting_rules` and
+     *     :func:`app.sep.apps.alerts.restore.delete_conflicting_rules` and
      *     retry once.
      *
      *     :param payload: Push request body listing template names to push.
@@ -710,7 +710,7 @@ export interface paths {
      *
      *     POSTs the parent ``pbm_config`` task, then derived ``pbm_logical``,
      *     ``pbm_physical``, and ``pbm_status`` siblings via
-     *     :func:`~app.sep.plugins.framework.cascade.cascade_create_tasks`.
+     *     :func:`~app.sep.apps.framework.cascade.cascade_create_tasks`.
      */
     post: operations['backup_mongo_backup_mongo_api_create_api_plugins_backup_mongo__post'];
     delete?: never;
@@ -2947,7 +2947,7 @@ export interface components {
      *
      *     This one declaration drives the JSON create/update request body, the Jinja
      *     ``Form()`` body, and — via
-     *     :func:`~app.sep.plugins.framework.form_dsl.derive_app_schema` — the
+     *     :func:`~app.sep.apps.framework.form_dsl.derive_app_schema` — the
      *     ``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are
      *     enforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /
      *     ``Forbidden`` gates plus ``__form_rules__``), not by a decorator.
@@ -3417,12 +3417,12 @@ export interface components {
      *     :type fail_when: list[FailRule] | None
      *     :param derived: Optional declarative specs for sibling tasks derived from
      *         the parent task on cascade. Consumed by
-     *         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+     *         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
      *         across the parent and N derived siblings. Defaults to ``None``.
      *     :type derived: list[DerivedTask] | None
      *     :param predecessors: Optional declarative specs for tasks that must run
      *         before the parent. Consumed by
-     *         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+     *         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
      *         across the predecessors and the parent, including the chain wiring
      *         applied at execute time. Defaults to ``None``.
      *     :type predecessors: list[ChainedPredecessor] | None
@@ -3605,7 +3605,7 @@ export interface components {
       awscli_s3_upload_extra_args?: string | null;
       /** Backup Dir */
       backup_dir?: string | null;
-      backup_type: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      backup_type: components['schemas']['app__sep__apps__mysql_backups__models__BackupType'];
       /** Binlog Alternative Host */
       binlog_alternative_host?: string | null;
       /** Binlog Cmd */
@@ -3635,7 +3635,7 @@ export interface components {
       compress: boolean;
       /** Compression Algorithm */
       compression_algorithm?:
-        | components['schemas']['app__sep__plugins__mysql_backups__models__CompressionAlgorithm']
+        | components['schemas']['app__sep__apps__mysql_backups__models__CompressionAlgorithm']
         | null;
       /** Defaults File */
       defaults_file?: string | null;
@@ -4121,7 +4121,7 @@ export interface components {
        */
       alert_on_fail: boolean;
       backup_compression?:
-        | components['schemas']['app__sep__plugins__backup_mongo__models__CompressionAlgorithm']
+        | components['schemas']['app__sep__apps__backup_mongo__models__CompressionAlgorithm']
         | null;
       /** Backup Compression Level */
       backup_compression_level?: number | null;
@@ -4438,7 +4438,7 @@ export interface components {
      * ChainedPredecessor
      * @description Represent a chained predecessor task that runs before the parent.
      *
-     *     The cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes
+     *     The cascade module (:mod:`app.sep.apps.framework.cascade`) consumes
      *     this spec when POSTing, PUTting, or DELETEing a plugin's tasks: each
      *     predecessor is created with ``data["parent"]`` linked to the parent's
      *     name (when ``parent_link`` is true) and named
@@ -4796,7 +4796,7 @@ export interface components {
      * DerivedTask
      * @description Represent a sibling task derived from a parent during cascade operations.
      *
-     *     The cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes this
+     *     The cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this
      *     spec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task
      *     is created first, then for each ``DerivedTask`` the parent payload is
      *     deep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``
@@ -6077,7 +6077,7 @@ export interface components {
       alert_on_fail: boolean;
       /** Backup Source */
       backup_source: string;
-      backup_type: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      backup_type: components['schemas']['app__sep__apps__mysql_backups__models__BackupType'];
       /** Binlog Restore Extra Args */
       binlog_restore_extra_args?: string | null;
       /** Custom Mysql Init Command */
@@ -6250,7 +6250,7 @@ export interface components {
      * RestoreRequest
      * @description Describe the request body for ``POST /api/plugins/alerts/restore``.
      *
-     *     :param backup_id: Primary key of the :class:`~app.sep.plugins.alerts.models.AlertBackup`
+     *     :param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`
      *         row to restore from. Must be a positive integer.
      *     :type backup_id: int
      */
@@ -6265,7 +6265,7 @@ export interface components {
      *     :param status: ``"success"`` on a complete restore.
      *     :type status: Literal["success"]
      *     :param details: Per-section restore counts as returned by
-     *         :func:`~app.sep.plugins.alerts.restore.restore_from_backup`.
+     *         :func:`~app.sep.apps.alerts.restore.restore_from_backup`.
      *     :type details: dict[str, Any]
      */
     RestoreResponse: {
@@ -6374,7 +6374,7 @@ export interface components {
      *
      *     Mirrors :class:`RestoreCreate` field-for-field with JSON-native types (notably
      *     ``service_id: int | None``). Routes convert via
-     *     :func:`~app.sep.plugins.backup_mongo.restore.deps.restore_create_from_write`
+     *     :func:`~app.sep.apps.backup_mongo.restore.deps.restore_create_from_write`
      *     before building task payloads. See :class:`RestoreCreate` for why both models
      *     remain.
      *
@@ -6413,7 +6413,7 @@ export interface components {
     RestoreTaskWrite: {
       /** Backup Source */
       backup_source: string;
-      backup_type: components['schemas']['app__sep__plugins__backup_mongo__models__BackupType'];
+      backup_type: components['schemas']['app__sep__apps__backup_mongo__models__BackupType'];
       /** Credentials Path */
       credentials_path?: string | null;
       /** Hostname */
@@ -6446,7 +6446,7 @@ export interface components {
      *     Extend the standard task-response surface with the restore-specific
      *     destination facts the detail view renders; the shared task identity,
      *     status, audit, and anonymization fields come from
-     *     :class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.
+     *     :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
      *
      *     :param backup_type: The backup type recorded in task config.
      *     :param hostname: The executor hostname target.
@@ -6997,7 +6997,7 @@ export interface components {
      * SnippetBatchApproveRequest
      * @description Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.
      *
-     *     Unlike the Form-bound :class:`~app.sep.plugins.snippets.deps.SnippetBatchApproveForm`
+     *     Unlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`
      *     twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
      *     parses it as JSON.
      *
@@ -7100,9 +7100,9 @@ export interface components {
      *     (currently the manual refresh button) so the React shell can decide
      *     whether to render those controls without probing the gated endpoints.
      *
-     *     Distinct from :class:`~app.sep.plugins.framework.schema.Capabilities`,
+     *     Distinct from :class:`~app.sep.apps.framework.schema.Capabilities`,
      *     which describes static UI feature flags on
-     *     :attr:`~app.sep.plugins.framework.schema.AppSchema.capabilities`
+     *     :attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`
      *     (chaining, scheduling, alert_on_fail). This model is the per-
      *     deployment runtime counterpart returned by ``GET /capabilities``.
      *
@@ -7736,7 +7736,7 @@ export interface components {
     /** PaginatedResponse[BackupTaskResponse] */
     app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1: {
       /** Items */
-      items: components['schemas']['app__sep__plugins__backup_mongo__models__BackupTaskResponse'][];
+      items: components['schemas']['app__sep__apps__backup_mongo__models__BackupTaskResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -7747,7 +7747,7 @@ export interface components {
     /** PaginatedResponse[BackupTaskResponse] */
     app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2: {
       /** Items */
-      items: components['schemas']['app__sep__plugins__backup_pg__models__BackupTaskResponse'][];
+      items: components['schemas']['app__sep__apps__backup_pg__models__BackupTaskResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -7766,7 +7766,7 @@ export interface components {
      *     :param chain_on_failure: Whether to run chained tasks even on failure.
      *     :type chain_on_failure: bool | None
      */
-    app__sep__plugins__backup_mongo__models__BackupExecuteWrite: {
+    app__sep__apps__backup_mongo__models__BackupExecuteWrite: {
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
       /** Chain Task Names */
@@ -7783,7 +7783,7 @@ export interface components {
      *     :param task_id: The id of the task-history row created by the tasks API.
      *     :type task_id: int | None
      */
-    app__sep__plugins__backup_mongo__models__BackupExecutionResponse: {
+    app__sep__apps__backup_mongo__models__BackupExecutionResponse: {
       /** Task Id */
       task_id?: number | null;
       /** Task Name */
@@ -7800,7 +7800,7 @@ export interface components {
      *         available.
      *     :type latest_pbm_status: str | None
      */
-    app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse: {
+    app__sep__apps__backup_mongo__models__BackupTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
@@ -7856,7 +7856,7 @@ export interface components {
      *     :param last_updated_by: The user who last modified the task record.
      *     :type last_updated_by: str | None
      */
-    app__sep__plugins__backup_mongo__models__BackupTaskResponse: {
+    app__sep__apps__backup_mongo__models__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
@@ -7888,7 +7888,7 @@ export interface components {
      * @description Backup types.
      * @enum {string}
      */
-    app__sep__plugins__backup_mongo__models__BackupType:
+    app__sep__apps__backup_mongo__models__BackupType:
       | 'pbm_logical'
       | 'pbm_physical'
       | 'pbm_snapshot'
@@ -7899,7 +7899,7 @@ export interface components {
      * @description Represents algorithm of choice whem compressing wirteTiger datafiles.
      * @enum {string}
      */
-    app__sep__plugins__backup_mongo__models__CompressionAlgorithm:
+    app__sep__apps__backup_mongo__models__CompressionAlgorithm:
       | 'gzip'
       | 'snappy'
       | 'lz4'
@@ -7917,7 +7917,7 @@ export interface components {
      *     :param chain_on_failure: Whether to run chained tasks even on failure.
      *     :type chain_on_failure: bool | None
      */
-    app__sep__plugins__backup_pg__models__BackupExecuteWrite: {
+    app__sep__apps__backup_pg__models__BackupExecuteWrite: {
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
       /** Chain Task Names */
@@ -7934,7 +7934,7 @@ export interface components {
      *     :param task_id: The id of the task-history row created by the tasks API.
      *     :type task_id: int | None
      */
-    app__sep__plugins__backup_pg__models__BackupExecutionResponse: {
+    app__sep__apps__backup_pg__models__BackupExecutionResponse: {
       /** Task Id */
       task_id?: number | null;
       /** Task Name */
@@ -7953,7 +7953,7 @@ export interface components {
      *     :param port: The PostgreSQL port the task connects to.
      *     :type port: int | None
      */
-    app__sep__plugins__backup_pg__models__BackupTaskDetailResponse: {
+    app__sep__apps__backup_pg__models__BackupTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
@@ -8009,7 +8009,7 @@ export interface components {
      *     :param last_updated_by: User that last modified the task record.
      *     :type last_updated_by: str | None
      */
-    app__sep__plugins__backup_pg__models__BackupTaskResponse: {
+    app__sep__apps__backup_pg__models__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
@@ -8041,13 +8041,13 @@ export interface components {
      * @description Backup types.
      * @enum {string}
      */
-    app__sep__plugins__mysql_backups__models__BackupType: 'M' | 'X' | 'B';
+    app__sep__apps__mysql_backups__models__BackupType: 'M' | 'X' | 'B';
     /**
      * CompressionAlgorithm
      * @description Enumeration for Compression Algorithms.
      * @enum {string}
      */
-    app__sep__plugins__mysql_backups__models__CompressionAlgorithm:
+    app__sep__apps__mysql_backups__models__CompressionAlgorithm:
       | 'zstd'
       | 'lz4'
       | 'gzip'
@@ -8970,7 +8970,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse'];
+          'application/json': components['schemas']['app__sep__apps__backup_mongo__models__BackupTaskDetailResponse'];
         };
       };
       /** @description Validation Error */
@@ -9237,7 +9237,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse'];
+          'application/json': components['schemas']['app__sep__apps__backup_mongo__models__BackupTaskDetailResponse'];
         };
       };
       /** @description Validation Error */
@@ -9291,7 +9291,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupExecuteWrite'];
+        'application/json': components['schemas']['app__sep__apps__backup_mongo__models__BackupExecuteWrite'];
       };
     };
     responses: {
@@ -9301,7 +9301,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupExecutionResponse'];
+          'application/json': components['schemas']['app__sep__apps__backup_mongo__models__BackupExecutionResponse'];
         };
       };
       /** @description Validation Error */
@@ -9420,7 +9420,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_pg__models__BackupTaskDetailResponse'];
+          'application/json': components['schemas']['app__sep__apps__backup_pg__models__BackupTaskDetailResponse'];
         };
       };
       /** @description Validation Error */
@@ -9511,7 +9511,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['app__sep__plugins__backup_pg__models__BackupExecuteWrite'];
+        'application/json': components['schemas']['app__sep__apps__backup_pg__models__BackupExecuteWrite'];
       };
     };
     responses: {
@@ -9521,7 +9521,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_pg__models__BackupExecutionResponse'];
+          'application/json': components['schemas']['app__sep__apps__backup_pg__models__BackupExecutionResponse'];
         };
       };
       /** @description Validation Error */

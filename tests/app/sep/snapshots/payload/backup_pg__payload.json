@@ -14,7 +14,7 @@
         "requirements": "packaging\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/backup_pg/payload",
+      "payload": "file://app/sep/apps/backup_pg/payload",
       "task": "run-python"
     },
     "is_template": false,
@@ -37,7 +37,7 @@
         "requirements": "packaging\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/backup_pg/payload",
+      "payload": "file://app/sep/apps/backup_pg/payload",
       "task": "run-python"
     },
     "is_template": false,
@@ -60,7 +60,7 @@
         "requirements": "packaging\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/backup_pg/payload",
+      "payload": "file://app/sep/apps/backup_pg/payload",
       "task": "run-python"
     },
     "is_template": false,

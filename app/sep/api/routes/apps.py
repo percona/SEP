@@ -26,10 +26,10 @@ the admin listing at ``/api/admin/apps/``.
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.crud import AppStateManager
 from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
 from app.sep.models import AppLifecycleEnum
-from app.sep.plugins.framework.registry import get_app_registry
 
 router = APIRouter(tags=["apps"])
 

@@ -59,7 +59,7 @@ repos:
         entry: python3 scripts/check_nomad_payload_size.py
         language: python
         additional_dependencies: ["python-minifier==2.11.3"]
-        files: ^app/sep/plugins/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
+        files: ^app/sep/apps/(?!dipper/)(?:.*/)?(?:payload|[^/]*_payload)$
         pass_filenames: true
       - id: oxfmt
         name: oxfmt (frontend formatter)

@@ -33,9 +33,9 @@ from app.inventory.models import (
     TableWrite,
 )
 from app.models import CasdoorUser
+from app.sep.apps.alters.models import AltersCreate
+from app.sep.apps.archives.models import ArchivesCreate
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
-from app.sep.plugins.alters.models import AltersCreate
-from app.sep.plugins.archives.models import ArchivesCreate
 from app.tasks.models import (
     Task,
     TaskBackendEnum,

@@ -26,6 +26,7 @@ from pytest_mock import MockerFixture
 from starlette.routing import Match
 
 from app.sep.api.router import api_router, apps_router, build_apps_router
+from app.sep.apps.framework.registry import build_app_registry
 from app.sep.config import App, sep_settings
 from app.sep.deps import (
     BEARER_REQUIRED_DETAIL,
@@ -36,7 +37,6 @@ from app.sep.deps import (
     validate_csrf,
 )
 from app.sep.main import sep_app
-from app.sep.plugins.framework.registry import build_app_registry
 
 
 class TestApiRouterComposition:
@@ -388,12 +388,12 @@ def _force_legacy_synthesis(
     is stubbed so synthesis can complete past a ``None``/empty ``api_router_path``.
     """
     mocker.patch(
-        "app.sep.plugins.framework.registry.import_module",
+        "app.sep.apps.framework.registry.import_module",
         return_value=SimpleNamespace(),
     )
     if stub_router:
         mocker.patch(
-            "app.sep.plugins.framework.registry.import_var",
+            "app.sep.apps.framework.registry.import_var",
             return_value=APIRouter(),
         )
 
@@ -406,7 +406,7 @@ class TestApiRouterConfigDrivenLoop:
         plugin = App(
             name="Alters",
             module_name="alters",
-            api_router_path="app.sep.plugins.alters.api_routes.router",
+            api_router_path="app.sep.apps.alters.api_routes.router",
         )
         router = build_apps_router(build_app_registry([plugin]))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
@@ -436,7 +436,7 @@ class TestApiRouterConfigDrivenLoop:
         plugin = App(
             name="Alters",
             module_name="alters",
-            api_router_path="app.sep.plugins.alters.api_routes.router",
+            api_router_path="app.sep.apps.alters.api_routes.router",
         )
         router = build_apps_router(build_app_registry([plugin]))
         tagged = [
@@ -467,7 +467,7 @@ class TestApiRouterConfigDrivenLoop:
         plugin = App(
             name="Ghost",
             module_name="alters",
-            api_router_path="app.sep.plugins.alters.api_routes.does_not_exist",
+            api_router_path="app.sep.apps.alters.api_routes.does_not_exist",
         )
         with pytest.raises(AttributeError):
             build_apps_router(build_app_registry([plugin]))
@@ -484,7 +484,7 @@ class TestApiRouterConfigDrivenLoop:
         plugin = App(
             name="Bad",
             module_name="alters",
-            api_router_path="app.sep.plugins.alters.api_routes:router",
+            api_router_path="app.sep.apps.alters.api_routes:router",
         )
         with pytest.raises((ImportError, AttributeError, ModuleNotFoundError)):
             build_apps_router(build_app_registry([plugin]))
@@ -493,9 +493,7 @@ class TestApiRouterConfigDrivenLoop:
         self,
     ) -> None:
         """Assert convention auto-derive sets ``api_router_path`` for built-ins."""
-        for module, expected in (
-            ("dipper", "app.sep.plugins.dipper.api_routes.router"),
-        ):
+        for module, expected in (("dipper", "app.sep.apps.dipper.api_routes.router"),):
             plugin = App(name=module.title(), module_name=module)
             assert plugin.api_router_path == expected
 
@@ -504,7 +502,7 @@ class TestApiRouterConfigDrivenLoop:
     ) -> None:
         """Assert convention derives ``api_router_path`` once alters ships API routes."""
         plugin = App(name="Alters", module_name="alters")
-        assert plugin.api_router_path == "app.sep.plugins.alters.api_routes.router"
+        assert plugin.api_router_path == "app.sep.apps.alters.api_routes.router"
 
     def test_explicit_null_api_router_path_opts_out(self) -> None:
         """Assert explicit ``null`` input wins over convention auto-derive."""
@@ -519,7 +517,7 @@ class TestApiRouterConfigDrivenLoop:
 
     def test_explicit_string_api_router_path_wins_over_convention(self) -> None:
         """Assert explicit string wins over the conventional path."""
-        custom = "app.sep.plugins.dipper.api_routes.router"
+        custom = "app.sep.apps.dipper.api_routes.router"
         plugin = App(
             name="Checksums",
             module_name="checksums",
@@ -574,7 +572,7 @@ class TestApiRouterConfigDrivenLoop:
         _force_legacy_synthesis(mocker, stub_router=True)
         plugin = App.model_construct(
             name="Ghost",
-            module_name="app.sep.plugins.alters",
+            module_name="app.sep.apps.alters",
             api_router_path="",
         )
         router = build_apps_router(build_app_registry([plugin]))

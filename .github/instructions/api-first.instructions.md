@@ -1,5 +1,5 @@
 ---
-applyTo: "app/sep/api/**/*.py,app/sep/plugins/framework/**/*.py,app/sep/plugins/**/api_routes.py,app/sep/plugins/**/schema.py,frontend/packages/framework/**,frontend/packages/api/**,frontend/packages/plugins/**,frontend/packages/shell/**"
+applyTo: "app/sep/api/**/*.py,app/sep/apps/framework/**/*.py,app/sep/apps/**/api_routes.py,app/sep/apps/**/schema.py,frontend/packages/framework/**,frontend/packages/api/**,frontend/packages/plugins/**,frontend/packages/shell/**"
 ---
 
 # API-First + React Migration
@@ -16,7 +16,7 @@ Use `/api/sep/<resource>/` when data is shared across plugins (executor hosts, c
 
 ## Rule 2 — Schema-driven by default
 
-Default: define a `PluginSchema` in `app/sep/plugins/{name}/schema.py`, register a plugin router, ship a React package that's a pass-through to `<SchemaDrivenPlugin pluginName="…" />`.
+Default: define a `PluginSchema` in `app/sep/apps/{name}/schema.py`, register a plugin router, ship a React package that's a pass-through to `<SchemaDrivenPlugin pluginName="…" />`.
 
 **Custom React (escape hatch)** requires (a) no `PluginSchema` shape covers the plugin AND (b) the missing extension wouldn't benefit any other planned plugin. Only **alerts** and **report** qualify today.
 

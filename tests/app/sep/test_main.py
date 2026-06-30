@@ -32,13 +32,13 @@ from app.core.auth.exceptions import (
 )
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.sep.api.router import apps_router
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.config import App, sep_settings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.exceptions import LoginRedirectException
 from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
 from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppLifecycleEnum, AppState
-from app.sep.plugins.framework.registry import get_app_registry
 from tests.app.factories import OAuthTokenFactory
 
 

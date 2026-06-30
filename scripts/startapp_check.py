@@ -19,7 +19,7 @@
 The ``make startapp-check`` CI gate exercises the Makefile/CLI/``settings.yaml``
 path end-to-end — which the in-process ``test_scaffold.py`` deliberately bypasses
 — by scaffolding a throwaway app per flavor through
-``python app/sep/plugins/framework/scaffold.py`` and running the contract test it
+``python app/sep/apps/framework/scaffold.py`` and running the contract test it
 generates.
 The throwaway packages and the ``settings.yaml`` edit are reverted in a
 ``finally`` even when a flavor fails, so a failed run never dirties the worktree
@@ -33,9 +33,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SETTINGS_FILE = REPO_ROOT / "settings.yaml"
-PLUGINS_DIR = REPO_ROOT / "app" / "sep" / "plugins"
-TESTS_DIR = REPO_ROOT / "tests" / "app" / "sep" / "plugins"
-SCAFFOLDER = REPO_ROOT / "app" / "sep" / "plugins" / "framework" / "scaffold.py"
+PLUGINS_DIR = REPO_ROOT / "app" / "sep" / "apps"
+TESTS_DIR = REPO_ROOT / "tests" / "app" / "sep" / "apps"
+SCAFFOLDER = REPO_ROOT / "app" / "sep" / "apps" / "framework" / "scaffold.py"
 FLAVORS = ("task", "script", "base")
 
 
@@ -64,7 +64,7 @@ def main() -> int:
                 "--type",
                 flavor,
             )
-            _run(sys.executable, "-m", "pytest", f"tests/app/sep/plugins/{name}/", "-q")
+            _run(sys.executable, "-m", "pytest", f"tests/app/sep/apps/{name}/", "-q")
     except subprocess.CalledProcessError as error:
         print(f"startapp-check failed: {error}", file=sys.stderr)
         exit_code = 1
