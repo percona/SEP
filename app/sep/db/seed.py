@@ -50,7 +50,7 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     the override refresh callback re-seeds the beat schedule), without an application
     restart. The plugin-gated schedules (``alerts`` backup, ``report``
     generation) are keyed to their own settings and are included verbatim; their
-    live-reload is out of scope for SEP-1039.
+    live-reload is not handled here and still requires a restart.
 
     :return: The schedule/task pairs to seed into the Celery beat database.
     """
