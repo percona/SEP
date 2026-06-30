@@ -171,6 +171,8 @@ def test_hot_field_names_tasks_settings() -> None:
             "PRE_EXECUTION_CONNECTIVITY_CHECK",
             "STALENESS_THRESHOLD_SECONDS",
             "SYNC_LOCK_TTL",
+            "LOG_RETENTION_DAYS",
+            "LOG_PURGE_BATCH_SIZE",
         }
     )
 

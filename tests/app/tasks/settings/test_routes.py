@@ -213,6 +213,53 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
+    @pytest.mark.parametrize("bad_value", [1.5, True, 0, 366])
+    async def test_patch_log_retention_days_invalid_rejected(
+        self,
+        admin_test_client: TestClient,
+        session: AsyncSession,
+        bad_value: object,
+    ) -> None:
+        """Reject un-normalized non-int / out-of-range LOG_RETENTION_DAYS with 422.
+
+        The persisted-override path normalizes integer-valued floats at JSON
+        storage, so ``Strict()`` only bites on the PATCH layer where the raw
+        ``float``/``bool`` arrives un-coerced. A rejected key writes zero rows.
+        """
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"LOG_RETENTION_DAYS": bad_value},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        locs = [tuple(entry["loc"]) for entry in response.json()["detail"]]
+        assert any(loc[:2] == ("body", "LOG_RETENTION_DAYS") for loc in locs)
+        rows = await SettingsOverrideManager.list(
+            session, setting_class=SettingClassEnum.TASKS_SETTINGS
+        )
+        assert rows == []
+
+    async def test_patch_log_retention_days_valid_accepted(
+        self,
+        admin_test_client: TestClient,
+        session: AsyncSession,
+    ) -> None:
+        """A valid in-range LOG_RETENTION_DAYS PATCH persists and reflects on the proxy."""
+        new_value = 90
+        response = admin_test_client.patch(
+            "/admin/settings/TasksSettings",
+            json={"LOG_RETENTION_DAYS": new_value},
+        )
+        try:
+            assert response.status_code == status.HTTP_200_OK
+            assert new_value == tasks_settings.LOG_RETENTION_DAYS
+            rows = await SettingsOverrideManager.list(
+                session, setting_class=SettingClassEnum.TASKS_SETTINGS
+            )
+            assert len(rows) == 1
+            assert rows[0].value == new_value
+        finally:
+            tasks_settings._set_snapshot({})
+
     async def test_delete_idempotent(self, admin_test_client: TestClient) -> None:
         """Deleting a HOT field with no row still succeeds with 204."""
         response = admin_test_client.delete(

@@ -19,9 +19,11 @@ from datetime import timedelta
 from enum import StrEnum
 from typing import Annotated, ClassVar
 
-from annotated_types import Gt
-from pydantic import PositiveInt
+from annotated_types import Gt, Le
+from pydantic import Field, PositiveInt, Strict
+from sqlalchemy_celery_beat.models import Period
 
+from app.core.celery.models import IntervalSchedule
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
@@ -32,6 +34,8 @@ from app.core.settings_override.registry import (
     nested_overridable_field,
 )
 from app.tasks.execution.executors.nomad import NomadExecutor
+
+MAX_LOG_RETENTION_DAYS = 365
 
 
 class PreExecutionCheckMode(StrEnum):
@@ -78,6 +82,18 @@ class TasksSettings(BaseYamlAppSettings):
         dispatch's scheduled time and its Nomad-side execution start before
         the allocation self-aborts as stale. Must be positive. Defaults to 3600.
     :type STALENESS_THRESHOLD_SECONDS: PositiveInt
+    :param LOG_RETENTION_DAYS: The age in days beyond which finished task-execution
+        logs (``taskhistory_log`` rows) are purged. Runtime-overridable; must be a
+        positive integer no greater than 365. Defaults to 90.
+    :type LOG_RETENTION_DAYS: int
+    :param LOG_PURGE_BATCH_SIZE: The maximum number of ``taskhistory_log`` rows
+        deleted per commit by the purge job. Runtime-overridable; must be positive.
+        Defaults to 10,000.
+    :type LOG_PURGE_BATCH_SIZE: PositiveInt
+    :param LOG_PURGE_INTERVAL: The schedule on which the log-purge periodic task
+        runs. ``None`` disables seeding the task entirely. Read at startup (not
+        runtime-overridable). Defaults to once per day.
+    :type LOG_PURGE_INTERVAL: IntervalSchedule | None
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -94,6 +110,13 @@ class TasksSettings(BaseYamlAppSettings):
         PreExecutionCheckMode.WARN
     )
     STALENESS_THRESHOLD_SECONDS: PositiveInt = hot_field(3600)
+    LOG_RETENTION_DAYS: Annotated[int, Strict(), Gt(0), Le(MAX_LOG_RETENTION_DAYS)] = (
+        hot_field(90)
+    )
+    LOG_PURGE_BATCH_SIZE: PositiveInt = hot_field(10_000)
+    LOG_PURGE_INTERVAL: IntervalSchedule | None = Field(
+        default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS)
+    )
 
 
 tasks_settings: TasksSettings = OverridableSettingsProxy(

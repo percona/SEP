@@ -32,6 +32,7 @@ from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
+from app.core.utils.fields import DatabaseDialect
 from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     DispatchLock,
@@ -576,6 +577,61 @@ class TaskHistoryLogManager(BaseSQLModelManager):
 
     Model = TaskHistoryLog
     ordering = None
+
+    #: Statuses whose executions are still in flight; their logs are never purged.
+    ACTIVE_STATUSES = frozenset(
+        {TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING}
+    )
+
+    @classmethod
+    async def delete_aged_batch(
+        cls,
+        session: AsyncSession,
+        *,
+        cutoff: datetime,
+        batch_size: int,
+    ) -> int:
+        """Delete one bounded batch of aged, non-active task-execution log rows.
+
+        Select up to ``batch_size`` ``taskhistory_log`` rows whose parent
+        ``TaskHistory`` is no longer active (any status except ``PENDING`` /
+        ``RUNNING``) and whose effective completion time --
+        ``COALESCE(finished_at, started_at, created_at)`` -- is strictly older
+        than ``cutoff``, then delete them in a single committed statement. The
+        parent ``taskhistory`` audit row is never touched.
+
+        On PostgreSQL the inner selection takes ``FOR UPDATE ... SKIP LOCKED``
+        on the log rows so concurrent workers never contend on or double-delete
+        the same batch; other dialects (SQLite in tests) omit the clause.
+
+        :param session: The async session bound to the Tasks database.
+        :param cutoff: The age boundary; rows with an effective completion time
+            strictly less than this are eligible for deletion.
+        :param batch_size: The maximum number of rows to delete in this call.
+        :return: The number of ``taskhistory_log`` rows deleted.
+        """
+        effective_completion = func.coalesce(
+            col(TaskHistory.finished_at),
+            col(TaskHistory.started_at),
+            col(TaskHistory.created_at),
+        )
+        doomed = (
+            select(col(TaskHistoryLog.id))
+            .join(
+                TaskHistory,
+                col(TaskHistoryLog.task_history_id) == col(TaskHistory.id),
+            )
+            .where(
+                col(TaskHistory.status).not_in(cls.ACTIVE_STATUSES),
+                effective_completion < cutoff,
+            )
+            .limit(batch_size)
+        )
+        if session.get_bind().name == DatabaseDialect.POSTGRESQL:
+            doomed = doomed.with_for_update(skip_locked=True, of=TaskHistoryLog)
+
+        result = await cls.delete_where(session, col(TaskHistoryLog.id).in_(doomed))
+        return result.rowcount
 
     @classmethod
     async def exists_for_task(cls, session: AsyncSession, task_history_id: int) -> bool:
