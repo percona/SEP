@@ -154,12 +154,14 @@ class ServiceIdLookup:
                 else default_port_for_service_type(service.type)
             )
             address_key = (service.type, address, port)
-            cls._register(by_address, ambiguous_addresses, address_key, service.id)
+            _register_lookup_id(
+                by_address, ambiguous_addresses, address_key, service.id
+            )
 
             name = str(service.name).strip()
             if name:
                 name_key = (service.type, name)
-                cls._register(by_name, ambiguous_names, name_key, service.id)
+                _register_lookup_id(by_name, ambiguous_names, name_key, service.id)
 
         return cls(
             by_address=by_address,
@@ -167,22 +169,6 @@ class ServiceIdLookup:
             by_name=by_name,
             ambiguous_names=frozenset(ambiguous_names),
         )
-
-    @staticmethod
-    def _register(
-        unique: dict[Any, int],
-        ambiguous: set[Any],
-        key: Any,
-        service_id: int,
-    ) -> None:
-        """Insert ``service_id`` under ``key``, marking duplicates as ambiguous.
-
-        :param unique: The map receiving the first id seen for each key.
-        :param ambiguous: Keys that have already collided once.
-        :param key: The lookup key being registered.
-        :param service_id: The inventory service id to register.
-        """
-        _register_lookup_id(unique, ambiguous, key, service_id)
 
     def resolve(
         self,
@@ -310,7 +296,6 @@ async def load_service_id_lookup(session: AsyncSession) -> ServiceIdLookup:
 def meta_service_hints(
     meta: Mapping[str, Any],
     *,
-    service_type: ServiceTypeEnum,
     host: str | None = None,
     port: int | None = None,
 ) -> tuple[str | None, int | None, str | None]:
@@ -321,12 +306,10 @@ def meta_service_hints(
     metadata when provided.
 
     :param meta: The task ``data['meta']`` mapping.
-    :param service_type: The expected inventory service type (call-site clarity only).
     :param host: An explicit host override from task YAML/config parsing.
     :param port: An explicit port override from task YAML/config parsing.
     :return: ``(host, port, service_name)`` suitable for :meth:`ServiceIdLookup.resolve`.
     """
-    del service_type  # reserved for call-site clarity and future validation
     resolved_host = host
     if not resolved_host:
         for key in (CONNECTIVITY_META_HOST_KEY, "_service_host"):

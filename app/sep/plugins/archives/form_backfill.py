@@ -158,7 +158,6 @@ def _resolve_source_service_id(
     config_source_port = _case_get(all_section, "source_port")
     host, port, service_name = meta_service_hints(
         meta,
-        service_type=ServiceTypeEnum.MYSQL,
         host=config_source_host if isinstance(config_source_host, str) else None,
         port=config_source_port if isinstance(config_source_port, int) else None,
     )

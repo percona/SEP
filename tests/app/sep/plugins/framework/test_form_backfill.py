@@ -16,11 +16,19 @@
 """Tests for the legacy form backfill orchestrator."""
 
 import logging
+from collections.abc import AsyncIterator
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlmodel.pool import StaticPool
 
+from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.utils import json_serializer
 from app.sep.plugins.checksums.app import app as checksums_app
 from app.sep.plugins.framework.form_backfill import (
     _backfill_app,
@@ -53,24 +61,50 @@ def _reconstructor_must_not_run(_task: Task, _ctx: FormBackfillContext) -> dict:
     raise AssertionError("reconstructor must not run")
 
 
+@pytest_asyncio.fixture
+async def tasks_session() -> AsyncIterator[AsyncSession]:
+    """Provide an in-memory tasks DB session that runs real flushes."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    session_maker = get_async_session_maker_from_engine(engine)
+    async with session_maker() as session:
+        yield session
+
+
+async def _persisted_task(session: AsyncSession, *, data: dict) -> Task:
+    """Insert a task row and return the refreshed ORM instance."""
+    task = _minimal_task(data=data)
+    session.add(task)
+    await session.commit()
+    await session.refresh(task)
+    return task
+
+
 @pytest.mark.asyncio
-async def test_persist_stamped_form_assigns_data_and_preserves_audit_fields():
-    """Stamped ``data`` is written directly without touching audit columns."""
-    task = _minimal_task(data={"meta": {}})
+async def test_persist_stamped_form_assigns_data_and_preserves_audit_fields(
+    tasks_session: AsyncSession,
+):
+    """Stamped ``data`` is written without bumping audit columns on flush."""
+    task = await _persisted_task(tasks_session, data={"meta": {}})
+    original_updated_at = task.updated_at
     stamped_data = {
         "meta": {},
         RESERVED_FORM_KEY: {"task_name": "legacy-task"},
     }
-    session = MagicMock()
-    session.flush = AsyncMock()
 
-    await _persist_stamped_form(session, task, stamped_data, dry_run=False)
+    await _persist_stamped_form(tasks_session, task, stamped_data, dry_run=False)
+    await tasks_session.commit()
+    await tasks_session.refresh(task)
 
     assert task.data[RESERVED_FORM_KEY] == {"task_name": "legacy-task"}
     assert task.last_updated_by == "original-user"
-    assert task.updated_at == datetime(2024, 1, 1, tzinfo=UTC)
-    session.add.assert_called_once_with(task)
-    session.flush.assert_awaited_once()
+    assert task.updated_at == original_updated_at
 
 
 @pytest.mark.asyncio
@@ -186,9 +220,15 @@ def test_backfill_single_task_skips_invalid_reconstructed_form():
 
 
 @pytest.mark.asyncio
-async def test_backfill_single_task_stamp_preserves_audit_fields_on_persist():
+async def test_backfill_single_task_stamp_preserves_audit_fields_on_persist(
+    tasks_session: AsyncSession,
+):
     """A successful stamp plus persist must leave audit attribution untouched."""
-    task = _minimal_task(data={"meta": {"command": "pt-table-checksum"}})
+    task = await _persisted_task(
+        tasks_session,
+        data={"meta": {"command": "pt-table-checksum"}},
+    )
+    original_updated_at = task.updated_at
 
     def _valid_body(_task: Task, _ctx: FormBackfillContext) -> dict:
         return {
@@ -200,18 +240,20 @@ async def test_backfill_single_task_stamp_preserves_audit_fields_on_persist():
 
     entry = _BackfillApp(app=checksums_app, reconstructor=_valid_body)
     ctx = FormBackfillContext(log=logging.getLogger("test"))
-    session = MagicMock()
-    session.flush = AsyncMock()
 
     outcome = _backfill_single_task(task, entry, ctx)
 
     assert outcome.label == "stamped"
     assert outcome.stamped_data is not None
-    await _persist_stamped_form(session, task, outcome.stamped_data, dry_run=False)
+    await _persist_stamped_form(
+        tasks_session, task, outcome.stamped_data, dry_run=False
+    )
+    await tasks_session.commit()
+    await tasks_session.refresh(task)
 
     assert task.data[RESERVED_FORM_KEY]["task_name"] == "legacy-task"
     assert task.last_updated_by == "original-user"
-    assert task.updated_at == datetime(2024, 1, 1, tzinfo=UTC)
+    assert task.updated_at == original_updated_at
 
 
 @pytest.mark.asyncio

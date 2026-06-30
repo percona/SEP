@@ -246,6 +246,10 @@ async def _persist_stamped_form(
 ) -> None:
     """Stage ``stamped_data`` on the task without changing audit attribution.
 
+    Only ``data`` is modified; ``last_updated_by`` is left untouched and
+    ``updated_at`` is pinned to its pre-flush value so the ORM UPDATE does not
+    apply the column's ``onupdate`` default.
+
     Flush the update to the database session only; the caller must
     :meth:`~sqlalchemy.ext.asyncio.AsyncSession.commit` after each successful task
     so a later failure's :meth:`~sqlalchemy.ext.asyncio.AsyncSession.rollback` cannot
@@ -258,8 +262,11 @@ async def _persist_stamped_form(
     """
     if dry_run:
         return
+    original_updated_at = task.updated_at
     task.data = stamped_data
     flag_modified(task, "data")
+    task.updated_at = original_updated_at
+    flag_modified(task, "updated_at")
     session.add(task)
     await session.flush()
 
@@ -536,7 +543,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI entry point for the legacy form backfill.
+    """Run the legacy form backfill from the command line.
 
     :param argv: Optional argument vector; defaults to ``sys.argv[1:]``.
     :return: Exit code ``0`` (the batch never fails on per-task errors).

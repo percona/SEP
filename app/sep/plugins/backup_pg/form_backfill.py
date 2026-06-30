@@ -94,7 +94,6 @@ def reconstruct_backup_pg_form(
     hostname = parsed.get("hostname")
     host, port, service_name = meta_service_hints(
         meta,
-        service_type=ServiceTypeEnum.POSTGRESQL,
         host=parsed.get("host"),
         port=parsed.get("port"),
     )

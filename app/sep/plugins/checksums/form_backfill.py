@@ -97,10 +97,7 @@ def reconstruct_checksums_form(
     if not isinstance(hostname, str) or not hostname.strip():
         return None
 
-    host, port, service_name = meta_service_hints(
-        meta,
-        service_type=ServiceTypeEnum.MYSQL,
-    )
+    host, port, service_name = meta_service_hints(meta)
     service_id = ctx.service_lookup.resolve(
         service_type=ServiceTypeEnum.MYSQL,
         host=host,

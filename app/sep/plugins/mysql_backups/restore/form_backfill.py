@@ -67,7 +67,6 @@ def _resolve_restore_service_id(
 
     host, port, service_name = meta_service_hints(
         meta,
-        service_type=ServiceTypeEnum.MYSQL,
         host=parsed.get("host"),
         port=parsed.get("port"),
     )

@@ -175,7 +175,6 @@ def test_meta_service_hints_prefers_connectivity_keys():
             "_service_port": 3306,
             "_service_name": "mysql-prod",
         },
-        service_type=ServiceTypeEnum.MYSQL,
     )
 
     assert host == "10.0.0.8"
@@ -191,7 +190,6 @@ def test_meta_service_hints_honors_explicit_host_and_port_overrides():
             CONNECTIVITY_META_HOST_KEY: "10.0.0.8",
             CONNECTIVITY_META_PORT_KEY: 3307,
         },
-        service_type=ServiceTypeEnum.POSTGRESQL,
         host="db.internal",
         port=expected_port,
     )
