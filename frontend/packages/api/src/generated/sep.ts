@@ -1111,7 +1111,6 @@ export interface paths {
      *         configured (injected via ``PMMAPIDep``).
      *     :type pmm_api: PMMRemoteAPI | None
      *     :return: Context-specific schema including payload parameters.
-     *     :rtype: AppSchema
      */
     get: operations['dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get'];
     put?: never;
@@ -3409,7 +3408,6 @@ export interface components {
      *     :param entities: Optional list of CRUD entities for multi-resource plugins.
      *         When non-empty, the React shell renders one list/create/detail flow
      *         per entity. Defaults to ``None`` (legacy single-entity mode).
-     *     :type entities: list[AppEntitySchema] | None
      *     :param cardinality_rules: Optional plugin-wide cross-field cardinality
      *         constraints (task-style plugins only; ignored when ``entities`` is set).
      *         Defaults to ``None``.
