@@ -47,26 +47,12 @@ from app.sep.celery import render_report_pdf_job, upload_report_snapshot_job
 from app.sep.config import sep_settings
 from app.sep.deps import IsApiAuthenticated
 from app.sep.plugins.report.deps import RequiredPMMAPIDep
-from app.sep.plugins.report.models import REPORT_SECTIONS
+from app.sep.plugins.report.job_service import filter_report_sections
 from app.sep.plugins.report.schemas import ReportJobResponse, ReportSnapshotWrite
 from app.sep.plugins.report.service import generate_report
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-def _filter_sections(sections: list[str] | None) -> list[str] | None:
-    """Return only section names that exist in ``REPORT_SECTIONS``.
-
-    :param sections: Optional list of requested section names.
-    :type sections: list[str] | None
-    :return: Filtered section names, ``None`` when no valid filter remains.
-    :rtype: list[str] | None
-    """
-    if sections:
-        filtered = [s for s in sections if s in REPORT_SECTIONS]
-        return filtered or None
-    return sections
 
 
 def _job_response(job_id: str, *, pdf: bool = False) -> ReportJobResponse:
@@ -153,7 +139,7 @@ async def report_generate_json_api(
         until=until,
         full=full,
         refresh=refresh,
-        sections=_filter_sections(sections),
+        sections=filter_report_sections(sections),
     )
     return JSONResponse(content=report.model_dump(mode="json"))
 

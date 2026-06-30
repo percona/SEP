@@ -15,7 +15,21 @@
 
 """Helpers for report jobs."""
 
-from app.sep.plugins.report.models import ReportData
+from app.sep.plugins.report.models import REPORT_SECTIONS, ReportData
+
+
+def filter_report_sections(sections: list[str] | None) -> list[str] | None:
+    """Return only section names that exist in ``REPORT_SECTIONS``.
+
+    :param sections: Optional list of requested section names.
+    :type sections: list[str] | None
+    :return: Filtered section names, ``None`` when no valid filter remains.
+    :rtype: list[str] | None
+    """
+    if sections:
+        filtered = [s for s in sections if s in REPORT_SECTIONS]
+        return filtered or None
+    return sections
 
 
 def report_pdf_filename(report: ReportData) -> str:
