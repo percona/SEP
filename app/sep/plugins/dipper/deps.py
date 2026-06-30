@@ -567,7 +567,7 @@ async def build_dipper_execution_meta(
             raise HTTPUnprocessableEntityException(
                 detail=(
                     "PMM server URL is required. Provide it in args.pmmserver"
-                    " or configure SEP__PMM__ENDPOINT."
+                    " or configure PMM__ENDPOINT."
                 )
             )
         raw_args["pmmserver"] = pmm_server
