@@ -32,13 +32,12 @@ from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework.form_dsl import (
-    AppFormModel,
     Choices,
     Forbidden,
     FormRules,
-    HostRef,
     Requires,
     ServiceRef,
+    TaskFormModel,
     Ui,
 )
 from app.sep.plugins.framework.rules import (
@@ -227,7 +226,7 @@ class BackupConfigAll(BaseCaseInsensitiveModel):
     rsync_path: NonEmptyStr | EmptyStrToNone = None
 
 
-class BackupCreate(AppFormModel):
+class BackupCreate(TaskFormModel):
     """Declare the model-first create/update body and ``GET /schema`` source for MySQL Backups.
 
     Declares each form field once, in section order (Task, General, Mydumper,
@@ -262,10 +261,6 @@ class BackupCreate(AppFormModel):
         )
     )
 
-    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
-    hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
-    ]
     service_id: Annotated[
         int,
         ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), check_connectivity=True),

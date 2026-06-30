@@ -1025,6 +1025,7 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"),
                 (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"),
                 (SettingClassEnum.SETTINGS, "PMM"),
+                (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
             }
         finally:
             sep_app.state.override_callbacks = original

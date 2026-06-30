@@ -25,11 +25,10 @@ from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.plugins.framework import BaseTaskResponse
 from app.sep.plugins.framework.form_dsl import (
-    AppFormModel,
     Choices,
-    HostRef,
     SchemaRef,
     ServiceRef,
+    TaskFormModel,
     Ui,
 )
 from app.sep.plugins.mysql_backups.models import BackupType
@@ -267,7 +266,7 @@ class RestoreConfig(BaseCaseInsensitiveModel):
     server_list: list[RestoreConfigServer]
 
 
-class RestoreCreate(AppFormModel):
+class RestoreCreate(TaskFormModel):
     """Declare the model-first create/update body and ``GET /schema`` source for Restores.
 
     Declares every restore form field once, in section order (Task, General,
@@ -290,10 +289,6 @@ class RestoreCreate(AppFormModel):
     404-tolerant resolution lives in ``deps.resolve_restore_entities``.
     """
 
-    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
-    hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
-    ]
     backup_type: Annotated[
         BackupType,
         Choices((("M", "Mydumper"), ("X", "XtraBackup"), ("B", "Binlog"))),

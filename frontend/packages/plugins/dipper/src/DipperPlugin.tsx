@@ -39,6 +39,7 @@ import {
   ServiceSelector,
   TaskHistoryTable,
   TaskLogViewer,
+  useStopTaskHistory,
   type ServiceOption,
   type TaskHistoryEntry,
 } from '@sep/framework';
@@ -89,6 +90,7 @@ export function DipperPlugin() {
   const formSchema = useDipperFormSchema(serviceId, collectorType);
   const history = useDipperHistory();
   const execution = useDipperExecution();
+  const stop = useStopTaskHistory();
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
 
   const title = pluginSchema.data?.display_name ?? 'Collect Diagnostic Data';
@@ -212,6 +214,19 @@ export function DipperPlugin() {
           data={history.data?.items ?? []}
           isLoading={history.isLoading}
           onViewLogs={handleViewLogs}
+          onStopTask={(entry) => {
+            if (entry.id !== null && entry.id !== undefined) {
+              // Dipper's history is keyed under ['dipper','history'] and does not
+              // poll, so the stop hook's ['task-history'] invalidation never
+              // reaches it; refetch this query directly once the stop succeeds.
+              stop.mutate(entry.id, {
+                onSuccess: () => {
+                  history.refetch();
+                },
+              });
+            }
+          }}
+          isStopping={stop.isPending}
         />
       )}
 

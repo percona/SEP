@@ -53,7 +53,12 @@ import { resolvePath } from '../../utils/resolvePath';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
 import { TaskLogViewer } from '../TaskLogViewer';
 import { ScheduleSummary } from '../ScheduleSummary';
-import { useExecuteTask, useTaskHistoryByNames, type TaskExecuteBody } from '../../hooks';
+import {
+  useExecuteTask,
+  useStopTaskHistory,
+  useTaskHistoryByNames,
+  type TaskExecuteBody,
+} from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
 import { resolvePluginRouteBase } from './routeBase';
@@ -441,6 +446,7 @@ interface LogsTabProps {
 
 function LogsTab({ taskNames }: LogsTabProps) {
   const historyQuery = useTaskHistoryByNames(taskNames);
+  const stop = useStopTaskHistory();
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
   const logsTaskName = logsEntry?.task?.name ?? taskNames[0] ?? 'task';
 
@@ -457,6 +463,12 @@ function LogsTab({ taskNames }: LogsTabProps) {
             isLoading={historyQuery.isLoading}
             hideTaskNameColumn={taskNames.length <= 1}
             onViewLogs={setLogsEntry}
+            onStopTask={(entry) => {
+              if (entry.id !== null && entry.id !== undefined) {
+                stop.mutate(entry.id);
+              }
+            }}
+            isStopping={stop.isPending}
           />
         </Paper>
       )}

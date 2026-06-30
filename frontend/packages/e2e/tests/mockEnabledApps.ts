@@ -47,13 +47,13 @@ const NAV_APP_METADATA = {
   snippets: {
     display_name: 'Snippet Manager',
     uri_path: '/snippets',
-    group: 'snippets',
+    group: null,
     nav_order: 2,
   },
   atw: {
     display_name: 'Collect Diagnostic Data',
     uri_path: '/atw',
-    group: 'snippets',
+    group: 'diagnostics',
     nav_order: 3,
   },
   alerts: { display_name: 'Alert Templates', uri_path: '/alerts', group: 'alerts', nav_order: 4 },
@@ -63,7 +63,7 @@ const NAV_APP_METADATA = {
     group: 'alerts',
     nav_order: 5,
   },
-  alters: { display_name: 'Alters', uri_path: '/alters', group: 'schema_change', nav_order: 6 },
+  alters: { display_name: 'Alters', uri_path: '/alters', group: null, nav_order: 6 },
   checksums: { display_name: 'Checksums', uri_path: '/checksums', group: null, nav_order: 7 },
   mysql_backups: {
     display_name: 'MySQL Backups',
@@ -87,13 +87,13 @@ const NAV_APP_METADATA = {
   dipper: {
     display_name: 'Dipper Data Collection',
     uri_path: '/dipper',
-    group: null,
+    group: 'diagnostics',
     nav_order: 12,
   },
   report: {
     display_name: 'Health & Security Report',
     uri_path: '/report',
-    group: null,
+    group: 'diagnostics',
     nav_order: 13,
   },
 } as const satisfies Record<

@@ -132,6 +132,29 @@ describe('ServiceSelector', () => {
     await screen.findByText('No services available');
   });
 
+  it('hydrates a persisted scalar service id into the matching inventory option', async () => {
+    mocked.get.mockResolvedValueOnce(makePage([{ id: 7, name: 'mysql-prod', type: 'mysql' }]));
+    const client = makeClient();
+    function Probe() {
+      const methods = useForm<{ service: unknown }>({ defaultValues: { service: 7 } });
+      return (
+        <FormProvider {...methods}>
+          <ServiceSelector name="service" label="Service" serviceTypes={['mysql']} />
+          <output data-testid="hydrated-value">{JSON.stringify(methods.watch('service'))}</output>
+        </FormProvider>
+      );
+    }
+    render(
+      <Wrapper client={client}>
+        <Probe />
+      </Wrapper>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('hydrated-value').textContent).toContain('"id":7'),
+    );
+    expect(screen.getByLabelText('Service')).toHaveValue('mysql-prod (mysql)');
+  });
+
   describe('allow_custom (free-solo)', () => {
     function CustomProbe() {
       const methods = useForm<{ service: unknown }>({ defaultValues: { service: null } });

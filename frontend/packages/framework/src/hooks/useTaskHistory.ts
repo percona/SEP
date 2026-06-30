@@ -44,16 +44,24 @@ export interface UseTaskHistoryOptions {
   limit?: number;
   /** Disable the underlying query (no fetch, no polling). */
   enabled?: boolean;
+  /** Exclude internal maintenance task rows before server-side pagination. */
+  excludeInternal?: boolean;
 }
 
 interface ListParams {
   status?: TaskHistoryStatus | null;
   offset?: number;
   limit?: number;
+  excludeInternal?: boolean;
 }
 
-function buildParams({ status, offset, limit }: ListParams): Record<string, string | number> {
-  const params: Record<string, string | number> = {};
+function buildParams({
+  status,
+  offset,
+  limit,
+  excludeInternal,
+}: ListParams): Record<string, string | number | boolean> {
+  const params: Record<string, string | number | boolean> = {};
   if (status) {
     params.status = status;
   }
@@ -62,6 +70,9 @@ function buildParams({ status, offset, limit }: ListParams): Record<string, stri
   }
   if (typeof limit === 'number') {
     params.limit = limit;
+  }
+  if (excludeInternal) {
+    params.exclude_internal = true;
   }
   return params;
 }
@@ -98,13 +109,14 @@ export function useTaskHistory(options: UseTaskHistoryOptions = {}) {
     offset,
     limit,
     enabled = true,
+    excludeInternal = false,
   } = options;
   return useQuery<PaginatedTaskHistory>({
-    queryKey: ['task-history', { status: status ?? null, offset, limit }],
+    queryKey: ['task-history', { status: status ?? null, offset, limit, excludeInternal }],
     enabled,
     queryFn: async () => {
       const { data } = await apiClient.get<PaginatedTaskHistory>('/sep/task-history/', {
-        params: buildParams({ status, offset, limit }),
+        params: buildParams({ status, offset, limit, excludeInternal }),
       });
       return data;
     },

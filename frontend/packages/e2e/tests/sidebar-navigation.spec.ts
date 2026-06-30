@@ -169,13 +169,12 @@ const TARGETS: SidebarTarget[] = [
   { label: 'Task Manager', urlPattern: /\/tasks(\/|$)/, sentinel: heading(GENERIC_PLUGIN_HEADING) },
   {
     label: 'Snippet Manager',
-    group: 'Snippets',
     urlPattern: /\/snippets(\/|$)/,
     sentinel: heading('Snippet Manager'),
   },
   {
     label: 'Collect Diagnostic Data',
-    group: 'Snippets',
+    group: 'Diagnostics',
     urlPattern: /\/atw(\/|$)/,
     sentinel: heading('Collect Diagnostic Data'),
   },
@@ -208,6 +207,7 @@ const TARGETS: SidebarTarget[] = [
   { label: 'Archives', urlPattern: /\/plugins\/archives(\/|$)/, sentinel: heading('Archives') },
   {
     label: 'Dipper Data Collection',
+    group: 'Diagnostics',
     urlPattern: /\/dipper(\/|$)/,
     sentinel: heading(GENERIC_PLUGIN_HEADING),
   },
@@ -262,9 +262,13 @@ test.describe('sidebar navigation wiring', () => {
     // Leave the dashboard first so the click is a real navigation.
     await page.getByRole('button', { name: 'Inventory' }).click();
     await expect(page).toHaveURL(/\/inventory(\/|$)/, { timeout: LAZY_TIMEOUT });
+    // Wait for the lazy Inventory page to actually mount before navigating away.
+    // The URL flips synchronously on click while the chunk is still resolving, so
+    // without this sentinel the Dashboard click can be swallowed mid-load.
+    await expect(heading(GENERIC_PLUGIN_HEADING)(page)).toBeVisible({ timeout: LAZY_TIMEOUT });
 
     await page.getByRole('button', { name: 'Dashboard' }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/$/, { timeout: LAZY_TIMEOUT });
     await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
     await expect(page.getByText(NOT_FOUND_TEXT)).toHaveCount(0);
   });
