@@ -182,7 +182,6 @@ async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
 
     :param _: The new effective ``SnippetsSettings`` snapshot mapping (unused --
         the interval is re-read from the proxy by the task-set builder).
-    :type _: Mapping[str, object]
     """
     await init_periodic_tasks_db(get_system_periodic_tasks(), "sep__")
 
