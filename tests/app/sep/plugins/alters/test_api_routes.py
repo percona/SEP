@@ -555,6 +555,34 @@ class TestAltersApiUpdate:
         assert f"{DEFAULT_PARENT_NAME}-pre-checks" in response.json()["detail"]
         mock_task_api_dep.put.assert_not_called()
 
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_update_via_satellite_400_beats_protected_409(
+        self, test_client, mock_task_api_dep, created_service
+    ) -> None:
+        """PUT by satellite URL returns 400 even when the parent is protected.
+
+        Pins the gate order: the URL-target assertion (400) runs before the
+        protected check (409). A protected parent reached via a satellite URL
+        must still surface the 400, not the protected 409.
+        """
+        parent = build_alters_task(DEFAULT_PARENT_NAME, protected=True)
+        pre_checks = build_alters_task(
+            f"{DEFAULT_PARENT_NAME}-pre-checks", parent=DEFAULT_PARENT_NAME
+        )
+        mock_task_api_dep.get = AsyncMock(side_effect=[pre_checks, parent])
+
+        response = test_client.put(
+            f"{API_BASE}/{DEFAULT_PARENT_NAME}-pre-checks",
+            json=build_alters_write_body(
+                task_name=f"{DEFAULT_PARENT_NAME}-pre-checks",
+                service_id=created_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "protected" not in response.json()["detail"].lower()
+        mock_task_api_dep.put.assert_not_called()
+
 
 class TestAltersApiDelete:
     """Tests for DELETE /api/plugins/alters/{task_name}."""
@@ -655,6 +683,34 @@ class TestAltersApiDelete:
         mock_task_api_dep.delete.assert_not_called()
         history_paths = [c.args[0] for c in mock_task_api_dep.get.await_args_list]
         assert f"/{DEFAULT_PARENT_NAME}/history/" in history_paths
+
+    def test_delete_running_conflict_beats_protected_409(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """DELETE of a protected, running task returns the conflict 409, not protected.
+
+        Both gates raise 409, so status alone cannot distinguish them. Pins the
+        gate order via the detail message: the running-conflict check runs before
+        the protected check, so a parent that is both running and protected must
+        surface "already running or pending", not "Cannot delete a protected task."
+        """
+        parent = build_alters_task(DEFAULT_PARENT_NAME, protected=True)
+        running_history = {"items": [{"id": 1}], "total": 1, "offset": 0, "limit": 50}
+
+        async def _get(path: str, params: dict | None = None) -> dict:
+            if path == f"/{DEFAULT_PARENT_NAME}":
+                return parent
+            if path == f"/{DEFAULT_PARENT_NAME}/history/":
+                return running_history
+            raise AssertionError(f"unexpected GET {path!r} params={params!r}")
+
+        mock_task_api_dep.get = AsyncMock(side_effect=_get)
+
+        response = test_client.delete(f"{API_BASE}/{DEFAULT_PARENT_NAME}")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        assert response.json()["detail"] == "Task is already running or pending."
+        mock_task_api_dep.delete.assert_not_called()
 
 
 class TestAltersApiExecute:
