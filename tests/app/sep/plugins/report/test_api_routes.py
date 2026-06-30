@@ -337,6 +337,41 @@ class TestReportJobApi:
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
+    def test_failed_job_status_returns_sanitized_error(self, test_client):
+        """Job status hides raw exception details from clients."""
+        with patch(
+            f"{_API}.celery.AsyncResult",
+            return_value=self._async_result(
+                status_="FAILURE",
+                failed=True,
+                result=RuntimeError("https://user:secret@pmm.example failed"),
+            ),
+        ):
+            response = test_client.get(f"{self._PDF_JOBS_URL}/job-1")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["error"] == "Report job failed"
+        assert "secret" not in str(body)
+
+    def test_failed_validation_job_returns_structured_errors(self, test_client):
+        """Validation failures keep structured error details without raw exception text."""
+        errors = [{"loc": ["metadata"], "msg": "Field required", "type": "missing"}]
+        with patch(
+            f"{_API}.celery.AsyncResult",
+            return_value=self._async_result(
+                status_="FAILURE",
+                failed=True,
+                result={"error": "Invalid report snapshot", "errors": errors},
+            ),
+        ):
+            response = test_client.get(f"{self._PDF_JOBS_URL}/job-1")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["error"] == "Invalid report snapshot"
+        assert body["result"] == {"errors": errors}
+
     def test_upload_job_uses_snapshot_without_generate_report(self, test_client):
         """Upload job start sends report JSON snapshot, no PMM recollection."""
         report_json = make_report().model_dump(mode="json")

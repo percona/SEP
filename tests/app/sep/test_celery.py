@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from celery.exceptions import Ignore
 
 import app.sep.celery as sep_celery
 from app.sep.clients.pmm import (
@@ -628,3 +629,35 @@ class TestGenerateHealthReportCooperativeCancel:
         generate.assert_awaited_once()
         generate_pdf.assert_awaited_once_with(report)
         upload.assert_awaited_once_with(report, b"%PDF-1.4")
+
+
+class TestReportSnapshotJobs:
+    """Report snapshot Celery jobs expose structured validation failures."""
+
+    def test_render_pdf_invalid_snapshot_sets_failure_meta(self, mocker) -> None:
+        """Invalid PDF snapshot stores safe structured FAILURE metadata."""
+        update_state = mocker.patch.object(sep_celery.render_report_pdf_job, "update_state")
+
+        with pytest.raises(Ignore):
+            sep_celery.render_report_pdf_job.run({})
+
+        update_state.assert_called_once()
+        _, kwargs = update_state.call_args
+        assert kwargs["state"] == "FAILURE"
+        assert kwargs["meta"]["error"] == "Invalid report snapshot"
+        assert isinstance(kwargs["meta"]["errors"], list)
+
+    def test_upload_invalid_snapshot_sets_failure_meta(self, mocker) -> None:
+        """Invalid upload snapshot stores safe structured FAILURE metadata."""
+        update_state = mocker.patch.object(
+            sep_celery.upload_report_snapshot_job, "update_state"
+        )
+
+        with pytest.raises(Ignore):
+            sep_celery.upload_report_snapshot_job.run({})
+
+        update_state.assert_called_once()
+        _, kwargs = update_state.call_args
+        assert kwargs["state"] == "FAILURE"
+        assert kwargs["meta"]["error"] == "Invalid report snapshot"
+        assert isinstance(kwargs["meta"]["errors"], list)

@@ -398,63 +398,55 @@ class TestReportGeneratePDF:
 
     _PDF_URL = "/report/generate/pdf"
 
-    def test_returns_200_with_pdf(self, test_client):
-        """Assert the report snapshot is returned as a PDF download."""
+    @pytest.mark.usefixtures("_mock_report_index_context")
+    def test_returns_200_with_job_page(self, test_client):
+        """Assert the report snapshot starts an async PDF job."""
         report = make_report()
-        pdf_bytes = b"%PDF-1.4 fake content"
         with (
-            patch(
-                "app.sep.plugins.report.routes.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=pdf_bytes,
-            ) as mock_pdf,
+            patch("app.sep.plugins.report.routes.render_report_pdf_job.delay")
+            as mock_delay,
             patch(
                 "app.sep.plugins.report.routes.generate_report",
                 new_callable=AsyncMock,
             ) as mock_generate,
         ):
+            mock_delay.return_value.id = "job-1"
             response = test_client.post(
-                self._PDF_URL,
-                data={"report_json": report.model_dump_json()},
+                self._PDF_URL, data={"report_json": report.model_dump_json()}
             )
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.headers["content-type"] == "application/pdf"
-        assert response.content == pdf_bytes
-        mock_pdf.assert_awaited_once()
+        assert response.headers["content-type"] == "text/html; charset=utf-8"
+        assert "PDF generation started" in response.text
+        assert "/api/plugins/report/pdf-jobs/job-1" in response.text
+        mock_delay.assert_called_once_with(report.model_dump(mode="json"))
         mock_generate.assert_not_awaited()
 
-    def test_content_disposition_header(self, test_client):
-        """Assert Content-Disposition header contains the expected filename."""
+    @pytest.mark.usefixtures("_mock_report_index_context")
+    def test_job_page_includes_download_url(self, test_client):
+        """Assert PDF job page includes download URL after enqueue."""
         report = make_report()
         with patch(
-            "app.sep.plugins.report.routes.generate_pdf_report",
-            new_callable=AsyncMock,
-            return_value=b"%PDF-1.4",
-        ):
+            "app.sep.plugins.report.routes.render_report_pdf_job.delay"
+        ) as mock_delay:
+            mock_delay.return_value.id = "job-1"
             response = test_client.post(
                 self._PDF_URL,
                 data={"report_json": report.model_dump_json()},
             )
 
-        disposition = response.headers["content-disposition"]
-        assert "Health_and_Security_Report_2026-03-31.pdf" in disposition
-        assert disposition.startswith("attachment")
+        assert "/api/plugins/report/pdf-jobs/job-1/pdf" in response.text
+        assert "Health_and_Security_Report_2026-03-31.pdf" in response.text
 
-    def test_returns_500_on_pdf_error(self, test_client):
-        """Assert 500 when PDF rendering fails."""
-        report = make_report()
-        with patch(
-            "app.sep.plugins.report.routes.generate_pdf_report",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("render failed"),
-        ):
-            response = test_client.post(
-                self._PDF_URL,
-                data={"report_json": report.model_dump_json()},
-            )
+    @pytest.mark.usefixtures("_mock_report_index_context")
+    def test_returns_422_on_invalid_snapshot(self, test_client):
+        """Assert invalid snapshot still returns structured validation errors."""
+        response = test_client.post(
+            self._PDF_URL,
+            data={"report_json": "{}"},
+        )
 
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 class TestReportUpload:
@@ -469,34 +461,29 @@ class TestReportUpload:
         yield
         sep_app.dependency_overrides.pop(require_upload_configured, None)
 
-    def test_returns_200_with_json(self, test_client):
-        """Assert a successful snapshot upload returns 200 with JSON."""
+    @pytest.mark.usefixtures("_mock_report_index_context")
+    def test_returns_200_with_job_page(self, test_client):
+        """Assert a successful snapshot upload starts an async job."""
         report = make_report()
-        upload_result = {"status": "ok", "id": "12345"}
         with (
-            patch(
-                "app.sep.plugins.report.routes.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-            patch(
-                "app.sep.plugins.report.routes.upload_pdf_report",
-                new_callable=AsyncMock,
-                return_value=upload_result,
-            ) as mock_upload,
+            patch("app.sep.plugins.report.routes.upload_report_snapshot_job.delay")
+            as mock_delay,
             patch(
                 "app.sep.plugins.report.routes.generate_report",
                 new_callable=AsyncMock,
             ) as mock_generate,
         ):
+            mock_delay.return_value.id = "job-2"
             response = test_client.post(
                 self._UPLOAD_URL,
                 data={"report_json": report.model_dump_json()},
             )
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == upload_result
-        mock_upload.assert_awaited_once()
+        assert response.headers["content-type"] == "text/html; charset=utf-8"
+        assert "ServiceNow upload started" in response.text
+        assert "/api/plugins/report/upload-jobs/job-2" in response.text
+        mock_delay.assert_called_once_with(report.model_dump(mode="json"))
         mock_generate.assert_not_awaited()
 
     def test_returns_503_when_upload_not_configured(self, test_client, mock_pmm_api):
@@ -508,24 +495,12 @@ class TestReportUpload:
         )
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
-    def test_returns_500_on_upload_error(self, test_client):
-        """Assert 500 when snapshot upload fails."""
-        report = make_report()
-        with (
-            patch(
-                "app.sep.plugins.report.routes.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-            patch(
-                "app.sep.plugins.report.routes.upload_pdf_report",
-                new_callable=AsyncMock,
-                side_effect=RuntimeError("upload failed"),
-            ),
-        ):
-            response = test_client.post(
-                self._UPLOAD_URL,
-                data={"report_json": report.model_dump_json()},
-            )
+    @pytest.mark.usefixtures("_mock_report_index_context")
+    def test_returns_422_on_invalid_snapshot(self, test_client):
+        """Assert invalid upload snapshot still returns structured validation errors."""
+        response = test_client.post(
+            self._UPLOAD_URL,
+            data={"report_json": "{}"},
+        )
 
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
