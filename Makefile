@@ -209,7 +209,7 @@ startapp:
 ifndef NAME
 	$(error NAME is required. Usage: make startapp NAME=myapp [TYPE=task|script|base])
 endif
-	@$(DARWIN_DYLD) "${VENV_BIN}"/python -m app.sep.plugins.framework.scaffold --name "$(NAME)" --type "$(or $(TYPE),task)"
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/plugins/framework/scaffold.py --name "$(NAME)" --type "$(or $(TYPE),task)"
 
 startapp-check:
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/startapp_check.py

@@ -18,8 +18,9 @@
 
 The ``make startapp-check`` CI gate exercises the Makefile/CLI/``settings.yaml``
 path end-to-end — which the in-process ``test_scaffold.py`` deliberately bypasses
-— by scaffolding a throwaway app per flavor through ``python -m
-app.sep.plugins.framework.scaffold`` and running the contract test it generates.
+— by scaffolding a throwaway app per flavor through
+``python app/sep/plugins/framework/scaffold.py`` and running the contract test it
+generates.
 The throwaway packages and the ``settings.yaml`` edit are reverted in a
 ``finally`` even when a flavor fails, so a failed run never dirties the worktree
 or breaks the next run's clobber guard.
@@ -34,6 +35,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SETTINGS_FILE = REPO_ROOT / "settings.yaml"
 PLUGINS_DIR = REPO_ROOT / "app" / "sep" / "plugins"
 TESTS_DIR = REPO_ROOT / "tests" / "app" / "sep" / "plugins"
+SCAFFOLDER = REPO_ROOT / "app" / "sep" / "plugins" / "framework" / "scaffold.py"
 FLAVORS = ("task", "script", "base")
 
 
@@ -56,8 +58,7 @@ def main() -> int:
             print(f"== scaffolding {flavor!r} app {name!r} ==", flush=True)
             _run(
                 sys.executable,
-                "-m",
-                "app.sep.plugins.framework.scaffold",
+                str(SCAFFOLDER),
                 "--name",
                 name,
                 "--type",
