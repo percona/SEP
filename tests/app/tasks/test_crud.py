@@ -15,7 +15,7 @@
 
 """Define tests for the Tasks CRUD managers."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -1272,9 +1272,9 @@ async def _create_history_with_log(
     task: Task,
     *,
     status: TaskHistoryStatusEnum,
-    created_at,
-    started_at=None,
-    finished_at=None,
+    created_at: datetime,
+    started_at: datetime | None = None,
+    finished_at: datetime | None = None,
     chunks: int = 1,
 ) -> TaskHistory:
     """Create a ``TaskHistory`` with explicit timestamps and ``chunks`` log rows.
