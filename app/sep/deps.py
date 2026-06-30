@@ -1230,12 +1230,9 @@ def reject_if_protected(task: Task, *, action: str = "edit") -> Task:
     satellite path to its parent) before rejecting protected tasks.
 
     :param task: The resolved task to gate.
-    :type task: Task
     :param action: The action verb for the 409 detail (``"edit"`` or ``"delete"``).
-    :type action: str
     :raises HTTPConflictException: If the task is marked as protected.
     :return: The unprotected task.
-    :rtype: Task
     """
     if task.protected:
         raise HTTPConflictException(f"Cannot {action} a protected task.")
