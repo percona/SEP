@@ -190,12 +190,54 @@ def test_reconciler_seeded_as_ungated_system_task() -> None:
     """The drain reconciler is seeded with no owner, so it is never gated off."""
     reconcilers = [
         task
-        for schedule in seed_module.SYSTEM_PERIODIC_TASKS
+        for schedule in seed_module.get_system_periodic_tasks()
         for task in schedule.tasks
         if task.task_name == "app.sep.app_drain.reconcile_disabling_apps"
     ]
     assert len(reconcilers) == 1
     assert reconcilers[0].owner_app_key is None
+
+
+def _snippets_schedule(
+    tasks: list[SystemPeriodicTaskSchedule],
+) -> SystemPeriodicTaskSchedule:
+    """Return the schedule carrying the ``sep__sync_snippets`` task."""
+    return next(
+        schedule
+        for schedule in tasks
+        if any(task.name == SNIPPETS_TASK for task in schedule.tasks)
+    )
+
+
+def test_builder_reads_sync_interval_at_call_time() -> None:
+    """``get_system_periodic_tasks`` reflects the live ``SYNC_INTERVAL`` override.
+
+    Built per call, so a DB-backed override published to the proxy snapshot is
+    honored without a restart.
+    """
+    from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
+    from app.sep.snippets.config import snippets_settings
+
+    snippets_settings._set_snapshot(
+        {"SYNC_INTERVAL": CoreIntervalSchedule(every=30, period=Period.MINUTES)}
+    )
+    try:
+        schedule = _snippets_schedule(seed_module.get_system_periodic_tasks())
+        assert schedule.schedule == CoreIntervalSchedule(
+            every=30, period=Period.MINUTES
+        )
+    finally:
+        snippets_settings._set_snapshot({})
+
+    # A different override on the next call is reflected (no import-time freeze).
+    snippets_settings._set_snapshot(
+        {"SYNC_INTERVAL": CoreIntervalSchedule(every=5, period=Period.MINUTES)}
+    )
+    try:
+        schedule = _snippets_schedule(seed_module.get_system_periodic_tasks())
+        assert schedule.schedule == CoreIntervalSchedule(every=5, period=Period.MINUTES)
+    finally:
+        snippets_settings._set_snapshot({})
 
 
 @pytest_asyncio.fixture(name="beat_maker")
@@ -252,8 +294,8 @@ class TestInitSepDbPeriodicTaskGating:
         )
         mocker.patch.object(
             seed_module,
-            "SYSTEM_PERIODIC_TASKS",
-            [
+            "get_system_periodic_tasks",
+            return_value=[
                 SystemPeriodicTaskSchedule(
                     schedule=IntervalSchedule(every=10, period=Period.MINUTES),
                     tasks=[
