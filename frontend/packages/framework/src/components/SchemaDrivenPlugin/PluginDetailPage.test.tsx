@@ -86,8 +86,8 @@ vi.mock('../../hooks', () => ({
   useStopTaskHistory: () => ({ mutate: stopMutate, isPending: false }),
 }));
 
-// Logs tab renders the real TaskHistoryTable; stub it to capture the wired
-// onStopTask handler (no other test exercises the Logs tab / this component).
+// Execution History tab renders the real TaskHistoryTable; stub it to capture the wired
+// onStopTask handler (no other test exercises the Execution History tab / this component).
 vi.mock('../TaskHistoryTable', () => ({
   TaskHistoryTable: ({ onStopTask }: { onStopTask?: (entry: { id: number }) => void }) =>
     onStopTask ? (
@@ -716,12 +716,26 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 });
 
-describe('PluginDetailPage — Logs tab stop wiring', () => {
+describe('PluginDetailPage — tabs', () => {
+  it('labels the history tab Execution History', () => {
+    mockUsePluginTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+
+    renderAt('/plugins/checksums/task/FECHK');
+
+    expect(screen.getByRole('tab', { name: 'Execution History' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Logs' })).toBeNull();
+  });
+});
+
+describe('PluginDetailPage — Execution History tab stop wiring', () => {
   beforeEach(() => {
     stopMutate.mockReset();
   });
 
-  it('wires the Logs-tab table Stop action to the stop-task mutation with the row id', async () => {
+  it('wires the Execution History tab table Stop action to the stop-task mutation with the row id', async () => {
     mockUsePluginTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'running' },
       isLoading: false,
