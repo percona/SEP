@@ -24,9 +24,9 @@ from pydantic import ValidationError
 
 from app.core.config import PMMSettings
 from app.sep.config import (
-    _DeprecatedPMMConfig,
     App,
     AppDrainSettings,
+    DeprecatedPMMConfig,
     SEPSettings,
     SessionOptions,
 )
@@ -120,7 +120,7 @@ class TestForwardDeprecatedPMMFields:
         core_pmm = PMMSettings()
         with patch("app.sep.config.settings") as mock_settings:
             mock_settings.PMM = core_pmm
-            SEPSettings(PMM=_DeprecatedPMMConfig())
+            SEPSettings(PMM=DeprecatedPMMConfig())
         assert mock_settings.PMM is core_pmm
 
 

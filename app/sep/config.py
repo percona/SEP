@@ -265,7 +265,7 @@ class SessionOptions(BaseModel):
     PATH: URIPath | None = None
 
 
-class _DeprecatedPMMConfig(BaseLowercaseModel):
+class DeprecatedPMMConfig(BaseLowercaseModel):
     """Accept deprecated ``SEP.PMM`` fields for backward compatibility.
 
     Include both connection/auth fields (forwarded to ``settings.PMM``) and
@@ -546,7 +546,6 @@ class SEPSettings(BaseYamlAppSettings):
     :param PMM: Deprecated ``SEP.PMM`` section for backward compatibility. Connection
         fields are forwarded to the top-level ``settings.PMM``; alerts fields are read
         by ``AlertsPMMConfig``.
-    :type PMM: _DeprecatedPMMConfig
     :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
         Upload is disabled by default.
     :type HEALTH_REPORT: HealthReportSettings
@@ -588,7 +587,7 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: SyncerExtraKwargs = SyncerExtraKwargs()
     SYNC_REFRESH_TIME: int = hot_field(5)
-    PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
+    PMM: DeprecatedPMMConfig = DeprecatedPMMConfig()
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
     APP_DRAIN: AppDrainSettings = AppDrainSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600)
