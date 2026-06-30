@@ -31,6 +31,7 @@ Route layout:
 """
 
 import base64
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Query
@@ -51,6 +52,7 @@ from app.sep.plugins.report.schemas import ReportJobResponse, ReportSnapshotWrit
 from app.sep.plugins.report.service import generate_report
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _filter_sections(sections: list[str] | None) -> list[str] | None:
@@ -93,7 +95,14 @@ def _job_response(job_id: str, *, pdf: bool = False) -> ReportJobResponse:
         else:
             response.result = job_result
     elif result.failed():
-        response.error = str(result.result)
+        logger.warning("Report job %s failed: %r", job_id, result.result)
+        if isinstance(result.result, dict) and result.result.get("error"):
+            response.error = str(result.result["error"])
+            errors = result.result.get("errors")
+            if isinstance(errors, list):
+                response.result = {"errors": errors}
+        else:
+            response.error = "Report job failed"
     return response
 
 
