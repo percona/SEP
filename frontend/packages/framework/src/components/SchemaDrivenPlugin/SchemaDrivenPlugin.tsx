@@ -60,7 +60,7 @@ interface SchemaDrivenPluginProps {
   suppressDetailKeys?: string[];
   /** Replace the default Execute button on single-task detail pages. */
   getTaskExecuteActions?: (task: Record<string, unknown>) => TaskExecuteAction[] | undefined;
-  /** Task names whose execution history should appear on the Logs tab. */
+  /** Task names whose execution history should appear on the Execution History tab. */
   getTaskHistoryNames?: (task: Record<string, unknown>) => string[] | undefined;
   /** Extra overview content on single-task detail pages. */
   renderTaskDetailChildren?: (args: {
