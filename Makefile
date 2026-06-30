@@ -209,6 +209,15 @@ changelog-check:
 changelog-list:
 	@$(PYTHON) scripts/changelog.py list
 
+startapp:
+ifndef NAME
+	$(error NAME is required. Usage: make startapp NAME=myapp [TYPE=task|script|base])
+endif
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/plugins/framework/scaffold.py --name "$(NAME)" --type "$(or $(TYPE),task)"
+
+startapp-check:
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/startapp_check.py
+
 SIGN_FLAG := $(if $(SIGN_VIA_API),--sign-via-github-api,)
 PUSH_IMAGE_DOCKER ?= true
 
@@ -265,4 +274,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check

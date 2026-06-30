@@ -330,6 +330,10 @@ branch = true
 source = ["app"]
 omit = [
     "__init__.py",
+    # Apps the scaffolder tests generate under the real source tree and delete
+    # in teardown: measuring them leaves dead source paths in .coverage that
+    # break `coverage json` (the PR coverage-comment step) with "No source for code".
+    "app/sep/plugins/_scaffold_*/*",
 ]
 
 [tool.coverage.report]
