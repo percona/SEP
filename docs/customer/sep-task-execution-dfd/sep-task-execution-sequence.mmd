@@ -1,5 +1,5 @@
 %% SEP Task Execution — Sequence diagrams
-%% Path A: Snippets. Path B: Checksums (proxy plugin, two-phase).
+%% Path A: Snippets. Path B: Checksums (proxy app, two-phase).
 %% Avoid semicolons and parentheses inside Note lines (mermaid-cli parse bug).
 
 sequenceDiagram
@@ -7,7 +7,7 @@ sequenceDiagram
     actor Eng as Engineer
     participant UI as SEP UI
     participant Casdoor as Casdoor IdP
-    participant SEP as SEP plugin API
+    participant SEP as SEP app API
     participant Inv as Inventory API
     participant Tasks as Tasks API
     participant DB as Tasks PostgreSQL
@@ -40,7 +40,7 @@ sequenceDiagram
     rect rgb(232, 245, 233)
         Note over Eng,Node: Path B Checksums create phase
         Eng->>UI: Create checksum task form
-        UI->>SEP: POST api plugins checksums
+        UI->>SEP: POST api apps checksums
         SEP->>Inv: GET service schemas tables
         Inv-->>SEP: MySQL service details
         SEP->>SEP: Build meta pt-table-checksum args target
