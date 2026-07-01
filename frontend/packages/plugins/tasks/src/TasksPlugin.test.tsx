@@ -19,7 +19,7 @@ import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PluginSchema } from '@sep/api';
+import type { AppSchema } from '@sep/api';
 import { TasksPlugin } from './TasksPlugin';
 import { useTasksList, useTasksPluginSchema } from './hooks';
 
@@ -46,7 +46,7 @@ vi.mock('@sep/framework', () => ({
 const mockUseTasksPluginSchema = vi.mocked(useTasksPluginSchema);
 const mockUseTasksList = vi.mocked(useTasksList);
 
-const mockSchema: PluginSchema = {
+const mockSchema: AppSchema = {
   name: 'tasks',
   display_name: 'Task Manager',
   description: 'View task definitions and execution history.',

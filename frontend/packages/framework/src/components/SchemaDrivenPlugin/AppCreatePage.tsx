@@ -22,13 +22,13 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
-import { useCreatePluginEntity, useCreatePluginTask, type PluginSchema } from '@sep/api';
+import { useCreateAppEntity, useCreateAppTask, type AppSchema } from '@sep/api';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
 import type { RenderFormSlot } from './types';
 
-interface PluginCreatePageProps {
-  schema: PluginSchema;
+interface AppCreatePageProps {
+  schema: AppSchema;
   pluginName: string;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
@@ -38,14 +38,14 @@ interface PluginCreatePageProps {
   renderCreateForm?: RenderFormSlot;
 }
 
-export function PluginCreatePage({
+export function AppCreatePage({
   schema,
   pluginName,
   mockTasks,
   mockEntityItems,
   renderField,
   renderCreateForm,
-}: PluginCreatePageProps) {
+}: AppCreatePageProps) {
   const navigate = useNavigate();
   const { entityName } = useParams<{ entityName?: string }>();
   const entitySchema = useMemo(
@@ -54,8 +54,8 @@ export function PluginCreatePage({
   );
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
   const { enqueueSnackbar } = useSnackbar();
-  const createTask = useCreatePluginTask(pluginName, mockTasks);
-  const createEntity = useCreatePluginEntity(
+  const createTask = useCreateAppTask(pluginName, mockTasks);
+  const createEntity = useCreateAppEntity(
     pluginName,
     entityName ?? '',
     multi ? mockEntityItems?.[entityName!] : undefined,

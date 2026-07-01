@@ -25,19 +25,19 @@ import Skeleton from '@mui/material/Skeleton';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
 import {
-  usePluginSchema,
-  usePluginEntityDetail,
-  useUpdatePluginEntity,
-  type PluginEntitySchema,
-  type PluginSchema,
+  useAppSchema,
+  useAppEntityDetail,
+  useUpdateAppEntity,
+  type AppEntitySchema,
+  type AppSchema,
 } from '@sep/api';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
-import { PluginListPage } from './PluginListPage';
-import { PluginCreatePage } from './PluginCreatePage';
-import { PluginTaskEditPage } from './PluginTaskEditPage';
-import { PluginDetailPage, type TaskExecuteAction } from './PluginDetailPage';
-import { PluginSchedulePage } from './PluginSchedulePage';
+import { AppListPage } from './AppListPage';
+import { AppCreatePage } from './AppCreatePage';
+import { AppTaskEditPage } from './AppTaskEditPage';
+import { AppDetailPage, type TaskExecuteAction } from './AppDetailPage';
+import { AppSchedulePage } from './AppSchedulePage';
 import type { RenderFormSlot } from './types';
 import type { RenderListColumnOverride } from '../SchemaListView';
 
@@ -45,7 +45,7 @@ interface SchemaDrivenPluginProps {
   pluginName: string;
   /** Absolute list route prefix when the plugin is not mounted under ``/apps/{name}``. */
   routeBase?: string;
-  mockSchema?: PluginSchema;
+  mockSchema?: AppSchema;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
   /** When true, only the list table is shown (no create, detail, or edit routes). */
@@ -66,7 +66,7 @@ interface SchemaDrivenPluginProps {
   renderTaskDetailChildren?: (args: {
     task: Record<string, unknown>;
     pluginName: string;
-    schema: PluginSchema;
+    schema: AppSchema;
   }) => ReactNode;
   /** Hide multi-entity tab bar (e.g. inventory uses breadcrumbs instead). */
   hideEntityTabs?: boolean;
@@ -78,7 +78,7 @@ interface SchemaDrivenPluginProps {
   renderEntityDetailChildren?: (args: {
     entityName: string;
     record: Record<string, unknown>;
-    schema: PluginSchema;
+    schema: AppSchema;
     pathname: string;
     pluginName: string;
     mockEntityItems?: Record<string, Record<string, unknown>[]>;
@@ -97,14 +97,14 @@ interface SchemaDrivenPluginProps {
   renderListColumn?: RenderListColumnOverride;
 }
 
-function PluginEditPage({
+function AppEditPage({
   schema,
   pluginName,
   mockEntityItems,
   renderField,
   renderEditForm,
 }: {
-  schema: PluginSchema;
+  schema: AppSchema;
   pluginName: string;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
   renderField?: RenderFieldOverride;
@@ -113,19 +113,19 @@ function PluginEditPage({
   const navigate = useNavigate();
   const { entityName, id } = useParams<{ entityName?: string; id: string }>();
   const entitySchema = useMemo(
-    () => schema.entities?.find((e: PluginEntitySchema) => e.name === entityName),
+    () => schema.entities?.find((e: AppEntitySchema) => e.name === entityName),
     [schema.entities, entityName],
   );
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
 
   const { enqueueSnackbar } = useSnackbar();
-  const updateEntity = useUpdatePluginEntity(
+  const updateEntity = useUpdateAppEntity(
     pluginName,
     entityName ?? '',
     multi ? mockEntityItems?.[entityName!] : undefined,
   );
 
-  const { data: item, isLoading } = usePluginEntityDetail(
+  const { data: item, isLoading } = useAppEntityDetail(
     pluginName,
     entityName ?? '',
     id,
@@ -241,7 +241,7 @@ export function SchemaDrivenPlugin({
   renderEditForm,
   renderListColumn,
 }: SchemaDrivenPluginProps) {
-  const { data: schema, isLoading, error } = usePluginSchema(pluginName, mockSchema);
+  const { data: schema, isLoading, error } = useAppSchema(pluginName, mockSchema);
   const showMutationRoutes = !listOnly && !browseOnly;
   const showDetailRoutes = !listOnly;
 
@@ -273,7 +273,7 @@ export function SchemaDrivenPlugin({
         <Route
           path=":entityName"
           element={
-            <PluginListPage
+            <AppListPage
               schema={schema}
               pluginName={pluginName}
               mockEntityItems={mockEntityItems}
@@ -290,7 +290,7 @@ export function SchemaDrivenPlugin({
             <Route
               path=":entityName/new"
               element={
-                <PluginCreatePage
+                <AppCreatePage
                   schema={schema}
                   pluginName={pluginName}
                   mockEntityItems={mockEntityItems}
@@ -302,7 +302,7 @@ export function SchemaDrivenPlugin({
             <Route
               path=":entityName/:id/edit"
               element={
-                <PluginEditPage
+                <AppEditPage
                   schema={schema}
                   pluginName={pluginName}
                   mockEntityItems={mockEntityItems}
@@ -317,7 +317,7 @@ export function SchemaDrivenPlugin({
           <Route
             path=":entityName/:id"
             element={
-              <PluginDetailPage
+              <AppDetailPage
                 schema={schema}
                 pluginName={pluginName}
                 mockEntityItems={mockEntityItems}
@@ -338,7 +338,7 @@ export function SchemaDrivenPlugin({
       <Route
         index
         element={
-          <PluginListPage
+          <AppListPage
             schema={schema}
             pluginName={pluginName}
             mockTasks={mockTasks}
@@ -354,7 +354,7 @@ export function SchemaDrivenPlugin({
           <Route
             path="new"
             element={
-              <PluginCreatePage
+              <AppCreatePage
                 schema={schema}
                 pluginName={pluginName}
                 mockTasks={mockTasks}
@@ -366,7 +366,7 @@ export function SchemaDrivenPlugin({
           <Route
             path="task/:id/edit"
             element={
-              <PluginTaskEditPage
+              <AppTaskEditPage
                 schema={schema}
                 pluginName={pluginName}
                 mockTasks={mockTasks}
@@ -382,13 +382,13 @@ export function SchemaDrivenPlugin({
           show the panel even though the entry-point buttons (which gate on
           the same capability) are hidden. */}
       {schema.capabilities?.scheduling && (
-        <Route path="schedule" element={<PluginSchedulePage pluginName={pluginName} />} />
+        <Route path="schedule" element={<AppSchedulePage pluginName={pluginName} />} />
       )}
       {showDetailRoutes && (
         <Route
           path="task/:id/*"
           element={
-            <PluginDetailPage
+            <AppDetailPage
               schema={schema}
               pluginName={pluginName}
               routeBase={routeBase}

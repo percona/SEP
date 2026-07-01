@@ -21,7 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { SnippetExecutionAccordion } from './SnippetExecutionAccordion';
-import { apiClient, type PluginSchema } from '@sep/api';
+import { apiClient, type AppSchema } from '@sep/api';
 import type { TaskHistoryEntry } from '../TaskHistoryTable';
 
 vi.mock('@sep/api', () => ({
@@ -57,9 +57,9 @@ const mockedApi = apiClient as unknown as {
   post: ReturnType<typeof vi.fn>;
 };
 
-type FormSection = NonNullable<PluginSchema['forms']>[number];
+type FormSection = NonNullable<AppSchema['forms']>[number];
 
-function makeSchema(extraFields: FormSection['fields'] = []): PluginSchema {
+function makeSchema(extraFields: FormSection['fields'] = []): AppSchema {
   return {
     name: 'snippets',
     display_name: 'Test Snippet',

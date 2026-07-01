@@ -23,7 +23,7 @@ import Skeleton from '@mui/material/Skeleton';
 import Typography from '@mui/material/Typography';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
-import { usePluginTask, useUpdatePluginTask, type PluginSchema } from '@sep/api';
+import { useAppTask, useUpdateAppTask, type AppSchema } from '@sep/api';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/types';
 import type { RenderFormSlot } from './types';
@@ -80,14 +80,14 @@ const TASK_NAME_FIELD = 'task_name';
  * ``PUT``. Serves every ``TaskExecutionApp`` with no per-app code; ``task_name``
  * is immutable here (see {@link TASK_NAME_FIELD}).
  */
-export function PluginTaskEditPage({
+export function AppTaskEditPage({
   schema,
   pluginName,
   mockTasks,
   renderField,
   renderEditForm,
 }: {
-  schema: PluginSchema;
+  schema: AppSchema;
   pluginName: string;
   mockTasks?: Record<string, unknown>[];
   renderField?: RenderFieldOverride;
@@ -96,8 +96,8 @@ export function PluginTaskEditPage({
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const { enqueueSnackbar } = useSnackbar();
-  const updateTask = useUpdatePluginTask(pluginName, mockTasks);
-  const { data: task, isLoading } = usePluginTask(pluginName, id, mockTasks);
+  const updateTask = useUpdateAppTask(pluginName, mockTasks);
+  const { data: task, isLoading } = useAppTask(pluginName, id, mockTasks);
 
   const storedForm = getStoredForm(task);
 

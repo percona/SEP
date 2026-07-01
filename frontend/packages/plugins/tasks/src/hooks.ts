@@ -16,7 +16,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { apiClient, usePluginSchema } from '@sep/api';
+import { apiClient, useAppSchema } from '@sep/api';
 import { RUNNING_STATUSES } from '@sep/framework';
 import {
   TASKS_PLUGIN_NAME,
@@ -27,7 +27,7 @@ import {
 
 /** Fetch the read-only Task Manager plugin schema. */
 export function useTasksPluginSchema() {
-  return usePluginSchema(TASKS_PLUGIN_NAME);
+  return useAppSchema(TASKS_PLUGIN_NAME);
 }
 
 /** Fetch task definition rows for the list view. */

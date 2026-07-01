@@ -20,18 +20,18 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
-import type { PluginSchema } from '@sep/api';
-import { PluginCreatePage } from './PluginCreatePage';
+import type { AppSchema } from '@sep/api';
+import { AppCreatePage } from './AppCreatePage';
 import type { RenderFormSlot } from './types';
 
 const mockCreateTaskMutate = vi.fn();
 
 vi.mock('@sep/api', () => ({
-  useCreatePluginTask: () => ({ mutate: mockCreateTaskMutate, isPending: false }),
-  useCreatePluginEntity: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateAppTask: () => ({ mutate: mockCreateTaskMutate, isPending: false }),
+  useCreateAppEntity: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-const schema: PluginSchema = {
+const schema: AppSchema = {
   pluginName: 'checksums',
   display_name: 'Checksum',
   description: 'Test',
@@ -46,19 +46,19 @@ const schema: PluginSchema = {
       ],
     },
   ],
-} as unknown as PluginSchema;
+} as unknown as AppSchema;
 
 function renderPage(extra?: { renderCreateForm?: RenderFormSlot }) {
   return render(
     <SnackbarProvider>
       <MemoryRouter initialEntries={['/apps/checksums/new']}>
-        <PluginCreatePage schema={schema} pluginName="checksums" {...extra} />
+        <AppCreatePage schema={schema} pluginName="checksums" {...extra} />
       </MemoryRouter>
     </SnackbarProvider>,
   );
 }
 
-describe('PluginCreatePage — renderCreateForm slot', () => {
+describe('AppCreatePage — renderCreateForm slot', () => {
   it('renders the default SchemaFormRenderer when no slot is supplied', () => {
     renderPage();
     // Default form body: the schema field renders, with the framework chrome.

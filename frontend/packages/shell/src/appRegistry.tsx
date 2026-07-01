@@ -133,7 +133,7 @@ export function getSchemaDrivenFallbackRoutes(): SchemaDrivenFallbackRoute[] {
     });
 }
 
-export interface PluginRouteDefinition {
+export interface AppRouteDefinition {
   path: string;
   element: ReactElement;
 }
@@ -141,7 +141,7 @@ export interface PluginRouteDefinition {
 /** Protected apps are never gated — toggle returns 409 on the backend. */
 const UNGUARDED_APP_KEYS = new Set(['inventory']);
 
-function wrapPluginRoute(appKey: string, element: ReactElement): ReactElement {
+function wrapAppRoute(appKey: string, element: ReactElement): ReactElement {
   if (UNGUARDED_APP_KEYS.has(appKey)) {
     return element;
   }
@@ -149,18 +149,18 @@ function wrapPluginRoute(appKey: string, element: ReactElement): ReactElement {
 }
 
 /** Shell plugin routes: bespoke registry entries, schema-driven fallbacks, legacy aliases. */
-export function buildPluginRoutes(): PluginRouteDefinition[] {
-  const routes: PluginRouteDefinition[] = Object.values(CUSTOM_APP_REGISTRY).map(
+export function buildAppRoutes(): AppRouteDefinition[] {
+  const routes: AppRouteDefinition[] = Object.values(CUSTOM_APP_REGISTRY).map(
     ({ appKey, routePattern, Component }) => ({
       path: routePattern,
-      element: wrapPluginRoute(appKey, createElement(Component)),
+      element: wrapAppRoute(appKey, createElement(Component)),
     }),
   );
 
   for (const { routePattern, appKey } of getSchemaDrivenFallbackRoutes()) {
     routes.push({
       path: routePattern,
-      element: wrapPluginRoute(appKey, createElement(SchemaDrivenAppRoute, { appKey })),
+      element: wrapAppRoute(appKey, createElement(SchemaDrivenAppRoute, { appKey })),
     });
   }
 
@@ -169,12 +169,12 @@ export function buildPluginRoutes(): PluginRouteDefinition[] {
       const entry = CUSTOM_APP_REGISTRY[appKey];
       routes.push({
         path,
-        element: wrapPluginRoute(appKey, createElement(entry.Component)),
+        element: wrapAppRoute(appKey, createElement(entry.Component)),
       });
     } else {
       routes.push({
         path,
-        element: wrapPluginRoute(appKey, createElement(SchemaDrivenAppRoute, { appKey })),
+        element: wrapAppRoute(appKey, createElement(SchemaDrivenAppRoute, { appKey })),
       });
     }
   }

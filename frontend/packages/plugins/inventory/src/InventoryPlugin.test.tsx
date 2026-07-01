@@ -20,10 +20,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
-import { apiClient, type PluginSchema } from '@sep/api';
+import { apiClient, type AppSchema } from '@sep/api';
 import { InventoryPlugin } from './InventoryPlugin';
 
-const mockSchema: PluginSchema = {
+const mockSchema: AppSchema = {
   name: 'inventory',
   display_name: 'Inventory',
   entities: [
@@ -37,7 +37,7 @@ const mockSchema: PluginSchema = {
 };
 
 /** Full multi-entity schema for nested URL + ``detail_highlights`` integration coverage. */
-const inventoryNestedMockSchema: PluginSchema = {
+const inventoryNestedMockSchema: AppSchema = {
   name: 'inventory',
   display_name: 'Inventory',
   entities: [
@@ -179,7 +179,7 @@ describe('InventoryPlugin', () => {
   });
 
   it('renders exactly one Schedules button on the nodes list (custom one only)', async () => {
-    const schedulingSchema: PluginSchema = {
+    const schedulingSchema: AppSchema = {
       ...mockSchema,
       capabilities: { scheduling: true },
     };

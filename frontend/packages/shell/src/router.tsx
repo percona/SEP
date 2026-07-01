@@ -17,7 +17,7 @@
 
 import { lazy } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
-import { buildPluginRoutes } from './appRegistry';
+import { buildAppRoutes } from './appRegistry';
 import RootLayout from './layouts/RootLayout';
 import MainLayout from './layouts/MainLayout';
 import AuthGuard from './components/AuthGuard';
@@ -28,7 +28,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const AdminAppsPage = lazy(() => import('./pages/AdminAppsPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
-const pluginRoutes = buildPluginRoutes();
+const pluginRoutes = buildAppRoutes();
 
 export const router = createBrowserRouter([
   {
