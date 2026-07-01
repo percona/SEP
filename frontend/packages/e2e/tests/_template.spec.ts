@@ -38,7 +38,7 @@ import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 /** The React Router path that mounts your plugin, e.g. '/schema-change/checksums'. */
 const PLUGIN_ROUTE = '/TODO/plugin-route';
 
-/** The plugin's displayName from its PluginSchema, e.g. 'Checksums'. */
+/** The plugin's displayName from its AppSchema, e.g. 'Checksums'. */
 const PLUGIN_DISPLAY_NAME = 'TODO Plugin Name';
 
 // ── Auth + API mocks ──────────────────────────────────────────────────────────
@@ -97,7 +97,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
     }
 
     if (pathname.endsWith('/schema')) {
-      // 404 -> usePluginSchema falls back to its mockSchema prop
+      // 404 -> useAppSchema falls back to its mockSchema prop
       return route.fulfill({
         status: 404,
         contentType: 'application/json',
@@ -108,7 +108,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
     // TODO: replace the default empty-list response with plugin-specific
     // fixture data if your assertions need real task rows:
     //
-    // if (pathname.includes('/plugins/your-plugin/')) {
+    // if (pathname.includes('/apps/your-plugin/')) {
     //   return route.fulfill({
     //     status: 200,
     //     contentType: 'application/json',

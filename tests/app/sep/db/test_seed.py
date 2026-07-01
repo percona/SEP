@@ -30,23 +30,23 @@ from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSche
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep import periodic_tasks as periodic_tasks_module
-from app.sep.config import Plugin
+from app.sep.apps.framework.registry import get_app_registry
+from app.sep.config import App
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
 from app.sep.models import AppLifecycleEnum, AppState
-from app.sep.plugins.framework.registry import get_app_registry
 
 SNIPPETS_TASK = "sep__sync_snippets"
 
 
-def _plugin(key: str, *, enabled: bool = True) -> Plugin:
-    """Build a ``Plugin`` activation entry for ``key``."""
-    return Plugin(module_name=key, enabled=enabled)
+def _plugin(key: str, *, enabled: bool = True) -> App:
+    """Build an ``App`` activation entry for ``key``."""
+    return App(module_name=key, enabled=enabled)
 
 
 @pytest.fixture(autouse=True)
 def _clear_registry_cache() -> None:
-    """Rebuild the registry from each test's patched ``PLUGINS``."""
+    """Rebuild the registry from each test's patched ``APPS``."""
     get_app_registry.cache_clear()
     yield
     get_app_registry.cache_clear()
@@ -93,7 +93,7 @@ class TestInitSepDbAppStateSeeding:
         """Each non-protected plugin yields a row with its YAML ``enabled`` value."""
         mocker.patch.object(
             seed_module.sep_settings,
-            "PLUGINS",
+            "APPS",
             [
                 _plugin("snippets", enabled=True),
                 _plugin("checksums", enabled=False),
@@ -114,7 +114,7 @@ class TestInitSepDbAppStateSeeding:
         self, mocker, patched_seed, seed_maker
     ) -> None:
         """The protected ``inventory`` app gets no row even when configured."""
-        mocker.patch.object(seed_module.sep_settings, "PLUGINS", [_plugin("inventory")])
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("inventory")])
 
         await seed_module.init_sep_db()
 
@@ -127,7 +127,7 @@ class TestInitSepDbAppStateSeeding:
     ) -> None:
         """A second seed with the same configured set inserts no extra rows."""
         mocker.patch.object(
-            seed_module.sep_settings, "PLUGINS", [_plugin("snippets", enabled=True)]
+            seed_module.sep_settings, "APPS", [_plugin("snippets", enabled=True)]
         )
 
         await seed_module.init_sep_db()
@@ -148,7 +148,7 @@ class TestInitSepDbAppStateSeeding:
             await session.commit()
 
         mocker.patch.object(
-            seed_module.sep_settings, "PLUGINS", [_plugin("snippets", enabled=True)]
+            seed_module.sep_settings, "APPS", [_plugin("snippets", enabled=True)]
         )
         await seed_module.init_sep_db()
 
@@ -167,7 +167,7 @@ class TestInitSepDbAppStateSeeding:
             await session.commit()
 
         mocker.patch.object(
-            seed_module.sep_settings, "PLUGINS", [_plugin("snippets", enabled=True)]
+            seed_module.sep_settings, "APPS", [_plugin("snippets", enabled=True)]
         )
         await seed_module.init_sep_db()
 
@@ -179,7 +179,7 @@ class TestInitSepDbAppStateSeeding:
         self, mocker, patched_seed, seed_maker
     ) -> None:
         """Periodic-task seeding still fires after AppState seeding (no regression)."""
-        mocker.patch.object(seed_module.sep_settings, "PLUGINS", [])
+        mocker.patch.object(seed_module.sep_settings, "APPS", [])
 
         await seed_module.init_sep_db()
 
@@ -310,7 +310,7 @@ class TestInitSepDbPeriodicTaskGating:
         )
         mocker.patch.object(
             seed_module.sep_settings,
-            "PLUGINS",
+            "APPS",
             [_plugin("snippets", enabled=app_enabled)],
         )
 

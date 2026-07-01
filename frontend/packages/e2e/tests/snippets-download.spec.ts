@@ -60,7 +60,7 @@ interface SnippetDownloadMockOptions {
 }
 
 function snippetApiPaths() {
-  const base = '/api/plugins/snippets/snippet';
+  const base = '/api/apps/snippets/snippet';
   return {
     schema: `${base}/schema`,
     history: `${base}/history`,

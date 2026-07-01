@@ -261,7 +261,7 @@ async def require_bearer_for_unsafe_methods(request: Request) -> None:
     require ``Authorization: Bearer ...``; cookie-authenticated cross-site
     JSON mutations are rejected with ``401`` before any business logic runs.
 
-    Intended to be attached at router level to ``/api/plugins/*`` so every
+    Intended to be attached at router level to ``/api/apps/*`` so every
     plugin's JSON mutation routes inherit the guard uniformly.
 
     :param request: The incoming HTTP request.
@@ -500,7 +500,7 @@ def get_toggleable_app_key(app_key: str) -> str:
         )
     # Deferred: the framework package __init__ imports back into this module,
     # so a top-level import here would cycle.
-    from app.sep.plugins.framework.registry import get_app_registry
+    from app.sep.apps.framework.registry import get_app_registry
 
     if get_app_registry().get(app_key) is None:
         raise HTTPNotFoundException(detail="App not found")
@@ -563,7 +563,7 @@ async def get_default_context(
         states = {}
     # Deferred: the framework package __init__ imports back into this module,
     # so a top-level import here would cycle.
-    from app.sep.plugins.framework.registry import get_app_registry
+    from app.sep.apps.framework.registry import get_app_registry
 
     plugins = [
         app

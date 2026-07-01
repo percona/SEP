@@ -4,9 +4,9 @@ This document describes what SEP captures during task execution, how SEP handles
 
 ## Scope
 
-This document covers data produced by predefined SEP task executions, including plugin-driven tasks, snippets, and Nomad-backed jobs. It focuses on stdout/stderr task logs, task execution metadata, and downloadable task output files.
+This document covers data produced by predefined SEP task executions, including app-driven tasks, snippets, and Nomad-backed jobs. It focuses on stdout/stderr task logs, task execution metadata, and downloadable task output files.
 
-SEP task execution is not a free-form shell. Users select approved snippets or plugin-defined operations, and the server builds the execution request from stored task definitions, validated form data, and inventory context. Even with predefined execution, command parameters and task output can contain sensitive information.
+SEP task execution is not a free-form shell. Users select approved snippets or app-defined operations, and the server builds the execution request from stored task definitions, validated form data, and inventory context. Even with predefined execution, command parameters and task output can contain sensitive information.
 
 ## Audit Logging
 
@@ -17,7 +17,7 @@ SEP records a task history entry for every task execution request. The task hist
 - Creation, start, and finish timestamps through `created_at`, `started_at`, and `finished_at`.
 - Execution status, such as pending, running, success, failed, lost, or stale.
 - The execution request JSON, including the task name, target, execution metadata, payload, ETA, and executor tracking information.
-- Command context, including the fixed task or plugin command metadata used to dispatch the job.
+- Command context, including the fixed task or app command metadata used to dispatch the job.
 - Execution lifecycle information derived from Nomad task state and exposed through the execution events API.
 - Captured stdout and stderr chunks in the task log store.
 

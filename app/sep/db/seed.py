@@ -24,21 +24,21 @@ from app.core.celery.utils import (
     SystemPeriodicTaskData,
     SystemPeriodicTaskSchedule,
 )
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
 from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppLifecycleEnum, AppState, AppStateBase
 from app.sep.periodic_tasks import sync_app_periodic_task_gating
-from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings
 
 _alerts_plugin_enabled = any(
-    p.module_name.endswith(".alerts") for p in sep_settings.PLUGINS
+    p.module_name.endswith(".alerts") for p in sep_settings.APPS
 )
 
 _report_plugin_enabled = any(
-    p.module_name.endswith(".report") for p in sep_settings.PLUGINS
+    p.module_name.endswith(".report") for p in sep_settings.APPS
 )
 
 
@@ -77,7 +77,7 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     ]
 
     if _alerts_plugin_enabled:
-        from app.sep.plugins.alerts.config import alerts_pmm_config
+        from app.sep.apps.alerts.config import alerts_pmm_config
 
         system_tasks.append(
             SystemPeriodicTaskSchedule(
@@ -131,7 +131,7 @@ async def init_sep_db() -> None:
     """Initialize the SEP database with app state and periodic tasks.
 
     Seeds one :class:`app.sep.models.AppState` row per non-protected plugin in
-    ``SEP.PLUGINS`` using get-or-create (the YAML ``enabled`` flag is mapped to
+    ``SEP.APPS`` using get-or-create (the YAML ``enabled`` flag is mapped to
     ``ENABLED`` / ``DISABLED`` only on insert; existing rows are never
     overwritten), removes rows for apps no longer configured, then seeds the SEP
     periodic tasks and gates each plugin-owned schedule by its app state via

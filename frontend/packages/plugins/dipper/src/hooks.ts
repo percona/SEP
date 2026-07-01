@@ -16,17 +16,17 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type PluginSchema } from '@sep/api';
+import { apiClient, type AppSchema } from '@sep/api';
 import type { PaginatedTaskHistory } from '@sep/framework';
 import type { DipperCollectorType, DipperExecutionResponse, DipperExecutionWrite } from './types';
 
-const DIPPER_BASE = '/plugins/dipper';
+const DIPPER_BASE = '/apps/dipper';
 
 export function useDipperPluginSchema() {
-  return useQuery<PluginSchema>({
+  return useQuery<AppSchema>({
     queryKey: ['dipper', 'schema'],
     queryFn: async () => {
-      const { data } = await apiClient.get<PluginSchema>(`${DIPPER_BASE}/schema`);
+      const { data } = await apiClient.get<AppSchema>(`${DIPPER_BASE}/schema`);
       return data;
     },
     staleTime: 5 * 60 * 1000,
@@ -34,11 +34,11 @@ export function useDipperPluginSchema() {
 }
 
 export function useDipperFormSchema(serviceId: number | null, collectorType: DipperCollectorType) {
-  return useQuery<PluginSchema>({
+  return useQuery<AppSchema>({
     queryKey: ['dipper', 'form-schema', serviceId, collectorType],
     enabled: serviceId !== null,
     queryFn: async () => {
-      const { data } = await apiClient.get<PluginSchema>(`${DIPPER_BASE}/form-schema`, {
+      const { data } = await apiClient.get<AppSchema>(`${DIPPER_BASE}/form-schema`, {
         params: { service_id: serviceId, collector_type: collectorType },
       });
       return data;

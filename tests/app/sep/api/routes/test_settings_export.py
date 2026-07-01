@@ -356,9 +356,9 @@ class TestSepConfigExportYaml:
     async def test_complex_field_renders_as_mapping(
         self, api_admin_client: TestClient
     ) -> None:
-        """Emit ``SEPSettings.PLUGINS`` as a structured value, not a repr blob."""
+        """Emit ``SEPSettings.APPS`` as a structured value, not a repr blob."""
         export = yaml.safe_load(api_admin_client.get(EXPORT_URL).text)
-        plugins = export[SettingClassEnum.SEP_SETTINGS.value]["PLUGINS"]
+        plugins = export[SettingClassEnum.SEP_SETTINGS.value]["APPS"]
         assert isinstance(plugins, list)
         if plugins:
             assert isinstance(plugins[0], dict)

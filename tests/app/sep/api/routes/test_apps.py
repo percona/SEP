@@ -28,6 +28,7 @@ from sqlmodel import SQLModel
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.models import CasdoorUser
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.config import sep_settings
 from app.sep.deps import (
     get_api_authenticated_user,
@@ -37,7 +38,6 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app
 from app.sep.models import AppLifecycleEnum, AppState
-from app.sep.plugins.framework.registry import get_app_registry
 
 
 @pytest_asyncio.fixture(name="override_session")
@@ -91,7 +91,7 @@ class TestListAppsForNavigation:
         response = api_user_client.get("/api/apps/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
-        assert len(payload) == len(sep_settings.PLUGINS)
+        assert len(payload) == len(sep_settings.APPS)
         assert set(payload[0]) == {
             "app_key",
             "enabled",
