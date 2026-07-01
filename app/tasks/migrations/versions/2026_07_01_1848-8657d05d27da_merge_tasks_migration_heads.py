@@ -25,14 +25,18 @@ from typing import Sequence, Union
 
 # revision identifiers, used by Alembic.
 revision: str = '8657d05d27da'
-down_revision: Union[str, None] = ('b2e5d8f0c3a4', 'b7e1c0a4d9f2', '60bf743eb469')
+down_revision: Union[str, Sequence[str], None] = (
+    'b2e5d8f0c3a4',
+    'b7e1c0a4d9f2',
+    '60bf743eb469',
+)
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    pass
+    """Merge the three tasks heads into one. No-op; no schema change."""
 
 
 def downgrade() -> None:
-    pass
+    """Unmerge the heads. No-op; a head merge has nothing to undo."""
