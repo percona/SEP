@@ -48,7 +48,7 @@ from app.sep.clients.pmm import (
 from app.sep.deps import get_session, require_bearer_for_unsafe_methods
 from app.sep.main import sep_app
 
-API_BASE = "/api/plugins/alerts"
+API_BASE = "/api/apps/alerts"
 BEARER_HEADERS = {"Authorization": "Bearer test-token"}
 
 
@@ -88,7 +88,7 @@ def api_client(test_client: TestClient, session: AsyncSession) -> TestClient:
 
     Set a default ``Authorization: Bearer`` header so requests satisfy the
     framework-level ``RequireBearerForUnsafeMethods`` guard on the
-    ``/api/plugins`` router — the guard inspects the raw request
+    ``/api/apps`` router — the guard inspects the raw request
     header, not the (overridden) user dep, so without this header cookie-only
     mutations would (correctly) 401.
     """
@@ -105,7 +105,7 @@ def cookie_only_api_client(
 
     Used to assert that mutating routes reject cookie-only callers (CSRF
     guard via framework-level ``RequireBearerForUnsafeMethods`` on the
-    ``/api/plugins`` router). The shared ``test_client`` fixture overrides
+    ``/api/apps`` router). The shared ``test_client`` fixture overrides
     the framework Bearer guard to a no-op so cookie auth works in tests; pop
     that override here so the real guard runs and the 401 path is exercised.
     """
@@ -1089,11 +1089,11 @@ def test_api_routes_mount_under_plugins_prefix():
     """Confirm every alerts JSON endpoint is registered in the OpenAPI spec."""
     paths = sep_app.openapi()["paths"]
     expected = {
-        "/api/plugins/alerts/backups",
-        "/api/plugins/alerts/backups/{backup_id}",
-        "/api/plugins/alerts/restore",
-        "/api/plugins/alerts/pagerduty",
-        "/api/plugins/alerts/pagerduty/delete",
-        "/api/plugins/alerts/push",
+        "/api/apps/alerts/backups",
+        "/api/apps/alerts/backups/{backup_id}",
+        "/api/apps/alerts/restore",
+        "/api/apps/alerts/pagerduty",
+        "/api/apps/alerts/pagerduty/delete",
+        "/api/apps/alerts/push",
     }
     assert expected.issubset(set(paths)), expected - set(paths)

@@ -15,7 +15,7 @@
 
 """HTTP integration tests for the report plugin JSON API routes.
 
-Mounted at ``/api/plugins/report/`` via ``apps_router`` in
+Mounted at ``/api/apps/report/`` via ``apps_router`` in
 ``app/sep/api/router.py``.
 """
 
@@ -33,7 +33,7 @@ from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.main import sep_app
 from tests.app.sep.apps.report.conftest import make_report
 
-API_BASE = "/api/plugins/report"
+API_BASE = "/api/apps/report"
 _API = "app.sep.apps.report.api_routes"
 
 
@@ -49,7 +49,7 @@ def mock_pmm_api():
 
 
 class TestReportConfigApi:
-    """Test GET /api/plugins/report/config."""
+    """Test GET /api/apps/report/config."""
 
     def test_returns_upload_disabled_reasons(self, test_client):
         """Default settings have upload disabled, so a reason is returned."""
@@ -68,7 +68,7 @@ class TestReportConfigApi:
 
 
 class TestReportGenerateJsonApi:
-    """Test GET /api/plugins/report/generate/json."""
+    """Test GET /api/apps/report/generate/json."""
 
     _JSON_URL = f"{API_BASE}/generate/json"
 
@@ -252,7 +252,7 @@ class TestReportGenerateJsonApi:
 
 
 class TestReportGeneratePdfApi:
-    """Test POST /api/plugins/report/generate/pdf."""
+    """Test POST /api/apps/report/generate/pdf."""
 
     _PDF_URL = f"{API_BASE}/generate/pdf"
 
@@ -359,7 +359,7 @@ class TestReportGeneratePdfApi:
 
 
 class TestReportUploadApi:
-    """Test POST /api/plugins/report/upload."""
+    """Test POST /api/apps/report/upload."""
 
     _UPLOAD_URL = f"{API_BASE}/upload"
 

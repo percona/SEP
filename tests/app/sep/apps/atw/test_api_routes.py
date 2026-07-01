@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the ATW plugin JSON API routes under /api/plugins/atw/."""
+"""Tests for the ATW plugin JSON API routes under /api/apps/atw/."""
 
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -48,7 +48,7 @@ def _mock_atw_snippet(
 
 
 class TestAtwListEndpoint:
-    """Tests for GET /api/plugins/atw/."""
+    """Tests for GET /api/apps/atw/."""
 
     def test_atw_list_returns_grouped_snippets(self, test_client: TestClient):
         """Ensure the listing endpoint groups mysql-tagged snippets under the MySQL root."""
@@ -64,7 +64,7 @@ class TestAtwListEndpoint:
             "app.sep.apps.atw.api_routes.SnippetManager.list",
             new=AsyncMock(return_value=[snippet]),
         ):
-            response = test_client.get("/api/plugins/atw/")
+            response = test_client.get("/api/apps/atw/")
 
         assert response.status_code == status.HTTP_200_OK
         assert "application/json" in response.headers["content-type"]
@@ -102,7 +102,7 @@ class TestAtwListEndpoint:
             "app.sep.apps.atw.api_routes.SnippetManager.list",
             new=AsyncMock(return_value=[snippet]),
         ):
-            response = test_client.get("/api/plugins/atw/")
+            response = test_client.get("/api/apps/atw/")
 
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -137,7 +137,7 @@ class TestAtwListEndpoint:
             "app.sep.apps.atw.api_routes.SnippetManager.list",
             new=AsyncMock(return_value=[mysql_snippet, mongo_snippet]),
         ):
-            response = test_client.get("/api/plugins/atw/")
+            response = test_client.get("/api/apps/atw/")
 
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -167,7 +167,7 @@ class TestAtwListEndpoint:
             "app.sep.apps.atw.api_routes.SnippetManager.list",
             new=AsyncMock(return_value=[snippet]),
         ):
-            response = test_client.get("/api/plugins/atw/")
+            response = test_client.get("/api/apps/atw/")
 
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -188,7 +188,7 @@ class TestAtwListEndpoint:
             "app.sep.apps.atw.api_routes.SnippetManager.list",
             new=AsyncMock(return_value=[snippet]),
         ):
-            response = test_client.get("/api/plugins/atw/")
+            response = test_client.get("/api/apps/atw/")
 
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -211,7 +211,7 @@ class TestAtwListEndpoint:
             "app.sep.apps.atw.api_routes.SnippetManager.list",
             new=AsyncMock(return_value=[snippet]),
         ):
-            response = test_client.get("/api/plugins/atw/")
+            response = test_client.get("/api/apps/atw/")
 
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -233,7 +233,7 @@ class TestAtwListEndpoint:
             "app.sep.apps.atw.api_routes.SnippetManager.list",
             new=AsyncMock(return_value=[snippet]),
         ):
-            response = test_client.get("/api/plugins/atw/")
+            response = test_client.get("/api/apps/atw/")
 
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
@@ -262,7 +262,7 @@ class TestAtwListEndpoint:
                 new=AsyncMock(return_value=[snippet]),
             ),
         ):
-            response = test_client.get("/api/plugins/atw/")
+            response = test_client.get("/api/apps/atw/")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
@@ -277,7 +277,7 @@ class TestAtwListEndpoint:
     ) -> None:
         """Ensure unauthenticated callers receive JSON 401."""
         response = unauthenticated_client.get(
-            "/api/plugins/atw/",
+            "/api/apps/atw/",
             follow_redirects=False,
         )
 
@@ -286,14 +286,14 @@ class TestAtwListEndpoint:
 
 
 class TestAtwSchemaEndpoint:
-    """Tests for GET /api/plugins/atw/schema."""
+    """Tests for GET /api/apps/atw/schema."""
 
     def test_atw_schema_requires_authentication(
         self, unauthenticated_client: TestClient
     ) -> None:
         """Ensure unauthenticated callers receive JSON 401 (mirrors list endpoint)."""
         response = unauthenticated_client.get(
-            "/api/plugins/atw/schema",
+            "/api/apps/atw/schema",
             follow_redirects=False,
         )
 
@@ -302,7 +302,7 @@ class TestAtwSchemaEndpoint:
 
     def test_atw_schema_returns_plugin_name(self, test_client: TestClient):
         """Ensure the schema endpoint serves the ATW plugin schema."""
-        response = test_client.get("/api/plugins/atw/schema")
+        response = test_client.get("/api/apps/atw/schema")
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -313,7 +313,7 @@ class TestAtwSchemaEndpoint:
         self, test_client: TestClient
     ) -> None:
         """Verify the Category Browser section exposes fail_when for parent/category pairs."""
-        response = test_client.get("/api/plugins/atw/schema")
+        response = test_client.get("/api/apps/atw/schema")
 
         assert response.status_code == status.HTTP_200_OK
         section = response.json()["forms"][0]

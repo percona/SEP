@@ -252,7 +252,7 @@ def build_dipper_form_schema(
             ScriptPreviewField(
                 name=_SCRIPT_PREVIEW_FIELD_NAME,
                 label="Script preview",
-                endpoint_url=f"/plugins/dipper/script-preview?{preview_query}",
+                endpoint_url=f"/apps/dipper/script-preview?{preview_query}",
             ),
         )
     )

@@ -261,7 +261,7 @@ def _iter_route_signatures(registry: Iterable["BaseApp"]) -> Iterator[tuple[str,
     """Yield the ``(mounted_path, method)`` signature of every registry route.
 
     :param registry: The apps to walk (the ``AppRegistry`` is one such iterable).
-    :yield: Each ``("/api/plugins/{key}{path}", method)`` pair.
+    :yield: Each ``("/api/apps/{key}{path}", method)`` pair.
     """
     for app in registry:
         router = app.api_router
@@ -272,7 +272,7 @@ def _iter_route_signatures(registry: Iterable["BaseApp"]) -> Iterator[tuple[str,
             if path is None:
                 continue
             for method in getattr(route, "methods", None) or ():
-                yield (f"/api/plugins/{app.key}{path}", method)
+                yield (f"/api/apps/{app.key}{path}", method)
 
 
 def check_route_collisions(registry: Iterable["BaseApp"]) -> list[str]:

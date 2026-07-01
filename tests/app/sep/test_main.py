@@ -775,7 +775,7 @@ class TestAppStateGuards:
             path = getattr(route, "path", "")
             for key in guarded_keys:
                 if (
-                    path.startswith(f"/plugins/{key}/") or path == f"/plugins/{key}"
+                    path.startswith(f"/apps/{key}/") or path == f"/apps/{key}"
                 ) and _route_has_app_guard(route):
                     seen.add(key)
         assert guarded_keys <= seen

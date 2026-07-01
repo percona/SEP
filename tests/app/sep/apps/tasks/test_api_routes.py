@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the tasks plugin JSON API routes under /api/plugins/tasks/."""
+"""Tests for the tasks plugin JSON API routes under /api/apps/tasks/."""
 
 from datetime import datetime, UTC
 from typing import Any
@@ -33,7 +33,7 @@ from app.tasks.models import (
 )
 from tests.app.factories import TaskFactory
 
-API_BASE = "/api/plugins/tasks"
+API_BASE = "/api/apps/tasks"
 EXPECTED_TEMPLATE_DETAIL_CALLS = 2
 
 
@@ -50,7 +50,7 @@ def build_task_payload(**overrides: Any) -> dict:
 
 
 class TestTasksAppSchemaEndpoint:
-    """Tests for GET /api/plugins/tasks/schema."""
+    """Tests for GET /api/apps/tasks/schema."""
 
     def test_schema_returns_200(self, test_client):
         """Ensure the schema endpoint returns HTTP 200 with JSON content."""
@@ -88,7 +88,7 @@ class TestTasksAppSchemaEndpoint:
 
 
 class TestTasksPluginListEndpoint:
-    """Tests for GET /api/plugins/tasks/."""
+    """Tests for GET /api/apps/tasks/."""
 
     @pytest.fixture(autouse=True)
     def _mock_username_mapping(self):
@@ -169,7 +169,7 @@ class TestTasksPluginListEndpoint:
 
 
 class TestTasksPluginDetailEndpoint:
-    """Tests for GET /api/plugins/tasks/{task_name}."""
+    """Tests for GET /api/apps/tasks/{task_name}."""
 
     def test_detail_returns_bundle(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep

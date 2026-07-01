@@ -20,7 +20,7 @@ schema describes the snippet list view but declares no forms (snippets are
 discovered by ``update_snippets()`` rather than created via this API). The
 per-snippet schema is synthesised at request time from the snippet's YAML
 frontmatter and served at
-``GET /api/plugins/snippets/snippet/schema?snippet_filename=...``.
+``GET /api/apps/snippets/snippet/schema?snippet_filename=...``.
 """
 
 __all__ = [
@@ -319,7 +319,7 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
                         name=_SCRIPT_PREVIEW_FIELD_NAME,
                         label="Snippet file",
                         endpoint_url=(
-                            "/plugins/snippets/snippet/preview?"
+                            "/apps/snippets/snippet/preview?"
                             + urlencode({"snippet_filename": snippet.filename})
                         ),
                     ),

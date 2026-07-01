@@ -24,7 +24,7 @@ from app.core.utils.fields import NonEmptyStr
 
 
 class PushRequest(BaseModel):
-    """Describe the request body for ``POST /api/plugins/alerts/push``.
+    """Describe the request body for ``POST /api/apps/alerts/push``.
 
     :param selected_templates: Names of templates to push to PMM. Must be a
         non-empty list of non-empty strings.
@@ -61,7 +61,7 @@ class PushResponse(BaseModel):
 
 
 class RestoreRequest(BaseModel):
-    """Describe the request body for ``POST /api/plugins/alerts/restore``.
+    """Describe the request body for ``POST /api/apps/alerts/restore``.
 
     :param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`
         row to restore from. Must be a positive integer.
@@ -177,7 +177,7 @@ class BackupDetail(BaseModel):
 
 
 class PagerDutyRequest(BaseModel):
-    """Describe the request body for ``POST /api/plugins/alerts/pagerduty``.
+    """Describe the request body for ``POST /api/apps/alerts/pagerduty``.
 
     :param integration_key: The PagerDuty integration key. Must be non-empty
         after stripping whitespace.
@@ -274,7 +274,7 @@ class IndexBackupSummary(BaseModel):
 
 
 class IndexResponse(BaseModel):
-    """Describe the response body for ``GET /api/plugins/alerts/``.
+    """Describe the response body for ``GET /api/apps/alerts/``.
 
     Aggregate everything the React list page needs in a single call: the alert
     templates grouped by service type, whether PMM is reachable, the PagerDuty

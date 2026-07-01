@@ -17,7 +17,7 @@
 
 The registry discovers the exported ``app`` under the scoped key
 ``mysql_backups/restore`` (derived from the module path), mounting its derived
-JSON router at ``/api/plugins/mysql_backups/restore/`` while the existing Jinja
+JSON router at ``/api/apps/mysql_backups/restore/`` while the existing Jinja
 UI keeps serving at ``/mysql_backups/restores/`` via the threaded
 ``jinja_router``. Because a restore legitimately has no destination service for
 XtraBackup / Binlog and tolerates a 404 fallback, the create payload is built by

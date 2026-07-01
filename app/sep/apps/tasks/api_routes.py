@@ -15,7 +15,7 @@
 
 """Define the read-only JSON API router for the Tasks plugin.
 
-Mounted at ``/api/plugins/tasks/`` via ``apps_router`` in
+Mounted at ``/api/apps/tasks/`` via ``apps_router`` in
 ``app/sep/api/router.py``. List and detail handlers proxy the tasks HTTP API
 through ``TaskAPI``, mirroring the legacy Jinja routes in
 ``app.sep.apps.tasks.routes``.

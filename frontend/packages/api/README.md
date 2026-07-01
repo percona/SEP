@@ -66,7 +66,7 @@ setOnUnauthorized(() => redirectToLogin());
 import { apiClient, ApiError } from '@sep/api';
 
 try {
-  const { data } = await apiClient.get('/plugins/checksums/');
+  const { data } = await apiClient.get('/apps/checksums/');
 } catch (err) {
   if (err instanceof ApiError && err.status === 404) {
     // handle not found
@@ -163,7 +163,7 @@ export function useChecksumTask(name: string) {
     queryKey: ['checksums', name],
     queryFn: () =>
       throwOnApiError(
-        sepApi.GET('/api/plugins/checksums/{task_name}', {
+        sepApi.GET('/api/apps/checksums/{task_name}', {
           params: { path: { task_name: name } },
         }),
       ),

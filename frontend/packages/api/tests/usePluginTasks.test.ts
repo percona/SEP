@@ -57,24 +57,24 @@ describe('buildEntityItemPath', () => {
     // A backend bug or attacker-controlled id with "/" or ".." would otherwise
     // change which resource (or even which plugin) the request targets.
     expect(buildEntityItemPath('mysql_backups', 'backups', '../secret')).toBe(
-      '/plugins/mysql_backups/backups/..%2Fsecret',
+      '/apps/mysql_backups/backups/..%2Fsecret',
     );
     expect(buildEntityItemPath('mysql_backups', 'backups', 'a/b')).toBe(
-      '/plugins/mysql_backups/backups/a%2Fb',
+      '/apps/mysql_backups/backups/a%2Fb',
     );
   });
 
   it('encodes whitespace, unicode, and reserved characters', () => {
-    expect(buildEntityItemPath('p', 'e', 'a b')).toBe('/plugins/p/e/a%20b');
-    expect(buildEntityItemPath('p', 'e', '#frag')).toBe('/plugins/p/e/%23frag');
-    expect(buildEntityItemPath('p', 'e', '?q=1')).toBe('/plugins/p/e/%3Fq%3D1');
-    expect(buildEntityItemPath('p', 'e', 'café')).toBe('/plugins/p/e/caf%C3%A9');
+    expect(buildEntityItemPath('p', 'e', 'a b')).toBe('/apps/p/e/a%20b');
+    expect(buildEntityItemPath('p', 'e', '#frag')).toBe('/apps/p/e/%23frag');
+    expect(buildEntityItemPath('p', 'e', '?q=1')).toBe('/apps/p/e/%3Fq%3D1');
+    expect(buildEntityItemPath('p', 'e', 'café')).toBe('/apps/p/e/caf%C3%A9');
   });
 
   it('passes bare alphanumeric / UUID ids through unchanged', () => {
-    expect(buildEntityItemPath('p', 'e', '42')).toBe('/plugins/p/e/42');
+    expect(buildEntityItemPath('p', 'e', '42')).toBe('/apps/p/e/42');
     expect(buildEntityItemPath('p', 'e', '550e8400-e29b-41d4-a716-446655440000')).toBe(
-      '/plugins/p/e/550e8400-e29b-41d4-a716-446655440000',
+      '/apps/p/e/550e8400-e29b-41d4-a716-446655440000',
     );
   });
 });

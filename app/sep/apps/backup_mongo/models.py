@@ -569,7 +569,7 @@ class BackupExecuteWrite(BaseModel):
 
 
 class BackupExecutionResponse(BaseModel):
-    """Represent the response from POST /api/plugins/backup_mongo/{task_name}/execute.
+    """Represent the response from POST /api/apps/backup_mongo/{task_name}/execute.
 
     :param task_name: The name of the task that was executed.
     :type task_name: str

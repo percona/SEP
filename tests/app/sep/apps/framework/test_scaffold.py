@@ -102,7 +102,7 @@ def _task_conformance(app: TaskExecutionApp) -> list[str]:
 
 def _mount_api_first(app_def: BaseApp, user: CasdoorUser) -> TestClient:
     """Mount a ``BaseApp``'s API router behind the production auth guard."""
-    apps_router = APIRouter(prefix="/plugins")
+    apps_router = APIRouter(prefix="/apps")
     apps_router.include_router(app_def.api_router, prefix=app_def.uri_path)
     api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
     api_router.include_router(apps_router)
@@ -333,7 +333,5 @@ def test_base_flavor_scaffolds_api_first_app(
 
         client = _mount_api_first(app, regular_user)
 
-        assert (
-            client.get(f"/api/plugins/{name}/schema").status_code == status.HTTP_200_OK
-        )
-        assert client.get(f"/api/plugins/{name}/").status_code == status.HTTP_200_OK
+        assert client.get(f"/api/apps/{name}/schema").status_code == status.HTTP_200_OK
+        assert client.get(f"/api/apps/{name}/").status_code == status.HTTP_200_OK

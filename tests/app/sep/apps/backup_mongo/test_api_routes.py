@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the backup_mongo plugin JSON API routes under /api/plugins/backup_mongo/."""
+"""Tests for the backup_mongo plugin JSON API routes under /api/apps/backup_mongo/."""
 
 from typing import Any
 from unittest.mock import AsyncMock, call
@@ -28,7 +28,7 @@ from app.sep.inventory import CreatedService
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import TaskFactory
 
-API_BASE = "/api/plugins/backup_mongo"
+API_BASE = "/api/apps/backup_mongo"
 EXPECTED_CASCADE_POSTS = 4
 DEFAULT_PAGE_LIMIT = 50
 THREE_PARENT_FIXTURE_TOTAL = 3
@@ -104,7 +104,7 @@ def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
 
 
 class TestBackupMongoAppSchemaEndpoint:
-    """Tests for GET /api/plugins/backup_mongo/schema."""
+    """Tests for GET /api/apps/backup_mongo/schema."""
 
     def test_schema_returns_200(self, test_client):
         """Ensure the schema endpoint returns HTTP 200 with JSON content."""
@@ -155,7 +155,7 @@ def build_execute_response(
 
 
 class TestBackupMongoApiList:
-    """Tests for GET /api/plugins/backup_mongo/."""
+    """Tests for GET /api/apps/backup_mongo/."""
 
     def test_list_returns_parent_tasks_only(
         self, test_client, mock_task_api_dep
@@ -313,7 +313,7 @@ class TestBackupMongoApiList:
 
 
 class TestBackupMongoApiCreate:
-    """Tests for POST /api/plugins/backup_mongo/."""
+    """Tests for POST /api/apps/backup_mongo/."""
 
     def test_create_posts_parent_and_derived_tasks(
         self,
@@ -428,7 +428,7 @@ class TestBackupMongoApiCreate:
 
 
 class TestBackupMongoApiDetail:
-    """Tests for GET /api/plugins/backup_mongo/{task_name}."""
+    """Tests for GET /api/apps/backup_mongo/{task_name}."""
 
     def test_detail_includes_derived_tasks(
         self, test_client, mock_task_api_dep
@@ -535,7 +535,7 @@ class TestBackupMongoApiDetail:
 
 
 class TestBackupMongoApiDelete:
-    """Tests for DELETE /api/plugins/backup_mongo/{task_name}."""
+    """Tests for DELETE /api/apps/backup_mongo/{task_name}."""
 
     def test_delete_removes_parent_and_all_derived_tasks(
         self, test_client, mock_task_api_dep
@@ -576,7 +576,7 @@ class TestBackupMongoApiDelete:
 
 
 class TestBackupMongoApiExecute:
-    """Tests for POST /api/plugins/backup_mongo/{task_name}/execute."""
+    """Tests for POST /api/apps/backup_mongo/{task_name}/execute."""
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_execute_returns_201_with_task_name_and_id(

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the dipper plugin JSON API routes under /api/plugins/dipper/."""
+"""Tests for the dipper plugin JSON API routes under /api/apps/dipper/."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -28,7 +28,7 @@ from app.sep.apps.dipper.deps import get_pmm_api
 from app.sep.deps import BEARER_REQUIRED_DETAIL
 from app.sep.main import sep_app
 
-API_BASE = "/api/plugins/dipper"
+API_BASE = "/api/apps/dipper"
 FAKE_TASK_ID = 99
 
 
@@ -58,7 +58,7 @@ def build_fake_service(
 
 
 class TestDipperSchemaEndpoint:
-    """Tests for ``GET /api/plugins/dipper/schema``."""
+    """Tests for ``GET /api/apps/dipper/schema``."""
 
     def test_schema_returns_200(self, test_client):
         """Schema endpoint returns HTTP 200 with JSON content."""
@@ -97,7 +97,7 @@ class TestDipperSchemaEndpoint:
 
 
 class TestDipperListEndpoint:
-    """Tests for ``GET /api/plugins/dipper/``."""
+    """Tests for ``GET /api/apps/dipper/``."""
 
     def test_list_returns_dipper_history_rows(self, test_client, mock_task_api_dep):
         """List endpoint returns task-history rows filtered to Dipper executions."""
@@ -173,7 +173,7 @@ class TestDipperListEndpoint:
 
 
 class TestDipperFormSchemaEndpoint:
-    """Tests for ``GET /api/plugins/dipper/form-schema``."""
+    """Tests for ``GET /api/apps/dipper/form-schema``."""
 
     def test_mysql_environment_schema_contains_payload_fields(
         self, test_client, mock_inventory_api_dep, mock_task_api_dep
@@ -400,7 +400,7 @@ class TestDipperFormSchemaEndpoint:
 
 
 class TestDipperScriptPreviewEndpoint:
-    """Tests for ``GET /api/plugins/dipper/script-preview``."""
+    """Tests for ``GET /api/apps/dipper/script-preview``."""
 
     def test_preview_returns_content_for_mysql_environment(
         self, test_client, mock_inventory_api_dep
@@ -517,7 +517,7 @@ class TestDipperBearerGate:
 
 
 class TestDipperExecuteEndpoint:
-    """Tests for ``POST /api/plugins/dipper/``."""
+    """Tests for ``POST /api/apps/dipper/``."""
 
     def test_execute_returns_201(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep

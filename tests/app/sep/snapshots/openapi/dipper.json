@@ -883,7 +883,7 @@
         "type": "object"
       },
       "DipperExecuteWrite": {
-        "description": "Define the JSON body for ``POST /api/plugins/dipper/``.\n\n:param service_id: Inventory ID of the database service to collect data from.\n:type service_id: int\n:param collector_type: Which collector script to run (environment or pmm).\n:type collector_type: CollectorTypeEnum\n:param executor_host: Nomad client hostname that will run the script.\n:type executor_host: NonEmptyStr\n:param sudo: Whether to invoke the script with ``sudo``. ``None`` defers\n    to the script's own sudo policy (the default).\n:type sudo: bool | None\n:param args: Per-parameter arguments keyed by script parameter name. Validated\n    server-side against the script's dynamic execution model.\n:type args: dict[str, Any]",
+        "description": "Define the JSON body for ``POST /api/apps/dipper/``.\n\n:param service_id: Inventory ID of the database service to collect data from.\n:type service_id: int\n:param collector_type: Which collector script to run (environment or pmm).\n:type collector_type: CollectorTypeEnum\n:param executor_host: Nomad client hostname that will run the script.\n:type executor_host: NonEmptyStr\n:param sudo: Whether to invoke the script with ``sudo``. ``None`` defers\n    to the script's own sudo policy (the default).\n:type sudo: bool | None\n:param args: Per-parameter arguments keyed by script parameter name. Validated\n    server-side against the script's dynamic execution model.\n:type args: dict[str, Any]",
         "properties": {
           "args": {
             "title": "Args",
@@ -922,7 +922,7 @@
         "type": "object"
       },
       "DipperExecutionResponse": {
-        "description": "Represent the response from ``POST /api/plugins/dipper/``.\n\n:param task_id: ID of the task-history row created by the tasks API.\n:type task_id: int | None\n:param task_name: The execution task name used to dispatch the script.\n:type task_name: str\n:param snippet_filename: Composite path used to correlate history rows.\n:type snippet_filename: str\n:param service_id: Inventory ID of the database service.\n:type service_id: int\n:param collector_type: Collector type that was executed.\n:type collector_type: CollectorTypeEnum",
+        "description": "Represent the response from ``POST /api/apps/dipper/``.\n\n:param task_id: ID of the task-history row created by the tasks API.\n:type task_id: int | None\n:param task_name: The execution task name used to dispatch the script.\n:type task_name: str\n:param snippet_filename: Composite path used to correlate history rows.\n:type snippet_filename: str\n:param service_id: Inventory ID of the database service.\n:type service_id: int\n:param collector_type: Collector type that was executed.\n:type collector_type: CollectorTypeEnum",
         "properties": {
           "collector_type": {
             "$ref": "#/components/schemas/CollectorTypeEnum"
@@ -2021,7 +2021,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -2774,16 +2774,16 @@
     }
   },
   "paths": {
-    "/api/plugins/dipper/": {
+    "/api/apps/dipper/": {
       "get": {
         "description": "Return Dipper execution history rows.\n\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: RemoteAPI\n:return: Paginated task-history response filtered to Dipper runs.\n:rtype: dict[str, Any]",
-        "operationId": "dipper_dipper_api_list_api_plugins_dipper__get",
+        "operationId": "dipper_dipper_api_list_api_apps_dipper__get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Dipper Dipper Api List Api Plugins Dipper  Get",
+                  "title": "Response Dipper Dipper Api List Api Apps Dipper  Get",
                   "type": "object"
                 }
               }
@@ -2798,7 +2798,7 @@
       },
       "post": {
         "description": "Execute a Dipper collector script against a database service.\n\nDelegates all script resolution, PMM defaults merging, argument\nvalidation, and metadata assembly to ``build_dipper_execution_meta``.\n\n:param request: The HTTP request (used to derive the artifact download URL).\n:type request: Request\n:param body: Validated JSON request body.\n:type body: DipperExecuteWrite\n:param inventory_api: Async client for the inventory sub-app.\n:type inventory_api: RemoteAPI\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: RemoteAPI\n:return: Execution response with the created task identifier.\n:rtype: DipperExecutionResponse\n:raises HTTPNotFoundException: When the service does not exist.\n:raises HTTPUnprocessableEntityException: When the script/args are invalid.",
-        "operationId": "dipper_dipper_api_execute_api_plugins_dipper__post",
+        "operationId": "dipper_dipper_api_execute_api_apps_dipper__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2837,10 +2837,10 @@
         ]
       }
     },
-    "/api/plugins/dipper/form-schema": {
+    "/api/apps/dipper/form-schema": {
       "get": {
         "description": "Return the selected Dipper payload's dynamic execution schema.\n\n:param service_id: Inventory ID of the database service.\n:type service_id: int\n:param collector_type: Which collector variant to render.\n:type collector_type: CollectorTypeEnum\n:param inventory_api: Async client for the inventory sub-app.\n:type inventory_api: RemoteAPI\n:param executor_hosts: Available executor hosts keyed by hostname.\n:type executor_hosts: dict\n:param pmm_api: The configured PMM API client, or ``None`` when PMM is not\n    configured (injected via ``PMMAPIDep``).\n:type pmm_api: PMMRemoteAPI | None\n:return: Context-specific schema including payload parameters.",
-        "operationId": "dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get",
+        "operationId": "dipper_dipper_api_form_schema_api_apps_dipper_form_schema_get",
         "parameters": [
           {
             "in": "query",
@@ -2888,10 +2888,10 @@
         ]
       }
     },
-    "/api/plugins/dipper/schema": {
+    "/api/apps/dipper/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "dipper_get_schema_api_plugins_dipper_schema_get",
+        "operationId": "dipper_get_schema_api_apps_dipper_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -2910,10 +2910,10 @@
         ]
       }
     },
-    "/api/plugins/dipper/script-preview": {
+    "/api/apps/dipper/script-preview": {
       "get": {
         "description": "Return a preview of the collector script for the given service.\n\n:param service_id: Inventory ID of the database service.\n:type service_id: int\n:param collector_type: Which collector variant to preview.\n:type collector_type: CollectorTypeEnum\n:param inventory_api: Async client for the inventory sub-app.\n:type inventory_api: RemoteAPI\n:return: Preview content alongside language and truncation metadata.\n:rtype: ScriptPreviewResponse\n:raises HTTPNotFoundException: When the service does not exist.\n:raises HTTPUnprocessableEntityException: When no script is available for\n    the service/collector combination, or when the script contains\n    non-UTF-8 bytes.",
-        "operationId": "dipper_dipper_api_script_preview_api_plugins_dipper_script_preview_get",
+        "operationId": "dipper_dipper_api_script_preview_api_apps_dipper_script_preview_get",
         "parameters": [
           {
             "in": "query",

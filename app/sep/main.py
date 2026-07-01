@@ -80,7 +80,6 @@ from app.tasks.config import tasks_settings
 logger = logging.getLogger(__name__)
 
 JSON_API_PATH_PREFIXES: tuple[str, ...] = (
-    "/api/plugins/",
     "/api/sep/",
     "/api/admin/",
     "/api/apps/",

@@ -260,7 +260,7 @@ async def require_bearer_for_unsafe_methods(request: Request) -> None:
     require ``Authorization: Bearer ...``; cookie-authenticated cross-site
     JSON mutations are rejected with ``401`` before any business logic runs.
 
-    Intended to be attached at router level to ``/api/plugins/*`` so every
+    Intended to be attached at router level to ``/api/apps/*`` so every
     plugin's JSON mutation routes inherit the guard uniformly.
 
     :param request: The incoming HTTP request.

@@ -84,7 +84,7 @@ async def test_per_snippet_schema_includes_host_and_preview(create_snippet):
     )
     assert preview.label == "Snippet file"
     assert preview.endpoint_url == (
-        "/plugins/snippets/snippet/preview?"
+        "/apps/snippets/snippet/preview?"
         + urlencode({"snippet_filename": snippet.filename})
     )
 
@@ -101,11 +101,11 @@ async def test_per_snippet_schema_url_encodes_nested_filenames(create_snippet):
         f for f in preview_section.fields if isinstance(f, ScriptPreviewField)
     )
     assert preview.endpoint_url == (
-        "/plugins/snippets/snippet/preview?"
+        "/apps/snippets/snippet/preview?"
         + urlencode({"snippet_filename": snippet.filename})
     )
     path, _, _query = preview.endpoint_url.partition("?")
-    assert path == "/plugins/snippets/snippet/preview"
+    assert path == "/apps/snippets/snippet/preview"
     assert "%2F" not in path
     assert "diag" not in path
     assert "slow-query" not in path

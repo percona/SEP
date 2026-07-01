@@ -65,7 +65,7 @@ from tests.app.sep.apps.framework.contract_suite import routes_of as _routes
 
 _OWNER = TaskOwner.ARCHIVER
 _PREFIX = "/fixture-scripts"
-_BASE = f"/api/plugins{_PREFIX}"
+_BASE = f"/api/apps{_PREFIX}"
 _TASK_NAME = "run-bash"
 _SCRIPT_PARAMS: dict[str, dict[str, type]] = {
     "report.sh": {"database": str, "count": int},

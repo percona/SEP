@@ -156,7 +156,7 @@ class ScriptPreviewResponse(BaseModel):
 
 
 class SnippetBatchApproveRequest(BaseModel):
-    """Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.
+    """Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.
 
     Unlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`
     twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI

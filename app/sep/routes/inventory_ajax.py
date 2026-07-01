@@ -16,7 +16,7 @@
 """Define legacy AJAX proxy routes for inventory API schema/table data.
 
 Serve dynamic dropdown data to Jinja2 forms that predate the shared
-``/api/plugins/*`` surface. New plugin API endpoints should register under
+``/api/apps/*`` surface. New plugin API endpoints should register under
 ``app/sep/api/router.py`` instead of being added here.
 """
 

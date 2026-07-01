@@ -101,17 +101,17 @@ def build_backup_write_body(
 
 
 class TestSchemaEndpoint:
-    """Tests for GET /api/plugins/mysql_backups/schema."""
+    """Tests for GET /api/apps/mysql_backups/schema."""
 
     def test_schema_returns_200(self, test_client):
         """The schema endpoint returns 200 and JSON content."""
-        response = test_client.get("/api/plugins/mysql_backups/schema")
+        response = test_client.get("/api/apps/mysql_backups/schema")
         assert response.status_code == status.HTTP_200_OK
         assert "application/json" in response.headers["content-type"]
 
     def test_schema_contains_plugin_name(self, test_client):
         """Body carries the plugin name."""
-        response = test_client.get("/api/plugins/mysql_backups/schema")
+        response = test_client.get("/api/apps/mysql_backups/schema")
         assert response.json()["name"] == "mysql_backups"
 
     def test_schema_capabilities(self, test_client):
@@ -120,9 +120,7 @@ class TestSchemaEndpoint:
         ``stats`` is the framework default (``False``); MySQL Backups does not
         render an aggregated execution-stats card today.
         """
-        caps = test_client.get("/api/plugins/mysql_backups/schema").json()[
-            "capabilities"
-        ]
+        caps = test_client.get("/api/apps/mysql_backups/schema").json()["capabilities"]
         assert caps == {
             "chaining": True,
             "alert_on_fail": True,
@@ -133,19 +131,19 @@ class TestSchemaEndpoint:
 
     def test_schema_includes_backup_type_field(self, test_client):
         """The mode-discriminator field is present."""
-        body = test_client.get("/api/plugins/mysql_backups/schema").json()
+        body = test_client.get("/api/apps/mysql_backups/schema").json()
         names = {f["name"] for s in body["forms"] for f in s["fields"]}
         assert "backup_type" in names
         assert "upload" in names
 
     def test_schema_anonymous_returns_401(self, unauthenticated_client):
         """Anonymous schema fetch is rejected by IsApiAuthenticated."""
-        response = unauthenticated_client.get("/api/plugins/mysql_backups/schema")
+        response = unauthenticated_client.get("/api/apps/mysql_backups/schema")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 class TestListEndpoint:
-    """Tests for GET /api/plugins/mysql_backups/."""
+    """Tests for GET /api/apps/mysql_backups/."""
 
     def test_list_returns_data(self, test_client, mock_task_api_dep):
         """The list endpoint returns the registered backups tasks."""
@@ -156,7 +154,7 @@ class TestListEndpoint:
         mock_task_api_dep.post = AsyncMock(
             return_value={task["name"]: TaskHistoryStatusEnum.SUCCESS.value}
         )
-        response = test_client.get("/api/plugins/mysql_backups/")
+        response = test_client.get("/api/apps/mysql_backups/")
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["total"] == 1
@@ -179,7 +177,7 @@ class TestListEndpoint:
             "offset": 0,
             "limit": 50,
         }
-        response = test_client.get("/api/plugins/mysql_backups/")
+        response = test_client.get("/api/apps/mysql_backups/")
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["items"] == []
@@ -191,7 +189,7 @@ class TestListEndpoint:
             return_value={"items": [], "total": 0, "offset": 25, "limit": 10}
         )
         mock_task_api_dep.get = mock_get
-        response = test_client.get("/api/plugins/mysql_backups/?offset=25&limit=10")
+        response = test_client.get("/api/apps/mysql_backups/?offset=25&limit=10")
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["offset"] == 25  # noqa: PLR2004
@@ -210,13 +208,13 @@ class TestListEndpoint:
     ):
         """Negative/zero/oversized pagination params are rejected with 422."""
         mock_task_api_dep.get = AsyncMock()
-        response = test_client.get(f"/api/plugins/mysql_backups/?{query}")
+        response = test_client.get(f"/api/apps/mysql_backups/?{query}")
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_called()
 
 
 class TestDetailEndpoint:
-    """Tests for GET /api/plugins/mysql_backups/{task_name}."""
+    """Tests for GET /api/apps/mysql_backups/{task_name}."""
 
     def test_detail_returns_task(self, test_client, mock_task_api_dep):
         """The detail endpoint returns a single backup task."""
@@ -227,7 +225,7 @@ class TestDetailEndpoint:
                 {"items": [], "total": 0, "offset": 0, "limit": 50},
             ]
         )
-        response = test_client.get(f"/api/plugins/mysql_backups/{task['name']}")
+        response = test_client.get(f"/api/apps/mysql_backups/{task['name']}")
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["name"] == task["name"]
@@ -241,7 +239,7 @@ class TestDetailEndpoint:
 
         sep_app.dependency_overrides[get_backups_task] = _raise_not_found
         try:
-            response = test_client.get("/api/plugins/mysql_backups/nope")
+            response = test_client.get("/api/apps/mysql_backups/nope")
         finally:
             sep_app.dependency_overrides.pop(get_backups_task, None)
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -254,14 +252,14 @@ class TestDetailEndpoint:
 
         sep_app.dependency_overrides[get_backups_task] = _raise_not_found
         try:
-            response = test_client.get("/api/plugins/mysql_backups/some-checksums-task")
+            response = test_client.get("/api/apps/mysql_backups/some-checksums-task")
         finally:
             sep_app.dependency_overrides.pop(get_backups_task, None)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
 class TestCreateEndpoint:
-    """Tests for POST /api/plugins/mysql_backups/."""
+    """Tests for POST /api/apps/mysql_backups/."""
 
     def test_create_returns_201(
         self, test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
@@ -276,7 +274,7 @@ class TestCreateEndpoint:
             service_id=created_service.id, backup_type=BackupType.MYDUMPER
         )
         response = test_client.post(
-            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_201_CREATED, response.text
         assert response.json()["name"] == task["name"]
@@ -296,7 +294,7 @@ class TestCreateEndpoint:
             xtrabackup_extra_args="--no-version-check",
         )
         response = test_client.post(
-            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_201_CREATED
 
@@ -315,7 +313,7 @@ class TestCreateEndpoint:
             binlog_prefix="bp",
         )
         response = test_client.post(
-            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_201_CREATED
 
@@ -332,7 +330,7 @@ class TestCreateEndpoint:
             xtrabackup_extra_args="--foo",
         )
         response = test_client.post(
-            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
@@ -349,7 +347,7 @@ class TestCreateEndpoint:
             encryption_recipient="ops@example.com",
         )
         response = test_client.post(
-            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
@@ -359,7 +357,7 @@ class TestCreateEndpoint:
     ):
         """Empty body returns 422 (required fields missing)."""
         response = test_client.post(
-            "/api/plugins/mysql_backups/", json={}, headers=BEARER_HEADERS
+            "/api/apps/mysql_backups/", json={}, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
@@ -381,7 +379,7 @@ class TestCreateEndpoint:
         )
         body["upload"] = []
         response = test_client.post(
-            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
@@ -406,7 +404,7 @@ class TestCreateEndpoint:
             s3_bucket="bkt",
         )
         response = test_client.post(
-            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
@@ -432,7 +430,7 @@ class TestCreateEndpoint:
             skip_s3_safety_check=True,
         )
         response = test_client.post(
-            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
@@ -459,7 +457,7 @@ class TestCreateEndpoint:
         # Drop the S3 destination field carried by the default body.
         body.pop("s3_bucket", None)
         response = test_client.post(
-            "/api/plugins/mysql_backups/", json=body, headers=BEARER_HEADERS
+            "/api/apps/mysql_backups/", json=body, headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_201_CREATED, response.text
 
@@ -468,12 +466,12 @@ class TestCreateEndpoint:
     ):
         """Anonymous create is rejected by IsApiAuthenticated."""
         body = build_backup_write_body()
-        response = unauthenticated_client.post("/api/plugins/mysql_backups/", json=body)
+        response = unauthenticated_client.post("/api/apps/mysql_backups/", json=body)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 class TestDeleteEndpoint:
-    """Tests for DELETE /api/plugins/mysql_backups/{task_name}."""
+    """Tests for DELETE /api/apps/mysql_backups/{task_name}."""
 
     def test_delete_returns_204(self, test_client, mock_task_api_dep):
         """Successful delete returns 204."""
@@ -481,7 +479,7 @@ class TestDeleteEndpoint:
         mock_task_api_dep.get = AsyncMock(return_value=task)
         mock_task_api_dep.delete = AsyncMock()
         response = test_client.delete(
-            f"/api/plugins/mysql_backups/{task['name']}", headers=BEARER_HEADERS
+            f"/api/apps/mysql_backups/{task['name']}", headers=BEARER_HEADERS
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
         mock_task_api_dep.delete.assert_awaited_once_with(f"/{task['name']}")
@@ -495,7 +493,7 @@ class TestDeleteEndpoint:
         sep_app.dependency_overrides[get_backups_task] = _raise_not_found
         try:
             response = test_client.delete(
-                "/api/plugins/mysql_backups/nope", headers=BEARER_HEADERS
+                "/api/apps/mysql_backups/nope", headers=BEARER_HEADERS
             )
         finally:
             sep_app.dependency_overrides.pop(get_backups_task, None)
@@ -503,7 +501,7 @@ class TestDeleteEndpoint:
 
 
 class TestExecuteEndpoint:
-    """Tests for POST /api/plugins/mysql_backups/{task_name}/execute."""
+    """Tests for POST /api/apps/mysql_backups/{task_name}/execute."""
 
     def _execute_response(self, task_id: int = 99) -> dict:
         return {
@@ -524,7 +522,7 @@ class TestExecuteEndpoint:
         )
         mock_task_api_dep.post = AsyncMock(return_value=self._execute_response())
         response = test_client.post(
-            f"/api/plugins/mysql_backups/{task['name']}/execute",
+            f"/api/apps/mysql_backups/{task['name']}/execute",
             json={},
             headers=BEARER_HEADERS,
         )
@@ -545,7 +543,7 @@ class TestExecuteEndpoint:
         )
         mock_task_api_dep.post = AsyncMock(return_value=self._execute_response())
         response = test_client.post(
-            f"/api/plugins/mysql_backups/{task['name']}/execute",
+            f"/api/apps/mysql_backups/{task['name']}/execute",
             json={
                 "chain_task_names": ["other-task"],
                 "chain_on_failure": True,
@@ -573,7 +571,7 @@ class TestExecuteEndpoint:
             ]
         )
         response = test_client.post(
-            "/api/plugins/mysql_backups/nope/execute",
+            "/api/apps/mysql_backups/nope/execute",
             json={},
             headers=BEARER_HEADERS,
         )
@@ -584,7 +582,7 @@ class TestExecuteEndpoint:
     ):
         """Execute without Bearer header is rejected as 401."""
         response = api_admin_client_no_bearer.post(
-            "/api/plugins/mysql_backups/some-task/execute", json={}
+            "/api/apps/mysql_backups/some-task/execute", json={}
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
@@ -600,7 +598,7 @@ class TestBearerAuthGate:
         """POST without Bearer header is rejected as 401."""
         body = build_backup_write_body()
         response = api_admin_client_no_bearer.post(
-            "/api/plugins/mysql_backups/", json=body
+            "/api/apps/mysql_backups/", json=body
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
@@ -611,7 +609,7 @@ class TestBearerAuthGate:
     ):
         """DELETE without Bearer header is rejected as 401."""
         response = api_admin_client_no_bearer.delete(
-            "/api/plugins/mysql_backups/some-task"
+            "/api/apps/mysql_backups/some-task"
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
@@ -625,5 +623,5 @@ class TestBearerAuthGate:
             "offset": 0,
             "limit": 50,
         }
-        response = test_client.get("/api/plugins/mysql_backups/")
+        response = test_client.get("/api/apps/mysql_backups/")
         assert response.status_code == status.HTTP_200_OK

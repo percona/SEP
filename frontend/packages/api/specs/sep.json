@@ -466,7 +466,7 @@
         "type": "object"
       },
       "AltersExecutionResponse": {
-        "description": "Represent the response from POST /api/plugins/alters/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
+        "description": "Represent the response from POST /api/apps/alters/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
         "properties": {
           "task_id": {
             "anyOf": [
@@ -3041,7 +3041,7 @@
         "title": "BatchApprovalResponse",
         "type": "object"
       },
-      "Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post": {
+      "Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post": {
         "properties": {
           "full": {
             "default": true,
@@ -3064,10 +3064,10 @@
             "type": "string"
           }
         },
-        "title": "Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post",
+        "title": "Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post",
         "type": "object"
       },
-      "Body_report_report_upload_api_api_plugins_report_upload_post": {
+      "Body_report_report_upload_api_api_apps_report_upload_post": {
         "properties": {
           "full": {
             "default": true,
@@ -3090,7 +3090,7 @@
             "type": "string"
           }
         },
-        "title": "Body_report_report_upload_api_api_plugins_report_upload_post",
+        "title": "Body_report_report_upload_api_api_apps_report_upload_post",
         "type": "object"
       },
       "BoolField": {
@@ -3963,7 +3963,7 @@
         "type": "object"
       },
       "DipperExecuteWrite": {
-        "description": "Define the JSON body for ``POST /api/plugins/dipper/``.\n\n:param service_id: Inventory ID of the database service to collect data from.\n:type service_id: int\n:param collector_type: Which collector script to run (environment or pmm).\n:type collector_type: CollectorTypeEnum\n:param executor_host: Nomad client hostname that will run the script.\n:type executor_host: NonEmptyStr\n:param sudo: Whether to invoke the script with ``sudo``. ``None`` defers\n    to the script's own sudo policy (the default).\n:type sudo: bool | None\n:param args: Per-parameter arguments keyed by script parameter name. Validated\n    server-side against the script's dynamic execution model.\n:type args: dict[str, Any]",
+        "description": "Define the JSON body for ``POST /api/apps/dipper/``.\n\n:param service_id: Inventory ID of the database service to collect data from.\n:type service_id: int\n:param collector_type: Which collector script to run (environment or pmm).\n:type collector_type: CollectorTypeEnum\n:param executor_host: Nomad client hostname that will run the script.\n:type executor_host: NonEmptyStr\n:param sudo: Whether to invoke the script with ``sudo``. ``None`` defers\n    to the script's own sudo policy (the default).\n:type sudo: bool | None\n:param args: Per-parameter arguments keyed by script parameter name. Validated\n    server-side against the script's dynamic execution model.\n:type args: dict[str, Any]",
         "properties": {
           "args": {
             "title": "Args",
@@ -4002,7 +4002,7 @@
         "type": "object"
       },
       "DipperExecutionResponse": {
-        "description": "Represent the response from ``POST /api/plugins/dipper/``.\n\n:param task_id: ID of the task-history row created by the tasks API.\n:type task_id: int | None\n:param task_name: The execution task name used to dispatch the script.\n:type task_name: str\n:param snippet_filename: Composite path used to correlate history rows.\n:type snippet_filename: str\n:param service_id: Inventory ID of the database service.\n:type service_id: int\n:param collector_type: Collector type that was executed.\n:type collector_type: CollectorTypeEnum",
+        "description": "Represent the response from ``POST /api/apps/dipper/``.\n\n:param task_id: ID of the task-history row created by the tasks API.\n:type task_id: int | None\n:param task_name: The execution task name used to dispatch the script.\n:type task_name: str\n:param snippet_filename: Composite path used to correlate history rows.\n:type snippet_filename: str\n:param service_id: Inventory ID of the database service.\n:type service_id: int\n:param collector_type: Collector type that was executed.\n:type collector_type: CollectorTypeEnum",
         "properties": {
           "collector_type": {
             "$ref": "#/components/schemas/CollectorTypeEnum"
@@ -4777,7 +4777,7 @@
         "type": "object"
       },
       "IndexResponse": {
-        "description": "Describe the response body for ``GET /api/plugins/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:type groups: list[IndexTemplateGroup]\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:type pmm_connected: bool\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:type pagerduty: IndexPagerDutyStatus | None\n:param recent_backups: The most recent alert backups, newest first.\n:type recent_backups: list[IndexBackupSummary]",
+        "description": "Describe the response body for ``GET /api/apps/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:type groups: list[IndexTemplateGroup]\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:type pmm_connected: bool\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:type pagerduty: IndexPagerDutyStatus | None\n:param recent_backups: The most recent alert backups, newest first.\n:type recent_backups: list[IndexBackupSummary]",
         "properties": {
           "groups": {
             "items": {
@@ -5580,7 +5580,7 @@
         "type": "object"
       },
       "PagerDutyRequest": {
-        "description": "Describe the request body for ``POST /api/plugins/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.\n:type integration_key: NonEmptyStr",
+        "description": "Describe the request body for ``POST /api/apps/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.\n:type integration_key: NonEmptyStr",
         "properties": {
           "integration_key": {
             "minLength": 1,
@@ -5886,7 +5886,7 @@
         "type": "string"
       },
       "PluginTaskResponse": {
-        "description": "Represent a single plugin task entry returned by ``GET /api/plugins/inventory/``.\n\n:param name: Machine-readable task identifier (e.g. ``\"inventory-sync\"``).\n:type name: str\n:param display_name: Human-readable label for the schedule UI.\n:type display_name: str",
+        "description": "Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.\n\n:param name: Machine-readable task identifier (e.g. ``\"inventory-sync\"``).\n:type name: str\n:param display_name: Human-readable label for the schedule UI.\n:type display_name: str",
         "properties": {
           "display_name": {
             "title": "Display Name",
@@ -5934,7 +5934,7 @@
         "type": "object"
       },
       "PushRequest": {
-        "description": "Describe the request body for ``POST /api/plugins/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.\n:type selected_templates: list[NonEmptyStr]",
+        "description": "Describe the request body for ``POST /api/apps/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.\n:type selected_templates: list[NonEmptyStr]",
         "properties": {
           "selected_templates": {
             "items": {
@@ -6563,7 +6563,7 @@
         "type": "object"
       },
       "RestoreRequest": {
-        "description": "Describe the request body for ``POST /api/plugins/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.\n:type backup_id: int",
+        "description": "Describe the request body for ``POST /api/apps/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.\n:type backup_id: int",
         "properties": {
           "backup_id": {
             "exclusiveMinimum": 0.0,
@@ -7406,7 +7406,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -7927,7 +7927,7 @@
         "type": "object"
       },
       "SnippetBatchApproveRequest": {
-        "description": "Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.\n\nUnlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`\ntwin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI\nparses it as JSON.\n\n:param filenames: Unique, non-empty list of snippet filenames to approve in a\n    single atomic operation. Duplicates are silently deduplicated by\n    ``UniqueList``.\n:type filenames: UniqueList[NonEmptyStr]",
+        "description": "Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.\n\nUnlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`\ntwin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI\nparses it as JSON.\n\n:param filenames: Unique, non-empty list of snippet filenames to approve in a\n    single atomic operation. Duplicates are silently deduplicated by\n    ``UniqueList``.\n:type filenames: UniqueList[NonEmptyStr]",
         "properties": {
           "filenames": {
             "items": {
@@ -8397,7 +8397,7 @@
         "type": "string"
       },
       "TaskDetailResponse": {
-        "description": "Represent the aggregate payload for ``GET /api/plugins/tasks/{task_name}``.\n\nBundle the task definition, execution history, periodic schedules, and\nexecutor host metadata into a single response for the React detail page.\n\n:param task: The task definition as returned by the tasks API.\n:type task: TaskResponse\n:param execution_history: Paginated task history from the tasks API\n    (``items``, ``total``, ``offset``, ``limit``).\n:type execution_history: dict[str, Any]\n:param periodic_summary: Read-only summaries of periodic schedules\n    attached to this task.\n:type periodic_summary: list[PeriodicTaskSummary]\n:param executor_hosts: Executor hosts available for display, with\n    inventory-resolved labels when possible.\n:type executor_hosts: list[ExecutorHostMetadata]",
+        "description": "Represent the aggregate payload for ``GET /api/apps/tasks/{task_name}``.\n\nBundle the task definition, execution history, periodic schedules, and\nexecutor host metadata into a single response for the React detail page.\n\n:param task: The task definition as returned by the tasks API.\n:type task: TaskResponse\n:param execution_history: Paginated task history from the tasks API\n    (``items``, ``total``, ``offset``, ``limit``).\n:type execution_history: dict[str, Any]\n:param periodic_summary: Read-only summaries of periodic schedules\n    attached to this task.\n:type periodic_summary: list[PeriodicTaskSummary]\n:param executor_hosts: Executor hosts available for display, with\n    inventory-resolved labels when possible.\n:type executor_hosts: list[ExecutorHostMetadata]",
         "properties": {
           "execution_history": {
             "title": "Execution History",
@@ -9297,7 +9297,7 @@
         "type": "object"
       },
       "app__sep__apps__backup_mongo__models__BackupExecutionResponse": {
-        "description": "Represent the response from POST /api/plugins/backup_mongo/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:type task_name: str\n:param task_id: The id of the task-history row created by the tasks API.\n:type task_id: int | None",
+        "description": "Represent the response from POST /api/apps/backup_mongo/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:type task_name: str\n:param task_id: The id of the task-history row created by the tasks API.\n:type task_id: int | None",
         "properties": {
           "task_id": {
             "anyOf": [
@@ -10114,10 +10114,10 @@
         ]
       }
     },
-    "/api/plugins/alert_troubleshooting/": {
+    "/api/apps/alert_troubleshooting/": {
       "get": {
         "description": "Return alerts grouped by service type.\n\n:param session: The database session.\n:type session: SessionDep\n:return: A list of alert groups, each containing alerts for a service type.\n:rtype: list[AlertGroup]",
-        "operationId": "alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get",
+        "operationId": "alert_troubleshooting_alert_troubleshooting_api_list_api_apps_alert_troubleshooting__get",
         "responses": {
           "200": {
             "content": {
@@ -10126,7 +10126,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AlertGroup"
                   },
-                  "title": "Response Alert Troubleshooting Alert Troubleshooting Api List Api Plugins Alert Troubleshooting  Get",
+                  "title": "Response Alert Troubleshooting Alert Troubleshooting Api List Api Apps Alert Troubleshooting  Get",
                   "type": "array"
                 }
               }
@@ -10140,10 +10140,10 @@
         ]
       }
     },
-    "/api/plugins/alert_troubleshooting/schema": {
+    "/api/apps/alert_troubleshooting/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get",
+        "operationId": "alert_troubleshooting_get_schema_api_apps_alert_troubleshooting_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -10162,10 +10162,10 @@
         ]
       }
     },
-    "/api/plugins/alert_troubleshooting/{service_type}/{alert_name}": {
+    "/api/apps/alert_troubleshooting/{service_type}/{alert_name}": {
       "get": {
         "description": "Return alert info and associated snippets for a specific alert.\n\n:param service_type: The service type of the alert.\n:type service_type: AlertServiceType\n:param alert_name: The alert name identifier.\n:type alert_name: str\n:param session: The database session.\n:type session: SessionDep\n:return: Alert info and associated snippets.\n:rtype: AlertDetailResponse\n:raises HTTPNotFoundException: If no snippets match the alert.",
-        "operationId": "alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get",
+        "operationId": "alert_troubleshooting_alert_troubleshooting_api_detail_api_apps_alert_troubleshooting__service_type___alert_name__get",
         "parameters": [
           {
             "in": "path",
@@ -10215,10 +10215,10 @@
         ]
       }
     },
-    "/api/plugins/alerts/": {
+    "/api/apps/alerts/": {
       "get": {
         "description": "Return everything the React list page needs in a single call.\n\nMirror the data assembled for the deprecated Jinja index view\n(:func:`app.sep.apps.alerts.deps.get_alerts_index_context`) as JSON:\nalert templates grouped by service type, PMM connectivity, the PagerDuty\ncontact-point status, and the most recent backups.\n\n``present_names`` is ``None`` when PMM is unconfigured or unreachable, which\nis the same signal used to drive ``pmm_connected`` and per-template\n``in_pmm`` flags so the UI degrades gracefully.\n\n:param alert_templates: Local alert templates grouped by service type.\n:type alert_templates: AlertTemplatesDep\n:param present_names: Template names already present in PMM, or ``None`` when\n    PMM is unreachable.\n:type present_names: set[str] | None\n:param recent_backups: The most recent alert backups, newest first.\n:type recent_backups: list[AlertBackup]\n:param pagerduty_status: PagerDuty contact-point status, or ``None`` when PMM\n    is unreachable.\n:type pagerduty_status: dict[str, Any] | None\n:return: The aggregated index payload.\n:rtype: IndexResponse",
-        "operationId": "alerts_alerts_api_index_api_plugins_alerts__get",
+        "operationId": "alerts_alerts_api_index_api_apps_alerts__get",
         "responses": {
           "200": {
             "content": {
@@ -10237,10 +10237,10 @@
         ]
       }
     },
-    "/api/plugins/alerts/backups": {
+    "/api/apps/alerts/backups": {
       "get": {
         "description": "Return a paginated page of alert backups, newest first.\n\n:param session: The async database session.\n:type session: SessionDep\n:param pagination: Validated offset/limit query parameters (``limit`` capped at 100).\n:type pagination: Pagination\n:return: A paginated envelope of backup summaries ordered by\n    ``created_at`` descending.\n:rtype: PaginatedResponse[BackupSummary]",
-        "operationId": "alerts_alerts_api_list_backups_api_plugins_alerts_backups_get",
+        "operationId": "alerts_alerts_api_list_backups_api_apps_alerts_backups_get",
         "parameters": [
           {
             "in": "query",
@@ -10294,10 +10294,10 @@
         ]
       }
     },
-    "/api/plugins/alerts/backups/{backup_id}": {
+    "/api/apps/alerts/backups/{backup_id}": {
       "get": {
         "description": "Return a categorised view of a single backup.\n\n:param session: The async database session.\n:type session: SessionDep\n:param backup_id: Primary key of the backup row.\n:type backup_id: int\n:return: The full backup detail.\n:rtype: BackupDetail\n:raises HTTPNotFoundException: If the backup is not found.",
-        "operationId": "alerts_alerts_api_get_backup_api_plugins_alerts_backups__backup_id__get",
+        "operationId": "alerts_alerts_api_get_backup_api_apps_alerts_backups__backup_id__get",
         "parameters": [
           {
             "in": "path",
@@ -10337,10 +10337,10 @@
         ]
       }
     },
-    "/api/plugins/alerts/pagerduty": {
+    "/api/apps/alerts/pagerduty": {
       "post": {
         "description": "Create or update the PagerDuty contact point and notification route.\n\nMirror :func:`app.sep.apps.alerts.routes.pagerduty_save` over JSON.\n\n:param payload: PagerDuty save request body.\n:type payload: PagerDutyRequest\n:param pmm_api: The PMM API client. Raises 503 if PMM is not configured.\n:type pmm_api: PMMRemoteAPI\n:return: ``status=\"created\"`` or ``status=\"updated\"``.\n:rtype: PagerDutyResponse\n:raises HTTPBadGatewayException: If the PMM upstream call fails.",
-        "operationId": "alerts_alerts_api_pagerduty_save_api_plugins_alerts_pagerduty_post",
+        "operationId": "alerts_alerts_api_pagerduty_save_api_apps_alerts_pagerduty_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10379,10 +10379,10 @@
         ]
       }
     },
-    "/api/plugins/alerts/pagerduty/delete": {
+    "/api/apps/alerts/pagerduty/delete": {
       "post": {
         "description": "Delete the PagerDuty contact point and remove its notification route.\n\n:param pmm_api: The PMM API client. Raises 503 if PMM is not configured.\n:type pmm_api: PMMRemoteAPI\n:return: ``status=\"deleted\"``.\n:rtype: PagerDutyResponse\n:raises HTTPNotFoundException: If no PagerDuty contact point exists.\n:raises HTTPBadGatewayException: If the PMM upstream call fails.",
-        "operationId": "alerts_alerts_api_pagerduty_delete_api_plugins_alerts_pagerduty_delete_post",
+        "operationId": "alerts_alerts_api_pagerduty_delete_api_apps_alerts_pagerduty_delete_post",
         "responses": {
           "200": {
             "content": {
@@ -10401,10 +10401,10 @@
         ]
       }
     },
-    "/api/plugins/alerts/push": {
+    "/api/apps/alerts/push": {
       "post": {
         "description": "Push selected alert templates to PMM as rules.\n\nMirror :func:`app.sep.apps.alerts.routes.alerts_push` over JSON.\nPreserve the conflict-retry path: on ``create_rule`` collision call\n:func:`app.sep.apps.alerts.restore.delete_conflicting_rules` and\nretry once.\n\n:param payload: Push request body listing template names to push.\n:type payload: PushRequest\n:param pmm_api: The PMM API client. Raises 503 if PMM is not configured.\n:type pmm_api: PMMRemoteAPI\n:param alert_templates: Local alert templates grouped by service type.\n:type alert_templates: AlertTemplatesDep\n:param folder: The PMM alert folder. Raises 502 if unreachable.\n:type folder: Folder\n:param present_names: Template names already present in PMM, or ``None`` if\n    PMM is unreachable for the listing call.\n:type present_names: set[str] | None\n:return: A ``PushResponse`` with one :class:`PushItemResult` per template.\n:rtype: PushResponse",
-        "operationId": "alerts_alerts_api_push_api_plugins_alerts_push_post",
+        "operationId": "alerts_alerts_api_push_api_apps_alerts_push_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10443,10 +10443,10 @@
         ]
       }
     },
-    "/api/plugins/alerts/restore": {
+    "/api/apps/alerts/restore": {
       "post": {
         "description": "Restore alert configuration from a backup snapshot.\n\n:param payload: Restore request body identifying the backup to apply.\n:type payload: RestoreRequest\n:param pmm_api: The PMM API client. Raises 503 if PMM is not configured.\n:type pmm_api: PMMRemoteAPI\n:param session: The async database session.\n:type session: SessionDep\n:return: A ``RestoreResponse`` with the per-section restore counts.\n:rtype: RestoreResponse\n:raises HTTPNotFoundException: If the backup is not found.\n:raises HTTPBadGatewayException: If the PMM upstream call fails with\n    ``OSError``.",
-        "operationId": "alerts_alerts_api_restore_api_plugins_alerts_restore_post",
+        "operationId": "alerts_alerts_api_restore_api_apps_alerts_restore_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10485,10 +10485,10 @@
         ]
       }
     },
-    "/api/plugins/alters/": {
+    "/api/apps/alters/": {
       "get": {
         "description": "List parent alters execute tasks.",
-        "operationId": "alters_alters_api_list_api_plugins_alters__get",
+        "operationId": "alters_alters_api_list_api_apps_alters__get",
         "parameters": [
           {
             "in": "query",
@@ -10531,7 +10531,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AltersTaskResponse"
                   },
-                  "title": "Response Alters Alters Api List Api Plugins Alters  Get",
+                  "title": "Response Alters Alters Api List Api Apps Alters  Get",
                   "type": "array"
                 }
               }
@@ -10556,7 +10556,7 @@
       },
       "post": {
         "description": "Create an alters task group from a JSON payload request body.\n\nPOSTs the parent execute task, dry-run derived sibling, and pre-checks\npredecessor. Pre-checks are started manually from the detail page.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics — an unchecked box\n    submits no field); this asymmetry is intentional.\n:type check_connectivity: bool",
-        "operationId": "alters_alters_api_create_api_plugins_alters__post",
+        "operationId": "alters_alters_api_create_api_apps_alters__post",
         "parameters": [
           {
             "in": "query",
@@ -10607,10 +10607,10 @@
         ]
       }
     },
-    "/api/plugins/alters/schema": {
+    "/api/apps/alters/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "alters_get_schema_api_plugins_alters_schema_get",
+        "operationId": "alters_get_schema_api_apps_alters_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -10629,10 +10629,10 @@
         ]
       }
     },
-    "/api/plugins/alters/{task_name}": {
+    "/api/apps/alters/{task_name}": {
       "delete": {
         "description": "Delete an alters task group.",
-        "operationId": "alters_alters_api_delete_api_plugins_alters__task_name__delete",
+        "operationId": "alters_alters_api_delete_api_apps_alters__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -10666,7 +10666,7 @@
       },
       "get": {
         "description": "Retrieve a single parent alters task.",
-        "operationId": "alters_alters_api_detail_api_plugins_alters__task_name__get",
+        "operationId": "alters_alters_api_detail_api_apps_alters__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -10707,7 +10707,7 @@
       },
       "put": {
         "description": "Update an alters task group from a JSON payload request body.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after the update. Defaults to ``True``; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics); this asymmetry is\n    intentional.\n:type check_connectivity: bool",
-        "operationId": "alters_alters_api_update_api_plugins_alters__task_name__put",
+        "operationId": "alters_alters_api_update_api_apps_alters__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -10767,10 +10767,10 @@
         ]
       }
     },
-    "/api/plugins/alters/{task_name}/execute": {
+    "/api/apps/alters/{task_name}/execute": {
       "post": {
         "description": "Execute an alters task (parent, dry-run, or pre-checks).",
-        "operationId": "alters_alters_api_execute_api_plugins_alters__task_name__execute_post",
+        "operationId": "alters_alters_api_execute_api_apps_alters__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -10820,9 +10820,9 @@
         ]
       }
     },
-    "/api/plugins/archives/": {
+    "/api/apps/archives/": {
       "get": {
-        "operationId": "archives__list_api_plugins_archives__get",
+        "operationId": "archives__list_api_apps_archives__get",
         "parameters": [
           {
             "in": "query",
@@ -10849,7 +10849,7 @@
                   "items": {
                     "$ref": "#/components/schemas/BaseTaskResponse"
                   },
-                  "title": "Response Archives  List Api Plugins Archives  Get",
+                  "title": "Response Archives  List Api Apps Archives  Get",
                   "type": "array"
                 }
               }
@@ -10873,7 +10873,7 @@
         ]
       },
       "post": {
-        "operationId": "archives__create_api_plugins_archives__post",
+        "operationId": "archives__create_api_apps_archives__post",
         "parameters": [
           {
             "in": "query",
@@ -10924,10 +10924,10 @@
         ]
       }
     },
-    "/api/plugins/archives/schema": {
+    "/api/apps/archives/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "archives_get_schema_api_plugins_archives_schema_get",
+        "operationId": "archives_get_schema_api_apps_archives_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -10946,9 +10946,9 @@
         ]
       }
     },
-    "/api/plugins/archives/{task_name}": {
+    "/api/apps/archives/{task_name}": {
       "delete": {
-        "operationId": "archives__delete_api_plugins_archives__task_name__delete",
+        "operationId": "archives__delete_api_apps_archives__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -10981,7 +10981,7 @@
         ]
       },
       "get": {
-        "operationId": "archives__detail_api_plugins_archives__task_name__get",
+        "operationId": "archives__detail_api_apps_archives__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -11021,7 +11021,7 @@
         ]
       },
       "put": {
-        "operationId": "archives__update_api_plugins_archives__task_name__put",
+        "operationId": "archives__update_api_apps_archives__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -11081,10 +11081,10 @@
         ]
       }
     },
-    "/api/plugins/archives/{task_name}/execute": {
+    "/api/apps/archives/{task_name}/execute": {
       "post": {
         "description": "Resolve, dispatch, and wrap a standard task execution.",
-        "operationId": "archives_archives_api_execute_api_plugins_archives__task_name__execute_post",
+        "operationId": "archives_archives_api_execute_api_apps_archives__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -11134,10 +11134,10 @@
         ]
       }
     },
-    "/api/plugins/atw/": {
+    "/api/apps/atw/": {
       "get": {
         "description": "List ATW-tagged snippets grouped by category.\n\nCategories with no matching snippets are omitted to keep the payload small;\nthe ATW enum still defines the full taxonomy for validation (plugin schema).",
-        "operationId": "atw_atw_api_list_api_plugins_atw__get",
+        "operationId": "atw_atw_api_list_api_apps_atw__get",
         "responses": {
           "200": {
             "content": {
@@ -11146,7 +11146,7 @@
                   "items": {
                     "$ref": "#/components/schemas/ATWCategoryListing"
                   },
-                  "title": "Response Atw Atw Api List Api Plugins Atw  Get",
+                  "title": "Response Atw Atw Api List Api Apps Atw  Get",
                   "type": "array"
                 }
               }
@@ -11160,10 +11160,10 @@
         ]
       }
     },
-    "/api/plugins/atw/schema": {
+    "/api/apps/atw/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "atw_get_schema_api_plugins_atw_schema_get",
+        "operationId": "atw_get_schema_api_apps_atw_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -11182,10 +11182,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/": {
+    "/api/apps/backup_mongo/": {
       "get": {
         "description": "List parent PBM backup config tasks.",
-        "operationId": "backup_mongo_backup_mongo_api_list_api_plugins_backup_mongo__get",
+        "operationId": "backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get",
         "parameters": [
           {
             "in": "query",
@@ -11256,7 +11256,7 @@
       },
       "post": {
         "description": "Create a backup task group from a JSON payload request body.\n\nPOSTs the parent ``pbm_config`` task, then derived ``pbm_logical``,\n``pbm_physical``, and ``pbm_status`` siblings via\n:func:`~app.sep.apps.framework.cascade.cascade_create_tasks`.",
-        "operationId": "backup_mongo_backup_mongo_api_create_api_plugins_backup_mongo__post",
+        "operationId": "backup_mongo_backup_mongo_api_create_api_apps_backup_mongo__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11295,10 +11295,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/restores/": {
+    "/api/apps/backup_mongo/restores/": {
       "get": {
         "description": "List parent PBM restore config tasks.",
-        "operationId": "backup_mongo_restore_mongo_api_list_api_plugins_backup_mongo_restores__get",
+        "operationId": "backup_mongo_restore_mongo_api_list_api_apps_backup_mongo_restores__get",
         "parameters": [
           {
             "in": "query",
@@ -11369,7 +11369,7 @@
       },
       "post": {
         "description": "Create a restore task group from a JSON payload request body.\n\nPOSTs the parent config task, restore leg, pbm-list helper, and optional\nforce-resync child for physical restores. Rolls back on any failure.",
-        "operationId": "backup_mongo_restore_mongo_api_create_api_plugins_backup_mongo_restores__post",
+        "operationId": "backup_mongo_restore_mongo_api_create_api_apps_backup_mongo_restores__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11408,10 +11408,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/restores/schema": {
+    "/api/apps/backup_mongo/restores/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "backup_mongo_get_schema_api_plugins_backup_mongo_restores_schema_get",
+        "operationId": "backup_mongo_get_schema_api_apps_backup_mongo_restores_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -11430,10 +11430,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/restores/{task_name}": {
+    "/api/apps/backup_mongo/restores/{task_name}": {
       "delete": {
         "description": "Delete a restore task group.",
-        "operationId": "backup_mongo_restore_mongo_api_delete_api_plugins_backup_mongo_restores__task_name__delete",
+        "operationId": "backup_mongo_restore_mongo_api_delete_api_apps_backup_mongo_restores__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -11467,7 +11467,7 @@
       },
       "get": {
         "description": "Retrieve a single parent restore task with child task status.",
-        "operationId": "backup_mongo_restore_mongo_api_detail_api_plugins_backup_mongo_restores__task_name__get",
+        "operationId": "backup_mongo_restore_mongo_api_detail_api_apps_backup_mongo_restores__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -11508,7 +11508,7 @@
       },
       "put": {
         "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place.",
-        "operationId": "backup_mongo_restore_mongo_api_update_api_plugins_backup_mongo_restores__task_name__put",
+        "operationId": "backup_mongo_restore_mongo_api_update_api_apps_backup_mongo_restores__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -11558,10 +11558,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/restores/{task_name}/execute": {
+    "/api/apps/backup_mongo/restores/{task_name}/execute": {
       "post": {
         "description": "Execute a restore task.",
-        "operationId": "backup_mongo_restore_mongo_api_execute_api_plugins_backup_mongo_restores__task_name__execute_post",
+        "operationId": "backup_mongo_restore_mongo_api_execute_api_apps_backup_mongo_restores__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -11611,10 +11611,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/schema": {
+    "/api/apps/backup_mongo/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "backup_mongo_get_schema_api_plugins_backup_mongo_schema_get",
+        "operationId": "backup_mongo_get_schema_api_apps_backup_mongo_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -11633,10 +11633,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/{task_name}": {
+    "/api/apps/backup_mongo/{task_name}": {
       "delete": {
         "description": "Delete a backup task group.",
-        "operationId": "backup_mongo_backup_mongo_api_delete_api_plugins_backup_mongo__task_name__delete",
+        "operationId": "backup_mongo_backup_mongo_api_delete_api_apps_backup_mongo__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -11670,7 +11670,7 @@
       },
       "get": {
         "description": "Retrieve a single parent backup task with derived sibling status.",
-        "operationId": "backup_mongo_backup_mongo_api_detail_api_plugins_backup_mongo__task_name__get",
+        "operationId": "backup_mongo_backup_mongo_api_detail_api_apps_backup_mongo__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -11710,10 +11710,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/{task_name}/execute": {
+    "/api/apps/backup_mongo/{task_name}/execute": {
       "post": {
         "description": "Execute a backup task.",
-        "operationId": "backup_mongo_backup_mongo_api_execute_api_plugins_backup_mongo__task_name__execute_post",
+        "operationId": "backup_mongo_backup_mongo_api_execute_api_apps_backup_mongo__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -11763,9 +11763,9 @@
         ]
       }
     },
-    "/api/plugins/backup_pg/": {
+    "/api/apps/backup_pg/": {
       "get": {
-        "operationId": "backup_pg__list_paginated_api_plugins_backup_pg__get",
+        "operationId": "backup_pg__list_paginated_api_apps_backup_pg__get",
         "parameters": [
           {
             "in": "query",
@@ -11835,7 +11835,7 @@
         ]
       },
       "post": {
-        "operationId": "backup_pg__create_api_plugins_backup_pg__post",
+        "operationId": "backup_pg__create_api_apps_backup_pg__post",
         "parameters": [
           {
             "in": "query",
@@ -11886,10 +11886,10 @@
         ]
       }
     },
-    "/api/plugins/backup_pg/schema": {
+    "/api/apps/backup_pg/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "backup_pg_get_schema_api_plugins_backup_pg_schema_get",
+        "operationId": "backup_pg_get_schema_api_apps_backup_pg_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -11908,9 +11908,9 @@
         ]
       }
     },
-    "/api/plugins/backup_pg/{task_name}": {
+    "/api/apps/backup_pg/{task_name}": {
       "delete": {
-        "operationId": "backup_pg__delete_api_plugins_backup_pg__task_name__delete",
+        "operationId": "backup_pg__delete_api_apps_backup_pg__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -11943,7 +11943,7 @@
         ]
       },
       "get": {
-        "operationId": "backup_pg__detail_api_plugins_backup_pg__task_name__get",
+        "operationId": "backup_pg__detail_api_apps_backup_pg__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -11983,7 +11983,7 @@
         ]
       },
       "put": {
-        "operationId": "backup_pg__update_api_plugins_backup_pg__task_name__put",
+        "operationId": "backup_pg__update_api_apps_backup_pg__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -12043,10 +12043,10 @@
         ]
       }
     },
-    "/api/plugins/backup_pg/{task_name}/execute": {
+    "/api/apps/backup_pg/{task_name}/execute": {
       "post": {
         "description": "Resolve, dispatch, and wrap a standard task execution.",
-        "operationId": "backup_pg_backup_pg_api_execute_api_plugins_backup_pg__task_name__execute_post",
+        "operationId": "backup_pg_backup_pg_api_execute_api_apps_backup_pg__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -12096,9 +12096,9 @@
         ]
       }
     },
-    "/api/plugins/checksums/": {
+    "/api/apps/checksums/": {
       "get": {
-        "operationId": "checksums__list_api_plugins_checksums__get",
+        "operationId": "checksums__list_api_apps_checksums__get",
         "parameters": [
           {
             "in": "query",
@@ -12141,7 +12141,7 @@
                   "items": {
                     "$ref": "#/components/schemas/BaseTaskResponse"
                   },
-                  "title": "Response Checksums  List Api Plugins Checksums  Get",
+                  "title": "Response Checksums  List Api Apps Checksums  Get",
                   "type": "array"
                 }
               }
@@ -12165,7 +12165,7 @@
         ]
       },
       "post": {
-        "operationId": "checksums__create_api_plugins_checksums__post",
+        "operationId": "checksums__create_api_apps_checksums__post",
         "parameters": [
           {
             "in": "query",
@@ -12216,10 +12216,10 @@
         ]
       }
     },
-    "/api/plugins/checksums/schema": {
+    "/api/apps/checksums/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "checksums_get_schema_api_plugins_checksums_schema_get",
+        "operationId": "checksums_get_schema_api_apps_checksums_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -12238,9 +12238,9 @@
         ]
       }
     },
-    "/api/plugins/checksums/{task_name}": {
+    "/api/apps/checksums/{task_name}": {
       "delete": {
-        "operationId": "checksums__delete_api_plugins_checksums__task_name__delete",
+        "operationId": "checksums__delete_api_apps_checksums__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -12273,7 +12273,7 @@
         ]
       },
       "get": {
-        "operationId": "checksums__detail_api_plugins_checksums__task_name__get",
+        "operationId": "checksums__detail_api_apps_checksums__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -12313,7 +12313,7 @@
         ]
       },
       "put": {
-        "operationId": "checksums__update_api_plugins_checksums__task_name__put",
+        "operationId": "checksums__update_api_apps_checksums__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -12373,10 +12373,10 @@
         ]
       }
     },
-    "/api/plugins/checksums/{task_name}/execute": {
+    "/api/apps/checksums/{task_name}/execute": {
       "post": {
         "description": "Resolve, dispatch, and wrap a standard task execution.",
-        "operationId": "checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post",
+        "operationId": "checksums_checksums_api_execute_api_apps_checksums__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -12426,16 +12426,16 @@
         ]
       }
     },
-    "/api/plugins/dipper/": {
+    "/api/apps/dipper/": {
       "get": {
         "description": "Return Dipper execution history rows.\n\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: RemoteAPI\n:return: Paginated task-history response filtered to Dipper runs.\n:rtype: dict[str, Any]",
-        "operationId": "dipper_dipper_api_list_api_plugins_dipper__get",
+        "operationId": "dipper_dipper_api_list_api_apps_dipper__get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Dipper Dipper Api List Api Plugins Dipper  Get",
+                  "title": "Response Dipper Dipper Api List Api Apps Dipper  Get",
                   "type": "object"
                 }
               }
@@ -12450,7 +12450,7 @@
       },
       "post": {
         "description": "Execute a Dipper collector script against a database service.\n\nDelegates all script resolution, PMM defaults merging, argument\nvalidation, and metadata assembly to ``build_dipper_execution_meta``.\n\n:param request: The HTTP request (used to derive the artifact download URL).\n:type request: Request\n:param body: Validated JSON request body.\n:type body: DipperExecuteWrite\n:param inventory_api: Async client for the inventory sub-app.\n:type inventory_api: RemoteAPI\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: RemoteAPI\n:return: Execution response with the created task identifier.\n:rtype: DipperExecutionResponse\n:raises HTTPNotFoundException: When the service does not exist.\n:raises HTTPUnprocessableEntityException: When the script/args are invalid.",
-        "operationId": "dipper_dipper_api_execute_api_plugins_dipper__post",
+        "operationId": "dipper_dipper_api_execute_api_apps_dipper__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -12489,10 +12489,10 @@
         ]
       }
     },
-    "/api/plugins/dipper/form-schema": {
+    "/api/apps/dipper/form-schema": {
       "get": {
         "description": "Return the selected Dipper payload's dynamic execution schema.\n\n:param service_id: Inventory ID of the database service.\n:type service_id: int\n:param collector_type: Which collector variant to render.\n:type collector_type: CollectorTypeEnum\n:param inventory_api: Async client for the inventory sub-app.\n:type inventory_api: RemoteAPI\n:param executor_hosts: Available executor hosts keyed by hostname.\n:type executor_hosts: dict\n:param pmm_api: The configured PMM API client, or ``None`` when PMM is not\n    configured (injected via ``PMMAPIDep``).\n:type pmm_api: PMMRemoteAPI | None\n:return: Context-specific schema including payload parameters.",
-        "operationId": "dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get",
+        "operationId": "dipper_dipper_api_form_schema_api_apps_dipper_form_schema_get",
         "parameters": [
           {
             "in": "query",
@@ -12540,10 +12540,10 @@
         ]
       }
     },
-    "/api/plugins/dipper/schema": {
+    "/api/apps/dipper/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "dipper_get_schema_api_plugins_dipper_schema_get",
+        "operationId": "dipper_get_schema_api_apps_dipper_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -12562,10 +12562,10 @@
         ]
       }
     },
-    "/api/plugins/dipper/script-preview": {
+    "/api/apps/dipper/script-preview": {
       "get": {
         "description": "Return a preview of the collector script for the given service.\n\n:param service_id: Inventory ID of the database service.\n:type service_id: int\n:param collector_type: Which collector variant to preview.\n:type collector_type: CollectorTypeEnum\n:param inventory_api: Async client for the inventory sub-app.\n:type inventory_api: RemoteAPI\n:return: Preview content alongside language and truncation metadata.\n:rtype: ScriptPreviewResponse\n:raises HTTPNotFoundException: When the service does not exist.\n:raises HTTPUnprocessableEntityException: When no script is available for\n    the service/collector combination, or when the script contains\n    non-UTF-8 bytes.",
-        "operationId": "dipper_dipper_api_script_preview_api_plugins_dipper_script_preview_get",
+        "operationId": "dipper_dipper_api_script_preview_api_apps_dipper_script_preview_get",
         "parameters": [
           {
             "in": "query",
@@ -12613,10 +12613,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/": {
+    "/api/apps/inventory/": {
       "get": {
         "description": "Return the list of periodic task names for the Inventory plugin.\n\nHard-coded because the Inventory plugin has exactly one periodic task\n(``inventory-sync``). The shape matches what the React\n``usePluginTasks('inventory')`` hook expects: a list of objects with at\nminimum a ``name`` key.",
-        "operationId": "inventory_inventory_plugin_tasks_api_plugins_inventory__get",
+        "operationId": "inventory_inventory_plugin_tasks_api_apps_inventory__get",
         "responses": {
           "200": {
             "content": {
@@ -12625,7 +12625,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PluginTaskResponse"
                   },
-                  "title": "Response Inventory Inventory Plugin Tasks Api Plugins Inventory  Get",
+                  "title": "Response Inventory Inventory Plugin Tasks Api Apps Inventory  Get",
                   "type": "array"
                 }
               }
@@ -12639,10 +12639,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/available-syncers/": {
+    "/api/apps/inventory/available-syncers/": {
       "get": {
         "description": "Return syncers capable of syncing inventory.\n\n:param available_syncers: Filtered syncer list from ``InventoryAvailableSyncersDep``.\n:type available_syncers: list[AvailableSyncer]\n:return: Filtered list of syncers that can sync inventory.\n:rtype: list[AvailableSyncer]",
-        "operationId": "inventory_inventory_available_syncers_api_plugins_inventory_available_syncers__get",
+        "operationId": "inventory_inventory_available_syncers_api_apps_inventory_available_syncers__get",
         "responses": {
           "200": {
             "content": {
@@ -12651,7 +12651,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AvailableSyncer"
                   },
-                  "title": "Response Inventory Inventory Available Syncers Api Plugins Inventory Available Syncers  Get",
+                  "title": "Response Inventory Inventory Available Syncers Api Apps Inventory Available Syncers  Get",
                   "type": "array"
                 }
               }
@@ -12665,10 +12665,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/nodes/{node_id}/system-observation": {
+    "/api/apps/inventory/nodes/{node_id}/system-observation": {
       "get": {
         "description": "Proxy the host-level system observation for a node (read-only).\n\nForwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``\nendpoint via ``InventoryAPI``. This three-segment literal path cannot\ncollide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An\nupstream HTTP 404 — the \"not collected yet\" signal — propagates unchanged\nfor the React panel to render as an empty state.\n\n:param node_id: Primary key of the node.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The host-level system observation payload.",
-        "operationId": "inventory_inventory_node_system_observation_api_plugins_inventory_nodes__node_id__system_observation_get",
+        "operationId": "inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get",
         "parameters": [
           {
             "in": "path",
@@ -12685,7 +12685,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Inventory Inventory Node System Observation Api Plugins Inventory Nodes  Node Id  System Observation Get"
+                  "title": "Response Inventory Inventory Node System Observation Api Apps Inventory Nodes  Node Id  System Observation Get"
                 }
               }
             },
@@ -12708,10 +12708,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/schema": {
+    "/api/apps/inventory/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "inventory_get_schema_api_plugins_inventory_schema_get",
+        "operationId": "inventory_get_schema_api_apps_inventory_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -12730,10 +12730,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/services/{service_id}/system-observation": {
+    "/api/apps/inventory/services/{service_id}/system-observation": {
       "get": {
         "description": "Proxy the service-level system observation for a service (read-only).\n\nForwards to the inventory sub-app's\n``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.\nAn upstream HTTP 404 propagates unchanged so the React panel renders its\n\"not collected yet\" empty state.\n\n:param service_id: Primary key of the service.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The service-level system observation payload.",
-        "operationId": "inventory_inventory_service_system_observation_api_plugins_inventory_services__service_id__system_observation_get",
+        "operationId": "inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get",
         "parameters": [
           {
             "in": "path",
@@ -12750,7 +12750,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Inventory Inventory Service System Observation Api Plugins Inventory Services  Service Id  System Observation Get"
+                  "title": "Response Inventory Inventory Service System Observation Api Apps Inventory Services  Service Id  System Observation Get"
                 }
               }
             },
@@ -12773,10 +12773,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/sync/": {
+    "/api/apps/inventory/sync/": {
       "post": {
         "description": "Schedule an ad-hoc inventory sync as a background task.\n\nMirrors the Jinja2 ``POST /inventory/sync/`` handler but accepts an\noptional JSON body ``{\"syncer\": \"<qualified_name>\"}``. When ``syncer``\nis absent, ``None``, or empty, every configured syncer runs in\ndeclaration order; otherwise only the named syncer is forwarded. An\nunknown or inapplicable syncer raises HTTP 400 — never a silent no-op.\n\nAuthentication is enforced by the parent ``api_router``'s\n``IsApiAuthenticated`` dependency, so this handler needs no auth parameter.\n\n:param syncers: Configured syncers from ``SyncersDep``.\n:type syncers: SyncersDep\n:param background_tasks: FastAPI's background task scheduler.\n:type background_tasks: BackgroundTasks\n:param internal_token: SEP-internal service token injected by\n    ``InternalTokenDep`` and forwarded to the background sync task.\n:param body: Optional trigger body.\n:type body: InventorySyncTriggerWrite | None\n:return: Empty 202 Accepted response.\n:rtype: Response\n:raises HTTPBadRequestException: When ``body.syncer`` is set but does\n    not match any configured syncer that can sync inventory.",
-        "operationId": "inventory_inventory_sync_trigger_api_plugins_inventory_sync__post",
+        "operationId": "inventory_inventory_sync_trigger_api_apps_inventory_sync__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -12815,10 +12815,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/sync/status/": {
+    "/api/apps/inventory/sync/status/": {
       "get": {
         "description": "Return whether an inventory-wide sync is currently running.\n\nReplaces the server-rendered ``sync_is_running`` template variable\nused by the Jinja2 inventory page so the React control can poll the\nsame state without scraping HTML.\n\n:param session: SQLModel async session.\n:type session: SessionDep\n:return: ``{\"is_running\": <bool>}``.\n:rtype: InventorySyncStatusResponse",
-        "operationId": "inventory_inventory_sync_status_api_plugins_inventory_sync_status__get",
+        "operationId": "inventory_inventory_sync_status_api_apps_inventory_sync_status__get",
         "responses": {
           "200": {
             "content": {
@@ -12837,10 +12837,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/{entity}/": {
+    "/api/apps/inventory/{entity}/": {
       "get": {
         "description": "List inventory nodes, services, schemas, or tables.",
-        "operationId": "inventory_inventory_list_entity_api_plugins_inventory__entity___get",
+        "operationId": "inventory_inventory_list_entity_api_apps_inventory__entity___get",
         "parameters": [
           {
             "in": "path",
@@ -12858,7 +12858,7 @@
               "application/json": {
                 "schema": {
                   "items": {},
-                  "title": "Response Inventory Inventory List Entity Api Plugins Inventory  Entity   Get",
+                  "title": "Response Inventory Inventory List Entity Api Apps Inventory  Entity   Get",
                   "type": "array"
                 }
               }
@@ -12883,7 +12883,7 @@
       },
       "post": {
         "description": "Create an inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_create_entity_api_plugins_inventory__entity___post",
+        "operationId": "inventory_inventory_create_entity_api_apps_inventory__entity___post",
         "parameters": [
           {
             "in": "path",
@@ -12900,7 +12900,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Inventory Inventory Create Entity Api Plugins Inventory  Entity   Post"
+                  "title": "Response Inventory Inventory Create Entity Api Apps Inventory  Entity   Post"
                 }
               }
             },
@@ -12923,10 +12923,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/{entity}/{item_id}": {
+    "/api/apps/inventory/{entity}/{item_id}": {
       "delete": {
         "description": "Delete an inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_delete_entity_api_plugins_inventory__entity___item_id__delete",
+        "operationId": "inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -12974,7 +12974,7 @@
       },
       "get": {
         "description": "Retrieve a single inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_get_entity_api_plugins_inventory__entity___item_id__get",
+        "operationId": "inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get",
         "parameters": [
           {
             "in": "path",
@@ -13000,7 +13000,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Inventory Inventory Get Entity Api Plugins Inventory  Entity   Item Id  Get"
+                  "title": "Response Inventory Inventory Get Entity Api Apps Inventory  Entity   Item Id  Get"
                 }
               }
             },
@@ -13024,7 +13024,7 @@
       },
       "put": {
         "description": "Update an inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_update_entity_api_plugins_inventory__entity___item_id__put",
+        "operationId": "inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put",
         "parameters": [
           {
             "in": "path",
@@ -13050,7 +13050,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Inventory Inventory Update Entity Api Plugins Inventory  Entity   Item Id  Put"
+                  "title": "Response Inventory Inventory Update Entity Api Apps Inventory  Entity   Item Id  Put"
                 }
               }
             },
@@ -13073,9 +13073,9 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/": {
+    "/api/apps/mysql_backups/": {
       "get": {
-        "operationId": "mysql_backups__list_paginated_api_plugins_mysql_backups__get",
+        "operationId": "mysql_backups__list_paginated_api_apps_mysql_backups__get",
         "parameters": [
           {
             "in": "query",
@@ -13145,7 +13145,7 @@
         ]
       },
       "post": {
-        "operationId": "mysql_backups__create_api_plugins_mysql_backups__post",
+        "operationId": "mysql_backups__create_api_apps_mysql_backups__post",
         "parameters": [
           {
             "in": "query",
@@ -13196,9 +13196,9 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/restore/": {
+    "/api/apps/mysql_backups/restore/": {
       "get": {
-        "operationId": "mysql_backups_restore__list_paginated_api_plugins_mysql_backups_restore__get",
+        "operationId": "mysql_backups_restore__list_paginated_api_apps_mysql_backups_restore__get",
         "parameters": [
           {
             "in": "query",
@@ -13268,7 +13268,7 @@
         ]
       },
       "post": {
-        "operationId": "mysql_backups_restore__create_api_plugins_mysql_backups_restore__post",
+        "operationId": "mysql_backups_restore__create_api_apps_mysql_backups_restore__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -13307,10 +13307,10 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/restore/schema": {
+    "/api/apps/mysql_backups/restore/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "mysql_backups_restore_get_schema_api_plugins_mysql_backups_restore_schema_get",
+        "operationId": "mysql_backups_restore_get_schema_api_apps_mysql_backups_restore_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -13329,9 +13329,9 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/restore/{task_name}": {
+    "/api/apps/mysql_backups/restore/{task_name}": {
       "delete": {
-        "operationId": "mysql_backups_restore__delete_api_plugins_mysql_backups_restore__task_name__delete",
+        "operationId": "mysql_backups_restore__delete_api_apps_mysql_backups_restore__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -13364,7 +13364,7 @@
         ]
       },
       "get": {
-        "operationId": "mysql_backups_restore__detail_api_plugins_mysql_backups_restore__task_name__get",
+        "operationId": "mysql_backups_restore__detail_api_apps_mysql_backups_restore__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -13404,7 +13404,7 @@
         ]
       },
       "put": {
-        "operationId": "mysql_backups_restore__update_api_plugins_mysql_backups_restore__task_name__put",
+        "operationId": "mysql_backups_restore__update_api_apps_mysql_backups_restore__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -13454,10 +13454,10 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/restore/{task_name}/execute": {
+    "/api/apps/mysql_backups/restore/{task_name}/execute": {
       "post": {
         "description": "Resolve, dispatch, and wrap a standard task execution.",
-        "operationId": "mysql_backups_restore_mysql_backups_restores_api_execute_api_plugins_mysql_backups_restore__task_name__execute_post",
+        "operationId": "mysql_backups_restore_mysql_backups_restores_api_execute_api_apps_mysql_backups_restore__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -13507,10 +13507,10 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/schema": {
+    "/api/apps/mysql_backups/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "mysql_backups_get_schema_api_plugins_mysql_backups_schema_get",
+        "operationId": "mysql_backups_get_schema_api_apps_mysql_backups_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -13529,9 +13529,9 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/{task_name}": {
+    "/api/apps/mysql_backups/{task_name}": {
       "delete": {
-        "operationId": "mysql_backups__delete_api_plugins_mysql_backups__task_name__delete",
+        "operationId": "mysql_backups__delete_api_apps_mysql_backups__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -13564,7 +13564,7 @@
         ]
       },
       "get": {
-        "operationId": "mysql_backups__detail_api_plugins_mysql_backups__task_name__get",
+        "operationId": "mysql_backups__detail_api_apps_mysql_backups__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -13604,7 +13604,7 @@
         ]
       },
       "put": {
-        "operationId": "mysql_backups__update_api_plugins_mysql_backups__task_name__put",
+        "operationId": "mysql_backups__update_api_apps_mysql_backups__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -13664,10 +13664,10 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/{task_name}/execute": {
+    "/api/apps/mysql_backups/{task_name}/execute": {
       "post": {
         "description": "Resolve, dispatch, and wrap a standard task execution.",
-        "operationId": "mysql_backups_mysql_backups_api_execute_api_plugins_mysql_backups__task_name__execute_post",
+        "operationId": "mysql_backups_mysql_backups_api_execute_api_apps_mysql_backups__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -13717,10 +13717,10 @@
         ]
       }
     },
-    "/api/plugins/report/config": {
+    "/api/apps/report/config": {
       "get": {
         "description": "Return upload configuration status.\n\n:return: JSON with ``upload_disabled_reasons`` — empty list means upload is ready.\n:rtype: JSONResponse",
-        "operationId": "report_report_config_api_plugins_report_config_get",
+        "operationId": "report_report_config_api_apps_report_config_get",
         "responses": {
           "200": {
             "content": {
@@ -13737,10 +13737,10 @@
         ]
       }
     },
-    "/api/plugins/report/generate/json": {
+    "/api/apps/report/generate/json": {
       "get": {
         "description": "Generate a report and return as JSON.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:param sections: Optional list of sections to include.\n:type sections: list[str] | None\n:return: JSON response with the full report data.\n:rtype: JSONResponse",
-        "operationId": "report_report_generate_json_api_api_plugins_report_generate_json_get",
+        "operationId": "report_report_generate_json_api_api_apps_report_generate_json_get",
         "parameters": [
           {
             "in": "query",
@@ -13828,15 +13828,15 @@
         ]
       }
     },
-    "/api/plugins/report/generate/pdf": {
+    "/api/apps/report/generate/pdf": {
       "post": {
         "description": "Generate a report and return it as a downloadable PDF.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:return: PDF file response.\n:rtype: Response",
-        "operationId": "report_report_generate_pdf_api_api_plugins_report_generate_pdf_post",
+        "operationId": "report_report_generate_pdf_api_api_apps_report_generate_pdf_post",
         "requestBody": {
           "content": {
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post"
+                "$ref": "#/components/schemas/Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post"
               }
             }
           }
@@ -13867,15 +13867,15 @@
         ]
       }
     },
-    "/api/plugins/report/upload": {
+    "/api/apps/report/upload": {
       "post": {
         "description": "Generate a report, convert to PDF, and upload to ServiceNow.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:return: JSON response with the upload result.\n:rtype: JSONResponse",
-        "operationId": "report_report_upload_api_api_plugins_report_upload_post",
+        "operationId": "report_report_upload_api_api_apps_report_upload_post",
         "requestBody": {
           "content": {
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/Body_report_report_upload_api_api_plugins_report_upload_post"
+                "$ref": "#/components/schemas/Body_report_report_upload_api_api_apps_report_upload_post"
               }
             }
           }
@@ -13906,10 +13906,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/": {
+    "/api/apps/snippets/": {
       "get": {
         "description": "List every discovered script as its list-row projection.",
-        "operationId": "snippets_snippets_api_list_api_plugins_snippets__get",
+        "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
         "responses": {
           "200": {
             "content": {
@@ -13918,7 +13918,7 @@
                   "items": {
                     "$ref": "#/components/schemas/SnippetResponse"
                   },
-                  "title": "Response Snippets Snippets Api List Api Plugins Snippets  Get",
+                  "title": "Response Snippets Snippets Api List Api Apps Snippets  Get",
                   "type": "array"
                 }
               }
@@ -13932,10 +13932,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/approvals": {
+    "/api/apps/snippets/approvals": {
       "patch": {
         "description": "Approve a set of snippets atomically (idempotent partial-update).\n\nReject the whole batch with ``400`` and a\n:class:`BatchApprovalErrorResponse` payload when any filename has no\nDB row or its file is missing on disk. Filenames that are already\napproved when the call starts are reported in\n``skipped_already_approved`` — not as errors. The atomic write uses\n``approved_at IS NULL`` as a CAS filter so two concurrent admins\ncannot double-approve.\n\n:param existence: Pre-validated batch existence result from the dependency.\n:type existence: SnippetBatchExistenceResult\n:param user: The authenticated admin performing the action.\n:type user: User\n:param session: The active database session.\n:type session: AsyncSession\n:return: The success payload listing approved + skipped filenames.\n:rtype: BatchApprovalResponse\n:raises HTTPBadRequestException: On hard-error precheck failures with\n    a :class:`BatchApprovalErrorResponse` body.",
-        "operationId": "snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch",
+        "operationId": "snippets_snippets_api_batch_approve_api_apps_snippets_approvals_patch",
         "requestBody": {
           "content": {
             "application/json": {
@@ -13974,10 +13974,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/capabilities": {
+    "/api/apps/snippets/capabilities": {
       "get": {
         "description": "Return per-deployment capability flags for the snippets plugin.\n\nRead live from ``snippets_settings`` so a deployment-config hot reload between\ntwo requests is reflected on the next response.\n\n:return: Capability flags reflecting the current deployment config.",
-        "operationId": "snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get",
+        "operationId": "snippets__snippets_capabilities_provider_api_apps_snippets_capabilities_get",
         "responses": {
           "200": {
             "content": {
@@ -13996,10 +13996,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/refresh": {
+    "/api/apps/snippets/refresh": {
       "post": {
         "description": "Refresh the snippets cache from disk.\n\nAdmin-only and additionally gated by manual sync being enabled.\nMirrors the legacy Jinja2 ``POST /snippets/refresh`` route.\n\n:param user: The authenticated admin performing the refresh.\n:type user: User\n:param session: The SEP database session.\n:return: A response carrying the UTC timestamp of the refresh.\n:rtype: RefreshResponse",
-        "operationId": "snippets_snippets_api_refresh_api_plugins_snippets_refresh_post",
+        "operationId": "snippets_snippets_api_refresh_api_apps_snippets_refresh_post",
         "responses": {
           "200": {
             "content": {
@@ -14018,10 +14018,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/schema": {
+    "/api/apps/snippets/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "snippets_get_schema_api_plugins_snippets_schema_get",
+        "operationId": "snippets_get_schema_api_apps_snippets_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -14040,10 +14040,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/approval": {
+    "/api/apps/snippets/snippet/approval": {
       "delete": {
         "description": "Remove approval from a single snippet (idempotent).\n\nRemoving an approval that doesn't exist is a no-op ``204``. The\nsnippet missing → ``404`` (handled by ``SnippetDep``); approval\nmissing → ``204``.\n\n:param snippet: The snippet whose approval is being cleared.\n:type snippet: Snippet\n:param user: The authenticated admin performing the action.\n:type user: User\n:param session: The active database session.\n:type session: AsyncSession\n:return: An empty 204 response.\n:rtype: Response",
-        "operationId": "snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete",
+        "operationId": "snippets_snippets_api_remove_approval_api_apps_snippets_snippet_approval_delete",
         "parameters": [
           {
             "description": "Snippet filename (relative path under snippets root).",
@@ -14079,7 +14079,7 @@
       },
       "put": {
         "description": "Approve a single snippet (idempotent).\n\nRe-approving an already-approved snippet returns ``200`` with the\ncurrent state — ``approved_at`` is *not* overwritten so the audit\ntrail is preserved.\n\n:param snippet: The snippet whose approval is being set.\n:type snippet: Snippet\n:param user: The authenticated admin performing the action.\n:type user: User\n:param session: The active database session.\n:type session: AsyncSession\n:return: The snippet entity after the call, including approval state.\n:rtype: SnippetResponse",
-        "operationId": "snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put",
+        "operationId": "snippets_snippets_api_approve_api_apps_snippets_snippet_approval_put",
         "parameters": [
           {
             "description": "Snippet filename (relative path under snippets root).",
@@ -14121,10 +14121,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/download": {
+    "/api/apps/snippets/snippet/download": {
       "get": {
         "description": "Stream the raw snippet file as a download attachment.\n\nReturns the on-disk source verbatim — full bash/Python body plus its\nYAML frontmatter — so end users can save the file locally without\nbeing capped by the preview truncation limits. The\n``SnippetDep`` dependency already validates both the DB row and the\non-disk file, so a missing snippet or missing file surfaces as 404.\n\n:param snippet: The snippet whose raw file is requested.\n:type snippet: Snippet\n:return: The snippet file streamed as ``attachment; filename=...``\n    with a MIME type guessed from the on-disk path.\n:rtype: FileResponse",
-        "operationId": "snippets_snippets_api_download_api_plugins_snippets_snippet_download_get",
+        "operationId": "snippets_snippets_api_download_api_apps_snippets_snippet_download_get",
         "parameters": [
           {
             "description": "Snippet filename (relative path under snippets root).",
@@ -14164,10 +14164,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/execute": {
+    "/api/apps/snippets/snippet/execute": {
       "post": {
         "description": "Validate the args, assemble the meta, and dispatch the execution.",
-        "operationId": "snippets_snippets_api_script_execute_api_plugins_snippets_snippet_execute_post",
+        "operationId": "snippets_snippets_api_script_execute_api_apps_snippets_snippet_execute_post",
         "parameters": [
           {
             "description": "Script filename (relative path under the script dir).",
@@ -14219,10 +14219,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/history": {
+    "/api/apps/snippets/snippet/history": {
       "get": {
         "description": "Proxy the per-script execution history from the Tasks API by filename.",
-        "operationId": "snippets_snippets_api_script_history_api_plugins_snippets_snippet_history_get",
+        "operationId": "snippets_snippets_api_script_history_api_apps_snippets_snippet_history_get",
         "parameters": [
           {
             "description": "Script filename (relative path under the script dir).",
@@ -14241,7 +14241,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Snippets Snippets Api Script History Api Plugins Snippets Snippet History Get",
+                  "title": "Response Snippets Snippets Api Script History Api Apps Snippets Snippet History Get",
                   "type": "object"
                 }
               }
@@ -14265,10 +14265,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/preview": {
+    "/api/apps/snippets/snippet/preview": {
       "get": {
         "description": "Return the snippet's preview content with a highlighter language hint.\n\n:param snippet: The snippet whose preview is requested.\n:type snippet: Snippet\n:return: The preview content alongside metadata about it.\n:rtype: ScriptPreviewResponse\n:raises HTTPUnprocessableEntityException: When the snippet contains\n    bytes that cannot be decoded as UTF-8.",
-        "operationId": "snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get",
+        "operationId": "snippets_snippets_api_script_preview_api_apps_snippets_snippet_preview_get",
         "parameters": [
           {
             "description": "Snippet filename (relative path under snippets root).",
@@ -14310,10 +14310,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/schema": {
+    "/api/apps/snippets/snippet/schema": {
       "get": {
         "description": "Return the per-script form schema synthesised from its parameters.",
-        "operationId": "snippets_snippets_api_script_schema_api_plugins_snippets_snippet_schema_get",
+        "operationId": "snippets_snippets_api_script_schema_api_apps_snippets_snippet_schema_get",
         "parameters": [
           {
             "description": "Script filename (relative path under the script dir).",
@@ -14355,10 +14355,10 @@
         ]
       }
     },
-    "/api/plugins/tasks/": {
+    "/api/apps/tasks/": {
       "get": {
         "description": "List task definitions for the read-only plugin UI.\n\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:return: Task rows for the schema-driven list view.\n:rtype: list[TaskListResponse]",
-        "operationId": "task_manager_tasks_api_list_api_plugins_tasks__get",
+        "operationId": "task_manager_tasks_api_list_api_apps_tasks__get",
         "responses": {
           "200": {
             "content": {
@@ -14367,7 +14367,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TaskListResponse"
                   },
-                  "title": "Response Task Manager Tasks Api List Api Plugins Tasks  Get",
+                  "title": "Response Task Manager Tasks Api List Api Apps Tasks  Get",
                   "type": "array"
                 }
               }
@@ -14381,10 +14381,10 @@
         ]
       }
     },
-    "/api/plugins/tasks/schema": {
+    "/api/apps/tasks/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "task_manager_get_schema_api_plugins_tasks_schema_get",
+        "operationId": "task_manager_get_schema_api_apps_tasks_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -14403,10 +14403,10 @@
         ]
       }
     },
-    "/api/plugins/tasks/{task_name}": {
+    "/api/apps/tasks/{task_name}": {
       "get": {
         "description": "Return the per-task detail bundle for the read-only plugin UI.\n\n:param task: The task definition resolved by name.\n:type task: Task\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:param executor_hosts_ctx: Executor hosts enriched with inventory labels.\n:type executor_hosts_ctx: ExecutorHostsCtx\n:return: Task definition, history, periodic schedules, and executor hosts.\n:rtype: TaskDetailResponse",
-        "operationId": "task_manager_tasks_api_detail_api_plugins_tasks__task_name__get",
+        "operationId": "task_manager_tasks_api_detail_api_apps_tasks__task_name__get",
         "parameters": [
           {
             "in": "path",

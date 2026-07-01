@@ -1882,7 +1882,7 @@
         "type": "object"
       },
       "PluginTaskResponse": {
-        "description": "Represent a single plugin task entry returned by ``GET /api/plugins/inventory/``.\n\n:param name: Machine-readable task identifier (e.g. ``\"inventory-sync\"``).\n:type name: str\n:param display_name: Human-readable label for the schedule UI.\n:type display_name: str",
+        "description": "Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.\n\n:param name: Machine-readable task identifier (e.g. ``\"inventory-sync\"``).\n:type name: str\n:param display_name: Human-readable label for the schedule UI.\n:type display_name: str",
         "properties": {
           "display_name": {
             "title": "Display Name",
@@ -2005,7 +2005,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -2734,10 +2734,10 @@
     }
   },
   "paths": {
-    "/api/plugins/inventory/": {
+    "/api/apps/inventory/": {
       "get": {
         "description": "Return the list of periodic task names for the Inventory plugin.\n\nHard-coded because the Inventory plugin has exactly one periodic task\n(``inventory-sync``). The shape matches what the React\n``usePluginTasks('inventory')`` hook expects: a list of objects with at\nminimum a ``name`` key.",
-        "operationId": "inventory_inventory_plugin_tasks_api_plugins_inventory__get",
+        "operationId": "inventory_inventory_plugin_tasks_api_apps_inventory__get",
         "responses": {
           "200": {
             "content": {
@@ -2746,7 +2746,7 @@
                   "items": {
                     "$ref": "#/components/schemas/PluginTaskResponse"
                   },
-                  "title": "Response Inventory Inventory Plugin Tasks Api Plugins Inventory  Get",
+                  "title": "Response Inventory Inventory Plugin Tasks Api Apps Inventory  Get",
                   "type": "array"
                 }
               }
@@ -2760,10 +2760,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/available-syncers/": {
+    "/api/apps/inventory/available-syncers/": {
       "get": {
         "description": "Return syncers capable of syncing inventory.\n\n:param available_syncers: Filtered syncer list from ``InventoryAvailableSyncersDep``.\n:type available_syncers: list[AvailableSyncer]\n:return: Filtered list of syncers that can sync inventory.\n:rtype: list[AvailableSyncer]",
-        "operationId": "inventory_inventory_available_syncers_api_plugins_inventory_available_syncers__get",
+        "operationId": "inventory_inventory_available_syncers_api_apps_inventory_available_syncers__get",
         "responses": {
           "200": {
             "content": {
@@ -2772,7 +2772,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AvailableSyncer"
                   },
-                  "title": "Response Inventory Inventory Available Syncers Api Plugins Inventory Available Syncers  Get",
+                  "title": "Response Inventory Inventory Available Syncers Api Apps Inventory Available Syncers  Get",
                   "type": "array"
                 }
               }
@@ -2786,10 +2786,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/nodes/{node_id}/system-observation": {
+    "/api/apps/inventory/nodes/{node_id}/system-observation": {
       "get": {
         "description": "Proxy the host-level system observation for a node (read-only).\n\nForwards to the inventory sub-app's ``/nodes/{node_id}/system-observation``\nendpoint via ``InventoryAPI``. This three-segment literal path cannot\ncollide with the two-segment ``/{entity}/{item_id:int}`` detail matcher. An\nupstream HTTP 404 — the \"not collected yet\" signal — propagates unchanged\nfor the React panel to render as an empty state.\n\n:param node_id: Primary key of the node.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The host-level system observation payload.",
-        "operationId": "inventory_inventory_node_system_observation_api_plugins_inventory_nodes__node_id__system_observation_get",
+        "operationId": "inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get",
         "parameters": [
           {
             "in": "path",
@@ -2806,7 +2806,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Inventory Inventory Node System Observation Api Plugins Inventory Nodes  Node Id  System Observation Get"
+                  "title": "Response Inventory Inventory Node System Observation Api Apps Inventory Nodes  Node Id  System Observation Get"
                 }
               }
             },
@@ -2829,10 +2829,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/schema": {
+    "/api/apps/inventory/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "inventory_get_schema_api_plugins_inventory_schema_get",
+        "operationId": "inventory_get_schema_api_apps_inventory_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -2851,10 +2851,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/services/{service_id}/system-observation": {
+    "/api/apps/inventory/services/{service_id}/system-observation": {
       "get": {
         "description": "Proxy the service-level system observation for a service (read-only).\n\nForwards to the inventory sub-app's\n``/services/{service_id}/system-observation`` endpoint via ``InventoryAPI``.\nAn upstream HTTP 404 propagates unchanged so the React panel renders its\n\"not collected yet\" empty state.\n\n:param service_id: Primary key of the service.\n:param inventory_api: Authenticated inventory ``RemoteAPI`` client.\n:return: The service-level system observation payload.",
-        "operationId": "inventory_inventory_service_system_observation_api_plugins_inventory_services__service_id__system_observation_get",
+        "operationId": "inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get",
         "parameters": [
           {
             "in": "path",
@@ -2871,7 +2871,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Inventory Inventory Service System Observation Api Plugins Inventory Services  Service Id  System Observation Get"
+                  "title": "Response Inventory Inventory Service System Observation Api Apps Inventory Services  Service Id  System Observation Get"
                 }
               }
             },
@@ -2894,10 +2894,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/sync/": {
+    "/api/apps/inventory/sync/": {
       "post": {
         "description": "Schedule an ad-hoc inventory sync as a background task.\n\nMirrors the Jinja2 ``POST /inventory/sync/`` handler but accepts an\noptional JSON body ``{\"syncer\": \"<qualified_name>\"}``. When ``syncer``\nis absent, ``None``, or empty, every configured syncer runs in\ndeclaration order; otherwise only the named syncer is forwarded. An\nunknown or inapplicable syncer raises HTTP 400 — never a silent no-op.\n\nAuthentication is enforced by the parent ``api_router``'s\n``IsApiAuthenticated`` dependency, so this handler needs no auth parameter.\n\n:param syncers: Configured syncers from ``SyncersDep``.\n:type syncers: SyncersDep\n:param background_tasks: FastAPI's background task scheduler.\n:type background_tasks: BackgroundTasks\n:param internal_token: SEP-internal service token injected by\n    ``InternalTokenDep`` and forwarded to the background sync task.\n:param body: Optional trigger body.\n:type body: InventorySyncTriggerWrite | None\n:return: Empty 202 Accepted response.\n:rtype: Response\n:raises HTTPBadRequestException: When ``body.syncer`` is set but does\n    not match any configured syncer that can sync inventory.",
-        "operationId": "inventory_inventory_sync_trigger_api_plugins_inventory_sync__post",
+        "operationId": "inventory_inventory_sync_trigger_api_apps_inventory_sync__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2936,10 +2936,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/sync/status/": {
+    "/api/apps/inventory/sync/status/": {
       "get": {
         "description": "Return whether an inventory-wide sync is currently running.\n\nReplaces the server-rendered ``sync_is_running`` template variable\nused by the Jinja2 inventory page so the React control can poll the\nsame state without scraping HTML.\n\n:param session: SQLModel async session.\n:type session: SessionDep\n:return: ``{\"is_running\": <bool>}``.\n:rtype: InventorySyncStatusResponse",
-        "operationId": "inventory_inventory_sync_status_api_plugins_inventory_sync_status__get",
+        "operationId": "inventory_inventory_sync_status_api_apps_inventory_sync_status__get",
         "responses": {
           "200": {
             "content": {
@@ -2958,10 +2958,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/{entity}/": {
+    "/api/apps/inventory/{entity}/": {
       "get": {
         "description": "List inventory nodes, services, schemas, or tables.",
-        "operationId": "inventory_inventory_list_entity_api_plugins_inventory__entity___get",
+        "operationId": "inventory_inventory_list_entity_api_apps_inventory__entity___get",
         "parameters": [
           {
             "in": "path",
@@ -2979,7 +2979,7 @@
               "application/json": {
                 "schema": {
                   "items": {},
-                  "title": "Response Inventory Inventory List Entity Api Plugins Inventory  Entity   Get",
+                  "title": "Response Inventory Inventory List Entity Api Apps Inventory  Entity   Get",
                   "type": "array"
                 }
               }
@@ -3004,7 +3004,7 @@
       },
       "post": {
         "description": "Create an inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_create_entity_api_plugins_inventory__entity___post",
+        "operationId": "inventory_inventory_create_entity_api_apps_inventory__entity___post",
         "parameters": [
           {
             "in": "path",
@@ -3021,7 +3021,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Inventory Inventory Create Entity Api Plugins Inventory  Entity   Post"
+                  "title": "Response Inventory Inventory Create Entity Api Apps Inventory  Entity   Post"
                 }
               }
             },
@@ -3044,10 +3044,10 @@
         ]
       }
     },
-    "/api/plugins/inventory/{entity}/{item_id}": {
+    "/api/apps/inventory/{entity}/{item_id}": {
       "delete": {
         "description": "Delete an inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_delete_entity_api_plugins_inventory__entity___item_id__delete",
+        "operationId": "inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -3095,7 +3095,7 @@
       },
       "get": {
         "description": "Retrieve a single inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_get_entity_api_plugins_inventory__entity___item_id__get",
+        "operationId": "inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get",
         "parameters": [
           {
             "in": "path",
@@ -3121,7 +3121,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Inventory Inventory Get Entity Api Plugins Inventory  Entity   Item Id  Get"
+                  "title": "Response Inventory Inventory Get Entity Api Apps Inventory  Entity   Item Id  Get"
                 }
               }
             },
@@ -3145,7 +3145,7 @@
       },
       "put": {
         "description": "Update an inventory node, service, schema, or table.",
-        "operationId": "inventory_inventory_update_entity_api_plugins_inventory__entity___item_id__put",
+        "operationId": "inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put",
         "parameters": [
           {
             "in": "path",
@@ -3171,7 +3171,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Inventory Inventory Update Entity Api Plugins Inventory  Entity   Item Id  Put"
+                  "title": "Response Inventory Inventory Update Entity Api Apps Inventory  Entity   Item Id  Put"
                 }
               }
             },

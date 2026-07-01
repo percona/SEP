@@ -32,7 +32,7 @@ class DipperScript(BaseSnippet):
 
 
 class DipperExecuteWrite(BaseModel):
-    """Define the JSON body for ``POST /api/plugins/dipper/``.
+    """Define the JSON body for ``POST /api/apps/dipper/``.
 
     :param service_id: Inventory ID of the database service to collect data from.
     :type service_id: int
@@ -56,7 +56,7 @@ class DipperExecuteWrite(BaseModel):
 
 
 class DipperExecutionResponse(BaseModel):
-    """Represent the response from ``POST /api/plugins/dipper/``.
+    """Represent the response from ``POST /api/apps/dipper/``.
 
     :param task_id: ID of the task-history row created by the tasks API.
     :type task_id: int | None

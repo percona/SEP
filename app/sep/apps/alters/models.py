@@ -525,7 +525,7 @@ class AltersExecuteWrite(BaseModel):
 
 
 class AltersExecutionResponse(BaseModel):
-    """Represent the response from POST /api/plugins/alters/{task_name}/execute.
+    """Represent the response from POST /api/apps/alters/{task_name}/execute.
 
     :param task_name: The name of the task that was executed.
     :param task_id: The id of the task-history row created by the tasks API.

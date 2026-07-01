@@ -16,7 +16,7 @@
 """Define routes for the Support Snippets plugin.
 
 These Jinja2 routes are deprecated. The JSON API equivalents live under
-``/api/plugins/snippets/`` and the React UI consumes them via
+``/api/apps/snippets/`` and the React UI consumes them via
 ``frontend/packages/plugins/snippets``. Every response from this router
 carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on
 hit; the routes remain mounted so users can fall back to the legacy UI

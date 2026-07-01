@@ -27,12 +27,12 @@ from app.models import CasdoorUser
 from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
 from app.sep.apps.<< name >>.app import app as << name >>_app
 
-_BASE = "/api/plugins/<< name >>"
+_BASE = "/api/apps/<< name >>"
 
 
 def _client(user: CasdoorUser) -> TestClient:
     """Mount the app's API router behind the production auth guard."""
-    apps_router = APIRouter(prefix="/plugins")
+    apps_router = APIRouter(prefix="/apps")
     apps_router.include_router(<< name >>_app.api_router, prefix=<< name >>_app.uri_path)
     api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
     api_router.include_router(apps_router)

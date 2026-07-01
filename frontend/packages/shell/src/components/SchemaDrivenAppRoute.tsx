@@ -27,7 +27,7 @@ interface SchemaDrivenAppRouteProps {
  * Generic shell route for schema-driven apps without a bespoke React package.
  *
  * ``routeBase`` comes from ``appNavConfig`` when the plugin is not mounted
- * under the default ``/plugins/{appKey}`` prefix. The derived schema now drives
+ * under the default ``/apps/{appKey}`` prefix. The derived schema now drives
  * every form (including archives' one-of groups and free-solo references), so
  * no per-app create/edit form override is injected here.
  */

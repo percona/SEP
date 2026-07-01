@@ -17,7 +17,7 @@
 
 The registry discovers the exported ``app`` under the key ``snippets`` (derived
 from the module path), mounting its derived JSON router at
-``/api/plugins/snippets/`` while the existing Jinja UI keeps serving at
+``/api/apps/snippets/`` while the existing Jinja UI keeps serving at
 ``/snippets/`` via the threaded ``jinja_router``. The JSON surface is the first
 real adoption of the framework ``ScriptSource`` seam: listing, per-snippet form
 schema, execution history, and execute are derived from

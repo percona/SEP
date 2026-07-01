@@ -2445,7 +2445,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -3351,9 +3351,9 @@
     }
   },
   "paths": {
-    "/api/plugins/archives/": {
+    "/api/apps/archives/": {
       "get": {
-        "operationId": "archives__list_api_plugins_archives__get",
+        "operationId": "archives__list_api_apps_archives__get",
         "parameters": [
           {
             "in": "query",
@@ -3380,7 +3380,7 @@
                   "items": {
                     "$ref": "#/components/schemas/BaseTaskResponse"
                   },
-                  "title": "Response Archives  List Api Plugins Archives  Get",
+                  "title": "Response Archives  List Api Apps Archives  Get",
                   "type": "array"
                 }
               }
@@ -3404,7 +3404,7 @@
         ]
       },
       "post": {
-        "operationId": "archives__create_api_plugins_archives__post",
+        "operationId": "archives__create_api_apps_archives__post",
         "parameters": [
           {
             "in": "query",
@@ -3455,10 +3455,10 @@
         ]
       }
     },
-    "/api/plugins/archives/schema": {
+    "/api/apps/archives/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "archives_get_schema_api_plugins_archives_schema_get",
+        "operationId": "archives_get_schema_api_apps_archives_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -3477,9 +3477,9 @@
         ]
       }
     },
-    "/api/plugins/archives/{task_name}": {
+    "/api/apps/archives/{task_name}": {
       "delete": {
-        "operationId": "archives__delete_api_plugins_archives__task_name__delete",
+        "operationId": "archives__delete_api_apps_archives__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -3512,7 +3512,7 @@
         ]
       },
       "get": {
-        "operationId": "archives__detail_api_plugins_archives__task_name__get",
+        "operationId": "archives__detail_api_apps_archives__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3552,7 +3552,7 @@
         ]
       },
       "put": {
-        "operationId": "archives__update_api_plugins_archives__task_name__put",
+        "operationId": "archives__update_api_apps_archives__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -3612,10 +3612,10 @@
         ]
       }
     },
-    "/api/plugins/archives/{task_name}/execute": {
+    "/api/apps/archives/{task_name}/execute": {
       "post": {
         "description": "Resolve, dispatch, and wrap a standard task execution.",
-        "operationId": "archives_archives_api_execute_api_plugins_archives__task_name__execute_post",
+        "operationId": "archives_archives_api_execute_api_apps_archives__task_name__execute_post",
         "parameters": [
           {
             "in": "path",

@@ -93,7 +93,7 @@ def schema_endpoint(router: APIRouter, plugin_schema: AppSchema) -> None:
     Call this once from the module that owns the plugin's ``APIRouter``
     (typically under the shared ``apps_router`` tree in
     ``app/sep/api/router.py``); the route then resolves at
-    ``/api/plugins/{plugin}/schema`` once the plugin router is included with
+    ``/api/apps/{plugin}/schema`` once the plugin router is included with
     the matching prefix. The helper itself does not set a prefix.
 
     .. code-block:: python

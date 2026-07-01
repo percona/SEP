@@ -2041,7 +2041,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -2883,10 +2883,10 @@
     }
   },
   "paths": {
-    "/api/plugins/alert_troubleshooting/": {
+    "/api/apps/alert_troubleshooting/": {
       "get": {
         "description": "Return alerts grouped by service type.\n\n:param session: The database session.\n:type session: SessionDep\n:return: A list of alert groups, each containing alerts for a service type.\n:rtype: list[AlertGroup]",
-        "operationId": "alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get",
+        "operationId": "alert_troubleshooting_alert_troubleshooting_api_list_api_apps_alert_troubleshooting__get",
         "responses": {
           "200": {
             "content": {
@@ -2895,7 +2895,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AlertGroup"
                   },
-                  "title": "Response Alert Troubleshooting Alert Troubleshooting Api List Api Plugins Alert Troubleshooting  Get",
+                  "title": "Response Alert Troubleshooting Alert Troubleshooting Api List Api Apps Alert Troubleshooting  Get",
                   "type": "array"
                 }
               }
@@ -2909,10 +2909,10 @@
         ]
       }
     },
-    "/api/plugins/alert_troubleshooting/schema": {
+    "/api/apps/alert_troubleshooting/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get",
+        "operationId": "alert_troubleshooting_get_schema_api_apps_alert_troubleshooting_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -2931,10 +2931,10 @@
         ]
       }
     },
-    "/api/plugins/alert_troubleshooting/{service_type}/{alert_name}": {
+    "/api/apps/alert_troubleshooting/{service_type}/{alert_name}": {
       "get": {
         "description": "Return alert info and associated snippets for a specific alert.\n\n:param service_type: The service type of the alert.\n:type service_type: AlertServiceType\n:param alert_name: The alert name identifier.\n:type alert_name: str\n:param session: The database session.\n:type session: SessionDep\n:return: Alert info and associated snippets.\n:rtype: AlertDetailResponse\n:raises HTTPNotFoundException: If no snippets match the alert.",
-        "operationId": "alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get",
+        "operationId": "alert_troubleshooting_alert_troubleshooting_api_detail_api_apps_alert_troubleshooting__service_type___alert_name__get",
         "parameters": [
           {
             "in": "path",

@@ -2671,7 +2671,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -3529,9 +3529,9 @@
     }
   },
   "paths": {
-    "/api/plugins/mysql_backups/restore/": {
+    "/api/apps/mysql_backups/restore/": {
       "get": {
-        "operationId": "mysql_backups_restore__list_paginated_api_plugins_mysql_backups_restore__get",
+        "operationId": "mysql_backups_restore__list_paginated_api_apps_mysql_backups_restore__get",
         "parameters": [
           {
             "in": "query",
@@ -3601,7 +3601,7 @@
         ]
       },
       "post": {
-        "operationId": "mysql_backups_restore__create_api_plugins_mysql_backups_restore__post",
+        "operationId": "mysql_backups_restore__create_api_apps_mysql_backups_restore__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3640,10 +3640,10 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/restore/schema": {
+    "/api/apps/mysql_backups/restore/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "mysql_backups_restore_get_schema_api_plugins_mysql_backups_restore_schema_get",
+        "operationId": "mysql_backups_restore_get_schema_api_apps_mysql_backups_restore_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -3662,9 +3662,9 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/restore/{task_name}": {
+    "/api/apps/mysql_backups/restore/{task_name}": {
       "delete": {
-        "operationId": "mysql_backups_restore__delete_api_plugins_mysql_backups_restore__task_name__delete",
+        "operationId": "mysql_backups_restore__delete_api_apps_mysql_backups_restore__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -3697,7 +3697,7 @@
         ]
       },
       "get": {
-        "operationId": "mysql_backups_restore__detail_api_plugins_mysql_backups_restore__task_name__get",
+        "operationId": "mysql_backups_restore__detail_api_apps_mysql_backups_restore__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3737,7 +3737,7 @@
         ]
       },
       "put": {
-        "operationId": "mysql_backups_restore__update_api_plugins_mysql_backups_restore__task_name__put",
+        "operationId": "mysql_backups_restore__update_api_apps_mysql_backups_restore__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -3787,10 +3787,10 @@
         ]
       }
     },
-    "/api/plugins/mysql_backups/restore/{task_name}/execute": {
+    "/api/apps/mysql_backups/restore/{task_name}/execute": {
       "post": {
         "description": "Resolve, dispatch, and wrap a standard task execution.",
-        "operationId": "mysql_backups_restore_mysql_backups_restores_api_execute_api_plugins_mysql_backups_restore__task_name__execute_post",
+        "operationId": "mysql_backups_restore_mysql_backups_restores_api_execute_api_apps_mysql_backups_restore__task_name__execute_post",
         "parameters": [
           {
             "in": "path",

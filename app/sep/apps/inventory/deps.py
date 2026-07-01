@@ -302,7 +302,7 @@ async def get_syncers_standalone() -> list[BaseSyncer]:
 def require_inventory_plugin_entity(entity: str) -> str:
     """Normalize ``entity`` or raise HTTP 404 when it is not a known segment.
 
-    :param entity: URL segment under ``/api/plugins/inventory/``.
+    :param entity: URL segment under ``/api/apps/inventory/``.
     :type entity: str
     :return: The same value when it is one of ``nodes``, ``services``,
         ``schemas``, or ``tables``.
