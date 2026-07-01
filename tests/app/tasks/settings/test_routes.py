@@ -213,18 +213,18 @@ class TestTasksSettingsApi:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
-    @pytest.mark.parametrize("bad_value", [1.5, True, 0, 366])
+    @pytest.mark.parametrize("bad_value", [1.5, 0, 366])
     async def test_patch_log_retention_days_invalid_rejected(
         self,
         admin_test_client: TestClient,
         session: AsyncSession,
         bad_value: object,
     ) -> None:
-        """Reject un-normalized non-int / out-of-range LOG_RETENTION_DAYS with 422.
+        """Reject non-integer or out-of-range LOG_RETENTION_DAYS with 422.
 
-        The persisted-override path normalizes integer-valued floats at JSON
-        storage, so ``Strict()`` only bites on the PATCH layer where the raw
-        ``float``/``bool`` arrives un-coerced. A rejected key writes zero rows.
+        Matching the lax sibling int settings, coercible values (``"90"``,
+        ``90.0``) are accepted; only a fractional float or a value outside the
+        ``1..365`` bounds is rejected. A rejected key writes zero rows.
         """
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",

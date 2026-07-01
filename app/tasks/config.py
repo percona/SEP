@@ -20,7 +20,7 @@ from enum import StrEnum
 from typing import Annotated, ClassVar
 
 from annotated_types import Gt, Le
-from pydantic import Field, PositiveInt, Strict
+from pydantic import Field, PositiveInt
 from sqlalchemy_celery_beat.models import Period
 
 from app.core.celery.models import IntervalSchedule
@@ -85,15 +85,12 @@ class TasksSettings(BaseYamlAppSettings):
     :param LOG_RETENTION_DAYS: The age in days beyond which finished task-execution
         logs (``taskhistory_log`` rows) are purged. Runtime-overridable; must be a
         positive integer no greater than 365. Defaults to 90.
-    :type LOG_RETENTION_DAYS: int
     :param LOG_PURGE_BATCH_SIZE: The maximum number of ``taskhistory_log`` rows
         deleted per commit by the purge job. Runtime-overridable; must be positive.
         Defaults to 10,000.
-    :type LOG_PURGE_BATCH_SIZE: PositiveInt
     :param LOG_PURGE_INTERVAL: The schedule on which the log-purge periodic task
         runs. ``None`` disables seeding the task entirely. Read at startup (not
         runtime-overridable). Defaults to once per day.
-    :type LOG_PURGE_INTERVAL: IntervalSchedule | None
     :param LOG_STREAM_CAP_BYTES: The maximum captured-log bytes retained per
         ``(task_history_id, source, stream)``. As a stream grows past the cap
         the writer drops the oldest chunks, keeping a bounded recent tail so a
@@ -118,8 +115,8 @@ class TasksSettings(BaseYamlAppSettings):
         PreExecutionCheckMode.WARN
     )
     STALENESS_THRESHOLD_SECONDS: PositiveInt = hot_field(3600)
-    LOG_RETENTION_DAYS: Annotated[int, Strict(), Gt(0), Le(MAX_LOG_RETENTION_DAYS)] = (
-        hot_field(90)
+    LOG_RETENTION_DAYS: Annotated[int, Gt(0), Le(MAX_LOG_RETENTION_DAYS)] = hot_field(
+        90
     )
     LOG_PURGE_BATCH_SIZE: PositiveInt = hot_field(10_000)
     LOG_PURGE_INTERVAL: IntervalSchedule | None = Field(

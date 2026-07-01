@@ -578,11 +578,6 @@ class TaskHistoryLogManager(BaseSQLModelManager):
     Model = TaskHistoryLog
     ordering = None
 
-    #: Statuses whose executions are still in flight; their logs are never purged.
-    ACTIVE_STATUSES = frozenset(
-        {TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING}
-    )
-
     @classmethod
     async def delete_aged_batch(
         cls,
@@ -602,7 +597,11 @@ class TaskHistoryLogManager(BaseSQLModelManager):
 
         On PostgreSQL the inner selection takes ``FOR UPDATE ... SKIP LOCKED``
         on the log rows so concurrent workers never contend on or double-delete
-        the same batch; other dialects (SQLite in tests) omit the clause.
+        the same batch; other dialects (SQLite in tests) omit the clause. On
+        MySQL the limited selection is wrapped in a derived table because MySQL
+        rejects ``LIMIT`` inside an ``IN (SELECT ...)`` subquery (error 1235)
+        and deleting from a table referenced in its own subquery (error 1093);
+        the derived table sidesteps both while keeping the batch semantics.
 
         :param session: The async session bound to the Tasks database.
         :param cutoff: The age boundary; rows with an effective completion time
@@ -622,13 +621,16 @@ class TaskHistoryLogManager(BaseSQLModelManager):
                 col(TaskHistoryLog.task_history_id) == col(TaskHistory.id),
             )
             .where(
-                col(TaskHistory.status).not_in(cls.ACTIVE_STATUSES),
+                col(TaskHistory.status).not_in(TaskHistoryStatusEnum.active_statuses()),
                 effective_completion < cutoff,
             )
             .limit(batch_size)
         )
-        if session.get_bind().name == DatabaseDialect.POSTGRESQL:
+        dialect = session.get_bind().name
+        if dialect == DatabaseDialect.POSTGRESQL:
             doomed = doomed.with_for_update(skip_locked=True, of=TaskHistoryLog)
+        elif dialect == DatabaseDialect.MYSQL:
+            doomed = select(doomed.subquery().c.id)
 
         result = await cls.delete_where(session, col(TaskHistoryLog.id).in_(doomed))
         return result.rowcount

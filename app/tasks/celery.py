@@ -656,9 +656,7 @@ async def _raise_if_identical_task_conflict(
             func_json_extract(engine_name, TaskHistory.execution_request, "payload")
             == queue_item.execution_request.payload,
             *meta_where_clauses,
-            col(TaskHistory.status).in_(
-                [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]
-            ),
+            col(TaskHistory.status).in_(TaskHistoryStatusEnum.active_statuses()),
             col(TaskHistory.id) != queue_item.id,
             task_id=queue_item.task_id,
         )

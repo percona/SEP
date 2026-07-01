@@ -145,7 +145,7 @@ async def test_log_retention_days_override_applies_at_runtime(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("invalid_value", [0, -5, 366, "x", True, 1.5])
+@pytest.mark.parametrize("invalid_value", [0, -5, 366, "x", 1.5])
 async def test_log_retention_days_invalid_override_falls_back(
     override_session_maker: async_sessionmaker,
     invalid_value: object,
