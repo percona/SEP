@@ -24,13 +24,13 @@ from app.core.celery.utils import (
     SystemPeriodicTaskData,
     SystemPeriodicTaskSchedule,
 )
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.config import sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
 from app.sep.deps import PROTECTED_APP_KEYS
 from app.sep.models import AppLifecycleEnum, AppState, AppStateBase
 from app.sep.periodic_tasks import sync_app_periodic_task_gating
-from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings
 
 _alerts_plugin_enabled = any(
@@ -77,7 +77,7 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     ]
 
     if _alerts_plugin_enabled:
-        from app.sep.plugins.alerts.config import alerts_pmm_config
+        from app.sep.apps.alerts.config import alerts_pmm_config
 
         system_tasks.append(
             SystemPeriodicTaskSchedule(

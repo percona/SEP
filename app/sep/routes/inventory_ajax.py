@@ -26,8 +26,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.core.pagination import fetch_all_dict_items
+from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.deps import InventoryAPI, IsAuthenticated
-from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.utils.decorators import csrf_exempt
 
 logger = logging.getLogger(__name__)

@@ -1,0 +1,32 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Run the derived-router contract suite against the << display_name >> app.
+
+The shared :class:`DerivedRouterContractTests` exercises the whole derived HTTP
+surface (schema, list, detail, create, update, execute, delete, auth) against the
+real definition, reading the contract from the app's knobs. The fixtures it
+requests come from the plugins-tests root conftest.
+"""
+
+from app.sep.apps.<< name >>.app import app as << name >>_app
+from tests.app.sep.apps.framework.contract_suite import DerivedRouterContractTests
+
+
+class Test<< class_prefix >>Contract(DerivedRouterContractTests):
+    """Assert the << display_name >> app's derived HTTP surface, knob by knob."""
+
+    app_def = << name >>_app
+    remapped_username = None

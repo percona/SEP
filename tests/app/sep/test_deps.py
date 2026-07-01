@@ -38,6 +38,7 @@ from app.core.exceptions import (
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.models import CasdoorUser
+from app.sep.apps.framework.registry import build_app_registry
 from app.sep.config import App, sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import (
@@ -73,7 +74,6 @@ from app.sep.deps import (
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
 from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEnum
-from app.sep.plugins.framework.registry import build_app_registry
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
@@ -1464,7 +1464,7 @@ class TestGetToggleableAppKey:
     ) -> None:
         """A configured, non-protected key resolves to itself."""
         monkeypatch.setattr(
-            "app.sep.plugins.framework.registry.get_app_registry",
+            "app.sep.apps.framework.registry.get_app_registry",
             lambda: build_app_registry(
                 [
                     App(name="Inventory", module_name="inventory"),
@@ -1484,7 +1484,7 @@ class TestGetToggleableAppKey:
     ) -> None:
         """An unconfigured key raises 404."""
         monkeypatch.setattr(
-            "app.sep.plugins.framework.registry.get_app_registry",
+            "app.sep.apps.framework.registry.get_app_registry",
             lambda: build_app_registry(
                 [App(name="Snippet Manager", module_name="snippets")]
             ),
@@ -1527,7 +1527,7 @@ class TestGetDefaultContextPluginFiltering:
 
         with (
             patch(
-                "app.sep.plugins.framework.registry.get_app_registry",
+                "app.sep.apps.framework.registry.get_app_registry",
                 return_value=build_app_registry(self._plugins()),
             ),
             patch("app.sep.deps.settings"),
@@ -1552,7 +1552,7 @@ class TestGetDefaultContextPluginFiltering:
 
         with (
             patch(
-                "app.sep.plugins.framework.registry.get_app_registry",
+                "app.sep.apps.framework.registry.get_app_registry",
                 return_value=build_app_registry(self._plugins()),
             ),
             patch("app.sep.deps.settings"),
@@ -1572,7 +1572,7 @@ class TestGetDefaultContextPluginFiltering:
         """A configured plugin with no DB row is shown (missing -> enabled)."""
         with (
             patch(
-                "app.sep.plugins.framework.registry.get_app_registry",
+                "app.sep.apps.framework.registry.get_app_registry",
                 return_value=build_app_registry(self._plugins()),
             ),
             patch("app.sep.deps.settings"),
@@ -1592,7 +1592,7 @@ class TestGetDefaultContextPluginFiltering:
         """A DB read failure shows every app so the page (and error pages) render."""
         with (
             patch(
-                "app.sep.plugins.framework.registry.get_app_registry",
+                "app.sep.apps.framework.registry.get_app_registry",
                 return_value=build_app_registry(self._plugins()),
             ),
             patch("app.sep.deps.settings"),

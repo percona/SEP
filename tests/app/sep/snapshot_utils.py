@@ -26,7 +26,7 @@ from fastapi import FastAPI
 
 from app.core.utils.openapi import generate_tag_prefixed_unique_id
 from app.sep.api.router import api_router
-from app.sep.plugins.framework.registry import get_app_registry
+from app.sep.apps.framework.registry import get_app_registry
 
 SNAPSHOTS_DIR = Path(__file__).parent / "snapshots"
 PLUGIN_PREFIX = "/api/plugins"
