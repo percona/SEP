@@ -37,6 +37,7 @@ STREAM = TaskLogType.STDOUT
 SEEDED_CHUNK_COUNT = 10
 UNDER_CAP_CHUNK_COUNT = 5
 EXPECTED_RETRY_ATTEMPTS = 2
+REALLOCATION_EPOCH = 1
 
 
 @pytest.fixture(autouse=True)
@@ -315,7 +316,9 @@ async def test_drain_preserves_persisted_offset_for_eviction(
     )
     persisted_before = state.persisted_offset
 
-    await TaskHistoryLogWriter.drain_and_reset_producer_offsets(session, history.id)
+    await TaskHistoryLogWriter.drain_and_reset_producer_offsets(
+        session, history.id, new_allocation_epoch=REALLOCATION_EPOCH
+    )
 
     state = await TaskHistoryLogStateManager.get_for_stream(
         session, history.id, SOURCE, STREAM

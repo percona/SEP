@@ -881,7 +881,7 @@ class TaskHistoryLog(BaseSQLModel, table=True):
 
 
 class TaskHistoryLogState(BaseSQLModel, table=True):
-    """Per-stream staging buffer and persisted offsets for the log writer.
+    """Hold the per-stream staging buffer and persisted offsets for the log writer.
 
     Inherits from ``BaseSQLModel`` (surrogate integer PK) and declares a
     unique constraint on ``(task_history_id, source, stream)`` — callers
@@ -901,6 +901,15 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
         switch). May diverge from ``persisted_offset`` after a Nomad
         followup-allocation switch.
     :type producer_offset: int
+    :param nomad_offset: The raw Nomad-space byte offset for the next log fetch
+        (the ``offset=`` kwarg of the next ``stream_logs.stream`` call).
+        Allocation-relative like ``producer_offset`` (resets on switch); kept
+        durable here so a worker without the in-memory cursor resumes the fetch
+        instead of re-reading the whole file from ``0``.
+    :param allocation_epoch: The Nomad allocation ``CreateIndex`` (monotonic,
+        creation-anchored) that ``nomad_offset``/``producer_offset`` belong to.
+        ``0`` is the legacy/unknown sentinel (pre-migration rows and non-Nomad
+        streams) that the seed and write guards trust unconditionally.
     :param staging: Bytes pending flush to the chunk store.
     :type staging: bytes
     :param staging_updated_at: When ``staging`` was last modified; used to age
@@ -942,6 +951,20 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
         ),
     )
     producer_offset: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
+    )
+    nomad_offset: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
+    )
+    allocation_epoch: int = SQLField(
         sa_column=Column(
             BigInteger,
             nullable=False,
