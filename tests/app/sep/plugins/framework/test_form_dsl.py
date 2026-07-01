@@ -152,6 +152,28 @@ class TestWireTypeInference:
         assert isinstance(fields["cfg"], YamlField)
 
 
+class _LabelModel(AppFormModel):
+    oplog_span: Annotated[int, Ui(section="s")] = 0
+    custom_span: Annotated[int, Ui(label="Custom", section="s")] = 0
+    hostname: Annotated[str, Ui(label="Executor Host", section="s")] = ""
+
+
+class TestFieldLabelDerivation:
+    """Cover derived vs explicit ``Ui`` field labels."""
+
+    def test_derives_label_from_field_name(self) -> None:
+        """Title-case the field name when ``Ui.label`` is omitted."""
+        assert _fields_by_name(_LabelModel)["oplog_span"].label == "Oplog Span"
+
+    def test_explicit_label_overrides_derivation(self) -> None:
+        """Honor an explicit ``Ui.label`` over the derived default."""
+        assert _fields_by_name(_LabelModel)["custom_span"].label == "Custom"
+
+    def test_divergent_explicit_label_preserved(self) -> None:
+        """Keep an explicit label that diverges from the title-cased field name."""
+        assert _fields_by_name(_LabelModel)["hostname"].label == "Executor Host"
+
+
 class _ChoiceModel(AppFormModel):
     color: Annotated[_Color, Ui(label="C", section="s")] = _Color.red
     mode: Annotated[Literal["a", "b"], Ui(label="M", section="s")] = "a"
