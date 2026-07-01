@@ -19,7 +19,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
 import type { AlertDetailResponse, AlertGroup } from './types';
 
-const API_BASE = '/plugins/alert_troubleshooting';
+const API_BASE = '/apps/alert_troubleshooting';
 
 export function useAlertGroups() {
   return useQuery<AlertGroup[]>({

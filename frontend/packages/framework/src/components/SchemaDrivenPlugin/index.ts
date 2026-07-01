@@ -18,10 +18,10 @@
 export { SchemaDrivenPlugin } from './SchemaDrivenPlugin';
 export { DeleteConfirmDialog } from './DeleteConfirmDialog';
 export type { DeleteConfirmDialogProps } from './DeleteConfirmDialog';
-export { PluginCreatePage } from './PluginCreatePage';
-export { PluginTaskEditPage } from './PluginTaskEditPage';
-export { PluginDetailPage } from './PluginDetailPage';
+export { AppCreatePage } from './AppCreatePage';
+export { AppTaskEditPage } from './AppTaskEditPage';
+export { AppDetailPage } from './AppDetailPage';
 export { getStoredForm, STORED_FORM_KEY } from './storedForm';
-export { PluginListPage } from './PluginListPage';
-export { PluginSchedulePage } from './PluginSchedulePage';
-export type { PluginFormSlotProps, RenderFormSlot } from './types';
+export { AppListPage } from './AppListPage';
+export { AppSchedulePage } from './AppSchedulePage';
+export type { AppFormSlotProps, RenderFormSlot } from './types';

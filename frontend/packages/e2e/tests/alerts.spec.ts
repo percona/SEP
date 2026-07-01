@@ -123,38 +123,38 @@ async function mockAlertsRoutes(page: Page) {
     // Alerts index
     if (
       req.method() === 'GET' &&
-      (pathname === '/api/plugins/alerts/' || pathname === '/api/plugins/alerts')
+      (pathname === '/api/apps/alerts/' || pathname === '/api/apps/alerts')
     ) {
       return route.fulfill({ json: MOCK_INDEX });
     }
 
     // Push
-    if (req.method() === 'POST' && pathname === '/api/plugins/alerts/push') {
+    if (req.method() === 'POST' && pathname === '/api/apps/alerts/push') {
       return route.fulfill({ json: MOCK_PUSH_RESULT });
     }
 
     // Restore
-    if (req.method() === 'POST' && pathname === '/api/plugins/alerts/restore') {
+    if (req.method() === 'POST' && pathname === '/api/apps/alerts/restore') {
       return route.fulfill({ json: MOCK_RESTORE_RESULT });
     }
 
     // PagerDuty save
-    if (req.method() === 'POST' && pathname === '/api/plugins/alerts/pagerduty') {
+    if (req.method() === 'POST' && pathname === '/api/apps/alerts/pagerduty') {
       return route.fulfill({ json: MOCK_PAGERDUTY_SAVE });
     }
 
     // PagerDuty delete
-    if (req.method() === 'POST' && pathname === '/api/plugins/alerts/pagerduty/delete') {
+    if (req.method() === 'POST' && pathname === '/api/apps/alerts/pagerduty/delete') {
       return route.fulfill({ json: { status: 'deleted' } });
     }
 
     // Paginated backups list (restore picker source)
-    if (req.method() === 'GET' && pathname === '/api/plugins/alerts/backups') {
+    if (req.method() === 'GET' && pathname === '/api/apps/alerts/backups') {
       return route.fulfill({ json: MOCK_BACKUPS_PAGE });
     }
 
     // Backup detail
-    if (req.method() === 'GET' && pathname === '/api/plugins/alerts/backups/1') {
+    if (req.method() === 'GET' && pathname === '/api/apps/alerts/backups/1') {
       return route.fulfill({ json: MOCK_BACKUP_DETAIL });
     }
 
@@ -321,13 +321,13 @@ test.describe('PagerDuty flow (wizard branching)', () => {
       }
       if (
         req.method() === 'GET' &&
-        (pathname === '/api/plugins/alerts/' || pathname === '/api/plugins/alerts')
+        (pathname === '/api/apps/alerts/' || pathname === '/api/apps/alerts')
       ) {
         return route.fulfill({
           json: { ...MOCK_INDEX, pagerduty: { configured: true, uid: 'abc' } },
         });
       }
-      if (req.method() === 'POST' && pathname === '/api/plugins/alerts/pagerduty/delete') {
+      if (req.method() === 'POST' && pathname === '/api/apps/alerts/pagerduty/delete') {
         return route.fulfill({ json: { status: 'deleted' } });
       }
       return route.fulfill({

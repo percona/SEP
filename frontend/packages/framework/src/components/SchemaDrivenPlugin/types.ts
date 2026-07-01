@@ -16,7 +16,7 @@
  */
 
 import type { ReactNode } from 'react';
-import type { PluginCapabilities } from '@sep/api';
+import type { AppCapabilities } from '@sep/api';
 import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/types';
 
 /**
@@ -30,7 +30,7 @@ import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/typ
  * rather than firing its own mutation, or the success / error snackbars and
  * post-submit navigation desync.
  */
-export interface PluginFormSlotProps {
+export interface AppFormSlotProps {
   /** Form sections to render (from the task / entity schema). */
   sections: FormSection[];
   /** Framework submit handler — wires the create / update mutation, snackbars, and navigation. */
@@ -40,7 +40,7 @@ export interface PluginFormSlotProps {
   /** Initial form values (populated for edit; undefined for create). */
   defaultValues?: Record<string, unknown>;
   /** Plugin capabilities (e.g. `alert_on_fail`) for the composed renderer. */
-  capabilities?: PluginCapabilities;
+  capabilities?: AppCapabilities;
   /** Per-field override threaded through, so a composed renderer can honour it. */
   renderField?: RenderFieldOverride;
 }
@@ -49,4 +49,4 @@ export interface PluginFormSlotProps {
  * Whole-form slot override for the create / edit pages. Return custom form UI;
  * the framework keeps the surrounding chrome, mutation, and snackbars.
  */
-export type RenderFormSlot = (props: PluginFormSlotProps) => ReactNode;
+export type RenderFormSlot = (props: AppFormSlotProps) => ReactNode;

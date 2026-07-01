@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-/** Chunk lazy-loaded from ``PluginDetailPage`` — keeps ``sql-formatter`` and ``prism-react-renderer`` out of the main framework bundle. */
+/** Chunk lazy-loaded from ``AppDetailPage`` — keeps ``sql-formatter`` and ``prism-react-renderer`` out of the main framework bundle. */
 
 import { format as formatSql } from 'sql-formatter';
 import { Highlight, themes } from 'prism-react-renderer';

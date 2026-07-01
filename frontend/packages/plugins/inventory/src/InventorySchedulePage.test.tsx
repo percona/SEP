@@ -23,19 +23,19 @@ import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
 // Hoisted mocks must be set up before imports that use them.
-const { apiMock, usePluginTasksMock } = vi.hoisted(() => ({
+const { apiMock, useAppTasksMock } = vi.hoisted(() => ({
   apiMock: {
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
   },
-  usePluginTasksMock: vi.fn(),
+  useAppTasksMock: vi.fn(),
 }));
 
 vi.mock('@sep/api', () => ({
   apiClient: apiMock,
-  usePluginTasks: (...args: unknown[]) => usePluginTasksMock(...args),
+  useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
 }));
 
 import { InventorySchedulePage } from './InventorySchedulePage';
@@ -88,7 +88,7 @@ function renderPage(schedulingEnabled = true) {
 }
 
 function setupHooks(periodic: PeriodicTaskResponse[]) {
-  usePluginTasksMock.mockReturnValue({
+  useAppTasksMock.mockReturnValue({
     data: [{ name: TASK_NAME }],
     isLoading: false,
     isError: false,
@@ -107,7 +107,7 @@ beforeEach(() => {
   apiMock.post.mockReset();
   apiMock.put.mockReset();
   apiMock.delete.mockReset();
-  usePluginTasksMock.mockReset();
+  useAppTasksMock.mockReset();
 });
 
 describe('InventorySchedulePage', () => {
