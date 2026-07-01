@@ -269,7 +269,7 @@ class BackupCreate(TaskFormModel):
     backup_type: Annotated[
         BackupType,
         Choices((("M", "Mydumper"), ("X", "XtraBackup"), ("B", "Binlog"))),
-        Ui(label="Backup Type", section="Task"),
+        Ui(section="Task"),
     ]
     alias: Annotated[
         NonEmptyStr | EmptyStrToNone, Ui(label="Server Alias", section="Task")

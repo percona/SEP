@@ -292,14 +292,14 @@ class RestoreCreate(TaskFormModel):
     backup_type: Annotated[
         BackupType,
         Choices((("M", "Mydumper"), ("X", "XtraBackup"), ("B", "Binlog"))),
-        Ui(label="Backup Type", section="Task"),
+        Ui(section="Task"),
     ]
 
-    backup_source: Annotated[NonEmptyStr, Ui(label="Backup Source", section="General")]
+    backup_source: Annotated[NonEmptyStr, Ui(section="General")]
     logging_dir: Annotated[
         NonEmptyStr | EmptyStrToNone, Ui(label="Logging directory", section="General")
     ] = None
-    port: Annotated[int | None, Ui(label="Port", section="General")] = None
+    port: Annotated[int | None, Ui(section="General")] = None
     custom_mysql_init_command: Annotated[
         NonEmptyStr | EmptyStrToNone,
         Ui(label="Custom MySQL init command", section="General"),

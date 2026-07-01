@@ -327,12 +327,11 @@ class RestoreForm(TaskFormModel):
                 (BackupType.PBM_PHYSICAL.value, "Physical"),
             )
         ),
-        Ui(label="Backup Type", section="Task"),
+        Ui(section="Task"),
     ]
     backup_source: Annotated[
         str,
         Ui(
-            label="Backup Source",
             section="Task",
             description="Backup name or timestamp (e.g. 2025-12-15T19:04:05Z)",
         ),
@@ -340,7 +339,6 @@ class RestoreForm(TaskFormModel):
     credentials_path: Annotated[
         str | None,
         Ui(
-            label="Credentials Path",
             section="Task",
             description="Optional path to MongoDB URI credentials on the Nomad node",
         ),

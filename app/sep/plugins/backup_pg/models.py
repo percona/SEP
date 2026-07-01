@@ -136,7 +136,6 @@ class BackupPgForm(TaskFormModel):
     stanza: Annotated[
         SafeStanza,
         Ui(
-            label="Stanza",
             section="pgBackRest",
             description=(
                 "pgBackRest stanza name as defined in pgbackrest.conf on the "

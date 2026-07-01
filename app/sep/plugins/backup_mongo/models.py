@@ -328,7 +328,6 @@ class BackupForm(TaskFormModel):
     credentials_path: Annotated[
         str | None,
         Ui(
-            label="Credentials Path",
             section="Task",
             description="Optional path to MongoDB URI credentials on the Nomad node",
         ),
@@ -336,7 +335,7 @@ class BackupForm(TaskFormModel):
     storage_type: Annotated[
         str,
         Choices((("s3", "S3-compatible"), ("filesystem", "Filesystem"))),
-        Ui(label="Storage Type", section="Storage"),
+        Ui(section="Storage"),
     ] = StorageType.S3.value
     storage_s3_region: Annotated[
         str | None, _NOT_S3_STORAGE, Ui(label="S3 Region", section="Storage")
@@ -373,7 +372,6 @@ class BackupForm(TaskFormModel):
         str,
         _COMPRESSION_CHOICES,
         Ui(
-            label="Backup Compression",
             section="BackupOptions",
             description="Compression method for backup snapshots. Default: s2",
         ),
