@@ -148,7 +148,7 @@ function wrapAppRoute(appKey: string, element: ReactElement): ReactElement {
   return createElement(AppDisabledGuard, { appKey, children: element });
 }
 
-/** Shell plugin routes: bespoke registry entries, schema-driven fallbacks, legacy aliases. */
+/** Shell app routes: bespoke registry entries, schema-driven fallbacks, legacy aliases. */
 export function buildAppRoutes(): AppRouteDefinition[] {
   const routes: AppRouteDefinition[] = Object.values(CUSTOM_APP_REGISTRY).map(
     ({ appKey, routePattern, Component }) => ({
