@@ -816,7 +816,7 @@ class TestGetTasksIndexContext:
         )
 
         with patch("app.sep.deps.sep_settings") as mock_sep:
-            mock_sep.PLUGINS = []
+            mock_sep.APPS = []
             context = await get_tasks_index_context(
                 mock_inv_api, mock_tasks_api, default_context, executor_hosts_ctx
             )

@@ -91,7 +91,7 @@ class TestListAppsForNavigation:
         response = api_user_client.get("/api/apps/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
-        assert len(payload) == len(sep_settings.PLUGINS)
+        assert len(payload) == len(sep_settings.APPS)
         assert set(payload[0]) == {
             "app_key",
             "enabled",
