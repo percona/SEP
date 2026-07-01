@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -26,6 +26,7 @@ import { useCreateAppEntity, useCreateAppTask, type AppSchema } from '@sep/api';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
 import type { RenderFormSlot } from './types';
+import { EMPTY_SUBMIT_ERROR, mapSubmitError, type SubmitErrorState } from './submitErrorMapping';
 
 interface AppCreatePageProps {
   schema: AppSchema;
@@ -66,7 +67,13 @@ export function AppCreatePage({
   const sections = multi ? entitySchema!.forms : schema.forms!;
   const capabilities = multi ? undefined : schema.capabilities;
 
+  const [{ submitError, fieldErrors }, setSubmitErrorState] =
+    useState<SubmitErrorState>(EMPTY_SUBMIT_ERROR);
+
   const handleSubmit = (data: Record<string, unknown>) => {
+    // Clear any prior failure so the banner / inline errors reset before the
+    // new attempt resolves.
+    setSubmitErrorState(EMPTY_SUBMIT_ERROR);
     // Coerce at the submit boundary so whole-form slots that build their own
     // form (bypassing SchemaFormRenderer's internal coercion) still send a
     // backend-ready payload. Idempotent for the default SchemaFormRenderer
@@ -78,7 +85,10 @@ export function AppCreatePage({
       },
       onError: (error: unknown) => {
         const message = error instanceof Error ? error.message : 'Failed to create';
+        // Transient toast is unchanged; 422s additionally map to a persistent
+        // banner plus inline per-field errors.
         enqueueSnackbar(message, { variant: 'error' });
+        setSubmitErrorState(mapSubmitError(error, sections, message));
       },
     });
   };
@@ -104,6 +114,8 @@ export function AppCreatePage({
           onSubmit={handleSubmit}
           loading={create.isPending}
           submitLabel={`Create ${title}`}
+          submitError={submitError}
+          fieldErrors={fieldErrors}
           capabilities={capabilities}
           renderField={renderField}
         />

@@ -28,7 +28,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const AdminAppsPage = lazy(() => import('./pages/AdminAppsPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
-const pluginRoutes = buildAppRoutes();
+const appRoutes = buildAppRoutes();
 
 export const router = createBrowserRouter([
   {
@@ -47,7 +47,7 @@ export const router = createBrowserRouter([
         ),
         children: [
           { index: true, element: <DashboardPage /> },
-          ...pluginRoutes.map(({ path, element }) => ({ path, element })),
+          ...appRoutes.map(({ path, element }) => ({ path, element })),
           { path: 'settings', element: <SettingsPage /> },
           { path: 'admin/apps', element: <AdminAppsPage /> },
           { path: '*', element: <NotFoundPage /> },

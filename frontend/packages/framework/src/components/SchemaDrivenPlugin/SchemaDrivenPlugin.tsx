@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -33,6 +33,7 @@ import {
 } from '@sep/api';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
+import { EMPTY_SUBMIT_ERROR, mapSubmitError, type SubmitErrorState } from './submitErrorMapping';
 import { AppListPage } from './AppListPage';
 import { AppCreatePage } from './AppCreatePage';
 import { AppTaskEditPage } from './AppTaskEditPage';
@@ -136,10 +137,16 @@ function AppEditPage({
   const title = entitySchema?.display_name ?? schema.display_name;
   const sections = entitySchema?.forms ?? schema.forms!;
 
+  const [{ submitError, fieldErrors }, setSubmitErrorState] =
+    useState<SubmitErrorState>(EMPTY_SUBMIT_ERROR);
+
   const handleSubmit = (data: Record<string, unknown>) => {
     if (!id || !multi) {
       return;
     }
+    // Clear any prior failure so the banner / inline errors reset before the
+    // new attempt resolves.
+    setSubmitErrorState(EMPTY_SUBMIT_ERROR);
     updateEntity.mutate(
       // Coerce at the submit boundary so whole-form slots that bypass
       // SchemaFormRenderer's internal coercion still send a backend-ready
@@ -155,7 +162,10 @@ function AppEditPage({
         },
         onError: (error: unknown) => {
           const message = error instanceof Error ? error.message : 'Failed to update';
+          // Transient toast is unchanged; 422s additionally map to a persistent
+          // banner plus inline per-field errors.
           enqueueSnackbar(message, { variant: 'error' });
+          setSubmitErrorState(mapSubmitError(error, sections, message));
         },
       },
     );
@@ -213,6 +223,8 @@ function AppEditPage({
           onSubmit={handleSubmit}
           loading={updateEntity.isPending}
           submitLabel={`Save ${title}`}
+          submitError={submitError}
+          fieldErrors={fieldErrors}
           defaultValues={defaultValues}
           renderField={renderField}
         />
