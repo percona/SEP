@@ -6863,8 +6863,9 @@ export interface components {
      *
      *     The wired classes are ``SEPSettings``, ``TasksSettings``,
      *     ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
-     *     ``AlertSettings`` and ``AnonymizerSettings``. ``InventorySettings`` is
-     *     intentionally NOT here -- wrapping it is deferred to a follow-up ticket.
+     *     ``AlertSettings``, ``AlertsSettings`` and ``AnonymizerSettings``.
+     *     ``InventorySettings`` is intentionally NOT here -- wrapping it is deferred
+     *     to a follow-up ticket.
      *
      *     To wire a new settings class:
      *
