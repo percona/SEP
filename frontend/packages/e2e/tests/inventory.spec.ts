@@ -211,7 +211,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname === '/api/plugins/inventory/schema') {
+    if (pathname === '/api/apps/inventory/schema') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -220,7 +220,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
     }
 
     // SyncControl: available syncers + sync status
-    if (pathname.includes('/plugins/inventory/available-syncers')) {
+    if (pathname.includes('/apps/inventory/available-syncers')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -228,7 +228,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.includes('/plugins/inventory/sync/status')) {
+    if (pathname.includes('/apps/inventory/sync/status')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -238,7 +238,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
 
     // ── Entity detail routes — must come before list routes ────────────────────
 
-    if (req.method() === 'GET' && pathname === `/api/plugins/inventory/nodes/${NODE_ID}`) {
+    if (req.method() === 'GET' && pathname === `/api/apps/inventory/nodes/${NODE_ID}`) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -246,7 +246,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && pathname === `/api/plugins/inventory/services/${SERVICE_ID}`) {
+    if (req.method() === 'GET' && pathname === `/api/apps/inventory/services/${SERVICE_ID}`) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -254,7 +254,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && pathname === `/api/plugins/inventory/schemas/${SCHEMA_ID}`) {
+    if (req.method() === 'GET' && pathname === `/api/apps/inventory/schemas/${SCHEMA_ID}`) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -264,7 +264,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
 
     // ── Entity list routes ─────────────────────────────────────────────────────
 
-    if (req.method() === 'GET' && /^\/api\/plugins\/inventory\/nodes\/?$/.test(pathname)) {
+    if (req.method() === 'GET' && /^\/api\/apps\/inventory\/nodes\/?$/.test(pathname)) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -272,7 +272,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && /^\/api\/plugins\/inventory\/services\/?$/.test(pathname)) {
+    if (req.method() === 'GET' && /^\/api\/apps\/inventory\/services\/?$/.test(pathname)) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -280,7 +280,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && /^\/api\/plugins\/inventory\/schemas\/?$/.test(pathname)) {
+    if (req.method() === 'GET' && /^\/api\/apps\/inventory\/schemas\/?$/.test(pathname)) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -288,7 +288,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && /^\/api\/plugins\/inventory\/tables\/?$/.test(pathname)) {
+    if (req.method() === 'GET' && /^\/api\/apps\/inventory\/tables\/?$/.test(pathname)) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -297,7 +297,7 @@ async function mockInventoryApis(page: Page): Promise<void> {
     }
 
     // DELETE: return 204 No Content for any inventory entity delete
-    if (req.method() === 'DELETE' && pathname.startsWith('/api/plugins/inventory/')) {
+    if (req.method() === 'DELETE' && pathname.startsWith('/api/apps/inventory/')) {
       return route.fulfill({ status: 204 });
     }
 
@@ -451,7 +451,7 @@ test.describe('Inventory plugin smoke', () => {
 
     await expect
       .poll(() => deleteRequests, { timeout: 5_000 })
-      .toContain(`/api/plugins/inventory/nodes/${NODE_ID}`);
+      .toContain(`/api/apps/inventory/nodes/${NODE_ID}`);
   });
 
   test('flat service detail route renders service name in breadcrumb', async ({ page }) => {

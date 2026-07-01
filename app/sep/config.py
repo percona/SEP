@@ -15,6 +15,7 @@
 
 """Define SEP settings."""
 
+import logging
 from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
@@ -25,6 +26,7 @@ from urllib.parse import urlparse
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 from pydantic import (
+    AliasChoices,
     AliasGenerator,
     BaseModel,
     computed_field,
@@ -36,6 +38,8 @@ from pydantic import (
     PositiveInt,
     SecretStr,
 )
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource
+from pydantic_settings.sources import DotEnvSettingsSource, EnvSettingsSource
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule, Period
 from app.core.config import (
@@ -65,6 +69,8 @@ from app.core.utils.fields import (
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
+logger = logging.getLogger(__name__)
+
 
 class App(BaseCaseInsensitiveModel):
     """Represent a SEP plugin.
@@ -74,11 +80,11 @@ class App(BaseCaseInsensitiveModel):
     path and set default values based on the plugin's name.
 
     :param name: The name of the plugin. Optional: a MODULE_NAME-only entry
-        omits it and the :class:`app.sep.plugins.framework.registry.AppRegistry`
+        omits it and the :class:`app.sep.apps.framework.registry.AppRegistry`
         derives descriptive metadata from the module basename instead.
     :type name: str | None
     :param module_name: The name of the module associated with the plugin. This field is
-        automatically prefixed with ``app.sep.plugins.`` during validation.
+        automatically prefixed with ``app.sep.apps.`` during validation.
     :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
@@ -99,8 +105,8 @@ class App(BaseCaseInsensitiveModel):
         shipping enabled. Set ``ENABLED: false`` to seed a plugin disabled.
     :type enabled: bool
     :param api_router_path: Optional dot-separated import path to the plugin's
-        JSON ``APIRouter`` instance (e.g. ``"app.sep.plugins.checksums.api_routes.router"``).
-        When set, the router is mounted under ``/api/plugins/{key}`` by the
+        JSON ``APIRouter`` instance (e.g. ``"app.sep.apps.checksums.api_routes.router"``).
+        When set, the router is mounted under ``/api/apps/{key}`` by the
         shared API router loop. Three input states:
 
         * **Field omitted** — auto-derive from ``module_name`` when the
@@ -133,14 +139,14 @@ class App(BaseCaseInsensitiveModel):
         """Resolve the full module path for the plugin.
 
         This method takes the module name provided and prefixes it with
-        ``app.sep.plugins.`` to resolve the full import path.
+        ``app.sep.apps.`` to resolve the full import path.
 
         :param v: The module name to resolve.
         :type v: str
-        :return: The full module path with the ``app.sep.plugins.`` prefix.
+        :return: The full module path with the ``app.sep.apps.`` prefix.
         :rtype: str
         """
-        return f"app.sep.plugins.{v}"
+        return f"app.sep.apps.{v}"
 
     @field_validator("module_name")
     @classmethod
@@ -154,12 +160,12 @@ class App(BaseCaseInsensitiveModel):
         still constructing. A filesystem probe keeps construction import-free; the
         real import happens when the registry is built, after settings are ready.
 
-        :param v: The resolved ``app.sep.plugins.``-prefixed module path.
+        :param v: The resolved ``app.sep.apps.``-prefixed module path.
         :return: The validated module path.
         :raises ValueError: When no module file or package exists at the path.
         """
-        relative = v.removeprefix("app.sep.plugins.")
-        target = Path(__file__).parent / "plugins" / Path(*relative.split("."))
+        relative = v.removeprefix("app.sep.apps.")
+        target = Path(__file__).parent / "apps" / Path(*relative.split("."))
         if (target / "__init__.py").is_file() or target.with_suffix(".py").is_file():
             return v
         raise ValueError(f"No module named {v}")
@@ -192,10 +198,10 @@ class App(BaseCaseInsensitiveModel):
         """
         if "api_router_path" in self.model_fields_set:
             return self
-        relative = self.module_name.removeprefix("app.sep.plugins.")
+        relative = self.module_name.removeprefix("app.sep.apps.")
         candidate_file = (
             Path(__file__).parent
-            / "plugins"
+            / "apps"
             / Path(*relative.split("."))
             / "api_routes.py"
         )
@@ -478,6 +484,14 @@ class AppDrainSettings(BaseLowercaseModel):
         return value
 
 
+def _warn_legacy_apps_key() -> None:
+    """Emit a deprecation warning for the legacy ``SEP.PLUGINS`` config key."""
+    logger.warning(
+        "The SEP.PLUGINS / SEP__PLUGINS config key is deprecated and will be "
+        "removed in a future release; use SEP.APPS / SEP__APPS instead.",
+    )
+
+
 class SEPSettings(BaseYamlAppSettings):
     """Define settings for SEP.
 
@@ -508,7 +522,7 @@ class SEPSettings(BaseYamlAppSettings):
     :type INVENTORY_ENDPOINT: CredentialHttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
     :type TASKS_ENDPOINT: CredentialHttpUrl
-    :param PLUGINS: A list of plugins used by SEP. Defaults to an empty list with
+    :param APPS: A list of apps used by SEP. Defaults to an empty list with
         duplicates removed.
     :param PROXY_HEADERS: Whether to use proxy headers (like ``X-Forwarded-For``).
         Defaults to ``False``.
@@ -560,7 +574,10 @@ class SEPSettings(BaseYamlAppSettings):
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
     TASKS_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
-    PLUGINS: UniqueList[App] = UniqueList()
+    APPS: UniqueList[App] = Field(
+        default_factory=UniqueList,
+        validation_alias=AliasChoices("APPS", "PLUGINS"),
+    )
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
@@ -575,6 +592,72 @@ class SEPSettings(BaseYamlAppSettings):
         materializer=materialize_template,
         advanced=True,
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_removed_pmm_frontend(cls, data: Any) -> Any:
+        """Warn if the removed ``PMM_FRONTEND`` field is still set.
+
+        :param data: The raw input data.
+        :type data: Any
+        :return: The input data unchanged.
+        :rtype: Any
+        """
+        if isinstance(data, dict) and data.get("PMM_FRONTEND") is not None:
+            logger.warning(
+                "SEP__PMM_FRONTEND has been removed. "
+                "Use PMM__FRONTEND (top-level) or SEP__PMM__FRONTEND instead.",
+            )
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_legacy_plugins_key(cls, data: Any) -> Any:
+        """Emit a deprecation warning when the legacy ``PLUGINS`` key is set via YAML or init.
+
+        :param data: The raw input data.
+        :return: The input data unchanged.
+        """
+        if isinstance(data, dict) and "PLUGINS" in data:
+            _warn_legacy_apps_key()
+        return data
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: EnvSettingsSource,
+        dotenv_settings: DotEnvSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Emit a deprecation warning when the legacy ``SEP__PLUGINS`` env key supplies the app list.
+
+        The before-validator covers the YAML / init path but never sees an
+        env-only legacy key: the environment source keys the value by the field
+        name ``APPS``, not the matched alias. Detect the stripped legacy key
+        here so the deprecation warning is airtight for the env source too.
+
+        :param settings_cls: The settings class being configured.
+        :param init_settings: The init-arguments source.
+        :param env_settings: The environment-variable source.
+        :param dotenv_settings: The dotenv-file source.
+        :param file_secret_settings: The file-secret source.
+        :return: The source tuple from the base implementation, unchanged.
+        """
+        sources = super().settings_customise_sources(
+            settings_cls,
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
+        if any(
+            "plugins" in getattr(source, "env_vars", {})
+            for source in (env_settings, dotenv_settings)
+        ):
+            _warn_legacy_apps_key()
+        return sources
 
     @computed_field
     @cached_property

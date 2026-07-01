@@ -209,9 +209,9 @@ type BackupApiState = { tasks: BackupTaskRow[] };
 type RestoreApiState = { tasks: RestoreTaskRow[] };
 type PluginApiState = { backup: BackupApiState; restore: RestoreApiState };
 
-/** Task name segment from ``/api/plugins/backup_mongo/{task_name}`` (not list/schema/restores). */
+/** Task name segment from ``/api/apps/backup_mongo/{task_name}`` (not list/schema/restores). */
 function backupTaskNameFromPath(pathname: string): string | null {
-  const prefix = '/api/plugins/backup_mongo/';
+  const prefix = '/api/apps/backup_mongo/';
   if (!pathname.startsWith(prefix) || pathname.includes('/restores')) {
     return null;
   }
@@ -222,9 +222,9 @@ function backupTaskNameFromPath(pathname: string): string | null {
   return decodeURIComponent(segment);
 }
 
-/** Task name segment from ``/api/plugins/backup_mongo/restores/{task_name}``. */
+/** Task name segment from ``/api/apps/backup_mongo/restores/{task_name}``. */
 function restoreTaskNameFromPath(pathname: string): string | null {
-  const prefix = '/api/plugins/backup_mongo/restores/';
+  const prefix = '/api/apps/backup_mongo/restores/';
   if (!pathname.startsWith(prefix)) {
     return null;
   }
@@ -268,7 +268,7 @@ async function mockBackupMongoApis(page: Page, apiState: PluginApiState): Promis
       });
     }
 
-    if (pathname === '/api/plugins/backup_mongo/schema') {
+    if (pathname === '/api/apps/backup_mongo/schema') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -276,7 +276,7 @@ async function mockBackupMongoApis(page: Page, apiState: PluginApiState): Promis
       });
     }
 
-    if (pathname === '/api/plugins/backup_mongo/restores/schema') {
+    if (pathname === '/api/apps/backup_mongo/restores/schema') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -286,7 +286,7 @@ async function mockBackupMongoApis(page: Page, apiState: PluginApiState): Promis
 
     if (
       req.method() === 'POST' &&
-      (pathname === '/api/plugins/backup_mongo/' || pathname === '/api/plugins/backup_mongo')
+      (pathname === '/api/apps/backup_mongo/' || pathname === '/api/apps/backup_mongo')
     ) {
       const body = req.postDataJSON() as { task_name?: string; hostname?: string };
       const taskName = String(body.task_name ?? NEW_BACKUP_TASK_NAME);
@@ -325,7 +325,7 @@ async function mockBackupMongoApis(page: Page, apiState: PluginApiState): Promis
 
     if (
       req.method() === 'GET' &&
-      (pathname === '/api/plugins/backup_mongo/' || pathname === '/api/plugins/backup_mongo')
+      (pathname === '/api/apps/backup_mongo/' || pathname === '/api/apps/backup_mongo')
     ) {
       return route.fulfill({
         status: 200,
@@ -336,8 +336,8 @@ async function mockBackupMongoApis(page: Page, apiState: PluginApiState): Promis
 
     if (
       req.method() === 'POST' &&
-      (pathname === '/api/plugins/backup_mongo/restores/' ||
-        pathname === '/api/plugins/backup_mongo/restores')
+      (pathname === '/api/apps/backup_mongo/restores/' ||
+        pathname === '/api/apps/backup_mongo/restores')
     ) {
       const body = req.postDataJSON() as {
         task_name?: string;
@@ -393,8 +393,8 @@ async function mockBackupMongoApis(page: Page, apiState: PluginApiState): Promis
 
     if (
       req.method() === 'GET' &&
-      (pathname === '/api/plugins/backup_mongo/restores/' ||
-        pathname === '/api/plugins/backup_mongo/restores')
+      (pathname === '/api/apps/backup_mongo/restores/' ||
+        pathname === '/api/apps/backup_mongo/restores')
     ) {
       return route.fulfill({
         status: 200,
@@ -510,7 +510,7 @@ test.describe('MongoDB backup_mongo plugin smoke', () => {
     await expect(page.getByText(MOCK_BACKUP_TASK_NAME)).toHaveCount(0);
     await expect
       .poll(() => deleteRequests, { timeout: 5_000 })
-      .toContain(`/api/plugins/backup_mongo/${MOCK_BACKUP_TASK_NAME}`);
+      .toContain(`/api/apps/backup_mongo/${MOCK_BACKUP_TASK_NAME}`);
     expect(apiState.backup.tasks.some((task) => task.name === MOCK_BACKUP_TASK_NAME)).toBe(false);
   });
 
@@ -567,7 +567,7 @@ test.describe('MongoDB backup_mongo plugin smoke', () => {
     await expect(page.getByText(MOCK_RESTORE_TASK_NAME)).toHaveCount(0);
     await expect
       .poll(() => deleteRequests, { timeout: 5_000 })
-      .toContain(`/api/plugins/backup_mongo/restores/${MOCK_RESTORE_TASK_NAME}`);
+      .toContain(`/api/apps/backup_mongo/restores/${MOCK_RESTORE_TASK_NAME}`);
     expect(apiState.restore.tasks.some((task) => task.name === MOCK_RESTORE_TASK_NAME)).toBe(false);
   });
 });

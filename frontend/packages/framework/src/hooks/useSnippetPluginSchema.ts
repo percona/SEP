@@ -22,7 +22,7 @@ const SNIPPET_PLUGIN_SCHEMA_STALE_MS = 5 * 60 * 1000;
 
 /**
  * Load a snippets-plugin schema from an API path relative to `/api`
- * (e.g. `/plugins/snippets/my-script.sh/schema`, including encoded slashes).
+ * (e.g. `/apps/snippets/my-script.sh/schema`, including encoded slashes).
  *
  * Shared by the snippets detail page (path derived from filename) and flows
  * like ATW that compose the same URLs client-side.

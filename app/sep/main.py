@@ -50,6 +50,9 @@ from app.core.utils import run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
+from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.celery import sync_snippets
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.db import get_async_session_maker
@@ -71,9 +74,6 @@ from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
-from app.sep.plugins.alerts.config import alerts_settings, AlertsSettings
-from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
-from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
@@ -81,7 +81,6 @@ from app.tasks.config import tasks_settings
 logger = logging.getLogger(__name__)
 
 JSON_API_PATH_PREFIXES: tuple[str, ...] = (
-    "/api/plugins/",
     "/api/sep/",
     "/api/admin/",
     "/api/apps/",
@@ -194,11 +193,12 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     Force-resolves ``messages_settings`` (fail-fast validation), then starts the
     background refresher for the ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``,
-    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global) and ``ALERT_SETTINGS`` proxies
-    for the duration of the wrapped block. ``SETTINGS`` and ``ALERT_SETTINGS``
-    wrap shared module-level proxies (``settings`` / ``alert_settings``); the SEP
-    refresher is their **sole** owner so that under the combined ``app.main:app``
-    the Tasks refresher does not also publish into them from the Tasks database.
+    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global), ``ALERT_SETTINGS`` and
+    ``ALERTS_SETTINGS`` proxies for the duration of the wrapped block.
+    ``SETTINGS`` and ``ALERT_SETTINGS`` wrap shared module-level proxies
+    (``settings`` / ``alert_settings``); the SEP refresher is their **sole**
+    owner so that under the combined ``app.main:app`` the Tasks refresher does
+    not also publish into them from the Tasks database.
     Endpoint and PMM rebind callbacks are built here -- where ``app`` is
     available -- so both run modes wire them.
 

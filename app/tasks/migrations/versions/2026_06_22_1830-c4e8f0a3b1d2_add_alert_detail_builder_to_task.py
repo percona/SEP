@@ -40,7 +40,7 @@ depends_on: Union[str, Sequence[str], None] = None
 # Builder path stamped onto archiver tasks at creation. Backfilled here so
 # archiver tasks created before this column existed keep their failure-alert
 # enrichment without needing to be recreated.
-_ARCHIVER_BUILDER = "app.sep.plugins.archives.alerts:build_owner_alert_details"
+_ARCHIVER_BUILDER = "app.sep.apps.archives.alerts:build_owner_alert_details"
 
 
 def upgrade() -> None:

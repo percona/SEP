@@ -207,15 +207,15 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
       });
     }
 
-    if (pathname === `/api/plugins/${PLUGIN_API_NAME}/schema`) {
+    if (pathname === `/api/apps/${PLUGIN_API_NAME}/schema`) {
       return route.fulfill({ json: MOCK_ALTERS_SCHEMA });
     }
 
-    if (pathname === `/api/plugins/${PLUGIN_API_NAME}/` && req.method() === 'GET') {
+    if (pathname === `/api/apps/${PLUGIN_API_NAME}/` && req.method() === 'GET') {
       return route.fulfill({ json: tasks });
     }
 
-    if (pathname === `/api/plugins/${PLUGIN_API_NAME}/` && req.method() === 'POST') {
+    if (pathname === `/api/apps/${PLUGIN_API_NAME}/` && req.method() === 'POST') {
       const body = req.postDataJSON() as Record<string, unknown>;
       overrides.capturePosts?.push(body);
       const created = {
@@ -239,7 +239,7 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
       return route.fulfill({ status: 201, json: created });
     }
 
-    const detailMatch = pathname.match(/^\/api\/plugins\/alters\/([^/]+)$/);
+    const detailMatch = pathname.match(/^\/api\/apps\/alters\/([^/]+)$/);
     if (detailMatch && req.method() === 'GET') {
       const taskName = decodeURIComponent(detailMatch[1]!);
       const task = tasks.find((row) => row.name === taskName);
@@ -288,7 +288,7 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
       return route.fulfill({ json: [{ id: 20, name: 'users' }] });
     }
 
-    if (pathname.includes(`/plugins/${PLUGIN_API_NAME}/`)) {
+    if (pathname.includes(`/apps/${PLUGIN_API_NAME}/`)) {
       return route.fulfill({ json: [] });
     }
 

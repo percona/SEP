@@ -29,7 +29,7 @@ export interface UseSnippetPluginExecutionOptions {
 
 /**
  * POST snippet execution against an API path relative to `/api`
- * (e.g. `/plugins/snippets/my-script.sh/execute`).
+ * (e.g. `/apps/snippets/my-script.sh/execute`).
  */
 export function useSnippetPluginExecution(
   executePath: string | null | undefined,

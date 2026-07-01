@@ -17,6 +17,7 @@
 
 from datetime import timedelta
 from string import Template
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -130,13 +131,13 @@ class TestPluginModuleNameResolution:
     def test_modern_value_resolves(self):
         """The modern ``mysql_backups`` value resolves normally."""
         plugin = App(name="MySQL Backups", module_name="mysql_backups")
-        assert plugin.module_name == "app.sep.plugins.mysql_backups"
+        assert plugin.module_name == "app.sep.apps.mysql_backups"
 
     @pytest.mark.parametrize(
         ("sibling_value", "expected_module"),
         [
-            ("backup_mongo", "app.sep.plugins.backup_mongo"),
-            ("backup_pg", "app.sep.plugins.backup_pg"),
+            ("backup_mongo", "app.sep.apps.backup_mongo"),
+            ("backup_pg", "app.sep.apps.backup_pg"),
         ],
     )
     def test_sibling_backup_module_resolves(
@@ -180,3 +181,66 @@ class TestAppDrainSettings:
         """A zero or negative TTL fails validation rather than pruning live rows."""
         with pytest.raises(ValidationError, match="positive duration"):
             AppDrainSettings(stale_task_ttl=timedelta(seconds=seconds))
+
+
+def _logged_legacy_apps_warning(mock_logger: object) -> bool:
+    """Return whether any ``logger.warning`` call names the deprecated PLUGINS key."""
+    return any(
+        "PLUGINS" in str(call.args[0]) for call in mock_logger.warning.call_args_list
+    )
+
+
+class TestAppsKeyBackCompat:
+    """Cover the ``SEP.PLUGINS`` -> ``SEP.APPS`` config-key back-compat shim."""
+
+    def test_legacy_plugins_key_populates_apps(self):
+        """Load a legacy ``PLUGINS`` key into ``APPS`` via the validation alias."""
+        settings = SEPSettings.model_validate(
+            {"PLUGINS": [{"MODULE_NAME": "backup_pg"}]}
+        )
+        assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
+
+    def test_modern_apps_key_populates_apps(self):
+        """Load the app list from the modern ``APPS`` key."""
+        settings = SEPSettings.model_validate({"APPS": [{"MODULE_NAME": "backup_pg"}]})
+        assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
+
+    def test_apps_takes_precedence_over_legacy(self):
+        """Prefer ``APPS`` over the legacy ``PLUGINS`` when both keys are set."""
+        settings = SEPSettings.model_validate(
+            {
+                "APPS": [{"MODULE_NAME": "backup_pg"}],
+                "PLUGINS": [{"MODULE_NAME": "backup_mongo"}],
+            }
+        )
+        assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
+
+    def test_deprecation_warning_for_legacy_key(self):
+        """Assert a deprecation warning is logged when the legacy ``PLUGINS`` key is set."""
+        with patch("app.sep.config.logger") as mock_logger:
+            SEPSettings.model_validate({"PLUGINS": [{"MODULE_NAME": "backup_pg"}]})
+        assert _logged_legacy_apps_warning(mock_logger)
+
+    def test_no_warning_for_modern_key(self):
+        """Assert no deprecation warning is logged for the modern ``APPS`` key."""
+        with patch("app.sep.config.logger") as mock_logger:
+            SEPSettings.model_validate({"APPS": [{"MODULE_NAME": "backup_pg"}]})
+        assert not _logged_legacy_apps_warning(mock_logger)
+
+    def test_legacy_plugins_env_var_populates_apps_and_warns(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Load a legacy ``SEP__PLUGINS`` env var into ``APPS`` and warn."""
+        monkeypatch.setenv("SEP__PLUGINS", '[{"MODULE_NAME": "backup_pg"}]')
+        with patch("app.sep.config.logger") as mock_logger:
+            settings = SEPSettings()
+        assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
+        assert _logged_legacy_apps_warning(mock_logger)
+
+    def test_modern_apps_env_var_does_not_warn(self, monkeypatch: pytest.MonkeyPatch):
+        """Load a modern ``SEP__APPS`` env var into ``APPS`` without warning."""
+        monkeypatch.setenv("SEP__APPS", '[{"MODULE_NAME": "backup_pg"}]')
+        with patch("app.sep.config.logger") as mock_logger:
+            settings = SEPSettings()
+        assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
+        assert not _logged_legacy_apps_warning(mock_logger)

@@ -22,6 +22,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import app.sep.celery as sep_celery
+from app.sep.apps.alerts.config import AlertsSettings
+from app.sep.apps.alerts.crud import AlertBackupManager
+from app.sep.apps.alerts.models import AlertBackup
 from app.sep.clients.pmm import (
     AlertRule,
     ContactPoint,
@@ -32,9 +35,6 @@ from app.sep.clients.pmm import (
 from app.sep.clients.pmm import (
     AlertTemplate as PMMAlertTemplate,
 )
-from app.sep.plugins.alerts.config import AlertsSettings
-from app.sep.plugins.alerts.crud import AlertBackupManager
-from app.sep.plugins.alerts.models import AlertBackup
 from app.sep.snippets.config import SnippetFilter, SnippetFilterType, snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
@@ -274,7 +274,7 @@ def _mock_pmm_api():
 def _patch_pmm_settings(mocker, *, retention=10):
     """Patch alerts PMM config inside _backup_alert_config."""
     mocker.patch(
-        "app.sep.plugins.alerts.config.alerts_settings",
+        "app.sep.apps.alerts.config.alerts_settings",
         MagicMock(spec=AlertsSettings, BACKUP_RETENTION=retention),
     )
 
@@ -303,7 +303,7 @@ class TestBackupAlertConfig:
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker)
         mocker.patch(
-            "app.sep.plugins.alerts.deps.get_pmm_api",
+            "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=mock_api),
         )
         _patch_session(mocker, session)
@@ -326,7 +326,7 @@ class TestBackupAlertConfig:
     async def test_backup_pmm_not_configured(self, mocker) -> None:
         """Assert no backup is created when PMM is not configured."""
         mocker.patch(
-            "app.sep.plugins.alerts.deps.get_pmm_api",
+            "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=None),
         )
         mock_session_maker = mocker.patch("app.sep.celery.get_async_session_maker")
@@ -343,7 +343,7 @@ class TestBackupAlertConfig:
             side_effect=ConnectionError("PMM unreachable")
         )
         mocker.patch(
-            "app.sep.plugins.alerts.deps.get_pmm_api",
+            "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=mock_api),
         )
         mock_session_maker = mocker.patch("app.sep.celery.get_async_session_maker")
@@ -366,7 +366,7 @@ class TestBackupAlertConfig:
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker, retention=retention)
         mocker.patch(
-            "app.sep.plugins.alerts.deps.get_pmm_api",
+            "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=mock_api),
         )
         _patch_session(mocker, session)
@@ -390,7 +390,7 @@ class TestBackupAlertConfig:
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker, retention=retention)
         mocker.patch(
-            "app.sep.plugins.alerts.deps.get_pmm_api",
+            "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=mock_api),
         )
         _patch_session(mocker, session)
@@ -406,7 +406,7 @@ class TestBackupAlertConfig:
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker)
         mocker.patch(
-            "app.sep.plugins.alerts.deps.get_pmm_api",
+            "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=mock_api),
         )
         _patch_session(mocker, session)
@@ -427,7 +427,7 @@ class TestBackupAlertConfig:
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker)
         mocker.patch(
-            "app.sep.plugins.alerts.deps.get_pmm_api",
+            "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=mock_api),
         )
         _patch_session(mocker, session)
@@ -451,7 +451,7 @@ class TestBackupAlertConfig:
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker)
         mocker.patch(
-            "app.sep.plugins.alerts.deps.get_pmm_api",
+            "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=mock_api),
         )
         _patch_session(mocker, session)
@@ -540,7 +540,7 @@ class TestBackupAlertConfigCooperativeCancel:
         """A cancel before the fetch skips the PMM round-trip entirely."""
         mock_api = _mock_pmm_api()
         mocker.patch(
-            "app.sep.plugins.alerts.deps.get_pmm_api",
+            "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=mock_api),
         )
         mocker.patch(f"{MODULE}.should_cancel", new=AsyncMock(return_value=True))
@@ -555,7 +555,7 @@ class TestBackupAlertConfigCooperativeCancel:
         mock_api = _mock_pmm_api()
         _patch_pmm_settings(mocker)
         mocker.patch(
-            "app.sep.plugins.alerts.deps.get_pmm_api",
+            "app.sep.apps.alerts.deps.get_pmm_api",
             new=AsyncMock(return_value=mock_api),
         )
         _patch_session(mocker, session)
@@ -586,11 +586,11 @@ class TestGenerateHealthReportCooperativeCancel:
     async def test_stops_before_generation_on_cancel(self, mocker):
         """A cancel before generation skips report generation entirely."""
         mocker.patch(
-            "app.sep.plugins.report.deps.get_pmm_api",
+            "app.sep.apps.report.deps.get_pmm_api",
             new=AsyncMock(return_value=MagicMock()),
         )
         generate = mocker.patch(
-            "app.sep.plugins.report.service.generate_report",
+            "app.sep.apps.report.service.generate_report",
             new=AsyncMock(return_value=self._mock_report()),
         )
         mocker.patch(f"{MODULE}.should_cancel", new=AsyncMock(return_value=True))
@@ -603,19 +603,19 @@ class TestGenerateHealthReportCooperativeCancel:
     async def test_stops_before_upload_on_cancel(self, mocker):
         """A cancel after generation skips the PDF render and upload."""
         mocker.patch(
-            "app.sep.plugins.report.deps.get_pmm_api",
+            "app.sep.apps.report.deps.get_pmm_api",
             new=AsyncMock(return_value=MagicMock()),
         )
         generate = mocker.patch(
-            "app.sep.plugins.report.service.generate_report",
+            "app.sep.apps.report.service.generate_report",
             new=AsyncMock(return_value=self._mock_report()),
         )
         generate_pdf = mocker.patch(
-            "app.sep.plugins.report.service.generate_pdf_report",
+            "app.sep.apps.report.service.generate_pdf_report",
             new=AsyncMock(),
         )
         upload = mocker.patch(
-            "app.sep.plugins.report.service.upload_pdf_report",
+            "app.sep.apps.report.service.upload_pdf_report",
             new=AsyncMock(),
         )
         mocker.patch(
