@@ -216,14 +216,14 @@ class TestAppsKeyBackCompat:
             {"PLUGINS": [{"MODULE_NAME": "backup_pg"}]}
         )
         assert [app.module_name for app in settings.APPS] == [
-            "app.sep.plugins.backup_pg"
+            "app.sep.apps.backup_pg"
         ]
 
     def test_modern_apps_key_populates_apps(self):
         """Load the app list from the modern ``APPS`` key."""
         settings = SEPSettings.model_validate({"APPS": [{"MODULE_NAME": "backup_pg"}]})
         assert [app.module_name for app in settings.APPS] == [
-            "app.sep.plugins.backup_pg"
+            "app.sep.apps.backup_pg"
         ]
 
     def test_apps_takes_precedence_over_legacy(self):
@@ -235,7 +235,7 @@ class TestAppsKeyBackCompat:
             }
         )
         assert [app.module_name for app in settings.APPS] == [
-            "app.sep.plugins.backup_pg"
+            "app.sep.apps.backup_pg"
         ]
 
     def test_deprecation_warning_for_legacy_key(self):
@@ -258,7 +258,7 @@ class TestAppsKeyBackCompat:
         with patch("app.sep.config.logger") as mock_logger:
             settings = SEPSettings()
         assert any(
-            app.module_name == "app.sep.plugins.backup_pg" for app in settings.APPS
+            app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS
         )
         assert _logged_legacy_apps_warning(mock_logger)
 
@@ -268,6 +268,6 @@ class TestAppsKeyBackCompat:
         with patch("app.sep.config.logger") as mock_logger:
             settings = SEPSettings()
         assert any(
-            app.module_name == "app.sep.plugins.backup_pg" for app in settings.APPS
+            app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS
         )
         assert not _logged_legacy_apps_warning(mock_logger)
