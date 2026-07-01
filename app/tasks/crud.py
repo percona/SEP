@@ -32,6 +32,7 @@ from app.core.db.utils import func_json_extract, idempotent_insert
 from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse, Pagination
 from app.core.utils.date_time import utc_now
+from app.core.utils.fields import DatabaseDialect
 from app.tasks.logs.constants import TAIL_SCAN_MAX_CHUNKS
 from app.tasks.models import (
     DispatchLock,
@@ -578,6 +579,63 @@ class TaskHistoryLogManager(BaseSQLModelManager):
     ordering = None
 
     @classmethod
+    async def delete_aged_batch(
+        cls,
+        session: AsyncSession,
+        *,
+        cutoff: datetime,
+        batch_size: int,
+    ) -> int:
+        """Delete one bounded batch of aged, non-active task-execution log rows.
+
+        Select up to ``batch_size`` ``taskhistory_log`` rows whose parent
+        ``TaskHistory`` is no longer active (any status except ``PENDING`` /
+        ``RUNNING``) and whose effective completion time --
+        ``COALESCE(finished_at, started_at, created_at)`` -- is strictly older
+        than ``cutoff``, then delete them in a single committed statement. The
+        parent ``taskhistory`` audit row is never touched.
+
+        On PostgreSQL the inner selection takes ``FOR UPDATE ... SKIP LOCKED``
+        on the log rows so concurrent workers never contend on or double-delete
+        the same batch; other dialects (SQLite in tests) omit the clause. On
+        MySQL the limited selection is wrapped in a derived table because MySQL
+        rejects ``LIMIT`` inside an ``IN (SELECT ...)`` subquery (error 1235)
+        and deleting from a table referenced in its own subquery (error 1093);
+        the derived table sidesteps both while keeping the batch semantics.
+
+        :param session: The async session bound to the Tasks database.
+        :param cutoff: The age boundary; rows with an effective completion time
+            strictly less than this are eligible for deletion.
+        :param batch_size: The maximum number of rows to delete in this call.
+        :return: The number of ``taskhistory_log`` rows deleted.
+        """
+        effective_completion = func.coalesce(
+            col(TaskHistory.finished_at),
+            col(TaskHistory.started_at),
+            col(TaskHistory.created_at),
+        )
+        doomed = (
+            select(col(TaskHistoryLog.id))
+            .join(
+                TaskHistory,
+                col(TaskHistoryLog.task_history_id) == col(TaskHistory.id),
+            )
+            .where(
+                col(TaskHistory.status).not_in(TaskHistoryStatusEnum.active_statuses()),
+                effective_completion < cutoff,
+            )
+            .limit(batch_size)
+        )
+        dialect = session.get_bind().name
+        if dialect == DatabaseDialect.POSTGRESQL:
+            doomed = doomed.with_for_update(skip_locked=True, of=TaskHistoryLog)
+        elif dialect == DatabaseDialect.MYSQL:
+            doomed = select(doomed.subquery().c.id)
+
+        result = await cls.delete_where(session, col(TaskHistoryLog.id).in_(doomed))
+        return result.rowcount
+
+    @classmethod
     async def exists_for_task(cls, session: AsyncSession, task_history_id: int) -> bool:
         """Return ``True`` when at least one chunk exists for the task history.
 
@@ -979,6 +1037,8 @@ class TaskHistoryLogStateManager(BaseManager):
             stream=stream,
             persisted_offset=0,
             producer_offset=0,
+            nomad_offset=0,
+            allocation_epoch=0,
             staging=b"",
             staging_updated_at=utc_now(),
             version=0,
@@ -1005,28 +1065,38 @@ class TaskHistoryLogStateManager(BaseManager):
         return list(result.all())
 
     @classmethod
-    async def reset_producer_offsets(
-        cls, session: AsyncSession, task_history_id: int
+    async def reset_allocation_frontier(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        *,
+        new_allocation_epoch: int,
     ) -> None:
-        """Set ``producer_offset`` to ``0`` for every stream of a task history.
+        """Reset both cursors to zero and stamp the new epoch for every stream.
 
         Called when Nomad reschedules a task to a follow-up allocation: the
-        new allocation's log file starts at byte 0, so any cached
-        ``producer_offset`` from the previous allocation must be cleared in
-        the database before the writer dedups based on it. Bumps ``version``
-        so concurrent writers re-read the row.
+        new allocation's log file starts at byte 0, so both allocation-relative
+        cursors (``producer_offset`` and ``nomad_offset``) must be cleared in
+        the database before the writer dedups or fetches against them, and
+        ``allocation_epoch`` must be advanced to the new allocation's
+        ``CreateIndex`` so stale-allocation writes are discarded by the write
+        guard. Bumps ``version`` so concurrent writers re-read the row.
 
         :param session: The SQLAlchemy asynchronous session.
         :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier whose state
             rows should be reset.
         :type task_history_id: int
+        :param new_allocation_epoch: The ``CreateIndex`` of the allocation the
+            frontier is being reset onto.
         """
         stmt = (
             update(TaskHistoryLogState)
             .where(col(TaskHistoryLogState.task_history_id) == task_history_id)
             .values(
                 producer_offset=0,
+                nomad_offset=0,
+                allocation_epoch=new_allocation_epoch,
                 version=col(TaskHistoryLogState.version) + 1,
                 updated_at=utc_now(),
             )
@@ -1043,6 +1113,8 @@ class TaskHistoryLogStateManager(BaseManager):
         stream: TaskLogType,
         persisted_offset: int,
         producer_offset: int,
+        nomad_offset: int,
+        allocation_epoch: int,
         staging: bytes,
         version: int,
         now: datetime,
@@ -1067,6 +1139,8 @@ class TaskHistoryLogStateManager(BaseManager):
         :param producer_offset: The producer-relative byte offset already
             consumed from the current allocation.
         :type producer_offset: int
+        :param nomad_offset: The raw Nomad-space fetch offset for the next read.
+        :param allocation_epoch: The Nomad ``CreateIndex`` the cursors belong to.
         :param staging: Bytes pending flush to the chunk store.
         :type staging: bytes
         :param version: The initial optimistic-locking version counter.
@@ -1083,6 +1157,8 @@ class TaskHistoryLogStateManager(BaseManager):
             stream=stream,
             persisted_offset=persisted_offset,
             producer_offset=producer_offset,
+            nomad_offset=nomad_offset,
+            allocation_epoch=allocation_epoch,
             staging=staging,
             staging_updated_at=now,
             version=version,
@@ -1103,6 +1179,8 @@ class TaskHistoryLogStateManager(BaseManager):
         new_version: int,
         persisted_offset: int,
         producer_offset: int,
+        nomad_offset: int,
+        allocation_epoch: int,
         staging: bytes,
         now: datetime,
     ) -> bool:
@@ -1130,6 +1208,9 @@ class TaskHistoryLogStateManager(BaseManager):
         :type persisted_offset: int
         :param producer_offset: The updated producer-relative offset.
         :type producer_offset: int
+        :param nomad_offset: The updated raw Nomad-space fetch offset.
+        :param allocation_epoch: The updated Nomad ``CreateIndex`` the cursors
+            belong to.
         :param staging: The updated staging bytes buffer.
         :type staging: bytes
         :param now: The update timestamp used for the audit columns.
@@ -1149,6 +1230,8 @@ class TaskHistoryLogStateManager(BaseManager):
             .values(
                 persisted_offset=persisted_offset,
                 producer_offset=producer_offset,
+                nomad_offset=nomad_offset,
+                allocation_epoch=allocation_epoch,
                 staging=staging,
                 staging_updated_at=now,
                 version=new_version,

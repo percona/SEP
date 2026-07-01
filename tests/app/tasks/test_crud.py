@@ -15,14 +15,17 @@
 
 """Define tests for the Tasks CRUD managers."""
 
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.core.pagination import (
     DEFAULT_PAGINATION_LIMIT,
@@ -1262,6 +1265,313 @@ class TestTaskHistoryLogManagerStderrTailChunks:
 
         chunks = await TaskHistoryLogManager.get_stderr_tail_chunks(session, history.id)
         assert chunks == []
+
+
+async def _create_history_with_log(
+    session: AsyncSession,
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum,
+    created_at: datetime,
+    started_at: datetime | None = None,
+    finished_at: datetime | None = None,
+    chunks: int = 1,
+) -> TaskHistory:
+    """Create a ``TaskHistory`` with explicit timestamps and ``chunks`` log rows.
+
+    :param session: The async database session.
+    :param task: The parent task.
+    :param status: The execution status to assign.
+    :param created_at: The ``created_at`` timestamp to force on the history row.
+    :param started_at: The optional ``started_at`` timestamp.
+    :param finished_at: The optional ``finished_at`` timestamp.
+    :param chunks: The number of ``TaskHistoryLog`` rows to attach.
+    :return: The persisted task history.
+    """
+    history = TaskHistory(
+        task_id=task.id,
+        status=status,
+        created_at=created_at,
+        started_at=started_at,
+        finished_at=finished_at,
+        execution_request={
+            "task": task.name,
+            "target": "localhost",
+            "meta": {},
+            "tracking": {"allocation_id": None, "evaluation_id": None},
+        },
+    )
+    history = await TaskHistoryManager.save(session, history)
+    for offset in range(chunks):
+        session.add(
+            TaskHistoryLog(
+                task_history_id=history.id,
+                source="run-python",
+                stream=TaskLogType.STDOUT,
+                start_offset=offset * 10,
+                end_offset=offset * 10 + 10,
+                content="x" * 10,
+            )
+        )
+    await session.commit()
+    return history
+
+
+async def _count_logs(session: AsyncSession) -> int:
+    """Return the total number of ``taskhistory_log`` rows."""
+    result = await session.exec(select(col(TaskHistoryLog.id)))
+    return len(result.all())
+
+
+async def _count_histories(session: AsyncSession) -> int:
+    """Return the total number of ``taskhistory`` rows."""
+    result = await session.exec(select(col(TaskHistory.id)))
+    return len(result.all())
+
+
+AGED_CHUNKS = 2
+BATCH_TOTAL_CHUNKS = 5
+BATCH_LIMIT = 3
+BATCH_REMAINDER = BATCH_TOTAL_CHUNKS - BATCH_LIMIT
+PG_CHUNKS = 3
+PG_LOCK_CHUNKS = 2
+
+
+class TestTaskHistoryLogManagerDeleteAgedBatch:
+    """Test ``TaskHistoryLogManager.delete_aged_batch``."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "status",
+        [
+            TaskHistoryStatusEnum.SUCCESS,
+            TaskHistoryStatusEnum.FAILED,
+            TaskHistoryStatusEnum.STOPPED,
+            TaskHistoryStatusEnum.LOST,
+            TaskHistoryStatusEnum.STALE,
+        ],
+    )
+    async def test_deletes_aged_non_active_logs(
+        self, session: AsyncSession, status: TaskHistoryStatusEnum
+    ) -> None:
+        """Delete logs of aged, non-active executions and preserve the audit row."""
+        task = await _create_task(session)
+        old = utc_now() - timedelta(days=100)
+        await _create_history_with_log(
+            session,
+            task,
+            status=status,
+            created_at=old,
+            finished_at=old,
+            chunks=AGED_CHUNKS,
+        )
+        cutoff = utc_now() - timedelta(days=90)
+
+        deleted = await TaskHistoryLogManager.delete_aged_batch(
+            session, cutoff=cutoff, batch_size=100
+        )
+
+        assert deleted == AGED_CHUNKS
+        assert await _count_logs(session) == 0
+        assert await _count_histories(session) == 1  # audit row preserved
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "status",
+        [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING],
+    )
+    async def test_skips_active_logs(
+        self, session: AsyncSession, status: TaskHistoryStatusEnum
+    ) -> None:
+        """Never delete logs of PENDING/RUNNING executions, however old."""
+        task = await _create_task(session)
+        old = utc_now() - timedelta(days=100)
+        await _create_history_with_log(
+            session, task, status=status, created_at=old, chunks=AGED_CHUNKS
+        )
+        cutoff = utc_now() - timedelta(days=90)
+
+        deleted = await TaskHistoryLogManager.delete_aged_batch(
+            session, cutoff=cutoff, batch_size=100
+        )
+
+        assert deleted == 0
+        assert await _count_logs(session) == AGED_CHUNKS
+
+    @pytest.mark.asyncio
+    async def test_skips_recent_logs(self, session: AsyncSession) -> None:
+        """Keep logs whose effective completion is newer than the cutoff."""
+        task = await _create_task(session)
+        recent = utc_now() - timedelta(days=10)
+        await _create_history_with_log(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=recent,
+            finished_at=recent,
+        )
+        cutoff = utc_now() - timedelta(days=90)
+
+        deleted = await TaskHistoryLogManager.delete_aged_batch(
+            session, cutoff=cutoff, batch_size=100
+        )
+
+        assert deleted == 0
+        assert await _count_logs(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_cutoff_boundary_is_strict(self, session: AsyncSession) -> None:
+        """A row exactly at the cutoff is kept (strict ``<`` comparison)."""
+        task = await _create_task(session)
+        cutoff = utc_now() - timedelta(days=90)
+        await _create_history_with_log(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=cutoff,
+            finished_at=cutoff,
+        )
+
+        deleted = await TaskHistoryLogManager.delete_aged_batch(
+            session, cutoff=cutoff, batch_size=100
+        )
+
+        assert deleted == 0
+        assert await _count_logs(session) == 1
+
+    @pytest.mark.asyncio
+    async def test_coalesce_falls_back_to_started_at(
+        self, session: AsyncSession
+    ) -> None:
+        """With finished_at NULL, age is taken from started_at."""
+        task = await _create_task(session)
+        old = utc_now() - timedelta(days=100)
+        await _create_history_with_log(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=utc_now(),  # recent created_at must NOT save the row
+            started_at=old,
+        )
+        cutoff = utc_now() - timedelta(days=90)
+
+        deleted = await TaskHistoryLogManager.delete_aged_batch(
+            session, cutoff=cutoff, batch_size=100
+        )
+
+        assert deleted == 1
+
+    @pytest.mark.asyncio
+    async def test_coalesce_falls_back_to_created_at(
+        self, session: AsyncSession
+    ) -> None:
+        """With finished_at and started_at NULL, age is taken from created_at."""
+        task = await _create_task(session)
+        old = utc_now() - timedelta(days=100)
+        await _create_history_with_log(
+            session, task, status=TaskHistoryStatusEnum.SUCCESS, created_at=old
+        )
+        cutoff = utc_now() - timedelta(days=90)
+
+        deleted = await TaskHistoryLogManager.delete_aged_batch(
+            session, cutoff=cutoff, batch_size=100
+        )
+
+        assert deleted == 1
+
+    @pytest.mark.asyncio
+    async def test_batch_size_caps_rows_per_call(self, session: AsyncSession) -> None:
+        """A single call deletes at most ``batch_size`` rows."""
+        task = await _create_task(session)
+        old = utc_now() - timedelta(days=100)
+        await _create_history_with_log(
+            session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=old,
+            finished_at=old,
+            chunks=BATCH_TOTAL_CHUNKS,
+        )
+        cutoff = utc_now() - timedelta(days=90)
+
+        deleted = await TaskHistoryLogManager.delete_aged_batch(
+            session, cutoff=cutoff, batch_size=BATCH_LIMIT
+        )
+
+        assert deleted == BATCH_LIMIT
+        assert await _count_logs(session) == BATCH_REMAINDER
+
+    @pytest.mark.asyncio
+    async def test_empty_table_returns_zero(self, session: AsyncSession) -> None:
+        """Return 0 when there is nothing to delete."""
+        cutoff = utc_now() - timedelta(days=90)
+        deleted = await TaskHistoryLogManager.delete_aged_batch(
+            session, cutoff=cutoff, batch_size=100
+        )
+        assert deleted == 0
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_deletes_on_real_postgres(
+        self, postgres_session: AsyncSession
+    ) -> None:
+        """The FOR UPDATE SKIP LOCKED batched delete runs and deletes on real PG."""
+        task = await _create_task(postgres_session)
+        old = utc_now() - timedelta(days=100)
+        await _create_history_with_log(
+            postgres_session,
+            task,
+            status=TaskHistoryStatusEnum.LOST,
+            created_at=old,
+            finished_at=old,
+            chunks=PG_CHUNKS,
+        )
+        cutoff = utc_now() - timedelta(days=90)
+
+        deleted = await TaskHistoryLogManager.delete_aged_batch(
+            postgres_session, cutoff=cutoff, batch_size=100
+        )
+
+        assert deleted == PG_CHUNKS
+        assert await _count_logs(postgres_session) == 0
+        assert await _count_histories(postgres_session) == 1
+
+    @pytest.mark.postgres
+    @pytest.mark.asyncio
+    async def test_skip_locked_skips_rows_locked_by_another_session(
+        self, postgres_engine: AsyncEngine, postgres_session: AsyncSession
+    ) -> None:
+        """Rows locked by a concurrent transaction are skipped, not blocked on."""
+        task = await _create_task(postgres_session)
+        old = utc_now() - timedelta(days=100)
+        await _create_history_with_log(
+            postgres_session,
+            task,
+            status=TaskHistoryStatusEnum.SUCCESS,
+            created_at=old,
+            finished_at=old,
+            chunks=PG_LOCK_CHUNKS,
+        )
+        cutoff = utc_now() - timedelta(days=90)
+
+        # Session A locks every log row and holds the transaction open.
+        locker_maker = get_async_session_maker_from_engine(postgres_engine)
+        async with locker_maker() as locker:
+            await locker.exec(
+                select(col(TaskHistoryLog.id)).with_for_update(skip_locked=True)
+            )
+            # Session B must skip the locked rows rather than block/deadlock.
+            deleted = await TaskHistoryLogManager.delete_aged_batch(
+                postgres_session, cutoff=cutoff, batch_size=100
+            )
+            assert deleted == 0
+            await locker.rollback()
+
+        # With the lock released, the rows are now deletable.
+        deleted = await TaskHistoryLogManager.delete_aged_batch(
+            postgres_session, cutoff=cutoff, batch_size=100
+        )
+        assert deleted == PG_LOCK_CHUNKS
 
 
 # ---------------------------------------------------------------------------
