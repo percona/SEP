@@ -30,8 +30,8 @@ packages. Anything that talks to the backend should go through here.
   the `openapi-fetch` `{ data, error }` tuple to throw the same shape.
 - **Token accessor pattern** — `setTokenProvider()` and `setOnUnauthorized()`
   let the auth layer plug in without the API package depending on auth state.
-- **Hooks** — `usePluginSchema`, `usePluginTasks`, `usePluginTask`,
-  `useCreatePluginTask` (generic, predate codegen) and `useCurrentUser`
+- **Hooks** — `useAppSchema`, `useAppTasks`, `useAppTask`,
+  `useCreateAppTask` (generic, predate codegen) and `useCurrentUser`
   (sample of the typed-hook pattern).
 - **Auth functions** — `postLogin`, `postRefresh`, `fetchCurrentUser`.
   Thin request wrappers consumed by the `AuthProvider` in `@sep/shell`.

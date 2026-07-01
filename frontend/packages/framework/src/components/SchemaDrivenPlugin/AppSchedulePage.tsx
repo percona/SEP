@@ -22,11 +22,11 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useNavigate } from 'react-router-dom';
 import { ScheduledTasksPanel } from '../ScheduledTasksPanel';
 
-interface PluginSchedulePageProps {
+interface AppSchedulePageProps {
   pluginName: string;
 }
 
-export function PluginSchedulePage({ pluginName }: PluginSchedulePageProps) {
+export function AppSchedulePage({ pluginName }: AppSchedulePageProps) {
   const navigate = useNavigate();
 
   return (

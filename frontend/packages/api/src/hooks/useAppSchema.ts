@@ -18,7 +18,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { ApiError } from '../errors';
-import type { PluginSchema } from '../types/plugin-schema';
+import type { AppSchema } from '../types/app-schema';
 
 /**
  * Fetches a plugin's schema from the backend.
@@ -27,12 +27,12 @@ import type { PluginSchema } from '../types/plugin-schema';
  * backend doesn't yet serve schemas. When the real API is available,
  * it takes precedence over the mock.
  */
-export function usePluginSchema(pluginName: string, mockSchema?: PluginSchema) {
-  return useQuery<PluginSchema>({
+export function useAppSchema(pluginName: string, mockSchema?: AppSchema) {
+  return useQuery<AppSchema>({
     queryKey: ['plugins', pluginName, 'schema'],
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<PluginSchema>(`/apps/${pluginName}/schema`);
+        const { data } = await apiClient.get<AppSchema>(`/apps/${pluginName}/schema`);
         return data;
       } catch (error) {
         // Fall back to mock schema on 404 (not yet served) or network error

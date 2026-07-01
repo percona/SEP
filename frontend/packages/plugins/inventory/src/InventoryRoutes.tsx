@@ -20,8 +20,8 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import DeviceHubIcon from '@mui/icons-material/DeviceHub';
-import type { PluginSchema } from '@sep/api';
-import { PluginDetailPage, PluginListPage } from '@sep/framework';
+import type { AppSchema } from '@sep/api';
+import { AppDetailPage, AppListPage } from '@sep/framework';
 import { renderInventoryDetailChildren } from './InventoryPluginNavigation';
 import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
 import { SyncControl } from './SyncControl';
@@ -44,7 +44,7 @@ function InventoryNodesList({
   allowListEntityDelete,
   schedulingEnabled,
 }: {
-  schema: PluginSchema;
+  schema: AppSchema;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
   allowListEntityDelete: boolean;
   schedulingEnabled: boolean;
@@ -86,7 +86,7 @@ function InventoryNodesList({
           <SyncControl />
         </Box>
       </Box>
-      <PluginListPage
+      <AppListPage
         schema={schema}
         pluginName="inventory"
         mockEntityItems={mockEntityItems}
@@ -111,7 +111,7 @@ export function InventoryRoutes({
   schema,
   mockEntityItems,
 }: {
-  schema: PluginSchema;
+  schema: AppSchema;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
 }) {
   const schedulingEnabled = !!schema.capabilities?.scheduling;
@@ -148,7 +148,7 @@ export function InventoryRoutes({
       <Route
         path="nodes/:nodeId"
         element={
-          <PluginDetailPage
+          <AppDetailPage
             {...detailProps}
             detailEntityName="nodes"
             detailIdParam="nodeId"
@@ -159,7 +159,7 @@ export function InventoryRoutes({
       <Route
         path="nodes/:nodeId/services/:serviceId"
         element={
-          <PluginDetailPage
+          <AppDetailPage
             {...detailProps}
             detailEntityName="services"
             detailIdParam="serviceId"
@@ -170,7 +170,7 @@ export function InventoryRoutes({
       <Route
         path="nodes/:nodeId/services/:serviceId/schemas/:schemaId"
         element={
-          <PluginDetailPage
+          <AppDetailPage
             {...detailProps}
             detailEntityName="schemas"
             detailIdParam="schemaId"
@@ -181,7 +181,7 @@ export function InventoryRoutes({
       <Route
         path="nodes/:nodeId/services/:serviceId/schemas/:schemaId/tables/:tableId"
         element={
-          <PluginDetailPage
+          <AppDetailPage
             {...detailProps}
             detailEntityName="tables"
             detailIdParam="tableId"
@@ -194,19 +194,15 @@ export function InventoryRoutes({
       <Route path="tables" element={<Navigate to="../nodes" replace relative="path" />} />
       <Route
         path="tables/:id"
-        element={<PluginDetailPage {...detailProps} detailEntityName="tables" detailIdParam="id" />}
+        element={<AppDetailPage {...detailProps} detailEntityName="tables" detailIdParam="id" />}
       />
       <Route
         path="services/:id"
-        element={
-          <PluginDetailPage {...detailProps} detailEntityName="services" detailIdParam="id" />
-        }
+        element={<AppDetailPage {...detailProps} detailEntityName="services" detailIdParam="id" />}
       />
       <Route
         path="schemas/:id"
-        element={
-          <PluginDetailPage {...detailProps} detailEntityName="schemas" detailIdParam="id" />
-        }
+        element={<AppDetailPage {...detailProps} detailEntityName="schemas" detailIdParam="id" />}
       />
     </Routes>
   );

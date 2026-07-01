@@ -207,7 +207,7 @@ function isBenignConsoleError(msg: string): boolean {
 
 type BackupApiState = { tasks: BackupTaskRow[] };
 type RestoreApiState = { tasks: RestoreTaskRow[] };
-type PluginApiState = { backup: BackupApiState; restore: RestoreApiState };
+type AppApiState = { backup: BackupApiState; restore: RestoreApiState };
 
 /** Task name segment from ``/api/apps/backup_mongo/{task_name}`` (not list/schema/restores). */
 function backupTaskNameFromPath(pathname: string): string | null {
@@ -238,7 +238,7 @@ function restoreTaskNameFromPath(pathname: string): string | null {
 /**
  * Authenticated session with backup_mongo and restores plugin routes mocked.
  */
-async function mockBackupMongoApis(page: Page, apiState: PluginApiState): Promise<void> {
+async function mockBackupMongoApis(page: Page, apiState: AppApiState): Promise<void> {
   const { backup: backupState, restore: restoreState } = apiState;
   await page.route('**/api/**', (route) => {
     const req = route.request();
@@ -412,7 +412,7 @@ async function mockBackupMongoApis(page: Page, apiState: PluginApiState): Promis
 }
 
 test.describe('MongoDB backup_mongo plugin smoke', () => {
-  let apiState: PluginApiState;
+  let apiState: AppApiState;
 
   test.beforeEach(async ({ page }) => {
     apiState = {

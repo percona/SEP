@@ -26,17 +26,12 @@ import Tabs from '@mui/material/Tabs';
 import AddIcon from '@mui/icons-material/Add';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import { useSnackbar } from 'notistack';
-import {
-  useDeletePluginEntity,
-  usePluginEntityList,
-  usePluginTasks,
-  type PluginSchema,
-} from '@sep/api';
+import { useDeleteAppEntity, useAppEntityList, useAppTasks, type AppSchema } from '@sep/api';
 import { SchemaListView, type RenderListColumnOverride } from '../SchemaListView';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 
-interface PluginListPageProps {
-  schema: PluginSchema;
+interface AppListPageProps {
+  schema: AppSchema;
   pluginName: string;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
@@ -65,7 +60,7 @@ interface PluginListPageProps {
   renderListColumn?: RenderListColumnOverride;
 }
 
-export function PluginListPage({
+export function AppListPage({
   schema,
   pluginName,
   mockTasks,
@@ -78,7 +73,7 @@ export function PluginListPage({
   rowClickHref,
   allowListEntityDelete = false,
   renderListColumn,
-}: PluginListPageProps) {
+}: AppListPageProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const [pendingDelete, setPendingDelete] = useState<{
@@ -93,8 +88,8 @@ export function PluginListPage({
   );
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
 
-  const singleQuery = usePluginTasks(pluginName, mockTasks, { enabled: !multi });
-  const entityQuery = usePluginEntityList(
+  const singleQuery = useAppTasks(pluginName, mockTasks, { enabled: !multi });
+  const entityQuery = useAppEntityList(
     pluginName,
     entityName ?? '',
     multi ? mockEntityItems?.[entityName!] : undefined,
@@ -107,7 +102,7 @@ export function PluginListPage({
   const description = multi ? entitySchema?.description : schema.description;
 
   const hasActionsColumn = listView.columns.some((c) => c.format === 'actions');
-  const deleteEntity = useDeletePluginEntity(
+  const deleteEntity = useDeleteAppEntity(
     pluginName,
     entityName ?? '',
     multi ? mockEntityItems?.[entityName!] : undefined,

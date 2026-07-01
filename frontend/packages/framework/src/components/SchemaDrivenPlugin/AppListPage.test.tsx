@@ -19,37 +19,37 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
-import type { PluginSchema } from '@sep/api';
-import { PluginListPage } from './PluginListPage';
+import type { AppSchema } from '@sep/api';
+import { AppListPage } from './AppListPage';
 
 vi.mock('../SchemaListView', () => ({
   SchemaListView: () => <div>list</div>,
 }));
 
 vi.mock('@sep/api', () => ({
-  usePluginTasks: () => ({ data: [], isLoading: false }),
-  usePluginEntityList: () => ({ data: [], isLoading: false }),
-  useDeletePluginEntity: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
+  useAppTasks: () => ({ data: [], isLoading: false }),
+  useAppEntityList: () => ({ data: [], isLoading: false }),
+  useDeleteAppEntity: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
 }));
 
-const schema: PluginSchema = {
+const schema: AppSchema = {
   name: 'sched',
   display_name: 'Sched',
   capabilities: { scheduling: true },
   list_view: { columns: [{ key: 'name', label: 'Name' }] },
 };
 
-function renderPage(props: Partial<Parameters<typeof PluginListPage>[0]> = {}) {
+function renderPage(props: Partial<Parameters<typeof AppListPage>[0]> = {}) {
   return render(
     <SnackbarProvider>
       <MemoryRouter>
-        <PluginListPage schema={schema} pluginName="sched" {...props} />
+        <AppListPage schema={schema} pluginName="sched" {...props} />
       </MemoryRouter>
     </SnackbarProvider>,
   );
 }
 
-describe('PluginListPage — generic Schedules button', () => {
+describe('AppListPage — generic Schedules button', () => {
   it('renders the generic Schedules button by default when scheduling is enabled', () => {
     renderPage();
     expect(screen.getByTestId('plugin-schedule-link')).toBeInTheDocument();

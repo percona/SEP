@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { PluginField } from '../types';
+import type { AppField } from '../types';
 import { StringField } from './StringField';
 import { IntegerField } from './IntegerField';
 import { FloatField } from './FloatField';
@@ -51,14 +51,14 @@ export {
 };
 
 interface FieldRendererProps {
-  field: PluginField;
+  field: AppField;
 }
 
 /**
- * Dispatches a PluginField to the concrete component for its `type` discriminator.
+ * Dispatches an AppField to the concrete component for its `type` discriminator.
  *
  * The switch is exhaustive on the discriminated union — adding a new field type
- * to `PluginField` will surface a TypeScript error here until the case is added.
+ * to `AppField` will surface a TypeScript error here until the case is added.
  */
 export function FieldRenderer({ field }: FieldRendererProps) {
   switch (field.type) {
