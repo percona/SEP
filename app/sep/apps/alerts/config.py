@@ -13,17 +13,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the alerts plugin settings section.
-
-The alerts plugin owns its operational settings under the ``SEP.ALERTS`` YAML
-section. These fields previously rode on the deprecated ``SEP.PMM`` section
-(removed in SEP-1477); they now live in this dedicated, plugin-owned section so
-the alerts plugin no longer depends on core PMM config.
-"""
+"""Define the alerts plugin settings section."""
 
 __all__ = ["AlertsSettings", "alerts_settings"]
 
-import logging
 from typing import ClassVar
 
 from pydantic import PositiveInt
@@ -33,8 +26,6 @@ from app.core.config import BaseYamlSettings
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import hot_field
-
-logger = logging.getLogger(__name__)
 
 
 class AlertsSettings(BaseYamlSettings):

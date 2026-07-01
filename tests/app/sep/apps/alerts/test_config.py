@@ -19,9 +19,8 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy_celery_beat.models import Period
 
-from app.core.celery.models import IntervalSchedule
+from app.core.celery.models import IntervalSchedule, Period
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.registry import (

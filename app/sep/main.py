@@ -193,11 +193,12 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     Force-resolves ``messages_settings`` (fail-fast validation), then starts the
     background refresher for the ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``,
-    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global) and ``ALERT_SETTINGS`` proxies
-    for the duration of the wrapped block. ``SETTINGS`` and ``ALERT_SETTINGS``
-    wrap shared module-level proxies (``settings`` / ``alert_settings``); the SEP
-    refresher is their **sole** owner so that under the combined ``app.main:app``
-    the Tasks refresher does not also publish into them from the Tasks database.
+    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global), ``ALERT_SETTINGS`` and
+    ``ALERTS_SETTINGS`` proxies for the duration of the wrapped block.
+    ``SETTINGS`` and ``ALERT_SETTINGS`` wrap shared module-level proxies
+    (``settings`` / ``alert_settings``); the SEP refresher is their **sole**
+    owner so that under the combined ``app.main:app`` the Tasks refresher does
+    not also publish into them from the Tasks database.
     Endpoint and PMM rebind callbacks are built here -- where ``app`` is
     available -- so both run modes wire them.
 
