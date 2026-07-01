@@ -499,7 +499,7 @@ def get_toggleable_app_key(app_key: str) -> str:
         )
     # Deferred: the framework package __init__ imports back into this module,
     # so a top-level import here would cycle.
-    from app.sep.plugins.framework.registry import get_app_registry
+    from app.sep.apps.framework.registry import get_app_registry
 
     if get_app_registry().get(app_key) is None:
         raise HTTPNotFoundException(detail="App not found")
@@ -562,7 +562,7 @@ async def get_default_context(
         states = {}
     # Deferred: the framework package __init__ imports back into this module,
     # so a top-level import here would cycle.
-    from app.sep.plugins.framework.registry import get_app_registry
+    from app.sep.apps.framework.registry import get_app_registry
 
     plugins = [
         app

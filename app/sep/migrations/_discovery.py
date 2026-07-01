@@ -40,7 +40,7 @@ import pkgutil
 import sys
 from pathlib import Path
 
-import app.sep.plugins as plugins_pkg
+import app.sep.apps as plugins_pkg
 
 
 def _load_models_module(full_name: str, models_path: Path) -> None:
@@ -55,7 +55,7 @@ def _load_models_module(full_name: str, models_path: Path) -> None:
     safe.
 
     :param full_name: The fully qualified module name under which to
-        register the loaded module (e.g. ``app.sep.plugins.alerts.models``).
+        register the loaded module (e.g. ``app.sep.apps.alerts.models``).
     :type full_name: str
     :param models_path: Filesystem path to the plugin's ``models.py``
         file.

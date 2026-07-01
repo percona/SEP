@@ -1,6 +1,6 @@
 {
   "delete_data_no_dest": {
-    "alert_detail_builder": "app.sep.plugins.archives.alerts:build_owner_alert_details",
+    "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -15,7 +15,7 @@
         "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/archives/payload",
+      "payload": "file://app/sep/apps/archives/payload",
       "task": "run-python"
     },
     "is_template": false,
@@ -24,7 +24,7 @@
     "protected": false
   },
   "dest_service_host": {
-    "alert_detail_builder": "app.sep.plugins.archives.alerts:build_owner_alert_details",
+    "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -39,7 +39,7 @@
         "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/archives/payload",
+      "payload": "file://app/sep/apps/archives/payload",
       "task": "run-python"
     },
     "is_template": false,
@@ -48,7 +48,7 @@
     "protected": false
   },
   "manual_host_free_solo_names": {
-    "alert_detail_builder": "app.sep.plugins.archives.alerts:build_owner_alert_details",
+    "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -63,7 +63,7 @@
         "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/archives/payload",
+      "payload": "file://app/sep/apps/archives/payload",
       "task": "run-python"
     },
     "is_template": false,
@@ -72,7 +72,7 @@
     "protected": false
   },
   "query_to_table": {
-    "alert_detail_builder": "app.sep.plugins.archives.alerts:build_owner_alert_details",
+    "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -87,7 +87,7 @@
         "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/archives/payload",
+      "payload": "file://app/sep/apps/archives/payload",
       "task": "run-python"
     },
     "is_template": false,
@@ -96,7 +96,7 @@
     "protected": false
   },
   "table_to_file": {
-    "alert_detail_builder": "app.sep.plugins.archives.alerts:build_owner_alert_details",
+    "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -111,7 +111,7 @@
         "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/archives/payload",
+      "payload": "file://app/sep/apps/archives/payload",
       "task": "run-python"
     },
     "is_template": false,
@@ -120,7 +120,7 @@
     "protected": false
   },
   "table_to_table_same_host": {
-    "alert_detail_builder": "app.sep.plugins.archives.alerts:build_owner_alert_details",
+    "alert_detail_builder": "app.sep.apps.archives.alerts:build_owner_alert_details",
     "alert_on_fail": false,
     "anonymize_mask": null,
     "backend": "proxy",
@@ -135,7 +135,7 @@
         "requirements": "PyMySQL[rsa,ed25519]\nfilelock\nPyYAML",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/archives/payload",
+      "payload": "file://app/sep/apps/archives/payload",
       "task": "run-python"
     },
     "is_template": false,
