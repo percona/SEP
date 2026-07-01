@@ -791,8 +791,9 @@ class ListView(SchemaBaseModel):
 
 
 #: The executor-host column shared by every host-bearing task-plugin list view.
-#: Treat as read-only: ``Column`` is not frozen, and this single instance is
-#: reused across app declarations, so mutating it would alias every consumer.
+#: This is a read-only constant. ``Column`` is not frozen and this single
+#: instance is reused across app declarations, so never mutate it — pass it
+#: through ``default_columns()``, which copies each middle column per call.
 EXECUTOR_HOST_COLUMN = Column(key="hostname", label="Executor Host")
 
 

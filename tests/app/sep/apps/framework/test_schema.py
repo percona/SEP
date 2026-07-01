@@ -743,80 +743,75 @@ def test_list_view_rejects_double_dash_prefix():
         )
 
 
-# ── default_columns() factory ────────────────────────────────────────────
+class TestDefaultColumns:
+    """Cover the shared ``default_columns()`` factory and ``EXECUTOR_HOST_COLUMN``."""
 
+    def test_returns_identity_audit_bookends_in_order(self):
+        """Return the fixed head/tail identity columns wrapping the middle slot."""
+        columns = default_columns()
 
-def test_default_columns_returns_identity_audit_bookends_in_order():
-    """Return the fixed head/tail identity columns wrapping the middle slot."""
-    columns = default_columns()
+        assert [column.key for column in columns] == [
+            "name",
+            "status",
+            "created_at",
+            "created_by",
+        ]
 
-    assert [column.key for column in columns] == [
-        "name",
-        "status",
-        "created_at",
-        "created_by",
-    ]
+    def test_inserts_middle_between_head_and_tail(self):
+        """Place ``*middle`` columns between the head and tail bookends, in order."""
+        host = Column(key="hostname", label="Executor Host")
+        plugin = Column(key="backup_type", label="Type", format=ColumnFormat.CHIP)
 
+        columns = default_columns(host, plugin)
 
-def test_default_columns_inserts_middle_between_head_and_tail():
-    """Place ``*middle`` columns between the head and tail bookends, in order."""
-    host = Column(key="hostname", label="Executor Host")
-    plugin = Column(key="backup_type", label="Type", format=ColumnFormat.CHIP)
+        assert [column.key for column in columns] == [
+            "name",
+            "status",
+            "hostname",
+            "backup_type",
+            "created_at",
+            "created_by",
+        ]
 
-    columns = default_columns(host, plugin)
+    def test_bookends_carry_expected_attributes(self):
+        """The head/tail columns keep their labels, sortability, and formats."""
+        by_key = {column.key: column for column in default_columns()}
 
-    assert [column.key for column in columns] == [
-        "name",
-        "status",
-        "hostname",
-        "backup_type",
-        "created_at",
-        "created_by",
-    ]
+        assert by_key["name"].label == "Name"
+        assert by_key["name"].sortable is True
+        assert by_key["status"].format == ColumnFormat.STATUS
+        assert by_key["created_at"].format == ColumnFormat.RELATIVE
+        assert by_key["created_by"].format is None
 
+    def test_returns_independent_instances_each_call(self):
+        """Each call builds fresh bookend instances so mutation never leaks across views."""
+        first = default_columns()
+        second = default_columns()
 
-def test_default_columns_bookends_carry_expected_attributes():
-    """The head/tail columns keep their labels, sortability, and formats."""
-    by_key = {column.key: column for column in default_columns()}
+        assert first[0] is not second[0]
 
-    assert by_key["name"].label == "Name"
-    assert by_key["name"].sortable is True
-    assert by_key["status"].format == ColumnFormat.STATUS
-    assert by_key["created_at"].format == ColumnFormat.RELATIVE
-    assert by_key["created_by"].format is None
+        first[0].label = "Mutated"
 
+        assert second[0].label == "Name"
 
-def test_default_columns_returns_independent_instances_each_call():
-    """Each call builds fresh bookend instances so mutation never leaks across views."""
-    first = default_columns()
-    second = default_columns()
+    def test_copies_middle_columns_each_call(self):
+        """Middle columns are copied so a shared constant never aliases across views."""
+        first = default_columns(EXECUTOR_HOST_COLUMN)
+        second = default_columns(EXECUTOR_HOST_COLUMN)
 
-    assert first[0] is not second[0]
+        assert first[2].key == "hostname"
+        assert first[2] is not EXECUTOR_HOST_COLUMN
+        assert first[2] is not second[2]
 
-    first[0].label = "Mutated"
+        first[2].label = "Mutated"
 
-    assert second[0].label == "Name"
+        assert second[2].label == "Executor Host"
+        assert EXECUTOR_HOST_COLUMN.label == "Executor Host"
 
-
-def test_default_columns_copies_middle_columns_each_call():
-    """Middle columns are copied so a shared constant never aliases across views."""
-    first = default_columns(EXECUTOR_HOST_COLUMN)
-    second = default_columns(EXECUTOR_HOST_COLUMN)
-
-    assert first[2].key == "hostname"
-    assert first[2] is not EXECUTOR_HOST_COLUMN
-    assert first[2] is not second[2]
-
-    first[2].label = "Mutated"
-
-    assert second[2].label == "Executor Host"
-    assert EXECUTOR_HOST_COLUMN.label == "Executor Host"
-
-
-def test_executor_host_column_key_and_label():
-    """The reusable executor-host constant carries the normalized header label."""
-    assert EXECUTOR_HOST_COLUMN.key == "hostname"
-    assert EXECUTOR_HOST_COLUMN.label == "Executor Host"
+    def test_executor_host_column_key_and_label(self):
+        """The reusable executor-host constant carries the normalized header label."""
+        assert EXECUTOR_HOST_COLUMN.key == "hostname"
+        assert EXECUTOR_HOST_COLUMN.label == "Executor Host"
 
 
 # ── ListView.overview_hidden_fields ──────────────────────────────────────
