@@ -2103,21 +2103,20 @@ export interface paths {
     put?: never;
     /**
      * Check Connectivity
-     * @description Probe every configured external / inter-service endpoint and report status.
+     * @description Probe the requested external / inter-service endpoints and report status.
      *
-     *     Run the PMM, Inventory, and Tasks/Nomad probes concurrently. Each is
-     *     isolated: one endpoint's failure is classified independently and never fails
-     *     the whole response, which always returns ``200`` with one entry per service
-     *     (``pmm``, ``inventory``, ``tasks``, ``nomad``).
+     *     Probe only the services named in ``body.targets``, running the selected
+     *     probes concurrently. Each is isolated: one endpoint's failure is classified
+     *     independently and never fails the whole response, which always returns
+     *     ``200`` with one entry per requested service, in request order. Tasks and
+     *     Nomad share a single ``/hosts/`` probe, so requesting either (or both) runs
+     *     it once.
      *
+     *     :param body: The request naming which services to probe.
      *     :param pmm_api: The PMM client dependency, or ``None`` when unconfigured.
-     *     :type pmm_api: PMMAPIDep
      *     :param inventory_api: The authenticated Inventory API client.
-     *     :type inventory_api: InventoryAPI
      *     :param tasks_api: The authenticated Tasks API client.
-     *     :type tasks_api: TaskAPI
-     *     :return: One normalized connectivity result per service.
-     *     :rtype: list[ConnectivityResult]
+     *     :return: One normalized connectivity result per requested service.
      */
     post: operations['sep_check_connectivity_api_sep_admin_connectivity_check__post'];
     delete?: never;
@@ -4753,6 +4752,17 @@ export interface components {
       | 'actions'
       | 'schedule';
     /**
+     * ConnectivityCheckRequest
+     * @description Carry the required set of services to probe.
+     *
+     *     :param targets: The services to probe. Must name at least one; duplicates are
+     *         collapsed so a shared probe (Tasks/Nomad) still runs once.
+     */
+    ConnectivityCheckRequest: {
+      /** Targets */
+      targets: components['schemas']['ServiceEnum'][];
+    };
+    /**
      * ConnectivityResult
      * @description Represent the outcome of probing a single external / inter-service endpoint.
      *
@@ -6787,6 +6797,12 @@ export interface components {
       /** Language */
       language: string;
     };
+    /**
+     * ServiceEnum
+     * @description Enumerate the probeable services, used as stable ``service`` identifiers.
+     * @enum {string}
+     */
+    ServiceEnum: 'pmm' | 'inventory' | 'tasks' | 'nomad';
     /**
      * ServiceField
      * @description Represent an inventory service selector field.
@@ -11272,7 +11288,11 @@ export interface operations {
       path?: never;
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConnectivityCheckRequest'];
+      };
+    };
     responses: {
       /** @description Successful Response */
       200: {
@@ -11281,6 +11301,15 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ConnectivityResult'][];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
         };
       };
     };

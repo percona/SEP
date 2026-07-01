@@ -15,10 +15,13 @@
 
 """Define the admin-only ``/api/sep/admin/connectivity-check`` endpoint.
 
-Expose a single generic ``POST`` that probes each configured external /
-inter-service endpoint (PMM, Inventory, Tasks, Nomad) on demand and reports
+Expose a single generic ``POST`` that probes the caller-specified external /
+inter-service endpoints (PMM, Inventory, Tasks, Nomad) on demand and reports
 normalized per-endpoint connectivity status, so an admin can confirm an
-endpoint or credential change is reachable and valid before relying on it.
+endpoint or credential change is reachable and valid before relying on it. The
+request must name which services to probe (``targets``, required, no default),
+so the settings flow can validate only the endpoint being edited while a full
+sweep still names all four.
 
 The probes are driven by the overridable ``RemoteAPI.check_connectivity``
 capability and fan out concurrently. A failure for one endpoint is captured and
@@ -27,12 +30,15 @@ PMM, Inventory, and Tasks are built through the existing
 ``settings.get_remote_api`` / ``ClientRegistry`` path (honoring SSL config and
 hot-reloaded overrides); Nomad reuses the Tasks ``/hosts/`` proxy -- a healthy
 response proves both Tasks and Nomad are reachable, so no new Tasks-app endpoint
-is added.
+is added. Because Tasks and Nomad share that single probe, requesting either (or
+both) runs ``/hosts/`` exactly once.
 """
 
 import asyncio
+from enum import StrEnum
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, Field
 
 from app.core.requests.connectivity import (
     build_connectivity_result,
@@ -45,11 +51,25 @@ from app.sep.deps import InventoryAPI, PMMAPIDep, TaskAPI
 
 router = APIRouter()
 
-#: Stable service identifiers returned in each result's ``service`` field.
-SERVICE_PMM = "pmm"
-SERVICE_INVENTORY = "inventory"
-SERVICE_TASKS = "tasks"
-SERVICE_NOMAD = "nomad"
+
+class ServiceEnum(StrEnum):
+    """Enumerate the probeable services, used as stable ``service`` identifiers."""
+
+    PMM = "pmm"
+    INVENTORY = "inventory"
+    TASKS = "tasks"
+    NOMAD = "nomad"
+
+
+class ConnectivityCheckRequest(BaseModel):
+    """Carry the required set of services to probe.
+
+    :param targets: The services to probe. Must name at least one; duplicates are
+        collapsed so a shared probe (Tasks/Nomad) still runs once.
+    """
+
+    targets: list[ServiceEnum] = Field(min_length=1)
+
 
 #: Authenticated Inventory route used as the reachability probe. ``/summary/``
 #: requires auth, so it also exercises authentication-failure detection.
@@ -65,17 +85,15 @@ async def _probe_pmm(pmm_api: PMMAPIDep) -> ConnectivityResult:
     """Probe PMM, or report "not configured" when no endpoint/key is set.
 
     :param pmm_api: The PMM client, or ``None`` when PMM is unconfigured.
-    :type pmm_api: PMMAPIDep
     :return: The PMM connectivity result.
-    :rtype: ConnectivityResult
     """
     if pmm_api is None:
         return build_connectivity_result(
-            SERVICE_PMM,
+            ServiceEnum.PMM,
             ConnectivityStatusEnum.UNREACHABLE,
             detail="PMM is not configured.",
         )
-    return await pmm_api.check_connectivity(SERVICE_PMM)
+    return await pmm_api.check_connectivity(ServiceEnum.PMM)
 
 
 async def _probe_tasks_and_nomad(
@@ -92,9 +110,7 @@ async def _probe_tasks_and_nomad(
     therefore cannot be either.
 
     :param tasks_api: The authenticated Tasks API client.
-    :type tasks_api: TaskAPI
     :return: A ``(tasks_result, nomad_result)`` pair.
-    :rtype: tuple[ConnectivityResult, ConnectivityResult]
     """
     try:
         async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
@@ -108,10 +124,10 @@ async def _probe_tasks_and_nomad(
             # Tasks is reachable but Nomad is not.
             return (
                 build_connectivity_result(
-                    SERVICE_TASKS, ConnectivityStatusEnum.REACHABLE
+                    ServiceEnum.TASKS, ConnectivityStatusEnum.REACHABLE
                 ),
                 build_connectivity_result(
-                    SERVICE_NOMAD,
+                    ServiceEnum.NOMAD,
                     ConnectivityStatusEnum.UNREACHABLE,
                     detail="Executor backend unreachable.",
                 ),
@@ -120,41 +136,66 @@ async def _probe_tasks_and_nomad(
         # SSL, timeout, or auth); Nomad cannot be confirmed either.
         probe_status = classify_connectivity_error(exc)
         return (
-            build_connectivity_result(SERVICE_TASKS, probe_status),
-            build_connectivity_result(SERVICE_NOMAD, probe_status),
+            build_connectivity_result(ServiceEnum.TASKS, probe_status),
+            build_connectivity_result(ServiceEnum.NOMAD, probe_status),
         )
     return (
-        build_connectivity_result(SERVICE_TASKS, ConnectivityStatusEnum.REACHABLE),
-        build_connectivity_result(SERVICE_NOMAD, ConnectivityStatusEnum.REACHABLE),
+        build_connectivity_result(ServiceEnum.TASKS, ConnectivityStatusEnum.REACHABLE),
+        build_connectivity_result(ServiceEnum.NOMAD, ConnectivityStatusEnum.REACHABLE),
     )
 
 
 @router.post("/")
 async def check_connectivity(
+    body: ConnectivityCheckRequest,
     pmm_api: PMMAPIDep,
     inventory_api: InventoryAPI,
     tasks_api: TaskAPI,
 ) -> list[ConnectivityResult]:
-    """Probe every configured external / inter-service endpoint and report status.
+    """Probe the requested external / inter-service endpoints and report status.
 
-    Run the PMM, Inventory, and Tasks/Nomad probes concurrently. Each is
-    isolated: one endpoint's failure is classified independently and never fails
-    the whole response, which always returns ``200`` with one entry per service
-    (``pmm``, ``inventory``, ``tasks``, ``nomad``).
+    Probe only the services named in ``body.targets``, running the selected
+    probes concurrently. Each is isolated: one endpoint's failure is classified
+    independently and never fails the whole response, which always returns
+    ``200`` with one entry per requested service, in request order. Tasks and
+    Nomad share a single ``/hosts/`` probe, so requesting either (or both) runs
+    it once.
 
+    :param body: The request naming which services to probe.
     :param pmm_api: The PMM client dependency, or ``None`` when unconfigured.
-    :type pmm_api: PMMAPIDep
     :param inventory_api: The authenticated Inventory API client.
-    :type inventory_api: InventoryAPI
     :param tasks_api: The authenticated Tasks API client.
-    :type tasks_api: TaskAPI
-    :return: One normalized connectivity result per service.
-    :rtype: list[ConnectivityResult]
+    :return: One normalized connectivity result per requested service.
     """
-    pmm_result, inventory_result, tasks_nomad = await asyncio.gather(
-        _probe_pmm(pmm_api),
-        inventory_api.check_connectivity(SERVICE_INVENTORY, path=_INVENTORY_PROBE_PATH),
-        _probe_tasks_and_nomad(tasks_api),
-    )
-    tasks_result, nomad_result = tasks_nomad
-    return [pmm_result, inventory_result, tasks_result, nomad_result]
+    # Preserve request order while collapsing duplicates.
+    targets = list(dict.fromkeys(body.targets))
+    want_tasks = ServiceEnum.TASKS in targets
+    want_nomad = ServiceEnum.NOMAD in targets
+
+    # Register each requested probe as a (service, coroutine) pair. Tasks/Nomad
+    # share one coroutine, so it is registered once under a sentinel key.
+    probes: dict[str, object] = {}
+    if ServiceEnum.PMM in targets:
+        probes[ServiceEnum.PMM] = _probe_pmm(pmm_api)
+    if ServiceEnum.INVENTORY in targets:
+        probes[ServiceEnum.INVENTORY] = inventory_api.check_connectivity(
+            ServiceEnum.INVENTORY, path=_INVENTORY_PROBE_PATH
+        )
+    if want_tasks or want_nomad:
+        probes["_tasks_nomad"] = _probe_tasks_and_nomad(tasks_api)
+
+    completed = dict(zip(probes, await asyncio.gather(*probes.values()), strict=False))
+
+    # Expand the shared Tasks/Nomad result into the requested halves.
+    by_service: dict[str, ConnectivityResult] = {}
+    for key, result in completed.items():
+        if key == "_tasks_nomad":
+            tasks_result, nomad_result = result
+            if want_tasks:
+                by_service[ServiceEnum.TASKS] = tasks_result
+            if want_nomad:
+                by_service[ServiceEnum.NOMAD] = nomad_result
+        else:
+            by_service[key] = result
+
+    return [by_service[service] for service in targets]

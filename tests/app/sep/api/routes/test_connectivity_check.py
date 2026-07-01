@@ -28,6 +28,7 @@ from app.core.requests.connectivity import (
     ConnectivityStatusEnum,
 )
 from app.models import CasdoorUser
+from app.sep.apps.alerts.deps import get_pmm_api
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.deps import (
     get_api_authenticated_admin,
@@ -35,9 +36,11 @@ from app.sep.deps import (
     require_bearer_for_unsafe_methods,
 )
 from app.sep.main import sep_app
-from app.sep.plugins.alerts.deps import get_pmm_api
 
 ENDPOINT = "/api/sep/admin/connectivity-check/"
+
+#: Full-sweep body naming every service (the frontend's "check all" shape).
+ALL_TARGETS = {"targets": ["pmm", "inventory", "tasks", "nomad"]}
 
 
 def _reachable(service: str, version: str | None = None) -> ConnectivityResult:
@@ -94,7 +97,7 @@ class TestConnectivityCheckEndpoint:
         mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
         mock_task_api_dep.get.return_value = {"nomad-1": "10.0.0.1"}
 
-        response = admin_client.post(ENDPOINT)
+        response = admin_client.post(ENDPOINT, json=ALL_TARGETS)
 
         assert response.status_code == status.HTTP_200_OK
         results = _results_by_service(response.json())
@@ -116,7 +119,7 @@ class TestConnectivityCheckEndpoint:
         )
         mock_task_api_dep.get.return_value = {}
 
-        response = admin_client.post(ENDPOINT)
+        response = admin_client.post(ENDPOINT, json=ALL_TARGETS)
 
         assert response.status_code == status.HTTP_200_OK
         results = _results_by_service(response.json())
@@ -138,7 +141,9 @@ class TestConnectivityCheckEndpoint:
         mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
         mock_task_api_dep.get.return_value = {}
 
-        results = _results_by_service(admin_client.post(ENDPOINT).json())
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json=ALL_TARGETS).json()
+        )
 
         assert results["tasks"]["reachable"] is True
         assert results["nomad"]["reachable"] is True
@@ -157,7 +162,9 @@ class TestConnectivityCheckEndpoint:
             "Executor backend unreachable"
         )
 
-        results = _results_by_service(admin_client.post(ENDPOINT).json())
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json=ALL_TARGETS).json()
+        )
 
         assert results["tasks"]["reachable"] is True
         assert results["nomad"]["reachable"] is False
@@ -181,7 +188,9 @@ class TestConnectivityCheckEndpoint:
             status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
-        results = _results_by_service(admin_client.post(ENDPOINT).json())
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json=ALL_TARGETS).json()
+        )
 
         assert results["tasks"]["reachable"] is False
         assert results["tasks"]["status"] == "error"
@@ -200,7 +209,9 @@ class TestConnectivityCheckEndpoint:
         mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
         mock_task_api_dep.get.side_effect = ConnectionRefusedError("refused")
 
-        results = _results_by_service(admin_client.post(ENDPOINT).json())
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json=ALL_TARGETS).json()
+        )
 
         assert results["tasks"]["reachable"] is False
         assert results["tasks"]["status"] == "unreachable"
@@ -219,7 +230,9 @@ class TestConnectivityCheckEndpoint:
         mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
         mock_task_api_dep.get.side_effect = HTTPException(status.HTTP_401_UNAUTHORIZED)
 
-        results = _results_by_service(admin_client.post(ENDPOINT).json())
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json=ALL_TARGETS).json()
+        )
 
         assert results["tasks"]["status"] == "auth_failed"
         assert results["nomad"]["status"] == "auth_failed"
@@ -235,20 +248,184 @@ class TestConnectivityCheckEndpoint:
         mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
         mock_task_api_dep.get.return_value = {}
 
-        results = _results_by_service(admin_client.post(ENDPOINT).json())
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json=ALL_TARGETS).json()
+        )
 
         assert results["pmm"]["reachable"] is False
         assert "not configured" in results["pmm"]["detail"].lower()
 
     def test_requires_admin(self, test_client: TestClient) -> None:
         """Reject a non-admin caller (cookie/regular user) with 403."""
-        # ``test_client`` authenticates a regular (non-admin) user.
-        response = test_client.post(ENDPOINT)
+        # ``test_client`` authenticates a regular (non-admin) user. Auth is
+        # enforced before body validation, so a valid body still gets a 403.
+        response = test_client.post(ENDPOINT, json=ALL_TARGETS)
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     def test_requires_bearer_on_post(
         self, api_admin_client_no_bearer: TestClient
     ) -> None:
         """Reject an admin cookie-only POST when the Bearer gate is intact."""
-        response = api_admin_client_no_bearer.post(ENDPOINT)
+        response = api_admin_client_no_bearer.post(ENDPOINT, json=ALL_TARGETS)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_targets_subset_probes_only_requested(
+        self,
+        admin_client: TestClient,
+        mock_pmm_api: AsyncMock,
+        mock_inventory_api_dep: AsyncMock,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Probe only PMM when ``targets`` names PMM alone."""
+        mock_pmm_api.check_connectivity.return_value = _reachable("pmm")
+
+        response = admin_client.post(ENDPOINT, json={"targets": ["pmm"]})
+
+        assert response.status_code == status.HTTP_200_OK
+        results = _results_by_service(response.json())
+        assert set(results) == {"pmm"}
+        mock_inventory_api_dep.check_connectivity.assert_not_called()
+        mock_task_api_dep.get.assert_not_called()
+
+    @pytest.mark.usefixtures("mock_task_api_dep")
+    def test_targets_preserve_request_order(
+        self,
+        admin_client: TestClient,
+        mock_pmm_api: AsyncMock,
+        mock_inventory_api_dep: AsyncMock,
+    ) -> None:
+        """Return results in the order the services were requested."""
+        mock_pmm_api.check_connectivity.return_value = _reachable("pmm")
+        mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
+
+        payload = admin_client.post(
+            ENDPOINT, json={"targets": ["inventory", "pmm"]}
+        ).json()
+
+        assert [entry["service"] for entry in payload] == ["inventory", "pmm"]
+
+    @pytest.mark.usefixtures("mock_pmm_api", "mock_inventory_api_dep")
+    def test_nomad_only_runs_hosts_probe(
+        self,
+        admin_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Return only Nomad, driven by the shared /hosts/ probe, when asked alone."""
+        mock_task_api_dep.get.return_value = {}
+
+        response = admin_client.post(ENDPOINT, json={"targets": ["nomad"]})
+
+        results = _results_by_service(response.json())
+        assert set(results) == {"nomad"}
+        assert results["nomad"]["reachable"] is True
+        mock_task_api_dep.get.assert_awaited_once()
+
+    @pytest.mark.usefixtures("mock_pmm_api", "mock_inventory_api_dep")
+    def test_tasks_and_nomad_share_single_probe(
+        self,
+        admin_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Run /hosts/ exactly once when both Tasks and Nomad are requested."""
+        mock_task_api_dep.get.return_value = {}
+
+        response = admin_client.post(ENDPOINT, json={"targets": ["tasks", "nomad"]})
+
+        results = _results_by_service(response.json())
+        assert set(results) == {"tasks", "nomad"}
+        mock_task_api_dep.get.assert_awaited_once()
+
+    @pytest.mark.usefixtures(
+        "mock_pmm_api", "mock_inventory_api_dep", "mock_task_api_dep"
+    )
+    def test_empty_targets_rejected(self, admin_client: TestClient) -> None:
+        """Reject an empty ``targets`` list with 422."""
+        response = admin_client.post(ENDPOINT, json={"targets": []})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.usefixtures(
+        "mock_pmm_api", "mock_inventory_api_dep", "mock_task_api_dep"
+    )
+    def test_invalid_target_rejected(self, admin_client: TestClient) -> None:
+        """Reject an unknown service name with 422."""
+        response = admin_client.post(ENDPOINT, json={"targets": ["bogus"]})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.usefixtures(
+        "mock_pmm_api", "mock_inventory_api_dep", "mock_task_api_dep"
+    )
+    def test_missing_targets_rejected(self, admin_client: TestClient) -> None:
+        """Reject a request with no ``targets`` field with 422."""
+        response = admin_client.post(ENDPOINT, json={})
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    @pytest.mark.usefixtures("mock_pmm_api", "mock_inventory_api_dep")
+    def test_duplicate_targets_collapsed(
+        self,
+        admin_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Collapse duplicate targets so a repeated service probes and returns once."""
+        mock_task_api_dep.get.return_value = {}
+
+        payload = admin_client.post(
+            ENDPOINT, json={"targets": ["tasks", "tasks"]}
+        ).json()
+
+        assert [entry["service"] for entry in payload] == ["tasks"]
+        mock_task_api_dep.get.assert_awaited_once()
+
+    @pytest.mark.usefixtures("mock_pmm_api", "mock_inventory_api_dep")
+    def test_tasks_only_runs_hosts_probe(
+        self,
+        admin_client: TestClient,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Return only Tasks, driven by the shared /hosts/ probe, when asked alone."""
+        mock_task_api_dep.get.return_value = {}
+
+        response = admin_client.post(ENDPOINT, json={"targets": ["tasks"]})
+
+        results = _results_by_service(response.json())
+        assert set(results) == {"tasks"}
+        assert results["tasks"]["reachable"] is True
+        mock_task_api_dep.get.assert_awaited_once()
+
+    def test_hosts_timeout_marks_both_timeout(
+        self,
+        admin_client: TestClient,
+        mock_pmm_api: AsyncMock,
+        mock_inventory_api_dep: AsyncMock,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Map a /hosts/ probe timeout to both Tasks and Nomad timeout."""
+        mock_pmm_api.check_connectivity.return_value = _reachable("pmm")
+        mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
+        mock_task_api_dep.get.side_effect = TimeoutError("timed out")
+
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json=ALL_TARGETS).json()
+        )
+
+        assert results["tasks"]["reachable"] is False
+        assert results["tasks"]["status"] == "timeout"
+        assert results["nomad"]["reachable"] is False
+        assert results["nomad"]["status"] == "timeout"
+
+    @pytest.mark.usefixtures("mock_inventory_api_dep", "mock_task_api_dep")
+    def test_pmm_configured_unreachable(
+        self,
+        admin_client: TestClient,
+        mock_pmm_api: AsyncMock,
+    ) -> None:
+        """Pass through a configured PMM client's unreachable result verbatim."""
+        mock_pmm_api.check_connectivity.return_value = build_connectivity_result(
+            "pmm", ConnectivityStatusEnum.UNREACHABLE
+        )
+
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json={"targets": ["pmm"]}).json()
+        )
+
+        assert results["pmm"]["reachable"] is False
+        assert results["pmm"]["status"] == "unreachable"
