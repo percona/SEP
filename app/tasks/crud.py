@@ -1037,6 +1037,8 @@ class TaskHistoryLogStateManager(BaseManager):
             stream=stream,
             persisted_offset=0,
             producer_offset=0,
+            nomad_offset=0,
+            allocation_epoch=0,
             staging=b"",
             staging_updated_at=utc_now(),
             version=0,
@@ -1063,28 +1065,38 @@ class TaskHistoryLogStateManager(BaseManager):
         return list(result.all())
 
     @classmethod
-    async def reset_producer_offsets(
-        cls, session: AsyncSession, task_history_id: int
+    async def reset_allocation_frontier(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        *,
+        new_allocation_epoch: int,
     ) -> None:
-        """Set ``producer_offset`` to ``0`` for every stream of a task history.
+        """Reset both cursors to zero and stamp the new epoch for every stream.
 
         Called when Nomad reschedules a task to a follow-up allocation: the
-        new allocation's log file starts at byte 0, so any cached
-        ``producer_offset`` from the previous allocation must be cleared in
-        the database before the writer dedups based on it. Bumps ``version``
-        so concurrent writers re-read the row.
+        new allocation's log file starts at byte 0, so both allocation-relative
+        cursors (``producer_offset`` and ``nomad_offset``) must be cleared in
+        the database before the writer dedups or fetches against them, and
+        ``allocation_epoch`` must be advanced to the new allocation's
+        ``CreateIndex`` so stale-allocation writes are discarded by the write
+        guard. Bumps ``version`` so concurrent writers re-read the row.
 
         :param session: The SQLAlchemy asynchronous session.
         :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier whose state
             rows should be reset.
         :type task_history_id: int
+        :param new_allocation_epoch: The ``CreateIndex`` of the allocation the
+            frontier is being reset onto.
         """
         stmt = (
             update(TaskHistoryLogState)
             .where(col(TaskHistoryLogState.task_history_id) == task_history_id)
             .values(
                 producer_offset=0,
+                nomad_offset=0,
+                allocation_epoch=new_allocation_epoch,
                 version=col(TaskHistoryLogState.version) + 1,
                 updated_at=utc_now(),
             )
@@ -1101,6 +1113,8 @@ class TaskHistoryLogStateManager(BaseManager):
         stream: TaskLogType,
         persisted_offset: int,
         producer_offset: int,
+        nomad_offset: int,
+        allocation_epoch: int,
         staging: bytes,
         version: int,
         now: datetime,
@@ -1125,6 +1139,8 @@ class TaskHistoryLogStateManager(BaseManager):
         :param producer_offset: The producer-relative byte offset already
             consumed from the current allocation.
         :type producer_offset: int
+        :param nomad_offset: The raw Nomad-space fetch offset for the next read.
+        :param allocation_epoch: The Nomad ``CreateIndex`` the cursors belong to.
         :param staging: Bytes pending flush to the chunk store.
         :type staging: bytes
         :param version: The initial optimistic-locking version counter.
@@ -1141,6 +1157,8 @@ class TaskHistoryLogStateManager(BaseManager):
             stream=stream,
             persisted_offset=persisted_offset,
             producer_offset=producer_offset,
+            nomad_offset=nomad_offset,
+            allocation_epoch=allocation_epoch,
             staging=staging,
             staging_updated_at=now,
             version=version,
@@ -1161,6 +1179,8 @@ class TaskHistoryLogStateManager(BaseManager):
         new_version: int,
         persisted_offset: int,
         producer_offset: int,
+        nomad_offset: int,
+        allocation_epoch: int,
         staging: bytes,
         now: datetime,
     ) -> bool:
@@ -1188,6 +1208,9 @@ class TaskHistoryLogStateManager(BaseManager):
         :type persisted_offset: int
         :param producer_offset: The updated producer-relative offset.
         :type producer_offset: int
+        :param nomad_offset: The updated raw Nomad-space fetch offset.
+        :param allocation_epoch: The updated Nomad ``CreateIndex`` the cursors
+            belong to.
         :param staging: The updated staging bytes buffer.
         :type staging: bytes
         :param now: The update timestamp used for the audit columns.
@@ -1207,6 +1230,8 @@ class TaskHistoryLogStateManager(BaseManager):
             .values(
                 persisted_offset=persisted_offset,
                 producer_offset=producer_offset,
+                nomad_offset=nomad_offset,
+                allocation_epoch=allocation_epoch,
                 staging=staging,
                 staging_updated_at=now,
                 version=new_version,
