@@ -73,7 +73,7 @@ function renderSummary(taskName = 'plugin-task') {
       <ScheduleSummary
         pluginName="archives"
         taskName={taskName}
-        scheduleHref="/plugins/archives/schedule"
+        scheduleHref="/apps/archives/schedule"
         disablePolling
       />
     </MemoryRouter>,
@@ -139,6 +139,6 @@ describe('ScheduleSummary', () => {
     expect(screen.getByTestId('schedule-summary-unscheduled')).toHaveTextContent('Not scheduled');
     const link = screen.getByTestId('schedule-summary-add-link');
     expect(link).toHaveTextContent('Add a schedule');
-    expect(link).toHaveAttribute('href', '/plugins/archives/schedule');
+    expect(link).toHaveAttribute('href', '/apps/archives/schedule');
   });
 });

@@ -90,7 +90,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Plugin schema
-    if (pathname.endsWith('/plugins/inventory/schema')) {
+    if (pathname.endsWith('/apps/inventory/schema')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -99,7 +99,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Plugin tasks list (usePluginTasks)
-    if (pathname.endsWith('/plugins/inventory/') && method === 'GET') {
+    if (pathname.endsWith('/apps/inventory/') && method === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -108,7 +108,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Available syncers
-    if (pathname.includes('/plugins/inventory/available-syncers/')) {
+    if (pathname.includes('/apps/inventory/available-syncers/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -117,7 +117,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Sync status (for SyncControl on nodes page)
-    if (pathname.includes('/plugins/inventory/sync/status/')) {
+    if (pathname.includes('/apps/inventory/sync/status/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -126,7 +126,7 @@ async function mockInventoryScheduleApis(page: Page) {
     }
 
     // Inventory nodes
-    if (pathname.includes('/plugins/inventory/nodes')) {
+    if (pathname.includes('/apps/inventory/nodes')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
     }
 

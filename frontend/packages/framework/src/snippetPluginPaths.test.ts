@@ -28,37 +28,37 @@ import {
 
 describe('snippetPluginPaths', () => {
   it('exposes the /snippet sub-prefix for per-snippet operations', () => {
-    expect(SNIPPET_PLUGIN_PER_SNIPPET_BASE).toBe('/plugins/snippets/snippet');
+    expect(SNIPPET_PLUGIN_PER_SNIPPET_BASE).toBe('/apps/snippets/snippet');
   });
 
   it('carries the filename in the snippet_filename query parameter', () => {
     expect(snippetPluginSchemaPath('hello.sh')).toBe(
-      '/plugins/snippets/snippet/schema?snippet_filename=hello.sh',
+      '/apps/snippets/snippet/schema?snippet_filename=hello.sh',
     );
     expect(snippetPluginExecutePath('hello.sh')).toBe(
-      '/plugins/snippets/snippet/execute?snippet_filename=hello.sh',
+      '/apps/snippets/snippet/execute?snippet_filename=hello.sh',
     );
     expect(snippetPluginPreviewPath('hello.sh')).toBe(
-      '/plugins/snippets/snippet/preview?snippet_filename=hello.sh',
+      '/apps/snippets/snippet/preview?snippet_filename=hello.sh',
     );
     expect(snippetPluginDownloadPath('hello.sh')).toBe(
-      '/plugins/snippets/snippet/download?snippet_filename=hello.sh',
+      '/apps/snippets/snippet/download?snippet_filename=hello.sh',
     );
     expect(snippetPluginHistoryPath('hello.sh')).toBe(
-      '/plugins/snippets/snippet/history?snippet_filename=hello.sh',
+      '/apps/snippets/snippet/history?snippet_filename=hello.sh',
     );
     expect(snippetPluginApprovalPath('hello.sh')).toBe(
-      '/plugins/snippets/snippet/approval?snippet_filename=hello.sh',
+      '/apps/snippets/snippet/approval?snippet_filename=hello.sh',
     );
   });
 
   it('escapes nested filenames using URLSearchParams encoding', () => {
     const filename = 'diag/slow-query.sh';
     expect(snippetPluginSchemaPath(filename)).toBe(
-      '/plugins/snippets/snippet/schema?snippet_filename=diag%2Fslow-query.sh',
+      '/apps/snippets/snippet/schema?snippet_filename=diag%2Fslow-query.sh',
     );
     expect(snippetPluginExecutePath(filename)).toBe(
-      '/plugins/snippets/snippet/execute?snippet_filename=diag%2Fslow-query.sh',
+      '/apps/snippets/snippet/execute?snippet_filename=diag%2Fslow-query.sh',
     );
   });
 

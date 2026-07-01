@@ -31,7 +31,7 @@ const MOCK_USER = {
   isAdmin: false,
 };
 
-// Minimal schema served for /api/plugins/:name/schema. SchemaDrivenPlugin
+// Minimal schema served for /api/apps/:name/schema. SchemaDrivenPlugin
 // renders `display_name` as an h4 heading and "New {display_name}" as the
 // create-button label, which is enough surface for the smoke assertions.
 // Keys are snake_case to match the backend PluginSchema shape — the React
@@ -57,7 +57,7 @@ const MOCK_PLUGIN_SCHEMA = {
  * Dispatch logic:
  *   /api/oauth/refresh           -> fake access token (bootstraps AuthProvider)
  *   /api/users/me                -> fake user profile (completes session bootstrap)
- *   /api/plugins/:name/schema    -> minimal valid PluginSchema (renders heading)
+ *   /api/apps/:name/schema    -> minimal valid PluginSchema (renders heading)
  *   /api/sep/dashboard/          -> zero counts for dashboard stat cards
  *   /api/sep/task-history/       -> empty paginated response (prevents refetchInterval crash)
  *   /api/apps/                   -> every nav app enabled (renders the full sidebar)
@@ -190,7 +190,7 @@ test.describe('shell sanity smoke', () => {
     });
 
     await mockAuthenticatedApis(page);
-    await page.goto('/plugins/checksums');
+    await page.goto('/apps/checksums');
 
     // SchemaDrivenPlugin renders the schema displayName as an h4 heading.
     // Allow extra time for the lazy-loaded SchemaDrivenPlugin / framework chunk to

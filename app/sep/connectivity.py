@@ -18,7 +18,7 @@
 These helpers serve the **form (Jinja) flow** — they emit flash messages via
 :func:`app.sep.middleware.messages.warning` and depend on a Starlette
 :class:`~starlette.requests.Request`. The **JSON API flow** uses the parallel
-helpers in :mod:`app.sep.plugins.framework.connectivity`, which return a
+helpers in :mod:`app.sep.apps.framework.connectivity`, which return a
 ``ConnectivityWarning | None`` object instead of mutating request state.
 """
 
@@ -86,7 +86,7 @@ def _record_latest_result(target: str, service_type: str, *, success: bool) -> N
     TTL of its own; ``alru_cache`` remains the authoritative TTL store and
     the snapshot is best-effort, refreshed each time
     ``check_and_warn_connectivity`` (form path) or
-    ``app.sep.plugins.framework.connectivity.record_connectivity_warning``
+    ``app.sep.apps.framework.connectivity.record_connectivity_warning``
     (JSON API path) runs.
 
     :param target: The Nomad node name.

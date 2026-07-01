@@ -43,7 +43,7 @@ import type { RenderListColumnOverride } from '../SchemaListView';
 
 interface SchemaDrivenPluginProps {
   pluginName: string;
-  /** Absolute list route prefix when the plugin is not mounted under ``/plugins/{name}``. */
+  /** Absolute list route prefix when the plugin is not mounted under ``/apps/{name}``. */
   routeBase?: string;
   mockSchema?: PluginSchema;
   mockTasks?: Record<string, unknown>[];
@@ -378,7 +378,7 @@ export function SchemaDrivenPlugin({
         </>
       )}
       {/* Schedule route is only registered when the plugin schema opts in;
-          otherwise direct navigation to `/plugins/<name>/schedule` would
+          otherwise direct navigation to `/apps/<name>/schedule` would
           show the panel even though the entry-point buttons (which gate on
           the same capability) are hidden. */}
       {schema.capabilities?.scheduling && (

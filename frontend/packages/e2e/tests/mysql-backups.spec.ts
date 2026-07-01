@@ -138,7 +138,7 @@ async function mockMysqlBackupsRoutes(page: Page, overrides: MockOverrides = {})
     if (pathname.includes('/users/me')) {
       return route.fulfill({ json: MOCK_USER });
     }
-    if (pathname === '/api/plugins/mysql_backups/schema') {
+    if (pathname === '/api/apps/mysql_backups/schema') {
       if (overrides.schemaStatus) {
         return route.fulfill({
           status: overrides.schemaStatus,
@@ -148,12 +148,12 @@ async function mockMysqlBackupsRoutes(page: Page, overrides: MockOverrides = {})
       }
       return route.fulfill({ json: MOCK_SCHEMA });
     }
-    if (pathname === '/api/plugins/mysql_backups/' && req.method() === 'GET') {
+    if (pathname === '/api/apps/mysql_backups/' && req.method() === 'GET') {
       return route.fulfill({
         json: { items: tasks, total: tasks.length, offset: 0, limit: 50 },
       });
     }
-    if (pathname === '/api/plugins/mysql_backups/' && req.method() === 'POST') {
+    if (pathname === '/api/apps/mysql_backups/' && req.method() === 'POST') {
       const auth = req.headers()['authorization'] ?? '';
       if (!auth.toLowerCase().startsWith('bearer ')) {
         return route.fulfill({
@@ -182,7 +182,7 @@ async function mockMysqlBackupsRoutes(page: Page, overrides: MockOverrides = {})
       });
       return route.fulfill({ status: 201, json: tasks[tasks.length - 1] });
     }
-    const historyMatch = pathname.match(/^\/api\/plugins\/mysql_backups\/[^/]+\/history\/?$/);
+    const historyMatch = pathname.match(/^\/api\/apps\/mysql_backups\/[^/]+\/history\/?$/);
     if (historyMatch) {
       return route.fulfill({
         json: {
@@ -227,7 +227,7 @@ test.describe('MySQL Backups smoke', () => {
   });
 
   test('loads list page and renders schema-driven plugin', async ({ page }) => {
-    await page.goto('/plugins/mysql_backups');
+    await page.goto('/apps/mysql_backups');
     await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
       timeout: 30_000,
     });
@@ -241,7 +241,7 @@ test.describe('MySQL Backups smoke', () => {
     test(`creates a ${label} (${value}) task and surfaces it in the list view`, async ({
       page,
     }) => {
-      await page.goto('/plugins/mysql_backups');
+      await page.goto('/apps/mysql_backups');
       await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
         timeout: 30_000,
       });
@@ -295,7 +295,7 @@ test.describe('MySQL Backups smoke', () => {
 // forbidden-gate field-strip behaviour from the contains-tightening commit.
 
 async function openCreateFormAndFillRequired(page: Page, taskName: string) {
-  await page.goto('/plugins/mysql_backups');
+  await page.goto('/apps/mysql_backups');
   await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
     timeout: 30_000,
   });
@@ -354,13 +354,13 @@ test.describe('MySQL Backups – section-visibility gates', () => {
     tasks.length = 0;
     await mockMysqlBackupsRoutes(page, {});
     // Override schema to include mode sections with forbidden gates.
-    await page.route('**/api/plugins/mysql_backups/schema', (route) =>
+    await page.route('**/api/apps/mysql_backups/schema', (route) =>
       route.fulfill({ json: MOCK_SCHEMA_WITH_SECTION_GATES }),
     );
   });
 
   test('no mode section visible before backup_type is selected', async ({ page }) => {
-    await page.goto('/plugins/mysql_backups');
+    await page.goto('/apps/mysql_backups');
     await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
       timeout: 30_000,
     });
@@ -386,7 +386,7 @@ test.describe('MySQL Backups – section-visibility gates', () => {
     ['Binlog', 'B', 'Binlog start position', 'Mydumper threads', 'XtraBackup parallel'],
   ] as const) {
     test(`selecting ${label} shows its section and hides the others`, async ({ page }) => {
-      await page.goto('/plugins/mysql_backups');
+      await page.goto('/apps/mysql_backups');
       await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
         timeout: 30_000,
       });
@@ -413,7 +413,7 @@ test.describe('MySQL Backups – section-visibility gates', () => {
     const posts: Array<Record<string, unknown>> = [];
     // Capture POSTs by routing the create endpoint specifically; beforeEach already
     // wired up the schema override and base routes.
-    await page.route('**/api/plugins/mysql_backups/', async (route) => {
+    await page.route('**/api/apps/mysql_backups/', async (route) => {
       const req = route.request();
       if (req.method() === 'POST') {
         const body = req.postDataJSON() as Record<string, unknown>;
@@ -431,7 +431,7 @@ test.describe('MySQL Backups – section-visibility gates', () => {
       });
     });
 
-    await page.goto('/plugins/mysql_backups');
+    await page.goto('/apps/mysql_backups');
     await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
       timeout: 30_000,
     });
@@ -492,7 +492,7 @@ test.describe('MySQL Backups – unhappy paths', () => {
 
   test('schema-fetch 503 renders an error state instead of a blank page', async ({ page }) => {
     await mockMysqlBackupsRoutes(page, { schemaStatus: 503 });
-    await page.goto('/plugins/mysql_backups');
+    await page.goto('/apps/mysql_backups');
 
     // SchemaDrivenPlugin surfaces "Failed to load plugin schema" on fetch failure.
     await expect(page.getByText(/Failed to load plugin schema/i)).toBeVisible({
@@ -526,7 +526,7 @@ test.describe('MySQL Backups – unhappy paths', () => {
   test('validation blocks empty submit – no POST fires', async ({ page }) => {
     const posts: Array<Record<string, unknown>> = [];
     await mockMysqlBackupsRoutes(page, { capturePosts: posts });
-    await page.goto('/plugins/mysql_backups');
+    await page.goto('/apps/mysql_backups');
     await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
       timeout: 30_000,
     });

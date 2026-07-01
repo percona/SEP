@@ -17,5 +17,5 @@
 
 /** Resolve the absolute URL prefix for plugin list/detail/schedule navigation. */
 export function resolvePluginRouteBase(pluginName: string, routeBase?: string): string {
-  return routeBase ?? `/plugins/${pluginName}`;
+  return routeBase ?? `/apps/${pluginName}`;
 }
