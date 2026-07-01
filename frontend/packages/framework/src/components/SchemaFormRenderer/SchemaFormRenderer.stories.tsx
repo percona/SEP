@@ -194,6 +194,27 @@ export const WithSubmitError: Story = {
   },
 };
 
+export const WithFieldErrors: Story = {
+  args: {
+    sections: MULTI_SECTION_SCHEMA.slice(0, 1),
+    submitLabel: 'Retry',
+    // Mirrors what the create/edit pages produce from a 422: a persistent banner
+    // listing every backend message plus inline per-field errors applied via
+    // setError. The `host` entry below maps to no rendered field, so it is
+    // surfaced through the banner only — never silently dropped.
+    submitError: [
+      "Couldn't save your changes:",
+      '• Title: String should have at least 3 characters',
+      '• host: field required',
+    ].join('\n'),
+    fieldErrors: [
+      { path: 'title', message: 'String should have at least 3 characters' },
+      { path: 'host', message: 'field required' },
+    ],
+    onSubmit: () => {},
+  },
+};
+
 export const MinimalForm: Story = {
   args: {
     sections: [
