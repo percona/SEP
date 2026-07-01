@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import app.sep.celery as sep_celery
-from app.sep.apps.alerts.config import AlertsPMMConfig
+from app.sep.apps.alerts.config import AlertsSettings
 from app.sep.apps.alerts.crud import AlertBackupManager
 from app.sep.apps.alerts.models import AlertBackup
 from app.sep.clients.pmm import (
@@ -274,8 +274,8 @@ def _mock_pmm_api():
 def _patch_pmm_settings(mocker, *, retention=10):
     """Patch alerts PMM config inside _backup_alert_config."""
     mocker.patch(
-        "app.sep.apps.alerts.config.alerts_pmm_config",
-        MagicMock(spec=AlertsPMMConfig, backup_retention=retention),
+        "app.sep.apps.alerts.config.alerts_settings",
+        MagicMock(spec=AlertsSettings, BACKUP_RETENTION=retention),
     )
 
 
