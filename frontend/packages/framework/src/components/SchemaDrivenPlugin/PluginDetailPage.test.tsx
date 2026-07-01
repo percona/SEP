@@ -723,7 +723,7 @@ describe('PluginDetailPage — tabs', () => {
       isLoading: false,
     });
 
-    renderAt('/plugins/checksums/task/FECHK');
+    renderAt('/apps/checksums/task/FECHK');
 
     expect(screen.getByRole('tab', { name: 'Execution History' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Logs' })).toBeNull();
