@@ -38,8 +38,8 @@ from app.core.exceptions import (
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.models import CasdoorUser
-from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.apps.framework.registry import build_app_registry
+from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import App, sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import (
