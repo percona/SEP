@@ -613,10 +613,10 @@ class TestApiRouterConfigDrivenLoop:
             )
 
     def test_module_level_apps_router_matches_settings(self) -> None:
-        """Assert module-level ``apps_router`` mirrors ``sep_settings.PLUGINS``."""
+        """Assert module-level ``apps_router`` mirrors ``sep_settings.APPS``."""
         expected_keys = {
             app.key
-            for app in build_app_registry(sep_settings.PLUGINS)
+            for app in build_app_registry(sep_settings.APPS)
             if app.api_router is not None
         }
 

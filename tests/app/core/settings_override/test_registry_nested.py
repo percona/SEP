@@ -141,7 +141,7 @@ def test_resolve_nested_field_unknown_nested_leaf() -> None:
 
 def test_resolve_nested_field_non_pydantic_intermediate() -> None:
     """A path whose intermediate is a collection (not a model) resolves to ``None``."""
-    assert resolve_nested_field(SEPSettings, "PLUGINS__0__NAME") is None
+    assert resolve_nested_field(SEPSettings, "APPS__0__NAME") is None
 
 
 def test_resolve_nested_field_primitive_past_leaf() -> None:

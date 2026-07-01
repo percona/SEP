@@ -123,7 +123,7 @@ def configured_plugin_keys() -> list[str]:
     """Return registry keys for plugins that expose a JSON API router, sorted.
 
     Read from the cached :func:`get_app_registry` (built once from
-    ``sep_settings.PLUGINS`` and never mutated) rather than ``sep_settings``
+    ``sep_settings.APPS`` and never mutated) rather than ``sep_settings``
     directly, so a definition-based app whose JSON router is the derived
     ``api_router`` (no ``api_router_path``) is counted alongside legacy
     ``api_router_path`` plugins. Reading the registry keeps the inventory
@@ -145,7 +145,7 @@ def build_plugins_openapi() -> dict[str, Any]:
     freezes ``sep_app``'s cached schema for other tests and perturbs shared
     ``components/schemas`` names — so a snapshot taken from it would depend on
     test-suite composition. ``api_router`` is built once from
-    ``sep_settings.PLUGINS`` and never mutated, so its schema is deterministic.
+    ``sep_settings.APPS`` and never mutated, so its schema is deterministic.
     ``generate_tag_prefixed_unique_id`` matches the ``operationId`` scheme that
     ``create_app`` installs on ``sep_app``.
 

@@ -146,8 +146,8 @@ def test_settings_insertion_is_idempotent() -> None:
     """Insert a disabled entry once; a second insert of the same name is a no-op."""
     original = scaffold.SETTINGS_FILE.read_text()
 
-    once, changed_first = scaffold.insert_plugin_entry(original, "scaffold_idem_demo")
-    twice, changed_second = scaffold.insert_plugin_entry(once, "scaffold_idem_demo")
+    once, changed_first = scaffold.insert_app_entry(original, "scaffold_idem_demo")
+    twice, changed_second = scaffold.insert_app_entry(once, "scaffold_idem_demo")
 
     assert changed_first
     assert not changed_second
@@ -159,7 +159,7 @@ def test_settings_insertion_is_idempotent() -> None:
 def test_insertion_fails_without_default_plugins_block() -> None:
     """Fail loudly rather than corrupt a settings file lacking the default block."""
     with pytest.raises(ValueError, match="default"):
-        scaffold.insert_plugin_entry("development:\n  SEP:\n    PLUGINS:\n", "demo")
+        scaffold.insert_app_entry("development:\n  SEP:\n    APPS:\n", "demo")
 
 
 def test_refuses_to_clobber_existing_plugin(tmp_settings: Path) -> None:
@@ -195,7 +195,7 @@ def test_refuses_to_clobber_existing_tests_package(tmp_settings: Path) -> None:
 
 
 def test_registers_app_disabled(tmp_settings: Path) -> None:
-    """Write the registration entry disabled under the default ``SEP.PLUGINS``."""
+    """Write the registration entry disabled under the default ``SEP.APPS``."""
     name = "_scaffold_smoke_disabled"
     with _scaffolded(name, scaffold.Flavor.TASK):
         assert (
@@ -225,7 +225,7 @@ def test_summary_notes_preexisting_registration(
     """Report the registration as pre-existing when the settings entry already exists."""
     name = "_scaffold_smoke_preregistered"
     tmp_settings.write_text(
-        scaffold.insert_plugin_entry(tmp_settings.read_text(), name)[0]
+        scaffold.insert_app_entry(tmp_settings.read_text(), name)[0]
     )
     try:
         assert scaffold.main(["--name", name, "--type", "task"]) == 0
@@ -242,7 +242,7 @@ def test_main_reports_missing_plugins_block_without_traceback(
 ) -> None:
     """Exit non-zero with a clean error, not a traceback, when registration fails."""
     name = "_scaffold_smoke_noblock"
-    tmp_settings.write_text("development:\n  SEP:\n    PLUGINS:\n")
+    tmp_settings.write_text("development:\n  SEP:\n    APPS:\n")
     try:
         assert scaffold.main(["--name", name, "--type", "task"]) == 1
         assert "error:" in capsys.readouterr().err

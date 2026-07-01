@@ -294,8 +294,8 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     url_for('periodic_task_create') and url_for('stop_task_execution') resolve
     without raising NoMatchFound.
     """
-    original_plugins = sep_settings.PLUGINS
-    mocker.patch.object(sep_settings, "PLUGINS", [App(module_name="backup_pg")])
+    original_plugins = sep_settings.APPS
+    mocker.patch.object(sep_settings, "APPS", [App(module_name="backup_pg")])
     get_app_registry.cache_clear()
 
     try:
@@ -305,7 +305,7 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
         assert "periodic_task_create" in route_names
         assert "stop_task_execution" in route_names
     finally:
-        sep_settings.PLUGINS = original_plugins
+        sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
         importlib.reload(main_module)
 
@@ -318,8 +318,8 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
     must be mounted whenever the inventory plugin is enabled even if no task-oriented
     plugin (tasks, backup, checksums, …) is configured.
     """
-    original_plugins = sep_settings.PLUGINS
-    mocker.patch.object(sep_settings, "PLUGINS", [App(module_name="inventory")])
+    original_plugins = sep_settings.APPS
+    mocker.patch.object(sep_settings, "APPS", [App(module_name="inventory")])
     get_app_registry.cache_clear()
 
     try:
@@ -330,7 +330,7 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
         assert "periodic_task_update" in route_names
         assert "periodic_task_delete" in route_names
     finally:
-        sep_settings.PLUGINS = original_plugins
+        sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
         importlib.reload(main_module)
 
@@ -737,7 +737,7 @@ class TestAppStateGuards:
         """Every non-protected UI plugin route carries the app-state guard."""
         guarded_prefixes = {
             p.uri_path
-            for p in sep_settings.PLUGINS
+            for p in sep_settings.APPS
             if p.module_name.split(".")[-1] not in PROTECTED_APP_KEYS
         }
         seen = set()
@@ -754,7 +754,7 @@ class TestAppStateGuards:
         """The protected ``inventory`` plugin's UI routes carry no app-state guard."""
         inventory_prefix = next(
             p.uri_path
-            for p in sep_settings.PLUGINS
+            for p in sep_settings.APPS
             if p.module_name.split(".")[-1] == "inventory"
         )
         for route in sep_app.routes:
@@ -766,7 +766,7 @@ class TestAppStateGuards:
         """Every non-protected JSON-API plugin sub-router carries the guard."""
         guarded_keys = {
             key
-            for p in sep_settings.PLUGINS
+            for p in sep_settings.APPS
             if (key := p.module_name.split(".")[-1]) not in PROTECTED_APP_KEYS
             and p.api_router_path
         }
