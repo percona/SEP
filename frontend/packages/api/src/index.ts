@@ -32,8 +32,8 @@ export {
 export { createQueryClient, defaultQueryClientConfig } from './queryClient';
 
 // Errors
-export { ApiError, normalizeAxiosError } from './errors';
-export type { ApiErrorDetails, ApiErrorKind } from './errors';
+export { ApiError, normalizeAxiosError, parseFieldErrors } from './errors';
+export type { ApiErrorDetails, ApiErrorKind, FieldValidationError } from './errors';
 
 // Auth
 export { postLogin, postRefresh, postLogout, fetchCurrentUser } from './auth';

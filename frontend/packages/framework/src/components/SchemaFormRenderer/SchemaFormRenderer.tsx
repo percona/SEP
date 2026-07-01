@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { memo, useCallback, useContext, useMemo } from 'react';
+import { memo, useCallback, useContext, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import { FormProvider, useForm, useFormContext, type SubmitHandler } from 'react-hook-form';
 // UNSAFE_DataRouterContext is an unstable react-router API — pinned to react-router-dom ^7.6.0; review on version bumps.
 import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
@@ -33,7 +33,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import type { PluginCapabilities } from '@sep/api';
+import type { FieldValidationError, PluginCapabilities } from '@sep/api';
 import { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from '../AlertOnFailField';
 import { ConditionalFieldSlot } from './ConditionalFieldSlot';
 import { OneOfGroupSlot } from './OneOfGroupSlot';
@@ -185,6 +185,15 @@ export interface SchemaFormRendererProps {
   defaultValues?: Record<string, unknown>;
   /** Server-side error to show above the form (e.g. API failure from the caller's mutation). */
   submitError?: string | null;
+  /**
+   * Backend per-field validation errors (e.g. parsed from a 422) applied to the
+   * form this renderer owns via react-hook-form `setError`. Each entry's `path`
+   * is a react-hook-form field name; entries with an empty `path` are skipped
+   * here (callers surface those through {@link submitError}). Pass a fresh array
+   * on each submit failure — changing the array identity re-runs setError, and
+   * previously applied errors are cleared before the new set is applied.
+   */
+  fieldErrors?: FieldValidationError[];
   /** Plugin capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
   capabilities?: PluginCapabilities;
   /**
@@ -244,10 +253,37 @@ function SchemaFormBody({
   submitLabel = 'Run',
   loading = false,
   submitError,
+  fieldErrors,
   capabilities,
   renderField,
 }: SchemaFormRendererProps) {
-  const { handleSubmit, formState } = useFormContext<Record<string, unknown>>();
+  const { handleSubmit, formState, setError, clearErrors, getFieldState } =
+    useFormContext<Record<string, unknown>>();
+
+  // Apply backend per-field errors to the form. Clear the paths set by the
+  // previous failure first so a resubmit that fixes some fields does not leave
+  // stale server errors on the corrected ones. Empty paths are form-level and
+  // surfaced only through the submitError banner.
+  const appliedServerErrorPaths = useRef<string[]>([]);
+  useEffect(() => {
+    if (appliedServerErrorPaths.current.length > 0) {
+      clearErrors(appliedServerErrorPaths.current);
+      appliedServerErrorPaths.current = [];
+    }
+    if (!fieldErrors?.length) {
+      return;
+    }
+    const applied: string[] = [];
+    for (const { path, message } of fieldErrors) {
+      if (!path) {
+        continue;
+      }
+      setError(path, { type: 'server', message });
+      applied.push(path);
+    }
+    appliedServerErrorPaths.current = applied;
+  }, [fieldErrors, setError, clearErrors]);
+
   const isGuarded = useUnsavedChangesGuard(submitError);
   const inDataRouter = Boolean(useContext(UNSAFE_DataRouterContext));
   const allFields = useMemo(() => flattenFields(sections), [sections]);
@@ -284,17 +320,46 @@ function SchemaFormBody({
     onSubmit(coerceFormValues(values, allFields));
   };
 
+  // Clear the server errors from the previous failure before react-hook-form's
+  // validation gate runs. A 422 whose loc lands on a field with no mounted
+  // input (unknown field, hidden conditional section, or array/nested path)
+  // gets a setError entry that no input can ever clear; handleSubmit refuses to
+  // call onValid while any error remains, which would wedge resubmission.
+  // Those errors stay visible in the persistent banner regardless. Defined
+  // inline (not memoized) so it always wraps the latest handleFormSubmit, which
+  // closes over the current cardinality / fail_when violation state.
+  const handleSubmitEvent = (event: FormEvent<HTMLFormElement>) => {
+    if (appliedServerErrorPaths.current.length > 0) {
+      clearErrors(appliedServerErrorPaths.current);
+      appliedServerErrorPaths.current = [];
+    }
+    void handleSubmit(handleFormSubmit, () => {
+      // Resubmit was blocked by a client-side validation error on some field, so
+      // handleFormSubmit never fired: the parent won't re-send fieldErrors and the
+      // effect won't re-run. Re-apply the server errors we cleared above (skipping
+      // any field that now has its own client-side error) so their inline highlight
+      // stays in sync with the still-visible persistent banner. Cleared again at the
+      // top of the next submit, so this never re-introduces the resubmission wedge.
+      if (!fieldErrors?.length) {
+        return;
+      }
+      const reapplied: string[] = [];
+      for (const { path, message } of fieldErrors) {
+        if (path && !getFieldState(path).error) {
+          setError(path, { type: 'server', message });
+          reapplied.push(path);
+        }
+      }
+      appliedServerErrorPaths.current = reapplied;
+    })(event);
+  };
+
   return (
     <>
       {inDataRouter && <UnsavedChangesBlocker isGuarded={isGuarded} />}
-      <Box
-        component="form"
-        onSubmit={handleSubmit(handleFormSubmit)}
-        noValidate
-        sx={{ maxWidth: 640 }}
-      >
+      <Box component="form" onSubmit={handleSubmitEvent} noValidate sx={{ maxWidth: 640 }}>
         {submitError && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity="error" sx={{ mb: 2, whiteSpace: 'pre-line' }}>
             {submitError}
           </Alert>
         )}
