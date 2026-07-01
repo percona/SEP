@@ -162,7 +162,7 @@ describe('useExecuteTask', () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      '/plugins/backup_mongo/restores/my-restore-task/execute',
+      '/apps/backup_mongo/restores/my-restore-task/execute',
       {},
     );
   });
@@ -176,7 +176,7 @@ describe('useExecuteTask', () => {
       await result.current.mutateAsync({ taskName: 'my-backup-task' });
     });
 
-    expect(mockApiPost).toHaveBeenCalledWith('/plugins/backup_mongo/my-backup-task/execute', {});
+    expect(mockApiPost).toHaveBeenCalledWith('/apps/backup_mongo/my-backup-task/execute', {});
   });
 
   it('encodes special characters in task names', async () => {
@@ -190,7 +190,7 @@ describe('useExecuteTask', () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      `/plugins/backup_mongo/restores/${encodeURIComponent(taskName)}/execute`,
+      `/apps/backup_mongo/restores/${encodeURIComponent(taskName)}/execute`,
       {},
     );
   });
@@ -212,7 +212,7 @@ describe('useExecuteTask', () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      '/plugins/alters/my-alter-pre-checks/execute',
+      '/apps/alters/my-alter-pre-checks/execute',
       executeBody,
     );
   });

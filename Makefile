@@ -115,7 +115,7 @@ dev-frontend:
 
 # One-time legacy data['_form'] backfill for framework-migrated task apps.
 backfill-legacy-forms: venv
-	@"${VENV_BIN}"/python -m app.sep.plugins.framework.form_backfill $(BACKFILL_ARGS)
+	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_backfill $(BACKFILL_ARGS)
 
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
@@ -187,7 +187,7 @@ test: venv
 # goldens, the frontend OpenAPI spec, and the generated TS client. Run after
 # changing an app form model, review the diff, then commit.
 regen-specs: venv
-	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/plugins/framework/test_form_dsl_golden.py
+	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/apps/framework/test_form_dsl_golden.py
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/dump_openapi.py
 	@cd frontend && pnpm --filter @sep/api codegen && pnpm --filter @sep/api exec oxfmt --write src/generated
 
@@ -213,7 +213,7 @@ startapp:
 ifndef NAME
 	$(error NAME is required. Usage: make startapp NAME=myapp [TYPE=task|script|base])
 endif
-	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/plugins/framework/scaffold.py --name "$(NAME)" --type "$(or $(TYPE),task)"
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py --name "$(NAME)" --type "$(or $(TYPE),task)"
 
 startapp-check:
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/startapp_check.py

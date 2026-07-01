@@ -23,7 +23,7 @@
  * Query strings are opaque to the routing layer, so the contract
  * survives the trip end-to-end regardless of intermediate normalisation.
  */
-export const SNIPPETS_PLUGINS_API_BASE = '/plugins/snippets';
+export const SNIPPETS_PLUGINS_API_BASE = '/apps/snippets';
 
 /** API path prefix for per-snippet operations (filename rides in the query string). */
 export const SNIPPET_PLUGIN_PER_SNIPPET_BASE = `${SNIPPETS_PLUGINS_API_BASE}/snippet`;

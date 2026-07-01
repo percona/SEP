@@ -94,6 +94,14 @@ class TasksSettings(BaseYamlAppSettings):
         runs. ``None`` disables seeding the task entirely. Read at startup (not
         runtime-overridable). Defaults to once per day.
     :type LOG_PURGE_INTERVAL: IntervalSchedule | None
+    :param LOG_STREAM_CAP_BYTES: The maximum captured-log bytes retained per
+        ``(task_history_id, source, stream)``. As a stream grows past the cap
+        the writer drops the oldest chunks, keeping a bounded recent tail so a
+        long-running execution's logs cannot grow without limit. Must be
+        positive. Defaults to 104857600 (100 MiB).
+    :param LOG_STREAM_EVICTION_MAX_ROWS: The maximum number of chunk rows the
+        writer evicts per flush, bounding the per-append eviction work. Must be
+        positive. Defaults to 1000.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -117,6 +125,8 @@ class TasksSettings(BaseYamlAppSettings):
     LOG_PURGE_INTERVAL: IntervalSchedule | None = Field(
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS)
     )
+    LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(104857600)
+    LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = hot_field(1000)
 
 
 tasks_settings: TasksSettings = OverridableSettingsProxy(

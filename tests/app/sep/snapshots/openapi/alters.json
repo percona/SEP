@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "AltersCreate": {
-        "description": "Represent the single model-first declaration of the Alters create form.\n\nThis one declaration drives the JSON create/update request body, the Jinja\n``Form()`` body, and — via\n:func:`~app.sep.plugins.framework.form_dsl.derive_app_schema` — the\n``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are\nenforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /\n``Forbidden`` gates plus ``__form_rules__``), not by a decorator.\n\nThe schema-display defaults for ``dsn_table`` and ``progress`` diverge from the\nrequest-body defaults: the body defaults both to the empty string (so the\n``dsn_table`` forbidden gate passes for non-``dsn`` recursion, and an omitted\n``progress`` emits no value), while the form renders the Percona-Toolkit DSN\ntable and ``time,10`` via ``Ui(default=...)``.\n\n:param task_name: The name of the task to be created.\n:param hostname: The target hostname for the task execution.\n:param service_id: The Inventory ID of the database service to connect to.\n:param schema_id: The database schema ID on which the task will operate.\n:param table_id: The table ID within the schema to be altered.\n:param schema_name: Manual schema name when ``schema_id`` is not set.\n:param table_name: Manual table name when ``table_id`` is not set.\n:param recursion_method: The method for handling recursion.\n:param alter: The specific alter command to be executed.\n:param dsn_table: The DSN table for recursion method when using ``dsn``. When\n    recursion is ``dsn`` and this field is omitted or empty, it defaults to\n    ``D=percona,t=dsns`` (Percona Toolkit convention).\n:param pause_file: Execution will be paused while the file specified by this param exists.\n:param new_table_name: New table name before it is swapped.\n:param print_arg: Print SQL statements to STDOUT.\n:param progress: Print progress reports to STDERR while copying rows.\n:param no_swap_tables: Swap the original table and the new, altered table.\n:param no_drop_old_table: Drop the original table after renaming it.\n:param no_drop_new_table: Drop the new table if copying the original table fails.\n:param no_drop_triggers: Drop triggers on the old table.\n:param tries: How many times to try critical operations.\n:param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.\n:param critical_load: Examine SHOW GLOBAL STATUS after every chunk, and abort if the load is too high.\n:param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are\n    higher than their thresholds.\n:param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.\n:param max_lag: Pause the data copy until all replicas lag is less than this value.\n:param max_flow_ctl: Pause when PXC flow control exceeds this value.\n:param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.\n:param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor\n    (user/password): pre-checks always use this path; execute/dry-run use pt-osc's\n    default ~/.my.cnf unless this is set to another path, then --defaults-file is added.\n:param continue_on_pre_check_failure: When True, continue to the run task even if\n    pre-checks fail (overrides the schema's default ``on_failure=\"halt\"`` policy).",
+        "description": "Represent the single model-first declaration of the Alters create form.\n\nThis one declaration drives the JSON create/update request body, the Jinja\n``Form()`` body, and — via\n:func:`~app.sep.apps.framework.form_dsl.derive_app_schema` — the\n``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are\nenforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /\n``Forbidden`` gates plus ``__form_rules__``), not by a decorator.\n\nThe schema-display defaults for ``dsn_table`` and ``progress`` diverge from the\nrequest-body defaults: the body defaults both to the empty string (so the\n``dsn_table`` forbidden gate passes for non-``dsn`` recursion, and an omitted\n``progress`` emits no value), while the form renders the Percona-Toolkit DSN\ntable and ``time,10`` via ``Ui(default=...)``.\n\n:param task_name: The name of the task to be created.\n:param hostname: The target hostname for the task execution.\n:param service_id: The Inventory ID of the database service to connect to.\n:param schema_id: The database schema ID on which the task will operate.\n:param table_id: The table ID within the schema to be altered.\n:param schema_name: Manual schema name when ``schema_id`` is not set.\n:param table_name: Manual table name when ``table_id`` is not set.\n:param recursion_method: The method for handling recursion.\n:param alter: The specific alter command to be executed.\n:param dsn_table: The DSN table for recursion method when using ``dsn``. When\n    recursion is ``dsn`` and this field is omitted or empty, it defaults to\n    ``D=percona,t=dsns`` (Percona Toolkit convention).\n:param pause_file: Execution will be paused while the file specified by this param exists.\n:param new_table_name: New table name before it is swapped.\n:param print_arg: Print SQL statements to STDOUT.\n:param progress: Print progress reports to STDERR while copying rows.\n:param no_swap_tables: Swap the original table and the new, altered table.\n:param no_drop_old_table: Drop the original table after renaming it.\n:param no_drop_new_table: Drop the new table if copying the original table fails.\n:param no_drop_triggers: Drop triggers on the old table.\n:param tries: How many times to try critical operations.\n:param set_vars: Set the MySQL variables in this comma-separated list of variable=value pairs.\n:param critical_load: Examine SHOW GLOBAL STATUS after every chunk, and abort if the load is too high.\n:param max_load: Examine SHOW GLOBAL STATUS after every chunk, and pause if any status variables are\n    higher than their thresholds.\n:param chunk_time: Adjust the chunk size dynamically so each data-copy query takes this long to execute.\n:param max_lag: Pause the data copy until all replicas lag is less than this value.\n:param max_flow_ctl: Pause when PXC flow control exceeds this value.\n:param extra_args: Additional command-line arguments to append to the pt-online-schema-change command.\n:param pre_checks_mysql_config_file: Path to MySQL client defaults file on the executor\n    (user/password): pre-checks always use this path; execute/dry-run use pt-osc's\n    default ~/.my.cnf unless this is set to another path, then --defaults-file is added.\n:param continue_on_pre_check_failure: When True, continue to the run task even if\n    pre-checks fail (overrides the schema's default ``on_failure=\"halt\"`` policy).",
         "properties": {
           "alert_on_fail": {
             "default": false,
@@ -288,7 +288,7 @@
         "type": "object"
       },
       "AltersExecutionResponse": {
-        "description": "Represent the response from POST /api/plugins/alters/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
+        "description": "Represent the response from POST /api/apps/alters/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
         "properties": {
           "task_id": {
             "anyOf": [
@@ -758,7 +758,7 @@
       },
       "AppSchema": {
         "additionalProperties": false,
-        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None",
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None",
         "properties": {
           "capabilities": {
             "anyOf": [
@@ -1095,7 +1095,7 @@
       },
       "ChainedPredecessor": {
         "additionalProperties": false,
-        "description": "Represent a chained predecessor task that runs before the parent.\n\nThe cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes\nthis spec when POSTing, PUTting, or DELETEing a plugin's tasks: each\npredecessor is created with ``data[\"parent\"]`` linked to the parent's\nname (when ``parent_link`` is true) and named\n``f\"{parent_name}{name_suffix}\"``. Create persists task records only;\nwhen the user starts the chain, the consuming plugin fires\n``POST /execute/{first_predecessor_name}`` using\n:func:`build_predecessor_chain_execute_body` for ``chain_task_names``\n(remaining predecessors then parent) and ``chain_on_failure`` derived\nfrom ``on_failure`` (``\"halt\"`` maps to ``False``, ``\"continue\"`` maps\nto ``True``).\n\n:param name_suffix: String appended to the parent's ``name`` to form\n    the predecessor's name (for example ``\"-pre-checks\"``).\n:type name_suffix: NonEmptyStr\n:param on_failure: Chain semantics when the predecessor terminates\n    non-successfully. ``\"halt\"`` (default) stops the chain;\n    ``\"continue\"`` lets the chain continue regardless. Translates to\n    the boolean ``chain_on_failure`` flag at execute time.\n:type on_failure: Literal[\"halt\", \"continue\"]\n:param parent_link: When true, set ``data[\"parent\"]`` on the\n    predecessor payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "description": "Represent a chained predecessor task that runs before the parent.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes\nthis spec when POSTing, PUTting, or DELETEing a plugin's tasks: each\npredecessor is created with ``data[\"parent\"]`` linked to the parent's\nname (when ``parent_link`` is true) and named\n``f\"{parent_name}{name_suffix}\"``. Create persists task records only;\nwhen the user starts the chain, the consuming plugin fires\n``POST /execute/{first_predecessor_name}`` using\n:func:`build_predecessor_chain_execute_body` for ``chain_task_names``\n(remaining predecessors then parent) and ``chain_on_failure`` derived\nfrom ``on_failure`` (``\"halt\"`` maps to ``False``, ``\"continue\"`` maps\nto ``True``).\n\n:param name_suffix: String appended to the parent's ``name`` to form\n    the predecessor's name (for example ``\"-pre-checks\"``).\n:type name_suffix: NonEmptyStr\n:param on_failure: Chain semantics when the predecessor terminates\n    non-successfully. ``\"halt\"`` (default) stops the chain;\n    ``\"continue\"`` lets the chain continue regardless. Translates to\n    the boolean ``chain_on_failure`` flag at execute time.\n:type on_failure: Literal[\"halt\", \"continue\"]\n:param parent_link: When true, set ``data[\"parent\"]`` on the\n    predecessor payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
         "properties": {
           "name_suffix": {
             "minLength": 1,
@@ -1427,7 +1427,7 @@
       },
       "DerivedTask": {
         "additionalProperties": false,
-        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:type data_overrides: dict[str, Any] | None\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
+        "description": "Represent a sibling task derived from a parent during cascade operations.\n\nThe cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this\nspec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task\nis created first, then for each ``DerivedTask`` the parent payload is\ndeep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``\nare applied to ``data[\"meta\"][\"args\"]`` as literal :meth:`str.replace`\ncalls in dict insertion order, ``payload_substitutions`` are applied to\n``data[\"payload\"]`` as literal :meth:`str.replace` calls in dict insertion\norder, ``data_overrides`` entries are assigned directly onto ``data`` as\nliteral key/value pairs in iteration order, and ``data[\"parent\"]`` is set\nto the parent's name when ``parent_link`` is true.\n\n:param name_suffix: String appended to the parent's ``name`` to form the\n    derived task's name (for example ``\"-dry-run\"``).\n:type name_suffix: NonEmptyStr\n:param arg_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"meta\"][\"args\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type arg_substitutions: dict[str, str] | None\n:param payload_substitutions: Optional ordered mapping of literal substring\n    replacements applied to ``data[\"payload\"]``. Each ``(old, new)``\n    pair is applied once via :meth:`str.replace` in dict insertion order.\n    Defaults to ``None`` (no substitutions).\n:type payload_substitutions: dict[str, str] | None\n:param data_overrides: Optional mapping of literal key→value pairs\n    assigned directly onto ``data`` after substitutions run. Each\n    pair becomes ``data[key] = value`` in iteration order. Use this\n    for plugin-specific identity fields (e.g. ``{\"backup_type\":\n    \"pbm_logical\"}``) that the framework should not name itself.\n    Defaults to ``None``.\n:type data_overrides: dict[str, Any] | None\n:param parent_link: When true, set ``data[\"parent\"]`` on the derived\n    payload to the parent's ``name``. Defaults to ``True``.\n:type parent_link: bool",
         "properties": {
           "arg_substitutions": {
             "anyOf": [
@@ -2631,7 +2631,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -3400,10 +3400,10 @@
     }
   },
   "paths": {
-    "/api/plugins/alters/": {
+    "/api/apps/alters/": {
       "get": {
         "description": "List parent alters execute tasks.",
-        "operationId": "alters_alters_api_list_api_plugins_alters__get",
+        "operationId": "alters_alters_api_list_api_apps_alters__get",
         "parameters": [
           {
             "in": "query",
@@ -3446,7 +3446,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AltersTaskResponse"
                   },
-                  "title": "Response Alters Alters Api List Api Plugins Alters  Get",
+                  "title": "Response Alters Alters Api List Api Apps Alters  Get",
                   "type": "array"
                 }
               }
@@ -3471,7 +3471,7 @@
       },
       "post": {
         "description": "Create an alters task group from a JSON payload request body.\n\nPOSTs the parent execute task, dry-run derived sibling, and pre-checks\npredecessor. Pre-checks are started manually from the detail page.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics — an unchecked box\n    submits no field); this asymmetry is intentional.\n:type check_connectivity: bool",
-        "operationId": "alters_alters_api_create_api_plugins_alters__post",
+        "operationId": "alters_alters_api_create_api_apps_alters__post",
         "parameters": [
           {
             "in": "query",
@@ -3522,10 +3522,10 @@
         ]
       }
     },
-    "/api/plugins/alters/schema": {
+    "/api/apps/alters/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "alters_get_schema_api_plugins_alters_schema_get",
+        "operationId": "alters_get_schema_api_apps_alters_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -3544,10 +3544,10 @@
         ]
       }
     },
-    "/api/plugins/alters/{task_name}": {
+    "/api/apps/alters/{task_name}": {
       "delete": {
         "description": "Delete an alters task group.",
-        "operationId": "alters_alters_api_delete_api_plugins_alters__task_name__delete",
+        "operationId": "alters_alters_api_delete_api_apps_alters__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -3581,7 +3581,7 @@
       },
       "get": {
         "description": "Retrieve a single parent alters task.",
-        "operationId": "alters_alters_api_detail_api_plugins_alters__task_name__get",
+        "operationId": "alters_alters_api_detail_api_apps_alters__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3622,7 +3622,7 @@
       },
       "put": {
         "description": "Update an alters task group from a JSON payload request body.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after the update. Defaults to ``True``; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics); this asymmetry is\n    intentional.\n:type check_connectivity: bool",
-        "operationId": "alters_alters_api_update_api_plugins_alters__task_name__put",
+        "operationId": "alters_alters_api_update_api_apps_alters__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -3682,10 +3682,10 @@
         ]
       }
     },
-    "/api/plugins/alters/{task_name}/execute": {
+    "/api/apps/alters/{task_name}/execute": {
       "post": {
         "description": "Execute an alters task (parent, dry-run, or pre-checks).",
-        "operationId": "alters_alters_api_execute_api_plugins_alters__task_name__execute_post",
+        "operationId": "alters_alters_api_execute_api_apps_alters__task_name__execute_post",
         "parameters": [
           {
             "in": "path",

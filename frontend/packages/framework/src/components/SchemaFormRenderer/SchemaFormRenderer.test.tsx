@@ -1810,7 +1810,7 @@ describe('SchemaFormRenderer — section-level visibility', () => {
 // ── multi_choice discriminator regression (SEP-1293) ─────────────────────────
 //
 // Guards against future drift between the hand-maintained `MultiChoiceField.type`
-// literal in plugin-schema.ts and the switch branches that consume it. A wrong
+// literal in app-schema.ts and the switch branches that consume it. A wrong
 // literal silently falls through to `default: return null` — these tests make
 // that failure loud.
 

@@ -19,13 +19,13 @@ import { memo } from 'react';
 import Box from '@mui/material/Box';
 import { FieldRenderer } from './fields';
 import { useConditionalField } from './hooks/useConditionalField';
-import type { PluginField, RenderFieldOverride } from './types';
+import type { AppField, RenderFieldOverride } from './types';
 
 export const ConditionalFieldSlot = memo(function ConditionalFieldSlot({
   field,
   renderField,
 }: {
-  field: PluginField;
+  field: AppField;
   renderField?: RenderFieldOverride;
 }) {
   const { isHidden, isRequired } = useConditionalField(field);

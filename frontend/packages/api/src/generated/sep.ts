@@ -14,7 +14,7 @@ export interface paths {
      * List Apps
      * @description List every configured app with its current enabled state.
      *
-     *     Returns one entry per ``SEP.PLUGINS`` entry, in declaration order. Apps with
+     *     Returns one entry per ``SEP.APPS`` entry, in declaration order. Apps with
      *     no row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);
      *     protected apps (``inventory``) are forced to ``ENABLED`` and reported with
      *     ``toggleable=False``. The list is non-paginated: app cardinality is bounded
@@ -152,7 +152,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alert_troubleshooting/': {
+  '/api/apps/alert_troubleshooting/': {
     parameters: {
       query?: never;
       header?: never;
@@ -168,7 +168,7 @@ export interface paths {
      *     :return: A list of alert groups, each containing alerts for a service type.
      *     :rtype: list[AlertGroup]
      */
-    get: operations['alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get'];
+    get: operations['alert_troubleshooting_alert_troubleshooting_api_list_api_apps_alert_troubleshooting__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -177,7 +177,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alert_troubleshooting/schema': {
+  '/api/apps/alert_troubleshooting/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -190,7 +190,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get'];
+    get: operations['alert_troubleshooting_get_schema_api_apps_alert_troubleshooting_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -199,7 +199,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alert_troubleshooting/{service_type}/{alert_name}': {
+  '/api/apps/alert_troubleshooting/{service_type}/{alert_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -220,7 +220,7 @@ export interface paths {
      *     :rtype: AlertDetailResponse
      *     :raises HTTPNotFoundException: If no snippets match the alert.
      */
-    get: operations['alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get'];
+    get: operations['alert_troubleshooting_alert_troubleshooting_api_detail_api_apps_alert_troubleshooting__service_type___alert_name__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -229,7 +229,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alerts/': {
+  '/api/apps/alerts/': {
     parameters: {
       query?: never;
       header?: never;
@@ -241,7 +241,7 @@ export interface paths {
      * @description Return everything the React list page needs in a single call.
      *
      *     Mirror the data assembled for the deprecated Jinja index view
-     *     (:func:`app.sep.plugins.alerts.deps.get_alerts_index_context`) as JSON:
+     *     (:func:`app.sep.apps.alerts.deps.get_alerts_index_context`) as JSON:
      *     alert templates grouped by service type, PMM connectivity, the PagerDuty
      *     contact-point status, and the most recent backups.
      *
@@ -262,7 +262,7 @@ export interface paths {
      *     :return: The aggregated index payload.
      *     :rtype: IndexResponse
      */
-    get: operations['alerts_alerts_api_index_api_plugins_alerts__get'];
+    get: operations['alerts_alerts_api_index_api_apps_alerts__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -271,7 +271,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alerts/backups': {
+  '/api/apps/alerts/backups': {
     parameters: {
       query?: never;
       header?: never;
@@ -290,7 +290,7 @@ export interface paths {
      *         ``created_at`` descending.
      *     :rtype: PaginatedResponse[BackupSummary]
      */
-    get: operations['alerts_alerts_api_list_backups_api_plugins_alerts_backups_get'];
+    get: operations['alerts_alerts_api_list_backups_api_apps_alerts_backups_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -299,7 +299,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alerts/backups/{backup_id}': {
+  '/api/apps/alerts/backups/{backup_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -318,7 +318,7 @@ export interface paths {
      *     :rtype: BackupDetail
      *     :raises HTTPNotFoundException: If the backup is not found.
      */
-    get: operations['alerts_alerts_api_get_backup_api_plugins_alerts_backups__backup_id__get'];
+    get: operations['alerts_alerts_api_get_backup_api_apps_alerts_backups__backup_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -327,7 +327,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alerts/pagerduty': {
+  '/api/apps/alerts/pagerduty': {
     parameters: {
       query?: never;
       header?: never;
@@ -340,7 +340,7 @@ export interface paths {
      * Alerts Api Pagerduty Save
      * @description Create or update the PagerDuty contact point and notification route.
      *
-     *     Mirror :func:`app.sep.plugins.alerts.routes.pagerduty_save` over JSON.
+     *     Mirror :func:`app.sep.apps.alerts.routes.pagerduty_save` over JSON.
      *
      *     :param payload: PagerDuty save request body.
      *     :type payload: PagerDutyRequest
@@ -350,14 +350,14 @@ export interface paths {
      *     :rtype: PagerDutyResponse
      *     :raises HTTPBadGatewayException: If the PMM upstream call fails.
      */
-    post: operations['alerts_alerts_api_pagerduty_save_api_plugins_alerts_pagerduty_post'];
+    post: operations['alerts_alerts_api_pagerduty_save_api_apps_alerts_pagerduty_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alerts/pagerduty/delete': {
+  '/api/apps/alerts/pagerduty/delete': {
     parameters: {
       query?: never;
       header?: never;
@@ -377,14 +377,14 @@ export interface paths {
      *     :raises HTTPNotFoundException: If no PagerDuty contact point exists.
      *     :raises HTTPBadGatewayException: If the PMM upstream call fails.
      */
-    post: operations['alerts_alerts_api_pagerduty_delete_api_plugins_alerts_pagerduty_delete_post'];
+    post: operations['alerts_alerts_api_pagerduty_delete_api_apps_alerts_pagerduty_delete_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alerts/push': {
+  '/api/apps/alerts/push': {
     parameters: {
       query?: never;
       header?: never;
@@ -397,9 +397,9 @@ export interface paths {
      * Alerts Api Push
      * @description Push selected alert templates to PMM as rules.
      *
-     *     Mirror :func:`app.sep.plugins.alerts.routes.alerts_push` over JSON.
+     *     Mirror :func:`app.sep.apps.alerts.routes.alerts_push` over JSON.
      *     Preserve the conflict-retry path: on ``create_rule`` collision call
-     *     :func:`app.sep.plugins.alerts.restore.delete_conflicting_rules` and
+     *     :func:`app.sep.apps.alerts.restore.delete_conflicting_rules` and
      *     retry once.
      *
      *     :param payload: Push request body listing template names to push.
@@ -416,14 +416,14 @@ export interface paths {
      *     :return: A ``PushResponse`` with one :class:`PushItemResult` per template.
      *     :rtype: PushResponse
      */
-    post: operations['alerts_alerts_api_push_api_plugins_alerts_push_post'];
+    post: operations['alerts_alerts_api_push_api_apps_alerts_push_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alerts/restore': {
+  '/api/apps/alerts/restore': {
     parameters: {
       query?: never;
       header?: never;
@@ -448,14 +448,14 @@ export interface paths {
      *     :raises HTTPBadGatewayException: If the PMM upstream call fails with
      *         ``OSError``.
      */
-    post: operations['alerts_alerts_api_restore_api_plugins_alerts_restore_post'];
+    post: operations['alerts_alerts_api_restore_api_apps_alerts_restore_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alters/': {
+  '/api/apps/alters/': {
     parameters: {
       query?: never;
       header?: never;
@@ -466,7 +466,7 @@ export interface paths {
      * Alters Api List
      * @description List parent alters execute tasks.
      */
-    get: operations['alters_alters_api_list_api_plugins_alters__get'];
+    get: operations['alters_alters_api_list_api_apps_alters__get'];
     put?: never;
     /**
      * Alters Api Create
@@ -483,14 +483,14 @@ export interface paths {
      *         submits no field); this asymmetry is intentional.
      *     :type check_connectivity: bool
      */
-    post: operations['alters_alters_api_create_api_plugins_alters__post'];
+    post: operations['alters_alters_api_create_api_apps_alters__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alters/schema': {
+  '/api/apps/alters/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -503,7 +503,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['alters_get_schema_api_plugins_alters_schema_get'];
+    get: operations['alters_get_schema_api_apps_alters_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -512,7 +512,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alters/{task_name}': {
+  '/api/apps/alters/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -523,7 +523,7 @@ export interface paths {
      * Alters Api Detail
      * @description Retrieve a single parent alters task.
      */
-    get: operations['alters_alters_api_detail_api_plugins_alters__task_name__get'];
+    get: operations['alters_alters_api_detail_api_apps_alters__task_name__get'];
     /**
      * Alters Api Update
      * @description Update an alters task group from a JSON payload request body.
@@ -535,19 +535,19 @@ export interface paths {
      *         intentional.
      *     :type check_connectivity: bool
      */
-    put: operations['alters_alters_api_update_api_plugins_alters__task_name__put'];
+    put: operations['alters_alters_api_update_api_apps_alters__task_name__put'];
     post?: never;
     /**
      * Alters Api Delete
      * @description Delete an alters task group.
      */
-    delete: operations['alters_alters_api_delete_api_plugins_alters__task_name__delete'];
+    delete: operations['alters_alters_api_delete_api_apps_alters__task_name__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/alters/{task_name}/execute': {
+  '/api/apps/alters/{task_name}/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -560,14 +560,14 @@ export interface paths {
      * Alters Api Execute
      * @description Execute an alters task (parent, dry-run, or pre-checks).
      */
-    post: operations['alters_alters_api_execute_api_plugins_alters__task_name__execute_post'];
+    post: operations['alters_alters_api_execute_api_apps_alters__task_name__execute_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/archives/': {
+  '/api/apps/archives/': {
     parameters: {
       query?: never;
       header?: never;
@@ -575,17 +575,17 @@ export interface paths {
       cookie?: never;
     };
     /** List */
-    get: operations['archives__list_api_plugins_archives__get'];
+    get: operations['archives__list_api_apps_archives__get'];
     put?: never;
     /** Create */
-    post: operations['archives__create_api_plugins_archives__post'];
+    post: operations['archives__create_api_apps_archives__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/archives/schema': {
+  '/api/apps/archives/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -598,7 +598,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['archives_get_schema_api_plugins_archives_schema_get'];
+    get: operations['archives_get_schema_api_apps_archives_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -607,7 +607,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/archives/{task_name}': {
+  '/api/apps/archives/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -615,18 +615,18 @@ export interface paths {
       cookie?: never;
     };
     /** Detail */
-    get: operations['archives__detail_api_plugins_archives__task_name__get'];
+    get: operations['archives__detail_api_apps_archives__task_name__get'];
     /** Update */
-    put: operations['archives__update_api_plugins_archives__task_name__put'];
+    put: operations['archives__update_api_apps_archives__task_name__put'];
     post?: never;
     /** Delete */
-    delete: operations['archives__delete_api_plugins_archives__task_name__delete'];
+    delete: operations['archives__delete_api_apps_archives__task_name__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/archives/{task_name}/execute': {
+  '/api/apps/archives/{task_name}/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -639,14 +639,14 @@ export interface paths {
      * Archives Api Execute
      * @description Resolve, dispatch, and wrap a standard task execution.
      */
-    post: operations['archives_archives_api_execute_api_plugins_archives__task_name__execute_post'];
+    post: operations['archives_archives_api_execute_api_apps_archives__task_name__execute_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/atw/': {
+  '/api/apps/atw/': {
     parameters: {
       query?: never;
       header?: never;
@@ -660,7 +660,7 @@ export interface paths {
      *     Categories with no matching snippets are omitted to keep the payload small;
      *     the ATW enum still defines the full taxonomy for validation (plugin schema).
      */
-    get: operations['atw_atw_api_list_api_plugins_atw__get'];
+    get: operations['atw_atw_api_list_api_apps_atw__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -669,7 +669,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/atw/schema': {
+  '/api/apps/atw/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -682,7 +682,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['atw_get_schema_api_plugins_atw_schema_get'];
+    get: operations['atw_get_schema_api_apps_atw_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -691,7 +691,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_mongo/': {
+  '/api/apps/backup_mongo/': {
     parameters: {
       query?: never;
       header?: never;
@@ -702,7 +702,7 @@ export interface paths {
      * Backup Mongo Api List
      * @description List parent PBM backup config tasks.
      */
-    get: operations['backup_mongo_backup_mongo_api_list_api_plugins_backup_mongo__get'];
+    get: operations['backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get'];
     put?: never;
     /**
      * Backup Mongo Api Create
@@ -710,16 +710,16 @@ export interface paths {
      *
      *     POSTs the parent ``pbm_config`` task, then derived ``pbm_logical``,
      *     ``pbm_physical``, and ``pbm_status`` siblings via
-     *     :func:`~app.sep.plugins.framework.cascade.cascade_create_tasks`.
+     *     :func:`~app.sep.apps.framework.cascade.cascade_create_tasks`.
      */
-    post: operations['backup_mongo_backup_mongo_api_create_api_plugins_backup_mongo__post'];
+    post: operations['backup_mongo_backup_mongo_api_create_api_apps_backup_mongo__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_mongo/restores/': {
+  '/api/apps/backup_mongo/restores/': {
     parameters: {
       query?: never;
       header?: never;
@@ -730,7 +730,7 @@ export interface paths {
      * Restore Mongo Api List
      * @description List parent PBM restore config tasks.
      */
-    get: operations['backup_mongo_restore_mongo_api_list_api_plugins_backup_mongo_restores__get'];
+    get: operations['backup_mongo_restore_mongo_api_list_api_apps_backup_mongo_restores__get'];
     put?: never;
     /**
      * Restore Mongo Api Create
@@ -739,14 +739,14 @@ export interface paths {
      *     POSTs the parent config task, restore leg, pbm-list helper, and optional
      *     force-resync child for physical restores. Rolls back on any failure.
      */
-    post: operations['backup_mongo_restore_mongo_api_create_api_plugins_backup_mongo_restores__post'];
+    post: operations['backup_mongo_restore_mongo_api_create_api_apps_backup_mongo_restores__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_mongo/restores/schema': {
+  '/api/apps/backup_mongo/restores/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -759,7 +759,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['backup_mongo_get_schema_api_plugins_backup_mongo_restores_schema_get'];
+    get: operations['backup_mongo_get_schema_api_apps_backup_mongo_restores_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -768,7 +768,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_mongo/restores/{task_name}': {
+  '/api/apps/backup_mongo/restores/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -779,7 +779,7 @@ export interface paths {
      * Restore Mongo Api Detail
      * @description Retrieve a single parent restore task with child task status.
      */
-    get: operations['backup_mongo_restore_mongo_api_detail_api_plugins_backup_mongo_restores__task_name__get'];
+    get: operations['backup_mongo_restore_mongo_api_detail_api_apps_backup_mongo_restores__task_name__get'];
     /**
      * Restore Mongo Api Update
      * @description Update a restore task from a JSON payload request body.
@@ -787,19 +787,19 @@ export interface paths {
      *     PUTs the parent config payload to the config task name and refreshes each
      *     child leg (restore, pbm-list, optional force-resync) in place.
      */
-    put: operations['backup_mongo_restore_mongo_api_update_api_plugins_backup_mongo_restores__task_name__put'];
+    put: operations['backup_mongo_restore_mongo_api_update_api_apps_backup_mongo_restores__task_name__put'];
     post?: never;
     /**
      * Restore Mongo Api Delete
      * @description Delete a restore task group.
      */
-    delete: operations['backup_mongo_restore_mongo_api_delete_api_plugins_backup_mongo_restores__task_name__delete'];
+    delete: operations['backup_mongo_restore_mongo_api_delete_api_apps_backup_mongo_restores__task_name__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_mongo/restores/{task_name}/execute': {
+  '/api/apps/backup_mongo/restores/{task_name}/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -812,14 +812,14 @@ export interface paths {
      * Restore Mongo Api Execute
      * @description Execute a restore task.
      */
-    post: operations['backup_mongo_restore_mongo_api_execute_api_plugins_backup_mongo_restores__task_name__execute_post'];
+    post: operations['backup_mongo_restore_mongo_api_execute_api_apps_backup_mongo_restores__task_name__execute_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_mongo/schema': {
+  '/api/apps/backup_mongo/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -832,7 +832,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['backup_mongo_get_schema_api_plugins_backup_mongo_schema_get'];
+    get: operations['backup_mongo_get_schema_api_apps_backup_mongo_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -841,7 +841,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_mongo/{task_name}': {
+  '/api/apps/backup_mongo/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -852,20 +852,20 @@ export interface paths {
      * Backup Mongo Api Detail
      * @description Retrieve a single parent backup task with derived sibling status.
      */
-    get: operations['backup_mongo_backup_mongo_api_detail_api_plugins_backup_mongo__task_name__get'];
+    get: operations['backup_mongo_backup_mongo_api_detail_api_apps_backup_mongo__task_name__get'];
     put?: never;
     post?: never;
     /**
      * Backup Mongo Api Delete
      * @description Delete a backup task group.
      */
-    delete: operations['backup_mongo_backup_mongo_api_delete_api_plugins_backup_mongo__task_name__delete'];
+    delete: operations['backup_mongo_backup_mongo_api_delete_api_apps_backup_mongo__task_name__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_mongo/{task_name}/execute': {
+  '/api/apps/backup_mongo/{task_name}/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -878,14 +878,14 @@ export interface paths {
      * Backup Mongo Api Execute
      * @description Execute a backup task.
      */
-    post: operations['backup_mongo_backup_mongo_api_execute_api_plugins_backup_mongo__task_name__execute_post'];
+    post: operations['backup_mongo_backup_mongo_api_execute_api_apps_backup_mongo__task_name__execute_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_pg/': {
+  '/api/apps/backup_pg/': {
     parameters: {
       query?: never;
       header?: never;
@@ -893,17 +893,17 @@ export interface paths {
       cookie?: never;
     };
     /** List */
-    get: operations['backup_pg__list_paginated_api_plugins_backup_pg__get'];
+    get: operations['backup_pg__list_paginated_api_apps_backup_pg__get'];
     put?: never;
     /** Create */
-    post: operations['backup_pg__create_api_plugins_backup_pg__post'];
+    post: operations['backup_pg__create_api_apps_backup_pg__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_pg/schema': {
+  '/api/apps/backup_pg/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -916,7 +916,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['backup_pg_get_schema_api_plugins_backup_pg_schema_get'];
+    get: operations['backup_pg_get_schema_api_apps_backup_pg_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -925,7 +925,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_pg/{task_name}': {
+  '/api/apps/backup_pg/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -933,18 +933,18 @@ export interface paths {
       cookie?: never;
     };
     /** Detail */
-    get: operations['backup_pg__detail_api_plugins_backup_pg__task_name__get'];
+    get: operations['backup_pg__detail_api_apps_backup_pg__task_name__get'];
     /** Update */
-    put: operations['backup_pg__update_api_plugins_backup_pg__task_name__put'];
+    put: operations['backup_pg__update_api_apps_backup_pg__task_name__put'];
     post?: never;
     /** Delete */
-    delete: operations['backup_pg__delete_api_plugins_backup_pg__task_name__delete'];
+    delete: operations['backup_pg__delete_api_apps_backup_pg__task_name__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/backup_pg/{task_name}/execute': {
+  '/api/apps/backup_pg/{task_name}/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -957,14 +957,14 @@ export interface paths {
      * Backup Pg Api Execute
      * @description Resolve, dispatch, and wrap a standard task execution.
      */
-    post: operations['backup_pg_backup_pg_api_execute_api_plugins_backup_pg__task_name__execute_post'];
+    post: operations['backup_pg_backup_pg_api_execute_api_apps_backup_pg__task_name__execute_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/checksums/': {
+  '/api/apps/checksums/': {
     parameters: {
       query?: never;
       header?: never;
@@ -972,17 +972,17 @@ export interface paths {
       cookie?: never;
     };
     /** List */
-    get: operations['checksums__list_api_plugins_checksums__get'];
+    get: operations['checksums__list_api_apps_checksums__get'];
     put?: never;
     /** Create */
-    post: operations['checksums__create_api_plugins_checksums__post'];
+    post: operations['checksums__create_api_apps_checksums__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/checksums/schema': {
+  '/api/apps/checksums/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -995,7 +995,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['checksums_get_schema_api_plugins_checksums_schema_get'];
+    get: operations['checksums_get_schema_api_apps_checksums_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1004,7 +1004,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/checksums/{task_name}': {
+  '/api/apps/checksums/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -1012,18 +1012,18 @@ export interface paths {
       cookie?: never;
     };
     /** Detail */
-    get: operations['checksums__detail_api_plugins_checksums__task_name__get'];
+    get: operations['checksums__detail_api_apps_checksums__task_name__get'];
     /** Update */
-    put: operations['checksums__update_api_plugins_checksums__task_name__put'];
+    put: operations['checksums__update_api_apps_checksums__task_name__put'];
     post?: never;
     /** Delete */
-    delete: operations['checksums__delete_api_plugins_checksums__task_name__delete'];
+    delete: operations['checksums__delete_api_apps_checksums__task_name__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/checksums/{task_name}/execute': {
+  '/api/apps/checksums/{task_name}/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -1036,14 +1036,14 @@ export interface paths {
      * Checksums Api Execute
      * @description Resolve, dispatch, and wrap a standard task execution.
      */
-    post: operations['checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post'];
+    post: operations['checksums_checksums_api_execute_api_apps_checksums__task_name__execute_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/dipper/': {
+  '/api/apps/dipper/': {
     parameters: {
       query?: never;
       header?: never;
@@ -1059,7 +1059,7 @@ export interface paths {
      *     :return: Paginated task-history response filtered to Dipper runs.
      *     :rtype: dict[str, Any]
      */
-    get: operations['dipper_dipper_api_list_api_plugins_dipper__get'];
+    get: operations['dipper_dipper_api_list_api_apps_dipper__get'];
     put?: never;
     /**
      * Dipper Api Execute
@@ -1081,14 +1081,14 @@ export interface paths {
      *     :raises HTTPNotFoundException: When the service does not exist.
      *     :raises HTTPUnprocessableEntityException: When the script/args are invalid.
      */
-    post: operations['dipper_dipper_api_execute_api_plugins_dipper__post'];
+    post: operations['dipper_dipper_api_execute_api_apps_dipper__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/dipper/form-schema': {
+  '/api/apps/dipper/form-schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -1112,7 +1112,7 @@ export interface paths {
      *     :type pmm_api: PMMRemoteAPI | None
      *     :return: Context-specific schema including payload parameters.
      */
-    get: operations['dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get'];
+    get: operations['dipper_dipper_api_form_schema_api_apps_dipper_form_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1121,7 +1121,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/dipper/schema': {
+  '/api/apps/dipper/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -1134,7 +1134,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['dipper_get_schema_api_plugins_dipper_schema_get'];
+    get: operations['dipper_get_schema_api_apps_dipper_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1143,7 +1143,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/dipper/script-preview': {
+  '/api/apps/dipper/script-preview': {
     parameters: {
       query?: never;
       header?: never;
@@ -1167,7 +1167,7 @@ export interface paths {
      *         the service/collector combination, or when the script contains
      *         non-UTF-8 bytes.
      */
-    get: operations['dipper_dipper_api_script_preview_api_plugins_dipper_script_preview_get'];
+    get: operations['dipper_dipper_api_script_preview_api_apps_dipper_script_preview_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1176,7 +1176,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/': {
+  '/api/apps/inventory/': {
     parameters: {
       query?: never;
       header?: never;
@@ -1192,7 +1192,7 @@ export interface paths {
      *     ``usePluginTasks('inventory')`` hook expects: a list of objects with at
      *     minimum a ``name`` key.
      */
-    get: operations['inventory_inventory_plugin_tasks_api_plugins_inventory__get'];
+    get: operations['inventory_inventory_plugin_tasks_api_apps_inventory__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1201,7 +1201,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/available-syncers/': {
+  '/api/apps/inventory/available-syncers/': {
     parameters: {
       query?: never;
       header?: never;
@@ -1217,7 +1217,7 @@ export interface paths {
      *     :return: Filtered list of syncers that can sync inventory.
      *     :rtype: list[AvailableSyncer]
      */
-    get: operations['inventory_inventory_available_syncers_api_plugins_inventory_available_syncers__get'];
+    get: operations['inventory_inventory_available_syncers_api_apps_inventory_available_syncers__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1226,7 +1226,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/nodes/{node_id}/system-observation': {
+  '/api/apps/inventory/nodes/{node_id}/system-observation': {
     parameters: {
       query?: never;
       header?: never;
@@ -1247,7 +1247,7 @@ export interface paths {
      *     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
      *     :return: The host-level system observation payload.
      */
-    get: operations['inventory_inventory_node_system_observation_api_plugins_inventory_nodes__node_id__system_observation_get'];
+    get: operations['inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1256,7 +1256,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/schema': {
+  '/api/apps/inventory/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -1269,7 +1269,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['inventory_get_schema_api_plugins_inventory_schema_get'];
+    get: operations['inventory_get_schema_api_apps_inventory_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1278,7 +1278,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/services/{service_id}/system-observation': {
+  '/api/apps/inventory/services/{service_id}/system-observation': {
     parameters: {
       query?: never;
       header?: never;
@@ -1298,7 +1298,7 @@ export interface paths {
      *     :param inventory_api: Authenticated inventory ``RemoteAPI`` client.
      *     :return: The service-level system observation payload.
      */
-    get: operations['inventory_inventory_service_system_observation_api_plugins_inventory_services__service_id__system_observation_get'];
+    get: operations['inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1307,7 +1307,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/sync/': {
+  '/api/apps/inventory/sync/': {
     parameters: {
       query?: never;
       header?: never;
@@ -1342,14 +1342,14 @@ export interface paths {
      *     :raises HTTPBadRequestException: When ``body.syncer`` is set but does
      *         not match any configured syncer that can sync inventory.
      */
-    post: operations['inventory_inventory_sync_trigger_api_plugins_inventory_sync__post'];
+    post: operations['inventory_inventory_sync_trigger_api_apps_inventory_sync__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/sync/status/': {
+  '/api/apps/inventory/sync/status/': {
     parameters: {
       query?: never;
       header?: never;
@@ -1369,7 +1369,7 @@ export interface paths {
      *     :return: ``{"is_running": <bool>}``.
      *     :rtype: InventorySyncStatusResponse
      */
-    get: operations['inventory_inventory_sync_status_api_plugins_inventory_sync_status__get'];
+    get: operations['inventory_inventory_sync_status_api_apps_inventory_sync_status__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1378,7 +1378,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/{entity}/': {
+  '/api/apps/inventory/{entity}/': {
     parameters: {
       query?: never;
       header?: never;
@@ -1389,20 +1389,20 @@ export interface paths {
      * Inventory List Entity
      * @description List inventory nodes, services, schemas, or tables.
      */
-    get: operations['inventory_inventory_list_entity_api_plugins_inventory__entity___get'];
+    get: operations['inventory_inventory_list_entity_api_apps_inventory__entity___get'];
     put?: never;
     /**
      * Inventory Create Entity
      * @description Create an inventory node, service, schema, or table.
      */
-    post: operations['inventory_inventory_create_entity_api_plugins_inventory__entity___post'];
+    post: operations['inventory_inventory_create_entity_api_apps_inventory__entity___post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/inventory/{entity}/{item_id}': {
+  '/api/apps/inventory/{entity}/{item_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -1413,24 +1413,24 @@ export interface paths {
      * Inventory Get Entity
      * @description Retrieve a single inventory node, service, schema, or table.
      */
-    get: operations['inventory_inventory_get_entity_api_plugins_inventory__entity___item_id__get'];
+    get: operations['inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get'];
     /**
      * Inventory Update Entity
      * @description Update an inventory node, service, schema, or table.
      */
-    put: operations['inventory_inventory_update_entity_api_plugins_inventory__entity___item_id__put'];
+    put: operations['inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put'];
     post?: never;
     /**
      * Inventory Delete Entity
      * @description Delete an inventory node, service, schema, or table.
      */
-    delete: operations['inventory_inventory_delete_entity_api_plugins_inventory__entity___item_id__delete'];
+    delete: operations['inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/mysql_backups/': {
+  '/api/apps/mysql_backups/': {
     parameters: {
       query?: never;
       header?: never;
@@ -1438,17 +1438,17 @@ export interface paths {
       cookie?: never;
     };
     /** List */
-    get: operations['mysql_backups__list_paginated_api_plugins_mysql_backups__get'];
+    get: operations['mysql_backups__list_paginated_api_apps_mysql_backups__get'];
     put?: never;
     /** Create */
-    post: operations['mysql_backups__create_api_plugins_mysql_backups__post'];
+    post: operations['mysql_backups__create_api_apps_mysql_backups__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/mysql_backups/restore/': {
+  '/api/apps/mysql_backups/restore/': {
     parameters: {
       query?: never;
       header?: never;
@@ -1456,17 +1456,17 @@ export interface paths {
       cookie?: never;
     };
     /** List */
-    get: operations['mysql_backups_restore__list_paginated_api_plugins_mysql_backups_restore__get'];
+    get: operations['mysql_backups_restore__list_paginated_api_apps_mysql_backups_restore__get'];
     put?: never;
     /** Create */
-    post: operations['mysql_backups_restore__create_api_plugins_mysql_backups_restore__post'];
+    post: operations['mysql_backups_restore__create_api_apps_mysql_backups_restore__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/mysql_backups/restore/schema': {
+  '/api/apps/mysql_backups/restore/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -1479,7 +1479,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['mysql_backups_restore_get_schema_api_plugins_mysql_backups_restore_schema_get'];
+    get: operations['mysql_backups_restore_get_schema_api_apps_mysql_backups_restore_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1488,7 +1488,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/mysql_backups/restore/{task_name}': {
+  '/api/apps/mysql_backups/restore/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -1496,18 +1496,18 @@ export interface paths {
       cookie?: never;
     };
     /** Detail */
-    get: operations['mysql_backups_restore__detail_api_plugins_mysql_backups_restore__task_name__get'];
+    get: operations['mysql_backups_restore__detail_api_apps_mysql_backups_restore__task_name__get'];
     /** Update */
-    put: operations['mysql_backups_restore__update_api_plugins_mysql_backups_restore__task_name__put'];
+    put: operations['mysql_backups_restore__update_api_apps_mysql_backups_restore__task_name__put'];
     post?: never;
     /** Delete */
-    delete: operations['mysql_backups_restore__delete_api_plugins_mysql_backups_restore__task_name__delete'];
+    delete: operations['mysql_backups_restore__delete_api_apps_mysql_backups_restore__task_name__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/mysql_backups/restore/{task_name}/execute': {
+  '/api/apps/mysql_backups/restore/{task_name}/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -1520,14 +1520,14 @@ export interface paths {
      * Mysql Backups Restores Api Execute
      * @description Resolve, dispatch, and wrap a standard task execution.
      */
-    post: operations['mysql_backups_restore_mysql_backups_restores_api_execute_api_plugins_mysql_backups_restore__task_name__execute_post'];
+    post: operations['mysql_backups_restore_mysql_backups_restores_api_execute_api_apps_mysql_backups_restore__task_name__execute_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/mysql_backups/schema': {
+  '/api/apps/mysql_backups/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -1540,7 +1540,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['mysql_backups_get_schema_api_plugins_mysql_backups_schema_get'];
+    get: operations['mysql_backups_get_schema_api_apps_mysql_backups_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1549,7 +1549,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/mysql_backups/{task_name}': {
+  '/api/apps/mysql_backups/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -1557,18 +1557,18 @@ export interface paths {
       cookie?: never;
     };
     /** Detail */
-    get: operations['mysql_backups__detail_api_plugins_mysql_backups__task_name__get'];
+    get: operations['mysql_backups__detail_api_apps_mysql_backups__task_name__get'];
     /** Update */
-    put: operations['mysql_backups__update_api_plugins_mysql_backups__task_name__put'];
+    put: operations['mysql_backups__update_api_apps_mysql_backups__task_name__put'];
     post?: never;
     /** Delete */
-    delete: operations['mysql_backups__delete_api_plugins_mysql_backups__task_name__delete'];
+    delete: operations['mysql_backups__delete_api_apps_mysql_backups__task_name__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/mysql_backups/{task_name}/execute': {
+  '/api/apps/mysql_backups/{task_name}/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -1581,14 +1581,14 @@ export interface paths {
      * Mysql Backups Api Execute
      * @description Resolve, dispatch, and wrap a standard task execution.
      */
-    post: operations['mysql_backups_mysql_backups_api_execute_api_plugins_mysql_backups__task_name__execute_post'];
+    post: operations['mysql_backups_mysql_backups_api_execute_api_apps_mysql_backups__task_name__execute_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/report/config': {
+  '/api/apps/report/config': {
     parameters: {
       query?: never;
       header?: never;
@@ -1602,7 +1602,7 @@ export interface paths {
      *     :return: JSON with ``upload_disabled_reasons`` — empty list means upload is ready.
      *     :rtype: JSONResponse
      */
-    get: operations['report_report_config_api_plugins_report_config_get'];
+    get: operations['report_report_config_api_apps_report_config_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1611,7 +1611,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/report/generate/json': {
+  '/api/apps/report/generate/json': {
     parameters: {
       query?: never;
       header?: never;
@@ -1637,7 +1637,7 @@ export interface paths {
      *     :return: JSON response with the full report data.
      *     :rtype: JSONResponse
      */
-    get: operations['report_report_generate_json_api_api_plugins_report_generate_json_get'];
+    get: operations['report_report_generate_json_api_api_apps_report_generate_json_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1646,7 +1646,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/report/generate/pdf': {
+  '/api/apps/report/generate/pdf': {
     parameters: {
       query?: never;
       header?: never;
@@ -1672,14 +1672,14 @@ export interface paths {
      *     :return: PDF file response.
      *     :rtype: Response
      */
-    post: operations['report_report_generate_pdf_api_api_plugins_report_generate_pdf_post'];
+    post: operations['report_report_generate_pdf_api_api_apps_report_generate_pdf_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/report/upload': {
+  '/api/apps/report/upload': {
     parameters: {
       query?: never;
       header?: never;
@@ -1705,14 +1705,14 @@ export interface paths {
      *     :return: JSON response with the upload result.
      *     :rtype: JSONResponse
      */
-    post: operations['report_report_upload_api_api_plugins_report_upload_post'];
+    post: operations['report_report_upload_api_api_apps_report_upload_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/': {
+  '/api/apps/snippets/': {
     parameters: {
       query?: never;
       header?: never;
@@ -1723,7 +1723,7 @@ export interface paths {
      * List
      * @description List every discovered script as its list-row projection.
      */
-    get: operations['snippets_snippets_api_list_api_plugins_snippets__get'];
+    get: operations['snippets_snippets_api_list_api_apps_snippets__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1732,7 +1732,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/approvals': {
+  '/api/apps/snippets/approvals': {
     parameters: {
       query?: never;
       header?: never;
@@ -1768,10 +1768,10 @@ export interface paths {
      *     :raises HTTPBadRequestException: On hard-error precheck failures with
      *         a :class:`BatchApprovalErrorResponse` body.
      */
-    patch: operations['snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch'];
+    patch: operations['snippets_snippets_api_batch_approve_api_apps_snippets_approvals_patch'];
     trace?: never;
   };
-  '/api/plugins/snippets/capabilities': {
+  '/api/apps/snippets/capabilities': {
     parameters: {
       query?: never;
       header?: never;
@@ -1787,7 +1787,7 @@ export interface paths {
      *
      *     :return: Capability flags reflecting the current deployment config.
      */
-    get: operations['snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get'];
+    get: operations['snippets__snippets_capabilities_provider_api_apps_snippets_capabilities_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1796,7 +1796,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/refresh': {
+  '/api/apps/snippets/refresh': {
     parameters: {
       query?: never;
       header?: never;
@@ -1818,14 +1818,14 @@ export interface paths {
      *     :return: A response carrying the UTC timestamp of the refresh.
      *     :rtype: RefreshResponse
      */
-    post: operations['snippets_snippets_api_refresh_api_plugins_snippets_refresh_post'];
+    post: operations['snippets_snippets_api_refresh_api_apps_snippets_refresh_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/schema': {
+  '/api/apps/snippets/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -1838,7 +1838,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['snippets_get_schema_api_plugins_snippets_schema_get'];
+    get: operations['snippets_get_schema_api_apps_snippets_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1847,7 +1847,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/snippet/approval': {
+  '/api/apps/snippets/snippet/approval': {
     parameters: {
       query?: never;
       header?: never;
@@ -1872,7 +1872,7 @@ export interface paths {
      *     :return: The snippet entity after the call, including approval state.
      *     :rtype: SnippetResponse
      */
-    put: operations['snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put'];
+    put: operations['snippets_snippets_api_approve_api_apps_snippets_snippet_approval_put'];
     post?: never;
     /**
      * Snippets Api Remove Approval
@@ -1891,13 +1891,13 @@ export interface paths {
      *     :return: An empty 204 response.
      *     :rtype: Response
      */
-    delete: operations['snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete'];
+    delete: operations['snippets_snippets_api_remove_approval_api_apps_snippets_snippet_approval_delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/snippet/download': {
+  '/api/apps/snippets/snippet/download': {
     parameters: {
       query?: never;
       header?: never;
@@ -1920,7 +1920,7 @@ export interface paths {
      *         with a MIME type guessed from the on-disk path.
      *     :rtype: FileResponse
      */
-    get: operations['snippets_snippets_api_download_api_plugins_snippets_snippet_download_get'];
+    get: operations['snippets_snippets_api_download_api_apps_snippets_snippet_download_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1929,7 +1929,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/snippet/execute': {
+  '/api/apps/snippets/snippet/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -1942,14 +1942,14 @@ export interface paths {
      * Execute script
      * @description Validate the args, assemble the meta, and dispatch the execution.
      */
-    post: operations['snippets_snippets_api_script_execute_api_plugins_snippets_snippet_execute_post'];
+    post: operations['snippets_snippets_api_script_execute_api_apps_snippets_snippet_execute_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/snippet/history': {
+  '/api/apps/snippets/snippet/history': {
     parameters: {
       query?: never;
       header?: never;
@@ -1960,7 +1960,7 @@ export interface paths {
      * Script history
      * @description Proxy the per-script execution history from the Tasks API by filename.
      */
-    get: operations['snippets_snippets_api_script_history_api_plugins_snippets_snippet_history_get'];
+    get: operations['snippets_snippets_api_script_history_api_apps_snippets_snippet_history_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1969,7 +1969,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/snippet/preview': {
+  '/api/apps/snippets/snippet/preview': {
     parameters: {
       query?: never;
       header?: never;
@@ -1987,7 +1987,7 @@ export interface paths {
      *     :raises HTTPUnprocessableEntityException: When the snippet contains
      *         bytes that cannot be decoded as UTF-8.
      */
-    get: operations['snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get'];
+    get: operations['snippets_snippets_api_script_preview_api_apps_snippets_snippet_preview_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1996,7 +1996,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/snippets/snippet/schema': {
+  '/api/apps/snippets/snippet/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -2007,7 +2007,7 @@ export interface paths {
      * Script schema
      * @description Return the per-script form schema synthesised from its parameters.
      */
-    get: operations['snippets_snippets_api_script_schema_api_plugins_snippets_snippet_schema_get'];
+    get: operations['snippets_snippets_api_script_schema_api_apps_snippets_snippet_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2016,7 +2016,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/tasks/': {
+  '/api/apps/tasks/': {
     parameters: {
       query?: never;
       header?: never;
@@ -2032,7 +2032,7 @@ export interface paths {
      *     :return: Task rows for the schema-driven list view.
      *     :rtype: list[TaskListResponse]
      */
-    get: operations['task_manager_tasks_api_list_api_plugins_tasks__get'];
+    get: operations['task_manager_tasks_api_list_api_apps_tasks__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2041,7 +2041,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/tasks/schema': {
+  '/api/apps/tasks/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -2054,7 +2054,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['task_manager_get_schema_api_plugins_tasks_schema_get'];
+    get: operations['task_manager_get_schema_api_apps_tasks_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2063,7 +2063,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/tasks/{task_name}': {
+  '/api/apps/tasks/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -2083,7 +2083,7 @@ export interface paths {
      *     :return: Task definition, history, periodic schedules, and executor hosts.
      *     :rtype: TaskDetailResponse
      */
-    get: operations['task_manager_tasks_api_detail_api_plugins_tasks__task_name__get'];
+    get: operations['task_manager_tasks_api_detail_api_apps_tasks__task_name__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -2947,7 +2947,7 @@ export interface components {
      *
      *     This one declaration drives the JSON create/update request body, the Jinja
      *     ``Form()`` body, and — via
-     *     :func:`~app.sep.plugins.framework.form_dsl.derive_app_schema` — the
+     *     :func:`~app.sep.apps.framework.form_dsl.derive_app_schema` — the
      *     ``GET /schema`` source. The mutual-exclusion and ``dsn`` conditional rules are
      *     enforced by ``AppFormModel`` inheritance (the field-level ``Requires`` /
      *     ``Forbidden`` gates plus ``__form_rules__``), not by a decorator.
@@ -3104,7 +3104,7 @@ export interface components {
     };
     /**
      * AltersExecutionResponse
-     * @description Represent the response from POST /api/plugins/alters/{task_name}/execute.
+     * @description Represent the response from POST /api/apps/alters/{task_name}/execute.
      *
      *     :param task_name: The name of the task that was executed.
      *     :param task_id: The id of the task-history row created by the tasks API.
@@ -3417,12 +3417,12 @@ export interface components {
      *     :type fail_when: list[FailRule] | None
      *     :param derived: Optional declarative specs for sibling tasks derived from
      *         the parent task on cascade. Consumed by
-     *         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+     *         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
      *         across the parent and N derived siblings. Defaults to ``None``.
      *     :type derived: list[DerivedTask] | None
      *     :param predecessors: Optional declarative specs for tasks that must run
      *         before the parent. Consumed by
-     *         :mod:`app.sep.plugins.framework.cascade` to drive POST/PUT/DELETE
+     *         :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE
      *         across the predecessors and the parent, including the chain wiring
      *         applied at execute time. Defaults to ``None``.
      *     :type predecessors: list[ChainedPredecessor] | None
@@ -3605,7 +3605,7 @@ export interface components {
       awscli_s3_upload_extra_args?: string | null;
       /** Backup Dir */
       backup_dir?: string | null;
-      backup_type: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      backup_type: components['schemas']['app__sep__apps__mysql_backups__models__BackupType'];
       /** Binlog Alternative Host */
       binlog_alternative_host?: string | null;
       /** Binlog Cmd */
@@ -3635,7 +3635,7 @@ export interface components {
       compress: boolean;
       /** Compression Algorithm */
       compression_algorithm?:
-        | components['schemas']['app__sep__plugins__mysql_backups__models__CompressionAlgorithm']
+        | components['schemas']['app__sep__apps__mysql_backups__models__CompressionAlgorithm']
         | null;
       /** Defaults File */
       defaults_file?: string | null;
@@ -4121,7 +4121,7 @@ export interface components {
        */
       alert_on_fail: boolean;
       backup_compression?:
-        | components['schemas']['app__sep__plugins__backup_mongo__models__CompressionAlgorithm']
+        | components['schemas']['app__sep__apps__backup_mongo__models__CompressionAlgorithm']
         | null;
       /** Backup Compression Level */
       backup_compression_level?: number | null;
@@ -4268,8 +4268,8 @@ export interface components {
       /** Skipped Already Approved */
       skipped_already_approved: string[];
     };
-    /** Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post */
-    Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post: {
+    /** Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post */
+    Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post: {
       /**
        * Full
        * @default true
@@ -4291,8 +4291,8 @@ export interface components {
        */
       until: string;
     };
-    /** Body_report_report_upload_api_api_plugins_report_upload_post */
-    Body_report_report_upload_api_api_plugins_report_upload_post: {
+    /** Body_report_report_upload_api_api_apps_report_upload_post */
+    Body_report_report_upload_api_api_apps_report_upload_post: {
       /**
        * Full
        * @default true
@@ -4438,7 +4438,7 @@ export interface components {
      * ChainedPredecessor
      * @description Represent a chained predecessor task that runs before the parent.
      *
-     *     The cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes
+     *     The cascade module (:mod:`app.sep.apps.framework.cascade`) consumes
      *     this spec when POSTing, PUTting, or DELETEing a plugin's tasks: each
      *     predecessor is created with ``data["parent"]`` linked to the parent's
      *     name (when ``parent_link`` is true) and named
@@ -4796,7 +4796,7 @@ export interface components {
      * DerivedTask
      * @description Represent a sibling task derived from a parent during cascade operations.
      *
-     *     The cascade module (:mod:`app.sep.plugins.framework.cascade`) consumes this
+     *     The cascade module (:mod:`app.sep.apps.framework.cascade`) consumes this
      *     spec when POSTing, PUTting, or DELETEing a plugin's tasks: the parent task
      *     is created first, then for each ``DerivedTask`` the parent payload is
      *     deep-copied, ``name`` is suffixed with ``name_suffix``, ``arg_substitutions``
@@ -4950,7 +4950,7 @@ export interface components {
     };
     /**
      * DipperExecuteWrite
-     * @description Define the JSON body for ``POST /api/plugins/dipper/``.
+     * @description Define the JSON body for ``POST /api/apps/dipper/``.
      *
      *     :param service_id: Inventory ID of the database service to collect data from.
      *     :type service_id: int
@@ -4979,7 +4979,7 @@ export interface components {
     };
     /**
      * DipperExecutionResponse
-     * @description Represent the response from ``POST /api/plugins/dipper/``.
+     * @description Represent the response from ``POST /api/apps/dipper/``.
      *
      *     :param task_id: ID of the task-history row created by the tasks API.
      *     :type task_id: int | None
@@ -5428,7 +5428,7 @@ export interface components {
     };
     /**
      * IndexResponse
-     * @description Describe the response body for ``GET /api/plugins/alerts/``.
+     * @description Describe the response body for ``GET /api/apps/alerts/``.
      *
      *     Aggregate everything the React list page needs in a single call: the alert
      *     templates grouped by service type, whether PMM is reachable, the PagerDuty
@@ -5812,7 +5812,7 @@ export interface components {
     };
     /**
      * PagerDutyRequest
-     * @description Describe the request body for ``POST /api/plugins/alerts/pagerduty``.
+     * @description Describe the request body for ``POST /api/apps/alerts/pagerduty``.
      *
      *     :param integration_key: The PagerDuty integration key. Must be non-empty
      *         after stripping whitespace.
@@ -5954,7 +5954,7 @@ export interface components {
     PgBackRestBackupType: 'incr' | 'diff';
     /**
      * PluginTaskResponse
-     * @description Represent a single plugin task entry returned by ``GET /api/plugins/inventory/``.
+     * @description Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.
      *
      *     :param name: Machine-readable task identifier (e.g. ``"inventory-sync"``).
      *     :type name: str
@@ -5991,7 +5991,7 @@ export interface components {
     };
     /**
      * PushRequest
-     * @description Describe the request body for ``POST /api/plugins/alerts/push``.
+     * @description Describe the request body for ``POST /api/apps/alerts/push``.
      *
      *     :param selected_templates: Names of templates to push to PMM. Must be a
      *         non-empty list of non-empty strings.
@@ -6077,7 +6077,7 @@ export interface components {
       alert_on_fail: boolean;
       /** Backup Source */
       backup_source: string;
-      backup_type: components['schemas']['app__sep__plugins__mysql_backups__models__BackupType'];
+      backup_type: components['schemas']['app__sep__apps__mysql_backups__models__BackupType'];
       /** Binlog Restore Extra Args */
       binlog_restore_extra_args?: string | null;
       /** Custom Mysql Init Command */
@@ -6248,9 +6248,9 @@ export interface components {
     };
     /**
      * RestoreRequest
-     * @description Describe the request body for ``POST /api/plugins/alerts/restore``.
+     * @description Describe the request body for ``POST /api/apps/alerts/restore``.
      *
-     *     :param backup_id: Primary key of the :class:`~app.sep.plugins.alerts.models.AlertBackup`
+     *     :param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`
      *         row to restore from. Must be a positive integer.
      *     :type backup_id: int
      */
@@ -6265,7 +6265,7 @@ export interface components {
      *     :param status: ``"success"`` on a complete restore.
      *     :type status: Literal["success"]
      *     :param details: Per-section restore counts as returned by
-     *         :func:`~app.sep.plugins.alerts.restore.restore_from_backup`.
+     *         :func:`~app.sep.apps.alerts.restore.restore_from_backup`.
      *     :type details: dict[str, Any]
      */
     RestoreResponse: {
@@ -6374,7 +6374,7 @@ export interface components {
      *
      *     Mirrors :class:`RestoreCreate` field-for-field with JSON-native types (notably
      *     ``service_id: int | None``). Routes convert via
-     *     :func:`~app.sep.plugins.backup_mongo.restore.deps.restore_create_from_write`
+     *     :func:`~app.sep.apps.backup_mongo.restore.deps.restore_create_from_write`
      *     before building task payloads. See :class:`RestoreCreate` for why both models
      *     remain.
      *
@@ -6413,7 +6413,7 @@ export interface components {
     RestoreTaskWrite: {
       /** Backup Source */
       backup_source: string;
-      backup_type: components['schemas']['app__sep__plugins__backup_mongo__models__BackupType'];
+      backup_type: components['schemas']['app__sep__apps__backup_mongo__models__BackupType'];
       /** Credentials Path */
       credentials_path?: string | null;
       /** Hostname */
@@ -6446,7 +6446,7 @@ export interface components {
      *     Extend the standard task-response surface with the restore-specific
      *     destination facts the detail view renders; the shared task identity,
      *     status, audit, and anonymization fields come from
-     *     :class:`~app.sep.plugins.framework.responses.BaseTaskResponse`.
+     *     :class:`~app.sep.apps.framework.responses.BaseTaskResponse`.
      *
      *     :param backup_type: The backup type recorded in task config.
      *     :param hostname: The executor hostname target.
@@ -6651,7 +6651,7 @@ export interface components {
      *     :param endpoint_url: The fully-resolved URL the renderer fetches preview
      *         content from, relative to the FE ``apiClient`` base (``/api``). Schema
      *         synthesisers should bake any plugin-specific path segments (for
-     *         example, ``/plugins/snippets/{filename}/preview``) here at
+     *         example, ``/apps/snippets/{filename}/preview``) here at
      *         schema build time rather than templating client-side.
      *     :type endpoint_url: NonEmptyStr
      *     :param depends_on: Names of sibling fields whose values trigger a
@@ -6995,9 +6995,9 @@ export interface components {
     };
     /**
      * SnippetBatchApproveRequest
-     * @description Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.
+     * @description Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.
      *
-     *     Unlike the Form-bound :class:`~app.sep.plugins.snippets.deps.SnippetBatchApproveForm`
+     *     Unlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`
      *     twin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI
      *     parses it as JSON.
      *
@@ -7100,9 +7100,9 @@ export interface components {
      *     (currently the manual refresh button) so the React shell can decide
      *     whether to render those controls without probing the gated endpoints.
      *
-     *     Distinct from :class:`~app.sep.plugins.framework.schema.Capabilities`,
+     *     Distinct from :class:`~app.sep.apps.framework.schema.Capabilities`,
      *     which describes static UI feature flags on
-     *     :attr:`~app.sep.plugins.framework.schema.AppSchema.capabilities`
+     *     :attr:`~app.sep.apps.framework.schema.AppSchema.capabilities`
      *     (chaining, scheduling, alert_on_fail). This model is the per-
      *     deployment runtime counterpart returned by ``GET /capabilities``.
      *
@@ -7279,7 +7279,7 @@ export interface components {
     TaskBackendEnum: 'nomad' | 'proxy' | 'celery';
     /**
      * TaskDetailResponse
-     * @description Represent the aggregate payload for ``GET /api/plugins/tasks/{task_name}``.
+     * @description Represent the aggregate payload for ``GET /api/apps/tasks/{task_name}``.
      *
      *     Bundle the task definition, execution history, periodic schedules, and
      *     executor host metadata into a single response for the React detail page.
@@ -7736,7 +7736,7 @@ export interface components {
     /** PaginatedResponse[BackupTaskResponse] */
     app__core__pagination__models__PaginatedResponse_BackupTaskResponse___1: {
       /** Items */
-      items: components['schemas']['app__sep__plugins__backup_mongo__models__BackupTaskResponse'][];
+      items: components['schemas']['app__sep__apps__backup_mongo__models__BackupTaskResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -7747,7 +7747,7 @@ export interface components {
     /** PaginatedResponse[BackupTaskResponse] */
     app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2: {
       /** Items */
-      items: components['schemas']['app__sep__plugins__backup_pg__models__BackupTaskResponse'][];
+      items: components['schemas']['app__sep__apps__backup_pg__models__BackupTaskResponse'][];
       /** Limit */
       limit: number;
       /** Offset */
@@ -7766,7 +7766,7 @@ export interface components {
      *     :param chain_on_failure: Whether to run chained tasks even on failure.
      *     :type chain_on_failure: bool | None
      */
-    app__sep__plugins__backup_mongo__models__BackupExecuteWrite: {
+    app__sep__apps__backup_mongo__models__BackupExecuteWrite: {
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
       /** Chain Task Names */
@@ -7776,14 +7776,14 @@ export interface components {
     };
     /**
      * BackupExecutionResponse
-     * @description Represent the response from POST /api/plugins/backup_mongo/{task_name}/execute.
+     * @description Represent the response from POST /api/apps/backup_mongo/{task_name}/execute.
      *
      *     :param task_name: The name of the task that was executed.
      *     :type task_name: str
      *     :param task_id: The id of the task-history row created by the tasks API.
      *     :type task_id: int | None
      */
-    app__sep__plugins__backup_mongo__models__BackupExecutionResponse: {
+    app__sep__apps__backup_mongo__models__BackupExecutionResponse: {
       /** Task Id */
       task_id?: number | null;
       /** Task Name */
@@ -7800,7 +7800,7 @@ export interface components {
      *         available.
      *     :type latest_pbm_status: str | None
      */
-    app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse: {
+    app__sep__apps__backup_mongo__models__BackupTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
@@ -7856,7 +7856,7 @@ export interface components {
      *     :param last_updated_by: The user who last modified the task record.
      *     :type last_updated_by: str | None
      */
-    app__sep__plugins__backup_mongo__models__BackupTaskResponse: {
+    app__sep__apps__backup_mongo__models__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
@@ -7888,7 +7888,7 @@ export interface components {
      * @description Backup types.
      * @enum {string}
      */
-    app__sep__plugins__backup_mongo__models__BackupType:
+    app__sep__apps__backup_mongo__models__BackupType:
       | 'pbm_logical'
       | 'pbm_physical'
       | 'pbm_snapshot'
@@ -7899,7 +7899,7 @@ export interface components {
      * @description Represents algorithm of choice whem compressing wirteTiger datafiles.
      * @enum {string}
      */
-    app__sep__plugins__backup_mongo__models__CompressionAlgorithm:
+    app__sep__apps__backup_mongo__models__CompressionAlgorithm:
       | 'gzip'
       | 'snappy'
       | 'lz4'
@@ -7917,7 +7917,7 @@ export interface components {
      *     :param chain_on_failure: Whether to run chained tasks even on failure.
      *     :type chain_on_failure: bool | None
      */
-    app__sep__plugins__backup_pg__models__BackupExecuteWrite: {
+    app__sep__apps__backup_pg__models__BackupExecuteWrite: {
       /** Chain On Failure */
       chain_on_failure?: boolean | null;
       /** Chain Task Names */
@@ -7934,7 +7934,7 @@ export interface components {
      *     :param task_id: The id of the task-history row created by the tasks API.
      *     :type task_id: int | None
      */
-    app__sep__plugins__backup_pg__models__BackupExecutionResponse: {
+    app__sep__apps__backup_pg__models__BackupExecutionResponse: {
       /** Task Id */
       task_id?: number | null;
       /** Task Name */
@@ -7953,7 +7953,7 @@ export interface components {
      *     :param port: The PostgreSQL port the task connects to.
      *     :type port: int | None
      */
-    app__sep__plugins__backup_pg__models__BackupTaskDetailResponse: {
+    app__sep__apps__backup_pg__models__BackupTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
@@ -8009,7 +8009,7 @@ export interface components {
      *     :param last_updated_by: User that last modified the task record.
      *     :type last_updated_by: str | None
      */
-    app__sep__plugins__backup_pg__models__BackupTaskResponse: {
+    app__sep__apps__backup_pg__models__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
       backend: components['schemas']['TaskBackendEnum'];
@@ -8041,13 +8041,13 @@ export interface components {
      * @description Backup types.
      * @enum {string}
      */
-    app__sep__plugins__mysql_backups__models__BackupType: 'M' | 'X' | 'B';
+    app__sep__apps__mysql_backups__models__BackupType: 'M' | 'X' | 'B';
     /**
      * CompressionAlgorithm
      * @description Enumeration for Compression Algorithms.
      * @enum {string}
      */
-    app__sep__plugins__mysql_backups__models__CompressionAlgorithm:
+    app__sep__apps__mysql_backups__models__CompressionAlgorithm:
       | 'zstd'
       | 'lz4'
       | 'gzip'
@@ -8167,7 +8167,7 @@ export interface operations {
       };
     };
   };
-  alert_troubleshooting_alert_troubleshooting_api_list_api_plugins_alert_troubleshooting__get: {
+  alert_troubleshooting_alert_troubleshooting_api_list_api_apps_alert_troubleshooting__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8187,7 +8187,7 @@ export interface operations {
       };
     };
   };
-  alert_troubleshooting_get_schema_api_plugins_alert_troubleshooting_schema_get: {
+  alert_troubleshooting_get_schema_api_apps_alert_troubleshooting_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8207,7 +8207,7 @@ export interface operations {
       };
     };
   };
-  alert_troubleshooting_alert_troubleshooting_api_detail_api_plugins_alert_troubleshooting__service_type___alert_name__get: {
+  alert_troubleshooting_alert_troubleshooting_api_detail_api_apps_alert_troubleshooting__service_type___alert_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8239,7 +8239,7 @@ export interface operations {
       };
     };
   };
-  alerts_alerts_api_index_api_plugins_alerts__get: {
+  alerts_alerts_api_index_api_apps_alerts__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8259,7 +8259,7 @@ export interface operations {
       };
     };
   };
-  alerts_alerts_api_list_backups_api_plugins_alerts_backups_get: {
+  alerts_alerts_api_list_backups_api_apps_alerts_backups_get: {
     parameters: {
       query?: {
         offset?: number;
@@ -8291,7 +8291,7 @@ export interface operations {
       };
     };
   };
-  alerts_alerts_api_get_backup_api_plugins_alerts_backups__backup_id__get: {
+  alerts_alerts_api_get_backup_api_apps_alerts_backups__backup_id__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8322,7 +8322,7 @@ export interface operations {
       };
     };
   };
-  alerts_alerts_api_pagerduty_save_api_plugins_alerts_pagerduty_post: {
+  alerts_alerts_api_pagerduty_save_api_apps_alerts_pagerduty_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -8355,7 +8355,7 @@ export interface operations {
       };
     };
   };
-  alerts_alerts_api_pagerduty_delete_api_plugins_alerts_pagerduty_delete_post: {
+  alerts_alerts_api_pagerduty_delete_api_apps_alerts_pagerduty_delete_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -8375,7 +8375,7 @@ export interface operations {
       };
     };
   };
-  alerts_alerts_api_push_api_plugins_alerts_push_post: {
+  alerts_alerts_api_push_api_apps_alerts_push_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -8408,7 +8408,7 @@ export interface operations {
       };
     };
   };
-  alerts_alerts_api_restore_api_plugins_alerts_restore_post: {
+  alerts_alerts_api_restore_api_apps_alerts_restore_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -8441,7 +8441,7 @@ export interface operations {
       };
     };
   };
-  alters_alters_api_list_api_plugins_alters__get: {
+  alters_alters_api_list_api_apps_alters__get: {
     parameters: {
       query?: {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -8473,7 +8473,7 @@ export interface operations {
       };
     };
   };
-  alters_alters_api_create_api_plugins_alters__post: {
+  alters_alters_api_create_api_apps_alters__post: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -8508,7 +8508,7 @@ export interface operations {
       };
     };
   };
-  alters_get_schema_api_plugins_alters_schema_get: {
+  alters_get_schema_api_apps_alters_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8528,7 +8528,7 @@ export interface operations {
       };
     };
   };
-  alters_alters_api_detail_api_plugins_alters__task_name__get: {
+  alters_alters_api_detail_api_apps_alters__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8559,7 +8559,7 @@ export interface operations {
       };
     };
   };
-  alters_alters_api_update_api_plugins_alters__task_name__put: {
+  alters_alters_api_update_api_apps_alters__task_name__put: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -8596,7 +8596,7 @@ export interface operations {
       };
     };
   };
-  alters_alters_api_delete_api_plugins_alters__task_name__delete: {
+  alters_alters_api_delete_api_apps_alters__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -8625,7 +8625,7 @@ export interface operations {
       };
     };
   };
-  alters_alters_api_execute_api_plugins_alters__task_name__execute_post: {
+  alters_alters_api_execute_api_apps_alters__task_name__execute_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -8660,7 +8660,7 @@ export interface operations {
       };
     };
   };
-  archives__list_api_plugins_archives__get: {
+  archives__list_api_apps_archives__get: {
     parameters: {
       query?: {
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
@@ -8691,7 +8691,7 @@ export interface operations {
       };
     };
   };
-  archives__create_api_plugins_archives__post: {
+  archives__create_api_apps_archives__post: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -8726,7 +8726,7 @@ export interface operations {
       };
     };
   };
-  archives_get_schema_api_plugins_archives_schema_get: {
+  archives_get_schema_api_apps_archives_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8746,7 +8746,7 @@ export interface operations {
       };
     };
   };
-  archives__detail_api_plugins_archives__task_name__get: {
+  archives__detail_api_apps_archives__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8777,7 +8777,7 @@ export interface operations {
       };
     };
   };
-  archives__update_api_plugins_archives__task_name__put: {
+  archives__update_api_apps_archives__task_name__put: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -8814,7 +8814,7 @@ export interface operations {
       };
     };
   };
-  archives__delete_api_plugins_archives__task_name__delete: {
+  archives__delete_api_apps_archives__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -8843,7 +8843,7 @@ export interface operations {
       };
     };
   };
-  archives_archives_api_execute_api_plugins_archives__task_name__execute_post: {
+  archives_archives_api_execute_api_apps_archives__task_name__execute_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -8878,7 +8878,7 @@ export interface operations {
       };
     };
   };
-  atw_atw_api_list_api_plugins_atw__get: {
+  atw_atw_api_list_api_apps_atw__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8898,7 +8898,7 @@ export interface operations {
       };
     };
   };
-  atw_get_schema_api_plugins_atw_schema_get: {
+  atw_get_schema_api_apps_atw_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -8918,7 +8918,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_backup_mongo_api_list_api_plugins_backup_mongo__get: {
+  backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get: {
     parameters: {
       query?: {
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
@@ -8951,7 +8951,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_backup_mongo_api_create_api_plugins_backup_mongo__post: {
+  backup_mongo_backup_mongo_api_create_api_apps_backup_mongo__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -8970,7 +8970,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse'];
+          'application/json': components['schemas']['app__sep__apps__backup_mongo__models__BackupTaskDetailResponse'];
         };
       };
       /** @description Validation Error */
@@ -8984,7 +8984,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_list_api_plugins_backup_mongo_restores__get: {
+  backup_mongo_restore_mongo_api_list_api_apps_backup_mongo_restores__get: {
     parameters: {
       query?: {
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
@@ -9017,7 +9017,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_create_api_plugins_backup_mongo_restores__post: {
+  backup_mongo_restore_mongo_api_create_api_apps_backup_mongo_restores__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -9050,7 +9050,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_get_schema_api_plugins_backup_mongo_restores_schema_get: {
+  backup_mongo_get_schema_api_apps_backup_mongo_restores_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9070,7 +9070,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_detail_api_plugins_backup_mongo_restores__task_name__get: {
+  backup_mongo_restore_mongo_api_detail_api_apps_backup_mongo_restores__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9101,7 +9101,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_update_api_plugins_backup_mongo_restores__task_name__put: {
+  backup_mongo_restore_mongo_api_update_api_apps_backup_mongo_restores__task_name__put: {
     parameters: {
       query?: never;
       header?: never;
@@ -9136,7 +9136,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_delete_api_plugins_backup_mongo_restores__task_name__delete: {
+  backup_mongo_restore_mongo_api_delete_api_apps_backup_mongo_restores__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -9165,7 +9165,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_execute_api_plugins_backup_mongo_restores__task_name__execute_post: {
+  backup_mongo_restore_mongo_api_execute_api_apps_backup_mongo_restores__task_name__execute_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -9200,7 +9200,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_get_schema_api_plugins_backup_mongo_schema_get: {
+  backup_mongo_get_schema_api_apps_backup_mongo_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9220,7 +9220,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_backup_mongo_api_detail_api_plugins_backup_mongo__task_name__get: {
+  backup_mongo_backup_mongo_api_detail_api_apps_backup_mongo__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9237,7 +9237,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupTaskDetailResponse'];
+          'application/json': components['schemas']['app__sep__apps__backup_mongo__models__BackupTaskDetailResponse'];
         };
       };
       /** @description Validation Error */
@@ -9251,7 +9251,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_backup_mongo_api_delete_api_plugins_backup_mongo__task_name__delete: {
+  backup_mongo_backup_mongo_api_delete_api_apps_backup_mongo__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -9280,7 +9280,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_backup_mongo_api_execute_api_plugins_backup_mongo__task_name__execute_post: {
+  backup_mongo_backup_mongo_api_execute_api_apps_backup_mongo__task_name__execute_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -9291,7 +9291,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupExecuteWrite'];
+        'application/json': components['schemas']['app__sep__apps__backup_mongo__models__BackupExecuteWrite'];
       };
     };
     responses: {
@@ -9301,7 +9301,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_mongo__models__BackupExecutionResponse'];
+          'application/json': components['schemas']['app__sep__apps__backup_mongo__models__BackupExecutionResponse'];
         };
       };
       /** @description Validation Error */
@@ -9315,7 +9315,7 @@ export interface operations {
       };
     };
   };
-  backup_pg__list_paginated_api_plugins_backup_pg__get: {
+  backup_pg__list_paginated_api_apps_backup_pg__get: {
     parameters: {
       query?: {
         offset?: number;
@@ -9348,7 +9348,7 @@ export interface operations {
       };
     };
   };
-  backup_pg__create_api_plugins_backup_pg__post: {
+  backup_pg__create_api_apps_backup_pg__post: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -9383,7 +9383,7 @@ export interface operations {
       };
     };
   };
-  backup_pg_get_schema_api_plugins_backup_pg_schema_get: {
+  backup_pg_get_schema_api_apps_backup_pg_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9403,7 +9403,7 @@ export interface operations {
       };
     };
   };
-  backup_pg__detail_api_plugins_backup_pg__task_name__get: {
+  backup_pg__detail_api_apps_backup_pg__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9420,7 +9420,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_pg__models__BackupTaskDetailResponse'];
+          'application/json': components['schemas']['app__sep__apps__backup_pg__models__BackupTaskDetailResponse'];
         };
       };
       /** @description Validation Error */
@@ -9434,7 +9434,7 @@ export interface operations {
       };
     };
   };
-  backup_pg__update_api_plugins_backup_pg__task_name__put: {
+  backup_pg__update_api_apps_backup_pg__task_name__put: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -9471,7 +9471,7 @@ export interface operations {
       };
     };
   };
-  backup_pg__delete_api_plugins_backup_pg__task_name__delete: {
+  backup_pg__delete_api_apps_backup_pg__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -9500,7 +9500,7 @@ export interface operations {
       };
     };
   };
-  backup_pg_backup_pg_api_execute_api_plugins_backup_pg__task_name__execute_post: {
+  backup_pg_backup_pg_api_execute_api_apps_backup_pg__task_name__execute_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -9511,7 +9511,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['app__sep__plugins__backup_pg__models__BackupExecuteWrite'];
+        'application/json': components['schemas']['app__sep__apps__backup_pg__models__BackupExecuteWrite'];
       };
     };
     responses: {
@@ -9521,7 +9521,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__plugins__backup_pg__models__BackupExecutionResponse'];
+          'application/json': components['schemas']['app__sep__apps__backup_pg__models__BackupExecutionResponse'];
         };
       };
       /** @description Validation Error */
@@ -9535,7 +9535,7 @@ export interface operations {
       };
     };
   };
-  checksums__list_api_plugins_checksums__get: {
+  checksums__list_api_apps_checksums__get: {
     parameters: {
       query?: {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -9567,7 +9567,7 @@ export interface operations {
       };
     };
   };
-  checksums__create_api_plugins_checksums__post: {
+  checksums__create_api_apps_checksums__post: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -9602,7 +9602,7 @@ export interface operations {
       };
     };
   };
-  checksums_get_schema_api_plugins_checksums_schema_get: {
+  checksums_get_schema_api_apps_checksums_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9622,7 +9622,7 @@ export interface operations {
       };
     };
   };
-  checksums__detail_api_plugins_checksums__task_name__get: {
+  checksums__detail_api_apps_checksums__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9653,7 +9653,7 @@ export interface operations {
       };
     };
   };
-  checksums__update_api_plugins_checksums__task_name__put: {
+  checksums__update_api_apps_checksums__task_name__put: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -9690,7 +9690,7 @@ export interface operations {
       };
     };
   };
-  checksums__delete_api_plugins_checksums__task_name__delete: {
+  checksums__delete_api_apps_checksums__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -9719,7 +9719,7 @@ export interface operations {
       };
     };
   };
-  checksums_checksums_api_execute_api_plugins_checksums__task_name__execute_post: {
+  checksums_checksums_api_execute_api_apps_checksums__task_name__execute_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -9754,7 +9754,7 @@ export interface operations {
       };
     };
   };
-  dipper_dipper_api_list_api_plugins_dipper__get: {
+  dipper_dipper_api_list_api_apps_dipper__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9774,7 +9774,7 @@ export interface operations {
       };
     };
   };
-  dipper_dipper_api_execute_api_plugins_dipper__post: {
+  dipper_dipper_api_execute_api_apps_dipper__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -9807,7 +9807,7 @@ export interface operations {
       };
     };
   };
-  dipper_dipper_api_form_schema_api_plugins_dipper_form_schema_get: {
+  dipper_dipper_api_form_schema_api_apps_dipper_form_schema_get: {
     parameters: {
       query: {
         service_id: number;
@@ -9839,7 +9839,7 @@ export interface operations {
       };
     };
   };
-  dipper_get_schema_api_plugins_dipper_schema_get: {
+  dipper_get_schema_api_apps_dipper_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9859,7 +9859,7 @@ export interface operations {
       };
     };
   };
-  dipper_dipper_api_script_preview_api_plugins_dipper_script_preview_get: {
+  dipper_dipper_api_script_preview_api_apps_dipper_script_preview_get: {
     parameters: {
       query: {
         service_id: number;
@@ -9891,7 +9891,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_plugin_tasks_api_plugins_inventory__get: {
+  inventory_inventory_plugin_tasks_api_apps_inventory__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9911,7 +9911,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_available_syncers_api_plugins_inventory_available_syncers__get: {
+  inventory_inventory_available_syncers_api_apps_inventory_available_syncers__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9931,7 +9931,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_node_system_observation_api_plugins_inventory_nodes__node_id__system_observation_get: {
+  inventory_inventory_node_system_observation_api_apps_inventory_nodes__node_id__system_observation_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9962,7 +9962,7 @@ export interface operations {
       };
     };
   };
-  inventory_get_schema_api_plugins_inventory_schema_get: {
+  inventory_get_schema_api_apps_inventory_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9982,7 +9982,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_service_system_observation_api_plugins_inventory_services__service_id__system_observation_get: {
+  inventory_inventory_service_system_observation_api_apps_inventory_services__service_id__system_observation_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10013,7 +10013,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_sync_trigger_api_plugins_inventory_sync__post: {
+  inventory_inventory_sync_trigger_api_apps_inventory_sync__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10044,7 +10044,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_sync_status_api_plugins_inventory_sync_status__get: {
+  inventory_inventory_sync_status_api_apps_inventory_sync_status__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10064,7 +10064,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_list_entity_api_plugins_inventory__entity___get: {
+  inventory_inventory_list_entity_api_apps_inventory__entity___get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10095,7 +10095,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_create_entity_api_plugins_inventory__entity___post: {
+  inventory_inventory_create_entity_api_apps_inventory__entity___post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10126,39 +10126,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_get_entity_api_plugins_inventory__entity___item_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        entity: string;
-        item_id: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': unknown;
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  inventory_inventory_update_entity_api_plugins_inventory__entity___item_id__put: {
+  inventory_inventory_get_entity_api_apps_inventory__entity___item_id__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10190,7 +10158,7 @@ export interface operations {
       };
     };
   };
-  inventory_inventory_delete_entity_api_plugins_inventory__entity___item_id__delete: {
+  inventory_inventory_update_entity_api_apps_inventory__entity___item_id__put: {
     parameters: {
       query?: never;
       header?: never;
@@ -10222,7 +10190,39 @@ export interface operations {
       };
     };
   };
-  mysql_backups__list_paginated_api_plugins_mysql_backups__get: {
+  inventory_inventory_delete_entity_api_apps_inventory__entity___item_id__delete: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        entity: string;
+        item_id: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': unknown;
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  mysql_backups__list_paginated_api_apps_mysql_backups__get: {
     parameters: {
       query?: {
         offset?: number;
@@ -10255,7 +10255,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups__create_api_plugins_mysql_backups__post: {
+  mysql_backups__create_api_apps_mysql_backups__post: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -10290,7 +10290,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_restore__list_paginated_api_plugins_mysql_backups_restore__get: {
+  mysql_backups_restore__list_paginated_api_apps_mysql_backups_restore__get: {
     parameters: {
       query?: {
         offset?: number;
@@ -10323,7 +10323,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_restore__create_api_plugins_mysql_backups_restore__post: {
+  mysql_backups_restore__create_api_apps_mysql_backups_restore__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10356,7 +10356,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_restore_get_schema_api_plugins_mysql_backups_restore_schema_get: {
+  mysql_backups_restore_get_schema_api_apps_mysql_backups_restore_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10376,7 +10376,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_restore__detail_api_plugins_mysql_backups_restore__task_name__get: {
+  mysql_backups_restore__detail_api_apps_mysql_backups_restore__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10407,7 +10407,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_restore__update_api_plugins_mysql_backups_restore__task_name__put: {
+  mysql_backups_restore__update_api_apps_mysql_backups_restore__task_name__put: {
     parameters: {
       query?: never;
       header?: never;
@@ -10442,7 +10442,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_restore__delete_api_plugins_mysql_backups_restore__task_name__delete: {
+  mysql_backups_restore__delete_api_apps_mysql_backups_restore__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -10471,7 +10471,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_restore_mysql_backups_restores_api_execute_api_plugins_mysql_backups_restore__task_name__execute_post: {
+  mysql_backups_restore_mysql_backups_restores_api_execute_api_apps_mysql_backups_restore__task_name__execute_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10506,7 +10506,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_get_schema_api_plugins_mysql_backups_schema_get: {
+  mysql_backups_get_schema_api_apps_mysql_backups_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10526,7 +10526,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups__detail_api_plugins_mysql_backups__task_name__get: {
+  mysql_backups__detail_api_apps_mysql_backups__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10557,7 +10557,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups__update_api_plugins_mysql_backups__task_name__put: {
+  mysql_backups__update_api_apps_mysql_backups__task_name__put: {
     parameters: {
       query?: {
         check_connectivity?: boolean;
@@ -10594,7 +10594,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups__delete_api_plugins_mysql_backups__task_name__delete: {
+  mysql_backups__delete_api_apps_mysql_backups__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -10623,7 +10623,7 @@ export interface operations {
       };
     };
   };
-  mysql_backups_mysql_backups_api_execute_api_plugins_mysql_backups__task_name__execute_post: {
+  mysql_backups_mysql_backups_api_execute_api_apps_mysql_backups__task_name__execute_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10658,7 +10658,7 @@ export interface operations {
       };
     };
   };
-  report_report_config_api_plugins_report_config_get: {
+  report_report_config_api_apps_report_config_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10678,7 +10678,7 @@ export interface operations {
       };
     };
   };
-  report_report_generate_json_api_api_plugins_report_generate_json_get: {
+  report_report_generate_json_api_api_apps_report_generate_json_get: {
     parameters: {
       query?: {
         since?: string;
@@ -10713,7 +10713,7 @@ export interface operations {
       };
     };
   };
-  report_report_generate_pdf_api_api_plugins_report_generate_pdf_post: {
+  report_report_generate_pdf_api_api_apps_report_generate_pdf_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10722,7 +10722,7 @@ export interface operations {
     };
     requestBody?: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post'];
+        'application/x-www-form-urlencoded': components['schemas']['Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post'];
       };
     };
     responses: {
@@ -10746,7 +10746,7 @@ export interface operations {
       };
     };
   };
-  report_report_upload_api_api_plugins_report_upload_post: {
+  report_report_upload_api_api_apps_report_upload_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10755,7 +10755,7 @@ export interface operations {
     };
     requestBody?: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_report_report_upload_api_api_plugins_report_upload_post'];
+        'application/x-www-form-urlencoded': components['schemas']['Body_report_report_upload_api_api_apps_report_upload_post'];
       };
     };
     responses: {
@@ -10779,7 +10779,7 @@ export interface operations {
       };
     };
   };
-  snippets_snippets_api_list_api_plugins_snippets__get: {
+  snippets_snippets_api_list_api_apps_snippets__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10799,7 +10799,7 @@ export interface operations {
       };
     };
   };
-  snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch: {
+  snippets_snippets_api_batch_approve_api_apps_snippets_approvals_patch: {
     parameters: {
       query?: never;
       header?: never;
@@ -10832,7 +10832,7 @@ export interface operations {
       };
     };
   };
-  snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get: {
+  snippets__snippets_capabilities_provider_api_apps_snippets_capabilities_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10852,7 +10852,7 @@ export interface operations {
       };
     };
   };
-  snippets_snippets_api_refresh_api_plugins_snippets_refresh_post: {
+  snippets_snippets_api_refresh_api_apps_snippets_refresh_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -10872,7 +10872,7 @@ export interface operations {
       };
     };
   };
-  snippets_get_schema_api_plugins_snippets_schema_get: {
+  snippets_get_schema_api_apps_snippets_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -10892,7 +10892,7 @@ export interface operations {
       };
     };
   };
-  snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put: {
+  snippets_snippets_api_approve_api_apps_snippets_snippet_approval_put: {
     parameters: {
       query: {
         /** @description Snippet filename (relative path under snippets root). */
@@ -10924,7 +10924,7 @@ export interface operations {
       };
     };
   };
-  snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete: {
+  snippets_snippets_api_remove_approval_api_apps_snippets_snippet_approval_delete: {
     parameters: {
       query: {
         /** @description Snippet filename (relative path under snippets root). */
@@ -10954,7 +10954,7 @@ export interface operations {
       };
     };
   };
-  snippets_snippets_api_download_api_plugins_snippets_snippet_download_get: {
+  snippets_snippets_api_download_api_apps_snippets_snippet_download_get: {
     parameters: {
       query: {
         /** @description Snippet filename (relative path under snippets root). */
@@ -10986,7 +10986,7 @@ export interface operations {
       };
     };
   };
-  snippets_snippets_api_script_execute_api_plugins_snippets_snippet_execute_post: {
+  snippets_snippets_api_script_execute_api_apps_snippets_snippet_execute_post: {
     parameters: {
       query: {
         /** @description Script filename (relative path under the script dir). */
@@ -11022,7 +11022,7 @@ export interface operations {
       };
     };
   };
-  snippets_snippets_api_script_history_api_plugins_snippets_snippet_history_get: {
+  snippets_snippets_api_script_history_api_apps_snippets_snippet_history_get: {
     parameters: {
       query: {
         /** @description Script filename (relative path under the script dir). */
@@ -11054,7 +11054,7 @@ export interface operations {
       };
     };
   };
-  snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get: {
+  snippets_snippets_api_script_preview_api_apps_snippets_snippet_preview_get: {
     parameters: {
       query: {
         /** @description Snippet filename (relative path under snippets root). */
@@ -11086,7 +11086,7 @@ export interface operations {
       };
     };
   };
-  snippets_snippets_api_script_schema_api_plugins_snippets_snippet_schema_get: {
+  snippets_snippets_api_script_schema_api_apps_snippets_snippet_schema_get: {
     parameters: {
       query: {
         /** @description Script filename (relative path under the script dir). */
@@ -11118,7 +11118,7 @@ export interface operations {
       };
     };
   };
-  task_manager_tasks_api_list_api_plugins_tasks__get: {
+  task_manager_tasks_api_list_api_apps_tasks__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -11138,7 +11138,7 @@ export interface operations {
       };
     };
   };
-  task_manager_get_schema_api_plugins_tasks_schema_get: {
+  task_manager_get_schema_api_apps_tasks_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -11158,7 +11158,7 @@ export interface operations {
       };
     };
   };
-  task_manager_tasks_api_detail_api_plugins_tasks__task_name__get: {
+  task_manager_tasks_api_detail_api_apps_tasks__task_name__get: {
     parameters: {
       query?: {
         owner?: components['schemas']['TaskOwner'] | null;

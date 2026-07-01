@@ -172,7 +172,7 @@ exclude_dirs = [
     "build",
     "venv",
     "app/tests/",
-    "app/sep/plugins/dipper/payloads/",
+    "app/sep/apps/dipper/payloads/",
     "app/sep/sync/syncers/system_facts/payload.py",  # host-run payload; reads packages via rpm/dpkg-query (literal argv)
 ]
 
@@ -292,7 +292,7 @@ order-by-type = false
 "celery.py" = ["ARG001"]
 "test_*.py" = ["S", "ARG001", "ARG002", "ANN", "SLF001"]
 "conftest.py" = ["S", "ARG001", "ARG002"]
-"tests/app/sep/plugins/framework/contract_suite.py" = ["S"] # pytest contract-suite mixin uses bare assert
+"tests/app/sep/apps/framework/contract_suite.py" = ["S"] # pytest contract-suite mixin uses bare assert
 "scripts/*.py" = [
     "T201", # CLI scripts use print() for user-facing output
     "S603", # CLI scripts coordinate git/gh/make subprocesses with literal arg lists
@@ -333,7 +333,7 @@ omit = [
     # Apps the scaffolder tests generate under the real source tree and delete
     # in teardown: measuring them leaves dead source paths in .coverage that
     # break `coverage json` (the PR coverage-comment step) with "No source for code".
-    "app/sep/plugins/_scaffold_*/*",
+    "app/sep/apps/_scaffold_*/*",
 ]
 
 [tool.coverage.report]

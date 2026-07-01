@@ -20,7 +20,7 @@ import time
 
 import pytest
 
-from app.sep.plugins.inventory.models import INVENTORY_SYNC_TASK_NAME
+from app.sep.apps.inventory.models import INVENTORY_SYNC_TASK_NAME
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
     NOMAD_EXEC_ARTIFACT,

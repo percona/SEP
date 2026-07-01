@@ -17,7 +17,7 @@
 
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
-import type { PluginField } from '../types';
+import type { AppField } from '../types';
 import { evaluatePredicate, getGateFieldNames } from '../utils/predicateEvaluator';
 import { watchValuesByName } from '../utils/watchValuesByName';
 
@@ -33,7 +33,7 @@ export interface ConditionalFieldState {
  * When `isHidden` becomes true the hook unregisters the field from
  * react-hook-form so its stale value is excluded from submission.
  */
-export function useConditionalField(field: PluginField): ConditionalFieldState {
+export function useConditionalField(field: AppField): ConditionalFieldState {
   const { control, unregister } = useFormContext();
 
   const watchedNames = useMemo<string[]>(() => {
