@@ -56,9 +56,9 @@ The UI does not submit arbitrary shell commands. SEP uses two main execution pat
 
 **Checksums example (canonical Path B):**
 
-1. **Create:** `POST /api/apps/checksums/` — `build_checksum_task` assembles `pt-table-checksum` with args from inventory (`app/sep/apps/checksums/deps.py`, `_assemble_checksum_payload`).
+1. **Create:** `POST /api/apps/checksums/` — `build_checksums_spec` assembles `pt-table-checksum` with args from inventory (`app/sep/apps/checksums/spec.py`), with the legacy Jinja form path using (`app/sep/apps/checksums/deps.py`, `_assemble_checksum_payload`).
 2. **Persist:** `POST /api/tasks/` — task row with `owner=CHECKSUMS`, `backend=PROXY`, `data.task=run-command`.
-3. **Execute:** `POST /api/tasks/execute/{task_name}` — body may only contain `eta`, `chain_task_names`; command comes from stored task (`app/sep/apps/checksums/routes.py`, `checksums_execute`).
+3. **Execute:** `POST /api/apps/checksums/{task_name}/execute` — body may only contain `eta`, `chain_task_names`, `chain_on_failure`; command comes from stored task (`app/sep/apps/framework/api.py`, `derive_execute_route`, which posts to `POST /api/tasks/execute/{task_name}`).
 
 The same two-phase pattern applies to **alters** (`command: pt-online-schema-change`).
 
