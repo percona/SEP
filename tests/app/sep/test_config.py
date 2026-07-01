@@ -22,17 +22,14 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import PMMSettings
 from app.sep.config import (
     App,
     AppDrainSettings,
-    DeprecatedPMMConfig,
     SEPSettings,
     SessionOptions,
+    SyncerExtraKwargs,
+    SyncOptions,
 )
-
-PMM_ENDPOINT = "https://pmm.example.com"
-CORE_PMM_ENDPOINT = "https://core.example.com"
 
 
 class TestSessionOptions:
@@ -85,47 +82,45 @@ class TestFooterTemplate:
         assert settings.FOOTER_TEMPLATE is tmpl
 
 
-class TestForwardDeprecatedPMMFields:
-    """Test the ``_forward_deprecated_pmm_fields`` model validator."""
+class TestDeprecatedPMMRemoved:
+    """The deprecated ``SEP.PMM`` section is gone; PMM lives only top-level."""
 
-    def test_forwards_fields_to_core_settings(self):
-        """Assert deprecated ``SEP.PMM`` fields are forwarded to ``settings.PMM``."""
-        core_pmm = PMMSettings()
-        with patch("app.sep.config.settings") as mock_settings:
-            mock_settings.PMM = core_pmm
-            SEPSettings(PMM={"ENDPOINT": PMM_ENDPOINT})
-        assert mock_settings.PMM.endpoint == PMM_ENDPOINT
+    def test_sep_settings_has_no_pmm_field(self):
+        """``SEPSettings`` no longer declares a ``PMM`` field."""
+        assert "PMM" not in SEPSettings.model_fields
 
-    def test_core_settings_take_precedence(self):
-        """Assert top-level ``PMM`` fields are not overwritten by ``SEP.PMM``."""
-        core_pmm = PMMSettings(endpoint=CORE_PMM_ENDPOINT)
-        with patch("app.sep.config.settings") as mock_settings:
-            mock_settings.PMM = core_pmm
-            SEPSettings(PMM={"ENDPOINT": PMM_ENDPOINT})
-        assert mock_settings.PMM.endpoint == CORE_PMM_ENDPOINT
+    def test_stray_sep_pmm_mapping_is_rejected(self):
+        """A leftover ``SEP.PMM`` mapping is rejected at construction.
 
-    def test_deprecation_warning_logged(self):
-        """Assert a deprecation warning is logged when fields are forwarded."""
-        core_pmm = PMMSettings()
-        with (
-            patch("app.sep.config.settings") as mock_settings,
-            patch("app.sep.config.logger") as mock_logger,
-        ):
-            mock_settings.PMM = core_pmm
-            SEPSettings(PMM={"ENDPOINT": PMM_ENDPOINT})
-        mock_logger.warning.assert_called_once()
+        Connection config must now come from the top-level ``PMM`` section. The
+        stale ``SEP.PMM`` block (including the ``SEP__PMM__*`` env-var path) is
+        rejected with a ``ValidationError`` so upgraded deployments fail fast at
+        startup instead of silently carrying dead config.
+        """
+        with pytest.raises(ValidationError, match="SEP.PMM"):
+            SEPSettings(PMM={"ENDPOINT": "https://pmm.example.com"})
 
-    def test_no_op_when_no_deprecated_fields_set(self):
-        """Assert ``settings.PMM`` is not modified when no deprecated fields are set."""
-        core_pmm = PMMSettings()
-        with patch("app.sep.config.settings") as mock_settings:
-            mock_settings.PMM = core_pmm
-            SEPSettings(PMM=DeprecatedPMMConfig())
-        assert mock_settings.PMM is core_pmm
+    def test_clean_build_without_stray_pmm(self):
+        """A clean ``SEPSettings`` build (no ``PMM`` key) constructs without error."""
+        assert SEPSettings() is not None
 
 
-class TestPluginModuleNameDeprecation:
-    """Test the legacy ``backup``/``backups`` MODULE_NAME shim on ``App``."""
+class TestPerSyncerPMMRemoved:
+    """The per-syncer ``pmm:`` override is gone; PMM syncers read top-level ``PMM``."""
+
+    def test_stray_pmm_on_syncer_is_rejected(self):
+        """A leftover ``pmm`` key on a ``SYNCERS[]`` entry is rejected."""
+        with pytest.raises(ValidationError, match="pmm"):
+            SyncOptions(syncer="PMMSyncer", pmm={"endpoint": "https://pmm.example.com"})
+
+    def test_stray_pmm_on_extra_kwargs_is_rejected(self):
+        """A leftover ``pmm`` key in ``SYNCER_EXTRA_KWARGS`` is rejected."""
+        with pytest.raises(ValidationError, match="pmm"):
+            SyncerExtraKwargs(pmm={"api_key": "secret"})
+
+
+class TestPluginModuleNameResolution:
+    """``App.MODULE_NAME`` resolution after the legacy backup shim removal."""
 
     @pytest.mark.parametrize("legacy_value", ["backup", "backups"])
     def test_legacy_value_is_remapped_to_mysql_backups(self, legacy_value: str):
@@ -155,14 +150,12 @@ class TestPluginModuleNameDeprecation:
             ("backup_pg", "app.sep.apps.backup_pg"),
         ],
     )
-    def test_sibling_backup_module_is_not_remapped(
+    def test_sibling_backup_module_resolves(
         self, sibling_value: str, expected_module: str
     ):
-        """Assert sibling plugins whose names begin with ``backup`` are unaffected."""
-        with patch("app.sep.config.logger") as mock_logger:
-            plugin = App(name="Backups", module_name=sibling_value)
+        """Sibling plugins whose names begin with ``backup`` resolve unchanged."""
+        plugin = App(name="Backups", module_name=sibling_value)
         assert plugin.module_name == expected_module
-        mock_logger.warning.assert_not_called()
 
 
 class TestPluginNameOptional:

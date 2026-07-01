@@ -33,6 +33,7 @@ from app.core.settings_override.api.routes import ClassEntry
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils.date_time import utc_now
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import IsApiAdmin, RequireBearerForUnsafeMethods, SessionDep, TaskAPI
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
@@ -45,6 +46,7 @@ SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
     (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
     (SettingClassEnum.SNIPPETS_SETTINGS, SnippetsSettings, snippets_settings),
     (SettingClassEnum.MESSAGES_SETTINGS, MessagesSettings, messages_settings),
+    (SettingClassEnum.ALERTS_SETTINGS, AlertsSettings, alerts_settings),
 ]
 
 router = build_settings_router(
