@@ -85,13 +85,13 @@ async function mockReportRoutes(page: Page) {
     if (pathname.includes('/users/me')) {
       return route.fulfill({ json: MOCK_USER });
     }
-    if (pathname === '/api/plugins/report/config') {
+    if (pathname === '/api/apps/report/config') {
       return route.fulfill({ json: MOCK_CONFIG });
     }
-    if (pathname === '/api/plugins/report/generate/json' && req.method() === 'GET') {
+    if (pathname === '/api/apps/report/generate/json' && req.method() === 'GET') {
       return route.fulfill({ json: MOCK_REPORT });
     }
-    if (pathname === '/api/plugins/report/generate/pdf' && req.method() === 'POST') {
+    if (pathname === '/api/apps/report/generate/pdf' && req.method() === 'POST') {
       return route.fulfill({
         status: 200,
         contentType: 'application/pdf',
@@ -99,7 +99,7 @@ async function mockReportRoutes(page: Page) {
         headers: { 'Content-Disposition': 'attachment; filename="report.pdf"' },
       });
     }
-    if (pathname === '/api/plugins/report/upload' && req.method() === 'POST') {
+    if (pathname === '/api/apps/report/upload' && req.method() === 'POST') {
       return route.fulfill({ json: { sys_id: 'smoke-abc123', status: 'uploaded' } });
     }
 
@@ -141,7 +141,7 @@ test.describe('Report plugin smoke', () => {
   test('PDF download button calls generate/pdf and shows no error', async ({ page }) => {
     let pdfRequested = false;
     await mockReportRoutes(page);
-    await page.route('**/api/plugins/report/generate/pdf', (route) => {
+    await page.route('**/api/apps/report/generate/pdf', (route) => {
       pdfRequested = true;
       return route.fulfill({
         status: 200,

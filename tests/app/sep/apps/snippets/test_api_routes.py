@@ -44,7 +44,7 @@ from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models import Snippet
 from app.tasks.models import TaskHistoryStatusEnum
 
-API_BASE = "/api/plugins/snippets"
+API_BASE = "/api/apps/snippets"
 
 
 async def _seed_gated_snippet(
@@ -119,7 +119,7 @@ class TestSnippetsApprovalApiReviewContracts:
 
 @pytest.mark.asyncio
 class TestSnippetsApiList:
-    """Tests for ``GET /api/plugins/snippets/``."""
+    """Tests for ``GET /api/apps/snippets/``."""
 
     async def test_returns_empty_list_when_no_snippets(
         self, test_client, session: AsyncSession, snippets_dir
@@ -150,7 +150,7 @@ class TestSnippetsApiList:
 
 @pytest.mark.asyncio
 class TestSnippetsAppSchema:
-    """Tests for ``GET /api/plugins/snippets/schema``."""
+    """Tests for ``GET /api/apps/snippets/schema``."""
 
     async def test_returns_static_plugin_schema(self, test_client):
         """The static plugin schema declares no forms but a populated list view."""
@@ -211,7 +211,7 @@ class TestSnippetsApiSnippetFilenameQueryParam:
 
 @pytest.mark.asyncio
 class TestSnippetsApiPerSnippetSchema:
-    """Tests for ``GET /api/plugins/snippets/snippet/schema``."""
+    """Tests for ``GET /api/apps/snippets/snippet/schema``."""
 
     async def test_returns_404_for_unknown_snippet(self, test_client):
         """A missing snippet filename surfaces as a 404."""
@@ -255,13 +255,13 @@ class TestSnippetsApiPerSnippetSchema:
         )
         assert preview_field["label"] == "Snippet file"
         assert preview_field["endpoint_url"] == (
-            f"/plugins/snippets/snippet/preview?snippet_filename={snippet.filename}"
+            f"/apps/snippets/snippet/preview?snippet_filename={snippet.filename}"
         )
 
 
 @pytest.mark.asyncio
 class TestSnippetsApiScriptPreview:
-    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/preview``."""
+    """Tests for ``GET /api/apps/snippets/{snippet_filename}/preview``."""
 
     async def test_returns_preview_with_language_hint(
         self, test_client, create_snippet
@@ -324,7 +324,7 @@ class TestSnippetsApiScriptPreview:
 
 @pytest.mark.asyncio
 class TestSnippetsApiDownload:
-    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/download``."""
+    """Tests for ``GET /api/apps/snippets/{snippet_filename}/download``."""
 
     async def test_returns_raw_file_with_attachment_headers(
         self, test_client, create_snippet, snippets_dir
@@ -385,7 +385,7 @@ class TestSnippetsApiDownload:
 
 @pytest.mark.asyncio
 class TestSnippetsApiHistory:
-    """Tests for ``GET /api/plugins/snippets/{snippet_filename}/history``."""
+    """Tests for ``GET /api/apps/snippets/{snippet_filename}/history``."""
 
     async def test_history_passes_filter_through(
         self, test_client, mock_task_api_dep, create_snippet
@@ -424,7 +424,7 @@ class TestSnippetsApiHistory:
 
 @pytest.mark.asyncio
 class TestSnippetsApiExecute:
-    """Tests for ``POST /api/plugins/snippets/{snippet_filename}/execute``."""
+    """Tests for ``POST /api/apps/snippets/{snippet_filename}/execute``."""
 
     async def test_returns_403_when_snippet_not_approved(
         self, test_client, mock_task_api_dep, create_snippet
@@ -699,7 +699,7 @@ class TestSnippetsApiExecute:
 
 @pytest.mark.asyncio
 class TestSnippetsApiPutApproval:
-    """Tests for ``PUT /api/plugins/snippets/{filename}/approval``."""
+    """Tests for ``PUT /api/apps/snippets/{filename}/approval``."""
 
     async def test_approves_unapproved_snippet(
         self, api_admin_client, create_snippet, admin_user, session: AsyncSession
@@ -801,7 +801,7 @@ class TestSnippetsApiPutApproval:
 
 @pytest.mark.asyncio
 class TestSnippetsApiDeleteApproval:
-    """Tests for ``DELETE /api/plugins/snippets/{filename}/approval``."""
+    """Tests for ``DELETE /api/apps/snippets/{filename}/approval``."""
 
     async def test_removes_approval(
         self, api_admin_client, create_snippet, admin_user, session: AsyncSession
@@ -895,7 +895,7 @@ class TestSnippetsApiDeleteApproval:
 
 @pytest.mark.asyncio
 class TestSnippetsApiPatchApprovals:
-    """Tests for ``PATCH /api/plugins/snippets/approvals``."""
+    """Tests for ``PATCH /api/apps/snippets/approvals``."""
 
     URL = f"{API_BASE}/approvals"
 
@@ -1116,7 +1116,7 @@ class TestSnippetsApiPatchApprovals:
 
 @pytest.mark.asyncio
 class TestSnippetsApiCapabilities:
-    """Tests for ``GET /api/plugins/snippets/capabilities``."""
+    """Tests for ``GET /api/apps/snippets/capabilities``."""
 
     URL = f"{API_BASE}/capabilities"
 
@@ -1156,7 +1156,7 @@ class TestSnippetsApiCapabilities:
 
 @pytest.mark.asyncio
 class TestSnippetsApiRefresh:
-    """Tests for ``POST /api/plugins/snippets/refresh``."""
+    """Tests for ``POST /api/apps/snippets/refresh``."""
 
     URL = f"{API_BASE}/refresh"
 
@@ -1255,7 +1255,7 @@ class TestSnippetsApiRefresh:
     ):
         """Cookie-auth admin POST without Bearer header is rejected with 401.
 
-        The framework Bearer gate on ``/api/plugins/*`` must fire before the
+        The framework Bearer gate on ``/api/apps/*`` must fire before the
         route's business logic, so the refresh helper is never invoked.
         """
         enable_manual_sync(value=True)
@@ -1274,9 +1274,9 @@ class TestSnippetsApiRefresh:
     @pytest.mark.parametrize(
         ("method", "path"),
         [
-            ("PUT", "/api/plugins/snippets/snippet/approval"),
-            ("DELETE", "/api/plugins/snippets/snippet/approval"),
-            ("PATCH", "/api/plugins/snippets/approvals"),
+            ("PUT", "/api/apps/snippets/snippet/approval"),
+            ("DELETE", "/api/apps/snippets/snippet/approval"),
+            ("PATCH", "/api/apps/snippets/approvals"),
         ],
     )
     async def test_cookie_only_approval_mutations_are_gate_rejected(
@@ -1362,7 +1362,7 @@ class TestSnippetsApiNestedFilenameContract:
         # The baked URL must round-trip through the same builder shape so a
         # client following it lands on the right preview endpoint.
         assert preview_field["endpoint_url"] == (
-            "/plugins/snippets/snippet/preview?snippet_filename=diag%2Fslow-query.sh"
+            "/apps/snippets/snippet/preview?snippet_filename=diag%2Fslow-query.sh"
         )
 
     async def test_get_script_preview(self, test_client, create_snippet):

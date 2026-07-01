@@ -117,7 +117,7 @@ class PeriodicTaskSummary(BaseModel):
 
 
 class TaskDetailResponse(BaseModel):
-    """Represent the aggregate payload for ``GET /api/plugins/tasks/{task_name}``.
+    """Represent the aggregate payload for ``GET /api/apps/tasks/{task_name}``.
 
     Bundle the task definition, execution history, periodic schedules, and
     executor host metadata into a single response for the React detail page.

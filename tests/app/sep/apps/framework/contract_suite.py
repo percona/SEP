@@ -90,9 +90,9 @@ def app_base_url(app_def: TaskExecutionApp) -> str:
     """Return the production-shape mount base for ``app_def``'s derived router.
 
     :param app_def: The app definition whose ``uri_path`` sets the mount prefix.
-    :return: The ``/api/plugins{uri_path}`` base the contract client requests.
+    :return: The ``/api/apps{uri_path}`` base the contract client requests.
     """
-    return f"/api/plugins{app_def.uri_path}"
+    return f"/api/apps{app_def.uri_path}"
 
 
 def routes_of(app_def: TaskExecutionApp) -> set[tuple[str, str]]:
@@ -123,10 +123,10 @@ def mount_app(app_def: TaskExecutionApp) -> FastAPI:
     """Mount the app's derived router under the production-shape router tree.
 
     :param app_def: The app definition whose ``api_router`` is mounted under
-        ``/api/plugins{uri_path}`` behind the ``IsApiAuthenticated`` router guard.
+        ``/api/apps{uri_path}`` behind the ``IsApiAuthenticated`` router guard.
     :return: A fresh ``FastAPI`` app carrying only this definition's routes.
     """
-    apps_router = APIRouter(prefix="/plugins")
+    apps_router = APIRouter(prefix="/apps")
     apps_router.include_router(app_def.api_router, prefix=app_def.uri_path)
     api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
     api_router.include_router(apps_router)

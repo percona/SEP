@@ -15,7 +15,7 @@
 
 """Define the JSON API router for the Inventory plugin.
 
-Mounted at ``/api/plugins/inventory/`` via ``apps_router`` in
+Mounted at ``/api/apps/inventory/`` via ``apps_router`` in
 ``app/sep/api/router.py``. Like other plugin proxies, these routes rely on the
 parent ``api_router`` for API authentication. The ``schema_endpoint`` helper
 additionally attaches ``IsApiAuthenticated`` to the schema route only; list,

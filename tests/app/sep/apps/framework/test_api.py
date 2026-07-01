@@ -211,7 +211,7 @@ def _mount_plugin_router(plugin_router: APIRouter, plugin_prefix: str) -> FastAP
     """Mount ``plugin_router`` under the production-shape router tree.
 
     Mirror ``app/sep/api/router.py`` exactly: plugin router → plugins router
-    (``/plugins``) → api router (``/api`` with ``IsApiAuthenticated``) →
+    (``/apps``) → api router (``/api`` with ``IsApiAuthenticated``) →
     ``FastAPI``. Return a fresh instance on every call so tests never touch
     the real ``sep_app``.
 
@@ -220,7 +220,7 @@ def _mount_plugin_router(plugin_router: APIRouter, plugin_prefix: str) -> FastAP
         on the shared plugins router (for example ``/test-schema-endpoint``).
     :return: A ``FastAPI`` application instance with the composed router tree.
     """
-    apps_router = APIRouter(prefix="/plugins")
+    apps_router = APIRouter(prefix="/apps")
     apps_router.include_router(plugin_router, prefix=plugin_prefix)
     api_router = APIRouter(prefix="/api", dependencies=[IsApiAuthenticated])
     api_router.include_router(apps_router)
@@ -374,7 +374,7 @@ class TestSchemaEndpointRouterComposition:
         app.dependency_overrides[get_api_authenticated_user] = spy
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/plugins/test-schema-endpoint/schema")
+        response = client.get("/api/apps/test-schema-endpoint/schema")
         assert response.status_code == status.HTTP_200_OK
         assert call_count["n"] == 1
 
@@ -386,7 +386,7 @@ class TestSchemaEndpointAuthenticated:
         self, authed_client: TestClient
     ) -> None:
         """Assert an authed GET returns the full serialised schema payload."""
-        response = authed_client.get("/api/plugins/test-schema-endpoint/schema")
+        response = authed_client.get("/api/apps/test-schema-endpoint/schema")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == _TEST_SCHEMA.model_dump(
@@ -395,13 +395,13 @@ class TestSchemaEndpointAuthenticated:
 
     def test_response_content_type_is_json(self, authed_client: TestClient) -> None:
         """Assert the response carries a JSON ``content-type``."""
-        response = authed_client.get("/api/plugins/test-schema-endpoint/schema")
+        response = authed_client.get("/api/apps/test-schema-endpoint/schema")
 
         assert response.headers["content-type"].startswith("application/json")
 
     def test_response_uses_snake_case_keys(self, authed_client: TestClient) -> None:
         """Assert the response emits snake_case wire keys (not camelCase)."""
-        body = authed_client.get("/api/plugins/test-schema-endpoint/schema").json()
+        body = authed_client.get("/api/apps/test-schema-endpoint/schema").json()
 
         assert "display_name" in body
         assert "list_view" in body
@@ -410,7 +410,7 @@ class TestSchemaEndpointAuthenticated:
 
     def test_field_discriminator_key_is_type(self, authed_client: TestClient) -> None:
         """Assert each field carries ``type`` (not ``field_type``) as its discriminator."""
-        body = authed_client.get("/api/plugins/test-schema-endpoint/schema").json()
+        body = authed_client.get("/api/apps/test-schema-endpoint/schema").json()
 
         assert body["forms"][0]["fields"][0]["type"] == "bool"
         assert "field_type" not in body["forms"][0]["fields"][0]
@@ -419,7 +419,7 @@ class TestSchemaEndpointAuthenticated:
         """Assert the OpenAPI spec documents the ``AppSchema`` response."""
         openapi = authed_client.get("/openapi.json").json()
 
-        path = openapi["paths"]["/api/plugins/test-schema-endpoint/schema"]
+        path = openapi["paths"]["/api/apps/test-schema-endpoint/schema"]
         response_ref = path["get"]["responses"]["200"]["content"]["application/json"][
             "schema"
         ]["$ref"]
@@ -454,9 +454,7 @@ class TestSchemaEndpointAuthenticated:
         self, authed_empty_forms_client: TestClient
     ) -> None:
         """Assert a schema with no form sections round-trips as ``forms: []``."""
-        body = authed_empty_forms_client.get(
-            "/api/plugins/test-empty-forms/schema"
-        ).json()
+        body = authed_empty_forms_client.get("/api/apps/test-empty-forms/schema").json()
 
         assert body["forms"] == []
 
@@ -467,7 +465,7 @@ class TestSchemaEndpointUnauthenticated:
     def test_unauthed_get_returns_401_json(self, unauthed_client: TestClient) -> None:
         """Assert unauthenticated GET returns 401 JSON, not a 303 redirect."""
         response = unauthed_client.get(
-            "/api/plugins/test-schema-endpoint/schema",
+            "/api/apps/test-schema-endpoint/schema",
             follow_redirects=False,
         )
 
@@ -480,7 +478,7 @@ class TestSchemaEndpointUnauthenticated:
     ) -> None:
         """Assert the 401 response does not carry a ``Location`` redirect header."""
         response = unauthed_client.get(
-            "/api/plugins/test-schema-endpoint/schema",
+            "/api/apps/test-schema-endpoint/schema",
             follow_redirects=False,
         )
 
@@ -494,9 +492,7 @@ class TestSchemaEndpointAllFieldsRoundTrip:
         self, authed_all_fields_client: TestClient
     ) -> None:
         """Assert the emitted JSON re-validates back into the original schema."""
-        body = authed_all_fields_client.get(
-            "/api/plugins/test-all-fields/schema"
-        ).json()
+        body = authed_all_fields_client.get("/api/apps/test-all-fields/schema").json()
 
         reparsed = AppSchema.model_validate(body)
         assert reparsed == _ALL_FIELDS_SCHEMA
@@ -561,7 +557,7 @@ class TestConditionalRulePrimitivesWireShape:
     ) -> None:
         """Hit the live route and confirm snake_case primitive keys appear."""
         body = authed_conditional_rules_client.get(
-            "/api/plugins/test-conditional-rules/schema"
+            "/api/apps/test-conditional-rules/schema"
         ).json()
 
         # AppSchema-scope primitive
@@ -584,7 +580,7 @@ class TestConditionalRulePrimitivesWireShape:
     ) -> None:
         """Predicate serialises via to_dict."""
         body = authed_conditional_rules_client.get(
-            "/api/plugins/test-conditional-rules/schema"
+            "/api/apps/test-conditional-rules/schema"
         ).json()
 
         gate = body["forms"][0]["fields"][1]["requires"][0]
@@ -603,9 +599,7 @@ class TestSchemaResponseExcludeNone:
         self, authed_all_fields_client: TestClient
     ) -> None:
         """A schema without conditional rules emits no rule-primitive keys."""
-        body = authed_all_fields_client.get(
-            "/api/plugins/test-all-fields/schema"
-        ).json()
+        body = authed_all_fields_client.get("/api/apps/test-all-fields/schema").json()
 
         for forbidden_key in (
             "requires",
@@ -665,7 +659,7 @@ class TestDerivedFieldWireShape:
         self, authed_client: TestClient
     ) -> None:
         """Verify ``derived`` is absent when the schema does not set it (BC guard)."""
-        body = authed_client.get("/api/plugins/test-schema-endpoint/schema").json()
+        body = authed_client.get("/api/apps/test-schema-endpoint/schema").json()
 
         assert "derived" not in body
 
@@ -673,7 +667,7 @@ class TestDerivedFieldWireShape:
         self, authed_derived_client: TestClient
     ) -> None:
         """Verify ``derived`` serialises in snake_case when the schema sets it."""
-        body = authed_derived_client.get("/api/plugins/test-derived/schema").json()
+        body = authed_derived_client.get("/api/apps/test-derived/schema").json()
 
         assert "derived" in body
         assert isinstance(body["derived"], list)
@@ -933,7 +927,7 @@ class TestCapabilitiesEndpointAuthenticated:
         """Assert an authed GET returns the provider's payload as JSON."""
         _provider_state["flag"] = True
         response = authed_capabilities_client.get(
-            "/api/plugins/test-capabilities-endpoint/capabilities"
+            "/api/apps/test-capabilities-endpoint/capabilities"
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -946,7 +940,7 @@ class TestCapabilitiesEndpointAuthenticated:
         """Assert the response equals the provider's pydantic dump."""
         _provider_state["flag"] = False
         body = authed_capabilities_client.get(
-            "/api/plugins/test-capabilities-endpoint/capabilities"
+            "/api/apps/test-capabilities-endpoint/capabilities"
         ).json()
 
         assert body == _DummyCapabilities(flag=False).model_dump(mode="json")
@@ -962,11 +956,11 @@ class TestCapabilitiesEndpointAuthenticated:
         """
         _provider_state["flag"] = False
         first = authed_capabilities_client.get(
-            "/api/plugins/test-capabilities-endpoint/capabilities"
+            "/api/apps/test-capabilities-endpoint/capabilities"
         )
         _provider_state["flag"] = True
         second = authed_capabilities_client.get(
-            "/api/plugins/test-capabilities-endpoint/capabilities"
+            "/api/apps/test-capabilities-endpoint/capabilities"
         )
 
         assert first.json() == {"flag": False}
@@ -987,7 +981,7 @@ class TestCapabilitiesEndpointUnauthenticated:
     ) -> None:
         """Assert unauthenticated GET returns 401 JSON, not a 303 redirect."""
         response = unauthed_capabilities_client.get(
-            "/api/plugins/test-capabilities-endpoint/capabilities",
+            "/api/apps/test-capabilities-endpoint/capabilities",
             follow_redirects=False,
         )
 
@@ -1029,7 +1023,7 @@ class TestCapabilitiesEndpointOpenApi:
 
         openapi = client.get("/openapi.json").json()
 
-        path = openapi["paths"]["/api/plugins/test-capabilities-endpoint/capabilities"]
+        path = openapi["paths"]["/api/apps/test-capabilities-endpoint/capabilities"]
         response_ref = path["get"]["responses"]["200"]["content"]["application/json"][
             "schema"
         ]["$ref"]
@@ -1057,7 +1051,7 @@ class TestCapabilitiesEndpointRuntime:
         app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/plugins/test-capabilities-endpoint/capabilities")
+        response = client.get("/api/apps/test-capabilities-endpoint/capabilities")
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     def test_provider_with_depends_param_resolved(
@@ -1085,7 +1079,7 @@ class TestCapabilitiesEndpointRuntime:
         app.dependency_overrides[get_api_authenticated_user] = lambda: regular_user
         client = TestClient(app, raise_server_exceptions=False)
 
-        response = client.get("/api/plugins/test-capabilities-endpoint/capabilities")
+        response = client.get("/api/apps/test-capabilities-endpoint/capabilities")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"flag": True}
 
@@ -1095,7 +1089,7 @@ class TestCapabilitiesEndpointRuntime:
 
 _SYNTHETIC_OWNER = TaskOwner.ARCHIVER
 _CRUD_PREFIX = "/test-derive-crud"
-_CRUD_BASE_URL = f"/api/plugins{_CRUD_PREFIX}"
+_CRUD_BASE_URL = f"/api/apps{_CRUD_PREFIX}"
 
 _PAGE_OFFSET = 5
 _PAGE_LIMIT = 2
@@ -2438,7 +2432,7 @@ class TestDeriveCrudRoutesCreateContext:
 
 
 _EXECUTE_PREFIX = "/test-derive-execute"
-_EXECUTE_BASE_URL = f"/api/plugins{_EXECUTE_PREFIX}"
+_EXECUTE_BASE_URL = f"/api/apps{_EXECUTE_PREFIX}"
 _EXECUTE_TASK_ID = 77
 _SYNTHETIC_TASK_DEP = Annotated[Task, Depends(make_task_dep(_SYNTHETIC_OWNER))]
 

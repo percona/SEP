@@ -50,7 +50,7 @@ from app.sep.deps import (
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
-# Jinja2 UI deprecated — React replacement at /plugins/mysql_backups.
+# Jinja2 UI deprecated — React replacement at /apps/mysql_backups.
 router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
 

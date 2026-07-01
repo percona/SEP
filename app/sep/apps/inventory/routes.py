@@ -141,7 +141,7 @@ async def sync_inventory(
     """Start inventory sync as a background task.
 
     Deprecated in favour of the React sync control at
-    ``POST /api/plugins/inventory/sync/``; functional until Wave 3.
+    ``POST /api/apps/inventory/sync/``; functional until Wave 3.
     """
     try:
         selected = filter_syncers_by_name(

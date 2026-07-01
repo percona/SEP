@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the shared SEP API router at ``/api/plugins/``."""
+"""Define tests for the shared SEP API router at ``/api/apps/``."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -51,22 +51,22 @@ class TestApiRouterComposition:
         assert IsApiAuthenticated in api_router.dependencies
 
     def test_apps_router_prefix(self) -> None:
-        """Assert the plugins sub-router carries the ``/plugins`` prefix."""
-        assert apps_router.prefix == "/plugins"
+        """Assert the plugins sub-router carries the ``/apps`` prefix."""
+        assert apps_router.prefix == "/apps"
 
     def test_atw_router_registered_under_plugins(self) -> None:
-        """Assert the ATW schema route is resolvable under ``/plugins/atw``."""
+        """Assert the ATW schema route is resolvable under ``/apps/atw``."""
         plugin_paths = {
             route.path for route in apps_router.routes if hasattr(route, "path")
         }
-        assert "/plugins/atw/schema" in plugin_paths
+        assert "/apps/atw/schema" in plugin_paths
 
     def test_checksums_router_registered_under_plugins(self) -> None:
-        """Assert the checksums schema route is resolvable under ``/plugins/checksums``."""
+        """Assert the checksums schema route is resolvable under ``/apps/checksums``."""
         plugin_paths = {
             route.path for route in apps_router.routes if hasattr(route, "path")
         }
-        assert "/plugins/checksums/schema" in plugin_paths
+        assert "/apps/checksums/schema" in plugin_paths
 
     def test_checksums_router_has_checksums_tag(self) -> None:
         """Assert routes contributed by the checksums sub-router expose the ``checksums`` tag."""
@@ -81,15 +81,20 @@ class TestApiRouterComposition:
     def test_apps_router_included_via_api_router(self) -> None:
         """Assert checksums and inventory plugin schema routes resolve on ``sep_app``.
 
-        Both plugins mount under ``/api/plugins/{name}/schema`` on the composed
+        Both plugins mount under ``/api/apps/{name}/schema`` on the composed
         application router.
         """
         api_plugin_paths = {
             route.path for route in sep_app.routes if hasattr(route, "path")
         }
-        assert "/api/plugins/atw/schema" in api_plugin_paths
-        assert "/api/plugins/checksums/schema" in api_plugin_paths
-        assert "/api/plugins/inventory/schema" in api_plugin_paths
+        assert "/api/apps/atw/schema" in api_plugin_paths
+        assert "/api/apps/checksums/schema" in api_plugin_paths
+        assert "/api/apps/inventory/schema" in api_plugin_paths
+
+    def test_legacy_plugins_prefix_removed_from_route_table(self) -> None:
+        """Assert no composed route remains under the retired ``/api/plugins`` prefix."""
+        api_paths = {route.path for route in sep_app.routes if hasattr(route, "path")}
+        assert not any(path.startswith("/api/plugins") for path in api_paths)
 
 
 class TestApiRouterAuthenticated:
@@ -99,14 +104,14 @@ class TestApiRouterAuthenticated:
         self, test_client: TestClient
     ) -> None:
         """Assert an authenticated GET on the checksums schema endpoint returns the schema."""
-        response = test_client.get("/api/plugins/checksums/schema")
+        response = test_client.get("/api/apps/checksums/schema")
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"].startswith("application/json")
         assert response.json()["name"] == "checksums"
 
     def test_unknown_plugin_returns_json_404(self, test_client: TestClient) -> None:
         """Assert an authenticated GET on an unknown plugin returns JSON 404."""
-        response = test_client.get("/api/plugins/does-not-exist/")
+        response = test_client.get("/api/apps/does-not-exist/")
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
@@ -119,7 +124,7 @@ class TestApiRouterAuthenticated:
         A single-segment path like ``/{task_name}`` is caught by the detail
         route, so use two segments to ensure no route matches.
         """
-        response = test_client.get("/api/plugins/checksums/some/deeply/nested")
+        response = test_client.get("/api/apps/checksums/some/deeply/nested")
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.headers["content-type"].startswith("application/json")
         assert "detail" in response.json()
@@ -133,7 +138,7 @@ class TestApiRouterUnauthenticated:
     ) -> None:
         """Assert unauth GET on the checksums schema returns 401 JSON, not 303 redirect."""
         response = unauthenticated_client.get(
-            "/api/plugins/checksums/schema", follow_redirects=False
+            "/api/apps/checksums/schema", follow_redirects=False
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
@@ -144,7 +149,7 @@ class TestApiRouterUnauthenticated:
     ) -> None:
         """Assert an unauth GET on an unknown plugin returns JSON 404 via the handler."""
         response = unauthenticated_client.get(
-            "/api/plugins/does-not-exist/", follow_redirects=False
+            "/api/apps/does-not-exist/", follow_redirects=False
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.headers["content-type"].startswith("application/json")
@@ -168,25 +173,25 @@ def cookie_only_client(regular_user):
 
 
 class TestPluginBearerGate:
-    """Exercise the framework-level Bearer gate on /api/plugins/* mutations."""
+    """Exercise the framework-level Bearer gate on /api/apps/* mutations."""
 
     @pytest.mark.parametrize(
         ("method", "path"),
         [
-            ("POST", "/api/plugins/snippets/refresh"),
-            ("PUT", "/api/plugins/snippets/snippet/approval"),
-            ("PATCH", "/api/plugins/snippets/approvals"),
-            ("DELETE", "/api/plugins/snippets/snippet/approval"),
-            ("POST", "/api/plugins/inventory/sync/"),
-            ("POST", "/api/plugins/dipper/"),
-            ("POST", "/api/plugins/checksums/"),
-            ("DELETE", "/api/plugins/checksums/some-task"),
+            ("POST", "/api/apps/snippets/refresh"),
+            ("PUT", "/api/apps/snippets/snippet/approval"),
+            ("PATCH", "/api/apps/snippets/approvals"),
+            ("DELETE", "/api/apps/snippets/snippet/approval"),
+            ("POST", "/api/apps/inventory/sync/"),
+            ("POST", "/api/apps/dipper/"),
+            ("POST", "/api/apps/checksums/"),
+            ("DELETE", "/api/apps/checksums/some-task"),
         ],
     )
     def test_cookie_only_mutation_is_rejected_with_401(
         self, cookie_only_client: TestClient, method: str, path: str
     ) -> None:
-        """Cookie-authenticated JSON mutations under /api/plugins/* return 401."""
+        """Reject cookie-authenticated JSON mutations under /api/apps/* with 401."""
         response = cookie_only_client.request(method, path, json={})
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
@@ -194,8 +199,8 @@ class TestPluginBearerGate:
     def test_cookie_only_get_passes_bearer_gate(
         self, cookie_only_client: TestClient
     ) -> None:
-        """Cookie-authenticated GET on /api/plugins/* is not blocked by the Bearer gate."""
-        response = cookie_only_client.get("/api/plugins/checksums/schema")
+        """Allow a cookie-authenticated GET on /api/apps/* through the Bearer gate."""
+        response = cookie_only_client.get("/api/apps/checksums/schema")
         assert response.status_code != status.HTTP_401_UNAUTHORIZED
 
     def test_bearer_mutation_passes_bearer_gate(
@@ -207,7 +212,7 @@ class TestPluginBearerGate:
         not be the framework Bearer-gate 401.
         """
         response = cookie_only_client.post(
-            "/api/plugins/snippets/refresh",
+            "/api/apps/snippets/refresh",
             json={},
             headers={"Authorization": "Bearer test-token"},
         )
@@ -223,7 +228,7 @@ class TestPluginBearerGate:
         401, not a 422 from body parsing.
         """
         response = cookie_only_client.post(
-            "/api/plugins/snippets/refresh",
+            "/api/apps/snippets/refresh",
             content=b"{not-json",
             headers={"content-type": "application/json"},
         )
@@ -234,14 +239,14 @@ class TestPluginBearerGate:
         self, cookie_only_client: TestClient
     ) -> None:
         """HEAD requests are treated as safe and not Bearer-gated."""
-        response = cookie_only_client.head("/api/plugins/checksums/schema")
+        response = cookie_only_client.head("/api/apps/checksums/schema")
         assert response.status_code != status.HTTP_401_UNAUTHORIZED
 
     def test_options_method_passes_bearer_gate(
         self, cookie_only_client: TestClient
     ) -> None:
         """OPTIONS (CORS preflight) requests are not Bearer-gated."""
-        response = cookie_only_client.options("/api/plugins/checksums/schema")
+        response = cookie_only_client.options("/api/apps/checksums/schema")
         assert response.status_code != status.HTTP_401_UNAUTHORIZED
 
     def test_bearer_gate_is_on_apps_router_only(self) -> None:
@@ -304,7 +309,7 @@ class TestPluginBearerGate:
         (405) are skipped without false-failing the test.
         """
         response = cookie_only_client.request(
-            method, "/api/plugins/snippets/snippet/approval", json={}
+            method, "/api/apps/snippets/snippet/approval", json={}
         )
         if response.status_code == status.HTTP_401_UNAUTHORIZED:
             assert response.json()["detail"] == BEARER_REQUIRED_DETAIL
@@ -318,10 +323,8 @@ class TestPluginBearerGate:
         is a single, path-agnostic constant — no f-string sneaks the plugin
         name or route into the response body.
         """
-        snippets_resp = cookie_only_client.post(
-            "/api/plugins/snippets/refresh", json={}
-        )
-        checksums_resp = cookie_only_client.post("/api/plugins/checksums/", json={})
+        snippets_resp = cookie_only_client.post("/api/apps/snippets/refresh", json={})
+        checksums_resp = cookie_only_client.post("/api/apps/checksums/", json={})
         assert snippets_resp.status_code == status.HTTP_401_UNAUTHORIZED
         assert checksums_resp.status_code == status.HTTP_401_UNAUTHORIZED
         assert (
@@ -342,7 +345,7 @@ class TestPluginBearerGate:
         did not. Asserting "neither 200 nor leaked-detail" is the contract.
         """
         response = cookie_only_client.request(
-            "PATCH", "/api/plugins/snippets/refresh", json={}
+            "PATCH", "/api/apps/snippets/refresh", json={}
         )
         assert response.status_code != status.HTTP_200_OK
         body = response.json() if response.content else {}
@@ -358,7 +361,7 @@ class TestPluginBearerGate:
         must NOT carry ``BEARER_REQUIRED_DETAIL`` — leaking it would imply the
         path exists but is bearer-gated, the inverse of what 404 should signal.
         """
-        response = cookie_only_client.post("/api/plugins/does-not-exist/foo", json={})
+        response = cookie_only_client.post("/api/apps/does-not-exist/foo", json={})
         assert response.status_code == status.HTTP_404_NOT_FOUND
         body = response.json() if response.content else {}
         assert body.get("detail") != BEARER_REQUIRED_DETAIL
@@ -373,7 +376,7 @@ class TestPluginBearerGate:
         405) and because the gate would 401 it if a future route did. Either
         outcome must not be 200.
         """
-        response = cookie_only_client.request("TRACE", "/api/plugins/checksums/schema")
+        response = cookie_only_client.request("TRACE", "/api/apps/checksums/schema")
         assert response.status_code != status.HTTP_200_OK
 
 
@@ -410,7 +413,7 @@ class TestApiRouterConfigDrivenLoop:
         )
         router = build_apps_router(build_app_registry([plugin]))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
-        assert any(p.startswith("/plugins/alters/") for p in paths)
+        assert any(p.startswith("/apps/alters/") for p in paths)
 
     def test_plugin_without_api_router_path_is_not_mounted(
         self, mocker: MockerFixture
@@ -428,7 +431,7 @@ class TestApiRouterConfigDrivenLoop:
     def test_empty_plugins_iterable_produces_empty_router(self) -> None:
         """Assert no plugins → no plugin routes (only the prefix)."""
         router = build_apps_router(build_app_registry([]))
-        assert router.prefix == "/plugins"
+        assert router.prefix == "/apps"
         assert router.routes == []
 
     def test_mounted_plugin_routes_carry_module_basename_tag(self) -> None:
@@ -556,9 +559,9 @@ class TestApiRouterConfigDrivenLoop:
         ]
         router = build_apps_router(build_app_registry(plugins))
         paths = {r.path for r in router.routes if hasattr(r, "path")}
-        assert any(p.startswith("/plugins/snippets/") for p in paths)
-        assert any(p.startswith("/plugins/checksums/") for p in paths)
-        assert any(p.startswith("/plugins/dipper/") for p in paths)
+        assert any(p.startswith("/apps/snippets/") for p in paths)
+        assert any(p.startswith("/apps/checksums/") for p in paths)
+        assert any(p.startswith("/apps/dipper/") for p in paths)
 
     def test_build_apps_router_skips_empty_string_path(
         self, mocker: MockerFixture
@@ -618,7 +621,7 @@ class TestApiRouterConfigDrivenLoop:
         }
 
         def owning_key(route_path: str) -> str | None:
-            rest = route_path.removeprefix("/plugins/")
+            rest = route_path.removeprefix("/apps/")
             candidates = [
                 key
                 for key in expected_keys
@@ -629,7 +632,7 @@ class TestApiRouterConfigDrivenLoop:
         seen_prefixes = {
             owning_key(r.path)
             for r in apps_router.routes
-            if hasattr(r, "path") and r.path.startswith("/plugins/")
+            if hasattr(r, "path") and r.path.startswith("/apps/")
         }
         assert expected_keys
         assert seen_prefixes == expected_keys
@@ -648,22 +651,22 @@ class TestApiRouterConfigDrivenLoopIntegration:
     ) -> None:
         """Assert plugin routes still 401 unauth — guard not bypassed by the loop."""
         response = unauthenticated_client.get(
-            "/api/plugins/dipper/schema", follow_redirects=False
+            "/api/apps/dipper/schema", follow_redirects=False
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_unmounted_plugin_returns_404(self, test_client: TestClient) -> None:
         """Assert a plugin key with no settings entry returns 404."""
-        response = test_client.get("/api/plugins/not-a-real-plugin/schema")
+        response = test_client.get("/api/apps/not-a-real-plugin/schema")
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     @pytest.mark.parametrize(
         ("method", "path"),
         [
-            ("GET", "/api/plugins/mysql_backups/restore/"),
-            ("POST", "/api/plugins/mysql_backups/restore/"),
-            ("GET", "/api/plugins/mysql_backups/restore/schema"),
-            ("GET", "/api/plugins/mysql_backups/restore/some-task"),
+            ("GET", "/api/apps/mysql_backups/restore/"),
+            ("POST", "/api/apps/mysql_backups/restore/"),
+            ("GET", "/api/apps/mysql_backups/restore/schema"),
+            ("GET", "/api/apps/mysql_backups/restore/some-task"),
             ("GET", "/mysql_backups/restores/"),
             ("GET", "/mysql_backups/restores/some-task"),
         ],
@@ -689,7 +692,7 @@ class TestApiRouterConfigDrivenLoopIntegration:
         )
         assert matched is not None
         prefix = (
-            "/api/plugins/mysql_backups/restore"
+            "/api/apps/mysql_backups/restore"
             if path.startswith("/api")
             else ("/mysql_backups/restores")
         )

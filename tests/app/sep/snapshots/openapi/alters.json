@@ -288,7 +288,7 @@
         "type": "object"
       },
       "AltersExecutionResponse": {
-        "description": "Represent the response from POST /api/plugins/alters/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
+        "description": "Represent the response from POST /api/apps/alters/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
         "properties": {
           "task_id": {
             "anyOf": [
@@ -2631,7 +2631,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -3400,10 +3400,10 @@
     }
   },
   "paths": {
-    "/api/plugins/alters/": {
+    "/api/apps/alters/": {
       "get": {
         "description": "List parent alters execute tasks.",
-        "operationId": "alters_alters_api_list_api_plugins_alters__get",
+        "operationId": "alters_alters_api_list_api_apps_alters__get",
         "parameters": [
           {
             "in": "query",
@@ -3446,7 +3446,7 @@
                   "items": {
                     "$ref": "#/components/schemas/AltersTaskResponse"
                   },
-                  "title": "Response Alters Alters Api List Api Plugins Alters  Get",
+                  "title": "Response Alters Alters Api List Api Apps Alters  Get",
                   "type": "array"
                 }
               }
@@ -3471,7 +3471,7 @@
       },
       "post": {
         "description": "Create an alters task group from a JSON payload request body.\n\nPOSTs the parent execute task, dry-run derived sibling, and pre-checks\npredecessor. Pre-checks are started manually from the detail page.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after task creation. Defaults to ``True`` so callers that\n    omit the parameter still get a connectivity round-trip; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics — an unchecked box\n    submits no field); this asymmetry is intentional.\n:type check_connectivity: bool",
-        "operationId": "alters_alters_api_create_api_plugins_alters__post",
+        "operationId": "alters_alters_api_create_api_apps_alters__post",
         "parameters": [
           {
             "in": "query",
@@ -3522,10 +3522,10 @@
         ]
       }
     },
-    "/api/plugins/alters/schema": {
+    "/api/apps/alters/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "alters_get_schema_api_plugins_alters_schema_get",
+        "operationId": "alters_get_schema_api_apps_alters_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -3544,10 +3544,10 @@
         ]
       }
     },
-    "/api/plugins/alters/{task_name}": {
+    "/api/apps/alters/{task_name}": {
       "delete": {
         "description": "Delete an alters task group.",
-        "operationId": "alters_alters_api_delete_api_plugins_alters__task_name__delete",
+        "operationId": "alters_alters_api_delete_api_apps_alters__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -3581,7 +3581,7 @@
       },
       "get": {
         "description": "Retrieve a single parent alters task.",
-        "operationId": "alters_alters_api_detail_api_plugins_alters__task_name__get",
+        "operationId": "alters_alters_api_detail_api_apps_alters__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -3622,7 +3622,7 @@
       },
       "put": {
         "description": "Update an alters task group from a JSON payload request body.\n\n:param check_connectivity: Whether to verify the target database is\n    reachable after the update. Defaults to ``True``; pass\n    ``check_connectivity=false`` to opt out. Note that the form flow\n    defaults to ``False`` (HTML checkbox semantics); this asymmetry is\n    intentional.\n:type check_connectivity: bool",
-        "operationId": "alters_alters_api_update_api_plugins_alters__task_name__put",
+        "operationId": "alters_alters_api_update_api_apps_alters__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -3682,10 +3682,10 @@
         ]
       }
     },
-    "/api/plugins/alters/{task_name}/execute": {
+    "/api/apps/alters/{task_name}/execute": {
       "post": {
         "description": "Execute an alters task (parent, dry-run, or pre-checks).",
-        "operationId": "alters_alters_api_execute_api_plugins_alters__task_name__execute_post",
+        "operationId": "alters_alters_api_execute_api_apps_alters__task_name__execute_post",
         "parameters": [
           {
             "in": "path",

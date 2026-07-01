@@ -15,7 +15,7 @@
 
 """Define the JSON API router for the report plugin.
 
-Mounted at ``/api/plugins/report/`` via ``apps_router`` in
+Mounted at ``/api/apps/report/`` via ``apps_router`` in
 ``app/sep/api/router.py``. ``api_router`` applies session/Bearer auth;
 ``apps_router`` applies ``RequireBearerForUnsafeMethods`` on POST/PUT/PATCH/DELETE.
 Route layout:

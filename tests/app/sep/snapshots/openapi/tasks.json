@@ -2030,7 +2030,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -2507,7 +2507,7 @@
         "type": "string"
       },
       "TaskDetailResponse": {
-        "description": "Represent the aggregate payload for ``GET /api/plugins/tasks/{task_name}``.\n\nBundle the task definition, execution history, periodic schedules, and\nexecutor host metadata into a single response for the React detail page.\n\n:param task: The task definition as returned by the tasks API.\n:type task: TaskResponse\n:param execution_history: Paginated task history from the tasks API\n    (``items``, ``total``, ``offset``, ``limit``).\n:type execution_history: dict[str, Any]\n:param periodic_summary: Read-only summaries of periodic schedules\n    attached to this task.\n:type periodic_summary: list[PeriodicTaskSummary]\n:param executor_hosts: Executor hosts available for display, with\n    inventory-resolved labels when possible.\n:type executor_hosts: list[ExecutorHostMetadata]",
+        "description": "Represent the aggregate payload for ``GET /api/apps/tasks/{task_name}``.\n\nBundle the task definition, execution history, periodic schedules, and\nexecutor host metadata into a single response for the React detail page.\n\n:param task: The task definition as returned by the tasks API.\n:type task: TaskResponse\n:param execution_history: Paginated task history from the tasks API\n    (``items``, ``total``, ``offset``, ``limit``).\n:type execution_history: dict[str, Any]\n:param periodic_summary: Read-only summaries of periodic schedules\n    attached to this task.\n:type periodic_summary: list[PeriodicTaskSummary]\n:param executor_hosts: Executor hosts available for display, with\n    inventory-resolved labels when possible.\n:type executor_hosts: list[ExecutorHostMetadata]",
         "properties": {
           "execution_history": {
             "title": "Execution History",
@@ -3011,10 +3011,10 @@
     }
   },
   "paths": {
-    "/api/plugins/tasks/": {
+    "/api/apps/tasks/": {
       "get": {
         "description": "List task definitions for the read-only plugin UI.\n\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:return: Task rows for the schema-driven list view.\n:rtype: list[TaskListResponse]",
-        "operationId": "task_manager_tasks_api_list_api_plugins_tasks__get",
+        "operationId": "task_manager_tasks_api_list_api_apps_tasks__get",
         "responses": {
           "200": {
             "content": {
@@ -3023,7 +3023,7 @@
                   "items": {
                     "$ref": "#/components/schemas/TaskListResponse"
                   },
-                  "title": "Response Task Manager Tasks Api List Api Plugins Tasks  Get",
+                  "title": "Response Task Manager Tasks Api List Api Apps Tasks  Get",
                   "type": "array"
                 }
               }
@@ -3037,10 +3037,10 @@
         ]
       }
     },
-    "/api/plugins/tasks/schema": {
+    "/api/apps/tasks/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "task_manager_get_schema_api_plugins_tasks_schema_get",
+        "operationId": "task_manager_get_schema_api_apps_tasks_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -3059,10 +3059,10 @@
         ]
       }
     },
-    "/api/plugins/tasks/{task_name}": {
+    "/api/apps/tasks/{task_name}": {
       "get": {
         "description": "Return the per-task detail bundle for the read-only plugin UI.\n\n:param task: The task definition resolved by name.\n:type task: Task\n:param tasks_api: Async client for the tasks sub-app.\n:type tasks_api: TaskAPI\n:param executor_hosts_ctx: Executor hosts enriched with inventory labels.\n:type executor_hosts_ctx: ExecutorHostsCtx\n:return: Task definition, history, periodic schedules, and executor hosts.\n:rtype: TaskDetailResponse",
-        "operationId": "task_manager_tasks_api_detail_api_plugins_tasks__task_name__get",
+        "operationId": "task_manager_tasks_api_detail_api_apps_tasks__task_name__get",
         "parameters": [
           {
             "in": "path",

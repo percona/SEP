@@ -15,7 +15,7 @@
 
 """Define the JSON API router for the Alters plugin.
 
-Mounted at ``/api/plugins/alters/`` via ``apps_router`` in
+Mounted at ``/api/apps/alters/`` via ``apps_router`` in
 ``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
 level; the ``schema_endpoint`` helper also pins ``IsApiAuthenticated`` per
 route for safety.

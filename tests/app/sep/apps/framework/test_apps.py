@@ -98,7 +98,7 @@ from tests.app.sep.apps.framework.kit import (
     SynthResponse as _SynthResponse,
 )
 
-_BASE = f"/api/plugins{_PREFIX}"
+_BASE = f"/api/apps{_PREFIX}"
 
 _LIST_VIEW = ListView(columns=[Column(key="name", label="Name")])
 
@@ -1109,7 +1109,7 @@ class TestRegistryBinding:
         )
         client = _client(bound, _make_tasks_api(), regular_user)
 
-        response = client.get(f"/api/plugins{bound.uri_path}/schema")
+        response = client.get(f"/api/apps{bound.uri_path}/schema")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["name"] == "synthetic-app"

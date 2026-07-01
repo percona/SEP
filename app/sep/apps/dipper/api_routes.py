@@ -15,7 +15,7 @@
 
 """Define the JSON API router for the Dipper plugin.
 
-Mounted at ``/api/plugins/dipper/`` via ``apps_router`` in
+Mounted at ``/api/apps/dipper/`` via ``apps_router`` in
 ``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
 level and redeclared per route for safety. Route layout:
 

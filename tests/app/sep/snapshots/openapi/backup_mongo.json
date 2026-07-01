@@ -2685,7 +2685,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -3527,7 +3527,7 @@
         "type": "object"
       },
       "app__sep__apps__backup_mongo__models__BackupExecutionResponse": {
-        "description": "Represent the response from POST /api/plugins/backup_mongo/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:type task_name: str\n:param task_id: The id of the task-history row created by the tasks API.\n:type task_id: int | None",
+        "description": "Represent the response from POST /api/apps/backup_mongo/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:type task_name: str\n:param task_id: The id of the task-history row created by the tasks API.\n:type task_id: int | None",
         "properties": {
           "task_id": {
             "anyOf": [
@@ -3837,10 +3837,10 @@
     }
   },
   "paths": {
-    "/api/plugins/backup_mongo/": {
+    "/api/apps/backup_mongo/": {
       "get": {
         "description": "List parent PBM backup config tasks.",
-        "operationId": "backup_mongo_backup_mongo_api_list_api_plugins_backup_mongo__get",
+        "operationId": "backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get",
         "parameters": [
           {
             "in": "query",
@@ -3911,7 +3911,7 @@
       },
       "post": {
         "description": "Create a backup task group from a JSON payload request body.\n\nPOSTs the parent ``pbm_config`` task, then derived ``pbm_logical``,\n``pbm_physical``, and ``pbm_status`` siblings via\n:func:`~app.sep.apps.framework.cascade.cascade_create_tasks`.",
-        "operationId": "backup_mongo_backup_mongo_api_create_api_plugins_backup_mongo__post",
+        "operationId": "backup_mongo_backup_mongo_api_create_api_apps_backup_mongo__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3950,10 +3950,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/restores/": {
+    "/api/apps/backup_mongo/restores/": {
       "get": {
         "description": "List parent PBM restore config tasks.",
-        "operationId": "backup_mongo_restore_mongo_api_list_api_plugins_backup_mongo_restores__get",
+        "operationId": "backup_mongo_restore_mongo_api_list_api_apps_backup_mongo_restores__get",
         "parameters": [
           {
             "in": "query",
@@ -4024,7 +4024,7 @@
       },
       "post": {
         "description": "Create a restore task group from a JSON payload request body.\n\nPOSTs the parent config task, restore leg, pbm-list helper, and optional\nforce-resync child for physical restores. Rolls back on any failure.",
-        "operationId": "backup_mongo_restore_mongo_api_create_api_plugins_backup_mongo_restores__post",
+        "operationId": "backup_mongo_restore_mongo_api_create_api_apps_backup_mongo_restores__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4063,10 +4063,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/restores/schema": {
+    "/api/apps/backup_mongo/restores/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "backup_mongo_get_schema_api_plugins_backup_mongo_restores_schema_get",
+        "operationId": "backup_mongo_get_schema_api_apps_backup_mongo_restores_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -4085,10 +4085,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/restores/{task_name}": {
+    "/api/apps/backup_mongo/restores/{task_name}": {
       "delete": {
         "description": "Delete a restore task group.",
-        "operationId": "backup_mongo_restore_mongo_api_delete_api_plugins_backup_mongo_restores__task_name__delete",
+        "operationId": "backup_mongo_restore_mongo_api_delete_api_apps_backup_mongo_restores__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -4122,7 +4122,7 @@
       },
       "get": {
         "description": "Retrieve a single parent restore task with child task status.",
-        "operationId": "backup_mongo_restore_mongo_api_detail_api_plugins_backup_mongo_restores__task_name__get",
+        "operationId": "backup_mongo_restore_mongo_api_detail_api_apps_backup_mongo_restores__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -4163,7 +4163,7 @@
       },
       "put": {
         "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place.",
-        "operationId": "backup_mongo_restore_mongo_api_update_api_plugins_backup_mongo_restores__task_name__put",
+        "operationId": "backup_mongo_restore_mongo_api_update_api_apps_backup_mongo_restores__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -4213,10 +4213,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/restores/{task_name}/execute": {
+    "/api/apps/backup_mongo/restores/{task_name}/execute": {
       "post": {
         "description": "Execute a restore task.",
-        "operationId": "backup_mongo_restore_mongo_api_execute_api_plugins_backup_mongo_restores__task_name__execute_post",
+        "operationId": "backup_mongo_restore_mongo_api_execute_api_apps_backup_mongo_restores__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -4266,10 +4266,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/schema": {
+    "/api/apps/backup_mongo/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "backup_mongo_get_schema_api_plugins_backup_mongo_schema_get",
+        "operationId": "backup_mongo_get_schema_api_apps_backup_mongo_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -4288,10 +4288,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/{task_name}": {
+    "/api/apps/backup_mongo/{task_name}": {
       "delete": {
         "description": "Delete a backup task group.",
-        "operationId": "backup_mongo_backup_mongo_api_delete_api_plugins_backup_mongo__task_name__delete",
+        "operationId": "backup_mongo_backup_mongo_api_delete_api_apps_backup_mongo__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -4325,7 +4325,7 @@
       },
       "get": {
         "description": "Retrieve a single parent backup task with derived sibling status.",
-        "operationId": "backup_mongo_backup_mongo_api_detail_api_plugins_backup_mongo__task_name__get",
+        "operationId": "backup_mongo_backup_mongo_api_detail_api_apps_backup_mongo__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -4365,10 +4365,10 @@
         ]
       }
     },
-    "/api/plugins/backup_mongo/{task_name}/execute": {
+    "/api/apps/backup_mongo/{task_name}/execute": {
       "post": {
         "description": "Execute a backup task.",
-        "operationId": "backup_mongo_backup_mongo_api_execute_api_plugins_backup_mongo__task_name__execute_post",
+        "operationId": "backup_mongo_backup_mongo_api_execute_api_apps_backup_mongo__task_name__execute_post",
         "parameters": [
           {
             "in": "path",

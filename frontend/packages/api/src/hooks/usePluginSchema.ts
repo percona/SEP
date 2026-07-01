@@ -32,7 +32,7 @@ export function usePluginSchema(pluginName: string, mockSchema?: PluginSchema) {
     queryKey: ['plugins', pluginName, 'schema'],
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<PluginSchema>(`/plugins/${pluginName}/schema`);
+        const { data } = await apiClient.get<PluginSchema>(`/apps/${pluginName}/schema`);
         return data;
       } catch (error) {
         // Fall back to mock schema on 404 (not yet served) or network error

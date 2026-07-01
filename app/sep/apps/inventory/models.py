@@ -27,7 +27,7 @@ INVENTORY_SYNC_TASK_NAME = "inventory-sync"
 
 
 class PluginTaskResponse(BaseModel):
-    """Represent a single plugin task entry returned by ``GET /api/plugins/inventory/``.
+    """Represent a single plugin task entry returned by ``GET /api/apps/inventory/``.
 
     :param name: Machine-readable task identifier (e.g. ``"inventory-sync"``).
     :type name: str

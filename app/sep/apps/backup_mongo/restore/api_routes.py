@@ -15,7 +15,7 @@
 
 """Define the JSON API router for the backup_mongo restores plugin.
 
-Mounted at ``/api/plugins/backup_mongo/restores/`` via
+Mounted at ``/api/apps/backup_mongo/restores/`` via
 ``include_router`` on the backup_mongo ``api_routes`` router. Authentication is
 enforced at the ``api_router`` level; ``schema_endpoint`` pins
 ``IsApiAuthenticated`` per route for safety.

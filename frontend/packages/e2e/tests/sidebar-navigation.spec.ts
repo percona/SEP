@@ -63,7 +63,7 @@ const MOCK_USER = {
 const GENERIC_PLUGIN_HEADING = 'SEP Plugin';
 
 // Plugins whose display-name heading we assert explicitly (keyed by the
-// `<name>` in /api/plugins/<name>/schema). These are the schema-driven entries
+// `<name>` in /api/apps/<name>/schema). These are the schema-driven entries
 // this ticket is about — including the two that regressed.
 const SCHEMA_DISPLAY_NAMES: Record<string, string> = {
   checksums: 'Checksums',
@@ -97,7 +97,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       });
     }
 
-    const schemaMatch = pathname.match(/\/api\/plugins\/(.+)\/schema$/);
+    const schemaMatch = pathname.match(/\/api\/apps\/(.+)\/schema$/);
     if (schemaMatch) {
       const name = schemaMatch[1];
       return route.fulfill({
@@ -178,7 +178,7 @@ const TARGETS: SidebarTarget[] = [
     urlPattern: /\/atw(\/|$)/,
     sentinel: heading('Collect Diagnostic Data'),
   },
-  { label: 'Checksums', urlPattern: /\/plugins\/checksums(\/|$)/, sentinel: heading('Checksums') },
+  { label: 'Checksums', urlPattern: /\/apps\/checksums(\/|$)/, sentinel: heading('Checksums') },
   {
     label: 'Alert Troubleshooting',
     group: 'Alerts',
@@ -189,7 +189,7 @@ const TARGETS: SidebarTarget[] = [
   {
     label: 'MySQL Backups',
     group: 'Backups',
-    urlPattern: /\/plugins\/mysql_backups(\/|$)/,
+    urlPattern: /\/apps\/mysql_backups(\/|$)/,
     sentinel: heading('MySQL Backups'),
   },
   {
@@ -204,7 +204,7 @@ const TARGETS: SidebarTarget[] = [
     urlPattern: /\/backups\/postgresql(\/|$)/,
     sentinel: heading('PostgreSQL Backups'),
   },
-  { label: 'Archives', urlPattern: /\/plugins\/archives(\/|$)/, sentinel: heading('Archives') },
+  { label: 'Archives', urlPattern: /\/apps\/archives(\/|$)/, sentinel: heading('Archives') },
   {
     label: 'Dipper Data Collection',
     group: 'Diagnostics',

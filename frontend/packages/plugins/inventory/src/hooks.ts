@@ -19,7 +19,7 @@ import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiClient } from '@sep/api';
 
-const INVENTORY_BASE = '/plugins/inventory';
+const INVENTORY_BASE = '/apps/inventory';
 
 /**
  * Root query key for every inventory entity list (nodes plus the nested

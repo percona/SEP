@@ -73,7 +73,7 @@ class DeprecatedJinja2Route(APIRoute):
         async def custom_route_handler(request: Request) -> Response:
             message = (
                 f"Jinja2 plugin route {request.url.path} is deprecated; "
-                "use the JSON API equivalent under /api/plugins/"
+                "use the JSON API equivalent under /api/apps/"
             )
             logger.warning(message)
             warnings.warn(message, DeprecationWarning, stacklevel=2)

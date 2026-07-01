@@ -2038,7 +2038,7 @@
       },
       "ScriptPreviewField": {
         "additionalProperties": false,
-        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/plugins/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
+        "description": "Represent a read-only field that renders a backend-fetched script preview.\n\nThe renderer fetches ``endpoint_url`` on mount, and re-fetches whenever\nany sibling field listed in ``depends_on`` changes value (debounced and\ncancellation-safe). The response shape is\n``{content: str, language: str, is_truncated: bool}``.\n\n:param field_type: The discriminator literal; always\n    ``\"script_preview\"`` for this class. Serialised as the JSON key\n    ``\"type\"``.\n:type field_type: Literal[\"script_preview\"]\n:param endpoint_url: The fully-resolved URL the renderer fetches preview\n    content from, relative to the FE ``apiClient`` base (``/api``). Schema\n    synthesisers should bake any plugin-specific path segments (for\n    example, ``/apps/snippets/{filename}/preview``) here at\n    schema build time rather than templating client-side.\n:type endpoint_url: NonEmptyStr\n:param depends_on: Names of sibling fields whose values trigger a\n    re-fetch when changed. Empty (the default) means fetch once on\n    mount.\n:type depends_on: list[NonEmptyStr]\n:param language: Optional default highlighter language hint used when\n    the backend response omits ``language``. Defaults to ``None``.\n:type language: NonEmptyStr | None",
         "properties": {
           "default": {
             "anyOf": [
@@ -2292,7 +2292,7 @@
         "type": "string"
       },
       "SnippetBatchApproveRequest": {
-        "description": "Represent the JSON body for ``PATCH /api/plugins/snippets/approvals``.\n\nUnlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`\ntwin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI\nparses it as JSON.\n\n:param filenames: Unique, non-empty list of snippet filenames to approve in a\n    single atomic operation. Duplicates are silently deduplicated by\n    ``UniqueList``.\n:type filenames: UniqueList[NonEmptyStr]",
+        "description": "Represent the JSON body for ``PATCH /api/apps/snippets/approvals``.\n\nUnlike the Form-bound :class:`~app.sep.apps.snippets.deps.SnippetBatchApproveForm`\ntwin this is a plain Pydantic body — no ``Form()`` annotations — so FastAPI\nparses it as JSON.\n\n:param filenames: Unique, non-empty list of snippet filenames to approve in a\n    single atomic operation. Duplicates are silently deduplicated by\n    ``UniqueList``.\n:type filenames: UniqueList[NonEmptyStr]",
         "properties": {
           "filenames": {
             "items": {
@@ -2937,10 +2937,10 @@
     }
   },
   "paths": {
-    "/api/plugins/snippets/": {
+    "/api/apps/snippets/": {
       "get": {
         "description": "List every discovered script as its list-row projection.",
-        "operationId": "snippets_snippets_api_list_api_plugins_snippets__get",
+        "operationId": "snippets_snippets_api_list_api_apps_snippets__get",
         "responses": {
           "200": {
             "content": {
@@ -2949,7 +2949,7 @@
                   "items": {
                     "$ref": "#/components/schemas/SnippetResponse"
                   },
-                  "title": "Response Snippets Snippets Api List Api Plugins Snippets  Get",
+                  "title": "Response Snippets Snippets Api List Api Apps Snippets  Get",
                   "type": "array"
                 }
               }
@@ -2963,10 +2963,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/approvals": {
+    "/api/apps/snippets/approvals": {
       "patch": {
         "description": "Approve a set of snippets atomically (idempotent partial-update).\n\nReject the whole batch with ``400`` and a\n:class:`BatchApprovalErrorResponse` payload when any filename has no\nDB row or its file is missing on disk. Filenames that are already\napproved when the call starts are reported in\n``skipped_already_approved`` — not as errors. The atomic write uses\n``approved_at IS NULL`` as a CAS filter so two concurrent admins\ncannot double-approve.\n\n:param existence: Pre-validated batch existence result from the dependency.\n:type existence: SnippetBatchExistenceResult\n:param user: The authenticated admin performing the action.\n:type user: User\n:param session: The active database session.\n:type session: AsyncSession\n:return: The success payload listing approved + skipped filenames.\n:rtype: BatchApprovalResponse\n:raises HTTPBadRequestException: On hard-error precheck failures with\n    a :class:`BatchApprovalErrorResponse` body.",
-        "operationId": "snippets_snippets_api_batch_approve_api_plugins_snippets_approvals_patch",
+        "operationId": "snippets_snippets_api_batch_approve_api_apps_snippets_approvals_patch",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3005,10 +3005,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/capabilities": {
+    "/api/apps/snippets/capabilities": {
       "get": {
         "description": "Return per-deployment capability flags for the snippets plugin.\n\nRead live from ``snippets_settings`` so a deployment-config hot reload between\ntwo requests is reflected on the next response.\n\n:return: Capability flags reflecting the current deployment config.",
-        "operationId": "snippets__snippets_capabilities_provider_api_plugins_snippets_capabilities_get",
+        "operationId": "snippets__snippets_capabilities_provider_api_apps_snippets_capabilities_get",
         "responses": {
           "200": {
             "content": {
@@ -3027,10 +3027,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/refresh": {
+    "/api/apps/snippets/refresh": {
       "post": {
         "description": "Refresh the snippets cache from disk.\n\nAdmin-only and additionally gated by manual sync being enabled.\nMirrors the legacy Jinja2 ``POST /snippets/refresh`` route.\n\n:param user: The authenticated admin performing the refresh.\n:type user: User\n:param session: The SEP database session.\n:return: A response carrying the UTC timestamp of the refresh.\n:rtype: RefreshResponse",
-        "operationId": "snippets_snippets_api_refresh_api_plugins_snippets_refresh_post",
+        "operationId": "snippets_snippets_api_refresh_api_apps_snippets_refresh_post",
         "responses": {
           "200": {
             "content": {
@@ -3049,10 +3049,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/schema": {
+    "/api/apps/snippets/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "snippets_get_schema_api_plugins_snippets_schema_get",
+        "operationId": "snippets_get_schema_api_apps_snippets_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -3071,10 +3071,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/approval": {
+    "/api/apps/snippets/snippet/approval": {
       "delete": {
         "description": "Remove approval from a single snippet (idempotent).\n\nRemoving an approval that doesn't exist is a no-op ``204``. The\nsnippet missing → ``404`` (handled by ``SnippetDep``); approval\nmissing → ``204``.\n\n:param snippet: The snippet whose approval is being cleared.\n:type snippet: Snippet\n:param user: The authenticated admin performing the action.\n:type user: User\n:param session: The active database session.\n:type session: AsyncSession\n:return: An empty 204 response.\n:rtype: Response",
-        "operationId": "snippets_snippets_api_remove_approval_api_plugins_snippets_snippet_approval_delete",
+        "operationId": "snippets_snippets_api_remove_approval_api_apps_snippets_snippet_approval_delete",
         "parameters": [
           {
             "description": "Snippet filename (relative path under snippets root).",
@@ -3110,7 +3110,7 @@
       },
       "put": {
         "description": "Approve a single snippet (idempotent).\n\nRe-approving an already-approved snippet returns ``200`` with the\ncurrent state — ``approved_at`` is *not* overwritten so the audit\ntrail is preserved.\n\n:param snippet: The snippet whose approval is being set.\n:type snippet: Snippet\n:param user: The authenticated admin performing the action.\n:type user: User\n:param session: The active database session.\n:type session: AsyncSession\n:return: The snippet entity after the call, including approval state.\n:rtype: SnippetResponse",
-        "operationId": "snippets_snippets_api_approve_api_plugins_snippets_snippet_approval_put",
+        "operationId": "snippets_snippets_api_approve_api_apps_snippets_snippet_approval_put",
         "parameters": [
           {
             "description": "Snippet filename (relative path under snippets root).",
@@ -3152,10 +3152,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/download": {
+    "/api/apps/snippets/snippet/download": {
       "get": {
         "description": "Stream the raw snippet file as a download attachment.\n\nReturns the on-disk source verbatim — full bash/Python body plus its\nYAML frontmatter — so end users can save the file locally without\nbeing capped by the preview truncation limits. The\n``SnippetDep`` dependency already validates both the DB row and the\non-disk file, so a missing snippet or missing file surfaces as 404.\n\n:param snippet: The snippet whose raw file is requested.\n:type snippet: Snippet\n:return: The snippet file streamed as ``attachment; filename=...``\n    with a MIME type guessed from the on-disk path.\n:rtype: FileResponse",
-        "operationId": "snippets_snippets_api_download_api_plugins_snippets_snippet_download_get",
+        "operationId": "snippets_snippets_api_download_api_apps_snippets_snippet_download_get",
         "parameters": [
           {
             "description": "Snippet filename (relative path under snippets root).",
@@ -3195,10 +3195,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/execute": {
+    "/api/apps/snippets/snippet/execute": {
       "post": {
         "description": "Validate the args, assemble the meta, and dispatch the execution.",
-        "operationId": "snippets_snippets_api_script_execute_api_plugins_snippets_snippet_execute_post",
+        "operationId": "snippets_snippets_api_script_execute_api_apps_snippets_snippet_execute_post",
         "parameters": [
           {
             "description": "Script filename (relative path under the script dir).",
@@ -3250,10 +3250,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/history": {
+    "/api/apps/snippets/snippet/history": {
       "get": {
         "description": "Proxy the per-script execution history from the Tasks API by filename.",
-        "operationId": "snippets_snippets_api_script_history_api_plugins_snippets_snippet_history_get",
+        "operationId": "snippets_snippets_api_script_history_api_apps_snippets_snippet_history_get",
         "parameters": [
           {
             "description": "Script filename (relative path under the script dir).",
@@ -3272,7 +3272,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Response Snippets Snippets Api Script History Api Plugins Snippets Snippet History Get",
+                  "title": "Response Snippets Snippets Api Script History Api Apps Snippets Snippet History Get",
                   "type": "object"
                 }
               }
@@ -3296,10 +3296,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/preview": {
+    "/api/apps/snippets/snippet/preview": {
       "get": {
         "description": "Return the snippet's preview content with a highlighter language hint.\n\n:param snippet: The snippet whose preview is requested.\n:type snippet: Snippet\n:return: The preview content alongside metadata about it.\n:rtype: ScriptPreviewResponse\n:raises HTTPUnprocessableEntityException: When the snippet contains\n    bytes that cannot be decoded as UTF-8.",
-        "operationId": "snippets_snippets_api_script_preview_api_plugins_snippets_snippet_preview_get",
+        "operationId": "snippets_snippets_api_script_preview_api_apps_snippets_snippet_preview_get",
         "parameters": [
           {
             "description": "Snippet filename (relative path under snippets root).",
@@ -3341,10 +3341,10 @@
         ]
       }
     },
-    "/api/plugins/snippets/snippet/schema": {
+    "/api/apps/snippets/snippet/schema": {
       "get": {
         "description": "Return the per-script form schema synthesised from its parameters.",
-        "operationId": "snippets_snippets_api_script_schema_api_plugins_snippets_snippet_schema_get",
+        "operationId": "snippets_snippets_api_script_schema_api_apps_snippets_snippet_schema_get",
         "parameters": [
           {
             "description": "Script filename (relative path under the script dir).",

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the alters plugin JSON API routes under /api/plugins/alters/."""
+"""Tests for the alters plugin JSON API routes under /api/apps/alters/."""
 
 from typing import Any
 from unittest.mock import AsyncMock, call
@@ -29,7 +29,7 @@ from app.sep.inventory import CreatedService
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 from tests.app.factories import TaskFactory
 
-API_BASE = "/api/plugins/alters"
+API_BASE = "/api/apps/alters"
 DEFAULT_TASK_NAME = "alter-task"
 DEFAULT_PARENT_NAME = "parent-alter"
 EXPECTED_CASCADE_CREATE_POSTS = 3
@@ -164,7 +164,7 @@ def _clear_connectivity_caches():
 
 
 class TestAltersAppSchemaEndpoint:
-    """Tests for GET /api/plugins/alters/schema."""
+    """Tests for GET /api/apps/alters/schema."""
 
     def test_schema_returns_200(self, test_client):
         """Ensure the schema endpoint returns HTTP 200 with JSON content."""
@@ -187,7 +187,7 @@ class TestAltersAppSchemaEndpoint:
 
 
 class TestAltersApiList:
-    """Tests for GET /api/plugins/alters/."""
+    """Tests for GET /api/apps/alters/."""
 
     def test_list_returns_parent_tasks_only(
         self, test_client, mock_task_api_dep
@@ -233,7 +233,7 @@ class TestAltersApiList:
 
 
 class TestAltersApiDetail:
-    """Tests for GET /api/plugins/alters/{task_name}."""
+    """Tests for GET /api/apps/alters/{task_name}."""
 
     def test_detail_returns_parent_task(self, test_client, mock_task_api_dep) -> None:
         """Ensure the detail endpoint returns the parent task with status."""
@@ -272,7 +272,7 @@ class TestAltersApiDetail:
 
 
 class TestAltersApiCreate:
-    """Tests for POST /api/plugins/alters/."""
+    """Tests for POST /api/apps/alters/."""
 
     def test_create_posts_parent_derived_and_predecessor(
         self,
@@ -379,7 +379,7 @@ class TestAltersApiCreate:
 
 
 class TestAltersApiUpdate:
-    """Tests for PUT /api/plugins/alters/{task_name}."""
+    """Tests for PUT /api/apps/alters/{task_name}."""
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_update_puts_parent_and_satellites(
@@ -562,7 +562,7 @@ class TestAltersApiUpdate:
 
 
 class TestAltersApiDelete:
-    """Tests for DELETE /api/plugins/alters/{task_name}."""
+    """Tests for DELETE /api/apps/alters/{task_name}."""
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_delete_removes_satellites_then_parent(
@@ -691,7 +691,7 @@ class TestAltersApiDelete:
 
 
 class TestAltersApiExecute:
-    """Tests for POST /api/plugins/alters/{task_name}/execute."""
+    """Tests for POST /api/apps/alters/{task_name}/execute."""
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_execute_returns_201_with_task_name_and_id(

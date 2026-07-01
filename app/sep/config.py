@@ -109,7 +109,7 @@ class App(BaseCaseInsensitiveModel):
     :type enabled: bool
     :param api_router_path: Optional dot-separated import path to the plugin's
         JSON ``APIRouter`` instance (e.g. ``"app.sep.apps.checksums.api_routes.router"``).
-        When set, the router is mounted under ``/api/plugins/{key}`` by the
+        When set, the router is mounted under ``/api/apps/{key}`` by the
         shared API router loop. Three input states:
 
         * **Field omitted** — auto-derive from ``module_name`` when the

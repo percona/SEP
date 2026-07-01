@@ -277,7 +277,7 @@ def test_no_duplicate_control_silent_with_response_extras_builder(
         inventory_api=MockInventoryAPI(),
     )
 
-    payload = client.get(f"/api/plugins{app_def.uri_path}/schema").json()
+    payload = client.get(f"/api/apps{app_def.uri_path}/schema").json()
 
     assert app_def.response_builder is not None
     assert check_no_duplicate_capability_control(payload) == []

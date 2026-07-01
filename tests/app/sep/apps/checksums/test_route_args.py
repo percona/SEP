@@ -41,7 +41,7 @@ _DSN_PREFIX = f"h={SYNTH_SERVICE_HOST},P={SYNTH_SERVICE_PORT},"
 
 
 def test_derived_create_assembles_exact_args(regular_user: CasdoorUser) -> None:
-    """Assert ``POST /api/plugins/checksums/`` assembles the byte-exact args string."""
+    """Assert ``POST /api/apps/checksums/`` assembles the byte-exact args string."""
     tasks_api = MockTaskAPI()
     client = build_contract_client(
         checksums_app,
@@ -71,7 +71,7 @@ def test_derived_create_assembles_exact_args(regular_user: CasdoorUser) -> None:
 
 
 def test_derived_update_assembles_exact_args(regular_user: CasdoorUser) -> None:
-    """Assert ``PUT /api/plugins/checksums/{task_name}`` reuses the arg assembly."""
+    """Assert ``PUT /api/apps/checksums/{task_name}`` reuses the arg assembly."""
     tasks_api = MockTaskAPI()
     tasks_api.seed_task("chk-update", owner=checksums_app.owner)
     client = build_contract_client(
@@ -100,7 +100,7 @@ def test_derived_update_assembles_exact_args(regular_user: CasdoorUser) -> None:
 
 
 def test_derived_schema_advanced_section_field_order(regular_user: CasdoorUser) -> None:
-    """Assert ``GET /api/plugins/checksums/schema`` keeps the Advanced display order."""
+    """Assert ``GET /api/apps/checksums/schema`` keeps the Advanced display order."""
     client = build_contract_client(
         checksums_app,
         user=regular_user,

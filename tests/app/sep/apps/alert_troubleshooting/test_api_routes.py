@@ -20,13 +20,13 @@ from fastapi import status
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-API_BASE = "/api/plugins/alert_troubleshooting"
+API_BASE = "/api/apps/alert_troubleshooting"
 EXPECTED_GROUP_COUNT = 2
 
 
 @pytest.mark.asyncio
 class TestAlertTroubleshootingApiList:
-    """Tests for ``GET /api/plugins/alert_troubleshooting/``."""
+    """Tests for ``GET /api/apps/alert_troubleshooting/``."""
 
     async def test_returns_empty_list_when_no_snippets(
         self, api_client: TestClient, session: AsyncSession, snippets_dir
@@ -99,7 +99,7 @@ class TestAlertTroubleshootingApiList:
 
 @pytest.mark.asyncio
 class TestAlertTroubleshootingApiDetail:
-    """Tests for ``GET /api/plugins/alert_troubleshooting/{service_type}/{alert_name}``."""
+    """Tests for ``GET /api/apps/alert_troubleshooting/{service_type}/{alert_name}``."""
 
     async def test_returns_alert_and_snippets(
         self,

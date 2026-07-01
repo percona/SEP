@@ -65,17 +65,17 @@ const STORED_TASK = {
 
 function renderAt(
   extra?: { renderEditForm?: RenderFormSlot },
-  path = '/plugins/checksums/task/check1/edit',
+  path = '/apps/checksums/task/check1/edit',
 ) {
   return render(
     <SnackbarProvider>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route
-            path="/plugins/:plugin/task/:id/edit"
+            path="/apps/:plugin/task/:id/edit"
             element={<PluginTaskEditPage schema={schema} pluginName="checksums" {...extra} />}
           />
-          <Route path="/plugins/:plugin/task/:id" element={<div>detail page</div>} />
+          <Route path="/apps/:plugin/task/:id" element={<div>detail page</div>} />
         </Routes>
       </MemoryRouter>
     </SnackbarProvider>,
@@ -194,13 +194,13 @@ describe('PluginTaskEditPage', () => {
 
     render(
       <SnackbarProvider>
-        <MemoryRouter initialEntries={['/plugins/checksums/task/check1/edit']}>
+        <MemoryRouter initialEntries={['/apps/checksums/task/check1/edit']}>
           <Routes>
             <Route
-              path="/plugins/:plugin/task/:id/edit"
+              path="/apps/:plugin/task/:id/edit"
               element={<PluginTaskEditPage schema={alertSchema} pluginName="checksums" />}
             />
-            <Route path="/plugins/:plugin/task/:id" element={<div>detail page</div>} />
+            <Route path="/apps/:plugin/task/:id" element={<div>detail page</div>} />
           </Routes>
         </MemoryRouter>
       </SnackbarProvider>,
@@ -259,13 +259,13 @@ describe('PluginTaskEditPage', () => {
 
     render(
       <SnackbarProvider>
-        <MemoryRouter initialEntries={['/plugins/mysql_backups/task/backup1/edit']}>
+        <MemoryRouter initialEntries={['/apps/mysql_backups/task/backup1/edit']}>
           <Routes>
             <Route
-              path="/plugins/:plugin/task/:id/edit"
+              path="/apps/:plugin/task/:id/edit"
               element={<PluginTaskEditPage schema={uploadSchema} pluginName="mysql_backups" />}
             />
-            <Route path="/plugins/:plugin/task/:id" element={<div>detail page</div>} />
+            <Route path="/apps/:plugin/task/:id" element={<div>detail page</div>} />
           </Routes>
         </MemoryRouter>
       </SnackbarProvider>,

@@ -99,7 +99,7 @@ export function usePluginTasks<T extends Record<string, unknown>>(
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<PluginTasksResponse<T>>(`/plugins/${pluginName}/`);
+        const { data } = await apiClient.get<PluginTasksResponse<T>>(`/apps/${pluginName}/`);
         return unwrapTasks(data);
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
@@ -124,7 +124,7 @@ export function usePluginTask<T extends Record<string, unknown>>(
     queryFn: async () => {
       try {
         const { data } = await apiClient.get<T>(
-          `/plugins/${pluginName}/${encodeURIComponent(taskId!)}`,
+          `/apps/${pluginName}/${encodeURIComponent(taskId!)}`,
         );
         return data;
       } catch (error) {
@@ -148,7 +148,7 @@ export function useCreatePluginTask<T extends Record<string, unknown>>(
   return useMutation<T, Error, Record<string, unknown>>({
     mutationFn: async (values) => {
       try {
-        const { data } = await apiClient.post<T>(`/plugins/${pluginName}/`, values);
+        const { data } = await apiClient.post<T>(`/apps/${pluginName}/`, values);
         return data;
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
@@ -173,7 +173,7 @@ export function useUpdatePluginTask<T extends Record<string, unknown>>(
     mutationFn: async ({ taskId, values }) => {
       try {
         const { data } = await apiClient.put<T>(
-          `/plugins/${pluginName}/${encodeURIComponent(taskId)}`,
+          `/apps/${pluginName}/${encodeURIComponent(taskId)}`,
           values,
         );
         return data;
@@ -207,10 +207,10 @@ function entityQueriesRootKey(pluginName: string) {
  * misbehaving backend or attacker-controlled JSON.
  */
 export function buildEntityItemPath(pluginName: string, entityName: string, id: string): string {
-  return `/plugins/${pluginName}/${entityName}/${encodeURIComponent(id)}`;
+  return `/apps/${pluginName}/${entityName}/${encodeURIComponent(id)}`;
 }
 
-/** List rows for one entity of a multi-entity plugin (GET ``/plugins/{name}/{entity}/``). */
+/** List rows for one entity of a multi-entity plugin (GET ``/apps/{name}/{entity}/``). */
 export function usePluginEntityList<T extends Record<string, unknown>>(
   pluginName: string,
   entityName: string,
@@ -223,7 +223,7 @@ export function usePluginEntityList<T extends Record<string, unknown>>(
     queryFn: async () => {
       try {
         const { data } = await apiClient.get<T[] | PaginatedPluginList<T>>(
-          `/plugins/${pluginName}/${entityName}/`,
+          `/apps/${pluginName}/${entityName}/`,
         );
         return unwrapPluginListResponse(data);
       } catch (error) {
@@ -273,7 +273,7 @@ export function useCreatePluginEntity<T extends Record<string, unknown>>(
   return useMutation<T, Error, Record<string, unknown>>({
     mutationFn: async (values) => {
       try {
-        const { data } = await apiClient.post<T>(`/plugins/${pluginName}/${entityName}/`, values);
+        const { data } = await apiClient.post<T>(`/apps/${pluginName}/${entityName}/`, values);
         return data;
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
@@ -349,7 +349,7 @@ export function useDeletePluginTask<T extends Record<string, unknown>>(
   return useMutation<void, Error, string>({
     mutationFn: async (taskId) => {
       try {
-        await apiClient.delete(`/plugins/${pluginName}/${encodeURIComponent(taskId)}`);
+        await apiClient.delete(`/apps/${pluginName}/${encodeURIComponent(taskId)}`);
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
           // Mock mode: pretend the delete succeeded so the UI flow can be

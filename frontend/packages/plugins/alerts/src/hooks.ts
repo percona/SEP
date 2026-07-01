@@ -24,7 +24,7 @@ import type {
   PushResponse,
 } from './types';
 
-const API_BASE = '/plugins/alerts';
+const API_BASE = '/apps/alerts';
 
 /** Backend caps GET /backups at 100 rows per page (see `_BACKUPS_LIMIT_MAX`). */
 const MAX_BACKUPS = 100;

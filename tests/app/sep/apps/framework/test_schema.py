@@ -338,7 +338,7 @@ def test_capabilities_omitted_pii_anonymization_in_payload_defaults_false():
         (
             ScriptPreviewField,
             "script_preview",
-            {"endpoint_url": "/api/plugins/x/preview"},
+            {"endpoint_url": "/api/apps/x/preview"},
         ),
         (
             ServiceField,
@@ -831,11 +831,11 @@ class TestScriptPreviewField:
         field = ScriptPreviewField(
             name="preview",
             label="Preview",
-            endpoint_url="/api/plugins/snippets/x.sh/preview",
+            endpoint_url="/api/apps/snippets/x.sh/preview",
         )
 
         assert field.field_type == "script_preview"
-        assert field.endpoint_url == "/api/plugins/snippets/x.sh/preview"
+        assert field.endpoint_url == "/api/apps/snippets/x.sh/preview"
         assert field.depends_on == []
         assert field.language is None
 
@@ -854,7 +854,7 @@ class TestScriptPreviewField:
         field = ScriptPreviewField(
             name="preview",
             label="Preview",
-            endpoint_url="/api/plugins/x/y",
+            endpoint_url="/api/apps/x/y",
             depends_on=["snippet_filename", "executor_host"],
         )
 
@@ -865,12 +865,12 @@ class TestScriptPreviewField:
         field = ScriptPreviewField(
             name="preview",
             label="Preview",
-            endpoint_url="/api/plugins/x/y",
+            endpoint_url="/api/apps/x/y",
         )
 
         dumped = field.model_dump(by_alias=True)
         assert dumped["type"] == "script_preview"
-        assert dumped["endpoint_url"] == "/api/plugins/x/y"
+        assert dumped["endpoint_url"] == "/api/apps/x/y"
         assert dumped["depends_on"] == []
 
     def test_dispatch_via_any_field_discriminator(self):
@@ -883,14 +883,14 @@ class TestScriptPreviewField:
                         "type": "script_preview",
                         "name": "preview",
                         "label": "Preview",
-                        "endpoint_url": "/api/plugins/x/y",
+                        "endpoint_url": "/api/apps/x/y",
                     },
                 ],
             },
         )
 
         assert isinstance(section.fields[0], ScriptPreviewField)
-        assert section.fields[0].endpoint_url == "/api/plugins/x/y"
+        assert section.fields[0].endpoint_url == "/api/apps/x/y"
 
 
 class TestChoiceDisabled:

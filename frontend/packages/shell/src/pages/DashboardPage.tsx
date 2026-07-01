@@ -49,10 +49,10 @@ interface RecentTask {
 
 const OWNER_ROUTE_MAP: Record<string, (taskName: string) => string> = {
   ALTERS: (n) => `/schema-change/alters/task/${encodeURIComponent(n)}`,
-  ARCHIVER: (n) => `/plugins/archives/task/${encodeURIComponent(n)}`,
-  BACKUPS: (n) => `/plugins/mysql_backups/task/${encodeURIComponent(n)}`,
+  ARCHIVER: (n) => `/apps/archives/task/${encodeURIComponent(n)}`,
+  BACKUPS: (n) => `/apps/mysql_backups/task/${encodeURIComponent(n)}`,
   RESTORES: (n) => `/tasks/${encodeURIComponent(n)}`,
-  CHECKSUMS: (n) => `/plugins/checksums/task/${encodeURIComponent(n)}`,
+  CHECKSUMS: (n) => `/apps/checksums/task/${encodeURIComponent(n)}`,
   BACKUP_MONGO: (n) => `/backups/mongodb/backups/task/${encodeURIComponent(n)}`,
   RESTORE_MONGO: (n) => `/backups/mongodb/restores/task/${encodeURIComponent(n)}`,
   BACKUP_PG: (n) => `/backups/postgresql/task/${encodeURIComponent(n)}`,

@@ -21,8 +21,8 @@ from pydantic import BaseModel
 class ReportGenerateWrite(BaseModel):
     """Define shared JSON body parameters for report generation API routes.
 
-    Request body for ``POST /api/plugins/report/generate/pdf`` and
-    ``POST /api/plugins/report/upload`` only. ``GET /api/plugins/report/generate``
+    Request body for ``POST /api/apps/report/generate/pdf`` and
+    ``POST /api/apps/report/upload`` only. ``GET /api/apps/report/generate``
     uses explicit query parameters (``since``, ``until``, ``full``, ``refresh``,
     ``sections``) and does not use this model. Legacy Jinja JSON remains at
     ``GET /report/generate/json``.

@@ -132,7 +132,7 @@ def test_jinja_routes_are_omitted_from_openapi():
     """Verify legacy inventory Jinja2 routes are excluded from the OpenAPI schema.
 
     The React control consumes the new JSON route at
-    ``POST /api/plugins/inventory/sync/``; the Jinja2 trigger remains
+    ``POST /api/apps/inventory/sync/``; the Jinja2 trigger remains
     functional but is hidden from OpenAPI now that the supported API
     surface is JSON-only.
     """

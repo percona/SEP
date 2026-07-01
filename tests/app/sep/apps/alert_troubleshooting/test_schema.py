@@ -45,11 +45,11 @@ class TestStaticSchema:
 
 
 class TestSchemaEndpoint:
-    """Tests for the /api/plugins/alert_troubleshooting/schema HTTP endpoint."""
+    """Tests for the /api/apps/alert_troubleshooting/schema HTTP endpoint."""
 
     def test_returns_plugin_schema(self, test_client):
-        """GET /api/plugins/alert_troubleshooting/schema returns the plugin metadata."""
-        response = test_client.get("/api/plugins/alert_troubleshooting/schema")
+        """GET /api/apps/alert_troubleshooting/schema returns the plugin metadata."""
+        response = test_client.get("/api/apps/alert_troubleshooting/schema")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["name"] == "alert_troubleshooting"

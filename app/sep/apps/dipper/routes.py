@@ -16,7 +16,7 @@
 """Define routes for the Dipper plugin.
 
 These Jinja2 routes are deprecated. The JSON API equivalents live under
-``/api/plugins/dipper/`` and the React UI consumes them via
+``/api/apps/dipper/`` and the React UI consumes them via
 ``frontend/packages/plugins/dipper``. Every response from this router
 carries the RFC 8594 ``Deprecation: true`` header and emits a WARNING on
 hit; the routes remain mounted so users can fall back to the legacy UI
