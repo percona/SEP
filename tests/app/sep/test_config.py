@@ -215,16 +215,12 @@ class TestAppsKeyBackCompat:
         settings = SEPSettings.model_validate(
             {"PLUGINS": [{"MODULE_NAME": "backup_pg"}]}
         )
-        assert [app.module_name for app in settings.APPS] == [
-            "app.sep.apps.backup_pg"
-        ]
+        assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
 
     def test_modern_apps_key_populates_apps(self):
         """Load the app list from the modern ``APPS`` key."""
         settings = SEPSettings.model_validate({"APPS": [{"MODULE_NAME": "backup_pg"}]})
-        assert [app.module_name for app in settings.APPS] == [
-            "app.sep.apps.backup_pg"
-        ]
+        assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
 
     def test_apps_takes_precedence_over_legacy(self):
         """Prefer ``APPS`` over the legacy ``PLUGINS`` when both keys are set."""
@@ -234,9 +230,7 @@ class TestAppsKeyBackCompat:
                 "PLUGINS": [{"MODULE_NAME": "backup_mongo"}],
             }
         )
-        assert [app.module_name for app in settings.APPS] == [
-            "app.sep.apps.backup_pg"
-        ]
+        assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
 
     def test_deprecation_warning_for_legacy_key(self):
         """Assert a deprecation warning is logged when the legacy ``PLUGINS`` key is set."""
@@ -257,9 +251,7 @@ class TestAppsKeyBackCompat:
         monkeypatch.setenv("SEP__PLUGINS", '[{"MODULE_NAME": "backup_pg"}]')
         with patch("app.sep.config.logger") as mock_logger:
             settings = SEPSettings()
-        assert any(
-            app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS
-        )
+        assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
         assert _logged_legacy_apps_warning(mock_logger)
 
     def test_modern_apps_env_var_does_not_warn(self, monkeypatch: pytest.MonkeyPatch):
@@ -267,7 +259,5 @@ class TestAppsKeyBackCompat:
         monkeypatch.setenv("SEP__APPS", '[{"MODULE_NAME": "backup_pg"}]')
         with patch("app.sep.config.logger") as mock_logger:
             settings = SEPSettings()
-        assert any(
-            app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS
-        )
+        assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
         assert not _logged_legacy_apps_warning(mock_logger)
