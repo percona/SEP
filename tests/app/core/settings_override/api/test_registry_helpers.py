@@ -16,10 +16,11 @@
 """Unit tests for the field-introspection helpers in ``registry.py`` and the response builder ``_settings_response_from_field`` in ``api.routes``."""
 
 from datetime import timedelta
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
 import pytest
-from pydantic import BaseModel, Field, PositiveInt, SecretStr, ValidationError
+from annotated_types import Gt, Le
+from pydantic import BaseModel, Field, PositiveInt, SecretStr, Strict, ValidationError
 
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.api.routes import (
@@ -55,6 +56,7 @@ class _FixtureSettings(BaseYamlSettings):
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["FIXTURE"]
 
     HOT_INT: PositiveInt = hot_field(10)
+    HOT_STRICT_INT: Annotated[int, Strict(), Gt(0), Le(365)] = hot_field(90)
     HOT_BOOL: bool = hot_field(default=True)
     COLD_STRING: str = "default"
     COLD_TIMEDELTA: timedelta = timedelta(minutes=5)
@@ -84,6 +86,37 @@ def test_coerce_field_value_rejects_wrong_type() -> None:
     field = _FixtureSettings.model_fields["HOT_BOOL"]
     with pytest.raises(ValidationError):
         coerce_field_value(field, "not-a-bool")
+
+
+_STRICT_INT_LOWER_BOUND = 1
+_STRICT_INT_UPPER_BOUND = 365
+_STRICT_INT_DEFAULT = 90
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, 1.5, 0, _STRICT_INT_UPPER_BOUND + 1],
+)
+def test_coerce_field_value_strict_int_rejects(bad_value: object) -> None:
+    """A ``Strict()``-int field rejects bool/float and out-of-range integers.
+
+    ``Strict()`` blocks the lax ``bool``/``float -> int`` coercion that a plain
+    ``int`` annotation would silently accept; ``Gt(0)``/``Le(365)`` are preserved
+    through ``_annotated_type`` reassembly so the bounds still reject 0 and 366.
+    """
+    field = _FixtureSettings.model_fields["HOT_STRICT_INT"]
+    with pytest.raises(ValidationError):
+        coerce_field_value(field, bad_value)
+
+
+@pytest.mark.parametrize(
+    "valid_value",
+    [_STRICT_INT_LOWER_BOUND, _STRICT_INT_DEFAULT, _STRICT_INT_UPPER_BOUND],
+)
+def test_coerce_field_value_strict_int_accepts_in_range(valid_value: int) -> None:
+    """A ``Strict()``-int field accepts genuine integers within the bounds."""
+    field = _FixtureSettings.model_fields["HOT_STRICT_INT"]
+    assert coerce_field_value(field, valid_value) == valid_value
 
 
 def test_iter_class_fields_yields_every_field() -> None:

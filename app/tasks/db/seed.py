@@ -483,6 +483,20 @@ if _nomad_cert_schedule is not None:
         ),
     )
 
+_log_purge_schedule = tasks_settings.LOG_PURGE_INTERVAL
+if _log_purge_schedule is not None:
+    SYSTEM_PERIODIC_TASKS.append(
+        SystemPeriodicTaskSchedule(
+            schedule=_log_purge_schedule,
+            tasks=[
+                SystemPeriodicTaskData(
+                    name="tasks__purge_task_history_logs",
+                    task_name="app.tasks.celery.purge_task_history_logs",
+                ),
+            ],
+        ),
+    )
+
 
 async def init_tasks_db() -> None:
     """Initialize the Tasks database with system tasks and periodic tasks."""
