@@ -186,12 +186,14 @@ export interface SchemaFormRendererProps {
   /** Server-side error to show above the form (e.g. API failure from the caller's mutation). */
   submitError?: string | null;
   /**
-   * Backend per-field validation errors (e.g. parsed from a 422) applied to the
-   * form this renderer owns via react-hook-form `setError`. Each entry's `path`
-   * is a react-hook-form field name; entries with an empty `path` are skipped
-   * here (callers surface those through {@link submitError}). Pass a fresh array
-   * on each submit failure — re-applying the same identity re-runs setError, and
-   * previously applied errors are cleared before the new set is applied.
+   /**
+    * Backend per-field validation errors (e.g. parsed from a 422) applied to the
+    * form this renderer owns via react-hook-form `setError`. Each entry's `path`
+    * is a react-hook-form field name; entries with an empty `path` are skipped
+    * here (callers surface those through {@link submitError}). Pass a fresh array
+    * on each submit failure — changing the array identity re-runs setError, and
+    * previously applied errors are cleared before the new set is applied.
+    */
    */
   fieldErrors?: FieldValidationError[];
   /** Plugin capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
