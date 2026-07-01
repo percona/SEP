@@ -16,7 +16,7 @@
 """Define the ``AppRegistry`` that drives SEP app mounting and metadata.
 
 The registry is the single iteration source for both mount loops and every
-``SEP.PLUGINS`` metadata consumer. It imports each activated module and either
+``SEP.APPS`` metadata consumer. It imports each activated module and either
 uses its exported ``app`` definition or synthesizes an implicit
 :class:`~app.sep.apps.framework.base.BaseApp` from the legacy ``App``
 settings entry, so legacy and definition-based apps coexist.
@@ -166,7 +166,7 @@ def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
     synthesize an implicit app from the legacy settings entry. Pure function of
     the activation list -- unit tests call it directly.
 
-    :param plugins: The ``SEP.PLUGINS`` activation entries, in order.
+    :param plugins: The ``SEP.APPS`` activation entries, in order.
     :return: The ordered registry.
     :rtype: AppRegistry
     """
@@ -183,7 +183,7 @@ def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
 
 @lru_cache(maxsize=1)
 def get_app_registry() -> AppRegistry:
-    """Return the process-wide registry built over ``sep_settings.PLUGINS``.
+    """Return the process-wide registry built over ``sep_settings.APPS``.
 
     Cached so the module-importing build runs once. ``cache_clear()`` resets it
     between tests.
@@ -191,4 +191,4 @@ def get_app_registry() -> AppRegistry:
     :return: The cached registry.
     :rtype: AppRegistry
     """
-    return build_app_registry(sep_settings.PLUGINS)
+    return build_app_registry(sep_settings.APPS)

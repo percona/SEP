@@ -34,11 +34,11 @@ from app.sep.periodic_tasks import sync_app_periodic_task_gating
 from app.sep.snippets.config import snippets_settings
 
 _alerts_plugin_enabled = any(
-    p.module_name.endswith(".alerts") for p in sep_settings.PLUGINS
+    p.module_name.endswith(".alerts") for p in sep_settings.APPS
 )
 
 _report_plugin_enabled = any(
-    p.module_name.endswith(".report") for p in sep_settings.PLUGINS
+    p.module_name.endswith(".report") for p in sep_settings.APPS
 )
 
 
@@ -131,7 +131,7 @@ async def init_sep_db() -> None:
     """Initialize the SEP database with app state and periodic tasks.
 
     Seeds one :class:`app.sep.models.AppState` row per non-protected plugin in
-    ``SEP.PLUGINS`` using get-or-create (the YAML ``enabled`` flag is mapped to
+    ``SEP.APPS`` using get-or-create (the YAML ``enabled`` flag is mapped to
     ``ENABLED`` / ``DISABLED`` only on insert; existing rows are never
     overwritten), removes rows for apps no longer configured, then seeds the SEP
     periodic tasks and gates each plugin-owned schedule by its app state via

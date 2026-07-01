@@ -90,7 +90,7 @@ def discover_plugin_migrations_and_models() -> list[str]:
     Discovery is **migrations-first**: a plugin only participates in
     Alembic if it has a ``migrations/versions/`` directory on disk.
     Filesystem-based walk over ``pkgutil.iter_modules(plugins_pkg.__path__)``;
-    does NOT consult ``sep_settings.PLUGINS``. Schema management follows
+    does NOT consult ``sep_settings.APPS``. Schema management follows
     installed code, not enablement in configuration.
 
     :return: Absolute paths to each participating plugin's migration
