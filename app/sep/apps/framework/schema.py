@@ -790,6 +790,39 @@ class ListView(SchemaBaseModel):
         return self
 
 
+#: The executor-host column shared by every host-bearing task-plugin list view.
+#: Treat as read-only: ``Column`` is not frozen, and this single instance is
+#: reused across app declarations, so mutating it would alias every consumer.
+EXECUTOR_HOST_COLUMN = Column(key="hostname", label="Executor Host")
+
+
+def default_columns(*middle: Column) -> list[Column]:
+    """Return the standard task-plugin list-view columns wrapping ``middle``.
+
+    Build the ordered column list ``[name, status, *middle, created_at,
+    created_by]`` shared by every task-plugin ``ListView``. The identity/audit
+    bookends are the part that is duplicated across all eight task plugins;
+    each plugin passes only its plugin-specific columns (and, where it has one,
+    ``EXECUTOR_HOST_COLUMN``) through the ``middle`` slot, in the order they
+    should appear. Fresh ``Column`` instances are built on every call — the
+    column models are not frozen, so returning shared instances would risk
+    aliasing across app declarations. The ``middle`` columns are copied for
+    the same reason: callers pass the shared ``EXECUTOR_HOST_COLUMN`` constant,
+    so spreading it verbatim would alias every host-bearing view.
+
+    :param middle: The plugin-specific columns to place between ``status`` and
+        ``created_at``, in display order.
+    :return: The ordered list of columns for the plugin's list view.
+    """
+    return [
+        Column(key="name", label="Name", sortable=True),
+        Column(key="status", label="Status", format=ColumnFormat.STATUS),
+        *(column.model_copy() for column in middle),
+        Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
+        Column(key="created_by", label="Created By"),
+    ]
+
+
 DetailPath = Annotated[
     str,
     StringConstraints(
