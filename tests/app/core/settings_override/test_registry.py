@@ -142,7 +142,7 @@ def test_is_hot_reloadable_true_for_promoted_endpoint() -> None:
 
 def test_is_hot_reloadable_false_for_structural_field() -> None:
     """Structural fields are never overridable."""
-    assert is_hot_reloadable(SEPSettings, "PLUGINS") is False
+    assert is_hot_reloadable(SEPSettings, "APPS") is False
 
 
 def test_is_hot_reloadable_false_for_missing_field() -> None:
@@ -168,6 +168,8 @@ def test_hot_field_names_tasks_settings() -> None:
     """``TasksSettings`` HOT fields exclude ``NOMAD`` but include ``SYNC_LOCK_TTL``."""
     assert hot_field_names(TasksSettings) == frozenset(
         {
+            "LOG_STREAM_CAP_BYTES",
+            "LOG_STREAM_EVICTION_MAX_ROWS",
             "PRE_EXECUTION_CONNECTIVITY_CHECK",
             "STALENESS_THRESHOLD_SECONDS",
             "SYNC_LOCK_TTL",
@@ -190,9 +192,14 @@ def test_nested_overridable_field_names_tasks_settings() -> None:
 
 
 def test_hot_field_names_snippets_settings() -> None:
-    """``SnippetsSettings`` ships its three HOT preview / sync fields."""
+    """Expose the HOT preview / sync fields and the sync interval on ``SnippetsSettings``."""
     assert hot_field_names(SnippetsSettings) == frozenset(
-        {"ENABLE_MANUAL_SYNC", "PREVIEW_MAX_CHARS", "PREVIEW_MAX_LINES"}
+        {
+            "ENABLE_MANUAL_SYNC",
+            "PREVIEW_MAX_CHARS",
+            "PREVIEW_MAX_LINES",
+            "SYNC_INTERVAL",
+        }
     )
 
 
@@ -245,9 +252,7 @@ def test_sep_settings_marked_advanced(field_name: str) -> None:
     assert is_advanced_field(SEPSettings.model_fields[field_name]) is True
 
 
-@pytest.mark.parametrize(
-    "field_name", ["SYNC_REFRESH_TIME", "PLUGINS", "DATABASE", "PMM"]
-)
+@pytest.mark.parametrize("field_name", ["SYNC_REFRESH_TIME", "APPS", "DATABASE", "PMM"])
 def test_sep_settings_not_marked_advanced(field_name: str) -> None:
     """SEP settings left basic do not carry the advanced flag (no over-marking)."""
     assert is_advanced_field(SEPSettings.model_fields[field_name]) is False

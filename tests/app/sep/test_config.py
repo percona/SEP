@@ -24,9 +24,9 @@ from pydantic import ValidationError
 
 from app.core.config import PMMSettings
 from app.sep.config import (
-    _DeprecatedPMMConfig,
+    App,
     AppDrainSettings,
-    Plugin,
+    DeprecatedPMMConfig,
     SEPSettings,
     SessionOptions,
 )
@@ -120,19 +120,19 @@ class TestForwardDeprecatedPMMFields:
         core_pmm = PMMSettings()
         with patch("app.sep.config.settings") as mock_settings:
             mock_settings.PMM = core_pmm
-            SEPSettings(PMM=_DeprecatedPMMConfig())
+            SEPSettings(PMM=DeprecatedPMMConfig())
         assert mock_settings.PMM is core_pmm
 
 
 class TestPluginModuleNameDeprecation:
-    """Test the legacy ``backup``/``backups`` MODULE_NAME shim on ``Plugin``."""
+    """Test the legacy ``backup``/``backups`` MODULE_NAME shim on ``App``."""
 
     @pytest.mark.parametrize("legacy_value", ["backup", "backups"])
     def test_legacy_value_is_remapped_to_mysql_backups(self, legacy_value: str):
         """Assert legacy aliases resolve to ``mysql_backups`` and log a deprecation warning."""
         with patch("app.sep.config.logger") as mock_logger:
-            plugin = Plugin(name="MySQL Backups", module_name=legacy_value)
-        assert plugin.module_name == "app.sep.plugins.mysql_backups"
+            plugin = App(name="MySQL Backups", module_name=legacy_value)
+        assert plugin.module_name == "app.sep.apps.mysql_backups"
         mock_logger.warning.assert_called_once()
         rendered = mock_logger.warning.call_args.args[0] % tuple(
             mock_logger.warning.call_args.args[1:]
@@ -144,15 +144,15 @@ class TestPluginModuleNameDeprecation:
     def test_modern_value_resolves_without_warning(self):
         """Assert the modern ``mysql_backups`` value resolves normally with no warning."""
         with patch("app.sep.config.logger") as mock_logger:
-            plugin = Plugin(name="MySQL Backups", module_name="mysql_backups")
-        assert plugin.module_name == "app.sep.plugins.mysql_backups"
+            plugin = App(name="MySQL Backups", module_name="mysql_backups")
+        assert plugin.module_name == "app.sep.apps.mysql_backups"
         mock_logger.warning.assert_not_called()
 
     @pytest.mark.parametrize(
         ("sibling_value", "expected_module"),
         [
-            ("backup_mongo", "app.sep.plugins.backup_mongo"),
-            ("backup_pg", "app.sep.plugins.backup_pg"),
+            ("backup_mongo", "app.sep.apps.backup_mongo"),
+            ("backup_pg", "app.sep.apps.backup_pg"),
         ],
     )
     def test_sibling_backup_module_is_not_remapped(
@@ -160,28 +160,28 @@ class TestPluginModuleNameDeprecation:
     ):
         """Assert sibling plugins whose names begin with ``backup`` are unaffected."""
         with patch("app.sep.config.logger") as mock_logger:
-            plugin = Plugin(name="Backups", module_name=sibling_value)
+            plugin = App(name="Backups", module_name=sibling_value)
         assert plugin.module_name == expected_module
         mock_logger.warning.assert_not_called()
 
 
 class TestPluginNameOptional:
-    """Test the MODULE_NAME-only ``Plugin`` shrink (``name`` optional)."""
+    """Test the MODULE_NAME-only ``App`` shrink (``name`` optional)."""
 
     def test_plugin_constructs_without_name(self) -> None:
         """A MODULE_NAME-only entry validates with ``name`` absent."""
-        plugin = Plugin(module_name="checksums")
+        plugin = App(module_name="checksums")
         assert plugin.name is None
 
     def test_name_absent_leaves_derived_metadata_empty(self) -> None:
         """Without a name, ``uri_path``/``css_class`` stay empty for the registry."""
-        plugin = Plugin(module_name="checksums")
+        plugin = App(module_name="checksums")
         assert plugin.uri_path == ""
         assert plugin.css_class == ""
 
     def test_name_still_seeds_derived_metadata(self) -> None:
         """A supplied name keeps driving the slugified defaults."""
-        plugin = Plugin(name="Snippet Manager", module_name="snippets")
+        plugin = App(name="Snippet Manager", module_name="snippets")
         assert plugin.uri_path == "/snippet-manager"
         assert plugin.css_class == "snippet-manager"
 
@@ -198,3 +198,66 @@ class TestAppDrainSettings:
         """A zero or negative TTL fails validation rather than pruning live rows."""
         with pytest.raises(ValidationError, match="positive duration"):
             AppDrainSettings(stale_task_ttl=timedelta(seconds=seconds))
+
+
+def _logged_legacy_apps_warning(mock_logger: object) -> bool:
+    """Return whether any ``logger.warning`` call names the deprecated PLUGINS key."""
+    return any(
+        "PLUGINS" in str(call.args[0]) for call in mock_logger.warning.call_args_list
+    )
+
+
+class TestAppsKeyBackCompat:
+    """Cover the ``SEP.PLUGINS`` -> ``SEP.APPS`` config-key back-compat shim."""
+
+    def test_legacy_plugins_key_populates_apps(self):
+        """Load a legacy ``PLUGINS`` key into ``APPS`` via the validation alias."""
+        settings = SEPSettings.model_validate(
+            {"PLUGINS": [{"MODULE_NAME": "backup_pg"}]}
+        )
+        assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
+
+    def test_modern_apps_key_populates_apps(self):
+        """Load the app list from the modern ``APPS`` key."""
+        settings = SEPSettings.model_validate({"APPS": [{"MODULE_NAME": "backup_pg"}]})
+        assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
+
+    def test_apps_takes_precedence_over_legacy(self):
+        """Prefer ``APPS`` over the legacy ``PLUGINS`` when both keys are set."""
+        settings = SEPSettings.model_validate(
+            {
+                "APPS": [{"MODULE_NAME": "backup_pg"}],
+                "PLUGINS": [{"MODULE_NAME": "backup_mongo"}],
+            }
+        )
+        assert [app.module_name for app in settings.APPS] == ["app.sep.apps.backup_pg"]
+
+    def test_deprecation_warning_for_legacy_key(self):
+        """Assert a deprecation warning is logged when the legacy ``PLUGINS`` key is set."""
+        with patch("app.sep.config.logger") as mock_logger:
+            SEPSettings.model_validate({"PLUGINS": [{"MODULE_NAME": "backup_pg"}]})
+        assert _logged_legacy_apps_warning(mock_logger)
+
+    def test_no_warning_for_modern_key(self):
+        """Assert no deprecation warning is logged for the modern ``APPS`` key."""
+        with patch("app.sep.config.logger") as mock_logger:
+            SEPSettings.model_validate({"APPS": [{"MODULE_NAME": "backup_pg"}]})
+        assert not _logged_legacy_apps_warning(mock_logger)
+
+    def test_legacy_plugins_env_var_populates_apps_and_warns(
+        self, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Load a legacy ``SEP__PLUGINS`` env var into ``APPS`` and warn."""
+        monkeypatch.setenv("SEP__PLUGINS", '[{"MODULE_NAME": "backup_pg"}]')
+        with patch("app.sep.config.logger") as mock_logger:
+            settings = SEPSettings()
+        assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
+        assert _logged_legacy_apps_warning(mock_logger)
+
+    def test_modern_apps_env_var_does_not_warn(self, monkeypatch: pytest.MonkeyPatch):
+        """Load a modern ``SEP__APPS`` env var into ``APPS`` without warning."""
+        monkeypatch.setenv("SEP__APPS", '[{"MODULE_NAME": "backup_pg"}]')
+        with patch("app.sep.config.logger") as mock_logger:
+            settings = SEPSettings()
+        assert any(app.module_name == "app.sep.apps.backup_pg" for app in settings.APPS)
+        assert not _logged_legacy_apps_warning(mock_logger)

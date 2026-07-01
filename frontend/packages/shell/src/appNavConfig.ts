@@ -55,9 +55,9 @@ export interface AppRouteMeta {
   appKey: string;
   /** Sidebar link target (canonical React path — not raw API ``uri_path``). */
   reactRoute: string;
-  /** ``react-router`` path literal relative to ``MainLayout`` (e.g. ``plugins/archives/*``). */
+  /** ``react-router`` path literal relative to ``MainLayout`` (e.g. ``apps/archives/*``). */
   routePattern: string;
-  /** ``SchemaDrivenPlugin`` list/detail prefix when not ``/plugins/{appKey}``. */
+  /** ``SchemaDrivenPlugin`` list/detail prefix when not ``/apps/{appKey}``. */
   routeBase?: string;
 }
 

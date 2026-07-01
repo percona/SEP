@@ -51,7 +51,7 @@ const schema: PluginSchema = {
 function renderPage(extra?: { renderCreateForm?: RenderFormSlot }) {
   return render(
     <SnackbarProvider>
-      <MemoryRouter initialEntries={['/plugins/checksums/new']}>
+      <MemoryRouter initialEntries={['/apps/checksums/new']}>
         <PluginCreatePage schema={schema} pluginName="checksums" {...extra} />
       </MemoryRouter>
     </SnackbarProvider>,

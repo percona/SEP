@@ -44,16 +44,24 @@ export interface UseTaskHistoryOptions {
   limit?: number;
   /** Disable the underlying query (no fetch, no polling). */
   enabled?: boolean;
+  /** Exclude internal maintenance task rows before server-side pagination. */
+  excludeInternal?: boolean;
 }
 
 interface ListParams {
   status?: TaskHistoryStatus | null;
   offset?: number;
   limit?: number;
+  excludeInternal?: boolean;
 }
 
-function buildParams({ status, offset, limit }: ListParams): Record<string, string | number> {
-  const params: Record<string, string | number> = {};
+function buildParams({
+  status,
+  offset,
+  limit,
+  excludeInternal,
+}: ListParams): Record<string, string | number | boolean> {
+  const params: Record<string, string | number | boolean> = {};
   if (status) {
     params.status = status;
   }
@@ -62,6 +70,9 @@ function buildParams({ status, offset, limit }: ListParams): Record<string, stri
   }
   if (typeof limit === 'number') {
     params.limit = limit;
+  }
+  if (excludeInternal) {
+    params.exclude_internal = true;
   }
   return params;
 }
@@ -98,13 +109,14 @@ export function useTaskHistory(options: UseTaskHistoryOptions = {}) {
     offset,
     limit,
     enabled = true,
+    excludeInternal = false,
   } = options;
   return useQuery<PaginatedTaskHistory>({
-    queryKey: ['task-history', { status: status ?? null, offset, limit }],
+    queryKey: ['task-history', { status: status ?? null, offset, limit, excludeInternal }],
     enabled,
     queryFn: async () => {
       const { data } = await apiClient.get<PaginatedTaskHistory>('/sep/task-history/', {
-        params: buildParams({ status, offset, limit }),
+        params: buildParams({ status, offset, limit, excludeInternal }),
       });
       return data;
     },
@@ -186,7 +198,7 @@ export function useStopTaskHistory() {
  * Dispatch a saved task for immediate execution.
  *
  * The request is routed through the SEP-level plugin gateway
- * (``POST /api/plugins/{pluginName}/{taskName}/execute``) — the FE must not
+ * (``POST /api/apps/{pluginName}/{taskName}/execute``) — the FE must not
  * call ``/api/tasks/*`` directly, as the Tasks sub-app is not exposed to the
  * browser in a production deployment. The plugin-task detail query is also
  * refreshed so the status chip on the detail page updates immediately after
@@ -198,7 +210,7 @@ export function useExecuteTask(pluginName: string) {
   return useMutation<unknown, Error, { taskName: string; executeBody?: TaskExecuteBody }>({
     mutationFn: async ({ taskName, executeBody }) => {
       const { data } = await apiClient.post<unknown>(
-        `/plugins/${pluginPath}/${encodeURIComponent(taskName)}/execute`,
+        `/apps/${pluginPath}/${encodeURIComponent(taskName)}/execute`,
         executeBody ?? {},
       );
       return data;

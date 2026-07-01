@@ -160,7 +160,7 @@ async function mockTasksApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname === '/api/plugins/tasks/schema') {
+    if (pathname === '/api/apps/tasks/schema') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -170,7 +170,7 @@ async function mockTasksApis(page: Page): Promise<void> {
 
     if (
       req.method() === 'GET' &&
-      (pathname === '/api/plugins/tasks/' || pathname === '/api/plugins/tasks')
+      (pathname === '/api/apps/tasks/' || pathname === '/api/apps/tasks')
     ) {
       return route.fulfill({
         status: 200,
@@ -179,7 +179,7 @@ async function mockTasksApis(page: Page): Promise<void> {
       });
     }
 
-    if (req.method() === 'GET' && pathname === `/api/plugins/tasks/${MOCK_TASK_NAME}`) {
+    if (req.method() === 'GET' && pathname === `/api/apps/tasks/${MOCK_TASK_NAME}`) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',

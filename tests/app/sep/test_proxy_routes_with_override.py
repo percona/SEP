@@ -122,7 +122,7 @@ async def test_snippets_refresh_route_observes_enable_manual_sync_override(
     non-JSON-API routes, masking the status code distinction.
     """
     update_snippets_spy = mocker.patch(
-        "app.sep.plugins.snippets.routes.update_snippets",
+        "app.sep.apps.snippets.routes.update_snippets",
         new=AsyncMock(return_value=None),
     )
 

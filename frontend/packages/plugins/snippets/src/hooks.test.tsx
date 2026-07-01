@@ -108,7 +108,7 @@ describe('useSnippetDownload', () => {
     clickSpy.mockRestore();
   });
 
-  it('GETs /plugins/snippets/snippet/download?snippet_filename=... with Bearer auth and a blob responseType', async () => {
+  it('GETs /apps/snippets/snippet/download?snippet_filename=... with Bearer auth and a blob responseType', async () => {
     const { result } = renderHook(() => useSnippetDownload('hello.sh'), {
       wrapper: makeWrapper(),
     });
@@ -123,7 +123,7 @@ describe('useSnippetDownload', () => {
 
     expect(lastConfig).not.toBeNull();
     const captured = lastConfig as CapturedRequestConfig;
-    expect(captured.url).toBe('/plugins/snippets/snippet/download?snippet_filename=hello.sh');
+    expect(captured.url).toBe('/apps/snippets/snippet/download?snippet_filename=hello.sh');
     expect(captured.method?.toLowerCase()).toBe('get');
     expect(captured.responseType).toBe('blob');
 
@@ -149,7 +149,7 @@ describe('useSnippetDownload', () => {
 
     const captured = lastConfig as CapturedRequestConfig;
     expect(captured.url).toBe(
-      '/plugins/snippets/snippet/download?snippet_filename=diag%2Fslow-query.sh',
+      '/apps/snippets/snippet/download?snippet_filename=diag%2Fslow-query.sh',
     );
     const [path] = (captured.url ?? '').split('?');
     expect(path).not.toContain('%2F');

@@ -153,11 +153,11 @@ class TestListApps:
     async def test_lists_every_configured_plugin(
         self, api_admin_client: TestClient
     ) -> None:
-        """Returns one entry per ``SEP.PLUGINS`` entry with the expected shape."""
+        """Return one entry per ``SEP.APPS`` entry with the expected shape."""
         response = api_admin_client.get("/api/admin/apps/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
-        assert len(payload) == len(sep_settings.PLUGINS)
+        assert len(payload) == len(sep_settings.APPS)
         entry = payload[0]
         assert set(entry) == {
             "app_key",

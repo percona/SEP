@@ -113,6 +113,10 @@ dev-backend: venv
 dev-frontend:
 	@cd frontend && pnpm dev
 
+# One-time legacy data['_form'] backfill for framework-migrated task apps.
+backfill-legacy-forms: venv
+	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_backfill $(BACKFILL_ARGS)
+
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
 		$$($(PYTHON) -c "import tomllib,pathlib;c=tomllib.loads(pathlib.Path('pyproject.toml').read_text());print(' '.join(f'--ignore-vuln {v}' for v in c.get('tool',{}).get('pip-audit',{}).get('ignore-vulnerabilities',[])))" 2>/dev/null)
@@ -183,7 +187,7 @@ test: venv
 # goldens, the frontend OpenAPI spec, and the generated TS client. Run after
 # changing an app form model, review the diff, then commit.
 regen-specs: venv
-	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/plugins/framework/test_form_dsl_golden.py
+	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/apps/framework/test_form_dsl_golden.py
 	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/dump_openapi.py
 	@cd frontend && pnpm --filter @sep/api codegen && pnpm --filter @sep/api exec oxfmt --write src/generated
 
@@ -204,6 +208,15 @@ changelog-check:
 
 changelog-list:
 	@$(PYTHON) scripts/changelog.py list
+
+startapp:
+ifndef NAME
+	$(error NAME is required. Usage: make startapp NAME=myapp [TYPE=task|script|base])
+endif
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py --name "$(NAME)" --type "$(or $(TYPE),task)"
+
+startapp-check:
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/startapp_check.py
 
 SIGN_FLAG := $(if $(SIGN_VIA_API),--sign-via-github-api,)
 PUSH_IMAGE_DOCKER ?= true
@@ -261,4 +274,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check

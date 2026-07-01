@@ -200,6 +200,6 @@ describe('buildNavigationItems', () => {
         display_name: 'MySQL Backups',
       }),
     ]);
-    expect(findLeaf(items, 'mysql_backups')?.to).toBe('/plugins/mysql_backups');
+    expect(findLeaf(items, 'mysql_backups')?.to).toBe('/apps/mysql_backups');
   });
 });

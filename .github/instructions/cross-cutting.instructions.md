@@ -1,5 +1,5 @@
 ---
-applyTo: "app/core/**/*.py,app/sep/deps.py,app/inventory/deps.py,app/tasks/deps.py,app/sep/plugins/shared/**/*.py"
+applyTo: "app/core/**/*.py,app/sep/deps.py,app/inventory/deps.py,app/tasks/deps.py,app/sep/apps/shared/**/*.py"
 ---
 
 # Cross-Cutting Changes — Shared Helpers & Side Effects
@@ -8,7 +8,7 @@ Diffs to these paths fan out across all three sub-applications. The bug class th
 
 ## Shared-helper changes — audit every caller
 
-When a PR touches `app/core/**`, `app/<service>/deps.py`, `app/sep/plugins/shared/**`, or a base class in `*/models.py` / `*/crud.py` whose subclasses live in multiple packages, the PR description should enumerate every call site and explain how the new behaviour preserves each caller's contract.
+When a PR touches `app/core/**`, `app/<service>/deps.py`, `app/sep/apps/shared/**`, or a base class in `*/models.py` / `*/crud.py` whose subclasses live in multiple packages, the PR description should enumerate every call site and explain how the new behaviour preserves each caller's contract.
 
 Specifically:
 

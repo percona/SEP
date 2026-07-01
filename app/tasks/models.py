@@ -853,6 +853,13 @@ class TaskHistoryLog(BaseSQLModel, table=True):
             "start_offset",
             name="uq_taskhistory_log_chunk",
         ),
+        Index(
+            "ix_taskhistory_log_stream_end_offset",
+            "task_history_id",
+            "source",
+            "stream",
+            "end_offset",
+        ),
     )
 
     task_history_id: int = SQLField(
@@ -958,6 +965,23 @@ class TaskHistoryLogState(BaseSQLModel, table=True):
     version: int = SQLField(default=0, nullable=False)
 
 
+GENERIC_EXECUTOR_TASK_NAMES: frozenset[str] = frozenset(
+    {
+        "run-python",
+        "exec-artifact",
+        "exec-python-artifact",
+    }
+)
+
+INTERNAL_TASK_NAMES: frozenset[str] = frozenset(
+    {
+        "inventory-sync",
+        "tasks__sync_running_tasks",
+        "tasks__check_nomad_cert_expiry",
+    }
+)
+
+
 class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
     """Represent a task history API response.
 
@@ -981,10 +1005,49 @@ class TaskHistoryResponse(TaskHistoryBase, BaseSQLModel):
         either a chunk-store row or a legacy ``tracking["task_logs"]`` blob.
         Populated by list/retrieve routes; defaults to ``False``.
     :type has_logs: bool
+    :param display_name: A user-meaningful label derived from the task name or
+        execution-request metadata. Read-only; computed on serialisation.
     """
 
     task: TaskResponse
     has_logs: bool = False
+
+    @computed_field
+    @property
+    def display_name(self) -> str:
+        """Return a user-meaningful display label for this task history row.
+
+        For normal tasks, returns ``task.name``. For generic executor templates
+        (``run-python``, ``exec-artifact``, ``exec-python-artifact``), builds a
+        ``"<source>/<filename> on <target>"`` label so otherwise-identical rows
+        are distinguishable: the filename comes from the snippet metadata or the
+        ``file://`` payload basename, the source directory from whichever of those
+        carries one, and the target from the execution request. Falls back to
+        ``"<task> on <target>"`` when no filename is available.
+
+        :return: The display label for the task history entry.
+        """
+        task_name = self.task.name
+        if task_name not in GENERIC_EXECUTOR_TASK_NAMES:
+            return task_name
+        meta = self.execution_request.meta or {}
+        snippet_fn = meta.get("_snippet_filename") or meta.get("snippet_filename")
+        payload = self.execution_request.payload
+        payload_path = (
+            payload.removeprefix("file://")
+            if payload and payload.startswith("file://")
+            else None
+        )
+        target = self.execution_request.target
+        source = snippet_fn or payload_path
+        if not source:
+            return f"{self.execution_request.task} on {target}"
+        source_dir = Path(source).parent.name or (
+            Path(payload_path).parent.name if payload_path else ""
+        )
+        leaf = Path(source).name
+        label = f"{source_dir}/{leaf}" if source_dir else leaf
+        return f"{label} on {target}"
 
 
 class TaskStats(BaseModel):

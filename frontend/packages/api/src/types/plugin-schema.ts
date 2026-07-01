@@ -19,7 +19,7 @@
  * Plugin Schema types — defines the contract for schema-driven plugins.
  *
  * These types mirror the backend PluginSchema Pydantic model.
- * The backend serves schemas at GET /api/plugins/{name}/schema as JSON.
+ * The backend serves schemas at GET /api/apps/{name}/schema as JSON.
  * The SchemaFormRenderer auto-generates the UI from these definitions.
  *
  * Wire format is snake_case end-to-end. Uses a discriminated union on

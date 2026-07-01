@@ -260,7 +260,7 @@ async def require_bearer_for_unsafe_methods(request: Request) -> None:
     require ``Authorization: Bearer ...``; cookie-authenticated cross-site
     JSON mutations are rejected with ``401`` before any business logic runs.
 
-    Intended to be attached at router level to ``/api/plugins/*`` so every
+    Intended to be attached at router level to ``/api/apps/*`` so every
     plugin's JSON mutation routes inherit the guard uniformly.
 
     :param request: The incoming HTTP request.
@@ -499,7 +499,7 @@ def get_toggleable_app_key(app_key: str) -> str:
         )
     # Deferred: the framework package __init__ imports back into this module,
     # so a top-level import here would cycle.
-    from app.sep.plugins.framework.registry import get_app_registry
+    from app.sep.apps.framework.registry import get_app_registry
 
     if get_app_registry().get(app_key) is None:
         raise HTTPNotFoundException(detail="App not found")
@@ -562,7 +562,7 @@ async def get_default_context(
         states = {}
     # Deferred: the framework package __init__ imports back into this module,
     # so a top-level import here would cycle.
-    from app.sep.plugins.framework.registry import get_app_registry
+    from app.sep.apps.framework.registry import get_app_registry
 
     plugins = [
         app
@@ -1220,3 +1220,42 @@ async def check_for_conflicted_running_tasks(
 
 
 HasNoConflictedRunningTasks = Depends(check_for_conflicted_running_tasks)
+
+
+def reject_if_protected(task: Task, *, action: str = "edit") -> Task:
+    """Return the task unchanged or raise 409 when it is protected.
+
+    Shared protected-task check for task-based plugins. Composable inline by
+    dependencies that must run earlier gates (for example ``alters`` resolving a
+    satellite path to its parent) before rejecting protected tasks.
+
+    :param task: The resolved task to gate.
+    :param action: The action verb for the 409 detail (``"edit"`` or ``"delete"``).
+    :raises HTTPConflictException: If the task is marked as protected.
+    :return: The unprotected task.
+    """
+    if task.protected:
+        raise HTTPConflictException(f"Cannot {action} a protected task.")
+    return task
+
+
+def protected_task_guard(
+    task_dep: Callable[..., Awaitable[Task]],
+    *,
+    action: str = "edit",
+) -> Callable[..., Awaitable[Task]]:
+    """Build a dependency that rejects protected tasks with HTTP 409.
+
+    Parameterized on the plugin's task-fetch dependency and the action verb so a
+    single helper serves every task plugin. Attach the returned callable to a
+    derived PUT via ``update_guard`` or expose it as an ``Annotated`` type alias.
+
+    :param task_dep: The plugin's task-fetch dependency used to resolve the task.
+    :param action: The action verb for the 409 detail (``"edit"`` or ``"delete"``).
+    :return: A FastAPI dependency that returns the task or raises 409.
+    """
+
+    async def _guard(task: Annotated[Task, Depends(task_dep)]) -> Task:
+        return reject_if_protected(task, action=action)
+
+    return _guard

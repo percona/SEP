@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-/** Body shape accepted by `POST /api/plugins/snippets/{filename}/execute`. */
+/** Body shape accepted by `POST /api/apps/snippets/{filename}/execute`. */
 export interface SnippetExecutionRequest {
   executor_host: string;
   sudo?: boolean;

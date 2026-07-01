@@ -54,4 +54,4 @@ Hard-coded periodic schedules in seed files are a red flag when the task's confi
 
 ## Plugin layout
 
-`app/sep/plugins/<name>/` with `routes.py`, `deps.py`, optional `models.py`. Registration in `settings.yaml` under `SEP.PLUGINS`. Flag plugins that put dep aliases in `routes.py`/`models.py` or scatter helpers into ad-hoc module names.
+`app/sep/apps/<name>/` with `routes.py`, `deps.py`, optional `models.py`. Registration in `settings.yaml` under `SEP.APPS`. Flag plugins that put dep aliases in `routes.py`/`models.py` or scatter helpers into ad-hoc module names.

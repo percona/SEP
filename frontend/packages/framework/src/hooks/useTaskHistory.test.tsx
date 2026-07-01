@@ -122,6 +122,22 @@ describe('useTaskHistory', () => {
     expect(url).toBe('/sep/task-history/');
     expect(mockApiGet.mock.calls.every(([u]) => !String(u).startsWith('/tasks/'))).toBe(true);
   });
+
+  it('sends exclude_internal=true when excludeInternal option is set', async () => {
+    renderHook(() => useTaskHistory({ excludeInternal: true }), { wrapper: wrapper() });
+    await waitFor(() => {
+      expect(mockApiGet).toHaveBeenCalledWith('/sep/task-history/', {
+        params: { exclude_internal: true },
+      });
+    });
+  });
+
+  it('omits exclude_internal from params when excludeInternal is not set', async () => {
+    renderHook(() => useTaskHistory(), { wrapper: wrapper() });
+    await waitFor(() => expect(mockApiGet).toHaveBeenCalled());
+    const params = mockApiGet.mock.calls[0][1]?.params ?? {};
+    expect(params).not.toHaveProperty('exclude_internal');
+  });
 });
 
 describe('useStopTaskHistory', () => {
@@ -146,7 +162,7 @@ describe('useExecuteTask', () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      '/plugins/backup_mongo/restores/my-restore-task/execute',
+      '/apps/backup_mongo/restores/my-restore-task/execute',
       {},
     );
   });
@@ -160,7 +176,7 @@ describe('useExecuteTask', () => {
       await result.current.mutateAsync({ taskName: 'my-backup-task' });
     });
 
-    expect(mockApiPost).toHaveBeenCalledWith('/plugins/backup_mongo/my-backup-task/execute', {});
+    expect(mockApiPost).toHaveBeenCalledWith('/apps/backup_mongo/my-backup-task/execute', {});
   });
 
   it('encodes special characters in task names', async () => {
@@ -174,7 +190,7 @@ describe('useExecuteTask', () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      `/plugins/backup_mongo/restores/${encodeURIComponent(taskName)}/execute`,
+      `/apps/backup_mongo/restores/${encodeURIComponent(taskName)}/execute`,
       {},
     );
   });
@@ -196,7 +212,7 @@ describe('useExecuteTask', () => {
     });
 
     expect(mockApiPost).toHaveBeenCalledWith(
-      '/plugins/alters/my-alter-pre-checks/execute',
+      '/apps/alters/my-alter-pre-checks/execute',
       executeBody,
     );
   });

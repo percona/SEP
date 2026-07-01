@@ -145,13 +145,13 @@ class SnippetVisibilityCondition(BaseModel):
 
     .. note::
         Visibility conditions lower onto the framework's ``forbidden``
-        :class:`~app.sep.plugins.framework.rules.FieldGate`. The React renderer
+        :class:`~app.sep.apps.framework.rules.FieldGate`. The React renderer
         evaluates them to hide the field and drop its value from the submitted
         payload, and both snippet execute paths additionally enforce them
         server-side: a value submitted directly for a field whose gate fires is
         rejected (HTTP 422 on the JSON API; flash + redirect on the legacy form),
         matching ``field_gate_forbidden`` "must be absent" semantics. See
-        :func:`app.sep.plugins.snippets.schema.evaluate_visibility_gates`.
+        :func:`app.sep.apps.snippets.schema.evaluate_visibility_gates`.
 
     :param parameter: The name of the sibling parameter the rule references.
     :type parameter: NonEmptyStr

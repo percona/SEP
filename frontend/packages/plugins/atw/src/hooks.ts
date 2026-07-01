@@ -19,7 +19,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
 import type { AtwCategoryListing } from './types';
 
-const ATW_BASE = '/plugins/atw';
+const ATW_BASE = '/apps/atw';
 
 const ATW_STALE_TIME_MS = 5 * 60 * 1000;
 
