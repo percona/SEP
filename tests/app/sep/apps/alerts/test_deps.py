@@ -330,8 +330,8 @@ class TestGetOrCreateAlertFolder:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_folders.return_value = [existing]
 
-        with patch("app.sep.apps.alerts.deps.alerts_pmm_config") as mock_config:
-            mock_config.alert_folder_name = "SEP Alerts"
+        with patch("app.sep.apps.alerts.deps.alerts_settings") as mock_config:
+            mock_config.ALERT_FOLDER_NAME = "SEP Alerts"
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is existing
@@ -345,8 +345,8 @@ class TestGetOrCreateAlertFolder:
         mock_api.list_folders.return_value = []
         mock_api.create_folder.return_value = created
 
-        with patch("app.sep.apps.alerts.deps.alerts_pmm_config") as mock_config:
-            mock_config.alert_folder_name = "SEP Alerts"
+        with patch("app.sep.apps.alerts.deps.alerts_settings") as mock_config:
+            mock_config.ALERT_FOLDER_NAME = "SEP Alerts"
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is created
@@ -361,8 +361,8 @@ class TestGetOrCreateAlertFolder:
         mock_api.list_folders.return_value = [other]
         mock_api.create_folder.return_value = created
 
-        with patch("app.sep.apps.alerts.deps.alerts_pmm_config") as mock_config:
-            mock_config.alert_folder_name = "SEP Alerts"
+        with patch("app.sep.apps.alerts.deps.alerts_settings") as mock_config:
+            mock_config.ALERT_FOLDER_NAME = "SEP Alerts"
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is created
@@ -373,8 +373,8 @@ class TestGetOrCreateAlertFolder:
         mock_api = AsyncMock(spec=PMMRemoteAPI)
         mock_api.list_folders.side_effect = OSError("unreachable")
 
-        with patch("app.sep.apps.alerts.deps.alerts_pmm_config") as mock_config:
-            mock_config.alert_folder_name = "SEP Alerts"
+        with patch("app.sep.apps.alerts.deps.alerts_settings") as mock_config:
+            mock_config.ALERT_FOLDER_NAME = "SEP Alerts"
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is None
@@ -387,8 +387,8 @@ class TestGetOrCreateAlertFolder:
             status_code=502, detail="Bad Gateway"
         )
 
-        with patch("app.sep.apps.alerts.deps.alerts_pmm_config") as mock_config:
-            mock_config.alert_folder_name = "SEP Alerts"
+        with patch("app.sep.apps.alerts.deps.alerts_settings") as mock_config:
+            mock_config.ALERT_FOLDER_NAME = "SEP Alerts"
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is None
