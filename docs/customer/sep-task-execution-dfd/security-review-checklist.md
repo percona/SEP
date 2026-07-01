@@ -34,9 +34,9 @@ Complete this checklist before sending customer-facing task-execution or Nomad m
 
 | # | Question | Pass | Fail | Notes |
 |---|----------|:----:|:----:|-------|
-| 2.1 | UI path shows **predefined** work only (snippet args / plugin-fixed commands) | ☐ | ☐ | |
+| 2.1 | UI path shows **predefined** work only (snippet args / app-fixed commands) | ☐ | ☐ | |
 | 2.2 | Snippet **approval** gate is represented (Path A) | ☐ | ☐ | |
-| 2.3 | **Path B** (checksums / proxy plugins): create vs execute phases shown; command fixed at create | ☐ | ☐ | |
+| 2.3 | **Path B** (checksums / proxy apps): create vs execute phases shown; command fixed at create | ☐ | ☐ | |
 | 2.4 | Server-side construction of `meta` / Nomad job type is clear for both paths | ☐ | ☐ | |
 | 2.5 | No diagram implication that users can run arbitrary shell via SEP UI | ☐ | ☐ | |
 
