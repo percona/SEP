@@ -17,13 +17,13 @@
 
 import type { TasksComponents } from '@sep/api';
 
-/** Plugin key used for ``/api/plugins/{name}/`` routes and schema fetching. */
+/** Plugin key used for ``/api/apps/{name}/`` routes and schema fetching. */
 export const TASKS_PLUGIN_NAME = 'tasks';
 
 /** Base path for the tasks plugin JSON API under the SEP layer. */
-export const TASKS_PLUGINS_API_BASE = '/plugins/tasks';
+export const TASKS_PLUGINS_API_BASE = '/apps/tasks';
 
-/** One task row from ``GET /api/plugins/tasks/``. */
+/** One task row from ``GET /api/apps/tasks/``. */
 export interface TaskListRow {
   name: string;
   backend: string;
@@ -53,7 +53,7 @@ export type TaskDetailTask = TasksComponents['schemas']['TaskResponse'];
 export type TaskExecutionHistory =
   TasksComponents['schemas']['PaginatedResponse_TaskHistoryResponse_'];
 
-/** Payload from ``GET /api/plugins/tasks/{task_name}``. */
+/** Payload from ``GET /api/apps/tasks/{task_name}``. */
 export interface TaskDetailBundle {
   task: TaskDetailTask;
   execution_history: TaskExecutionHistory;

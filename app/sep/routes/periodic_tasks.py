@@ -22,8 +22,8 @@ from fastapi import APIRouter, Form, Header, status
 from fastapi.responses import RedirectResponse
 
 from app.core.utils import deep_dict_update
+from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.deps import IsAuthenticated, IsCsrfValidated, TaskAPI
-from app.sep.plugins.framework.deprecation import DeprecatedJinja2Route
 from app.sep.tasks import (
     EnhancedPeriodicTaskCreateRequest,
     PeriodicTaskRequest,

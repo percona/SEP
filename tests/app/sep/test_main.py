@@ -31,14 +31,14 @@ from app.core.auth.exceptions import (
     HTTPUnauthorizedException,
 )
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
-from app.sep.api.router import plugins_router
-from app.sep.config import Plugin, sep_settings
+from app.sep.api.router import apps_router
+from app.sep.apps.framework.registry import get_app_registry
+from app.sep.config import App, sep_settings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.exceptions import LoginRedirectException
 from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
 from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppLifecycleEnum, AppState
-from app.sep.plugins.framework.registry import get_app_registry
 from tests.app.factories import OAuthTokenFactory
 
 
@@ -295,7 +295,7 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     without raising NoMatchFound.
     """
     original_plugins = sep_settings.PLUGINS
-    mocker.patch.object(sep_settings, "PLUGINS", [Plugin(module_name="backup_pg")])
+    mocker.patch.object(sep_settings, "PLUGINS", [App(module_name="backup_pg")])
     get_app_registry.cache_clear()
 
     try:
@@ -319,7 +319,7 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
     plugin (tasks, backup, checksums, …) is configured.
     """
     original_plugins = sep_settings.PLUGINS
-    mocker.patch.object(sep_settings, "PLUGINS", [Plugin(module_name="inventory")])
+    mocker.patch.object(sep_settings, "PLUGINS", [App(module_name="inventory")])
     get_app_registry.cache_clear()
 
     try:
@@ -771,11 +771,11 @@ class TestAppStateGuards:
             and p.api_router_path
         }
         seen = set()
-        for route in plugins_router.routes:
+        for route in apps_router.routes:
             path = getattr(route, "path", "")
             for key in guarded_keys:
                 if (
-                    path.startswith(f"/plugins/{key}/") or path == f"/plugins/{key}"
+                    path.startswith(f"/apps/{key}/") or path == f"/apps/{key}"
                 ) and _route_has_app_guard(route):
                     seen.add(key)
         assert guarded_keys <= seen

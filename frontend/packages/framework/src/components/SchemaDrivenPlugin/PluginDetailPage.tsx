@@ -81,7 +81,7 @@ export interface TaskExecuteAction {
 export interface PluginDetailPageProps {
   schema: PluginSchema;
   pluginName: string;
-  /** Absolute list route prefix when the plugin is not mounted under ``/plugins/{name}``. */
+  /** Absolute list route prefix when the plugin is not mounted under ``/apps/{name}``. */
   routeBase?: string;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;

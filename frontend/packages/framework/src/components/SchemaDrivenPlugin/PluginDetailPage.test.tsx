@@ -139,10 +139,10 @@ function renderAt(path: string) {
         <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route
-              path="/plugins/:plugin/task/:id/*"
+              path="/apps/:plugin/task/:id/*"
               element={<PluginDetailPage schema={schema} pluginName="checksums" />}
             />
-            <Route path="/plugins/:plugin" element={<div>list page</div>} />
+            <Route path="/apps/:plugin" element={<div>list page</div>} />
           </Routes>
         </MemoryRouter>
       </SnackbarProvider>
@@ -392,7 +392,7 @@ describe('PluginDetailPage execute flow', () => {
       isLoading: false,
     });
 
-    renderAt('/plugins/checksums/task/FECHK');
+    renderAt('/apps/checksums/task/FECHK');
 
     await userEvent.click(screen.getByTestId('plugin-task-execute'));
 
@@ -410,7 +410,7 @@ describe('PluginDetailPage execute flow', () => {
       isLoading: false,
     });
 
-    renderAt('/plugins/checksums/task/FECHK');
+    renderAt('/apps/checksums/task/FECHK');
 
     await userEvent.click(screen.getByTestId('plugin-task-execute'));
 
@@ -428,7 +428,7 @@ describe('PluginDetailPage execute flow', () => {
       isLoading: false,
     });
 
-    renderAt('/plugins/checksums/task/FECHK');
+    renderAt('/apps/checksums/task/FECHK');
 
     await userEvent.click(screen.getByTestId('plugin-task-execute'));
 
@@ -455,10 +455,10 @@ describe('PluginDetailPage execute flow', () => {
     render(
       <QueryClientProvider client={makeClient()}>
         <SnackbarProvider>
-          <MemoryRouter initialEntries={['/plugins/backup_mongo/task/pbm-backup']}>
+          <MemoryRouter initialEntries={['/apps/backup_mongo/task/pbm-backup']}>
             <Routes>
               <Route
-                path="/plugins/:plugin/task/:id/*"
+                path="/apps/:plugin/task/:id/*"
                 element={
                   <PluginDetailPage
                     schema={schema}
@@ -510,10 +510,10 @@ describe('PluginDetailPage execute flow', () => {
     render(
       <QueryClientProvider client={makeClient()}>
         <SnackbarProvider>
-          <MemoryRouter initialEntries={['/plugins/alters/task/my-alter']}>
+          <MemoryRouter initialEntries={['/apps/alters/task/my-alter']}>
             <Routes>
               <Route
-                path="/plugins/:plugin/task/:id/*"
+                path="/apps/:plugin/task/:id/*"
                 element={
                   <PluginDetailPage
                     schema={schema}
@@ -549,17 +549,17 @@ describe('PluginDetailPage execute flow', () => {
   });
 });
 
-function renderWithSchema(customSchema: PluginSchema, path = '/plugins/checksums/task/FECHK') {
+function renderWithSchema(customSchema: PluginSchema, path = '/apps/checksums/task/FECHK') {
   return render(
     <QueryClientProvider client={makeClient()}>
       <SnackbarProvider>
         <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route
-              path="/plugins/:plugin/task/:id/*"
+              path="/apps/:plugin/task/:id/*"
               element={<PluginDetailPage schema={customSchema} pluginName="checksums" />}
             />
-            <Route path="/plugins/:plugin" element={<div>list page</div>} />
+            <Route path="/apps/:plugin" element={<div>list page</div>} />
           </Routes>
         </MemoryRouter>
       </SnackbarProvider>
@@ -741,7 +741,7 @@ describe('PluginDetailPage — Execution History tab stop wiring', () => {
       isLoading: false,
     });
 
-    renderAt('/plugins/checksums/task/FECHK/logs');
+    renderAt('/apps/checksums/task/FECHK/logs');
 
     await userEvent.click(await screen.findByRole('button', { name: 'Stop row' }));
 
@@ -950,10 +950,10 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
     render(
       <QueryClientProvider client={makeClient()}>
         <SnackbarProvider>
-          <MemoryRouter initialEntries={['/plugins/inventory/services/1']}>
+          <MemoryRouter initialEntries={['/apps/inventory/services/1']}>
             <Routes>
               <Route
-                path="/plugins/:plugin/:entityName/:id/*"
+                path="/apps/:plugin/:entityName/:id/*"
                 element={<PluginDetailPage schema={customSchema} pluginName="inventory" />}
               />
             </Routes>
@@ -982,11 +982,11 @@ describe('PluginDetailPage — Edit affordance', () => {
       isLoading: false,
     });
 
-    renderAt('/plugins/checksums/task/FECHK');
+    renderAt('/apps/checksums/task/FECHK');
 
     const edit = screen.getByTestId('plugin-task-edit');
     expect(edit).not.toBeDisabled();
-    expect(edit).toHaveAttribute('href', '/plugins/checksums/task/FECHK/edit');
+    expect(edit).toHaveAttribute('href', '/apps/checksums/task/FECHK/edit');
   });
 
   it('disables Edit for a task with no stored form (legacy or legacy-form-created)', () => {
@@ -995,7 +995,7 @@ describe('PluginDetailPage — Edit affordance', () => {
       isLoading: false,
     });
 
-    renderAt('/plugins/checksums/task/FECHK');
+    renderAt('/apps/checksums/task/FECHK');
 
     expect(screen.getByTestId('plugin-task-edit')).toBeDisabled();
   });
@@ -1010,7 +1010,7 @@ describe('PluginDetailPage delete flow', () => {
       isLoading: false,
     });
 
-    renderAt('/plugins/checksums/task/check1');
+    renderAt('/apps/checksums/task/check1');
 
     await userEvent.click(screen.getByTestId('plugin-task-delete'));
 

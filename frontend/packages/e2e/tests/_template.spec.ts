@@ -108,7 +108,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
     // TODO: replace the default empty-list response with plugin-specific
     // fixture data if your assertions need real task rows:
     //
-    // if (pathname.includes('/plugins/your-plugin/')) {
+    // if (pathname.includes('/apps/your-plugin/')) {
     //   return route.fulfill({
     //     status: 200,
     //     contentType: 'application/json',

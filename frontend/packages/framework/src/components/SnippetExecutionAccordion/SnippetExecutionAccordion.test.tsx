@@ -252,7 +252,7 @@ describe('SnippetExecutionAccordion', () => {
       expect(screen.getByTestId('task-history-table')).toBeInTheDocument();
     });
     expect(mockedApi.get).toHaveBeenCalledWith(
-      '/plugins/snippets/snippet/history?snippet_filename=check.sh',
+      '/apps/snippets/snippet/history?snippet_filename=check.sh',
     );
   });
 
@@ -362,7 +362,7 @@ describe('SnippetExecutionAccordion', () => {
 
     await waitFor(() =>
       expect(mockedApi.get).toHaveBeenCalledWith(
-        '/plugins/snippets/snippet/schema?snippet_filename=check.sh',
+        '/apps/snippets/snippet/schema?snippet_filename=check.sh',
         {
           params: { execution_only: true },
         },

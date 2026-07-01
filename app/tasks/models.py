@@ -853,6 +853,13 @@ class TaskHistoryLog(BaseSQLModel, table=True):
             "start_offset",
             name="uq_taskhistory_log_chunk",
         ),
+        Index(
+            "ix_taskhistory_log_stream_end_offset",
+            "task_history_id",
+            "source",
+            "stream",
+            "end_offset",
+        ),
     )
 
     task_history_id: int = SQLField(

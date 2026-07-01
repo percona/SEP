@@ -168,6 +168,8 @@ def test_hot_field_names_tasks_settings() -> None:
     """``TasksSettings`` HOT fields exclude ``NOMAD`` but include ``SYNC_LOCK_TTL``."""
     assert hot_field_names(TasksSettings) == frozenset(
         {
+            "LOG_STREAM_CAP_BYTES",
+            "LOG_STREAM_EVICTION_MAX_ROWS",
             "PRE_EXECUTION_CONNECTIVITY_CHECK",
             "STALENESS_THRESHOLD_SECONDS",
             "SYNC_LOCK_TTL",

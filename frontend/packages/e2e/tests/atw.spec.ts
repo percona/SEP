@@ -33,7 +33,7 @@ const MOCK_USER = {
   isAdmin: false,
 };
 
-/** Minimal listing row matching ``GET /api/plugins/atw/``. */
+/** Minimal listing row matching ``GET /api/apps/atw/``. */
 const MOCK_ATW_LIST = [
   {
     category_root: 'MySQL',
@@ -52,7 +52,7 @@ const MOCK_ATW_LIST = [
   },
 ];
 
-/** Served at ``GET /api/plugins/atw/schema`` (discovery; page uses listing + per-snippet schema). */
+/** Served at ``GET /api/apps/atw/schema`` (discovery; page uses listing + per-snippet schema). */
 const MOCK_ATW_PLUGIN_SCHEMA = {
   name: 'atw',
   display_name: PLUGIN_DISPLAY_NAME,
@@ -134,7 +134,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (pathname.includes('/plugins/snippets/') && pathname.endsWith('/history')) {
+    if (pathname.includes('/apps/snippets/') && pathname.endsWith('/history')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -142,7 +142,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (pathname.includes('/plugins/snippets/') && pathname.endsWith('/schema')) {
+    if (pathname.includes('/apps/snippets/') && pathname.endsWith('/schema')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -151,7 +151,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
     }
 
     if (
-      pathname.includes('/plugins/snippets/') &&
+      pathname.includes('/apps/snippets/') &&
       pathname.endsWith('/execute') &&
       req.method() === 'POST'
     ) {
@@ -162,10 +162,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (
-      req.method() === 'GET' &&
-      (pathname === '/api/plugins/atw/' || pathname === '/api/plugins/atw')
-    ) {
+    if (req.method() === 'GET' && (pathname === '/api/apps/atw/' || pathname === '/api/apps/atw')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -173,7 +170,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       });
     }
 
-    if (pathname === '/api/plugins/atw/schema') {
+    if (pathname === '/api/apps/atw/schema') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',

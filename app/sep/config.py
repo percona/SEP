@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 _LEGACY_BACKUP_MODULE_NAMES = frozenset({"backup", "backups"})
 
 
-class Plugin(BaseCaseInsensitiveModel):
+class App(BaseCaseInsensitiveModel):
     """Represent a SEP plugin.
 
     This model defines the structure for a plugin, including its name, module,
@@ -83,11 +83,11 @@ class Plugin(BaseCaseInsensitiveModel):
     path and set default values based on the plugin's name.
 
     :param name: The name of the plugin. Optional: a MODULE_NAME-only entry
-        omits it and the :class:`app.sep.plugins.framework.registry.AppRegistry`
+        omits it and the :class:`app.sep.apps.framework.registry.AppRegistry`
         derives descriptive metadata from the module basename instead.
     :type name: str | None
     :param module_name: The name of the module associated with the plugin. This field is
-        automatically prefixed with ``app.sep.plugins.`` during validation.
+        automatically prefixed with ``app.sep.apps.`` during validation.
     :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
@@ -108,8 +108,8 @@ class Plugin(BaseCaseInsensitiveModel):
         shipping enabled. Set ``ENABLED: false`` to seed a plugin disabled.
     :type enabled: bool
     :param api_router_path: Optional dot-separated import path to the plugin's
-        JSON ``APIRouter`` instance (e.g. ``"app.sep.plugins.checksums.api_routes.router"``).
-        When set, the router is mounted under ``/api/plugins/{key}`` by the
+        JSON ``APIRouter`` instance (e.g. ``"app.sep.apps.checksums.api_routes.router"``).
+        When set, the router is mounted under ``/api/apps/{key}`` by the
         shared API router loop. Three input states:
 
         * **Field omitted** — auto-derive from ``module_name`` when the
@@ -132,7 +132,7 @@ class Plugin(BaseCaseInsensitiveModel):
     api_router_path: StrImportableAttribute | None = None
 
     def __eq__(self, other: Any) -> bool:
-        if isinstance(other, Plugin):
+        if isinstance(other, App):
             return self.module_name == other.module_name
         raise NotImplementedError
 
@@ -142,26 +142,26 @@ class Plugin(BaseCaseInsensitiveModel):
         """Resolve the full module path for the plugin.
 
         This method takes the module name provided and prefixes it with
-        ``app.sep.plugins.`` to resolve the full import path. Legacy MySQL
+        ``app.sep.apps.`` to resolve the full import path. Legacy MySQL
         backups plugin names (``backup``, ``backups``) are remapped to
         ``mysql_backups`` with a deprecation warning before prefixing; the
         legacy aliases will not be supported in the next version.
 
         :param v: The module name to resolve.
         :type v: str
-        :return: The full module path with the ``app.sep.plugins.`` prefix.
+        :return: The full module path with the ``app.sep.apps.`` prefix.
         :rtype: str
         """
         if v in _LEGACY_BACKUP_MODULE_NAMES:
             logger.warning(
-                "Plugin MODULE_NAME %r is deprecated; remapping to "
+                "App MODULE_NAME %r is deprecated; remapping to "
                 "'mysql_backups'. The legacy value will not be supported "
                 "in the next version — update settings.yaml to use "
                 "'mysql_backups'.",
                 v,
             )
             v = "mysql_backups"
-        return f"app.sep.plugins.{v}"
+        return f"app.sep.apps.{v}"
 
     @field_validator("module_name")
     @classmethod
@@ -175,12 +175,12 @@ class Plugin(BaseCaseInsensitiveModel):
         still constructing. A filesystem probe keeps construction import-free; the
         real import happens when the registry is built, after settings are ready.
 
-        :param v: The resolved ``app.sep.plugins.``-prefixed module path.
+        :param v: The resolved ``app.sep.apps.``-prefixed module path.
         :return: The validated module path.
         :raises ValueError: When no module file or package exists at the path.
         """
-        relative = v.removeprefix("app.sep.plugins.")
-        target = Path(__file__).parent / "plugins" / Path(*relative.split("."))
+        relative = v.removeprefix("app.sep.apps.")
+        target = Path(__file__).parent / "apps" / Path(*relative.split("."))
         if (target / "__init__.py").is_file() or target.with_suffix(".py").is_file():
             return v
         raise ValueError(f"No module named {v}")
@@ -205,7 +205,7 @@ class Plugin(BaseCaseInsensitiveModel):
         during settings construction without triggering circular imports
         through plugin ``__init__`` modules. Fail-fast on a missing
         ``router`` attribute is still enforced later in
-        ``build_plugins_router`` via ``import_var``.
+        ``build_apps_router`` via ``import_var``.
 
         :return: ``self`` with ``api_router_path`` populated when the
             plugin module ships an ``api_routes.py`` file.
@@ -213,10 +213,10 @@ class Plugin(BaseCaseInsensitiveModel):
         """
         if "api_router_path" in self.model_fields_set:
             return self
-        relative = self.module_name.removeprefix("app.sep.plugins.")
+        relative = self.module_name.removeprefix("app.sep.apps.")
         candidate_file = (
             Path(__file__).parent
-            / "plugins"
+            / "apps"
             / Path(*relative.split("."))
             / "api_routes.py"
         )
@@ -265,7 +265,7 @@ class SessionOptions(BaseModel):
     PATH: URIPath | None = None
 
 
-class _DeprecatedPMMConfig(BaseLowercaseModel):
+class DeprecatedPMMConfig(BaseLowercaseModel):
     """Accept deprecated ``SEP.PMM`` fields for backward compatibility.
 
     Include both connection/auth fields (forwarded to ``settings.PMM``) and
@@ -528,7 +528,6 @@ class SEPSettings(BaseYamlAppSettings):
     :type TASKS_ENDPOINT: CredentialHttpUrl
     :param PLUGINS: A list of plugins used by SEP. Defaults to an empty list with
         duplicates removed.
-    :type PLUGINS: UniqueList[Plugin]
     :param PROXY_HEADERS: Whether to use proxy headers (like ``X-Forwarded-For``).
         Defaults to ``False``.
     :type PROXY_HEADERS: bool
@@ -547,7 +546,6 @@ class SEPSettings(BaseYamlAppSettings):
     :param PMM: Deprecated ``SEP.PMM`` section for backward compatibility. Connection
         fields are forwarded to the top-level ``settings.PMM``; alerts fields are read
         by ``AlertsPMMConfig``.
-    :type PMM: _DeprecatedPMMConfig
     :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
         Upload is disabled by default.
     :type HEALTH_REPORT: HealthReportSettings
@@ -583,13 +581,13 @@ class SEPSettings(BaseYamlAppSettings):
     ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None = None
     INVENTORY_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
     TASKS_ENDPOINT: CredentialHttpUrl = hot_field(..., advanced=True)
-    PLUGINS: UniqueList[Plugin] = UniqueList()
+    PLUGINS: UniqueList[App] = UniqueList()
     PROXY_HEADERS: bool = False
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
     SYNCERS: UniqueList[SyncOptions] = UniqueList()
     SYNCER_EXTRA_KWARGS: SyncerExtraKwargs = SyncerExtraKwargs()
     SYNC_REFRESH_TIME: int = hot_field(5)
-    PMM: _DeprecatedPMMConfig = _DeprecatedPMMConfig()
+    PMM: DeprecatedPMMConfig = DeprecatedPMMConfig()
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
     APP_DRAIN: AppDrainSettings = AppDrainSettings()
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600)

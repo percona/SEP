@@ -30,18 +30,18 @@ from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSche
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep import periodic_tasks as periodic_tasks_module
-from app.sep.config import Plugin
+from app.sep.apps.framework.registry import get_app_registry
+from app.sep.config import App
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
 from app.sep.models import AppLifecycleEnum, AppState
-from app.sep.plugins.framework.registry import get_app_registry
 
 SNIPPETS_TASK = "sep__sync_snippets"
 
 
-def _plugin(key: str, *, enabled: bool = True) -> Plugin:
-    """Build a ``Plugin`` activation entry for ``key``."""
-    return Plugin(module_name=key, enabled=enabled)
+def _plugin(key: str, *, enabled: bool = True) -> App:
+    """Build an ``App`` activation entry for ``key``."""
+    return App(module_name=key, enabled=enabled)
 
 
 @pytest.fixture(autouse=True)
