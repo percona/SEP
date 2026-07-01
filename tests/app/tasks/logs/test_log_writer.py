@@ -371,7 +371,7 @@ async def test_reset_producer_offsets_clears_db_and_allows_realloc_writes(
         allocation_epoch=ALLOCATION_EPOCH_OLD,
     )
 
-    await TaskHistoryLogWriter.drain_and_reset_producer_offsets(
+    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
         session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
     )
 
@@ -430,7 +430,7 @@ async def test_append_discards_write_from_older_allocation_epoch(
         nomad_offset_after=len(b"epoch-100"),
         allocation_epoch=ALLOCATION_EPOCH_OLD,
     )
-    await TaskHistoryLogWriter.drain_and_reset_producer_offsets(
+    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
         session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
     )
 
@@ -554,7 +554,7 @@ async def test_append_stale_first_insert_self_heals_to_current_epoch(
     the discard guard.
     """
     history = created_task_with_history
-    await TaskHistoryLogWriter.drain_and_reset_producer_offsets(
+    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
         session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
     )
 
@@ -780,7 +780,7 @@ async def test_drain_and_reset_flushes_staging_before_zeroing_producer_offset(
     ``staging`` intact, so the next allocation's bytes were concatenated
     inline with the previous allocation's leftover remainder — producing a
     chunk that mixed content from both allocations. The writer method
-    ``drain_and_reset_producer_offsets`` must emit the remainder as its own
+    ``drain_and_reset_allocation_frontier`` must emit the remainder as its own
     chunk first, then zero ``producer_offset``.
     """
     history = created_task_with_history
@@ -802,7 +802,7 @@ async def test_drain_and_reset_flushes_staging_before_zeroing_producer_offset(
     chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
     assert chunks == []
 
-    await TaskHistoryLogWriter.drain_and_reset_producer_offsets(
+    await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
         session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
     )
 

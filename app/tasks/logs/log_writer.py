@@ -216,7 +216,7 @@ class TaskHistoryLogWriter:
         )
 
     @classmethod
-    async def drain_and_reset_producer_offsets(
+    async def drain_and_reset_allocation_frontier(
         cls,
         session: AsyncSession,
         task_history_id: int,
