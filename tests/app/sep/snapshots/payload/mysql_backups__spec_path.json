@@ -14,7 +14,7 @@
         "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/mysql_backups/binlog_payload",
+      "payload": "file://app/sep/apps/mysql_backups/binlog_payload",
       "task": "run-python"
     },
     "is_template": false,
@@ -37,7 +37,7 @@
         "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/mysql_backups/binlog_payload",
+      "payload": "file://app/sep/apps/mysql_backups/binlog_payload",
       "task": "run-python"
     },
     "is_template": false,
@@ -60,7 +60,7 @@
         "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/mysql_backups/mydumper_payload",
+      "payload": "file://app/sep/apps/mysql_backups/mydumper_payload",
       "task": "run-python"
     },
     "is_template": false,
@@ -83,7 +83,7 @@
         "requirements": "packaging\nPyYAML\nPyMySQL[rsa,ed25519]\nboto3\nfilelock",
         "target": "executor-host"
       },
-      "payload": "file://app/sep/plugins/mysql_backups/xtrabackup_payload",
+      "payload": "file://app/sep/apps/mysql_backups/xtrabackup_payload",
       "task": "run-python"
     },
     "is_template": false,

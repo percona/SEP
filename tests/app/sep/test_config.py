@@ -132,7 +132,7 @@ class TestPluginModuleNameDeprecation:
         """Assert legacy aliases resolve to ``mysql_backups`` and log a deprecation warning."""
         with patch("app.sep.config.logger") as mock_logger:
             plugin = App(name="MySQL Backups", module_name=legacy_value)
-        assert plugin.module_name == "app.sep.plugins.mysql_backups"
+        assert plugin.module_name == "app.sep.apps.mysql_backups"
         mock_logger.warning.assert_called_once()
         rendered = mock_logger.warning.call_args.args[0] % tuple(
             mock_logger.warning.call_args.args[1:]
@@ -145,14 +145,14 @@ class TestPluginModuleNameDeprecation:
         """Assert the modern ``mysql_backups`` value resolves normally with no warning."""
         with patch("app.sep.config.logger") as mock_logger:
             plugin = App(name="MySQL Backups", module_name="mysql_backups")
-        assert plugin.module_name == "app.sep.plugins.mysql_backups"
+        assert plugin.module_name == "app.sep.apps.mysql_backups"
         mock_logger.warning.assert_not_called()
 
     @pytest.mark.parametrize(
         ("sibling_value", "expected_module"),
         [
-            ("backup_mongo", "app.sep.plugins.backup_mongo"),
-            ("backup_pg", "app.sep.plugins.backup_pg"),
+            ("backup_mongo", "app.sep.apps.backup_mongo"),
+            ("backup_pg", "app.sep.apps.backup_pg"),
         ],
     )
     def test_sibling_backup_module_is_not_remapped(

@@ -30,11 +30,11 @@ from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSche
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep import periodic_tasks as periodic_tasks_module
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.config import App
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
 from app.sep.models import AppLifecycleEnum, AppState
-from app.sep.plugins.framework.registry import get_app_registry
 
 SNIPPETS_TASK = "sep__sync_snippets"
 
