@@ -16,7 +16,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, ApiError, type PluginSchema } from '@sep/api';
+import { apiClient, ApiError, type AppSchema } from '@sep/api';
 import {
   downloadBlob,
   SNIPPETS_PLUGINS_API_BASE,
@@ -89,7 +89,7 @@ export function useSnippets() {
  * and React Query deduplicates the fetch.
  */
 export function useSnippetSchema(filename: string | undefined, executionOnly = false) {
-  return useQuery<PluginSchema>({
+  return useQuery<AppSchema>({
     queryKey: executionOnly
       ? ['snippets', filename, 'schema', { execution_only: true }]
       : ['snippets', filename, 'schema'],
@@ -97,7 +97,7 @@ export function useSnippetSchema(filename: string | undefined, executionOnly = f
       if (!filename) {
         throw new Error('Missing snippet filename');
       }
-      const { data } = await apiClient.get<PluginSchema>(
+      const { data } = await apiClient.get<AppSchema>(
         snippetPluginSchemaPath(filename),
         executionOnly ? { params: { execution_only: true } } : undefined,
       );

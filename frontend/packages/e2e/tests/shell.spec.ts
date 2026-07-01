@@ -34,7 +34,7 @@ const MOCK_USER = {
 // Minimal schema served for /api/apps/:name/schema. SchemaDrivenPlugin
 // renders `display_name` as an h4 heading and "New {display_name}" as the
 // create-button label, which is enough surface for the smoke assertions.
-// Keys are snake_case to match the backend PluginSchema shape — the React
+// Keys are snake_case to match the backend AppSchema shape — the React
 // components read `schema.display_name` / `schema.list_view` directly.
 // Fields kept intentionally minimal: empty forms/list_view ⇒ no extra UI.
 const MOCK_PLUGIN_SCHEMA = {
@@ -57,7 +57,7 @@ const MOCK_PLUGIN_SCHEMA = {
  * Dispatch logic:
  *   /api/oauth/refresh           -> fake access token (bootstraps AuthProvider)
  *   /api/users/me                -> fake user profile (completes session bootstrap)
- *   /api/apps/:name/schema    -> minimal valid PluginSchema (renders heading)
+ *   /api/apps/:name/schema    -> minimal valid AppSchema (renders heading)
  *   /api/sep/dashboard/          -> zero counts for dashboard stat cards
  *   /api/sep/task-history/       -> empty paginated response (prevents refetchInterval crash)
  *   /api/apps/                   -> every nav app enabled (renders the full sidebar)
@@ -199,7 +199,7 @@ test.describe('shell sanity smoke', () => {
       timeout: 30_000,
     });
 
-    // "New Checksums" button confirms the full PluginListPage mounted
+    // "New Checksums" button confirms the full AppListPage mounted
     await expect(page.getByRole('button', { name: /new checksums/i })).toBeVisible();
 
     const criticalErrors = consoleErrors.filter((msg) => !isBenignConsoleError(msg));

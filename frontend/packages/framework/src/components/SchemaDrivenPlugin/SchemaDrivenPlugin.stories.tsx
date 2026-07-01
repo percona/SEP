@@ -22,12 +22,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
 import Alert from '@mui/material/Alert';
 import Paper from '@mui/material/Paper';
-import type { PluginSchema } from '@sep/api';
+import type { AppSchema } from '@sep/api';
 import { SchemaDrivenPlugin } from './SchemaDrivenPlugin';
 import type { RenderFormSlot } from './types';
 import { SchemaFormRenderer } from '../SchemaFormRenderer';
 
-const mockSchema: PluginSchema = {
+const mockSchema: AppSchema = {
   pluginName: 'checksums',
   display_name: 'Checksum',
   description: 'Consistency checks',
@@ -42,12 +42,12 @@ const mockSchema: PluginSchema = {
       ],
     },
   ],
-} as unknown as PluginSchema;
+} as unknown as AppSchema;
 
 // The edit route is registered only for multi-entity plugins, so the
 // renderEditForm story needs an entity-backed schema (vs. the single-entity
 // `mockSchema` the create story uses).
-const mockEntitySchema: PluginSchema = {
+const mockEntitySchema: AppSchema = {
   pluginName: 'inventory',
   display_name: 'Inventory',
   capabilities: {},
@@ -67,7 +67,7 @@ const mockEntitySchema: PluginSchema = {
       list_view: { columns: [{ key: 'label', label: 'Label' }] },
     },
   ],
-} as unknown as PluginSchema;
+} as unknown as AppSchema;
 
 const withProviders = (initialPath: string) => (Story: ComponentType) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

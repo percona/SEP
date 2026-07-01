@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
@@ -23,11 +23,12 @@ import Skeleton from '@mui/material/Skeleton';
 import Typography from '@mui/material/Typography';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
-import { usePluginTask, useUpdatePluginTask, type PluginSchema } from '@sep/api';
+import { useAppTask, useUpdateAppTask, type AppSchema } from '@sep/api';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/types';
 import type { RenderFormSlot } from './types';
 import { getStoredForm } from './storedForm';
+import { EMPTY_SUBMIT_ERROR, mapSubmitError, type SubmitErrorState } from './submitErrorMapping';
 
 /**
  * Normalize choice and multi-choice default values so that case differences
@@ -80,14 +81,14 @@ const TASK_NAME_FIELD = 'task_name';
  * ``PUT``. Serves every ``TaskExecutionApp`` with no per-app code; ``task_name``
  * is immutable here (see {@link TASK_NAME_FIELD}).
  */
-export function PluginTaskEditPage({
+export function AppTaskEditPage({
   schema,
   pluginName,
   mockTasks,
   renderField,
   renderEditForm,
 }: {
-  schema: PluginSchema;
+  schema: AppSchema;
   pluginName: string;
   mockTasks?: Record<string, unknown>[];
   renderField?: RenderFieldOverride;
@@ -96,8 +97,8 @@ export function PluginTaskEditPage({
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const { enqueueSnackbar } = useSnackbar();
-  const updateTask = useUpdatePluginTask(pluginName, mockTasks);
-  const { data: task, isLoading } = usePluginTask(pluginName, id, mockTasks);
+  const updateTask = useUpdateAppTask(pluginName, mockTasks);
+  const { data: task, isLoading } = useAppTask(pluginName, id, mockTasks);
 
   const storedForm = getStoredForm(task);
 
@@ -117,10 +118,16 @@ export function PluginTaskEditPage({
     [storedForm, editableSections],
   );
 
+  const [{ submitError, fieldErrors }, setSubmitErrorState] =
+    useState<SubmitErrorState>(EMPTY_SUBMIT_ERROR);
+
   const handleSubmit = (data: Record<string, unknown>) => {
     if (!id) {
       return;
     }
+    // Clear any prior failure so the banner / inline errors reset before the
+    // new attempt resolves.
+    setSubmitErrorState(EMPTY_SUBMIT_ERROR);
     updateTask.mutate(
       {
         taskId: id,
@@ -139,7 +146,10 @@ export function PluginTaskEditPage({
         },
         onError: (error: unknown) => {
           const message = error instanceof Error ? error.message : 'Failed to update';
+          // Transient toast is unchanged; 422s additionally map to a persistent
+          // banner plus inline per-field errors.
           enqueueSnackbar(message, { variant: 'error' });
+          setSubmitErrorState(mapSubmitError(error, editableSections, message));
         },
       },
     );
@@ -193,6 +203,8 @@ export function PluginTaskEditPage({
           onSubmit={handleSubmit}
           loading={updateTask.isPending}
           submitLabel="Save"
+          submitError={submitError}
+          fieldErrors={fieldErrors}
           defaultValues={normalizedDefaults}
           capabilities={schema.capabilities}
           renderField={renderField}

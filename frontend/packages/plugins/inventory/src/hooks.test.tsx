@@ -114,7 +114,7 @@ describe('useRefreshEntitiesOnSyncComplete', () => {
 
   it('cascades to a nested entity-list query via root-key prefix match', async () => {
     // Guard against the duplicated root-key literal drifting out of the shape
-    // usePluginEntityList actually keys lists by: seed a real node-list query
+    // useAppEntityList actually keys lists by: seed a real node-list query
     // and assert the true → false edge marks it invalidated through the prefix.
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

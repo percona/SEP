@@ -24,7 +24,7 @@
  */
 
 import type { ReactNode } from 'react';
-import type { PluginField as PluginFieldType } from '@sep/api';
+import type { AppField as AppFieldType } from '@sep/api';
 
 /** Argument bag handed to a {@link RenderFieldOverride}. */
 export interface RenderFieldArgs {
@@ -33,7 +33,7 @@ export interface RenderFieldArgs {
    * been decided by the conditional engine, so an override sees the same field
    * the framework would render.
    */
-  field: PluginFieldType;
+  field: AppFieldType;
   /** Render the framework default widget (the existing `FieldRenderer`) for this field. */
   renderDefault: () => ReactNode;
 }
@@ -58,8 +58,8 @@ export interface RenderFieldArgs {
 export type RenderFieldOverride = (args: RenderFieldArgs) => ReactNode;
 
 export type {
-  PluginSchema,
-  PluginField,
+  AppSchema,
+  AppField,
   SectionField,
   OneOfBranch,
   OneOfGroup,
