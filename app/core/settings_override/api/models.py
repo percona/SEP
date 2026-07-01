@@ -16,6 +16,7 @@
 """Pydantic request/response models for the settings REST API."""
 
 __all__ = [
+    "SettingClassAppMetadata",
     "SettingClassGroup",
     "SettingResponse",
     "SettingsListResponse",
@@ -95,6 +96,25 @@ class SettingsPatch(RootModel[dict[str, JsonValue]]):
     """
 
     root: dict[str, JsonValue] = Field(min_length=1)
+
+
+class SettingClassAppMetadata(BaseModel):
+    """App-ownership metadata attached to a :class:`SettingClassGroup`.
+
+    :param is_app_owned: Always ``True`` for app-owned groups.
+    :type is_app_owned: bool
+    :param app_id: The owning app's registry key.
+    :type app_id: str
+    :param app_display_name: The owning app's human-facing label.
+    :type app_display_name: str
+    :param app_enabled: Whether the owning app is currently enabled.
+    :type app_enabled: bool
+    """
+
+    is_app_owned: bool = True
+    app_id: str
+    app_display_name: str
+    app_enabled: bool
 
 
 class SettingClassGroup(BaseModel):
