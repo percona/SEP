@@ -315,9 +315,9 @@ async def _backup_alert_config() -> None:
         backup = AlertBackup(data=data, metadata_=metadata)
         await AlertBackupManager.save(session, backup)
 
-        from app.sep.apps.alerts.config import alerts_pmm_config
+        from app.sep.apps.alerts.config import alerts_settings
 
-        retention = alerts_pmm_config.backup_retention
+        retention = alerts_settings.BACKUP_RETENTION
         all_backups = await AlertBackupManager.list(session)
         if len(all_backups) > retention:
             ids_to_delete = [b.id for b in all_backups[retention:]]

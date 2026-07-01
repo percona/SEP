@@ -202,9 +202,9 @@ def filter_syncers_by_name(
 def _syncer_init_kwargs(sync_option: SyncOptions) -> dict[str, Any]:
     """Build constructor kwargs from a configured ``SyncOptions`` entry.
 
-    Drops ``None`` leaves so optional nested models (notably ``pmm`` on
-    ``PMMSyncer``) are not passed as explicit ``None``, which would override
-    the syncer's default factory and fail validation.
+    Drops ``None`` leaves so optional nested models are not passed as explicit
+    ``None``, which would override a syncer's default factory and fail
+    validation.
 
     :param sync_option: One element from ``sep_settings.SYNCERS``.
     :type sync_option: SyncOptions
