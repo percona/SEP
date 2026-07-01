@@ -2911,6 +2911,7 @@ class TestNomadTaskStatesToExecutionEvents:
         assert len(events) == 1
         assert events[0].event_type == "Setup Failure"
         assert "artifact download failed" in events[0].description
+        assert events[0].step == "step1"
 
 
 class TestPersistNomadTaskLogsCursorDurability:
