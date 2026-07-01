@@ -257,7 +257,7 @@ function SchemaFormBody({
   capabilities,
   renderField,
 }: SchemaFormRendererProps) {
-  const { handleSubmit, formState, setError, clearErrors } =
+  const { handleSubmit, formState, setError, clearErrors, getFieldState } =
     useFormContext<Record<string, unknown>>();
 
   // Apply backend per-field errors to the form. Clear the paths set by the
@@ -333,7 +333,25 @@ function SchemaFormBody({
       clearErrors(appliedServerErrorPaths.current);
       appliedServerErrorPaths.current = [];
     }
-    void handleSubmit(handleFormSubmit)(event);
+    void handleSubmit(handleFormSubmit, () => {
+      // Resubmit was blocked by a client-side validation error on some field, so
+      // handleFormSubmit never fired: the parent won't re-send fieldErrors and the
+      // effect won't re-run. Re-apply the server errors we cleared above (skipping
+      // any field that now has its own client-side error) so their inline highlight
+      // stays in sync with the still-visible persistent banner. Cleared again at the
+      // top of the next submit, so this never re-introduces the resubmission wedge.
+      if (!fieldErrors?.length) {
+        return;
+      }
+      const reapplied: string[] = [];
+      for (const { path, message } of fieldErrors) {
+        if (path && !getFieldState(path).error) {
+          setError(path, { type: 'server', message });
+          reapplied.push(path);
+        }
+      }
+      appliedServerErrorPaths.current = reapplied;
+    })(event);
   };
 
   return (

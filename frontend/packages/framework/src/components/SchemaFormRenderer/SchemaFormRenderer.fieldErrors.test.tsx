@@ -106,6 +106,41 @@ describe('SchemaFormRenderer field errors', () => {
     expect(screen.getByText('limit bad')).toBeInTheDocument();
   });
 
+  it('keeps a rendered-field server error inline when a resubmit is blocked client-side', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    // `title` is required, so emptying it blocks the resubmit before onSubmit runs.
+    const sections: FormSection[] = [
+      {
+        title: 'Task',
+        fields: [
+          { type: 'string', name: 'title', label: 'Title', description: 'A title', required: true },
+          { type: 'integer', name: 'limit', label: 'Row Limit', description: 'Max rows' },
+        ],
+      },
+    ];
+    renderWithProviders(
+      <SchemaFormRenderer
+        sections={sections}
+        onSubmit={onSubmit}
+        submitLabel="Run"
+        fieldErrors={[{ path: 'limit', message: 'must be positive' }]}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText('must be positive')).toBeInTheDocument());
+
+    // Empty the required title field, then resubmit: the client-side gate blocks
+    // the submit, so the eager clear must not drop `limit`'s inline highlight.
+    await user.clear(screen.getByLabelText(/Title/));
+    await user.click(screen.getByRole('button', { name: 'Run' }));
+
+    await waitFor(() => expect(screen.getByText('Title is required')).toBeInTheDocument());
+    expect(onSubmit).not.toHaveBeenCalled();
+    // `limit`'s server error survives the blocked resubmit, in sync with the banner.
+    expect(screen.getByText('must be positive')).toBeInTheDocument();
+  });
+
   it('does not wedge resubmission when a fieldError lands on a non-rendered field', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
