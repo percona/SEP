@@ -25,7 +25,7 @@ import type { ReportConfig, ReportData, ReportParams, UploadResult } from './typ
 // explicit rather than silently dropping it.
 type ReportPdfParams = Omit<ReportParams, 'sections'>;
 
-const API_BASE = '/plugins/report';
+const API_BASE = '/apps/report';
 
 export function useGenerateReport(params: ReportParams | null) {
   return useQuery<ReportData>({
@@ -89,9 +89,10 @@ export function useUploadToServiceNow() {
 }
 
 // Probe whether ServiceNow upload is configured. Returns empty disabled_reasons
-// (upload enabled) on any error — 404 means endpoint not yet deployed (SEP-1059),
-// other errors are transient config blips that should not silently block the user.
-// SEP-1059 should expose GET /api/plugins/report/config with { upload_disabled_reasons }.
+// (upload enabled) on any error — 404 means the config endpoint is not yet
+// deployed, other errors are transient config blips that should not silently
+// block the user. The endpoint should expose GET /api/apps/report/config with
+// { upload_disabled_reasons }.
 export function useReportConfig() {
   return useQuery<ReportConfig>({
     queryKey: ['report', 'config'],

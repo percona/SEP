@@ -218,7 +218,7 @@ Nomad access does **not** replace SEP’s own controls:
 
 - Engineers authenticate to SEP via **Casdoor OAuth/JWT** (see task execution DFD).
 - SEP only dispatches **predefined** job types and merged `meta` (no arbitrary shell from the UI).
-- Snippet approval and plugin-defined commands are enforced in SEP before Nomad dispatch.
+- Snippet approval and app-defined commands are enforced in SEP before Nomad dispatch.
 
 ---
 
@@ -228,7 +228,7 @@ Registered in the Tasks database (`app/tasks/db/seed.py`):
 
 | Job ID | Purpose | Driver |
 |--------|---------|--------|
-| `run-command` | Proxy plugins / `pt-*` style commands via `meta.command` + `meta.args` | `raw_exec` |
+| `run-command` | Proxy apps / `pt-*` style commands via `meta.command` + `meta.args` | `raw_exec` |
 | `run-python` | Python payload with venv prestart | `raw_exec` |
 | `exec-artifact` | Approved snippets / signed artifact download | `raw_exec` |
 

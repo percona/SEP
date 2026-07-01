@@ -24,7 +24,7 @@ import yaml
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
-from app.sep.plugins.archives.alerts import (
+from app.sep.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     ARCHIVER_TRACE_PLACEHOLDER,
 )
@@ -703,7 +703,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="2026 ERROR: pt-archiver Purge Failed"),
         )
         mock_trigger = AsyncMock()
@@ -737,7 +737,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="ERROR: boom"),
         )
         mock_trigger = AsyncMock()
@@ -760,7 +760,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value=None),
         )
         mock_trigger = AsyncMock()
@@ -775,7 +775,7 @@ class TestTaskHistory:
     ) -> None:
         """Give non-archiver failures no custom_details and keep the target summary."""
         read_spy = mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="x"),
         )
         history = TaskHistory(
@@ -799,7 +799,7 @@ class TestTaskHistory:
     ) -> None:
         """Leave Archiver LOST unchanged: no custom_details, no source-node summary."""
         read_spy = mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="x"),
         )
         history = TaskHistory(
@@ -860,7 +860,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.plugins.archives.alerts._read_last_stderr",
+            "app.sep.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="ERROR: boom"),
         )
         mock_trigger = AsyncMock()

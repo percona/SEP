@@ -109,7 +109,7 @@ function isBenignConsoleError(msg: string, deletedTaskNames: string[]): boolean 
   // other 404 (wrong route, missing mock, unrelated endpoint) must still fail.
   if (
     msg.includes('404 (Not Found)') &&
-    msg.includes('/api/plugins/backup_pg/') &&
+    msg.includes('/api/apps/backup_pg/') &&
     deletedTaskNames.some((name) => msg.includes(name))
   ) {
     return true;
@@ -119,9 +119,9 @@ function isBenignConsoleError(msg: string, deletedTaskNames: string[]): boolean 
 
 type ApiState = { tasks: TaskRow[]; deletedTaskNames: string[] };
 
-/** Task name segment from ``/api/plugins/backup_pg/{task_name}`` (not list/schema/schedule). */
+/** Task name segment from ``/api/apps/backup_pg/{task_name}`` (not list/schema/schedule). */
 function taskNameFromPath(pathname: string): string | null {
-  const prefix = '/api/plugins/backup_pg/';
+  const prefix = '/api/apps/backup_pg/';
   if (!pathname.startsWith(prefix)) {
     return null;
   }
@@ -169,7 +169,7 @@ async function mockBackupPgApis(page: Page, apiState: ApiState): Promise<void> {
       });
     }
 
-    if (pathname === '/api/plugins/backup_pg/schema') {
+    if (pathname === '/api/apps/backup_pg/schema') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -179,7 +179,7 @@ async function mockBackupPgApis(page: Page, apiState: ApiState): Promise<void> {
 
     if (
       req.method() === 'POST' &&
-      (pathname === '/api/plugins/backup_pg/' || pathname === '/api/plugins/backup_pg')
+      (pathname === '/api/apps/backup_pg/' || pathname === '/api/apps/backup_pg')
     ) {
       const body = req.postDataJSON() as { task_name?: string; hostname?: string };
       if (!body.task_name || !body.hostname) {
@@ -226,7 +226,7 @@ async function mockBackupPgApis(page: Page, apiState: ApiState): Promise<void> {
 
     if (
       req.method() === 'GET' &&
-      (pathname === '/api/plugins/backup_pg/' || pathname === '/api/plugins/backup_pg')
+      (pathname === '/api/apps/backup_pg/' || pathname === '/api/apps/backup_pg')
     ) {
       return route.fulfill({
         status: 200,
@@ -345,7 +345,7 @@ test.describe('PostgreSQL backup_pg plugin smoke', () => {
     await expect(page.getByText(MOCK_TASK_NAME)).toHaveCount(0);
     await expect
       .poll(() => deleteRequests, { timeout: 5_000 })
-      .toContain(`/api/plugins/backup_pg/${MOCK_TASK_NAME}`);
+      .toContain(`/api/apps/backup_pg/${MOCK_TASK_NAME}`);
     expect(apiState.tasks.some((t) => t.name === MOCK_TASK_NAME)).toBe(false);
   });
 });

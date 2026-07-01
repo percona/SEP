@@ -21,6 +21,7 @@ from datetime import datetime, UTC
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.utils.date_time import utc_now
+from app.tasks import config as tasks_config
 from app.tasks.crud import (
     TaskHistoryLogManager,
     TaskHistoryLogStateManager,
@@ -118,6 +119,7 @@ class TaskHistoryLogWriter:
             now = utc_now()
             staging = state.staging + effective_bytes
             persisted_offset = state.persisted_offset
+            previous_persisted_offset = persisted_offset
 
             staging, persisted_offset = await cls._flush_full_chunks(
                 session=session,
@@ -166,6 +168,14 @@ class TaskHistoryLogWriter:
                 now=now,
             )
             if applied:
+                await cls._evict_over_cap(
+                    session,
+                    task_history_id=task_history_id,
+                    source=source,
+                    stream=stream,
+                    persisted_offset=persisted_offset,
+                    previous_persisted_offset=previous_persisted_offset,
+                )
                 await session.commit()
                 return
             await session.rollback()
@@ -503,6 +513,59 @@ class TaskHistoryLogWriter:
             staging=staging,
             now=now,
         )
+
+    @classmethod
+    async def _evict_over_cap(
+        cls,
+        session: AsyncSession,
+        *,
+        task_history_id: int,
+        source: str,
+        stream: TaskLogType,
+        persisted_offset: int,
+        previous_persisted_offset: int,
+    ) -> None:
+        """Drop oldest chunks beyond ``LOG_STREAM_CAP_BYTES`` for this stream.
+
+        No-op unless this flush advanced ``persisted_offset`` and the stream
+        exceeds the cap (``low_water > 0``). The delete is staged on ``session``
+        without committing so it commits atomically with the flush and the
+        version-CAS in :meth:`append`; a delete error therefore aborts the whole
+        append rather than leaving a best-effort cap.
+
+        :param session: The SQLAlchemy asynchronous session.
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :param source: The execution step name.
+        :param stream: The log stream (stdout or stderr).
+        :param persisted_offset: The advanced post-flush persisted offset.
+        :param previous_persisted_offset: The persisted offset before this flush.
+        """
+        if persisted_offset <= previous_persisted_offset:
+            return
+        cap = tasks_config.tasks_settings.LOG_STREAM_CAP_BYTES
+        low_water = persisted_offset - cap
+        if low_water <= 0:
+            return
+        deleted = await TaskHistoryLogManager.delete_chunks_below_offset(
+            session,
+            task_history_id=task_history_id,
+            source=source,
+            stream=stream,
+            max_end_offset=low_water,
+            max_rows=tasks_config.tasks_settings.LOG_STREAM_EVICTION_MAX_ROWS,
+        )
+        if deleted:
+            logger.debug(
+                "taskhistory_log stream capped",
+                extra={
+                    "event": "taskhistory_log_stream_capped",
+                    "task_history_id": task_history_id,
+                    "source": source,
+                    "stream": stream.value,
+                    "evicted_rows": deleted,
+                    "low_water": low_water,
+                },
+            )
 
 
 async def backfill_legacy_logs(

@@ -48,7 +48,7 @@ export interface AlertBackupSummary {
   created_at: string;
 }
 
-/** Shape returned by GET /api/plugins/alerts/ (the alerts index endpoint). */
+/** Shape returned by GET /api/apps/alerts/ (the alerts index endpoint). */
 export interface AlertIndexResponse {
   groups: AlertTemplateGroup[];
   pmm_connected: boolean;

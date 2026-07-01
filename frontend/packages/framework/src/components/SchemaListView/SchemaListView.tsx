@@ -222,7 +222,7 @@ function SchemaListViewCore({
             Cell: ({ row }) => {
               const name = row.original.name;
               // Trim to match how the detail summary derives its lookup key
-              // (PluginDetailPage trims `task.name`), so the list cell and the
+              // (AppDetailPage trims `task.name`), so the list cell and the
               // summary join to the same schedule even with stray whitespace.
               const matched =
                 name === undefined || name === null

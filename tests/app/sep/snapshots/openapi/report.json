@@ -1,7 +1,7 @@
 {
   "components": {
     "schemas": {
-      "Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post": {
+      "Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post": {
         "properties": {
           "full": {
             "default": true,
@@ -24,10 +24,10 @@
             "type": "string"
           }
         },
-        "title": "Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post",
+        "title": "Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post",
         "type": "object"
       },
-      "Body_report_report_upload_api_api_plugins_report_upload_post": {
+      "Body_report_report_upload_api_api_apps_report_upload_post": {
         "properties": {
           "full": {
             "default": true,
@@ -50,7 +50,7 @@
             "type": "string"
           }
         },
-        "title": "Body_report_report_upload_api_api_plugins_report_upload_post",
+        "title": "Body_report_report_upload_api_api_apps_report_upload_post",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -109,10 +109,10 @@
     }
   },
   "paths": {
-    "/api/plugins/report/config": {
+    "/api/apps/report/config": {
       "get": {
         "description": "Return upload configuration status.\n\n:return: JSON with ``upload_disabled_reasons`` — empty list means upload is ready.\n:rtype: JSONResponse",
-        "operationId": "report_report_config_api_plugins_report_config_get",
+        "operationId": "report_report_config_api_apps_report_config_get",
         "responses": {
           "200": {
             "content": {
@@ -129,10 +129,10 @@
         ]
       }
     },
-    "/api/plugins/report/generate/json": {
+    "/api/apps/report/generate/json": {
       "get": {
         "description": "Generate a report and return as JSON.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:param sections: Optional list of sections to include.\n:type sections: list[str] | None\n:return: JSON response with the full report data.\n:rtype: JSONResponse",
-        "operationId": "report_report_generate_json_api_api_plugins_report_generate_json_get",
+        "operationId": "report_report_generate_json_api_api_apps_report_generate_json_get",
         "parameters": [
           {
             "in": "query",
@@ -220,15 +220,15 @@
         ]
       }
     },
-    "/api/plugins/report/generate/pdf": {
+    "/api/apps/report/generate/pdf": {
       "post": {
         "description": "Generate a report and return it as a downloadable PDF.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:return: PDF file response.\n:rtype: Response",
-        "operationId": "report_report_generate_pdf_api_api_plugins_report_generate_pdf_post",
+        "operationId": "report_report_generate_pdf_api_api_apps_report_generate_pdf_post",
         "requestBody": {
           "content": {
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/Body_report_report_generate_pdf_api_api_plugins_report_generate_pdf_post"
+                "$ref": "#/components/schemas/Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post"
               }
             }
           }
@@ -259,15 +259,15 @@
         ]
       }
     },
-    "/api/plugins/report/upload": {
+    "/api/apps/report/upload": {
       "post": {
         "description": "Generate a report, convert to PDF, and upload to ServiceNow.\n\n:param pmm_api: The PMM API client.\n:type pmm_api: PMMRemoteAPI\n:param since: Relative start of the report period.\n:type since: str\n:param until: Relative end of the report period.\n:type until: str\n:param full: Include all check results and full backup history.\n:type full: bool\n:param refresh: Force a refresh of advisor checks before fetching results.\n:type refresh: bool\n:return: JSON response with the upload result.\n:rtype: JSONResponse",
-        "operationId": "report_report_upload_api_api_plugins_report_upload_post",
+        "operationId": "report_report_upload_api_api_apps_report_upload_post",
         "requestBody": {
           "content": {
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/Body_report_report_upload_api_api_plugins_report_upload_post"
+                "$ref": "#/components/schemas/Body_report_report_upload_api_api_apps_report_upload_post"
               }
             }
           }

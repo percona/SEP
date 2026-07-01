@@ -16,10 +16,10 @@
  */
 
 import type { RegisterOptions } from 'react-hook-form';
-import type { PluginField } from '../types';
+import type { AppField } from '../types';
 import { getAtPath, setAtPath } from './fieldPath';
 
-export function buildValidationRules(field: PluginField): RegisterOptions {
+export function buildValidationRules(field: AppField): RegisterOptions {
   const rules: RegisterOptions = {};
 
   if (field.required) {
@@ -105,7 +105,7 @@ export function buildValidationRules(field: PluginField): RegisterOptions {
  */
 export function coerceFormValues(
   values: Record<string, unknown>,
-  fields: PluginField[],
+  fields: AppField[],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...values };
   for (const field of fields) {

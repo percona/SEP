@@ -36,11 +36,11 @@ from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.utils import json_serializer
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.main import _reseed_system_periodic_tasks
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
 from app.sep.middleware.messages.models import MessageLevel
-from app.sep.plugins.alerts.config import alerts_settings, AlertsSettings
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
 SNIPPETS_TASK = "sep__sync_snippets"

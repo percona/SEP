@@ -309,7 +309,7 @@ class AppStateBase(SQLModel):
 class AppState(BaseSQLModel, AppStateBase, table=True):
     """Represent the per-app runtime lifecycle state.
 
-    One row per non-protected plugin in ``settings.yaml SEP.PLUGINS``. Seeded on
+    One row per non-protected plugin in ``settings.yaml SEP.APPS``. Seeded on
     startup via :func:`app.sep.db.seed.init_sep_db`, mapping each YAML entry's
     ``enabled`` flag to ``ENABLED`` / ``DISABLED``, and transitioned via the
     admin REST endpoint at ``PUT /api/admin/apps/{app_key}/state``.
@@ -318,7 +318,7 @@ class AppState(BaseSQLModel, AppStateBase, table=True):
     the request guard skips injection for them and the toggle endpoint rejects
     them. A missing row for a configured app is treated as ``ENABLED`` by the
     guard (a configured plugin is active until explicitly disabled); rows for
-    apps no longer in ``SEP.PLUGINS`` are cleaned up on the next startup seed.
+    apps no longer in ``SEP.APPS`` are cleaned up on the next startup seed.
 
     :param id: The auto-incremented primary key.
     :param app_key: The plugin's module key. Unique and indexed.
@@ -378,7 +378,7 @@ class SEPPluginPeriodicTaskBase(SQLModel):
 class SEPPluginPeriodicTask(BaseSQLModel, SEPPluginPeriodicTaskBase, table=True):
     """Map a plugin-owned Celery periodic task to its owning app + user override.
 
-    One row per plugin-owned schedule in ``SEP.PLUGINS``. Seeded on startup via
+    One row per plugin-owned schedule in ``SEP.APPS``. Seeded on startup via
     :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating` and consulted at
     every :class:`AppState` transition to recompute ``effective_enabled`` and
     write it through to the library ``PeriodicTask.enabled`` column.

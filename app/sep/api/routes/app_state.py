@@ -32,6 +32,7 @@ from app.celery import celery
 from app.core.celery.deps import CeleryBeatSessionDep
 from app.core.exceptions import HTTPConflictException
 from app.sep.app_drain import finalize_drain_if_complete
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.crud import AppRunningTaskManager, AppStateManager
 from app.sep.deps import (
     PROTECTED_APP_KEYS,
@@ -40,7 +41,6 @@ from app.sep.deps import (
 )
 from app.sep.models import AppLifecycleEnum, AppStateBase, AppStateWrite
 from app.sep.periodic_tasks import apply_effective_enabled
-from app.sep.plugins.framework.registry import get_app_registry
 
 router = APIRouter()
 
@@ -97,7 +97,7 @@ class AppStateResponse(BaseModel):
 async def list_apps(session: SessionDep) -> list[AppInfoResponse]:
     """List every configured app with its current enabled state.
 
-    Returns one entry per ``SEP.PLUGINS`` entry, in declaration order. Apps with
+    Returns one entry per ``SEP.APPS`` entry, in declaration order. Apps with
     no row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);
     protected apps (``inventory``) are forced to ``ENABLED`` and reported with
     ``toggleable=False``. The list is non-paginated: app cardinality is bounded

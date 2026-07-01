@@ -32,8 +32,8 @@ export {
 export { createQueryClient, defaultQueryClientConfig } from './queryClient';
 
 // Errors
-export { ApiError, normalizeAxiosError } from './errors';
-export type { ApiErrorDetails, ApiErrorKind } from './errors';
+export { ApiError, normalizeAxiosError, parseFieldErrors } from './errors';
+export type { ApiErrorDetails, ApiErrorKind, FieldValidationError } from './errors';
 
 // Auth
 export { postLogin, postRefresh, postLogout, fetchCurrentUser } from './auth';
@@ -59,9 +59,9 @@ export type { paths as SepPaths, components as SepComponents } from './generated
 export { mainApi, sepApi, throwOnApiError } from './typed-client';
 
 export type {
-  PluginSchema,
-  PluginEntitySchema,
-  PluginField,
+  AppSchema,
+  AppEntitySchema,
+  AppField,
   SectionField,
   OneOfBranch,
   OneOfGroup,
@@ -71,7 +71,7 @@ export type {
   DetailField,
   DetailSection,
   DetailView,
-  PluginCapabilities,
+  AppCapabilities,
   StringField,
   IntegerField,
   FloatField,
@@ -92,22 +92,22 @@ export type {
   FieldGate,
   CardinalityRule,
   FailRule,
-} from './types/plugin-schema';
+} from './types/app-schema';
 
 // Hooks
 export {
   useCurrentUser,
-  usePluginSchema,
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  useUpdatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
+  useAppSchema,
+  useAppTasks,
+  useAppTask,
+  useCreateAppTask,
+  useUpdateAppTask,
+  useAppEntityList,
+  useAppEntityDetail,
+  useCreateAppEntity,
+  useUpdateAppEntity,
+  useDeleteAppEntity,
+  useDeleteAppTask,
   useAlertConfig,
   ALERT_CONFIG_QUERY_KEY,
   useDashboardStats,
