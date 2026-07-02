@@ -417,18 +417,22 @@ SEP:
   # ...
   SYNCERS:
     - SYNCER: PMMSyncer
-      PMM:
-        ENDPOINT: https://127.0.0.1:8443
-        VERIFY_SSL: false
 ```
 
-Syncers may require additional configuration that can be specifically defined in the `settings.yaml`
-(like the `PMM` section in the example above) or globally defined through the `SEP.SYNCER_EXTRA_KWARGS`
-config (`SEP__SYNCER_EXTRA_KWARGS` for in env settings). Using `SEP__SYNCER_EXTRA_KWARGS`
-is ideal when you have a syncer that needs a secret:
+Some syncers require additional configuration. PMM connection/auth config lives in the
+top-level `PMM` section (not under the syncer entry) — `PMMSyncer` reads it directly:
+```yaml
+PMM:
+  ENDPOINT: https://127.0.0.1:8443
+  VERIFY_SSL: false
 ```
-SEP__SYNCER_EXTRA_KWARGS__PMM__API_KEY=<Your PMM API key)
+The PMM API key is a secret and should be set via an env var rather than `settings.yaml`:
 ```
+PMM__API_KEY=<Your PMM API key>
+```
+
+Other syncers may take extra keyword arguments, defined globally through the
+`SEP.SYNCER_EXTRA_KWARGS` config (`SEP__SYNCER_EXTRA_KWARGS` for env settings).
 
 #### PMMSyncer
 

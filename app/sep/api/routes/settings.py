@@ -34,6 +34,7 @@ from app.core.settings_override.api.routes import ClassEntry
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils.date_time import utc_now
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.apps.framework.registry import (
     collect_app_owned_settings_classes,
     resolve_app_settings_metadata,
@@ -50,6 +51,7 @@ SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
     (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
     (SettingClassEnum.SNIPPETS_SETTINGS, SnippetsSettings, snippets_settings),
     (SettingClassEnum.MESSAGES_SETTINGS, MessagesSettings, messages_settings),
+    (SettingClassEnum.ALERTS_SETTINGS, AlertsSettings, alerts_settings),
 ]
 
 SEP_APP_OWNED_SETTINGS_CLASSES = collect_app_owned_settings_classes()

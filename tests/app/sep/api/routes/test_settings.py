@@ -174,8 +174,9 @@ class TestSepSettingsList:
     ) -> None:
         """Returns core, proxied TasksSettings, and app-owned groups.
 
-        SEP serves its own classes locally, proxies ``TasksSettings`` from the
-        Tasks sub-app, and appends app-owned classes such as ``AlertSettings``.
+        SEP serves its own classes locally (including ``AlertsSettings``),
+        proxies ``TasksSettings`` from the Tasks sub-app, and appends
+        app-owned classes such as ``AlertSettings``.
         """
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -185,6 +186,7 @@ class TestSepSettingsList:
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.MESSAGES_SETTINGS.value,
+            SettingClassEnum.ALERTS_SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
             SettingClassEnum.ALERT_SETTINGS.value,
         }
@@ -1119,6 +1121,7 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"),
                 (SettingClassEnum.SETTINGS, "PMM"),
                 (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
+                (SettingClassEnum.ALERTS_SETTINGS, "BACKUP_INTERVAL"),
             }
         finally:
             sep_app.state.override_callbacks = original

@@ -1,13 +1,13 @@
 # SEP User Guide
 
 A customer-facing introduction to the **Services Enablement Platform (SEP)** and a short
-description of every plugin: what it is for and what it runs on your database hosts.
+description of every app: what it is for and what it runs on your database hosts.
 
 ## Contents
 
 - [What is SEP?](#what-is-sep)
 - [How SEP works](#how-sep-works)
-- [Plugins](#plugins)
+- [Apps](#apps)
   - [Inventory](#inventory)
   - [Snippet Manager](#snippet-manager)
   - [Collect Diagnostic Data (ATW)](#collect-diagnostic-data-atw)
@@ -29,10 +29,10 @@ description of every plugin: what it is for and what it runs on your database ho
 
 SEP (Services Enablement Platform) is a modular web platform that lets Percona engineers and DBAs run standardized  database operations — backups, schema changes, consistency checks, diagnostics, and alerting — against different database technologies from a single interface. Instead of running ad-hoc commands by hand on each host, operators pick a service from an inventory and trigger a well-defined action, while SEP records who ran what, when, and with which result.
 
-SEP is **plugin-based**: each capability (backups, schema changes, diagnostics, etc.) is a
-separate plugin that adds its own UI and API. Which plugins are available is controlled by
-the `PLUGINS` (and `TASKS.PLUGINS`) sections of `settings.yaml`, so a deployment can enable
-only the plugins it needs.
+SEP is **app-based**: each capability (backups, schema changes, diagnostics, etc.) is a
+separate app that adds its own UI and API. Which apps are available is controlled by
+the `APPS` (and `TASKS.APPS`) sections of `settings.yaml`, so a deployment can enable
+only the apps it needs.
 
 ## How SEP works
 
@@ -41,13 +41,13 @@ At a high level:
 1. **Sign in.** Users authenticate through Casdoor (OAuth 2.0 / OIDC).
 2. **Browse inventory.** SEP keeps an inventory of nodes, services, schemas, and tables,
   typically synced from PMM. Operators select the service they want to act on.
-3. **Run a plugin action.** When an operator triggers an action, SEP dispatches a job to a
+3. **Run an app action.** When an operator triggers an action, SEP dispatches a job to a
   **Nomad** agent that runs on (or close to) the target database host using the `raw_exec`
    driver. The command runs there, and the output and logs are captured back in SEP for
    review and history.
 4. **Review results.** Task status, logs, and artifacts are stored and viewable in SEP.
 
-Some plugins (alerting and reporting) do not run a command on a database host at all — they
+Some apps (alerting and reporting) do not run a command on a database host at all — they
 talk to the PMM HTTP API instead.
 
 For deeper technical detail on the deployment topology and per-task data flow, see the
@@ -56,15 +56,15 @@ companion customer docs:
 - [SEP Architecture — Deployment Topology](../sep-architecture/README.md)
 - [SEP Task Execution — Data Flow](../sep-task-execution-dfd/README.md)
 
-## Plugins
+## Apps
 
-Each entry below lists the plugin's purpose and the command or tool it executes on the
+Each entry below lists the app's purpose and the command or tool it executes on the
 target host (or notes when it uses an API instead).
 
 ### Inventory
 
 **Purpose:** Manage the catalog of nodes, services, schemas, and tables that every other
-plugin acts on.
+app acts on.
 
 Inventory lets you view and edit nodes and services, synchronize the catalog from external
 sources (such as PMM), and schedule recurring syncs. From a service's detail page you can
@@ -167,16 +167,16 @@ configuration.
 
 **What it runs:** `**pbm backup`** (`--type logical` or `--type physical`), `**pbm config`**
 to apply storage/PITR settings, and `**pbm status`** to report state. Requires PBM CLI and a
-MongoDB connection URI configured on the target node (see the plugin's
-[README](../../../app/sep/plugins/backup_mongo/README.md) for prerequisites).
+MongoDB connection URI configured on the target node (see the app's
+[README](../../../app/sep/apps/backup_mongo/README.md) for prerequisites).
 
 **Root requirements:** no
 
 ### PostgreSQL Backups
 
 > [!NOTE]
-> This plugin is present in SEP but is **not enabled by default**. To use it, add it to the
-> `PLUGINS` section of `settings.yaml`.
+> This app is present in SEP but is **not enabled by default**. To use it, add it to the
+> `APPS` section of `settings.yaml`.
 
 **Purpose:** Run pgBackRest backups for PostgreSQL inventory services.
 
@@ -242,7 +242,7 @@ locally.
 
 ## Common concepts
 
-A few ideas apply across most plugins:
+A few ideas apply across most apps:
 
 - **Executor host.** Actions that run a command are dispatched to a Nomad agent on (or near)
 the target host. For remote databases (such as RDS/DBaaS) you select which executor host

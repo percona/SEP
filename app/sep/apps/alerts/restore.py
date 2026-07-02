@@ -21,7 +21,7 @@ from typing import Any
 from fastapi import status
 from fastapi.exceptions import HTTPException
 
-from app.sep.apps.alerts.config import alerts_pmm_config
+from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.alerts.deps import find_or_create_alert_folder
 from app.sep.apps.alerts.loader import get_alert_templates
 from app.sep.apps.alerts.models import (
@@ -161,7 +161,7 @@ async def _restore_rules(
                 template_name=template_name,
                 folder_uid=folder.uid,
                 for_duration=r_data.get("for", DEFAULT_FOR_DURATION),
-                group=r_data.get("group", alerts_pmm_config.alert_folder_name),
+                group=r_data.get("group", alerts_settings.ALERT_FOLDER_NAME),
             )
             created += 1
         except HTTPException as exc:

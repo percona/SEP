@@ -36,6 +36,7 @@ from app.core.settings_override.lifecycle import ProxyEntry, refresh_all
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.utils import json_serializer
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.main import _reseed_system_periodic_tasks
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
@@ -44,6 +45,7 @@ from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
 SNIPPETS_TASK = "sep__sync_snippets"
 RECONCILER_TASK = "sep__reconcile_disabling_apps"
+ALERT_BACKUP_TASK = "sep__backup_alert_config"
 OVERRIDE_EVERY_MINUTES = 30
 
 
@@ -71,6 +73,7 @@ def _sep_proxies() -> dict:
         SettingClassEnum.MESSAGES_SETTINGS: ProxyEntry(
             messages_settings, MessagesSettings
         ),
+        SettingClassEnum.ALERTS_SETTINGS: ProxyEntry(alerts_settings, AlertsSettings),
     }
 
 
@@ -315,6 +318,28 @@ async def _seed_snippets_task(
         await session.commit()
 
 
+async def _seed_alert_backup_task(
+    beat_session_maker: async_sessionmaker, *, every: int, enabled: bool
+) -> None:
+    """Seed a ``sep__backup_alert_config`` beat row at the given interval/gating."""
+    from sqlalchemy_celery_beat.models import IntervalSchedule as BeatInterval
+    from sqlalchemy_celery_beat.models import Period
+
+    async with beat_session_maker() as session:
+        schedule = BeatInterval(every=every, period=Period.HOURS)
+        session.add(schedule)
+        await session.flush()
+        session.add(
+            PeriodicTask(
+                name=ALERT_BACKUP_TASK,
+                task="app.sep.celery.backup_alert_config",
+                enabled=enabled,
+                schedule_model=schedule,
+            )
+        )
+        await session.commit()
+
+
 @pytest.mark.asyncio
 async def test_sync_interval_override_reseeds_beat_schedule_live(
     override_session_maker: async_sessionmaker,
@@ -370,6 +395,68 @@ async def test_sync_interval_override_reseeds_beat_schedule_live(
     assert task.schedule_model.every == OVERRIDE_EVERY_MINUTES
     assert task.schedule_model.period == Period.MINUTES
     assert task.enabled is False  # gating survived the re-seed (AC #4)
+
+
+@pytest.mark.asyncio
+async def test_backup_interval_override_reseeds_alert_backup_beat_schedule_live(
+    override_session_maker: async_sessionmaker,
+    beat_session_maker: async_sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``BACKUP_INTERVAL`` override re-seeds the ``sep__backup_alert_config`` row.
+
+    The alerts backup interval is a ``hot_field`` feeding the system beat schedule
+    (:func:`app.sep.db.seed.get_system_periodic_tasks`). Wiring
+    ``(ALERTS_SETTINGS, BACKUP_INTERVAL)`` to ``_reseed_system_periodic_tasks`` means
+    a runtime override updates the live beat row -- not just the proxy -- so Celery
+    beat reloads it on its next tick without a restart. Mirrors the snippets case.
+    """
+    # The alerts schedule is plugin-gated; force it on irrespective of the test
+    # settings.yaml so the task-set builder emits the alerts backup schedule.
+    monkeypatch.setattr("app.sep.db.seed._alerts_plugin_enabled", True)
+    # Gated OFF so we can prove the re-seed preserves the ``enabled`` flag.
+    await _seed_alert_backup_task(beat_session_maker, every=1, enabled=False)
+    async with override_session_maker() as session:
+        await SettingsOverrideManager.create(
+            session,
+            SettingOverride(
+                setting_class=SettingClassEnum.ALERTS_SETTINGS,
+                key="BACKUP_INTERVAL",
+                value={"every": OVERRIDE_EVERY_MINUTES, "period": "minutes"},
+            ),
+        )
+
+    monkeypatch.setattr(
+        "app.core.celery.utils.get_async_session_maker",
+        lambda: beat_session_maker,
+    )
+    callbacks = {
+        (
+            SettingClassEnum.ALERTS_SETTINGS,
+            "BACKUP_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+    }
+
+    try:
+        await refresh_all(lambda: override_session_maker, _sep_proxies(), callbacks)
+
+        # Proxy reflects the override...
+        assert (
+            IntervalSchedule(every=OVERRIDE_EVERY_MINUTES, period="minutes")
+            == alerts_settings.BACKUP_INTERVAL
+        )
+        # ...and the live beat row was re-seeded, gating state preserved.
+        async with beat_session_maker() as session:
+            task = await BasePeriodicTaskManager.first(session, name=ALERT_BACKUP_TASK)
+        assert task is not None
+        from sqlalchemy_celery_beat.models import Period
+
+        assert task.schedule_model.every == OVERRIDE_EVERY_MINUTES
+        assert task.schedule_model.period == Period.MINUTES
+        assert task.enabled is False  # gating survived the re-seed
+    finally:
+        # Restore the global proxy snapshot so unrelated tests see the YAML default.
+        alerts_settings._set_snapshot({})
 
 
 @pytest.mark.asyncio

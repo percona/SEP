@@ -1,9 +1,9 @@
-# Plugin migration OpenAPI + schema snapshot harness
+# App migration OpenAPI + schema snapshot harness
 
 A mechanical safety net for the app-framework epic. It snapshots every active
-plugin's public HTTP contract — its `/api/plugins/{key}` OpenAPI subtree and its
+app's public HTTP contract — its `/api/apps/{key}` OpenAPI subtree and its
 `GET …/schema` JSON payload — and byte-compares each against a golden file
-recorded from `main`. A plugin-migration PR is provably a **no-op** on the
+recorded from `main`. An app-migration PR is provably a **no-op** on the
 contract when these snapshots stay green, or it is an explicit, reviewed,
 additive change when a regenerated golden is part of the diff.
 
@@ -12,17 +12,17 @@ additive change when a regenerated golden is part of the diff.
 The harness is driven by two test modules plus a shared helper, all under
 `tests/app/sep/`:
 
-- `tests/app/sep/test_openapi_snapshot.py` — one golden per configured plugin
+- `tests/app/sep/test_openapi_snapshot.py` — one golden per configured app
   key (`tests/app/sep/snapshots/openapi/<key>.json`).
 - `tests/app/sep/test_schema_snapshot.py` — one golden per parameterless
-  `GET …/schema` route under a configured plugin prefix
+  `GET …/schema` route under a configured app prefix
   (`tests/app/sep/snapshots/schema/<slug>.json`).
 - `tests/app/sep/snapshot_utils.py` — pure helpers (canonical JSON, subtree
   slicing, `$ref` closure, route discovery, compare/update).
 
 Both modules **discover** their targets from the app rather than hardcoding
-plugin keys, so the harness self-maintains. The plugin inventory is derived from
-`sep_settings.PLUGINS` (the committed `settings.yaml` default config), not from
+app keys, so the harness self-maintains. The app inventory is derived from
+`sep_settings.APPS` (the committed `settings.yaml` default config), not from
 live-app path discovery.
 
 The OpenAPI document is built from a **throwaway app over the config-built
@@ -31,32 +31,32 @@ process-global `sep_app`. A sibling conftest (`backup_pg`) injects routers into
 `sep_app` at import time, which both freezes `sep_app`'s cached schema for other
 tests and perturbs shared `components/schemas` names — so a snapshot read from
 `sep_app` would depend on test-suite composition. `api_router` is built once
-from `sep_settings.PLUGINS` and is never mutated, so its schema is
+from `sep_settings.APPS` and is never mutated, so its schema is
 deterministic; the snapshot uses the same `operationId` scheme `create_app`
 installs on `sep_app`. The schema snapshots (AC2) still issue real
 `GET …/schema` requests through the authenticated `test_client` over `sep_app`,
 so the recorded payloads reflect the live serialization stack. Content is
-sliced strictly within configured `/api/plugins/{key}` prefixes.
+sliced strictly within configured `/api/apps/{key}` prefixes.
 
 Each module also carries a completeness guard
 (`test_*_golden_set_is_complete`) that fails when the committed golden set drifts
-from the discovered set — so an added or removed plugin/endpoint surfaces as a
+from the discovered set — so an added or removed app/endpoint surfaces as a
 missing/orphaned-golden failure rather than silent under-coverage.
 
 ### Scope notes
 
-- **Default-config set.** Goldens cover the plugins enabled by the default test
+- **Default-config set.** Goldens cover the apps enabled by the default test
   config. `backup_pg` is **not** covered: it appears only in the
   `env/settings-*team*.yaml` deployment profiles, so it is absent from
-  `sep_settings.PLUGINS`. When it (or any plugin) is later added to the default
+  `sep_settings.APPS`. When it (or any app) is later added to the default
   config, the completeness guard fails until a reviewed regeneration adds its
   goldens.
-- **Recorded for the default test environment (`development`).** The plugin set
-  comes from `sep_settings.PLUGINS`, which the YAML loader resolves against the
+- **Recorded for the default test environment (`development`).** The app set
+  comes from `sep_settings.APPS`, which the YAML loader resolves against the
   active `FASTAPI_ENV` overlay. The whole `test_client`-based suite boots with
   `FASTAPI_ENV` unset → `development`, and the goldens are recorded for that
   profile. Running the snapshot tests under a different `FASTAPI_ENV` changes the
-  active plugin set (and the running `sep_app`), so it requires a regeneration
+  active app set (and the running `sep_app`), so it requires a regeneration
   under that profile — the harness pins the suite's environment, not a hardcoded
   list.
 - **The parameterized `snippets/snippet/schema` route is excluded** from the
@@ -97,7 +97,7 @@ other than unset, `""`, `0`, `false`, or `False`.
 
 ### When regeneration is legitimate
 
-Regenerate **only** for a deliberate, reviewed, additive change to a plugin's
+Regenerate **only** for a deliberate, reviewed, additive change to an app's
 public contract — a new route, a new schema field, a new enum value that the
 ticket intends to ship. Never regenerate to silence an unexplained diff: an
 unexpected drift is the harness doing its job, and the diff must be understood
@@ -113,11 +113,11 @@ un-reviewed contract change.
 ## Migration coverage policy
 
 Migration tickets must **not** build a duplicate behavioral characterization
-suite. Per-plugin behavioral tests already exist (e.g.
-`tests/app/sep/plugins/checksums/test_api_routes.py`) and must keep passing
+suite. Per-app behavioral tests already exist (e.g.
+`tests/app/sep/apps/checksums/test_routes.py`) and must keep passing
 **unmodified** through a migration — that is the no-op proof.
 
-Instead, each migration runs a kickoff **coverage gap-check** on the plugin's
+Instead, each migration runs a kickoff **coverage gap-check** on the app's
 existing suite, confirming the standard contract paths are exercised:
 
 - authentication / authorization,
@@ -131,16 +131,16 @@ proof, and it is explicitly out of scope for a migration.
 
 ## Conformance suite (framework invariants)
 
-Where the snapshot harness pins each plugin's *byte-for-byte* contract, the
+Where the snapshot harness pins each app's *byte-for-byte* contract, the
 conformance suite enforces the app-framework's *structural* invariants
 mechanically, so they are caught in `make test`/CI instead of by reviewer memory.
 
-- `app/sep/plugins/framework/conformance.py` — pure detector functions, each
+- `app/sep/apps/framework/conformance.py` — pure detector functions, each
   taking one registry input plane and returning a list of violation strings
   (empty when the invariant holds).
-- `tests/app/sep/plugins/framework/test_conformance.py` — per-detector unit
+- `tests/app/sep/apps/framework/test_conformance.py` — per-detector unit
   tests, a synthetic `TaskExecutionApp` exercising the migrated-only detectors
-  before any plugin is migrated, and a suite that iterates `get_app_registry()`.
+  before any app is migrated, and a suite that iterates `get_app_registry()`.
 
 The checks:
 
@@ -154,7 +154,7 @@ The checks:
   view fields resolve to real `response_model` fields, and create-model schema
   derivation succeeds.
 - **Registry-level checks**: no two routes collide on `(path, method)`, the merged
-  plugin OpenAPI builds, and every operation carries a summary-or-description floor.
+  app OpenAPI builds, and every operation carries a summary-or-description floor.
 - **Transitional drift** (warning-level): reuses
   `form_dsl.check_form_conformance`, re-exported here so the suite imports every
   check from one module. Dormant today (no registry app exposes both a create
@@ -162,7 +162,7 @@ The checks:
 
 ### The duplicate `alert_on_fail` removal
 
-The suite's trigger was a systemic duplicate: five plugins (`alters`, `archives`,
+The suite's trigger was a systemic duplicate: five apps (`alters`, `archives`,
 `backup_mongo`, `backup_pg`, `mysql_backups`) each declared both an explicit
 `alert_on_fail` `BoolField` **and** `capabilities.alert_on_fail=True`, while the
 renderer already draws the capability-driven control under the same wire key. The
@@ -173,5 +173,5 @@ capability), and the submitted payload, the response models, the `alert_on_fail`
 task field, and the OpenAPI request bodies are all retained. The schema goldens
 were regenerated in the same change; the OpenAPI goldens stay green without
 regeneration. `backup_pg` is not in the default config (see the scope note above),
-so its removal is validated by `tests/app/sep/plugins/backup_pg/test_schema.py`,
+so its removal is validated by `tests/app/sep/apps/backup_pg/test_models.py`,
 not the registry suite.

@@ -13,63 +13,42 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define alerts plugin PMM configuration."""
+"""Define the alerts plugin settings section."""
 
-import logging
+__all__ = ["AlertsSettings", "alerts_settings"]
+
+from typing import ClassVar
 
 from pydantic import PositiveInt
 
 from app.core.celery.models import IntervalSchedule, Period
-from app.core.models import BaseLowercaseModel
-from app.core.utils.lazy import LazyProxy
+from app.core.config import BaseYamlSettings
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import hot_field
 
-logger = logging.getLogger(__name__)
 
+class AlertsSettings(BaseYamlSettings):
+    """Define configuration options for the alerts plugin.
 
-class AlertsPMMConfig(BaseLowercaseModel):
-    """Define alerts-specific PMM configuration.
-
-    :param backup_interval: Interval between alert configuration backups.
-    :type backup_interval: IntervalSchedule
-    :param backup_retention: Maximum number of alert backups to retain.
-    :type backup_retention: PositiveInt
-    :param alert_folder_name: Display name of the PMM folder used for SEP-managed
-        alert rules. Defaults to ``"SEP Alerts"``.
-    :type alert_folder_name: str
+    :cvar SETTINGS_PREFIXES: The prefixes for alerts-plugin settings in the
+        configuration file. Set to ``["SEP", "ALERTS"]`` so the section lives
+        under ``SEP.ALERTS`` and never collides with the core ``AlertSettings``
+        section (prefix ``ALERTING``).
+    :param BACKUP_INTERVAL: Interval between alert configuration backups.
+    :param BACKUP_RETENTION: Maximum number of alert backups to retain.
+    :param ALERT_FOLDER_NAME: Display name of the PMM folder used for
+        SEP-managed alert rules.
     """
 
-    backup_interval: IntervalSchedule = IntervalSchedule(every=24, period=Period.HOURS)
-    backup_retention: PositiveInt = 10
-    alert_folder_name: str = "SEP Alerts"
-
-
-def _create_alerts_pmm_config() -> AlertsPMMConfig:
-    """Create an ``AlertsPMMConfig`` from the deprecated ``SEP.PMM`` YAML section.
-
-    Read alerts-specific fields from ``sep_settings.PMM`` (a ``DeprecatedPMMConfig``
-    instance that includes both connection and alerts fields) and validate them
-    into an ``AlertsPMMConfig`` instance.
-
-    :return: The validated alerts PMM configuration.
-    :rtype: AlertsPMMConfig
-    """
-    from app.sep.config import sep_settings
-
-    pmm = sep_settings.PMM
-    alerts_fields = {"backup_interval", "backup_retention", "alert_folder_name"}
-    deprecated_set = pmm.model_fields_set & alerts_fields
-    if deprecated_set:
-        logger.info(
-            "Alerts fields are being read from SEP.PMM. "
-            "These fields will move to a dedicated alerts config section "
-            "in a future release. Fields found: %s",
-            ", ".join(sorted(deprecated_set)),
-        )
-    return AlertsPMMConfig(
-        backup_interval=pmm.backup_interval,
-        backup_retention=pmm.backup_retention,
-        alert_folder_name=pmm.alert_folder_name,
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "ALERTS"]
+    BACKUP_INTERVAL: IntervalSchedule = hot_field(
+        IntervalSchedule(every=24, period=Period.HOURS)
     )
+    BACKUP_RETENTION: PositiveInt = hot_field(10)
+    ALERT_FOLDER_NAME: str = hot_field("SEP Alerts")
 
 
-alerts_pmm_config: AlertsPMMConfig = LazyProxy(_create_alerts_pmm_config)
+alerts_settings: AlertsSettings = OverridableSettingsProxy(
+    AlertsSettings, setting_class=SettingClassEnum.ALERTS_SETTINGS
+)
