@@ -117,6 +117,11 @@ def execute_task_queue(self: CeleryTask, queue_id: int) -> dict[str, Any]:
     """
     logger.info("Executing task with queue_id: %s", queue_id)
     queue_item = celery.loop.run_until_complete(get_task_history(queue_id))
+    failed = celery.loop.run_until_complete(
+        _pre_dispatch_payload_check(queue_item, queue_item.execution_request.task, None)
+    )
+    if failed is not None:
+        return jsonable_encoder(failed)
     return jsonable_encoder(
         celery.loop.run_until_complete(
             dispatch_queue_item(queue_item, await_annotations=True)
@@ -332,13 +337,13 @@ async def _pre_dispatch_payload_check(
 ) -> TaskHistory | None:
     """Gate dispatch on payload resolvability, failing terminally when it cannot resolve.
 
-    Read (and discard) the cached ``payload_content`` property to force
-    resolution before dispatch: on success the executor reuses the warmed cache;
-    on an unresolvable ``file://`` reference this raises
-    :class:`PayloadReferenceError` here — before dispatch — so the failure
-    becomes a terminal FAILED via :func:`_persist_failed_dispatch` instead of an
-    endless Celery retry that leaves the history non-terminal. Return ``None`` to
-    proceed with normal dispatch.
+    Resolve and read the ``file://`` payload reference before dispatch so that a
+    reference which is unresolvable (orphaned or missing file) or unreadable
+    (permission, decode, or a file removed between the existence check and the
+    read) raises here — before dispatch — and becomes a terminal FAILED via
+    :func:`_persist_failed_dispatch` instead of an endless Celery retry that
+    leaves the history non-terminal. Return ``None`` to proceed with normal
+    dispatch.
 
     :param task_history: The unsaved TaskHistory from
         :func:`prepare_periodic_task_history`.
@@ -350,9 +355,9 @@ async def _pre_dispatch_payload_check(
     """
     try:
         _ = task_history.execution_request.payload_content
-    except PayloadReferenceError as exc:
+    except (PayloadReferenceError, OSError, UnicodeDecodeError) as exc:
         reason = (
-            f"Task payload could not be resolved for periodic task "
+            f"Task payload could not be resolved for "
             f"{periodic_task_name or task_name!r}: {exc}"
         )
         logger.exception(reason)
@@ -505,17 +510,13 @@ async def dispatch_queue_item(
     """Process an item from the history table.
 
     :param queue_item: The TaskHistory object to dispatch.
-    :type queue_item: TaskHistory
     :param session: Optional SQLAlchemy asynchronous session to use for the operation.
-    :type session: AsyncSession | None
     :param await_annotations: When True, await the STARTED PMM annotation inline
         instead of scheduling it as a fire-and-forget background task. Required
         from Celery contexts that drive the event loop via discrete
         ``celery.loop.run_until_complete(...)`` calls; the FastAPI default
         (``False``) keeps the request path non-blocking.
-    :type await_annotations: bool
     :return: The TaskHistory object post execution.
-    :rtype: TaskHistory
     :raises HTTPException: If the queue item status is not PENDING,
         raises a 409 Conflict error.
     :raises HTTPBadRequestException: If the task backend is unsupported,
@@ -754,15 +755,12 @@ async def maybe_dispatch_chain(
     ``_chain_task_names`` pointer is set.
 
     :param saved: The post-save TaskHistory to inspect.
-    :type saved: TaskHistory
     :param was_running: Whether the parent was RUNNING when this sync started.
-    :type was_running: bool
     :param await_annotations: Forwarded to the chained ``dispatch_queue_item``
         call. Celery contexts (``sync_queue_item``) pass ``True`` so the chained
         STARTED annotation reaches PMM before the loop stops; the FastAPI sync
         route keeps the default ``False`` to avoid blocking the response on PMM
         availability.
-    :type await_annotations: bool
     """
     if not was_running:
         return

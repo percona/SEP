@@ -53,13 +53,16 @@ def to_payload_reference(path: Path) -> str:
 
     The reference is location-independent: it stores the package-relative path
     under the ``BASE_DIR`` anchor rather than a deployment-absolute path, so a
-    later relocation of the deployment root does not orphan it.
+    later relocation of the deployment root does not orphan it. Both ``path``
+    and the anchor are resolved before the relative computation so a symlinked
+    deployment root — where the caller's unresolved path diverges from the
+    already-resolved ``BASE_DIR`` — still anchors instead of raising.
 
     :param path: An absolute path under ``BASE_DIR`` to the payload file.
     :return: A ``file://`` reference relative to ``BASE_DIR``.
     :raises ValueError: If ``path`` is not located under ``BASE_DIR``.
     """
-    return f"file://{Path(path).relative_to(BASE_DIR)}"
+    return f"file://{Path(path).resolve().relative_to(BASE_DIR.resolve())}"
 
 
 def resolve_payload_reference(reference: str) -> Path:
@@ -69,6 +72,10 @@ def resolve_payload_reference(reference: str) -> Path:
     references. When a candidate path sits under ``app/sep/plugins`` or
     ``app/sep/apps``, also try the aliased sibling location so a
     ``plugins``/``apps`` relocation re-anchors without a per-plugin change.
+
+    Only relative references are containment-checked against ``BASE_DIR``.
+    Absolute references are system-generated at task-creation time and are
+    trusted as-is, so the escape guard is intentionally asymmetric.
 
     :param reference: The stored ``file://`` payload reference.
     :return: The first candidate path that resolves to an existing file.
@@ -87,11 +94,10 @@ def resolve_payload_reference(reference: str) -> Path:
                 f"Task payload reference escapes BASE_DIR: {reference}"
             )
     candidates = [base_candidate]
-    for base in list(candidates):
-        text = str(base)
-        for old, new in _PLUGIN_APP_ALIASES:
-            if old in text:
-                candidates.append(Path(text.replace(old, new)))
+    text = str(base_candidate)
+    for old, new in _PLUGIN_APP_ALIASES:
+        if old in text:
+            candidates.append(Path(text.replace(old, new)))
     for path in candidates:
         if path.is_file():
             return path

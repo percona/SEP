@@ -1192,6 +1192,46 @@ class TestExecuteTaskQueue:
         assert ("get_task_history", 10) in call_order
         assert ("dispatch_queue_item", queue_item.id, True) in call_order
 
+    def test_unresolvable_payload_fails_terminally_without_dispatch(self, mocker):
+        """Assert an ad-hoc dispatch with an unresolvable payload fails FAILED, never dispatching."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            task = test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="adhoc-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=True,
+                    data={"task": "wrapped"},
+                )
+            )
+            history = test_loop.run_until_complete(
+                _seed_history(
+                    async_session_maker,
+                    task,
+                    payload="file:///nonexistent/x_payload",
+                )
+            )
+            mock_dispatch = mocker.patch(
+                "app.tasks.celery.dispatch_queue_item",
+                side_effect=_fake_dispatch_mark_running,
+            )
+            mock_alert = mocker.patch.object(
+                AlertService, "trigger", new_callable=AsyncMock
+            )
+
+            with patch.object(celery_module.celery, "loop", test_loop):
+                result = celery_module.execute_task_queue.__wrapped__(history.id)
+
+            mock_dispatch.assert_not_called()
+            mock_alert.assert_awaited_once()
+            rows = test_loop.run_until_complete(
+                _list_histories(async_session_maker, task.id)
+            )
+            assert len(rows) == 1
+            assert rows[0].id == history.id
+            assert rows[0].status == TaskHistoryStatusEnum.FAILED
+            assert result["status"] == TaskHistoryStatusEnum.FAILED.value
+
 
 class TestSyncQueueItem:
     """Test sync_queue_item."""
@@ -2007,6 +2047,33 @@ async def _list_histories(async_session_maker, task_id: int) -> list[TaskHistory
             task_id=task_id,
             query_options=[undefer(TaskHistory.execution_request)],
         )
+
+
+async def _seed_history(
+    async_session_maker,
+    task,
+    *,
+    payload: str | None,
+    target: str = "node-1",
+) -> TaskHistory:
+    """Insert a PENDING TaskHistory row for ``task`` and return it with ``id`` loaded."""
+    async with async_session_maker() as session:
+        history = TaskHistory(
+            task_id=task.id,
+            execution_request=TaskExecutionRequest(
+                task=task.name,
+                target=target,
+                meta={"target": target},
+                payload=payload,
+                tracking={"evaluation_id": ""},
+            ),
+            status=TaskHistoryStatusEnum.PENDING,
+            executed_by="test-user",
+        )
+        session.add(history)
+        await session.commit()
+        await session.refresh(history)
+        return history
 
 
 async def _list_log_chunks(async_session_maker, task_history_id: int):
@@ -3062,3 +3129,38 @@ class TestPreDispatchPayloadCheck:
             )
 
             assert result is None
+
+    def test_unreadable_payload_persists_failed(self, mocker):
+        """Assert a resolvable-but-unreadable payload (read error) also persists FAILED."""
+        with _sync_db_harness(mocker) as (test_loop, async_session_maker):
+            test_loop.run_until_complete(
+                _seed_task(
+                    async_session_maker,
+                    name="test-task",
+                    backend=TaskBackendEnum.PROXY,
+                    alert_on_fail=False,
+                    data={
+                        "task": "wrapped",
+                        "payload": "file://app/sep/plugins/mysql_backups/binlog_payload",
+                    },
+                )
+            )
+            unreadable = mocker.MagicMock()
+            unreadable.read_text.side_effect = PermissionError("denied")
+            mocker.patch(
+                "app.tasks.models.resolve_payload_reference", return_value=unreadable
+            )
+            task_history = test_loop.run_until_complete(
+                prepare_periodic_task_history(
+                    "test-task", {"meta": {"target": "node-1"}}
+                )
+            )
+
+            result = test_loop.run_until_complete(
+                celery_module._pre_dispatch_payload_check(
+                    task_history, "test-task", None
+                )
+            )
+
+            assert result is not None
+            assert result.status == TaskHistoryStatusEnum.FAILED

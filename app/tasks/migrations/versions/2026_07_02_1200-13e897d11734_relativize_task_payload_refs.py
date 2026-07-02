@@ -60,11 +60,12 @@ def _task_table() -> sa.Table:
 def _relativize_payload_reference(payload: str) -> str | None:
     """Return the healed, repo-relative reference, or ``None`` when unchanged.
 
-    Slice from the first ``app/sep/`` package segment (robust to any deployment
-    root and to the doubled ``.../app/app/sep/...`` prefix), heal the retired
-    ``backup(s)`` backup dir to ``mysql_backups`` under both package layouts, and
-    return a ``file://<package-relative>`` reference. Rows without a package
-    segment, or already in the healed form, return ``None``.
+    Slice from the last ``app/sep/`` package segment (robust to any deployment
+    root — including one whose prefix itself contains ``app/sep/``, e.g.
+    ``/srv/myapp/sep/...`` — and to the doubled ``.../app/app/sep/...`` prefix),
+    heal the retired ``backup(s)`` backup dir to ``mysql_backups`` under both
+    package layouts, and return a ``file://<package-relative>`` reference. Rows
+    without a package segment, or already in the healed form, return ``None``.
 
     :param payload: The stored ``file://`` payload reference to normalize.
     :return: The healed relative reference, or ``None`` if no change is needed.
@@ -72,7 +73,7 @@ def _relativize_payload_reference(payload: str) -> str | None:
     if not payload.startswith("file://"):
         return None
     raw = payload[len("file://") :]
-    index = raw.find(_MARKER)
+    index = raw.rfind(_MARKER)
     if index == -1:
         return None
     relative = raw[index:]

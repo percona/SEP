@@ -161,6 +161,36 @@ def test_heals_apps_backup_form(tasks_alembic_config):
         engine.dispose()
 
 
+def test_heals_prefix_containing_app_sep_substring(tasks_alembic_config):
+    """Assert a deploy prefix that itself contains ``app/sep/`` slices from the last segment."""
+    cfg, sync_url = tasks_alembic_config
+    command.upgrade(cfg, _PRE_RELATIVIZE_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _seed(
+                conn,
+                "myapp-task",
+                _proxy(
+                    "file:///srv/myapp/sep/releases/v1/app/sep/plugins/backup/binlog_payload"
+                ),
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            assert _payload_of(conn, "myapp-task") == (
+                "file://app/sep/plugins/mysql_backups/binlog_payload"
+            )
+    finally:
+        engine.dispose()
+
+
 def test_relativizes_non_backup_plugin_without_renaming(tasks_alembic_config):
     """Assert a non-mysql plugin ref is relativized but its plugin dir is not renamed."""
     cfg, sync_url = tasks_alembic_config

@@ -63,6 +63,17 @@ class TestToPayloadReference:
         reference = to_payload_reference(payload_path)
         assert resolve_payload_reference(reference) == payload_path
 
+    def test_symlinked_deploy_root_still_anchors(self, tmp_path, monkeypatch):
+        """Assert a path reached via a symlinked deploy root anchors relative to BASE_DIR."""
+        real_root = tmp_path / "real"
+        real_root.mkdir()
+        _write(real_root / _PLUGIN_REL)
+        link_root = tmp_path / "current"
+        link_root.symlink_to(real_root)
+        monkeypatch.setattr("app.core.utils.path.BASE_DIR", real_root)
+        via_symlink = link_root / _PLUGIN_REL
+        assert to_payload_reference(via_symlink) == f"file://{_PLUGIN_REL}"
+
 
 class TestResolvePayloadReference:
     """Test the resolve_payload_reference resolver."""
@@ -99,3 +110,13 @@ class TestResolvePayloadReference:
         """Assert a relative reference resolving outside BASE_DIR is rejected."""
         with pytest.raises(PayloadReferenceError, match="escapes BASE_DIR"):
             resolve_payload_reference("file://../../etc/passwd")
+
+    def test_absolute_reference_outside_base_dir_is_trusted(
+        self, tmp_path, monkeypatch
+    ):
+        """Assert an absolute reference outside BASE_DIR resolves; the escape guard is relative-only."""
+        base = tmp_path / "base"
+        base.mkdir()
+        monkeypatch.setattr("app.core.utils.path.BASE_DIR", base)
+        outside = _write(tmp_path / "elsewhere" / "payload_script")
+        assert resolve_payload_reference(f"file://{outside}") == outside
