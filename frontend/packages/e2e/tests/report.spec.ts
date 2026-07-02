@@ -96,19 +96,19 @@ async function mockReportRoutes(page: Page) {
     if (pathname.includes('/users/me')) {
       return route.fulfill({ json: MOCK_USER });
     }
-    if (pathname === '/api/plugins/report/config') {
+    if (pathname === '/api/apps/report/config') {
       return route.fulfill({ json: MOCK_CONFIG });
     }
-    if (pathname === '/api/plugins/report/generate/json' && req.method() === 'GET') {
+    if (pathname === '/api/apps/report/generate/json' && req.method() === 'GET') {
       return route.fulfill({ json: MOCK_REPORT });
     }
-    if (pathname === '/api/plugins/report/pdf-jobs' && req.method() === 'POST') {
+    if (pathname === '/api/apps/report/pdf-jobs' && req.method() === 'POST') {
       return route.fulfill({ json: { ...MOCK_PDF_JOB, status: 'pending', pdf_ready: false } });
     }
-    if (pathname === '/api/plugins/report/pdf-jobs/pdf-job-1' && req.method() === 'GET') {
+    if (pathname === '/api/apps/report/pdf-jobs/pdf-job-1' && req.method() === 'GET') {
       return route.fulfill({ json: MOCK_PDF_JOB });
     }
-    if (pathname === '/api/plugins/report/pdf-jobs/pdf-job-1/pdf' && req.method() === 'GET') {
+    if (pathname === '/api/apps/report/pdf-jobs/pdf-job-1/pdf' && req.method() === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/pdf',
@@ -116,10 +116,10 @@ async function mockReportRoutes(page: Page) {
         headers: { 'Content-Disposition': 'attachment; filename="report.pdf"' },
       });
     }
-    if (pathname === '/api/plugins/report/upload-jobs' && req.method() === 'POST') {
+    if (pathname === '/api/apps/report/upload-jobs' && req.method() === 'POST') {
       return route.fulfill({ json: { ...MOCK_UPLOAD_JOB, status: 'pending', result: null } });
     }
-    if (pathname === '/api/plugins/report/upload-jobs/upload-job-1' && req.method() === 'GET') {
+    if (pathname === '/api/apps/report/upload-jobs/upload-job-1' && req.method() === 'GET') {
       return route.fulfill({ json: MOCK_UPLOAD_JOB });
     }
 
@@ -161,7 +161,7 @@ test.describe('Report plugin smoke', () => {
   test('PDF download button calls pdf-jobs endpoint and shows no error', async ({ page }) => {
     let pdfRequested = false;
     await mockReportRoutes(page);
-    await page.route('**/api/plugins/report/pdf-jobs/pdf-job-1/pdf', (route) => {
+    await page.route('**/api/apps/report/pdf-jobs/pdf-job-1/pdf', (route) => {
       pdfRequested = true;
       return route.fulfill({
         status: 200,

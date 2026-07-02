@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from sqlmodel import SQLModel
 
-import app.sep.plugins as plugins_pkg
+import app.sep.apps as plugins_pkg
 from app.sep.config import sep_settings
 from app.sep.migrations._discovery import (
     _load_models_module,
@@ -33,7 +33,7 @@ from app.sep.migrations._discovery import (
 def isolated_plugins_path(tmp_path, monkeypatch):
     """Yield a scratch plugins path used in place of the real one.
 
-    Replace ``app.sep.plugins.__path__`` with a single-entry list
+    Replace ``app.sep.apps.__path__`` with a single-entry list
     pointing at ``tmp_path`` so the test can construct throwaway
     plugins without disturbing the real plugin tree. Evicts any
     throwaway plugin modules from ``sys.modules`` on teardown.
@@ -115,8 +115,8 @@ def test_discover_returns_alerts_migrations_dir():
 
 
 def test_discover_ignores_sep_settings_plugins(monkeypatch):
-    """Discovery does not consult ``sep_settings.PLUGINS``."""
-    monkeypatch.setattr(sep_settings, "PLUGINS", [])
+    """Assert discovery does not consult ``sep_settings.APPS``."""
+    monkeypatch.setattr(sep_settings, "APPS", [])
     version_dirs = discover_plugin_migrations_and_models()
     alerts_versions = str(
         Path(plugins_pkg.__path__[0]) / "alerts" / "migrations" / "versions"
@@ -134,7 +134,7 @@ def test_discover_skips_plugin_without_migrations_dir(isolated_plugins_path):
     )
     version_dirs = discover_plugin_migrations_and_models()
     assert version_dirs == []
-    assert "app.sep.plugins.no_migrations_plugin.models" not in sys.modules
+    assert "app.sep.apps.no_migrations_plugin.models" not in sys.modules
 
 
 def test_discover_propagates_broken_models_import(isolated_plugins_path):
@@ -147,7 +147,7 @@ def test_discover_propagates_broken_models_import(isolated_plugins_path):
     )
     with pytest.raises(ModuleNotFoundError):
         discover_plugin_migrations_and_models()
-    assert "app.sep.plugins.broken_models_plugin.models" not in sys.modules
+    assert "app.sep.apps.broken_models_plugin.models" not in sys.modules
 
 
 def test_discover_does_not_trigger_plugin_init_py(isolated_plugins_path):
@@ -166,7 +166,7 @@ def test_discover_does_not_trigger_plugin_init_py(isolated_plugins_path):
         isolated_plugins_path / "init_raises_plugin" / "migrations" / "versions"
     )
     assert target in version_dirs
-    loaded = sys.modules["app.sep.plugins.init_raises_plugin.models"]
+    loaded = sys.modules["app.sep.apps.init_raises_plugin.models"]
     assert loaded.MARKER == "plugin-models-loaded"
 
 

@@ -23,11 +23,11 @@ import MuiLink from '@mui/material/Link';
 import Typography from '@mui/material/Typography';
 import { useSnackbar } from 'notistack';
 import {
-  useDeletePluginEntity,
-  usePluginEntityDetail,
+  useDeleteAppEntity,
+  useAppEntityDetail,
   type ListView,
-  type PluginEntitySchema,
-  type PluginSchema,
+  type AppEntitySchema,
+  type AppSchema,
 } from '@sep/api';
 import { DeleteConfirmDialog, SchemaListView } from '@sep/framework';
 import {
@@ -169,7 +169,7 @@ function crumbsFromNestedPath(
  * Name-based trail: Inventory → node → service → schema → (table), with nested URLs
  * ``/…/nodes/:id/services/:id/…`` when applicable.
  */
-export function InventoryBreadcrumbs({ schema }: { schema: PluginSchema }) {
+export function InventoryBreadcrumbs({ schema }: { schema: AppSchema }) {
   const location = useLocation();
 
   const prefix = useMemo(() => inventoryMountPrefix(location.pathname), [location.pathname]);
@@ -197,7 +197,7 @@ export function InventoryBreadcrumbs({ schema }: { schema: PluginSchema }) {
 
   const detailEnabled = Boolean(prefix && entityName && id && ENTITY_NAMES.has(entityName));
 
-  const { data: record } = usePluginEntityDetail('inventory', entityName ?? '', id, undefined, {
+  const { data: record } = useAppEntityDetail('inventory', entityName ?? '', id, undefined, {
     enabled: detailEnabled,
   });
 
@@ -222,7 +222,7 @@ export function InventoryBreadcrumbs({ schema }: { schema: PluginSchema }) {
       : Boolean(record) && tableRecordNeedsServiceEnrichment(record as Row)),
   );
 
-  const { data: tableServiceEnrichment } = usePluginEntityDetail(
+  const { data: tableServiceEnrichment } = useAppEntityDetail(
     'inventory',
     'services',
     tableCrumbServiceId,
@@ -250,7 +250,7 @@ export function InventoryBreadcrumbs({ schema }: { schema: PluginSchema }) {
     schemaRecordNeedsNodeEnrichment(record as Row),
   );
 
-  const { data: schemaNodeEnrichment } = usePluginEntityDetail(
+  const { data: schemaNodeEnrichment } = useAppEntityDetail(
     'inventory',
     'nodes',
     schemaBreadcrumbNodeId,
@@ -277,7 +277,7 @@ export function InventoryBreadcrumbs({ schema }: { schema: PluginSchema }) {
     serviceRecordNeedsNodeEnrichment(record as Row),
   );
 
-  const { data: serviceNodeEnrichment } = usePluginEntityDetail(
+  const { data: serviceNodeEnrichment } = useAppEntityDetail(
     'inventory',
     'nodes',
     serviceBreadcrumbNodeId,
@@ -348,7 +348,7 @@ export function InventoryBreadcrumbs({ schema }: { schema: PluginSchema }) {
 
     if (!id) {
       const label =
-        schema?.entities?.find((e: PluginEntitySchema) => e.name === entityName)?.display_name ??
+        schema?.entities?.find((e: AppEntitySchema) => e.name === entityName)?.display_name ??
         entityName;
       out.push(crumbCurrent('list-entity', label));
       return out;
@@ -463,8 +463,8 @@ function isRecordArray(v: unknown): v is Row[] {
   );
 }
 
-function listViewFor(schema: PluginSchema, entityName: string): ListView | undefined {
-  return schema.entities?.find((e: PluginEntitySchema) => e.name === entityName)?.list_view;
+function listViewFor(schema: AppSchema, entityName: string): ListView | undefined {
+  return schema.entities?.find((e: AppEntitySchema) => e.name === entityName)?.list_view;
 }
 
 function isIdLike(v: unknown): v is string | number {
@@ -529,7 +529,7 @@ function NestedListSection({
   pluginName: string;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
   allowListEntityDelete?: boolean;
-  schema: PluginSchema;
+  schema: AppSchema;
 }) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
@@ -539,12 +539,12 @@ function NestedListSection({
   } | null>(null);
   const entityTitle = useMemo(
     () =>
-      schema.entities?.find((e: PluginEntitySchema) => e.name === listEntityName)?.display_name ??
+      schema.entities?.find((e: AppEntitySchema) => e.name === listEntityName)?.display_name ??
       listEntityName,
     [listEntityName, schema.entities],
   );
 
-  const deleteEntity = useDeletePluginEntity(
+  const deleteEntity = useDeleteAppEntity(
     pluginName,
     listEntityName,
     mockEntityItems?.[listEntityName],
@@ -643,7 +643,7 @@ export function renderInventoryDetailChildren({
 }: {
   entityName: string;
   record: Row;
-  schema: PluginSchema;
+  schema: AppSchema;
   pathname: string;
   pluginName: string;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;

@@ -29,8 +29,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.celery import celery
 from app.sep.app_drain import owned_by, should_cancel
+from app.sep.apps.alerts.crud import AlertBackupManager
 from app.sep.db import get_async_session_maker
-from app.sep.plugins.alerts.crud import AlertBackupManager
 from app.sep.snippets.config import SnippetFilterType, snippets_settings
 from app.sep.snippets.crud import SnippetManager
 from app.sep.snippets.models.snippet import Snippet
@@ -295,13 +295,13 @@ async def _generate_health_report(
     :return: None.
     :rtype: None
     """
-    from app.sep.config import sep_settings
-    from app.sep.plugins.report.deps import get_pmm_api
-    from app.sep.plugins.report.service import (
+    from app.sep.apps.report.deps import get_pmm_api
+    from app.sep.apps.report.service import (
         generate_pdf_report,
         generate_report,
         upload_pdf_report,
     )
+    from app.sep.config import sep_settings
 
     pmm_api = await get_pmm_api()
     if pmm_api is None:
@@ -363,8 +363,8 @@ def backup_alert_config() -> None:
 
 async def _backup_alert_config() -> None:
     """Fetch alert configuration from PMM and store as a backup."""
-    from app.sep.plugins.alerts.deps import get_pmm_api
-    from app.sep.plugins.alerts.models import AlertBackup
+    from app.sep.apps.alerts.deps import get_pmm_api
+    from app.sep.apps.alerts.models import AlertBackup
 
     pmm_api = await get_pmm_api()
     if pmm_api is None:
@@ -424,9 +424,9 @@ async def _backup_alert_config() -> None:
         backup = AlertBackup(data=data, metadata_=metadata)
         await AlertBackupManager.save(session, backup)
 
-        from app.sep.plugins.alerts.config import alerts_pmm_config
+        from app.sep.apps.alerts.config import alerts_settings
 
-        retention = alerts_pmm_config.backup_retention
+        retention = alerts_settings.BACKUP_RETENTION
         all_backups = await AlertBackupManager.list(session)
         if len(all_backups) > retention:
             ids_to_delete = [b.id for b in all_backups[retention:]]

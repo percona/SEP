@@ -21,7 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { SnippetExecutionAccordion } from './SnippetExecutionAccordion';
-import { apiClient, type PluginSchema } from '@sep/api';
+import { apiClient, type AppSchema } from '@sep/api';
 import type { TaskHistoryEntry } from '../TaskHistoryTable';
 
 vi.mock('@sep/api', () => ({
@@ -57,9 +57,9 @@ const mockedApi = apiClient as unknown as {
   post: ReturnType<typeof vi.fn>;
 };
 
-type FormSection = NonNullable<PluginSchema['forms']>[number];
+type FormSection = NonNullable<AppSchema['forms']>[number];
 
-function makeSchema(extraFields: FormSection['fields'] = []): PluginSchema {
+function makeSchema(extraFields: FormSection['fields'] = []): AppSchema {
   return {
     name: 'snippets',
     display_name: 'Test Snippet',
@@ -252,7 +252,7 @@ describe('SnippetExecutionAccordion', () => {
       expect(screen.getByTestId('task-history-table')).toBeInTheDocument();
     });
     expect(mockedApi.get).toHaveBeenCalledWith(
-      '/plugins/snippets/snippet/history?snippet_filename=check.sh',
+      '/apps/snippets/snippet/history?snippet_filename=check.sh',
     );
   });
 
@@ -362,7 +362,7 @@ describe('SnippetExecutionAccordion', () => {
 
     await waitFor(() =>
       expect(mockedApi.get).toHaveBeenCalledWith(
-        '/plugins/snippets/snippet/schema?snippet_filename=check.sh',
+        '/apps/snippets/snippet/schema?snippet_filename=check.sh',
         {
           params: { execution_only: true },
         },

@@ -31,24 +31,24 @@ from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep import periodic_tasks as periodic_tasks_module
-from app.sep.config import Plugin
+from app.sep.apps.framework.registry import get_app_registry
+from app.sep.config import App
 from app.sep.crud import AppStateManager, SEPPluginPeriodicTaskManager
 from app.sep.db import seed as seed_module
 from app.sep.models import AppLifecycleEnum, AppState
-from app.sep.plugins.framework.registry import get_app_registry
 
 SNIPPETS_TASK = "sep__sync_snippets"
 CELERY_RESULT_EXPIRES_SECONDS = 3600
 
 
-def _plugin(key: str, *, enabled: bool = True) -> Plugin:
-    """Build a ``Plugin`` activation entry for ``key``."""
-    return Plugin(module_name=key, enabled=enabled)
+def _plugin(key: str, *, enabled: bool = True) -> App:
+    """Build an ``App`` activation entry for ``key``."""
+    return App(module_name=key, enabled=enabled)
 
 
 @pytest.fixture(autouse=True)
 def _clear_registry_cache() -> None:
-    """Rebuild the registry from each test's patched ``PLUGINS``."""
+    """Rebuild the registry from each test's patched ``APPS``."""
     get_app_registry.cache_clear()
     yield
     get_app_registry.cache_clear()
@@ -95,7 +95,7 @@ class TestInitSepDbAppStateSeeding:
         """Each non-protected plugin yields a row with its YAML ``enabled`` value."""
         mocker.patch.object(
             seed_module.sep_settings,
-            "PLUGINS",
+            "APPS",
             [
                 _plugin("snippets", enabled=True),
                 _plugin("checksums", enabled=False),
@@ -116,7 +116,7 @@ class TestInitSepDbAppStateSeeding:
         self, mocker, patched_seed, seed_maker
     ) -> None:
         """The protected ``inventory`` app gets no row even when configured."""
-        mocker.patch.object(seed_module.sep_settings, "PLUGINS", [_plugin("inventory")])
+        mocker.patch.object(seed_module.sep_settings, "APPS", [_plugin("inventory")])
 
         await seed_module.init_sep_db()
 
@@ -129,7 +129,7 @@ class TestInitSepDbAppStateSeeding:
     ) -> None:
         """A second seed with the same configured set inserts no extra rows."""
         mocker.patch.object(
-            seed_module.sep_settings, "PLUGINS", [_plugin("snippets", enabled=True)]
+            seed_module.sep_settings, "APPS", [_plugin("snippets", enabled=True)]
         )
 
         await seed_module.init_sep_db()
@@ -150,7 +150,7 @@ class TestInitSepDbAppStateSeeding:
             await session.commit()
 
         mocker.patch.object(
-            seed_module.sep_settings, "PLUGINS", [_plugin("snippets", enabled=True)]
+            seed_module.sep_settings, "APPS", [_plugin("snippets", enabled=True)]
         )
         await seed_module.init_sep_db()
 
@@ -169,7 +169,7 @@ class TestInitSepDbAppStateSeeding:
             await session.commit()
 
         mocker.patch.object(
-            seed_module.sep_settings, "PLUGINS", [_plugin("snippets", enabled=True)]
+            seed_module.sep_settings, "APPS", [_plugin("snippets", enabled=True)]
         )
         await seed_module.init_sep_db()
 
@@ -181,7 +181,7 @@ class TestInitSepDbAppStateSeeding:
         self, mocker, patched_seed, seed_maker
     ) -> None:
         """Periodic-task seeding still fires after AppState seeding (no regression)."""
-        mocker.patch.object(seed_module.sep_settings, "PLUGINS", [])
+        mocker.patch.object(seed_module.sep_settings, "APPS", [])
 
         await seed_module.init_sep_db()
 
@@ -192,12 +192,54 @@ def test_reconciler_seeded_as_ungated_system_task() -> None:
     """The drain reconciler is seeded with no owner, so it is never gated off."""
     reconcilers = [
         task
-        for schedule in seed_module.SYSTEM_PERIODIC_TASKS
+        for schedule in seed_module.get_system_periodic_tasks()
         for task in schedule.tasks
         if task.task_name == "app.sep.app_drain.reconcile_disabling_apps"
     ]
     assert len(reconcilers) == 1
     assert reconcilers[0].owner_app_key is None
+
+
+def _snippets_schedule(
+    tasks: list[SystemPeriodicTaskSchedule],
+) -> SystemPeriodicTaskSchedule:
+    """Return the schedule carrying the ``sep__sync_snippets`` task."""
+    return next(
+        schedule
+        for schedule in tasks
+        if any(task.name == SNIPPETS_TASK for task in schedule.tasks)
+    )
+
+
+def test_builder_reads_sync_interval_at_call_time() -> None:
+    """``get_system_periodic_tasks`` reflects the live ``SYNC_INTERVAL`` override.
+
+    Built per call, so a DB-backed override published to the proxy snapshot is
+    honored without a restart.
+    """
+    from app.core.celery.models import IntervalSchedule as CoreIntervalSchedule
+    from app.sep.snippets.config import snippets_settings
+
+    snippets_settings._set_snapshot(
+        {"SYNC_INTERVAL": CoreIntervalSchedule(every=30, period=Period.MINUTES)}
+    )
+    try:
+        schedule = _snippets_schedule(seed_module.get_system_periodic_tasks())
+        assert schedule.schedule == CoreIntervalSchedule(
+            every=30, period=Period.MINUTES
+        )
+    finally:
+        snippets_settings._set_snapshot({})
+
+    # A different override on the next call is reflected (no import-time freeze).
+    snippets_settings._set_snapshot(
+        {"SYNC_INTERVAL": CoreIntervalSchedule(every=5, period=Period.MINUTES)}
+    )
+    try:
+        schedule = _snippets_schedule(seed_module.get_system_periodic_tasks())
+        assert schedule.schedule == CoreIntervalSchedule(every=5, period=Period.MINUTES)
+    finally:
+        snippets_settings._set_snapshot({})
 
 
 def test_celery_backend_cleanup_seeded_as_ungated_system_task() -> None:
@@ -216,6 +258,8 @@ def test_celery_backend_cleanup_seeded_as_ungated_system_task() -> None:
 def test_celery_result_expires_configured() -> None:
     """Celery results have a TTL so result backends do not grow forever."""
     assert settings.CELERY.result_expires == CELERY_RESULT_EXPIRES_SECONDS
+
+
 
 
 @pytest_asyncio.fixture(name="beat_maker")
@@ -272,8 +316,8 @@ class TestInitSepDbPeriodicTaskGating:
         )
         mocker.patch.object(
             seed_module,
-            "SYSTEM_PERIODIC_TASKS",
-            [
+            "get_system_periodic_tasks",
+            return_value=[
                 SystemPeriodicTaskSchedule(
                     schedule=IntervalSchedule(every=10, period=Period.MINUTES),
                     tasks=[
@@ -288,7 +332,7 @@ class TestInitSepDbPeriodicTaskGating:
         )
         mocker.patch.object(
             seed_module.sep_settings,
-            "PLUGINS",
+            "APPS",
             [_plugin("snippets", enabled=app_enabled)],
         )
 

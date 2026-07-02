@@ -26,7 +26,7 @@ import type {
   UploadResult,
 } from './types';
 
-const API_BASE = '/plugins/report';
+const API_BASE = '/apps/report';
 const REPORT_JOB_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_PDF_FILENAME = 'Health_and_Security_Report.pdf';
 const ACTIVE_JOB_STATES = new Set(['pending', 'received', 'started', 'retry']);
@@ -154,9 +154,10 @@ export function uploadJobResult(job: ReportJobResponse | null | undefined): Uplo
 }
 
 // Probe whether ServiceNow upload is configured. Returns empty disabled_reasons
-// (upload enabled) on any error — 404 means endpoint not yet deployed (SEP-1059),
-// other errors are transient config blips that should not silently block the user.
-// SEP-1059 should expose GET /api/plugins/report/config with { upload_disabled_reasons }.
+// (upload enabled) on any error — 404 means the config endpoint is not yet
+// deployed, other errors are transient config blips that should not silently
+// block the user. The endpoint should expose GET /api/apps/report/config with
+// { upload_disabled_reasons }.
 export function useReportConfig() {
   return useQuery<ReportConfig>({
     queryKey: ['report', 'config'],

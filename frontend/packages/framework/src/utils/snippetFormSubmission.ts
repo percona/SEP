@@ -22,7 +22,7 @@ export const SNIPPET_FORM_RESERVED_FIELD_NAMES = new Set([
   'script_preview',
 ]);
 
-/** Body shape accepted by `POST /api/plugins/snippets/{filename}/execute`. */
+/** Body shape accepted by `POST /api/apps/snippets/{filename}/execute`. */
 export interface SnippetExecutionFormPayload {
   executor_host: string;
   sudo: boolean;

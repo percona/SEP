@@ -34,6 +34,7 @@ from app.api.main import api_router as top_level_api_router
 from app.core.alerts.config import alert_settings, AlertSettings
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
+from app.core.celery.utils import init_periodic_tasks_db
 from app.core.config import create_app, default_lifespan, Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
 from app.core.health import build_health_router
@@ -49,10 +50,13 @@ from app.core.utils import run_pydantic_type_validator
 from app.core.utils.fields import URIPath
 from app.inventory.config import inventory_settings
 from app.sep.api.router import api_router
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
+from app.sep.apps.dipper.constants import DIPPER_PAYLOADS_DIR
+from app.sep.apps.framework.registry import get_app_registry
 from app.sep.celery import sync_snippets
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.db import get_async_session_maker
-from app.sep.db.seed import init_sep_db
+from app.sep.db.seed import get_system_periodic_tasks, init_sep_db
 from app.sep.deps import (
     AccessTokenCookie,
     get_base_url,
@@ -70,8 +74,6 @@ from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
-from app.sep.plugins.dipper.constants import DIPPER_PAYLOADS_DIR
-from app.sep.plugins.framework.registry import get_app_registry
 from app.sep.snippets.config import snippets_settings, SnippetsSettings
 from app.sep.utils.static import AuthenticatedStaticFiles
 from app.tasks.config import tasks_settings
@@ -79,7 +81,6 @@ from app.tasks.config import tasks_settings
 logger = logging.getLogger(__name__)
 
 JSON_API_PATH_PREFIXES: tuple[str, ...] = (
-    "/api/plugins/",
     "/api/sep/",
     "/api/admin/",
     "/api/apps/",
@@ -164,17 +165,40 @@ async def _invalidate_pmm_clients(_: Mapping[str, object]) -> None:
         await settings.invalidate_client(str(endpoint))
 
 
+async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
+    """Re-seed the SEP beat schedule after a hot interval override.
+
+    Wired for both ``SnippetsSettings.SYNC_INTERVAL`` (``sep__sync_snippets``) and
+    ``AlertsSettings.BACKUP_INTERVAL`` (``sep__backup_alert_config``). Rebuilds the
+    system periodic-task set via
+    :func:`app.sep.db.seed.get_system_periodic_tasks` -- which re-reads the now-live
+    interval from the refreshed proxy snapshot -- and re-invokes
+    :func:`app.core.celery.utils.init_periodic_tasks_db` under the ``sep__`` prefix.
+    The seeding is idempotent (get-or-create plus upsert by task name); its update
+    path reassigns only ``task`` / ``schedule_model`` / extra kwargs, so the
+    ``enabled`` gating state written by
+    :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating` is preserved.
+    Updating the ``IntervalSchedule`` bumps ``PeriodicTaskChanged.last_update``, so
+    Celery beat reloads the schedule on its next scheduler tick without a restart.
+
+    :param _: The new effective settings snapshot mapping (unused -- the interval is
+        re-read from the proxy by the task-set builder).
+    """
+    await init_periodic_tasks_db(get_system_periodic_tasks(), "sep__")
+
+
 @asynccontextmanager
 async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Wire the SEP-side settings override refresher into a lifespan.
 
     Force-resolves ``messages_settings`` (fail-fast validation), then starts the
     background refresher for the ``SEP_SETTINGS``, ``SNIPPETS_SETTINGS``,
-    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global) and ``ALERT_SETTINGS`` proxies
-    for the duration of the wrapped block. ``SETTINGS`` and ``ALERT_SETTINGS``
-    wrap shared module-level proxies (``settings`` / ``alert_settings``); the SEP
-    refresher is their **sole** owner so that under the combined ``app.main:app``
-    the Tasks refresher does not also publish into them from the Tasks database.
+    ``MESSAGES_SETTINGS``, ``SETTINGS`` (global), ``ALERT_SETTINGS`` and
+    ``ALERTS_SETTINGS`` proxies for the duration of the wrapped block.
+    ``SETTINGS`` and ``ALERT_SETTINGS`` wrap shared module-level proxies
+    (``settings`` / ``alert_settings``); the SEP refresher is their **sole**
+    owner so that under the combined ``app.main:app`` the Tasks refresher does
+    not also publish into them from the Tasks database.
     Endpoint and PMM rebind callbacks are built here -- where ``app`` is
     available -- so both run modes wire them.
 
@@ -221,6 +245,14 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ssl_certfile=tasks_settings.SSL_CERTFILE,
         ),
         (SettingClassEnum.SETTINGS, "PMM"): _invalidate_pmm_clients,
+        (
+            SettingClassEnum.SNIPPETS_SETTINGS,
+            "SYNC_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+        (
+            SettingClassEnum.ALERTS_SETTINGS,
+            "BACKUP_INTERVAL",
+        ): _reseed_system_periodic_tasks,
     }
     # On ``sep_app``'s state, not the lifespan's parent ``app``: requests to
     # ``/api/sep/...`` resolve ``request.app`` to the mounted ``sep_app``, where
@@ -238,6 +270,9 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ),
             SettingClassEnum.SETTINGS: ProxyEntry(settings, Settings),
             SettingClassEnum.ALERT_SETTINGS: ProxyEntry(alert_settings, AlertSettings),
+            SettingClassEnum.ALERTS_SETTINGS: ProxyEntry(
+                alerts_settings, AlertsSettings
+            ),
         },
         settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
         enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,

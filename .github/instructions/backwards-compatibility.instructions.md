@@ -1,5 +1,5 @@
 ---
-applyTo: "app/**/models.py,app/**/schema.py,app/*/migrations/**/*.py,app/*/db/seed.py,app/sep/plugins/**/api_routes.py,settings.yaml"
+applyTo: "app/**/models.py,app/**/schema.py,app/*/migrations/**/*.py,app/*/db/seed.py,app/sep/apps/**/api_routes.py,settings.yaml"
 ---
 
 # Backwards Compatibility

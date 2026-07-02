@@ -20,7 +20,7 @@ import time
 
 import pytest
 
-from app.sep.plugins.inventory.models import INVENTORY_SYNC_TASK_NAME
+from app.sep.apps.inventory.models import INVENTORY_SYNC_TASK_NAME
 from app.tasks.config import tasks_settings
 from app.tasks.db.seed import (
     NOMAD_EXEC_ARTIFACT,
@@ -228,3 +228,22 @@ def test_nomad_cert_expiry_periodic_task_seeded() -> None:
                 assert entry.task_name == "app.tasks.celery.check_nomad_cert_expiry"
                 return
     raise AssertionError("tasks__check_nomad_cert_expiry task not found")
+
+
+def test_purge_task_history_logs_periodic_task_seeded() -> None:
+    """Assert the log-purge periodic task is seeded on the configured schedule."""
+    interval = tasks_settings.LOG_PURGE_INTERVAL
+    if interval is None:
+        assert not any(
+            entry.name == "tasks__purge_task_history_logs"
+            for _sched, tasks in SYSTEM_PERIODIC_TASKS
+            for entry in tasks
+        )
+        return
+    for schedule, tasks in SYSTEM_PERIODIC_TASKS:
+        for entry in tasks:
+            if entry.name == "tasks__purge_task_history_logs":
+                assert schedule == interval
+                assert entry.task_name == "app.tasks.celery.purge_task_history_logs"
+                return
+    raise AssertionError("tasks__purge_task_history_logs task not found")

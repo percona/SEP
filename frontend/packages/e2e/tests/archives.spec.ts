@@ -18,7 +18,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
-const PLUGIN_ROUTE = '/plugins/archives';
+const PLUGIN_ROUTE = '/apps/archives';
 
 const PLUGIN_DISPLAY_NAME = 'Archives';
 
@@ -34,7 +34,7 @@ const MOCK_USER = {
 };
 
 /**
- * Minimal PluginSchema for archives — just enough for the form renderer to
+ * Minimal AppSchema for archives — just enough for the form renderer to
  * mount and expose the swap_drop + where fields that validator 6 exercises.
  */
 const MOCK_ARCHIVES_SCHEMA = {
@@ -115,7 +115,7 @@ async function mockArchivesApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.endsWith('/plugins/archives/schema')) {
+    if (pathname.endsWith('/apps/archives/schema')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -123,7 +123,7 @@ async function mockArchivesApis(page: Page): Promise<void> {
       });
     }
 
-    if (pathname.includes('/plugins/archives/')) {
+    if (pathname.includes('/apps/archives/')) {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',

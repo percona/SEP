@@ -21,19 +21,19 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
-const { apiMock, usePluginTasksMock } = vi.hoisted(() => ({
+const { apiMock, useAppTasksMock } = vi.hoisted(() => ({
   apiMock: {
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
   },
-  usePluginTasksMock: vi.fn(),
+  useAppTasksMock: vi.fn(),
 }));
 
 vi.mock('@sep/api', () => ({
   apiClient: apiMock,
-  usePluginTasks: (...args: unknown[]) => usePluginTasksMock(...args),
+  useAppTasks: (...args: unknown[]) => useAppTasksMock(...args),
 }));
 
 import { ScheduledTasksPanel } from './ScheduledTasksPanel';
@@ -74,11 +74,11 @@ beforeEach(() => {
   apiMock.post.mockReset();
   apiMock.put.mockReset();
   apiMock.delete.mockReset();
-  usePluginTasksMock.mockReset();
+  useAppTasksMock.mockReset();
 });
 
 function setup(periodic: PeriodicTaskResponse[]) {
-  usePluginTasksMock.mockReturnValue({
+  useAppTasksMock.mockReturnValue({
     data: [{ name: 'plugin-task' }, { name: 'other-plugin-task' }],
     isLoading: false,
     isError: false,

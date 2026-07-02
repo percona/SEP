@@ -31,14 +31,14 @@ from app.core.auth.exceptions import (
     HTTPUnauthorizedException,
 )
 from app.core.exceptions import HTTPBadGatewayException, HTTPServiceUnavailableException
-from app.sep.api.router import plugins_router
-from app.sep.config import Plugin, sep_settings
+from app.sep.api.router import apps_router
+from app.sep.apps.framework.registry import get_app_registry
+from app.sep.config import App, sep_settings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.exceptions import LoginRedirectException
 from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
 from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppLifecycleEnum, AppState
-from app.sep.plugins.framework.registry import get_app_registry
 from tests.app.factories import OAuthTokenFactory
 
 
@@ -294,8 +294,8 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
     url_for('periodic_task_create') and url_for('stop_task_execution') resolve
     without raising NoMatchFound.
     """
-    original_plugins = sep_settings.PLUGINS
-    mocker.patch.object(sep_settings, "PLUGINS", [Plugin(module_name="backup_pg")])
+    original_plugins = sep_settings.APPS
+    mocker.patch.object(sep_settings, "APPS", [App(module_name="backup_pg")])
     get_app_registry.cache_clear()
 
     try:
@@ -305,7 +305,7 @@ def test_task_routers_mounted_when_only_backup_pg_enabled(mocker):
         assert "periodic_task_create" in route_names
         assert "stop_task_execution" in route_names
     finally:
-        sep_settings.PLUGINS = original_plugins
+        sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
         importlib.reload(main_module)
 
@@ -318,8 +318,8 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
     must be mounted whenever the inventory plugin is enabled even if no task-oriented
     plugin (tasks, backup, checksums, …) is configured.
     """
-    original_plugins = sep_settings.PLUGINS
-    mocker.patch.object(sep_settings, "PLUGINS", [Plugin(module_name="inventory")])
+    original_plugins = sep_settings.APPS
+    mocker.patch.object(sep_settings, "APPS", [App(module_name="inventory")])
     get_app_registry.cache_clear()
 
     try:
@@ -330,7 +330,7 @@ def test_periodic_router_mounted_when_only_inventory_enabled(mocker):
         assert "periodic_task_update" in route_names
         assert "periodic_task_delete" in route_names
     finally:
-        sep_settings.PLUGINS = original_plugins
+        sep_settings.APPS = original_plugins
         get_app_registry.cache_clear()
         importlib.reload(main_module)
 
@@ -737,7 +737,7 @@ class TestAppStateGuards:
         """Every non-protected UI plugin route carries the app-state guard."""
         guarded_prefixes = {
             p.uri_path
-            for p in sep_settings.PLUGINS
+            for p in sep_settings.APPS
             if p.module_name.split(".")[-1] not in PROTECTED_APP_KEYS
         }
         seen = set()
@@ -754,7 +754,7 @@ class TestAppStateGuards:
         """The protected ``inventory`` plugin's UI routes carry no app-state guard."""
         inventory_prefix = next(
             p.uri_path
-            for p in sep_settings.PLUGINS
+            for p in sep_settings.APPS
             if p.module_name.split(".")[-1] == "inventory"
         )
         for route in sep_app.routes:
@@ -766,16 +766,16 @@ class TestAppStateGuards:
         """Every non-protected JSON-API plugin sub-router carries the guard."""
         guarded_keys = {
             key
-            for p in sep_settings.PLUGINS
+            for p in sep_settings.APPS
             if (key := p.module_name.split(".")[-1]) not in PROTECTED_APP_KEYS
             and p.api_router_path
         }
         seen = set()
-        for route in plugins_router.routes:
+        for route in apps_router.routes:
             path = getattr(route, "path", "")
             for key in guarded_keys:
                 if (
-                    path.startswith(f"/plugins/{key}/") or path == f"/plugins/{key}"
+                    path.startswith(f"/apps/{key}/") or path == f"/apps/{key}"
                 ) and _route_has_app_guard(route):
                     seen.add(key)
         assert guarded_keys <= seen

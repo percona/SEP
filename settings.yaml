@@ -54,7 +54,7 @@ default:
       SECURE: False
       SAMESITE: lax
       MAX_AGE: 604800
-    PLUGINS:
+    APPS:
       - NAME: Inventory
         MODULE_NAME: inventory
         URI_PATH: /inventory
@@ -211,7 +211,7 @@ development:
         - /api/docs
         - /api/inventory/docs
         - /api/tasks/docs
-    PLUGINS:
+    APPS:
       - NAME: Task Manager
         MODULE_NAME: tasks
         URI_PATH: /tasks

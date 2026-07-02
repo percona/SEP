@@ -21,6 +21,7 @@ from datetime import datetime, UTC
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.utils.date_time import utc_now
+from app.tasks import config as tasks_config
 from app.tasks.crud import (
     TaskHistoryLogManager,
     TaskHistoryLogStateManager,
@@ -68,6 +69,8 @@ class TaskHistoryLogWriter:
         new_bytes: bytes,
         force_flush: bool = False,
         producer_offset_after: int | None = None,
+        nomad_offset_after: int | None = None,
+        allocation_epoch: int | None = None,
     ) -> None:
         """Persist ``new_bytes`` for the given ``(task_history_id, source, stream)``.
 
@@ -90,6 +93,16 @@ class TaskHistoryLogWriter:
             end of ``new_bytes``. When provided, the state row's
             ``producer_offset`` is advanced atomically with the flush.
         :type producer_offset_after: int | None
+        :param nomad_offset_after: The raw Nomad-space fetch offset for the next
+            read. When provided, the row's ``nomad_offset`` is advanced
+            atomically with the flush; when ``None`` the existing value is
+            preserved so non-Nomad callers do not disturb it.
+        :param allocation_epoch: The Nomad allocation ``CreateIndex`` the bytes
+            belong to. When it is *older* than the committed row's epoch the
+            write is discarded — the bytes come from an allocation the frontier
+            has already moved past (a sync that overlapped a reschedule) and
+            appending them would corrupt the stream. ``None`` leaves the row's
+            epoch untouched (non-Nomad callers).
         :raises LogWriterConflictError: If the optimistic-locking retries are
             exhausted without converging on a successful update.
         """
@@ -102,6 +115,12 @@ class TaskHistoryLogWriter:
                 state = TaskHistoryLogStateManager.build_default(
                     task_history_id, source, stream
                 )
+
+            if (
+                allocation_epoch is not None
+                and allocation_epoch < state.allocation_epoch
+            ):
+                return
 
             effective_bytes = cls._effective_new_bytes(
                 state, new_bytes, producer_offset_after
@@ -118,6 +137,7 @@ class TaskHistoryLogWriter:
             now = utc_now()
             staging = state.staging + effective_bytes
             persisted_offset = state.persisted_offset
+            previous_persisted_offset = persisted_offset
 
             staging, persisted_offset = await cls._flush_full_chunks(
                 session=session,
@@ -150,6 +170,16 @@ class TaskHistoryLogWriter:
                 if producer_offset_after is not None
                 else state.producer_offset
             )
+            new_nomad = (
+                nomad_offset_after
+                if nomad_offset_after is not None
+                else state.nomad_offset
+            )
+            new_allocation_epoch = (
+                allocation_epoch
+                if allocation_epoch is not None
+                else state.allocation_epoch
+            )
             new_version = state.version + 1
 
             applied = await cls._persist_state(
@@ -162,10 +192,20 @@ class TaskHistoryLogWriter:
                 old_version=state.version,
                 persisted_offset=persisted_offset,
                 producer_offset=new_producer,
+                nomad_offset=new_nomad,
+                allocation_epoch=new_allocation_epoch,
                 staging=staging,
                 now=now,
             )
             if applied:
+                await cls._evict_over_cap(
+                    session,
+                    task_history_id=task_history_id,
+                    source=source,
+                    stream=stream,
+                    persisted_offset=persisted_offset,
+                    previous_persisted_offset=previous_persisted_offset,
+                )
                 await session.commit()
                 return
             await session.rollback()
@@ -176,25 +216,30 @@ class TaskHistoryLogWriter:
         )
 
     @classmethod
-    async def drain_and_reset_producer_offsets(
+    async def drain_and_reset_allocation_frontier(
         cls,
         session: AsyncSession,
         task_history_id: int,
+        *,
+        new_allocation_epoch: int,
     ) -> None:
-        """Force-flush every stream's staging buffer and zero ``producer_offset``.
+        """Flush every stream's staging buffer and reset the fetch frontier.
 
         Called when Nomad reschedules a task to a follow-up allocation: the
-        new allocation's log file starts at byte 0, so any cached
-        ``producer_offset`` from the previous allocation must be cleared, and
-        the leftover staging bytes from the previous allocation must be
-        emitted as their own chunk instead of being concatenated with the new
-        allocation's bytes.
+        new allocation's log file starts at byte 0, so the allocation-relative
+        cursors (``producer_offset`` and ``nomad_offset``) from the previous
+        allocation must be cleared and ``allocation_epoch`` advanced to the new
+        allocation's ``CreateIndex``, and the leftover staging bytes from the
+        previous allocation must be emitted as their own chunk instead of being
+        concatenated with the new allocation's bytes.
 
         :param session: The SQLAlchemy asynchronous session.
         :type session: AsyncSession
         :param task_history_id: The ``TaskHistory`` identifier whose state
             rows should be drained and reset.
         :type task_history_id: int
+        :param new_allocation_epoch: The ``CreateIndex`` of the allocation the
+            frontier is being reset onto.
         """
         rows = await TaskHistoryLogStateManager.list_for_task(session, task_history_id)
         for row in rows:
@@ -219,6 +264,8 @@ class TaskHistoryLogWriter:
                     new_version=row.version + 1,
                     persisted_offset=new_persisted,
                     producer_offset=row.producer_offset,
+                    nomad_offset=row.nomad_offset,
+                    allocation_epoch=row.allocation_epoch,
                     staging=b"",
                     now=now,
                 )
@@ -239,8 +286,8 @@ class TaskHistoryLogWriter:
                         "drained_bytes": drained_bytes,
                     },
                 )
-        await TaskHistoryLogStateManager.reset_producer_offsets(
-            session, task_history_id
+        await TaskHistoryLogStateManager.reset_allocation_frontier(
+            session, task_history_id, new_allocation_epoch=new_allocation_epoch
         )
         await session.commit()
 
@@ -447,6 +494,8 @@ class TaskHistoryLogWriter:
         old_version: int,
         persisted_offset: int,
         producer_offset: int,
+        nomad_offset: int,
+        allocation_epoch: int,
         staging: bytes,
         now: datetime,
     ) -> bool:
@@ -472,6 +521,8 @@ class TaskHistoryLogWriter:
         :type persisted_offset: int
         :param producer_offset: The producer-relative offset to persist.
         :type producer_offset: int
+        :param nomad_offset: The raw Nomad-space fetch offset to persist.
+        :param allocation_epoch: The Nomad ``CreateIndex`` to persist.
         :param staging: The remaining staging buffer to persist.
         :type staging: bytes
         :param now: The update timestamp.
@@ -487,6 +538,8 @@ class TaskHistoryLogWriter:
                 stream=stream,
                 persisted_offset=persisted_offset,
                 producer_offset=producer_offset,
+                nomad_offset=nomad_offset,
+                allocation_epoch=allocation_epoch,
                 staging=staging,
                 version=new_version,
                 now=now,
@@ -500,9 +553,64 @@ class TaskHistoryLogWriter:
             new_version=new_version,
             persisted_offset=persisted_offset,
             producer_offset=producer_offset,
+            nomad_offset=nomad_offset,
+            allocation_epoch=allocation_epoch,
             staging=staging,
             now=now,
         )
+
+    @classmethod
+    async def _evict_over_cap(
+        cls,
+        session: AsyncSession,
+        *,
+        task_history_id: int,
+        source: str,
+        stream: TaskLogType,
+        persisted_offset: int,
+        previous_persisted_offset: int,
+    ) -> None:
+        """Drop oldest chunks beyond ``LOG_STREAM_CAP_BYTES`` for this stream.
+
+        No-op unless this flush advanced ``persisted_offset`` and the stream
+        exceeds the cap (``low_water > 0``). The delete is staged on ``session``
+        without committing so it commits atomically with the flush and the
+        version-CAS in :meth:`append`; a delete error therefore aborts the whole
+        append rather than leaving a best-effort cap.
+
+        :param session: The SQLAlchemy asynchronous session.
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :param source: The execution step name.
+        :param stream: The log stream (stdout or stderr).
+        :param persisted_offset: The advanced post-flush persisted offset.
+        :param previous_persisted_offset: The persisted offset before this flush.
+        """
+        if persisted_offset <= previous_persisted_offset:
+            return
+        cap = tasks_config.tasks_settings.LOG_STREAM_CAP_BYTES
+        low_water = persisted_offset - cap
+        if low_water <= 0:
+            return
+        deleted = await TaskHistoryLogManager.delete_chunks_below_offset(
+            session,
+            task_history_id=task_history_id,
+            source=source,
+            stream=stream,
+            max_end_offset=low_water,
+            max_rows=tasks_config.tasks_settings.LOG_STREAM_EVICTION_MAX_ROWS,
+        )
+        if deleted:
+            logger.debug(
+                "taskhistory_log stream capped",
+                extra={
+                    "event": "taskhistory_log_stream_capped",
+                    "task_history_id": task_history_id,
+                    "source": source,
+                    "stream": stream.value,
+                    "evicted_rows": deleted,
+                    "low_water": low_water,
+                },
+            )
 
 
 async def backfill_legacy_logs(

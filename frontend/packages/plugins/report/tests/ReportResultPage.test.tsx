@@ -136,7 +136,7 @@ describe('ReportResultPage', () => {
 
   it('renders report data after successful fetch', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url.includes('/plugins/report/config')) {
+      if (url.includes('/apps/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
       return Promise.resolve({ data: MOCK_REPORT });
@@ -224,7 +224,7 @@ describe('ReportResultPage', () => {
       { job_id: 'job-1', status: 'success', pdf_ready: true },
     ];
     mockedApi.get.mockImplementation((url: string) => {
-      if (url.includes('/plugins/report/config')) {
+      if (url.includes('/apps/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
       if (url.endsWith('/plugins/report/pdf-jobs/job-1/pdf')) {
@@ -294,7 +294,7 @@ describe('ReportResultPage', () => {
     await waitFor(() => {
       expect(screen.getByText(/pdf download failed: report disabled/i)).toBeInTheDocument();
     });
-    expect(mockedApi.get).not.toHaveBeenCalledWith('/plugins/report/pdf-jobs/job-1/pdf', {
+    expect(mockedApi.get).not.toHaveBeenCalledWith('/apps/report/pdf-jobs/job-1/pdf', {
       responseType: 'blob',
     });
   });
@@ -302,7 +302,7 @@ describe('ReportResultPage', () => {
   it('starts an upload job on upload button click', async () => {
     let uploadStarted = false;
     mockedApi.get.mockImplementation((url: string) => {
-      if (url.includes('/plugins/report/config')) {
+      if (url.includes('/apps/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
       if (uploadStarted) {
@@ -333,7 +333,7 @@ describe('ReportResultPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /upload to servicenow/i }));
 
     await waitFor(() => {
-      expect(mockedApi.post).toHaveBeenCalledWith('/plugins/report/upload-jobs', {
+      expect(mockedApi.post).toHaveBeenCalledWith('/apps/report/upload-jobs', {
         report: MOCK_REPORT,
       });
     });
@@ -341,7 +341,7 @@ describe('ReportResultPage', () => {
 
   it('disables upload button when upload_disabled_reasons returned', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url.includes('/plugins/report/config')) {
+      if (url.includes('/apps/report/config')) {
         return Promise.resolve({
           data: { upload_disabled_reasons: ['ServiceNow credentials not configured'] },
         });

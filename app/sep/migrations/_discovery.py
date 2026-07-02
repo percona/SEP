@@ -40,7 +40,7 @@ import pkgutil
 import sys
 from pathlib import Path
 
-import app.sep.plugins as plugins_pkg
+import app.sep.apps as plugins_pkg
 
 
 def _load_models_module(full_name: str, models_path: Path) -> None:
@@ -55,7 +55,7 @@ def _load_models_module(full_name: str, models_path: Path) -> None:
     safe.
 
     :param full_name: The fully qualified module name under which to
-        register the loaded module (e.g. ``app.sep.plugins.alerts.models``).
+        register the loaded module (e.g. ``app.sep.apps.alerts.models``).
     :type full_name: str
     :param models_path: Filesystem path to the plugin's ``models.py``
         file.
@@ -90,7 +90,7 @@ def discover_plugin_migrations_and_models() -> list[str]:
     Discovery is **migrations-first**: a plugin only participates in
     Alembic if it has a ``migrations/versions/`` directory on disk.
     Filesystem-based walk over ``pkgutil.iter_modules(plugins_pkg.__path__)``;
-    does NOT consult ``sep_settings.PLUGINS``. Schema management follows
+    does NOT consult ``sep_settings.APPS``. Schema management follows
     installed code, not enablement in configuration.
 
     :return: Absolute paths to each participating plugin's migration
