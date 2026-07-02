@@ -24,6 +24,14 @@ import contextlib
 import json
 import sys
 
+#: Inner per-driver DB connect timeout (seconds). Defined here (not imported
+#: from ``app.tasks.connectivity.constants``) because this script runs
+#: standalone on a Nomad client with no access to the ``app`` package. Must
+#: stay strictly less than ``CONNECTIVITY_CHECK_TIMEOUT`` (the outer connect
+#: budget; a test enforces this) so the inner connect completes inside the
+#: outer window.
+CONNECT_TIMEOUT = 10
+
 
 def check_mysql(host: str, port: int) -> dict[str, bool | str]:
     """Check MySQL connectivity via ``SELECT 1``.
@@ -34,16 +42,13 @@ def check_mysql(host: str, port: int) -> dict[str, bool | str]:
     (codes 2xxx) and any other exception remain failures.
 
     :param host: The database host address.
-    :type host: str
     :param port: The database port number.
-    :type port: int
     :return: A dict with ``success`` and optionally ``error``.
-    :rtype: dict[str, bool | str]
     """
     import myloginpath
     import pymysql
 
-    connect_kwargs = {"host": host, "port": port, "connect_timeout": 10}
+    connect_kwargs = {"host": host, "port": port, "connect_timeout": CONNECT_TIMEOUT}
     with contextlib.suppress(Exception):
         login = myloginpath.parse("client")
         connect_kwargs["user"] = login.get("user")
@@ -75,16 +80,13 @@ def check_postgresql(host: str, port: int) -> dict[str, bool | str]:
     failures (``pgcode`` not set) and any other exception remain failures.
 
     :param host: The database host address.
-    :type host: str
     :param port: The database port number.
-    :type port: int
     :return: A dict with ``success`` and optionally ``error``.
-    :rtype: dict[str, bool | str]
     """
     import psycopg2
 
     try:
-        conn = psycopg2.connect(host=host, port=port, connect_timeout=10)
+        conn = psycopg2.connect(host=host, port=port, connect_timeout=CONNECT_TIMEOUT)
         try:
             with conn.cursor() as cursor:
                 cursor.execute("SELECT 1")
@@ -109,17 +111,14 @@ def check_mongodb(host: str, port: int) -> dict[str, bool | str]:
     ``ServerSelectionTimeoutError`` and any other exception remain failures.
 
     :param host: The database host address.
-    :type host: str
     :param port: The database port number.
-    :type port: int
     :return: A dict with ``success`` and optionally ``error``.
-    :rtype: dict[str, bool | str]
     """
     import pymongo
 
     try:
         client = pymongo.MongoClient(
-            host=host, port=port, serverSelectionTimeoutMS=10000
+            host=host, port=port, serverSelectionTimeoutMS=CONNECT_TIMEOUT * 1000
         )
         try:
             client.admin.command("ping")

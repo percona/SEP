@@ -18,4 +18,12 @@
 CONNECTIVITY_META_HOST_KEY = "_connectivity_host"
 CONNECTIVITY_META_PORT_KEY = "_connectivity_port"
 CONNECTIVITY_META_SERVICE_TYPE_KEY = "_connectivity_service_type"
-CONNECTIVITY_CHECK_TIMEOUT = 10
+
+#: Post-start connect budget (seconds). Must stay strictly above the inner DB
+#: ``CONNECT_TIMEOUT`` (``app/tasks/connectivity/payload.py``) so the inner
+#: connect can finish inside this window. ``service.py`` measures the boundary.
+CONNECTIVITY_CHECK_TIMEOUT = 20
+
+#: Pre-start provisioning budget (seconds), bounding a task whose ``run-script``
+#: step never starts.
+PROVISIONING_TIMEOUT = 45

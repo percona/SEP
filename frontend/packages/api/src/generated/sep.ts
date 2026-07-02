@@ -4805,11 +4805,12 @@ export interface components {
      * @description Represent a connectivity-check failure on a JSON API task-creation response.
      *
      *     :param target: The Nomad node the task targets.
-     *     :type target: str
      *     :param service_type: The lowercase database service type (e.g. ``mysql``).
-     *     :type service_type: str
      *     :param message: A human-readable description of the failure.
-     *     :type message: str
+     *     :param task_history_id: The run-script task-history id whose log explains
+     *         the failure, or ``None`` when no task was created (e.g. the Tasks API
+     *         was unreachable). Optional for backward compatibility with existing
+     *         plugin consumers.
      */
     ConnectivityWarning: {
       /** Message */
@@ -4818,6 +4819,8 @@ export interface components {
       service_type: string;
       /** Target */
       target: string;
+      /** Task History Id */
+      task_history_id?: number | null;
     };
     /**
      * DashboardStatsResponse

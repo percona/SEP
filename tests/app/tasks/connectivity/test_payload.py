@@ -377,3 +377,119 @@ class TestMain:
             pytest.raises(KeyError),
         ):
             main()
+
+
+class TestConnectTimeoutBudget:
+    """Guard the inner-DB-connect vs outer-connect budget invariant."""
+
+    def test_inner_connect_timeout_strictly_less_than_outer_budget(self):
+        """Verify the inner DB ``connect_timeout`` is below the connect budget.
+
+        If the inner DB ``connect_timeout`` equals the outer connect budget,
+        the inner connect can never complete inside the outer window once any
+        dispatch latency is added, producing a false-negative. The inner
+        timeout must stay strictly less than ``CONNECTIVITY_CHECK_TIMEOUT``.
+        """
+        from app.tasks.connectivity.constants import CONNECTIVITY_CHECK_TIMEOUT
+        from app.tasks.connectivity.payload import CONNECT_TIMEOUT
+
+        assert CONNECT_TIMEOUT < CONNECTIVITY_CHECK_TIMEOUT
+
+    def test_each_driver_uses_the_shared_connect_timeout_constant(
+        self, mock_myloginpath, mock_pymysql, mock_psycopg2, mock_pymongo
+    ):
+        """Verify every driver sources its timeout from ``CONNECT_TIMEOUT``.
+
+        A future edit must not be able to reintroduce a per-driver literal that
+        drifts from the shared constant.
+        """
+        from app.tasks.connectivity.payload import (
+            check_mongodb,
+            check_mysql,
+            check_postgresql,
+            CONNECT_TIMEOUT,
+        )
+
+        mock_myloginpath.parse.return_value = {}
+        check_mysql("db-host", 3306)
+        assert (
+            mock_pymysql.connect.call_args.kwargs["connect_timeout"] == CONNECT_TIMEOUT
+        )
+
+        check_postgresql("db-host", 5432)
+        assert (
+            mock_psycopg2.connect.call_args.kwargs["connect_timeout"] == CONNECT_TIMEOUT
+        )
+
+        check_mongodb("db-host", 27017)
+        assert (
+            mock_pymongo.MongoClient.call_args.kwargs["serverSelectionTimeoutMS"]
+            == CONNECT_TIMEOUT * 1000
+        )
+
+    def test_sep_and_tasks_connect_budgets_match(self):
+        """Verify the SEP-side and Tasks-side connect budgets cannot drift.
+
+        SEP sends ``CHECK_TIMEOUT`` as ``request.timeout``; the Tasks API charges
+        the connect phase against ``CONNECTIVITY_CHECK_TIMEOUT``. They are
+        declared in separate modules with no shared source, so this pins them
+        equal to catch a silent drift.
+        """
+        from app.sep.connectivity import CHECK_TIMEOUT
+        from app.tasks.connectivity.constants import CONNECTIVITY_CHECK_TIMEOUT
+
+        assert CHECK_TIMEOUT == CONNECTIVITY_CHECK_TIMEOUT
+
+    def test_total_server_budget_stays_under_remote_read_timeout(self):
+        """Verify the worst-case server wait stays under the client read timeout.
+
+        SEP's ``RemoteAPI`` holds the request open with ``sock_read=120`` while
+        the Tasks API waits up to ``PROVISIONING_TIMEOUT`` plus the connect
+        budget. If that sum approaches 120s the call surfaces as "Could not reach
+        the Tasks API" instead of the diagnostic timeout response, so keep a
+        comfortable margin below the read timeout.
+        """
+        from annotated_types import Le
+
+        from app.tasks.connectivity.constants import PROVISIONING_TIMEOUT
+        from app.tasks.connectivity.models import ConnectivityCheckWrite
+
+        timeout_field = ConnectivityCheckWrite.model_fields["timeout"]
+        max_connect_budget = next(
+            meta.le for meta in timeout_field.metadata if isinstance(meta, Le)
+        )
+        # ``ClientTimeout(sock_read=...)`` in ``app/core/requests/remote_api.py``.
+        remote_api_sock_read = 120
+        assert PROVISIONING_TIMEOUT + max_connect_budget < remote_api_sock_read
+
+
+class TestMainOutputContract:
+    """Guard the ``main`` stdout/stderr contract."""
+
+    def test_main_writes_pure_json_to_stdout(
+        self, tmp_path, capsys, mock_myloginpath, mock_pymysql
+    ):
+        """Verify ``main`` writes a single JSON document to stdout.
+
+        ``_parse_check_result`` reads the result with ``json.loads`` over the
+        ``run-script`` stdout, so stdout must stay a pure JSON document.
+        """
+        from app.tasks.connectivity.payload import main
+
+        mock_myloginpath.parse.return_value = {}
+        mock_conn = MagicMock()
+        mock_pymysql.connect.return_value = mock_conn
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+        config_path = tmp_path / "script_config"
+        config_path.write_text(
+            json.dumps({"service_type": "mysql", "host": "db-host", "port": 3306})
+        )
+
+        with patch("sys.argv", ["payload.py", "--config", str(config_path)]):
+            main()
+
+        captured = capsys.readouterr()
+        assert json.loads(captured.out) == {"success": True}
