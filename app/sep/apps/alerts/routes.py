@@ -23,7 +23,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.core.utils.fields import NonEmptyStr
-from app.sep.apps.alerts.config import alerts_pmm_config
+from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.alerts.crud import AlertBackupManager
 from app.sep.apps.alerts.deps import (
     AlertsIndexContext,
@@ -285,7 +285,7 @@ async def alerts_push(
                     template_name=template.name,
                     folder_uid=folder.uid,
                     for_duration=DEFAULT_FOR_DURATION,
-                    group=alerts_pmm_config.alert_folder_name,
+                    group=alerts_settings.ALERT_FOLDER_NAME,
                 )
             except (HTTPException, OSError):
                 logger.debug("Rule already exists for %s", name, exc_info=True)
@@ -312,7 +312,7 @@ async def alerts_push(
                 template_name=template.name,
                 folder_uid=folder.uid,
                 for_duration=DEFAULT_FOR_DURATION,
-                group=alerts_pmm_config.alert_folder_name,
+                group=alerts_settings.ALERT_FOLDER_NAME,
             )
             results.append(
                 {"name": name, "status": "success", "message": "Pushed successfully"}
@@ -335,7 +335,7 @@ async def alerts_push(
                     template_name=template.name,
                     folder_uid=folder.uid,
                     for_duration=DEFAULT_FOR_DURATION,
-                    group=alerts_pmm_config.alert_folder_name,
+                    group=alerts_settings.ALERT_FOLDER_NAME,
                 )
                 results.append(
                     {

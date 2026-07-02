@@ -45,7 +45,7 @@ export function isBackendUnavailable(error: unknown): boolean {
   return false;
 }
 
-type PaginatedPluginList<T> = {
+type PaginatedAppList<T> = {
   items: T[];
   total: number;
   offset: number;
@@ -53,7 +53,7 @@ type PaginatedPluginList<T> = {
 };
 
 /** Accept legacy flat lists or paginated ``{ items, total, offset, limit }`` envelopes. */
-export function unwrapPluginListResponse<T>(data: T[] | PaginatedPluginList<T>): T[] {
+export function unwrapAppListResponse<T>(data: T[] | PaginatedAppList<T>): T[] {
   if (Array.isArray(data)) {
     return data;
   }
@@ -80,16 +80,16 @@ export function unwrapPluginListResponse<T>(data: T[] | PaginatedPluginList<T>):
  *
  * The hook unwraps both shapes to `T[]` so call sites stay stable.
  */
-type PluginTasksResponse<T> = T[] | { items: T[] | null };
+type AppTasksResponse<T> = T[] | { items: T[] | null };
 
-export function unwrapTasks<T>(data: PluginTasksResponse<T> | null | undefined): T[] {
+export function unwrapTasks<T>(data: AppTasksResponse<T> | null | undefined): T[] {
   if (Array.isArray(data)) {
     return data;
   }
   return data?.items ?? [];
 }
 
-export function usePluginTasks<T extends Record<string, unknown>>(
+export function useAppTasks<T extends Record<string, unknown>>(
   pluginName: string,
   mockTasks?: T[],
   options?: { enabled?: boolean },
@@ -99,7 +99,7 @@ export function usePluginTasks<T extends Record<string, unknown>>(
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<PluginTasksResponse<T>>(`/apps/${pluginName}/`);
+        const { data } = await apiClient.get<AppTasksResponse<T>>(`/apps/${pluginName}/`);
         return unwrapTasks(data);
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockTasks && isBackendUnavailable(error)) {
@@ -112,7 +112,7 @@ export function usePluginTasks<T extends Record<string, unknown>>(
   });
 }
 
-export function usePluginTask<T extends Record<string, unknown>>(
+export function useAppTask<T extends Record<string, unknown>>(
   pluginName: string,
   taskId: string | undefined,
   mockTasks?: T[],
@@ -139,7 +139,7 @@ export function usePluginTask<T extends Record<string, unknown>>(
   });
 }
 
-export function useCreatePluginTask<T extends Record<string, unknown>>(
+export function useCreateAppTask<T extends Record<string, unknown>>(
   pluginName: string,
   mockTasks?: T[],
 ) {
@@ -163,7 +163,7 @@ export function useCreatePluginTask<T extends Record<string, unknown>>(
   });
 }
 
-export function useUpdatePluginTask<T extends Record<string, unknown>>(
+export function useUpdateAppTask<T extends Record<string, unknown>>(
   pluginName: string,
   mockTasks?: T[],
 ) {
@@ -211,7 +211,7 @@ export function buildEntityItemPath(pluginName: string, entityName: string, id: 
 }
 
 /** List rows for one entity of a multi-entity plugin (GET ``/apps/{name}/{entity}/``). */
-export function usePluginEntityList<T extends Record<string, unknown>>(
+export function useAppEntityList<T extends Record<string, unknown>>(
   pluginName: string,
   entityName: string,
   mockItems?: T[],
@@ -222,10 +222,10 @@ export function usePluginEntityList<T extends Record<string, unknown>>(
     enabled: options?.enabled !== false,
     queryFn: async () => {
       try {
-        const { data } = await apiClient.get<T[] | PaginatedPluginList<T>>(
+        const { data } = await apiClient.get<T[] | PaginatedAppList<T>>(
           `/apps/${pluginName}/${entityName}/`,
         );
-        return unwrapPluginListResponse(data);
+        return unwrapAppListResponse(data);
       } catch (error) {
         if (MOCK_FALLBACKS_ENABLED && mockItems && isBackendUnavailable(error)) {
           return mockItems;
@@ -237,7 +237,7 @@ export function usePluginEntityList<T extends Record<string, unknown>>(
   });
 }
 
-export function usePluginEntityDetail<T extends Record<string, unknown>>(
+export function useAppEntityDetail<T extends Record<string, unknown>>(
   pluginName: string,
   entityName: string,
   itemId: string | undefined,
@@ -263,7 +263,7 @@ export function usePluginEntityDetail<T extends Record<string, unknown>>(
   });
 }
 
-export function useCreatePluginEntity<T extends Record<string, unknown>>(
+export function useCreateAppEntity<T extends Record<string, unknown>>(
   pluginName: string,
   entityName: string,
   mockItems?: T[],
@@ -288,7 +288,7 @@ export function useCreatePluginEntity<T extends Record<string, unknown>>(
   });
 }
 
-export function useUpdatePluginEntity<T extends Record<string, unknown>>(
+export function useUpdateAppEntity<T extends Record<string, unknown>>(
   pluginName: string,
   entityName: string,
   mockItems?: T[],
@@ -316,11 +316,7 @@ export function useUpdatePluginEntity<T extends Record<string, unknown>>(
   });
 }
 
-export function useDeletePluginEntity(
-  pluginName: string,
-  entityName: string,
-  mockItems?: unknown[],
-) {
+export function useDeleteAppEntity(pluginName: string, entityName: string, mockItems?: unknown[]) {
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, string>({
@@ -340,7 +336,7 @@ export function useDeletePluginEntity(
   });
 }
 
-export function useDeletePluginTask<T extends Record<string, unknown>>(
+export function useDeleteAppTask<T extends Record<string, unknown>>(
   pluginName: string,
   mockTasks?: T[],
 ) {

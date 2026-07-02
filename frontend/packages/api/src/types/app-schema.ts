@@ -18,7 +18,7 @@
 /**
  * Plugin Schema types — defines the contract for schema-driven plugins.
  *
- * These types mirror the backend PluginSchema Pydantic model.
+ * These types mirror the backend AppSchema Pydantic model.
  * The backend serves schemas at GET /api/apps/{name}/schema as JSON.
  * The SchemaFormRenderer auto-generates the UI from these definitions.
  *
@@ -47,7 +47,7 @@ export interface FieldGate {
 }
 
 /**
- * Cross-field cardinality constraint at FormSection or PluginSchema scope.
+ * Cross-field cardinality constraint at FormSection or AppSchema scope.
  * When `when` matches (omitted means always), the count of present fields
  * in `fields` must satisfy `min` / `max` (omitted bound = unbounded). The
  * backend strips `None`-valued keys from the wire payload, so optional
@@ -211,7 +211,7 @@ export interface ScriptPreviewField extends BaseField {
 
 // ── Discriminated union ─────────────────────────────────────────────────
 
-export type PluginField =
+export type AppField =
   | StringField
   | IntegerField
   | FloatField
@@ -234,7 +234,7 @@ export type PluginField =
 export interface OneOfBranch {
   value: string;
   label: string;
-  fields: PluginField[];
+  fields: AppField[];
 }
 
 /**
@@ -254,7 +254,7 @@ export interface OneOfGroup {
 }
 
 /** A section item: a leaf field or a one-of group container. */
-export type SectionField = PluginField | OneOfGroup;
+export type SectionField = AppField | OneOfGroup;
 
 // ── Form structure ──────────────────────────────────────────────────────
 
@@ -300,7 +300,7 @@ export interface ListView {
 
 // ── Capabilities ────────────────────────────────────────────────────────
 
-export interface PluginCapabilities {
+export interface AppCapabilities {
   chaining?: boolean;
   alert_on_fail?: boolean;
   scheduling?: boolean;
@@ -333,7 +333,7 @@ export interface DetailView {
 // ── Multi-entity plugins (inventory) ────────────────────────────────────
 
 /** One CRUD resource when a plugin exposes several (nodes, services, …). */
-export interface PluginEntitySchema {
+export interface AppEntitySchema {
   name: string;
   display_name: string;
   description?: string;
@@ -345,19 +345,19 @@ export interface PluginEntitySchema {
 
 // ── Top-level schema ────────────────────────────────────────────────────
 
-export interface PluginSchema {
+export interface AppSchema {
   name: string;
   display_name: string;
   description?: string;
   task_type?: string;
   /** Task-style single entity: forms + list_view (omit or leave entities unset). */
   forms?: FormSection[];
-  capabilities?: PluginCapabilities;
+  capabilities?: AppCapabilities;
   list_view?: ListView;
   /** Declarative layout for the task detail page (task-style plugins). */
   detail_view?: DetailView;
   /** When set, the shell renders one list/create/detail flow per entity. */
-  entities?: PluginEntitySchema[];
+  entities?: AppEntitySchema[];
   /** Schema-wide cross-field cardinality constraints (task-style plugins). */
   cardinality_rules?: CardinalityRule[];
   /** Schema-wide predicate-only invariants (task-style plugins). */

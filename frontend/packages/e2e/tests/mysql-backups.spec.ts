@@ -512,7 +512,7 @@ test.describe('MySQL Backups – unhappy paths', () => {
       .last()
       .click();
 
-    // PluginCreatePage surfaces error via notistack snackbar.
+    // AppCreatePage surfaces error via notistack snackbar.
     await expect(page.getByText(/create blew up|failed to create/i)).toBeVisible({
       timeout: 15_000,
     });

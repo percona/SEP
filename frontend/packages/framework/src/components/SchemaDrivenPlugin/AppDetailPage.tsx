@@ -41,13 +41,13 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import { useSnackbar } from 'notistack';
 import {
-  useDeletePluginEntity,
-  useDeletePluginTask,
-  usePluginEntityDetail,
-  usePluginTask,
+  useDeleteAppEntity,
+  useDeleteAppTask,
+  useAppEntityDetail,
+  useAppTask,
   type DetailSection,
-  type PluginEntitySchema,
-  type PluginSchema,
+  type AppEntitySchema,
+  type AppSchema,
 } from '@sep/api';
 import { resolvePath } from '../../utils/resolvePath';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
@@ -61,7 +61,7 @@ import {
 } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
-import { resolvePluginRouteBase } from './routeBase';
+import { resolveAppRouteBase } from './routeBase';
 import { getStoredForm } from './storedForm';
 import { StatsCard } from './StatsCard';
 
@@ -78,8 +78,8 @@ export interface TaskExecuteAction {
   executeBody?: TaskExecuteBody;
 }
 
-export interface PluginDetailPageProps {
-  schema: PluginSchema;
+export interface AppDetailPageProps {
+  schema: AppSchema;
   pluginName: string;
   /** Absolute list route prefix when the plugin is not mounted under ``/apps/{name}``. */
   routeBase?: string;
@@ -97,13 +97,13 @@ export interface PluginDetailPageProps {
   renderTaskDetailChildren?: (args: {
     task: Record<string, unknown>;
     pluginName: string;
-    schema: PluginSchema;
+    schema: AppSchema;
   }) => ReactNode;
   /** Extra content under the main detail card (e.g. child entity tables). */
   renderEntityDetailChildren?: (args: {
     entityName: string;
     record: Record<string, unknown>;
-    schema: PluginSchema;
+    schema: AppSchema;
     pathname: string;
     pluginName: string;
     mockEntityItems?: Record<string, Record<string, unknown>[]>;
@@ -263,7 +263,7 @@ function TaskOverviewDetailField({ label, value }: { label: string; value: unkno
 }
 
 interface OverviewTabProps {
-  schema: PluginSchema;
+  schema: AppSchema;
   task: Record<string, unknown>;
   hiddenFields?: string[];
   /** Owning plugin name; enables the generic schedule summary. */
@@ -446,7 +446,7 @@ function LogsTab({ taskNames }: LogsTabProps) {
 }
 
 interface ActionBarProps {
-  schema: PluginSchema;
+  schema: AppSchema;
   pluginName: string;
   routeBase: string;
   taskName: string;
@@ -465,7 +465,7 @@ function ActionBar({
 }: ActionBarProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
-  const deleteTask = useDeletePluginTask(pluginName);
+  const deleteTask = useDeleteAppTask(pluginName);
   const executeTask = useExecuteTask(pluginName);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingExecute, setPendingExecute] = useState<TaskExecuteAction | null>(null);
@@ -636,7 +636,7 @@ function ActionBar({
   );
 }
 
-export function PluginDetailPage({
+export function AppDetailPage({
   schema,
   pluginName,
   routeBase: routeBaseProp,
@@ -653,8 +653,8 @@ export function PluginDetailPage({
   resolveParentPath,
   hideDetailChrome = false,
   allowListEntityDelete = false,
-}: PluginDetailPageProps) {
-  const routeBase = resolvePluginRouteBase(pluginName, routeBaseProp);
+}: AppDetailPageProps) {
+  const routeBase = resolveAppRouteBase(pluginName, routeBaseProp);
   const params = useParams<Record<string, string | undefined>>();
   const id = (detailIdParam && params[detailIdParam]) ?? params.id;
   const entityName = detailEntityName ?? params.entityName;
@@ -662,7 +662,7 @@ export function PluginDetailPage({
   const navigate = useNavigate();
   const location = useLocation();
   const entitySchema = useMemo(
-    () => schema.entities?.find((e: PluginEntitySchema) => e.name === entityName),
+    () => schema.entities?.find((e: AppEntitySchema) => e.name === entityName),
     [schema.entities, entityName],
   );
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
@@ -674,8 +674,8 @@ export function PluginDetailPage({
     return resolveParentPath(location.pathname);
   }, [location.pathname, resolveParentPath]);
 
-  const taskQuery = usePluginTask(pluginName, id, mockTasks, { enabled: !multi && Boolean(id) });
-  const entityQuery = usePluginEntityDetail(
+  const taskQuery = useAppTask(pluginName, id, mockTasks, { enabled: !multi && Boolean(id) });
+  const entityQuery = useAppEntityDetail(
     pluginName,
     entityName ?? '',
     id,
@@ -694,7 +694,7 @@ export function PluginDetailPage({
     [hideDetailChrome, multi, entityName, entitySchema?.display_name],
   );
 
-  const deleteEntity = useDeletePluginEntity(
+  const deleteEntity = useDeleteAppEntity(
     pluginName,
     entityName ?? '',
     multi ? mockEntityItems?.[entityName!] : undefined,

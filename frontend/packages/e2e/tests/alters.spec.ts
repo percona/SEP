@@ -33,7 +33,7 @@ const MOCK_USER = {
 };
 
 /**
- * Minimal PluginSchema for alters — covers list/create/detail plus the DSN
+ * Minimal AppSchema for alters — covers list/create/detail plus the DSN
  * conditional gate and manual schema/table target fields.
  */
 const MOCK_ALTERS_SCHEMA = {

@@ -162,10 +162,10 @@ class TestSepSettingsList:
     async def test_returns_local_and_proxied_groups(
         self, api_admin_client: TestClient
     ) -> None:
-        """Returns the three local groups plus the proxied TasksSettings group.
+        """Returns the local groups plus the proxied TasksSettings group.
 
         SEP serves its own classes locally and proxies ``TasksSettings`` from the
-        Tasks sub-app, so the LIST carries all four groups.
+        Tasks sub-app, so the LIST carries all of them.
         """
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -175,6 +175,7 @@ class TestSepSettingsList:
             SettingClassEnum.SEP_SETTINGS.value,
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.MESSAGES_SETTINGS.value,
+            SettingClassEnum.ALERTS_SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
         }
 
@@ -1026,6 +1027,7 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"),
                 (SettingClassEnum.SETTINGS, "PMM"),
                 (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
+                (SettingClassEnum.ALERTS_SETTINGS, "BACKUP_INTERVAL"),
             }
         finally:
             sep_app.state.override_callbacks = original

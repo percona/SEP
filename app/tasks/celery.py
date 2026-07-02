@@ -60,7 +60,12 @@ from app.core.utils import utc_now
 from app.core.utils.fields import DatabaseDialect
 from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
 from app.tasks.config import tasks_settings, TasksSettings
-from app.tasks.crud import DispatchLockManager, TaskHistoryManager, TaskManager
+from app.tasks.crud import (
+    DispatchLockManager,
+    TaskHistoryLogManager,
+    TaskHistoryManager,
+    TaskManager,
+)
 from app.tasks.db import get_async_session_maker
 from app.tasks.deps import (
     get_executable_task_by_name,
@@ -380,6 +385,65 @@ def sync_running_tasks() -> None:
 
 
 @celery.task
+def purge_task_history_logs() -> None:
+    """Define Celery task to purge aged task-execution logs."""
+    celery.loop.run_until_complete(_purge_task_history_logs())
+
+
+async def _purge_task_history_logs() -> None:
+    """Delete aged, non-active ``taskhistory_log`` rows in bounded batches.
+
+    Read the (runtime-overridable) retention window and batch size from
+    :data:`tasks_settings`, then loop committed batches via
+    :meth:`TaskHistoryLogManager.delete_aged_batch` until a short batch signals
+    that no eligible rows remain. The parent ``taskhistory`` audit rows are
+    never touched. Log the start time, retention window, total rows deleted,
+    and end time; on any failure, raise a system alert and re-raise so Celery
+    records the run as failed.
+    """
+    retention_days = tasks_settings.LOG_RETENTION_DAYS
+    batch_size = tasks_settings.LOG_PURGE_BATCH_SIZE
+    started_at = utc_now()
+    cutoff = started_at - timedelta(days=retention_days)
+    logger.info(
+        "Starting task-history-log purge: retention=%s days, cutoff=%s, batch_size=%s",
+        retention_days,
+        cutoff.isoformat(),
+        batch_size,
+    )
+    total_deleted = 0
+    try:
+        async_session = get_async_session_maker()
+        async with async_session() as session:
+            while True:
+                deleted = await TaskHistoryLogManager.delete_aged_batch(
+                    session, cutoff=cutoff, batch_size=batch_size
+                )
+                total_deleted += deleted
+                if deleted < batch_size:
+                    break
+    except Exception as exc:
+        logger.exception(
+            "Task-history-log purge failed after deleting %s rows", total_deleted
+        )
+        await alert_service.trigger(
+            {
+                "summary": f"Task-history-log purge failed: {exc}",
+                "source": "purge_task_history_logs",
+                "severity": AlertSeverity.ERROR,
+                "class": "log_purge_failure",
+                "dedup_key": "purge_task_history_logs",
+            }
+        )
+        raise
+    logger.info(
+        "Completed task-history-log purge: deleted %s rows in %s",
+        total_deleted,
+        utc_now() - started_at,
+    )
+
+
+@celery.task
 def sync_task_history(task_history_id: int) -> None:
     """Define Celery task to sync a task history item.
 
@@ -592,9 +656,7 @@ async def _raise_if_identical_task_conflict(
             func_json_extract(engine_name, TaskHistory.execution_request, "payload")
             == queue_item.execution_request.payload,
             *meta_where_clauses,
-            col(TaskHistory.status).in_(
-                [TaskHistoryStatusEnum.PENDING, TaskHistoryStatusEnum.RUNNING]
-            ),
+            col(TaskHistory.status).in_(TaskHistoryStatusEnum.active_statuses()),
             col(TaskHistory.id) != queue_item.id,
             task_id=queue_item.task_id,
         )

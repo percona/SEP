@@ -29,7 +29,6 @@ from collections.abc import Callable
 from datetime import datetime
 from enum import Enum, StrEnum
 from functools import cached_property
-from string import Template
 from typing import Annotated, Any, NamedTuple, NotRequired, Self
 
 from annotated_types import (
@@ -52,6 +51,7 @@ from pydantic_core.core_schema import ValidationInfo, ValidatorFunctionWrapHandl
 from typing_extensions import TypedDict
 
 from app.core.utils import run_pydantic_type_validator, shorten_text
+from app.core.utils.cli_args import is_value_arg_template
 from app.core.utils.date_time import make_datetime_utc
 from app.core.utils.fields import (
     EmptyStrToNone,
@@ -183,15 +183,15 @@ class SnippetMetaParameter(BaseModel):
 
     :param name: The name of the parameter.
     :type name: NonEmptyStr
-    :param py_type: The type of the parameter (`str`, `int`, `float`, `bool`). Defaults
-        to `str`. This parameter is validated as "type" in input data.
+    :param py_type: The type of the parameter (``str``, ``int``, ``float``, ``bool``).
+        Defaults to ``str``. This parameter is validated as "type" in input data.
     :type py_type: SnippetMetaParameterType
     :param required: Whether the parameter is required. Defaults to False.
     :type required: bool
     :param positional: Whether the parameter is positional. Defaults to False.
     :type positional: bool
     :param arg_format: The format string for the parameter when used as a command-line
-        argument. Use `${value}` as a placeholder (required for non-flag arguments).
+        argument. Use ``${value}`` as a placeholder (required for non-flag arguments).
         Defaults to None, which uses the default format from the snippets settings.
     :type arg_format: NonEmptyStr | None
     :param description: A description of the parameter. Defaults to None, meaning it
@@ -373,7 +373,7 @@ class SnippetMetaParameter(BaseModel):
     def validate_arg_format(self) -> Self:
         """Validate the arg_format for non-flag parameters contains '${value}'.
 
-        :return: The validated `SnippetMetaParameter` instance.
+        :return: The validated ``SnippetMetaParameter`` instance.
         :rtype: SnippetMetaParameter
         :raises ValueError: If arg_format is provided for non-flag parameters but
             does not include '${value}'.
@@ -381,7 +381,7 @@ class SnippetMetaParameter(BaseModel):
         if (
             not self.is_flag
             and self.arg_format is not None
-            and "value" not in Template(self.arg_format).get_identifiers()
+            and not is_value_arg_template(self.arg_format)
         ):
             raise ValueError(
                 "arg_format must include '${value}' for non-flag parameters"

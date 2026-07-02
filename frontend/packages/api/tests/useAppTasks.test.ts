@@ -16,11 +16,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  buildEntityItemPath,
-  isBackendUnavailable,
-  unwrapTasks,
-} from '../src/hooks/usePluginTasks';
+import { buildEntityItemPath, isBackendUnavailable, unwrapTasks } from '../src/hooks/useAppTasks';
 import { ApiError } from '../src/errors';
 
 describe('unwrapTasks', () => {
@@ -80,7 +76,7 @@ describe('buildEntityItemPath', () => {
 });
 
 describe('isBackendUnavailable (mock-fallback gate)', () => {
-  // The mock-fallback layer in usePluginTasks only swallows errors that look
+  // The mock-fallback layer in useAppTasks only swallows errors that look
   // like the backend is unreachable. A 401/403/404 must always propagate so
   // mock data never masks real auth or routing problems even in dev builds.
   it.each([

@@ -98,7 +98,7 @@ async function mockInventoryScheduleApis(page: Page) {
       });
     }
 
-    // Plugin tasks list (usePluginTasks)
+    // Plugin tasks list (useAppTasks)
     if (pathname.endsWith('/apps/inventory/') && method === 'GET') {
       return route.fulfill({
         status: 200,
@@ -202,7 +202,7 @@ test.describe('Inventory schedule management smoke', () => {
     await page.goto(NODES_ROUTE);
 
     // Exactly one Schedules button: inventory's working custom one. The generic
-    // PluginListPage button is suppressed via hideScheduleButton.
+    // AppListPage button is suppressed via hideScheduleButton.
     const scheduleButtons = page.getByRole('button', { name: /Schedules/i });
     await expect(scheduleButtons).toHaveCount(1);
 

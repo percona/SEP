@@ -26,16 +26,16 @@ export type { RenderListColumnArgs, RenderListColumnOverride } from './component
 export {
   SchemaDrivenPlugin,
   DeleteConfirmDialog,
-  PluginCreatePage,
-  PluginDetailPage,
-  PluginListPage,
-  PluginSchedulePage,
+  AppCreatePage,
+  AppDetailPage,
+  AppListPage,
+  AppSchedulePage,
 } from './components/SchemaDrivenPlugin';
-export type { PluginFormSlotProps, RenderFormSlot } from './components/SchemaDrivenPlugin';
+export type { AppFormSlotProps, RenderFormSlot } from './components/SchemaDrivenPlugin';
 export type { DeleteConfirmDialogProps } from './components/SchemaDrivenPlugin';
-export type { TaskExecuteAction } from './components/SchemaDrivenPlugin/PluginDetailPage';
+export type { TaskExecuteAction } from './components/SchemaDrivenPlugin/AppDetailPage';
 export type { TaskExecuteBody } from './hooks';
-export { pathToEntityList } from './components/SchemaDrivenPlugin/PluginDetailPage';
+export { pathToEntityList } from './components/SchemaDrivenPlugin/AppDetailPage';
 export { getStoredForm, STORED_FORM_KEY } from './components/SchemaDrivenPlugin';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';

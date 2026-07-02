@@ -17,6 +17,7 @@
 
 __all__ = ["BaseRemoteAPI", "RemoteAPI"]
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Generator
 from contextlib import asynccontextmanager, contextmanager
@@ -24,7 +25,7 @@ from contextvars import ContextVar, Token
 from functools import cached_property, lru_cache
 from ssl import create_default_context, SSLContext
 from types import TracebackType
-from typing import Any, NoReturn, Self
+from typing import Any, ClassVar, NoReturn, Self
 from urllib.parse import urljoin
 
 from aiohttp import (
@@ -41,14 +42,55 @@ from pydantic import computed_field, Field, PrivateAttr
 from app.core.exceptions import HTTPGoneException
 from app.core.log import correlation_id_var
 from app.core.models import BaseCaseInsensitiveModel
+from app.core.requests.connectivity import (
+    build_connectivity_result,
+    classify_connectivity_error,
+    ConnectivityResult,
+    ConnectivityStatusEnum,
+    PROBE_TIMEOUT_SECONDS,
+)
 from app.core.utils import json_serializer
-from app.core.utils.fields import CredentialHttpUrl, NonEmptyStr, RelativeFilePathField
+from app.core.utils.fields import (
+    CredentialHttpUrl,
+    NonEmptyStr,
+    redact_credential_url,
+    RelativeFilePathField,
+)
 
 # Maximum size of a single line yielded by RemoteAPI.stream(). aiohttp's default
 # StreamReader caps lines at ~128 KiB (2 * read_bufsize), which is too small for
 # verbose NDJSON log lines from tasks like xtrabackup. 16 MiB stays well below an
 # OOM threshold while comfortably covering real log chunks.
 _MAX_STREAM_LINE_BYTES = 16 * 1024 * 1024
+
+# Request headers whose values carry credentials and must never reach the logs.
+# Compared case-insensitively.
+_SENSITIVE_HEADERS = frozenset(
+    {"authorization", "x-api-key", "cookie", "proxy-authorization"}
+)
+_REDACTED_HEADER_VALUE = "****"
+
+
+def _sanitize_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return a shallow copy of request kwargs with credential headers redacted.
+
+    The auth context injects an ``Authorization`` header into ``kwargs`` before
+    the request is logged; this scrubs that and any other credential-bearing
+    header so secrets never reach the debug log.
+
+    :param kwargs: The request keyword arguments about to be logged.
+    :type kwargs: dict[str, Any]
+    :return: A copy safe to log, with sensitive header values masked.
+    :rtype: dict[str, Any]
+    """
+    headers = kwargs.get("headers")
+    if not headers:
+        return {**kwargs}
+    safe_headers = {
+        key: (_REDACTED_HEADER_VALUE if key.lower() in _SENSITIVE_HEADERS else value)
+        for key, value in headers.items()
+    }
+    return {**kwargs, "headers": safe_headers}
 
 
 def _raise_stream_line_too_big(size: int, path: str) -> NoReturn:
@@ -142,6 +184,12 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
     ssl_keyfile: RelativeFilePathField | None = Field(None, frozen=True)
     ssl_certfile: RelativeFilePathField | None = Field(None, frozen=True)
     logger_name: str = __name__
+    #: Lightweight route hit by :meth:`RemoteAPI.check_connectivity` for a
+    #: reachability probe. A ``ClassVar`` (not a model field) so it is purely
+    #: additive: existing subclasses and callers are unaffected, and it never
+    #: enters the client-registry key or model serialization. Override per
+    #: client, or pass an explicit ``path`` to ``check_connectivity``.
+    connectivity_check_path: ClassVar[str] = "/"
     _session: ClientSession | None = None
     _extra_headers: ContextVar[dict[str, str] | None] = PrivateAttr(
         default_factory=lambda: ContextVar("api_extra_headers", default=None)
@@ -394,10 +442,10 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
             }
         self.logger.debug(
             "RemoteAPI (%s): Sending %s request to %s with kwargs %s",
-            self.endpoint,
+            redact_credential_url(str(self.endpoint)),
             method,
             path,
-            kwargs,
+            _sanitize_request_kwargs(kwargs),
         )
         async with self._session.request(method, prepared_path, **kwargs) as response:
             yield response
@@ -613,6 +661,39 @@ class RemoteAPI(BaseRemoteAPI):
         ) as api:
             yield api
 
+    async def check_connectivity(
+        self, service: str, *, path: str | None = None
+    ) -> ConnectivityResult:
+        """Probe the endpoint and return a normalized connectivity result.
+
+        Issue a lightweight ``GET`` against ``path`` (or
+        :attr:`connectivity_check_path`) under a short bounded timeout and map
+        the outcome to one of the :class:`ConnectivityStatusEnum` states:
+        reachable, authentication failure, unreachable, SSL verification
+        failure, or timeout. Any failure is captured and classified -- this
+        method never raises -- so a single probe can be fanned out safely
+        alongside others.
+
+        The result carries only fixed, secret-free ``detail`` text; the
+        configured API key and any credentials embedded in the endpoint URL are
+        never echoed.
+
+        :param service: Stable identifier of the probed service (e.g. ``"pmm"``).
+        :type service: str
+        :param path: Optional override for the probe route. Defaults to
+            :attr:`connectivity_check_path`.
+        :type path: str | None
+        :return: The normalized connectivity result.
+        :rtype: ConnectivityResult
+        """
+        probe_path = path if path is not None else self.connectivity_check_path
+        try:
+            async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
+                await self.get(probe_path)
+        except Exception as exc:  # noqa: BLE001 -- classified, never re-raised
+            return build_connectivity_result(service, classify_connectivity_error(exc))
+        return build_connectivity_result(service, ConnectivityStatusEnum.REACHABLE)
+
     async def request(
         self,
         method: str,
@@ -639,7 +720,7 @@ class RemoteAPI(BaseRemoteAPI):
                 response_data = await response.json()
                 self.logger.debug(
                     "RemoteAPI (%s): %s request to %s response (%s): %s",
-                    self.endpoint,
+                    redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,
@@ -650,7 +731,7 @@ class RemoteAPI(BaseRemoteAPI):
                 response_content = response.content
                 self.logger.exception(
                     "RemoteAPI (%s): %s request to %s response content (%s): %s",
-                    self.endpoint,
+                    redact_credential_url(str(self.endpoint)),
                     method,
                     path,
                     response.status,

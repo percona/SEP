@@ -33,7 +33,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import type { FieldValidationError, PluginCapabilities } from '@sep/api';
+import type { AppCapabilities, FieldValidationError } from '@sep/api';
 import { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from '../AlertOnFailField';
 import { ConditionalFieldSlot } from './ConditionalFieldSlot';
 import { OneOfGroupSlot } from './OneOfGroupSlot';
@@ -48,9 +48,9 @@ import {
   flattenSectionFields,
   isOneOfGroup,
 } from './utils/flattenSectionFields';
-import type { FormSection, PluginField, RenderFieldOverride } from './types';
+import type { FormSection, AppField, RenderFieldOverride } from './types';
 
-function fieldDefault(field: PluginField): unknown {
+function fieldDefault(field: AppField): unknown {
   switch (field.type) {
     case 'bool':
       return field.default ?? false;
@@ -71,15 +71,15 @@ function fieldDefault(field: PluginField): unknown {
   }
 }
 
-function flattenFields(sections: FormSection[]): PluginField[] {
+function flattenFields(sections: FormSection[]): AppField[] {
   return flattenSectionFields(sections);
 }
 
 function buildFormDefaults(
   sections: FormSection[],
-  allFields: PluginField[],
+  allFields: AppField[],
   defaultValues: Record<string, unknown> | undefined,
-  capabilities: PluginCapabilities | undefined,
+  capabilities: AppCapabilities | undefined,
 ): Record<string, unknown> {
   const defaults: Record<string, unknown> = {};
   for (const field of allFields) {
@@ -195,7 +195,7 @@ export interface SchemaFormRendererProps {
    */
   fieldErrors?: FieldValidationError[];
   /** Plugin capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
-  capabilities?: PluginCapabilities;
+  capabilities?: AppCapabilities;
   /**
    * Optional per-field widget override. Applied after the conditional gate
    * decides visibility / required-ness; receives the gate-resolved field and a

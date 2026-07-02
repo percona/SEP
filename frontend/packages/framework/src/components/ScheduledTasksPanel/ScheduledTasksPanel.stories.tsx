@@ -122,6 +122,6 @@ export const PopulatedSingle: Story = {
   args: { periodicTasks: [SAMPLE_TASKS[0]], pluginTasks: PLUGIN_TASKS },
 };
 
-export const NoPluginTasks: Story = {
+export const NoAppTasks: Story = {
   args: { periodicTasks: [], pluginTasks: [] },
 };

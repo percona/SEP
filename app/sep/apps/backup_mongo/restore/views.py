@@ -29,6 +29,8 @@ from app.sep.apps.framework.schema import (
     Capabilities,
     Column,
     ColumnFormat,
+    default_columns,
+    EXECUTOR_HOST_COLUMN,
     ListView,
 )
 
@@ -40,15 +42,11 @@ restore_views = Views(
         )
     ),
     list_view=ListView(
-        columns=[
-            Column(key="name", label="Name", sortable=True),
-            Column(key="status", label="Status", format=ColumnFormat.STATUS),
-            Column(key="hostname", label="Executor Host"),
+        columns=default_columns(
+            EXECUTOR_HOST_COLUMN,
             Column(key="backup_type", label="Type", format=ColumnFormat.CHIP),
             Column(key="backup_source", label="Backup Source"),
-            Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
-            Column(key="created_by", label="Created By"),
-        ],
+        ),
         default_sort="name",
     ),
     capabilities=Capabilities(chaining=True, scheduling=True),

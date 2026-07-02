@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { usePluginSchema, type PluginSchema } from '@sep/api';
+import { useAppSchema, type AppSchema } from '@sep/api';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
@@ -24,7 +24,7 @@ import { InventoryRoutes } from './InventoryRoutes';
 
 export interface InventoryPluginProps {
   /** Optional mock schema for Storybook / offline tests. */
-  mockSchema?: PluginSchema;
+  mockSchema?: AppSchema;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
 }
 
@@ -34,7 +34,7 @@ export interface InventoryPluginProps {
  * tables; detail chrome stays browse-only (no edit / header delete).
  */
 export function InventoryPlugin({ mockSchema, mockEntityItems }: InventoryPluginProps) {
-  const { data: schema, isLoading, error } = usePluginSchema('inventory', mockSchema);
+  const { data: schema, isLoading, error } = useAppSchema('inventory', mockSchema);
 
   if (isLoading && !schema) {
     return (

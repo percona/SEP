@@ -16,19 +16,19 @@
  */
 
 export { useCurrentUser } from './useCurrentUser';
-export { usePluginSchema } from './usePluginSchema';
+export { useAppSchema } from './useAppSchema';
 export {
-  usePluginTasks,
-  usePluginTask,
-  useCreatePluginTask,
-  useUpdatePluginTask,
-  usePluginEntityList,
-  usePluginEntityDetail,
-  useCreatePluginEntity,
-  useUpdatePluginEntity,
-  useDeletePluginEntity,
-  useDeletePluginTask,
-} from './usePluginTasks';
+  useAppTasks,
+  useAppTask,
+  useCreateAppTask,
+  useUpdateAppTask,
+  useAppEntityList,
+  useAppEntityDetail,
+  useCreateAppEntity,
+  useUpdateAppEntity,
+  useDeleteAppEntity,
+  useDeleteAppTask,
+} from './useAppTasks';
 export { useAlertConfig, ALERT_CONFIG_QUERY_KEY } from './useAlertConfig';
 export type { AlertConfig } from './useAlertConfig';
 export { useDashboardStats } from './useDashboardStats';
