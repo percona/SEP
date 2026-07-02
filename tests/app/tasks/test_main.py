@@ -48,7 +48,7 @@ def _null_async_cm() -> MagicMock:
 
 @pytest.mark.asyncio
 async def test_tasks_lifespan_wires_anonymizer_into_refresher():
-    """SEP-1493: ``tasks_lifespan`` refreshes ANONYMIZER_SETTINGS, not only TASKS.
+    """Assert ``tasks_lifespan`` refreshes ANONYMIZER_SETTINGS, not only TASKS.
 
     The Tasks API process must load a pre-existing ``ANONYMIZER_SETTINGS``
     override on boot -- otherwise the settings LIST/GET serves the default
@@ -89,7 +89,7 @@ def test_tasks_app_lifespan_is_always_set():
 
 
 def test_tasks_app_publishes_nomad_rebind_callback_on_state():
-    """The NOMAD rebind callback registry is published on ``tasks_app.state``.
+    """Assert the NOMAD rebind callback registry is published on ``tasks_app.state``.
 
     The settings-API PATCH/DELETE handlers read the registry from
     ``request.app.state.override_callbacks`` to fire the rebind inline; requests
@@ -103,7 +103,7 @@ def test_tasks_app_publishes_nomad_rebind_callback_on_state():
 
 @pytest.mark.asyncio
 async def test_reconcile_nomad_rebinds_when_holder_present():
-    """The NOMAD rebind callback reconciles the live holder when one is set."""
+    """Assert the NOMAD rebind callback reconciles the live holder when one is set."""
     holder = MagicMock()
     holder.reconcile = AsyncMock()
     app_mock = MagicMock()
@@ -115,7 +115,7 @@ async def test_reconcile_nomad_rebinds_when_holder_present():
 
 @pytest.mark.asyncio
 async def test_reconcile_nomad_skips_when_holder_absent():
-    """The NOMAD rebind callback is a no-op when the holder was cleared.
+    """Assert the NOMAD rebind callback is a no-op when the holder was cleared.
 
     During the shutdown race ``NomadLifecycle.__aexit__`` sets
     ``tasks_app.state.nomad_lifecycle`` to ``None`` before the override refresher
@@ -271,13 +271,10 @@ def _make_schema_check_engine_mock(dialect_name: str, columns):
     """Build a mock async engine whose inspector returns ``columns``.
 
     :param dialect_name: The dialect name reported by ``engine.dialect.name``.
-    :type dialect_name: str
     :param columns: The list of column dicts returned by
         ``inspect(sync_conn).get_columns("taskhistory")``.
-    :type columns: list[dict] | None
     :return: A ``(engine_mock, run_sync_mock)`` pair suitable for patching
         ``app.tasks.db.seed.engine``.
-    :rtype: tuple
     """
     engine_mock = MagicMock()
     engine_mock.dialect.name = dialect_name

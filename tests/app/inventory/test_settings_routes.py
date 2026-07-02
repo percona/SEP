@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""SEP-1493: tests for the Inventory settings REST API and override bootstrap."""
+"""Test the Inventory settings REST API and override bootstrap."""
 
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
@@ -61,16 +61,16 @@ class TestInventorySettingsBootstrap:
     """The Inventory override framework is wired end-to-end."""
 
     def test_proxy_is_overridable(self) -> None:
-        """``inventory_settings`` is an override-aware proxy, not a plain lazy one."""
+        """Assert ``inventory_settings`` is an override-aware proxy, not a plain lazy one."""
         assert isinstance(inventory_settings, OverridableSettingsProxy)
 
     def test_enum_member_matches_class_name(self) -> None:
-        """The new enum member's value equals the Pydantic class name."""
+        """Assert the new enum member's value equals the Pydantic class name."""
         assert SettingClassEnum.INVENTORY_SETTINGS.value == InventorySettings.__name__
 
     @pytest.mark.asyncio
     async def test_non_hot_override_row_is_skipped(self, session: AsyncSession) -> None:
-        """A top-level row for a non-HOT field is skipped by the snapshot builder.
+        """Assert a top-level row for a non-HOT field is skipped by the snapshot builder.
 
         ``InventorySettings`` ships no HOT field yet, so an override row must not
         leak into the snapshot -- the plumbing is wired but the field stays
@@ -92,17 +92,11 @@ class TestInventorySettingsBootstrap:
     async def test_main_lifespan_enters_inventory_overrides(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """``main_lifespan`` enters the Inventory override refresher.
+        """Assert ``main_lifespan`` enters the Inventory override refresher once.
 
-        ``inventory_app`` is mounted under the top-level ``app`` via Starlette's
-        ``Mount``, which only forwards ``http``/``websocket`` scopes -- never
-        ``lifespan`` -- so ``inventory_lifespan`` is never invoked when
-        ``python -m app.main`` runs uvicorn against ``app.main:app``. The
-        ``INVENTORY_SETTINGS`` refresher must therefore be wired into
-        ``main_lifespan`` via ``inventory_overrides_lifespan`` (analogous to how
-        the SEP and Tasks refreshers are wired). This test stubs the other
-        lifespan side effects and asserts the Inventory override lifespan is
-        entered exactly once.
+        Starlette's ``Mount`` never forwards the ``lifespan`` scope, so the
+        ``INVENTORY_SETTINGS`` refresher must be wired into ``main_lifespan``
+        via ``inventory_overrides_lifespan``.
         """
         entered = 0
 
@@ -139,14 +133,14 @@ class TestInventorySettingsRouter:
     """The admin-gated Inventory settings router lists ``InventorySettings``."""
 
     async def test_list_returns_inventory_class(self, admin_client: TestClient) -> None:
-        """LIST exposes exactly the ``InventorySettings`` group."""
+        """Assert LIST exposes exactly the ``InventorySettings`` group."""
         response = admin_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         classes = {g["setting_class"] for g in response.json()["groups"]}
         assert classes == {SettingClassEnum.INVENTORY_SETTINGS.value}
 
     async def test_get_field_returns_metadata(self, admin_client: TestClient) -> None:
-        """GET on a single field returns its metadata."""
+        """Assert GET on a single field returns its metadata."""
         response = admin_client.get("/admin/settings/InventorySettings/UVICORN_PORT")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["setting_class"] == (
@@ -154,14 +148,14 @@ class TestInventorySettingsRouter:
         )
 
     async def test_non_admin_list_forbidden(self, non_admin_client: TestClient) -> None:
-        """A non-admin caller is rejected from the admin-gated LIST."""
+        """Assert a non-admin caller is rejected from the admin-gated LIST."""
         response = non_admin_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_non_admin_patch_forbidden(
         self, non_admin_client: TestClient
     ) -> None:
-        """A non-admin caller cannot PATCH settings."""
+        """Assert a non-admin caller cannot PATCH settings."""
         response = non_admin_client.patch(
             "/admin/settings/InventorySettings",
             json={"UVICORN_PORT": 9999},
@@ -169,7 +163,7 @@ class TestInventorySettingsRouter:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     async def test_patch_non_hot_field_rejected(self, admin_client: TestClient) -> None:
-        """No HOT field exists yet, so any PATCH is rejected as NOT_OVERRIDABLE."""
+        """Assert any PATCH is rejected as NOT_OVERRIDABLE (no HOT field exists yet)."""
         response = admin_client.patch(
             "/admin/settings/InventorySettings",
             json={"UVICORN_PORT": 9999},

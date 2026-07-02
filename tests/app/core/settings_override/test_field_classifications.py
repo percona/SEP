@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""SEP-1493 field-classification regression tests.
+"""Field-classification regression tests.
 
 Assert the reclassifications (``APP_DRAIN`` -> NESTED_ONLY; ``SNIPPETS_BASE_URL``,
 ``SYNC_FILTER``, ``LOGGING`` -> HOT) and the per-leaf ``advanced`` markers on the
@@ -53,17 +53,17 @@ class TestReclassification:
     """Behavior-changing reclassifications."""
 
     def test_app_drain_is_nested_only(self) -> None:
-        """``APP_DRAIN`` becomes a NESTED_ONLY overridable parent."""
+        """Assert ``APP_DRAIN`` becomes a NESTED_ONLY overridable parent."""
         assert _reload(SEPSettings, "APP_DRAIN") is ReloadClassification.NESTED_ONLY
         assert is_nested_overridable_parent(SEPSettings, "APP_DRAIN") is True
 
     @pytest.mark.parametrize("field", ["SNIPPETS_BASE_URL", "SYNC_FILTER"])
     def test_snippets_fields_are_hot(self, field: str) -> None:
-        """``SNIPPETS_BASE_URL`` and ``SYNC_FILTER`` become HOT fields."""
+        """Assert ``SNIPPETS_BASE_URL`` and ``SYNC_FILTER`` become HOT fields."""
         assert _reload(SnippetsSettings, field) is ReloadClassification.HOT
 
     def test_logging_is_hot(self) -> None:
-        """The global ``Settings.LOGGING`` field becomes HOT."""
+        """Assert the global ``Settings.LOGGING`` field becomes HOT."""
         assert _reload(Settings, "LOGGING") is ReloadClassification.HOT
 
 
@@ -81,12 +81,12 @@ class TestAdvancedMarkers:
         ],
     )
     def test_pmm_secondary_leaves_advanced(self, field: str) -> None:
-        """Each PMM secondary leaf carries the display-only advanced marker."""
+        """Assert each PMM secondary leaf carries the display-only advanced marker."""
         assert _advanced(PMMSettings, field) is True
 
     @pytest.mark.parametrize("field", ["endpoint", "api_key"])
     def test_pmm_connection_leaves_not_advanced(self, field: str) -> None:
-        """PMM connection leaves stay unmarked and keep their eligibility."""
+        """Verify PMM connection leaves stay unmarked and keep their eligibility."""
         assert _advanced(PMMSettings, field) is False
         # Connection leaves must not have been flipped to NOT_OVERRIDABLE.
         assert is_explicit_not_overridable(PMMSettings.model_fields[field]) is False
@@ -107,25 +107,25 @@ class TestAdvancedMarkers:
         ],
     )
     def test_nomad_secondary_leaves_advanced(self, field: str) -> None:
-        """Each NOMAD TLS/tuning leaf carries the advanced marker."""
+        """Assert each NOMAD TLS/tuning leaf carries the advanced marker."""
         assert _advanced(NomadExecutor, field) is True
 
     def test_nomad_endpoint_not_advanced(self) -> None:
-        """The NOMAD ``endpoint`` leaf stays unmarked and overridable."""
+        """Assert the NOMAD ``endpoint`` leaf stays unmarked and overridable."""
         assert _advanced(NomadExecutor, "endpoint") is False
         assert is_explicit_not_overridable(NomadExecutor.model_fields["endpoint"]) is (
             False
         )
 
     def test_nomad_frozen_tls_leaves_preserved(self) -> None:
-        """Redeclared inherited TLS leaves keep ``frozen`` for hash stability."""
+        """Assert redeclared inherited TLS leaves keep ``frozen`` for hash stability."""
         # Redeclaring inherited TLS leaves must preserve ``frozen`` so the
         # executor identity hash is unchanged.
         for field in ("verify_ssl", "ssl_cafile", "ssl_keyfile", "ssl_certfile"):
             assert NomadExecutor.model_fields[field].frozen is True
 
     def test_nomad_default_factory_leaf_constructs(self) -> None:
-        """The ``default_factory`` leaf constructs and stays HOT + advanced."""
+        """Verify the ``default_factory`` leaf constructs and stays HOT + advanced."""
         # ``check_cert_expiry_interval`` keeps its ``default_factory`` (no
         # default/default_factory conflict) and stays HOT + advanced.
         default = NomadExecutor.model_fields["check_cert_expiry_interval"].get_default(
@@ -137,7 +137,7 @@ class TestAdvancedMarkers:
         )
 
     def test_sep_artifact_download_ttl_advanced(self) -> None:
-        """``ARTIFACT_DOWNLOAD_TTL`` is HOT and advanced."""
+        """Assert ``ARTIFACT_DOWNLOAD_TTL`` is HOT and advanced."""
         assert _advanced(SEPSettings, "ARTIFACT_DOWNLOAD_TTL") is True
         assert _reload(SEPSettings, "ARTIFACT_DOWNLOAD_TTL") is ReloadClassification.HOT
 
@@ -153,6 +153,6 @@ class TestAdvancedMarkers:
         ],
     )
     def test_tasks_advanced_cluster(self, field: str) -> None:
-        """The Tasks log-retention / lock / staleness cluster is advanced."""
+        """Assert the Tasks log-retention / lock / staleness cluster is advanced."""
         assert _advanced(TasksSettings, field) is True
         assert _reload(TasksSettings, field) is ReloadClassification.HOT

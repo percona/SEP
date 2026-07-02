@@ -88,7 +88,7 @@ class TestTasksSettingsApi:
     async def test_list_returns_tasks_class(
         self, admin_test_client: TestClient
     ) -> None:
-        """The Tasks router exposes ``TasksSettings`` and ``AnonymizerSettings``."""
+        """Assert the Tasks router exposes ``TasksSettings`` and ``AnonymizerSettings``."""
         response = admin_test_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         groups = response.json()["groups"]
@@ -99,7 +99,7 @@ class TestTasksSettingsApi:
         }
 
     async def test_get_single_setting(self, admin_test_client: TestClient) -> None:
-        """A single Tasks HOT field returns its metadata."""
+        """Assert a single Tasks HOT field returns its metadata."""
         response = admin_test_client.get(
             "/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS"
         )
@@ -111,7 +111,7 @@ class TestTasksSettingsApi:
     async def test_get_anonymizer_default_entities(
         self, admin_test_client: TestClient
     ) -> None:
-        """SEP-1493: ``AnonymizerSettings.DEFAULT_ENTITIES`` is reachable via GET."""
+        """Assert ``AnonymizerSettings.DEFAULT_ENTITIES`` is reachable via GET."""
         response = admin_test_client.get(
             "/admin/settings/AnonymizerSettings/DEFAULT_ENTITIES"
         )
@@ -125,7 +125,7 @@ class TestTasksSettingsApi:
         admin_test_client: TestClient,
         session: AsyncSession,
     ) -> None:
-        """SEP-1493: a valid ``DEFAULT_ENTITIES`` PATCH persists an override row."""
+        """Assert a valid ``DEFAULT_ENTITIES`` PATCH persists an override row."""
         response = admin_test_client.patch(
             "/admin/settings/AnonymizerSettings",
             json={"DEFAULT_ENTITIES": ["CREDIT_CARD", "EMAIL_ADDRESS"]},
@@ -141,7 +141,7 @@ class TestTasksSettingsApi:
         admin_test_client: TestClient,
         session: AsyncSession,
     ) -> None:
-        """PATCHing a Tasks HOT field creates a row in the Tasks DB."""
+        """Assert PATCHing a Tasks HOT field creates a row in the Tasks DB."""
         new_value = 7200
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
@@ -177,7 +177,7 @@ class TestTasksSettingsApi:
         admin_test_client: TestClient,
         session: AsyncSession,
     ) -> None:
-        """Two HOT Tasks fields persist in a single transaction."""
+        """Assert two HOT Tasks fields persist in a single transaction."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={
@@ -193,7 +193,7 @@ class TestTasksSettingsApi:
         assert len(rows) == expected_rows
 
     async def test_patch_inline_refresh(self, admin_test_client: TestClient) -> None:
-        """After PATCH, the proxy returns the new value without the background refresher."""
+        """Assert the proxy returns the new value after PATCH without the background refresher."""
         new_value = 99
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
@@ -210,7 +210,7 @@ class TestTasksSettingsApi:
         admin_test_client: TestClient,
         session: AsyncSession,
     ) -> None:
-        """One bad key rejects the batch and writes zero rows."""
+        """Assert one bad key rejects the batch and writes zero rows."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={
@@ -227,7 +227,7 @@ class TestTasksSettingsApi:
     async def test_patch_not_overridable_field(
         self, admin_test_client: TestClient
     ) -> None:
-        """A non-HOT Tasks field is rejected as ``not_overridable``."""
+        """Assert a non-HOT Tasks field is rejected as ``not_overridable``."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"UVICORN_PORT": 9999},
@@ -237,7 +237,7 @@ class TestTasksSettingsApi:
         assert ReloadClassification.NOT_OVERRIDABLE.value in types
 
     async def test_patch_type_mismatch(self, admin_test_client: TestClient) -> None:
-        """An int field rejects a string value with a structured 422."""
+        """Assert an int field rejects a string value with a structured 422."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"STALENESS_THRESHOLD_SECONDS": "not-a-number"},
@@ -274,7 +274,7 @@ class TestTasksSettingsApi:
         admin_test_client: TestClient,
         session: AsyncSession,
     ) -> None:
-        """A valid in-range LOG_RETENTION_DAYS PATCH persists and reflects on the proxy."""
+        """Assert a valid in-range LOG_RETENTION_DAYS PATCH persists and reflects on the proxy."""
         new_value = 90
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
@@ -292,7 +292,7 @@ class TestTasksSettingsApi:
             tasks_settings._set_snapshot({})
 
     async def test_delete_idempotent(self, admin_test_client: TestClient) -> None:
-        """Deleting a HOT field with no row still succeeds with 204."""
+        """Assert deleting a HOT field with no row still succeeds with 204."""
         response = admin_test_client.delete(
             "/admin/settings/TasksSettings/STALENESS_THRESHOLD_SECONDS"
         )
@@ -301,12 +301,12 @@ class TestTasksSettingsApi:
     async def test_unauthenticated_returns_401(
         self, unauthenticated_client: TestClient
     ) -> None:
-        """An unauthenticated request to the settings endpoint returns 401."""
+        """Assert an unauthenticated request to the settings endpoint returns 401."""
         response = unauthenticated_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     async def test_non_admin_returns_403(self, non_admin_client: TestClient) -> None:
-        """A non-admin user is rejected with 403."""
+        """Assert a non-admin user is rejected with 403."""
         response = non_admin_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
@@ -351,7 +351,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_patch_nested_security_header_bool(
         self, admin_test_client: TestClient
     ) -> None:
-        """A nested case-insensitive boolean leaf override applies."""
+        """Assert a nested case-insensitive boolean leaf override applies."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"SECURITY_HEADERS__X_FRAME_OPTIONS_DENY": False},
@@ -362,7 +362,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_patch_multi_level_security_header(
         self, admin_test_client: TestClient
     ) -> None:
-        """A multi-level override instantiates the nested intermediate model."""
+        """Assert a multi-level override instantiates the nested intermediate model."""
         max_age = 31536000
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
@@ -376,7 +376,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_patch_whole_parent_security_headers_rejected(
         self, admin_test_client: TestClient
     ) -> None:
-        """Replacing the whole NESTED_ONLY ``SECURITY_HEADERS`` parent is rejected."""
+        """Reject replacing the whole NESTED_ONLY ``SECURITY_HEADERS`` parent."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"SECURITY_HEADERS": {"x_frame_options_deny": False}},
@@ -390,7 +390,7 @@ class TestTasksSettingsNestedOverrides:
         admin_test_client: TestClient,
         session: AsyncSession,
     ) -> None:
-        """Deleting a nested override removes its row and returns 204."""
+        """Assert deleting a nested override removes its row and returns 204."""
         admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"NOMAD__TIMEOUT": 30},
@@ -407,7 +407,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_delete_whole_parent_nomad_rejected(
         self, admin_test_client: TestClient
     ) -> None:
-        """DELETE on the whole NESTED_ONLY ``NOMAD`` parent returns 422."""
+        """Assert DELETE on the whole NESTED_ONLY ``NOMAD`` parent returns 422."""
         response = admin_test_client.delete("/admin/settings/TasksSettings/NOMAD")
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         types = {entry["type"] for entry in response.json()["detail"]}
@@ -416,7 +416,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_delete_whole_parent_security_headers_rejected(
         self, admin_test_client: TestClient
     ) -> None:
-        """DELETE on the whole NESTED_ONLY ``SECURITY_HEADERS`` parent returns 422."""
+        """Assert DELETE on the whole NESTED_ONLY ``SECURITY_HEADERS`` parent returns 422."""
         response = admin_test_client.delete(
             "/admin/settings/TasksSettings/SECURITY_HEADERS"
         )
@@ -427,7 +427,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_list_marks_overridden_security_header_leaf(
         self, admin_test_client: TestClient
     ) -> None:
-        """A nested override marks only its canonical leaf ``has_override`` in LIST."""
+        """Assert a nested override marks only its canonical leaf ``has_override`` in LIST."""
         admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"SECURITY_HEADERS__X_FRAME_OPTIONS_DENY": False},
@@ -444,7 +444,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_list_expands_security_headers_two_level_leaf(
         self, admin_test_client: TestClient
     ) -> None:
-        """LIST surfaces the two-level HSTS leaf with its canonical ``key_path``.
+        """Assert LIST surfaces the two-level HSTS leaf with its canonical ``key_path``.
 
         The intermediate ``strict_transport_security`` defaults to ``None``, so
         the leaf's ``value`` resolves to ``None`` without raising.
@@ -465,7 +465,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_list_marks_security_header_leaves_advanced(
         self, admin_test_client: TestClient
     ) -> None:
-        """Every expanded ``SECURITY_HEADERS`` leaf inherits ``is_advanced`` in LIST.
+        """Assert every expanded ``SECURITY_HEADERS`` leaf inherits ``is_advanced`` in LIST.
 
         Only the ``SECURITY_HEADERS`` parent is marked advanced (SEP-1382); the
         real LIST projection must propagate the flag to every leaf — including the
@@ -487,13 +487,13 @@ class TestTasksSettingsNestedOverrides:
             is True
         )
         # A Tasks sibling left basic stays False (STALENESS_THRESHOLD_SECONDS is
-        # promoted to advanced by SEP-1493, so it is no longer a valid negative).
+        # now promoted to advanced, so it is no longer a valid negative).
         assert by_key["PRE_EXECUTION_CONNECTIVITY_CHECK"]["is_advanced"] is False
 
     async def test_list_marks_nomad_secondary_leaves_advanced(
         self, admin_test_client: TestClient
     ) -> None:
-        """SEP-1493 marks the NOMAD TLS/tuning leaves advanced, but not ``endpoint``.
+        """Assert the NOMAD TLS/tuning leaves are advanced, but not ``endpoint``.
 
         The advanced flag is applied per leaf (the ``NOMAD`` parent is not marked),
         so the connection ``endpoint`` leaf must stay basic while the TLS and tuning
@@ -521,7 +521,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_get_multi_level_nested_before_override_returns_200(
         self, admin_test_client: TestClient
     ) -> None:
-        """GET on a multi-level key whose intermediate is ``None`` returns 200, not 500."""
+        """Assert GET on a multi-level key whose intermediate is ``None`` returns 200, not 500."""
         # ``STRICT_TRANSPORT_SECURITY`` defaults to ``None``; reading a leaf
         # under it must not raise.
         response = admin_test_client.get(
@@ -536,7 +536,7 @@ class TestTasksSettingsNestedOverrides:
         admin_test_client: TestClient,
         session: AsyncSession,
     ) -> None:
-        """Mixed-case spellings of the same nested key map to a single override row."""
+        """Assert mixed-case spellings of the same nested key map to a single override row."""
         admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"security_headers__x_frame_options_deny": False},
@@ -554,7 +554,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_delete_nested_under_non_overridable_parent_rejected(
         self, admin_test_client: TestClient
     ) -> None:
-        """DELETE of a nested key under a non-nested-overridable parent returns 422.
+        """Assert DELETE of a nested key under a non-nested-overridable parent returns 422.
 
         ``DATABASE`` is not promoted to ``nested_overridable_field``, so
         ``DATABASE__HOST`` must be rejected with the same ``not_overridable`` 422
@@ -570,7 +570,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_patch_nested_under_non_overridable_parent_rejected(
         self, admin_test_client: TestClient
     ) -> None:
-        """PATCH of a nested key under a non-nested-overridable parent returns 422.
+        """Assert PATCH of a nested key under a non-nested-overridable parent returns 422.
 
         Documents the DELETE/PATCH parity asserted above: both reject
         ``DATABASE__HOST`` with ``not_overridable``.
@@ -586,7 +586,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_get_intermediate_parent_reports_has_override(
         self, admin_test_client: TestClient
     ) -> None:
-        """A multi-level override marks the intermediate sub-model ``has_override`` too.
+        """Assert a multi-level override marks the intermediate sub-model ``has_override`` too.
 
         Patching ``SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE`` must make
         a GET of the intermediate ``SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY``
@@ -606,7 +606,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_detail_two_level_leaf_carries_key_path(
         self, admin_test_client: TestClient
     ) -> None:
-        """A two-level DETAIL response carries its canonical lowercase ``key_path``."""
+        """Assert a two-level DETAIL response carries its canonical lowercase ``key_path``."""
         response = admin_test_client.get(
             "/admin/settings/TasksSettings"
             "/SECURITY_HEADERS__STRICT_TRANSPORT_SECURITY__MAX_AGE"
@@ -623,7 +623,7 @@ class TestTasksSettingsNestedOverrides:
     async def test_patch_security_header_echoes_key_path(
         self, admin_test_client: TestClient
     ) -> None:
-        """A nested PATCH echoes the leaf's canonical lowercase ``key_path`` chain."""
+        """Assert a nested PATCH echoes the leaf's canonical lowercase ``key_path`` chain."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"SECURITY_HEADERS__X_FRAME_OPTIONS_DENY": False},
@@ -675,7 +675,7 @@ class TestTasksSettingsCredentialUrlRedaction:
     async def test_list_redacts_nomad_endpoint_leaf(
         self, admin_test_client: TestClient
     ) -> None:
-        """``GET /settings/`` masks ``NOMAD__endpoint`` password components."""
+        """Assert ``GET /settings/`` masks ``NOMAD__endpoint`` password components."""
         tasks_settings._set_snapshot(_nomad_snapshot_with_endpoint(self._FULL_URL))
         response = admin_test_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -689,7 +689,7 @@ class TestTasksSettingsCredentialUrlRedaction:
     async def test_detail_redacts_nomad_endpoint_leaf(
         self, admin_test_client: TestClient
     ) -> None:
-        """``GET /settings/{class}/{key}`` masks ``NOMAD__endpoint`` passwords."""
+        """Assert ``GET /settings/{class}/{key}`` masks ``NOMAD__endpoint`` passwords."""
         tasks_settings._set_snapshot(_nomad_snapshot_with_endpoint(self._FULL_URL))
         response = admin_test_client.get(
             "/admin/settings/TasksSettings/NOMAD__endpoint"
@@ -708,7 +708,7 @@ class TestTasksSettingsCredentialUrlWriteback:
     async def test_patch_redacted_nomad_leaf_preserves_password(
         self, admin_test_client: TestClient
     ) -> None:
-        """Saving an unchanged redacted ``NOMAD__endpoint`` keeps the real password."""
+        """Assert saving an unchanged redacted ``NOMAD__endpoint`` keeps the real password."""
         full_url = "http://nomad-user:nomad-secret@nomad.internal:4646"
         redacted_url = "http://nomad-user:****@nomad.internal:4646"
         snapshot = _nomad_snapshot_with_endpoint(full_url)
@@ -791,7 +791,7 @@ class TestTasksSettingsInlineRebind:
     async def test_patch_unrelated_key_does_not_fire_nomad_callback(
         self, admin_test_client: TestClient, nomad_callback_spy: AsyncMock
     ) -> None:
-        """PATCHing a non-``NOMAD`` key leaves the ``NOMAD`` rebind callback untouched."""
+        """Assert PATCHing a non-``NOMAD`` key leaves the ``NOMAD`` rebind callback untouched."""
         response = admin_test_client.patch(
             "/admin/settings/TasksSettings",
             json={"STALENESS_THRESHOLD_SECONDS": 4242},

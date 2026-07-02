@@ -48,23 +48,14 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     CasdoorSDK, the NomadExecutor, and any extra client sessions are properly managed
     during the application's startup and shutdown phases.
 
-    Also enters :func:`app.sep.main.sep_overrides_lifespan` and
-    :func:`app.inventory.main.inventory_overrides_lifespan` so the
-    ``SEP_SETTINGS``/``SNIPPETS_SETTINGS``/``MESSAGES_SETTINGS`` and
-    ``INVENTORY_SETTINGS`` override refreshers run. ``sep_app`` and
-    ``inventory_app`` are mounted under this app via Starlette's ``Mount``,
-    which only forwards ``http``/``websocket`` scopes -- never ``lifespan`` --
-    so their own ``sep_lifespan``/``inventory_lifespan`` are never invoked when
-    serving ``app.main:app``. The refreshers must therefore be started here,
-    analogous to how ``tasks_lifespan`` is entered for the tasks proxy. The
-    Inventory override lifespan excludes ``default_lifespan`` (already entered
-    via ``tasks_lifespan``) so the shared ``settings.CASDOOR`` / client registry
-    is not double-entered.
+    Starlette's ``Mount`` never forwards ``lifespan`` scope to the mounted
+    ``sep_app``/``inventory_app``, so their override refreshers are entered here
+    (alongside ``tasks_lifespan``) rather than from their own lifespans. Only
+    ``tasks_lifespan`` enters :func:`app.core.config.default_lifespan`, so the
+    shared ``settings.CASDOOR`` / client registry is entered exactly once.
 
     :param app: The FastAPI application instance.
-    :type app: FastAPI
     :yield: None
-    :rtype: AsyncGenerator[None, None]
     """
     validate_importable_settings(
         settings.AUTH_USER_MODEL,

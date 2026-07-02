@@ -24,7 +24,7 @@ def test_inventory_app_lifespan_is_always_set():
 
     The lifespan must not be gated behind a ``__name__`` check, because uvicorn
     re-imports the module with ``__name__ == "app.inventory.main"`` rather than
-    ``"__main__"``, which would leave the lifespan as ``None``. Since SEP-1493 the
-    Inventory app wraps ``default_lifespan`` with the settings-override refresher.
+    ``"__main__"``, which would leave the lifespan as ``None``. The Inventory app
+    now wraps ``default_lifespan`` with the settings-override refresher.
     """
     assert inventory_module_lifespan is inventory_lifespan
