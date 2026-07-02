@@ -15,8 +15,6 @@
 
 """Define tests for the app.core.utils.path module."""
 
-import logging
-
 import pytest
 
 from app.core.utils.path import (
@@ -88,12 +86,11 @@ class TestResolvePayloadReference:
         plugins_ref = f"file://{base_dir / _PLUGIN_REL}"
         assert resolve_payload_reference(plugins_ref) == apps_path
 
-    def test_unresolvable_reference_raises_and_logs(self, base_dir, caplog):
+    def test_unresolvable_reference_raises_and_logs(self, base_dir, mocker):
         """Assert an unresolvable reference raises PayloadReferenceError and logs it."""
         reference = f"file://{_PLUGIN_REL}"
-        with (
-            caplog.at_level(logging.ERROR, logger="app.core.utils.path"),
-            pytest.raises(PayloadReferenceError, match=_PLUGIN_REL),
-        ):
+        log_error = mocker.patch("app.core.utils.path.logger.error")
+        with pytest.raises(PayloadReferenceError, match=_PLUGIN_REL):
             resolve_payload_reference(reference)
-        assert any(_PLUGIN_REL in record.message for record in caplog.records)
+        log_error.assert_called_once()
+        assert _PLUGIN_REL in str(log_error.call_args)
