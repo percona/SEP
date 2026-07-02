@@ -29,10 +29,10 @@ from app.sep.apps.mysql_backups.models import (
 def _base_payload(backup_type: BackupType, **overrides) -> dict:
     """Build a minimal valid ``BackupCreate`` kwargs dict.
 
-    ``upload`` is required and non-empty per the explicit
-    MultiChoice contract; the default pair (S3 + ``s3_bucket``) keeps the
-    bidirectional validator happy so each test can override ``upload`` /
-    bucket fields only when that is the assertion under test.
+    ``upload`` is optional (an empty list is accepted); the default pair
+    (S3 + ``s3_bucket``) keeps the bidirectional provider-consistency
+    validator happy so each test can override ``upload`` / bucket fields
+    only when that is the assertion under test.
     """
     payload = {
         "task_name": "task1",
@@ -247,24 +247,32 @@ class TestUploadProviderGate:
             )
         )
 
-    def test_empty_upload_list_rejected(self):
-        """``upload=[]`` violates the explicit MultiChoice contract → 422.
+    def test_empty_upload_list_accepted(self):
+        """Accept ``upload=[]``: uploading a backup off-host is optional."""
+        model = BackupCreate(
+            **_base_payload(BackupType.MYDUMPER, upload=[], s3_bucket=None)
+        )
+        assert model.upload == []
 
-        Per review feedback: the React multichoice field initialises
-        to ``[]``; a missing or empty selection must surface 422 instead of
-        silently falling back to a legacy bucket-inference path. The
-        ``min_length=1`` constraint on ``BackupCreate.upload`` enforces this.
-        """
-        with pytest.raises(ValidationError, match="(?i)upload"):
-            BackupCreate(**_base_payload(BackupType.MYDUMPER, upload=[]))
-
-    def test_missing_upload_rejected(self):
-        """``upload`` is required; a payload without it surfaces a 422."""
+    def test_missing_upload_defaults_empty(self):
+        """Default ``upload`` to ``[]`` when a payload omits it (optional)."""
         payload = _base_payload(BackupType.MYDUMPER)
         payload.pop("upload")
         payload.pop("s3_bucket")
-        with pytest.raises(ValidationError, match=r"(?i)upload"):
-            BackupCreate(**payload)
+        model = BackupCreate(**payload)
+        assert model.upload == []
+
+    def test_empty_upload_with_destination_set_fails(self):
+        """Reject ``upload=[]`` when a destination field is set → 422.
+
+        Regression guard on the reverse-pairing branch: relaxing the
+        ``upload`` requirement must not let a stray destination (e.g.
+        ``s3_bucket``) slip through without its provider selected.
+        """
+        with pytest.raises(ValidationError, match="s3_bucket|S3"):
+            BackupCreate(
+                **_base_payload(BackupType.MYDUMPER, upload=[], s3_bucket="bkt")
+            )
 
 
 class TestCompressionAlgorithmValidator:

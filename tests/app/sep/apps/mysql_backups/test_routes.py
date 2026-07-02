@@ -138,6 +138,31 @@ def test_backups_create(test_client, mock_task_api_dep, backup_create):
     sep_app.dependency_overrides = {}
 
 
+def test_backups_create_no_upload(test_client, mock_task_api_dep):
+    """Assert POST /backups/ with no upload provider succeeds (upload is optional)."""
+    no_upload = BackupCreate(
+        task_name="fake_task",
+        hostname="localhost",
+        service_id=1,
+        backup_type=BackupType.MYDUMPER,
+        upload=[],
+    )
+    fake_task_write = GeneratedTaskFactory.build(
+        name="fake_task",
+        backend=TaskBackendEnum.PROXY,
+        owner=TaskOwner.BACKUPS,
+        data={"task": "fake-task", "meta": {}, "payload": ""},
+    )
+    sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write
+
+    response = test_client.post(
+        "/mysql_backups/", data=no_upload.model_dump(), follow_redirects=False
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+
+    sep_app.dependency_overrides = {}
+
+
 def test_backups_create_full_form_dependency_chain_without_payload_override(
     test_client,
     mock_task_api_dep,
