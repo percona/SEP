@@ -161,7 +161,7 @@ class TestListAggregation:
     def test_appends_tasks_group_fetched_server_side(
         self, admin_client: TestClient, mock_tasks: AsyncMock
     ) -> None:
-        """Return the three local groups plus the Tasks group, fetched via the proxy."""
+        """Return core, proxied TasksSettings, and app-owned groups in order."""
         mock_tasks.get.return_value = _tasks_list([_tasks_setting(has_override=True)])
         response = admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -169,7 +169,8 @@ class TestListAggregation:
         assert {"SEPSettings", "SnippetsSettings", "MessagesSettings"}.issubset(
             set(classes)
         )
-        assert classes[-1] == SettingClassEnum.TASKS_SETTINGS.value
+        assert classes[-2] == SettingClassEnum.TASKS_SETTINGS.value
+        assert classes[-1] == SettingClassEnum.ALERT_SETTINGS.value
         mock_tasks.get.assert_awaited_once_with(f"{REMOTE_BASE}/")
 
     def test_list_emits_is_advanced_for_sep_settings(

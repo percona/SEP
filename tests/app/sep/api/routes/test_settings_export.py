@@ -216,12 +216,7 @@ class TestSepConfigExportYaml:
         assert response.headers["content-disposition"].endswith('.yaml"')
 
         payload = yaml.safe_load(response.text)
-        assert set(payload) == {
-            SettingClassEnum.SEP_SETTINGS.value,
-            SettingClassEnum.SNIPPETS_SETTINGS.value,
-            SettingClassEnum.MESSAGES_SETTINGS.value,
-            SettingClassEnum.TASKS_SETTINGS.value,
-        }
+        assert set(payload) == FULL_EXPORT_CLASSES
         mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
 
     async def test_export_keys_match_list_for_sep_classes(
@@ -537,7 +532,15 @@ class TestSepConfigExportTasksFanOut:
 SEP_CLASS = SettingClassEnum.SEP_SETTINGS.value
 SNIPPETS_CLASS = SettingClassEnum.SNIPPETS_SETTINGS.value
 MESSAGES_CLASS = SettingClassEnum.MESSAGES_SETTINGS.value
+ALERT_CLASS = SettingClassEnum.ALERT_SETTINGS.value
 TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value
+FULL_EXPORT_CLASSES = {
+    SEP_CLASS,
+    SNIPPETS_CLASS,
+    MESSAGES_CLASS,
+    ALERT_CLASS,
+    TASKS_CLASS,
+}
 TASKS_SAMPLE_KEY = "STALENESS_THRESHOLD_SECONDS"
 MIN_MULTI_KEYS = 2
 
@@ -556,11 +559,11 @@ class TestSepConfigExportFilter:
     async def test_omitted_keys_returns_full_export(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
     ) -> None:
-        """Yield the full four-block export and fan out once when ``keys`` is omitted."""
+        """Yield the full five-block export and fan out once when ``keys`` is omitted."""
         response = api_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_200_OK
         payload = yaml.safe_load(response.text)
-        assert set(payload) == {SEP_CLASS, SNIPPETS_CLASS, MESSAGES_CLASS, TASKS_CLASS}
+        assert set(payload) == FULL_EXPORT_CLASSES
         mock_tasks_api.get.assert_awaited_once_with("/admin/settings/")
 
     async def test_single_key_selector_returns_only_that_key(

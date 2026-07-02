@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
+from app.core.alerts.config import alert_settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
 from app.core.settings_override.api import routes as settings_routes
@@ -49,6 +50,7 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app, sep_overrides_lifespan
 from app.sep.middleware.messages.config import messages_settings
+from app.sep.models import AppLifecycleEnum, AppState
 from app.sep.snippets.config import snippets_settings
 
 
@@ -143,6 +145,14 @@ def api_unauthenticated_client_fixture(
     sep_app.dependency_overrides = {}
 
 
+def _find_group(payload: dict[str, Any], setting_class: str) -> dict[str, Any]:
+    """Locate one settings-class group in the LIST response payload."""
+    for group in payload["groups"]:
+        if group["setting_class"] == setting_class:
+            return group
+    raise AssertionError(f"group {setting_class!r} not in payload")
+
+
 def _find_setting(
     payload: dict[str, Any], setting_class: str, key: str
 ) -> dict[str, Any]:
@@ -159,13 +169,13 @@ def _find_setting(
 class TestSepSettingsList:
     """Tests for ``GET /api/sep/admin/settings/``."""
 
-    async def test_returns_local_and_proxied_groups(
+    async def test_returns_local_proxied_and_app_owned_groups(
         self, api_admin_client: TestClient
     ) -> None:
-        """Returns the three local groups plus the proxied TasksSettings group.
+        """Returns core, proxied TasksSettings, and app-owned groups.
 
-        SEP serves its own classes locally and proxies ``TasksSettings`` from the
-        Tasks sub-app, so the LIST carries all four groups.
+        SEP serves its own classes locally, proxies ``TasksSettings`` from the
+        Tasks sub-app, and appends app-owned classes such as ``AlertSettings``.
         """
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
@@ -176,7 +186,63 @@ class TestSepSettingsList:
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.MESSAGES_SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
+            SettingClassEnum.ALERT_SETTINGS.value,
         }
+
+    async def test_core_groups_are_not_app_owned(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Core and proxied groups carry no app-ownership metadata."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        core_and_remote = {
+            SettingClassEnum.SEP_SETTINGS.value,
+            SettingClassEnum.SNIPPETS_SETTINGS.value,
+            SettingClassEnum.MESSAGES_SETTINGS.value,
+            SettingClassEnum.TASKS_SETTINGS.value,
+        }
+        for group in response.json()["groups"]:
+            if group["setting_class"] in core_and_remote:
+                assert group["is_app_owned"] is False
+                assert group["app_id"] is None
+                assert group["app_display_name"] is None
+                assert group["app_enabled"] is None
+
+    async def test_alert_settings_group_carries_app_metadata(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """``AlertSettings`` is tagged as owned by the alerts app when enabled."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        alert_group = _find_group(
+            response.json(),
+            SettingClassEnum.ALERT_SETTINGS.value,
+        )
+        assert alert_group["is_app_owned"] is True
+        assert alert_group["app_id"] == "alerts"
+        assert alert_group["app_display_name"] == "Alert Templates"
+        assert alert_group["app_enabled"] is True
+
+    async def test_alert_settings_group_reports_disabled_app(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """A disabled owning app is still listed with ``app_enabled=False``."""
+        override_session.add(
+            AppState(app_key="alerts", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        alert_group = _find_group(
+            response.json(),
+            SettingClassEnum.ALERT_SETTINGS.value,
+        )
+        assert alert_group["is_app_owned"] is True
+        assert alert_group["app_id"] == "alerts"
+        assert alert_group["app_enabled"] is False
 
     async def test_lists_hot_and_not_overridable_entries(
         self, api_admin_client: TestClient
@@ -888,6 +954,33 @@ class TestSepSettingsSecondaryClasses:
             assert target_level == messages_settings.LEVEL
         finally:
             messages_settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+class TestSepSettingsAlertSettings:
+    """Smoke tests for the app-owned AlertSettings class."""
+
+    async def test_get_alert_setting(self, api_admin_client: TestClient) -> None:
+        """``GET /settings/AlertSettings/{key}`` returns one alert field."""
+        response = api_admin_client.get(
+            "/api/sep/admin/settings/AlertSettings/SOURCE_PREFIX"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = response.json()
+        assert payload["setting_class"] == SettingClassEnum.ALERT_SETTINGS.value
+        assert payload["key"] == "SOURCE_PREFIX"
+
+    async def test_patch_alert_setting(self, api_admin_client: TestClient) -> None:
+        """A AlertSettings HOT field is patchable via the SEP router."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/AlertSettings",
+            json={"SOURCE_PREFIX": "test-prefix-"},
+        )
+        try:
+            assert response.status_code == status.HTTP_200_OK
+            assert alert_settings.SOURCE_PREFIX == "test-prefix-"
+        finally:
+            alert_settings._set_snapshot({})
 
 
 @pytest.mark.asyncio
