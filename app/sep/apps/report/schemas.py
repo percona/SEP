@@ -50,5 +50,7 @@ class ReportJobResponse(BaseModel):
     job_id: str
     status: str
     pdf_ready: bool = False
-    result: dict[str, Any] | None = Field(default=None, json_schema_extra={"additionalProperties": True})
+    result: dict[str, Any] | None = Field(
+        default=None, json_schema_extra={"additionalProperties": True}
+    )
     error: str | None = None

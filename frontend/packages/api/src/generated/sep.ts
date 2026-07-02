@@ -1664,14 +1664,14 @@ export interface paths {
      *     :return: PDF job status response.
      *     :rtype: ReportJobResponse
      */
-    post: operations['report_report_start_pdf_job_api_api_plugins_report_pdf_jobs_post'];
+    post: operations['report_report_start_pdf_job_api_api_apps_report_pdf_jobs_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/report/pdf-jobs/{job_id}': {
+  '/api/apps/report/pdf-jobs/{job_id}': {
     parameters: {
       query?: never;
       header?: never;
@@ -1687,7 +1687,7 @@ export interface paths {
      *     :return: PDF job status response.
      *     :rtype: ReportJobResponse
      */
-    get: operations['report_report_pdf_job_api_api_plugins_report_pdf_jobs__job_id__get'];
+    get: operations['report_report_pdf_job_api_api_apps_report_pdf_jobs__job_id__get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -1696,7 +1696,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/plugins/report/pdf-jobs/{job_id}/pdf': {
+  '/api/apps/report/pdf-jobs/{job_id}/pdf': {
     parameters: {
       query?: never;
       header?: never;
@@ -6573,7 +6573,12 @@ export interface components {
        */
       pdf_ready: boolean;
       /** Result */
-      result?: Record<string, unknown> | null;
+      result?:
+        | {
+            [key: string]: unknown;
+          }
+        | Record<string, never>
+        | null;
       /** Status */
       status: string;
     };
@@ -11367,7 +11372,7 @@ export interface operations {
       };
     };
   };
-  report_report_pdf_job_api_api_plugins_report_pdf_jobs__job_id__get: {
+  report_report_pdf_job_api_api_apps_report_pdf_jobs__job_id__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -11398,7 +11403,7 @@ export interface operations {
       };
     };
   };
-  report_report_download_pdf_api_api_plugins_report_pdf_jobs__job_id__pdf_get: {
+  report_report_download_pdf_api_api_apps_report_pdf_jobs__job_id__pdf_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -11462,7 +11467,7 @@ export interface operations {
       };
     };
   };
-  report_report_upload_job_api_api_plugins_report_upload_jobs__job_id__get: {
+  report_report_upload_job_api_api_apps_report_upload_jobs__job_id__get: {
     parameters: {
       query?: never;
       header?: never;

@@ -618,10 +618,10 @@
             "type": "boolean"
           },
           "result": {
+            "additionalProperties": true,
             "anyOf": [
               {
-                "type": "object",
-                "additionalProperties": true
+                "type": "object"
               },
               {
                 "type": "null"
@@ -942,10 +942,10 @@
         ]
       }
     },
-    "/api/plugins/report/pdf-jobs/{job_id}": {
+    "/api/apps/report/pdf-jobs/{job_id}": {
       "get": {
         "description": "Return PDF job status.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: PDF job status response.\n:rtype: ReportJobResponse",
-        "operationId": "report_report_pdf_job_api_api_plugins_report_pdf_jobs__job_id__get",
+        "operationId": "report_report_pdf_job_api_api_apps_report_pdf_jobs__job_id__get",
         "parameters": [
           {
             "in": "path",
@@ -985,10 +985,10 @@
         ]
       }
     },
-    "/api/plugins/report/pdf-jobs/{job_id}/pdf": {
+    "/api/apps/report/pdf-jobs/{job_id}/pdf": {
       "get": {
         "description": "Download a ready PDF result for a report job.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: PDF file response.\n:rtype: Response\n:raises HTTPInternalServerErrorException: If the Celery job failed.\n:raises HTTPConflictException: If the PDF result is not ready yet.",
-        "operationId": "report_report_download_pdf_api_api_plugins_report_pdf_jobs__job_id__pdf_get",
+        "operationId": "report_report_download_pdf_api_api_apps_report_pdf_jobs__job_id__pdf_get",
         "parameters": [
           {
             "in": "path",
@@ -1068,10 +1068,10 @@
         ]
       }
     },
-    "/api/plugins/report/upload-jobs/{job_id}": {
+    "/api/apps/report/upload-jobs/{job_id}": {
       "get": {
         "description": "Return ServiceNow upload job status.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: Upload job status response.\n:rtype: ReportJobResponse",
-        "operationId": "report_report_upload_job_api_api_plugins_report_upload_jobs__job_id__get",
+        "operationId": "report_report_upload_job_api_api_apps_report_upload_jobs__job_id__get",
         "parameters": [
           {
             "in": "path",

@@ -73,6 +73,7 @@ SYSTEM_PERIODIC_TASKS = [
     ),
 ]
 
+
 def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     """Build the SEP system periodic-task set, reading live settings per call.
 

@@ -260,8 +260,6 @@ def test_celery_result_expires_configured() -> None:
     assert settings.CELERY.result_expires == CELERY_RESULT_EXPIRES_SECONDS
 
 
-
-
 @pytest_asyncio.fixture(name="beat_maker")
 async def beat_maker_fixture() -> AsyncIterator:
     """Provide a session maker bound to an in-memory celery-beat DB."""
