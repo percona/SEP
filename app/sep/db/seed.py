@@ -41,6 +41,7 @@ _report_plugin_enabled = any(
     p.module_name.endswith(".report") for p in sep_settings.APPS
 )
 
+
 def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     """Build the SEP system periodic-task set, reading live settings per call.
 
