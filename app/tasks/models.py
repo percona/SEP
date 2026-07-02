@@ -289,7 +289,6 @@ class TaskExecutionRequest(BaseModel):
         Otherwise return the payload string (possibly ``None``) unchanged.
 
         :return: The referenced file's contents, or the payload string as-is.
-        :rtype: str | None
         :raises PayloadReferenceError: If a ``file://`` reference cannot be
             resolved to an existing file.
         """

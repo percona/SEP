@@ -30,7 +30,7 @@ _PLUGIN_APP_ALIASES = (
 
 
 class PayloadReferenceError(ValueError):
-    """Raise when a task payload ``file://`` reference cannot be resolved to a file."""
+    """Define exception raised when a task payload ``file://`` reference cannot be resolved."""
 
 
 def resolve_relative_path(path: str | bytes | PathLike) -> Path:
