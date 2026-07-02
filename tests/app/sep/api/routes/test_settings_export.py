@@ -634,6 +634,46 @@ class TestSepConfigExportFilter:
         payload = yaml.safe_load(response.text)
         assert list(payload) == [SEP_CLASS, TASKS_CLASS]
 
+    async def test_block_order_places_app_owned_before_tasks(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """Place app-owned blocks after core classes and before Tasks."""
+        response = api_admin_client.get(
+            EXPORT_URL,
+            params={"keys": [TASKS_CLASS, ALERT_CLASS, SEP_CLASS]},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert list(payload) == [SEP_CLASS, ALERT_CLASS, TASKS_CLASS]
+
+    async def test_alert_settings_whole_class_selector(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Export every ``AlertSettings`` key without fanning out to Tasks."""
+        list_keys = _list_keys_by_class(api_admin_client)
+        mock_tasks_api.get.reset_mock()
+        response = api_admin_client.get(EXPORT_URL, params={"keys": ALERT_CLASS})
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {ALERT_CLASS}
+        assert set(payload[ALERT_CLASS]) == list_keys[ALERT_CLASS]
+        mock_tasks_api.get.assert_not_called()
+
+    async def test_alert_settings_key_selector_skips_tasks_fan_out(
+        self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
+    ) -> None:
+        """Export one ``AlertSettings`` key with no upstream Tasks call."""
+        mock_tasks_api.get.reset_mock()
+        response = api_admin_client.get(
+            EXPORT_URL,
+            params={"keys": f"{ALERT_CLASS}.SOURCE_PREFIX"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        payload = yaml.safe_load(response.text)
+        assert set(payload) == {ALERT_CLASS}
+        assert set(payload[ALERT_CLASS]) == {"SOURCE_PREFIX"}
+        mock_tasks_api.get.assert_not_called()
+
     async def test_whole_class_dominates_overlapping_key(
         self, api_admin_client: TestClient
     ) -> None:
