@@ -50,7 +50,7 @@ class << class_prefix >>Form(AppFormModel):
         Ui(label="Database Host", section="Main"),
     ]
     hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Main")
+        NonEmptyStr, HostRef(), Ui(label="Execution Host", section="Main")
     ]
     message: Annotated[
         str,

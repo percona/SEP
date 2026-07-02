@@ -64,7 +64,7 @@ from app.core.utils.fields import (
     UTCDatetime,
 )
 from app.core.utils.pydantic import CustomFieldMetadata
-from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
     SnippetFilterType,

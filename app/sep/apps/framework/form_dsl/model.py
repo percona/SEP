@@ -24,7 +24,7 @@ from app.sep.apps.framework.rules import (
     apply_conditional_rules,
     ConditionalRulesModel,
 )
-from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
 __all__ = ["AppFormModel", "TaskFormModel"]
 

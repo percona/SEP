@@ -40,7 +40,8 @@ from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.utils.fields import NonEmptyStr
-from app.sep.apps.framework.schema import AppSchema, EXECUTION_HOST_LABEL
+from app.sep.apps.framework.schema import AppSchema
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
 
 @runtime_checkable

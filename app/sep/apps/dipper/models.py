@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from app.core.utils.fields import NonEmptyStr
 from app.sep.apps.dipper.constants import CollectorTypeEnum, DIPPER_PAYLOADS_DIR
-from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 from app.sep.snippets.models.snippet import BaseSnippet
 
 
