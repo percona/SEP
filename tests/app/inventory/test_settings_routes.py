@@ -15,13 +15,15 @@
 
 """SEP-1493: tests for the Inventory settings REST API and override bootstrap."""
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 
 import pytest
-from fastapi import status
+from fastapi import FastAPI, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.testclient import TestClient
 
+from app import main as main_module
 from app.api.deps import get_current_user
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
@@ -85,6 +87,51 @@ class TestInventorySettingsBootstrap:
         )
         snapshot = await build_snapshot(session, InventorySettings)
         assert "UVICORN_PORT" not in snapshot
+
+    @pytest.mark.asyncio
+    async def test_main_lifespan_enters_inventory_overrides(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``main_lifespan`` enters the Inventory override refresher.
+
+        ``inventory_app`` is mounted under the top-level ``app`` via Starlette's
+        ``Mount``, which only forwards ``http``/``websocket`` scopes -- never
+        ``lifespan`` -- so ``inventory_lifespan`` is never invoked when
+        ``python -m app.main`` runs uvicorn against ``app.main:app``. The
+        ``INVENTORY_SETTINGS`` refresher must therefore be wired into
+        ``main_lifespan`` via ``inventory_overrides_lifespan`` (analogous to how
+        the SEP and Tasks refreshers are wired). This test stubs the other
+        lifespan side effects and asserts the Inventory override lifespan is
+        entered exactly once.
+        """
+        entered = 0
+
+        @asynccontextmanager
+        async def _spy_inventory_overrides(_app: FastAPI) -> AsyncIterator[None]:
+            nonlocal entered
+            entered += 1
+            yield
+
+        async def _no_op_sep_startup() -> None:
+            """Stub ``sep_startup`` so the test does not hit the real SEP DB."""
+
+        @asynccontextmanager
+        async def _no_op_lifespan(_app: FastAPI) -> AsyncIterator[None]:
+            """Stub the SEP/Tasks lifespans so the test stays hermetic."""
+            yield
+
+        monkeypatch.setattr(main_module, "sep_startup", _no_op_sep_startup)
+        monkeypatch.setattr(main_module, "sep_overrides_lifespan", _no_op_lifespan)
+        monkeypatch.setattr(main_module, "tasks_lifespan", _no_op_lifespan)
+        monkeypatch.setattr(
+            main_module, "inventory_overrides_lifespan", _spy_inventory_overrides
+        )
+        monkeypatch.setattr(
+            main_module, "validate_importable_settings", lambda *_args: None
+        )
+
+        async with main_module.main_lifespan(FastAPI()):
+            assert entered == 1
 
 
 @pytest.mark.asyncio

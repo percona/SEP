@@ -58,34 +58,67 @@ async def get_summary_inventory(session: SessionDep) -> dict[str, int]:
 
 
 @asynccontextmanager
+async def inventory_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
+    """Wire the Inventory-side settings override refresher into a lifespan.
+
+    Starts the background refresher for the ``INVENTORY_SETTINGS`` proxy so
+    runtime override rows are observed without a restart, and publishes an empty
+    rebind-callback registry on ``inventory_app.state`` (the settings-API
+    handlers read it there; no field is HOT yet, so there is nothing to rebind).
+
+    This is extracted from :func:`inventory_lifespan` -- and deliberately excludes
+    :func:`default_lifespan` -- because ``inventory_app`` is mounted under the
+    top-level ``app`` via Starlette's ``Mount``, which only forwards
+    ``http``/``websocket`` scopes -- never ``lifespan``. Without calling this
+    context manager from :func:`app.main.main_lifespan`, the Inventory refresher
+    would never run when ``python -m app.main`` serves ``app.main:app``, and
+    pre-existing override rows would stay invisible until an in-process PATCH
+    publishes a snapshot. ``default_lifespan`` is left out here so that the
+    combined process (where ``tasks_lifespan`` already enters it) does not
+    double-enter the shared ``settings.CASDOOR`` / client registry.
+
+    The two call sites are mutually exclusive at runtime: uvicorn serves either
+    ``app.main:app`` (in which case ``main_lifespan`` enters this block) or
+    ``app.inventory.main:inventory_app`` standalone (in which case
+    ``inventory_lifespan`` enters it). The refresher therefore starts exactly
+    once.
+
+    :param app: The FastAPI application instance whose lifespan this manages.
+    :type app: FastAPI
+    :yield: None
+    :rtype: AsyncGenerator[None, None]
+    """
+    async with settings_override_refresher(
+        get_async_session_maker,
+        {
+            SettingClassEnum.INVENTORY_SETTINGS: ProxyEntry(
+                inventory_settings, InventorySettings
+            ),
+        },
+        settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
+        enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
+        callbacks={},
+    ):
+        yield
+
+
+@asynccontextmanager
 async def inventory_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage the Inventory API's lifespan.
 
     Wraps the bare :func:`default_lifespan` with the DB-backed settings-override
-    refresher for ``INVENTORY_SETTINGS`` so runtime override rows are observed
-    without a restart, and publishes an empty rebind-callback registry on
-    ``inventory_app.state`` (the settings-API handlers read it there; no field is
-    HOT yet, so there is nothing to rebind).
+    refresher for ``INVENTORY_SETTINGS`` (see
+    :func:`inventory_overrides_lifespan`). Used only when ``inventory_app`` runs
+    standalone; under the combined ``app.main:app`` the refresher is entered from
+    :func:`app.main.main_lifespan` and ``default_lifespan`` from
+    :func:`app.tasks.main.tasks_lifespan`.
 
     :param app: The FastAPI application instance whose lifespan this manages.
     :type app: FastAPI
     :return: An async context manager yielding ``None`` for the lifespan duration.
     :rtype: AsyncGenerator[None, None]
     """
-    async with (
-        settings_override_refresher(
-            get_async_session_maker,
-            {
-                SettingClassEnum.INVENTORY_SETTINGS: ProxyEntry(
-                    inventory_settings, InventorySettings
-                ),
-            },
-            settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,
-            enabled=settings.SETTINGS_OVERRIDE_REFRESHER_ENABLED,
-            callbacks={},
-        ),
-        default_lifespan(app),
-    ):
+    async with inventory_overrides_lifespan(app), default_lifespan(app):
         yield
 
 

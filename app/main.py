@@ -34,7 +34,7 @@ from app.core.config import create_app, settings
 from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
 from app.core.utils.openapi import merge_openapi_documents
-from app.inventory.main import inventory_app
+from app.inventory.main import inventory_app, inventory_overrides_lifespan
 from app.sep.config import sep_settings
 from app.sep.main import sep_app, sep_overrides_lifespan, sep_startup
 from app.tasks.main import tasks_app, tasks_lifespan
@@ -48,13 +48,18 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     CasdoorSDK, the NomadExecutor, and any extra client sessions are properly managed
     during the application's startup and shutdown phases.
 
-    Also enters :func:`app.sep.main.sep_overrides_lifespan` so the
-    ``SEP_SETTINGS``/``SNIPPETS_SETTINGS``/``MESSAGES_SETTINGS`` override
-    refresher runs. ``sep_app`` is mounted under this app via Starlette's
-    ``Mount``, which only forwards ``http``/``websocket`` scopes -- never
-    ``lifespan`` -- so its own ``sep_lifespan`` is never invoked when
-    serving ``app.main:app``. The refresher must therefore be started here,
-    analogous to how ``tasks_lifespan`` is entered for the tasks proxy.
+    Also enters :func:`app.sep.main.sep_overrides_lifespan` and
+    :func:`app.inventory.main.inventory_overrides_lifespan` so the
+    ``SEP_SETTINGS``/``SNIPPETS_SETTINGS``/``MESSAGES_SETTINGS`` and
+    ``INVENTORY_SETTINGS`` override refreshers run. ``sep_app`` and
+    ``inventory_app`` are mounted under this app via Starlette's ``Mount``,
+    which only forwards ``http``/``websocket`` scopes -- never ``lifespan`` --
+    so their own ``sep_lifespan``/``inventory_lifespan`` are never invoked when
+    serving ``app.main:app``. The refreshers must therefore be started here,
+    analogous to how ``tasks_lifespan`` is entered for the tasks proxy. The
+    Inventory override lifespan excludes ``default_lifespan`` (already entered
+    via ``tasks_lifespan``) so the shared ``settings.CASDOOR`` / client registry
+    is not double-entered.
 
     :param app: The FastAPI application instance.
     :type app: FastAPI
@@ -66,7 +71,11 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         *(s.syncer for s in sep_settings.SYNCERS),
     )
     await sep_startup()
-    async with sep_overrides_lifespan(app), tasks_lifespan(app):
+    async with (
+        sep_overrides_lifespan(app),
+        tasks_lifespan(app),
+        inventory_overrides_lifespan(app),
+    ):
         yield
 
 
