@@ -176,6 +176,7 @@ class TestSepSettingsList:
             SettingClassEnum.SNIPPETS_SETTINGS.value,
             SettingClassEnum.MESSAGES_SETTINGS.value,
             SettingClassEnum.ALERTS_SETTINGS.value,
+            SettingClassEnum.SETTINGS.value,
             SettingClassEnum.TASKS_SETTINGS.value,
         }
 
@@ -303,7 +304,7 @@ class TestSepSettingsGet:
     ) -> None:
         """FastAPI's enum validation rejects an unknown settings class with 422."""
         response = api_admin_client.get(
-            "/api/sep/admin/settings/InventorySettings/SYNC_REFRESH_TIME"
+            "/api/sep/admin/settings/NonExistentSettings/SYNC_REFRESH_TIME"
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
@@ -515,6 +516,64 @@ class TestSepSettingsPatch:
             json={"ARTIFACT_DOWNLOAD_TTL": -1},
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    async def test_app_drain_nested_leaf_patch_creates_override(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """SEP-1493: ``APP_DRAIN`` is NESTED_ONLY, so a leaf PATCH persists a row."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"APP_DRAIN__stale_task_ttl": 7200},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+        assert [r.key for r in rows] == ["APP_DRAIN__stale_task_ttl"]
+
+    async def test_app_drain_whole_object_patch_rejected(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """A whole-object PATCH of the NESTED_ONLY ``APP_DRAIN`` parent is rejected."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"APP_DRAIN": {"stale_task_ttl": 7200}},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SEP_SETTINGS
+        )
+        assert rows == []
+
+    async def test_app_drain_non_positive_ttl_rejected(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """The ``stale_task_ttl`` positive-duration validator surfaces as 422."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SEPSettings",
+            json={"APP_DRAIN__stale_task_ttl": 0},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+
+    async def test_snippets_base_url_hot_patch(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """SEP-1493: ``SNIPPETS_BASE_URL`` is HOT and accepts a PATCH."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SnippetsSettings",
+            json={"SNIPPETS_BASE_URL": "https://snippets.example.com/"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SNIPPETS_SETTINGS
+        )
+        assert [r.key for r in rows] == ["SNIPPETS_BASE_URL"]
 
     async def test_mixed_failure_modes_aggregate_in_detail(
         self,
@@ -1026,8 +1085,84 @@ class TestSepOverridesLifespanWiring:
                 (SettingClassEnum.SEP_SETTINGS, "INVENTORY_ENDPOINT"),
                 (SettingClassEnum.SEP_SETTINGS, "TASKS_ENDPOINT"),
                 (SettingClassEnum.SETTINGS, "PMM"),
+                (SettingClassEnum.SETTINGS, "LOGGING"),
                 (SettingClassEnum.SNIPPETS_SETTINGS, "SYNC_INTERVAL"),
                 (SettingClassEnum.ALERTS_SETTINGS, "BACKUP_INTERVAL"),
+                (SettingClassEnum.SEP_SETTINGS, "APP_DRAIN"),
             }
         finally:
             sep_app.state.override_callbacks = original
+
+
+@pytest.mark.asyncio
+class TestGlobalSettingsClass:
+    """SEP-1493: the global ``Settings`` class is reachable via the SEP router."""
+
+    async def test_settings_group_listed(self, api_admin_client: TestClient) -> None:
+        """The ``Settings`` group appears in the LIST projection."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        assert response.status_code == status.HTTP_200_OK
+        groups = {g["setting_class"] for g in response.json()["groups"]}
+        assert SettingClassEnum.SETTINGS.value in groups
+
+    async def test_pmm_leaf_patch_persists(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """A PMM leaf (HOT parent) accepts a per-child PATCH."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"PMM__verify_ssl": False},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SETTINGS
+        )
+        assert [r.key for r in rows] == ["PMM__verify_ssl"]
+
+    async def test_logging_hot_patch_persists(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """``LOGGING`` is HOT and accepts a PATCH."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"LOGGING": "DEBUG"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SETTINGS
+        )
+        assert [r.key for r in rows] == ["LOGGING"]
+
+    @pytest.mark.parametrize(
+        "field", ["SECRET_KEY", "CASDOOR", "CELERY", "LOGGING_CONFIG"]
+    )
+    async def test_restart_only_fields_reject_patch(
+        self, api_admin_client: TestClient, field: str
+    ) -> None:
+        """Restart-only fields stay NOT_OVERRIDABLE and reject a PATCH with 422."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={field: "whatever"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        types = {entry["type"] for entry in response.json()["detail"]}
+        assert ReloadClassification.NOT_OVERRIDABLE.value in types
+
+    async def test_secret_key_value_not_leaked(
+        self, api_admin_client: TestClient
+    ) -> None:
+        """The ``SECRET_KEY`` value must never be serialised in the LIST payload."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        entry = _find_setting(
+            response.json(), SettingClassEnum.SETTINGS.value, "SECRET_KEY"
+        )
+        # SecretStr is redacted by Pydantic's secret-aware JSON dump.
+        assert entry["value"] in (None, "**********")
+
+    async def test_pmm_api_key_not_leaked(self, api_admin_client: TestClient) -> None:
+        """The nested PMM ``api_key`` secret must not be serialised in the LIST."""
+        response = api_admin_client.get("/api/sep/admin/settings/")
+        entry = _find_setting(
+            response.json(), SettingClassEnum.SETTINGS.value, "PMM__api_key"
+        )
+        assert entry["value"] in (None, "**********")

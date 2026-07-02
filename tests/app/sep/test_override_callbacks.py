@@ -150,3 +150,61 @@ async def test_reseed_callback_registered_for_sync_interval() -> None:
         )
     finally:
         sep_main.sep_app.state.override_callbacks = original
+
+
+@pytest.mark.asyncio
+async def test_apply_logging_dictconfig_reapplies_new_level(
+    mocker: MockerFixture,
+) -> None:
+    """SEP-1493: the LOGGING rebind re-applies ``dictConfig`` with the live level.
+
+    ``LOGGING`` is HOT but ``LOGGING_CONFIG`` is not, so the callback must inject
+    the overridden level into the config before re-applying it — otherwise the
+    stale level baked in at construction time would be re-applied.
+    """
+    dict_config = mocker.patch("app.sep.main.logging.config.dictConfig")
+    settings._set_snapshot({"LOGGING": "DEBUG"})
+    try:
+        await sep_main._apply_logging_dictconfig({})
+    finally:
+        settings._set_snapshot({})
+
+    dict_config.assert_called_once()
+    applied = dict_config.call_args.args[0]
+    assert applied["loggers"][""]["level"] == "DEBUG"
+    assert applied["loggers"]["app"]["level"] == "DEBUG"
+
+
+@pytest.mark.asyncio
+async def test_apply_logging_dictconfig_swallows_failure(
+    mocker: MockerFixture,
+) -> None:
+    """A malformed logging config is logged and swallowed, never crashing the app."""
+    mocker.patch(
+        "app.sep.main.logging.config.dictConfig", side_effect=ValueError("bad config")
+    )
+    settings._set_snapshot({"LOGGING": "DEBUG"})
+    try:
+        # Must not raise.
+        await sep_main._apply_logging_dictconfig({})
+    finally:
+        settings._set_snapshot({})
+
+
+@pytest.mark.asyncio
+async def test_logging_and_app_drain_callbacks_registered() -> None:
+    """SEP-1493 registers the LOGGING rebind and the APP_DRAIN reseed callback."""
+    original = getattr(sep_main.sep_app.state, "override_callbacks", None)
+    try:
+        async with sep_main.sep_overrides_lifespan(FastAPI()):
+            callbacks = sep_main.sep_app.state.override_callbacks
+        assert (
+            callbacks[(SettingClassEnum.SETTINGS, "LOGGING")]
+            is sep_main._apply_logging_dictconfig
+        )
+        assert (
+            callbacks[(SettingClassEnum.SEP_SETTINGS, "APP_DRAIN")]
+            is sep_main._reseed_system_periodic_tasks
+        )
+    finally:
+        sep_main.sep_app.state.override_callbacks = original

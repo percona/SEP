@@ -289,12 +289,12 @@ class PMMSettings(BaseLowercaseModel):
     """
 
     endpoint: StrCredentialHttpUrl | None = None
-    frontend: StrHttpUrl | None = None
+    frontend: StrHttpUrl | None = hot_field(None, advanced=True)
     api_key: SecretStr | None = None
-    verify_ssl: bool = True
-    execution_target: str | None = None
-    annotations_enabled: bool = False
-    annotations_timeout: PositiveInt = 5
+    verify_ssl: bool = hot_field(default=True, advanced=True)
+    execution_target: str | None = hot_field(None, advanced=True)
+    annotations_enabled: bool = hot_field(default=False, advanced=True)
+    annotations_timeout: PositiveInt = hot_field(5, advanced=True)
 
     @model_validator(mode="after")
     def _default_frontend_to_endpoint(self) -> Self:
@@ -379,7 +379,7 @@ class Settings(BaseYamlSettings):
     ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
     SEP_INTERNAL_TOKEN: SecretStr | None = None
-    LOGGING: LogLevel = LogLevel.WARNING
+    LOGGING: LogLevel = hot_field(LogLevel.WARNING)
     LOGGING_CONFIG: dict[str, Any] = {}
     SSL_CAFILE: RelativeFilePathField | None = None
     BASE_URL: URL | None = None

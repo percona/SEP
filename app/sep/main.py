@@ -18,6 +18,7 @@
 import logging.config
 from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from traceback import format_exception
 from typing import Annotated, Any
 
@@ -165,6 +166,31 @@ async def _invalidate_pmm_clients(_: Mapping[str, object]) -> None:
         await settings.invalidate_client(str(endpoint))
 
 
+async def _apply_logging_dictconfig(_: Mapping[str, object]) -> None:
+    """Re-apply ``logging.config.dictConfig`` after a global ``LOGGING`` override.
+
+    ``LOGGING`` is a HOT field, but ``LOGGING_CONFIG`` (the dict handed to
+    ``dictConfig``) is not: the override snapshot replaces only the ``LOGGING``
+    key, so ``settings.LOGGING_CONFIG`` still carries the level baked in by the
+    ``set_log_level`` model validator at construction time. This callback mirrors
+    that validator -- inject the now-live ``settings.LOGGING`` into a copy of the
+    config and re-apply it -- so a log-level change takes effect in the SEP web
+    process without a restart. Failures are logged and swallowed: a malformed
+    config must not take the process down mid-request.
+
+    :param _: The new effective ``Settings`` snapshot mapping (unused -- the level
+        is re-read from the proxy).
+    :type _: Mapping[str, object]
+    """
+    try:
+        config = deepcopy(settings.LOGGING_CONFIG)
+        config["loggers"][""]["level"] = settings.LOGGING
+        config["loggers"]["app"]["level"] = settings.LOGGING
+        logging.config.dictConfig(config)
+    except Exception:
+        logger.exception("Failed to re-apply logging config after LOGGING override")
+
+
 async def _reseed_system_periodic_tasks(_: Mapping[str, object]) -> None:
     """Re-seed the SEP beat schedule after a hot interval override.
 
@@ -245,6 +271,7 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             ssl_certfile=tasks_settings.SSL_CERTFILE,
         ),
         (SettingClassEnum.SETTINGS, "PMM"): _invalidate_pmm_clients,
+        (SettingClassEnum.SETTINGS, "LOGGING"): _apply_logging_dictconfig,
         (
             SettingClassEnum.SNIPPETS_SETTINGS,
             "SYNC_INTERVAL",
@@ -252,6 +279,10 @@ async def sep_overrides_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         (
             SettingClassEnum.ALERTS_SETTINGS,
             "BACKUP_INTERVAL",
+        ): _reseed_system_periodic_tasks,
+        (
+            SettingClassEnum.SEP_SETTINGS,
+            "APP_DRAIN",
         ): _reseed_system_periodic_tasks,
     }
     # On ``sep_app``'s state, not the lifespan's parent ``app``: requests to

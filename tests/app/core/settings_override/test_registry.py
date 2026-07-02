@@ -180,9 +180,9 @@ def test_hot_field_names_tasks_settings() -> None:
 
 
 def test_nested_overridable_field_names_sep_settings() -> None:
-    """``SEPSettings`` ships exactly the two NESTED_ONLY parents this ticket promotes."""
+    """``SEPSettings`` exposes the session parents plus ``APP_DRAIN`` (SEP-1493)."""
     assert nested_overridable_field_names(SEPSettings) == frozenset(
-        {"SESSION", "SESSION_REFRESH"}
+        {"SESSION", "SESSION_REFRESH", "APP_DRAIN"}
     )
 
 
@@ -201,6 +201,8 @@ def test_hot_field_names_snippets_settings() -> None:
             "PREVIEW_MAX_CHARS",
             "PREVIEW_MAX_LINES",
             "SYNC_INTERVAL",
+            "SNIPPETS_BASE_URL",
+            "SYNC_FILTER",
         }
     )
 
@@ -265,10 +267,29 @@ def test_security_headers_marked_advanced() -> None:
     assert is_advanced_field(TasksSettings.model_fields["SECURITY_HEADERS"]) is True
 
 
-@pytest.mark.parametrize("field_name", ["NOMAD", "STALENESS_THRESHOLD_SECONDS"])
+@pytest.mark.parametrize("field_name", ["NOMAD", "PRE_EXECUTION_CONNECTIVITY_CHECK"])
 def test_tasks_settings_not_marked_advanced(field_name: str) -> None:
-    """``NOMAD`` and other Tasks settings stay basic (intentionally left out)."""
+    """The ``NOMAD`` parent and other unpromoted Tasks settings stay basic.
+
+    Only the NOMAD *leaves* are advanced (SEP-1493), never the parent itself.
+    """
     assert is_advanced_field(TasksSettings.model_fields[field_name]) is False
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "SYNC_LOCK_TTL",
+        "STALENESS_THRESHOLD_SECONDS",
+        "LOG_RETENTION_DAYS",
+        "LOG_PURGE_BATCH_SIZE",
+        "LOG_STREAM_CAP_BYTES",
+        "LOG_STREAM_EVICTION_MAX_ROWS",
+    ],
+)
+def test_tasks_settings_marked_advanced(field_name: str) -> None:
+    """SEP-1493 promotes the log-retention cluster and lock/staleness TTLs to advanced."""
+    assert is_advanced_field(TasksSettings.model_fields[field_name]) is True
 
 
 def test_session_leaf_inherits_advanced() -> None:

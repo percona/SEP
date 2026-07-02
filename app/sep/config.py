@@ -20,9 +20,10 @@ from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
 from string import Template
-from typing import Any, ClassVar, Literal, Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 from urllib.parse import urlparse
 
+from annotated_types import Gt
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 from pydantic import (
@@ -477,25 +478,14 @@ class AppDrainSettings(BaseLowercaseModel):
     reconcile_interval: IntervalSchedule = IntervalSchedule(
         every=5, period=Period.MINUTES
     )
-    stale_task_ttl: TimedeltaSeconds = timedelta(hours=1)
-
-    @field_validator("stale_task_ttl")
-    @classmethod
-    def _stale_task_ttl_positive(cls, value: timedelta) -> timedelta:
-        """Reject a zero or negative stale-task TTL.
-
-        The reconciler prunes rows whose ``created_at`` predates
-        ``utc_now() - stale_task_ttl``. A non-positive TTL puts that cutoff at or
-        after the present, so every in-flight ``AppRunningTask`` row is pruned and
-        a ``DISABLING`` app finalizes to ``DISABLED`` while its tasks still run.
-
-        :param value: The configured stale-task TTL.
-        :return: The validated TTL.
-        :raises ValueError: If ``value`` is not strictly positive.
-        """
-        if value.total_seconds() <= 0:
-            raise ValueError("APP_DRAIN.stale_task_ttl must be a positive duration")
-        return value
+    # Positivity is enforced by the ``Gt`` annotation constraint (not a
+    # ``field_validator``) so it holds both at construction *and* when the value
+    # arrives as a runtime override: nested-override coercion preserves
+    # annotated-type constraints but does not re-run model field validators. A
+    # non-positive TTL would put the reconciler's ``utc_now() - stale_task_ttl``
+    # cutoff at or after the present, pruning every in-flight ``AppRunningTask``
+    # row and finalizing a ``DISABLING`` app to ``DISABLED`` while its tasks run.
+    stale_task_ttl: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(hours=1)
 
 
 def _warn_legacy_apps_key() -> None:
@@ -598,8 +588,8 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: SyncerExtraKwargs = SyncerExtraKwargs()
     SYNC_REFRESH_TIME: int = hot_field(5)
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
-    APP_DRAIN: AppDrainSettings = AppDrainSettings()
-    ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600)
+    APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
+    ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
     FOOTER_TEMPLATE: Template = hot_field(
         Template("$summary $version"),

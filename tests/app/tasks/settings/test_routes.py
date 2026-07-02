@@ -88,12 +88,15 @@ class TestTasksSettingsApi:
     async def test_list_returns_tasks_class(
         self, admin_test_client: TestClient
     ) -> None:
-        """The Tasks router exposes exactly one settings class: TasksSettings."""
+        """The Tasks router exposes ``TasksSettings`` and ``AnonymizerSettings``."""
         response = admin_test_client.get("/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         groups = response.json()["groups"]
-        assert len(groups) == 1
-        assert groups[0]["setting_class"] == SettingClassEnum.TASKS_SETTINGS.value
+        classes = {group["setting_class"] for group in groups}
+        assert classes == {
+            SettingClassEnum.TASKS_SETTINGS.value,
+            SettingClassEnum.ANONYMIZER_SETTINGS.value,
+        }
 
     async def test_get_single_setting(self, admin_test_client: TestClient) -> None:
         """A single Tasks HOT field returns its metadata."""
@@ -104,6 +107,34 @@ class TestTasksSettingsApi:
         body = response.json()
         assert body["key"] == "STALENESS_THRESHOLD_SECONDS"
         assert body["reload"] == ReloadClassification.HOT.value
+
+    async def test_get_anonymizer_default_entities(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """SEP-1493: ``AnonymizerSettings.DEFAULT_ENTITIES`` is reachable via GET."""
+        response = admin_test_client.get(
+            "/admin/settings/AnonymizerSettings/DEFAULT_ENTITIES"
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["setting_class"] == (
+            SettingClassEnum.ANONYMIZER_SETTINGS.value
+        )
+
+    async def test_patch_anonymizer_default_entities(
+        self,
+        admin_test_client: TestClient,
+        session: AsyncSession,
+    ) -> None:
+        """SEP-1493: a valid ``DEFAULT_ENTITIES`` PATCH persists an override row."""
+        response = admin_test_client.patch(
+            "/admin/settings/AnonymizerSettings",
+            json={"DEFAULT_ENTITIES": ["CREDIT_CARD", "EMAIL_ADDRESS"]},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        rows = await SettingsOverrideManager.list(
+            session, setting_class=SettingClassEnum.ANONYMIZER_SETTINGS
+        )
+        assert [r.key for r in rows] == ["DEFAULT_ENTITIES"]
 
     async def test_patch_hot_field(
         self,
@@ -455,7 +486,37 @@ class TestTasksSettingsNestedOverrides:
             ]
             is True
         )
-        assert by_key["STALENESS_THRESHOLD_SECONDS"]["is_advanced"] is False
+        # A Tasks sibling left basic stays False (STALENESS_THRESHOLD_SECONDS is
+        # promoted to advanced by SEP-1493, so it is no longer a valid negative).
+        assert by_key["PRE_EXECUTION_CONNECTIVITY_CHECK"]["is_advanced"] is False
+
+    async def test_list_marks_nomad_secondary_leaves_advanced(
+        self, admin_test_client: TestClient
+    ) -> None:
+        """SEP-1493 marks the NOMAD TLS/tuning leaves advanced, but not ``endpoint``.
+
+        The advanced flag is applied per leaf (the ``NOMAD`` parent is not marked),
+        so the connection ``endpoint`` leaf must stay basic while the TLS and tuning
+        leaves surface ``is_advanced`` in the LIST projection.
+        """
+        settings = admin_test_client.get("/admin/settings/").json()["groups"][0][
+            "settings"
+        ]
+        by_key = {s["key"]: s for s in settings}
+        advanced_leaves = [
+            "NOMAD__verify_ssl",
+            "NOMAD__ssl_cafile",
+            "NOMAD__ssl_keyfile",
+            "NOMAD__ssl_certfile",
+            "NOMAD__secure",
+            "NOMAD__timeout",
+            "NOMAD__minify_payload",
+            "NOMAD__log_socket_read_timeout",
+            "NOMAD__cert_expiry_warn_days",
+        ]
+        for key in advanced_leaves:
+            assert by_key[key]["is_advanced"] is True, key
+        assert by_key["NOMAD__endpoint"]["is_advanced"] is False
 
     async def test_get_multi_level_nested_before_override_returns_200(
         self, admin_test_client: TestClient
