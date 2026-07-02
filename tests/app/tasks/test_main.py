@@ -18,7 +18,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException, status
+from fastapi import FastAPI, HTTPException, status
 from sqlalchemy.dialects.postgresql import JSON, JSONB
 
 from app.core.settings_override.models import SettingClassEnum
@@ -36,6 +36,46 @@ from app.tasks.main import (
     tasks_lifespan,
 )
 from app.tasks.main import lifespan as tasks_module_lifespan
+
+
+def _null_async_cm() -> MagicMock:
+    """Return a MagicMock that behaves as a no-op async context manager."""
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=None)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return cm
+
+
+@pytest.mark.asyncio
+async def test_tasks_lifespan_wires_anonymizer_into_refresher():
+    """SEP-1493: ``tasks_lifespan`` refreshes ANONYMIZER_SETTINGS, not only TASKS.
+
+    The Tasks API process must load a pre-existing ``ANONYMIZER_SETTINGS``
+    override on boot -- otherwise the settings LIST/GET serves the default
+    ``DEFAULT_ENTITIES`` until an in-process PATCH runs ``refresh_all``. The
+    Celery worker already wires both proxies; this asserts the HTTP-API lifespan
+    mirrors it. ``ALERT_SETTINGS`` stays out (shared-proxy clobber concern).
+    """
+    refresher = MagicMock(return_value=_null_async_cm())
+    with (
+        patch("app.tasks.main.init_tasks_db", new=AsyncMock()),
+        patch(
+            "app.tasks.main.verify_taskhistory_execution_request_is_jsonb",
+            new=AsyncMock(),
+        ),
+        patch("app.tasks.main.settings_override_refresher", refresher),
+        patch("app.tasks.main.default_lifespan", return_value=_null_async_cm()),
+        patch("app.tasks.main.NomadLifecycle", return_value=_null_async_cm()),
+    ):
+        async with tasks_lifespan(FastAPI()):
+            pass
+
+    refresher.assert_called_once()
+    proxies = refresher.call_args.args[1]
+    assert SettingClassEnum.ANONYMIZER_SETTINGS in proxies
+    assert SettingClassEnum.TASKS_SETTINGS in proxies
+    # ALERT_SETTINGS must stay out of the Tasks-process refresher.
+    assert SettingClassEnum.ALERT_SETTINGS not in proxies
 
 
 def test_tasks_app_lifespan_is_always_set():

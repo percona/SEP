@@ -49,7 +49,11 @@ from app.sep.deps import (
 )
 from app.sep.main import sep_app, sep_overrides_lifespan
 from app.sep.middleware.messages.config import messages_settings
-from app.sep.snippets.config import snippets_settings
+from app.sep.snippets.config import (
+    SnippetFilter,
+    SnippetFilterType,
+    snippets_settings,
+)
 
 
 def _mock_tasks_api() -> AsyncMock:
@@ -574,6 +578,44 @@ class TestSepSettingsPatch:
             override_session, setting_class=SettingClassEnum.SNIPPETS_SETTINGS
         )
         assert [r.key for r in rows] == ["SNIPPETS_BASE_URL"]
+
+    async def test_sync_filter_hot_patch_round_trip(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """SEP-1493: ``SYNC_FILTER`` is HOT; a valid PATCH persists and reflects."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SnippetsSettings",
+            json={"SYNC_FILTER": [".sh"]},
+        )
+        try:
+            assert response.status_code == status.HTTP_200_OK
+            rows = await SettingsOverrideManager.list(
+                override_session, setting_class=SettingClassEnum.SNIPPETS_SETTINGS
+            )
+            assert [r.key for r in rows] == ["SYNC_FILTER"]
+            assert {
+                SnippetFilter(".sh", SnippetFilterType.EXTENSION)
+            } == snippets_settings.SYNC_FILTER
+        finally:
+            snippets_settings._set_snapshot({})
+
+    async def test_sync_filter_bad_member_rejected(
+        self,
+        api_admin_client: TestClient,
+        override_session: AsyncSession,
+    ) -> None:
+        """A malformed ``SYNC_FILTER`` set member is rejected with 422 and no row."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/SnippetsSettings",
+            json={"SYNC_FILTER": [12345]},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SNIPPETS_SETTINGS
+        )
+        assert rows == []
 
     async def test_mixed_failure_modes_aggregate_in_detail(
         self,
@@ -1132,6 +1174,20 @@ class TestGlobalSettingsClass:
             override_session, setting_class=SettingClassEnum.SETTINGS
         )
         assert [r.key for r in rows] == ["LOGGING"]
+
+    async def test_logging_invalid_level_rejected(
+        self, api_admin_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """An invalid ``LOGGING`` level fails validation with 422 and writes no row."""
+        response = api_admin_client.patch(
+            "/api/sep/admin/settings/Settings",
+            json={"LOGGING": "NOTALEVEL"},
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
+        rows = await SettingsOverrideManager.list(
+            override_session, setting_class=SettingClassEnum.SETTINGS
+        )
+        assert rows == []
 
     @pytest.mark.parametrize(
         "field", ["SECRET_KEY", "CASDOOR", "CELERY", "LOGGING_CONFIG"]
