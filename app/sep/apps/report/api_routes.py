@@ -31,6 +31,7 @@ Route layout:
 """
 
 import base64
+import binascii
 import logging
 from typing import Annotated
 
@@ -195,8 +196,10 @@ async def report_download_pdf_api(job_id: str) -> Response:
         filename = result.result["filename"]
     try:
         pdf_bytes = base64.b64decode(encoded_pdf)
-    except Exception:
-        raise HTTPInternalServerErrorException(detail="PDF artifact is corrupt")
+    except binascii.Error as exc:
+        raise HTTPInternalServerErrorException(
+            detail="PDF artifact is corrupt"
+        ) from exc
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
