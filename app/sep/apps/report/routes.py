@@ -18,7 +18,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Form, Query, Request
+from fastapi import APIRouter, Form, Query, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
 
@@ -176,13 +176,16 @@ async def report_generate_pdf(
     :type context: ReportIndexContext
     :param report_json: Existing report JSON snapshot.
     :type report_json: str
-    :return: Rendered job status page.
-    :rtype: HTMLResponse
+    :return: Rendered job status page, or a validation error response.
+    :rtype: HTMLResponse | JSONResponse
     """
     try:
         report = ReportData.model_validate_json(report_json)
     except ValidationError as exc:
-        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"detail": exc.errors()},
+        )
     result = render_report_pdf_job.delay(report.model_dump(mode="json"))
     context.update(
         {
@@ -219,13 +222,16 @@ async def report_upload(
     :type context: ReportIndexContext
     :param report_json: Existing report JSON snapshot.
     :type report_json: str
-    :return: Rendered job status page.
-    :rtype: HTMLResponse
+    :return: Rendered job status page, or a validation error response.
+    :rtype: HTMLResponse | JSONResponse
     """
     try:
         report = ReportData.model_validate_json(report_json)
     except ValidationError as exc:
-        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"detail": exc.errors()},
+        )
     result = upload_report_snapshot_job.delay(report.model_dump(mode="json"))
     context.update(
         {

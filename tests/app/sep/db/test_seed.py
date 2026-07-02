@@ -242,19 +242,6 @@ def test_builder_reads_sync_interval_at_call_time() -> None:
         snippets_settings._set_snapshot({})
 
 
-def test_celery_backend_cleanup_seeded_as_ungated_system_task() -> None:
-    """The Celery result backend cleanup task is seeded and never gated off."""
-    cleanups = [
-        task
-        for schedule in seed_module.SYSTEM_PERIODIC_TASKS
-        for task in schedule.tasks
-        if task.task_name == "celery.backend_cleanup"
-    ]
-    assert len(cleanups) == 1
-    assert cleanups[0].name == "sep__celery_backend_cleanup"
-    assert cleanups[0].owner_app_key is None
-
-
 def test_celery_result_expires_configured() -> None:
     """Celery results have a TTL so result backends do not grow forever."""
     assert settings.CELERY.result_expires == CELERY_RESULT_EXPIRES_SECONDS

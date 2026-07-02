@@ -19,7 +19,6 @@ import json
 
 from sqlmodel import col
 
-from app.core.celery.models import CrontabSchedule
 from app.core.celery.utils import (
     init_periodic_tasks_db,
     SystemPeriodicTaskData,
@@ -41,38 +40,6 @@ _alerts_plugin_enabled = any(
 _report_plugin_enabled = any(
     p.module_name.endswith(".report") for p in sep_settings.APPS
 )
-
-SYSTEM_PERIODIC_TASKS = [
-    SystemPeriodicTaskSchedule(
-        schedule=CrontabSchedule(minute="0", hour="4"),
-        tasks=[
-            SystemPeriodicTaskData(
-                name="sep__celery_backend_cleanup",
-                task_name="celery.backend_cleanup",
-            ),
-        ],
-    ),
-    SystemPeriodicTaskSchedule(
-        schedule=sep_settings.APP_DRAIN.reconcile_interval,
-        tasks=[
-            SystemPeriodicTaskData(
-                name="sep__reconcile_disabling_apps",
-                task_name="app.sep.app_drain.reconcile_disabling_apps",
-            ),
-        ],
-    ),
-    SystemPeriodicTaskSchedule(
-        schedule=snippets_settings.SYNC_INTERVAL,
-        tasks=[
-            SystemPeriodicTaskData(
-                name="sep__sync_snippets",
-                task_name="app.sep.celery.sync_snippets",
-                owner_app_key="snippets",
-            ),
-        ],
-    ),
-]
-
 
 def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
     """Build the SEP system periodic-task set, reading live settings per call.

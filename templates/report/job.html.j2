@@ -66,7 +66,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
                 statusEl.textContent = job.error || "Report job failed.";
                 return;
             }
-            if (job.status !== "pending" && job.status !== "started" && job.status !== "retry") {
+            if (job.status !== "pending" && job.status !== "received" && job.status !== "started" && job.status !== "retry") {
                 statusEl.textContent = job.error || "Report job ended unexpectedly.";
                 return;
             }

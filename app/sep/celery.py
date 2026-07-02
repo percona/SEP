@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 from celery import states
+from celery import Task as CeleryTask
 from celery.exceptions import Ignore
 from pydantic import ValidationError
 from sqlmodel import col
@@ -39,11 +40,11 @@ from app.sep.snippets.utils import guess_mime_type
 logger = logging.getLogger(__name__)
 
 
-def _fail_invalid_report_snapshot(self: Any, exc: ValidationError) -> NoReturn:
+def _fail_invalid_report_snapshot(self: CeleryTask, exc: ValidationError) -> NoReturn:
     """Store structured validation failure metadata for report snapshot tasks.
 
     :param self: Bound Celery task instance.
-    :type self: Any
+    :type self: CeleryTask
     :param exc: Pydantic validation error.
     :type exc: ValidationError
     :raises Ignore: Stops task execution after storing FAILURE metadata.
@@ -172,11 +173,13 @@ def should_skip_snippet(snippet_path: Path) -> bool:
 
 @owned_by("report")
 @celery.task(bind=True)
-def render_report_pdf_job(self: Any, report_json: dict[str, Any]) -> dict[str, str]:
+def render_report_pdf_job(
+    self: CeleryTask, report_json: dict[str, Any]
+) -> dict[str, str]:
     """Render a PDF artifact from a stored report JSON snapshot.
 
     :param self: Bound Celery task instance.
-    :type self: Any
+    :type self: CeleryTask
     :param report_json: Serialized report snapshot.
     :type report_json: dict[str, Any]
     :return: Base64-encoded PDF payload and download filename.
@@ -202,12 +205,12 @@ def render_report_pdf_job(self: Any, report_json: dict[str, Any]) -> dict[str, s
 @owned_by("report")
 @celery.task(bind=True)
 def upload_report_snapshot_job(
-    self: Any, report_json: dict[str, Any]
+    self: CeleryTask, report_json: dict[str, Any]
 ) -> dict[str, Any]:
     """Render and upload a PDF from a report JSON snapshot.
 
     :param self: Bound Celery task instance.
-    :type self: Any
+    :type self: CeleryTask
     :param report_json: Serialized report snapshot.
     :type report_json: dict[str, Any]
     :return: ServiceNow upload response payload.
