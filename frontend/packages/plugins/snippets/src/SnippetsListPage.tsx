@@ -70,8 +70,25 @@ interface SnippetsListPageProps {
 
 type ApprovalFilter = 'all' | 'approved' | 'not_approved';
 
+/** Sentinel service-type filter value meaning "no service-type restriction". */
+const ALL_SERVICES = 'all';
+
 /** Sentinel service-type filter value for snippets that declare no service type. */
-const UNCATEGORIZED = '__uncategorized__';
+const UNCATEGORIZED = 'uncategorized';
+
+/**
+ * Prefix applied to real service-type values when used as `MenuItem` values.
+ * `service_type` is a free-form string, so prefixing the option values keeps
+ * them in a distinct namespace from the `ALL_SERVICES` / `UNCATEGORIZED`
+ * sentinels — a snippet declaring `service_type: "all"` still gets its own
+ * selectable option instead of colliding with the "All services" entry.
+ */
+const SERVICE_TYPE_PREFIX = 'type:';
+
+/** Encode a real service-type string into its `MenuItem` filter value. */
+function encodeServiceType(type: string): string {
+  return `${SERVICE_TYPE_PREFIX}${type}`;
+}
 
 /** Label shown for snippets that declare no `service_type`. */
 const UNCATEGORIZED_LABEL = 'Uncategorized';
@@ -192,7 +209,7 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
 
   const [search, setSearch] = useState('');
   const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>('all');
-  const [serviceTypeFilter, setServiceTypeFilter] = useState<string>('all');
+  const [serviceTypeFilter, setServiceTypeFilter] = useState<string>(ALL_SERVICES);
 
   const showRefresh = isAdmin && capabilities?.manual_sync_enabled;
 
@@ -233,13 +250,13 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
       if (approvalFilter === 'not_approved' && snippet.is_approved) {
         return false;
       }
-      if (serviceTypeFilter !== 'all') {
+      if (serviceTypeFilter !== ALL_SERVICES) {
         const type = normalizeServiceType(snippet);
         if (serviceTypeFilter === UNCATEGORIZED) {
           if (type !== null) {
             return false;
           }
-        } else if (type !== serviceTypeFilter) {
+        } else if (type === null || encodeServiceType(type) !== serviceTypeFilter) {
           return false;
         }
       }
@@ -527,9 +544,9 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
               sx={{ minWidth: 180 }}
               slotProps={{ htmlInput: { 'aria-label': 'Filter by service type' } }}
             >
-              <MenuItem value="all">All services</MenuItem>
+              <MenuItem value={ALL_SERVICES}>All services</MenuItem>
               {serviceTypes.map((type) => (
-                <MenuItem key={type} value={type}>
+                <MenuItem key={type} value={encodeServiceType(type)}>
                   {type}
                 </MenuItem>
               ))}

@@ -624,6 +624,30 @@ describe('SnippetsListPage — filters', () => {
     expect(screen.getByText(/no snippets match the current filters/i)).toBeInTheDocument();
   });
 
+  it('keeps a snippet whose service_type equals the "all" sentinel selectable', () => {
+    const literalAll = {
+      ...unapprovedSnippet,
+      filename: 'literal-all.sh',
+      title: 'Literal all',
+      description: '',
+      service_type: 'all',
+      is_approved: false,
+    };
+    mockUseSnippets.mockReturnValue({
+      data: [literalAll, mongoUnapproved],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useSnippets>);
+
+    render(<SnippetsListPage />);
+
+    // The literal "all" service type gets its own option, distinct from the
+    // "All services" (no-filter) entry, and selecting it narrows to that row.
+    selectOption('Filter by service type', 'all');
+
+    expect(bodyFilenames()).toEqual(['literal-all.sh']);
+  });
+
   it('drops selections for rows hidden by a filter from the batch payload', () => {
     const batchMutate = vi.fn();
     mockUseBatchApproveSnippets.mockReturnValue({
