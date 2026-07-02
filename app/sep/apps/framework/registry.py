@@ -36,10 +36,16 @@ from functools import lru_cache
 from importlib import import_module
 
 from fastapi import APIRouter
+from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.settings_override.api.models import SettingClassAppMetadata
+from app.core.settings_override.api.routes import AppOwnedClassEntry
+from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import import_var
 from app.sep.apps.framework.base import BaseApp
 from app.sep.config import App, sep_settings
+from app.sep.crud import AppStateManager
+from app.sep.deps import PROTECTED_APP_KEYS
 
 
 class AppRegistry:
@@ -192,3 +198,90 @@ def get_app_registry() -> AppRegistry:
     :rtype: AppRegistry
     """
     return build_app_registry(sep_settings.APPS)
+
+
+def collect_app_owned_settings_classes(
+    plugins: Iterable[App] | None = None,
+) -> list[AppOwnedClassEntry]:
+    """Collect app-owned settings classes declared by activated plugins.
+
+    Each plugin may export ``APP_OWNED_SETTINGS_CLASSES`` as a list of
+    :class:`~app.core.settings_override.api.routes.AppOwnedClassEntry` values.
+    Entries are returned in activation-list order; duplicate
+    ``setting_class`` values or unknown ``app_key`` references fail fast.
+
+    :param plugins: The ``SEP.APPS`` activation entries to scan. Defaults to
+        ``sep_settings.APPS``.
+    :return: The merged app-owned settings entries.
+    :rtype: list[AppOwnedClassEntry]
+    :raises TypeError: If a module's declaration is not a list of
+        :class:`AppOwnedClassEntry` instances.
+    :raises ValueError: If a setting class is declared more than once or
+        references an unknown app key.
+    """
+    activation = list(plugins if plugins is not None else sep_settings.APPS)
+    registry = build_app_registry(activation)
+    entries: list[AppOwnedClassEntry] = []
+    seen_classes: set[SettingClassEnum] = set()
+    for plugin in activation:
+        declared = getattr(
+            import_module(plugin.module_name),
+            "APP_OWNED_SETTINGS_CLASSES",
+            None,
+        )
+        if declared is None:
+            continue
+        if not isinstance(declared, list):
+            raise TypeError(
+                f"App module {plugin.module_name!r}: APP_OWNED_SETTINGS_CLASSES"
+                f" must be a list, got {type(declared).__name__}.",
+            )
+        for entry in declared:
+            if not isinstance(entry, AppOwnedClassEntry):
+                raise TypeError(
+                    f"App module {plugin.module_name!r}: every"
+                    " APP_OWNED_SETTINGS_CLASSES entry must be an"
+                    f" AppOwnedClassEntry, got {type(entry).__name__}.",
+                )
+            if entry.setting_class in seen_classes:
+                raise ValueError(
+                    f"Settings class {entry.setting_class.value!r} is declared"
+                    " by more than one app-owned settings registration.",
+                )
+            if registry.get(entry.app_key) is None:
+                raise ValueError(
+                    f"App-owned settings class {entry.setting_class.value!r}"
+                    f" references unknown app key {entry.app_key!r}.",
+                )
+            seen_classes.add(entry.setting_class)
+            entries.append(entry)
+    return entries
+
+
+async def resolve_app_settings_metadata(
+    session: AsyncSession,
+    app_key: str,
+) -> SettingClassAppMetadata:
+    """Resolve app identity and enabled state for a settings LIST group.
+
+    Protected apps are always reported enabled. Non-protected apps reflect
+    their DB lifecycle state via :meth:`AppStateManager.is_enabled`.
+
+    :param session: The SEP database session.
+    :param app_key: The owning app's registry key.
+    :return: Metadata for an app-owned :class:`SettingClassGroup`.
+    :rtype: SettingClassAppMetadata
+    :raises ValueError: If ``app_key`` is not registered.
+    """
+    app = get_app_registry().get(app_key)
+    if app is None:
+        raise ValueError(f"Unknown app key {app_key!r}.")
+    app_enabled = app_key in PROTECTED_APP_KEYS or await AppStateManager.is_enabled(
+        session,
+        app_key,
+    )
+    return SettingClassAppMetadata(
+        app_id=app.key,
+        app_display_name=app.display_name,
+        app_enabled=app_enabled,
+    )
