@@ -91,6 +91,54 @@ class TestRecordConnectivityWarning:
         assert get_latest_connectivity_result("node1", "mysql") is False
 
     @pytest.mark.asyncio
+    async def test_threads_task_history_id_into_warning(self, mock_tasks_api):
+        """Carry ``task_history_id`` from the API response onto the warning.
+
+        Regression: the warning must expose the run-script
+        ``task_history_id`` so the detail page can link the log.
+        """
+        expected_id = 321
+        mock_tasks_api.post.return_value = {
+            "success": False,
+            "error": "Connectivity check timed out after 30s",
+            "task_history_id": expected_id,
+        }
+
+        result = await record_connectivity_warning(
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+        assert result is not None
+        assert result.task_history_id == expected_id
+
+    @pytest.mark.asyncio
+    async def test_task_history_id_defaults_to_none(self, mock_tasks_api):
+        """Default ``task_history_id`` to ``None`` when the response omits it.
+
+        Back-compat: existing plugin consumers and responses that predate the
+        field must keep working.
+        """
+        mock_tasks_api.post.return_value = {
+            "success": False,
+            "error": "connection refused",
+        }
+
+        result = await record_connectivity_warning(
+            mock_tasks_api,
+            target="node1",
+            host="10.0.0.1",
+            port=3306,
+            service_type="mysql",
+        )
+
+        assert result is not None
+        assert result.task_history_id is None
+
+    @pytest.mark.asyncio
     async def test_uses_fallback_message_when_error_is_none(self, mock_tasks_api):
         """Fall back to a generic message when the API reports failure without an error string."""
         mock_tasks_api.post.return_value = {"success": False, "error": None}

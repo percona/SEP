@@ -1728,8 +1728,53 @@ class TestDeriveCrudRoutesConnectivity:
             "target": "node-1",
             "service_type": "mysql",
             "message": "unreachable",
+            "task_history_id": None,
         }
         probe.assert_awaited_once()
+
+    def test_probe_failure_threads_task_history_id_into_response(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Thread a non-null ``task_history_id`` end-to-end into the create JSON.
+
+        Patch only the Tasks-API boundary (not ``record_connectivity_warning``),
+        so the real ``_fetch_connectivity_result`` -> ``record_connectivity_warning``
+        -> create-response chain runs. A failed ``/connectivity-check/`` response
+        carrying ``task_history_id`` must surface that id on
+        ``connectivity_warning`` so the React detail page can link the run-script
+        log — the gap the ``None``-only probe-patch tests leave uncovered.
+        """
+        from app.sep.connectivity import _fetch_connectivity_result
+
+        _fetch_connectivity_result.cache_clear()
+
+        task_history_id = 4242
+        tasks_api = _make_tasks_api(
+            created_task=_task_dict_with_meta("new-task", _CONNECTIVITY_META)
+        )
+        base_post = tasks_api.post.side_effect
+
+        async def _post(path: str, json: dict | None = None) -> dict:
+            if path == "/connectivity-check/":
+                return {
+                    "success": False,
+                    "error": "Connectivity check timed out after 30s",
+                    "task_history_id": task_history_id,
+                }
+            return await base_post(path, json)
+
+        tasks_api.post.side_effect = _post
+        client = _authed_crud_client(
+            _crud_router(connectivity_check=True), tasks_api, regular_user
+        )
+
+        response = client.post(f"{_CRUD_BASE_URL}/", json={"name": "new-task"})
+
+        assert response.status_code == status.HTTP_201_CREATED
+        warning = response.json()["connectivity_warning"]
+        assert warning["task_history_id"] == task_history_id
+        assert warning["message"] == "Connectivity check timed out after 30s"
+        _fetch_connectivity_result.cache_clear()
 
     def test_probe_success_yields_null_connectivity_warning(
         self, regular_user: CasdoorUser, mocker
@@ -1895,6 +1940,7 @@ class TestDeriveCrudRoutesConnectivity:
             "target": "node-1",
             "service_type": "mysql",
             "message": "unreachable",
+            "task_history_id": None,
         }
 
     def test_explicit_builder_without_warning_field_rejected(self) -> None:

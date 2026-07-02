@@ -31,9 +31,11 @@ from app.sep.apps.framework.schema import (
     Capabilities,
     Column,
     ColumnFormat,
+    default_columns,
     DetailField,
     DetailSection,
     DetailView,
+    EXECUTOR_HOST_COLUMN,
     ListView,
 )
 
@@ -68,14 +70,10 @@ restore_views = Views(
         )
     ),
     list_view=ListView(
-        columns=[
-            Column(key="name", label="Name", sortable=True),
-            Column(key="status", label="Status", format=ColumnFormat.STATUS),
+        columns=default_columns(
             Column(key="backup_type", label="Type", format=ColumnFormat.CHIP),
-            Column(key="hostname", label="Host"),
-            Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
-            Column(key="created_by", label="Created By"),
-        ],
+            EXECUTOR_HOST_COLUMN,
+        ),
     ),
     detail_view=DetailView(
         sections=[
