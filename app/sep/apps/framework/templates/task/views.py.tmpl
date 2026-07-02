@@ -25,19 +25,14 @@ from app.sep.apps.framework.apps import Views
 from app.sep.apps.framework.form_dsl import FormLayout, SectionLayout
 from app.sep.apps.framework.schema import (
     Capabilities,
-    Column,
-    ColumnFormat,
     ListView,
+    default_columns,
 )
 
 << name >>_views = Views(
     layout=FormLayout(sections=(SectionLayout(key="Main", title="Main"),)),
     list_view=ListView(
-        columns=[
-            Column(key="name", label="Name", sortable=True),
-            Column(key="status", label="Status", format=ColumnFormat.STATUS),
-            Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
-        ],
+        columns=default_columns(),
     ),
     capabilities=Capabilities(alert_on_fail=True),
 )
