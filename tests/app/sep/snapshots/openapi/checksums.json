@@ -889,7 +889,7 @@
         "type": "string"
       },
       "ConnectivityWarning": {
-        "description": "Represent a connectivity-check failure on a JSON API task-creation response.\n\n:param target: The Nomad node the task targets.\n:type target: str\n:param service_type: The lowercase database service type (e.g. ``mysql``).\n:type service_type: str\n:param message: A human-readable description of the failure.\n:type message: str",
+        "description": "Represent a connectivity-check failure on a JSON API task-creation response.\n\n:param target: The Nomad node the task targets.\n:param service_type: The lowercase database service type (e.g. ``mysql``).\n:param message: A human-readable description of the failure.\n:param task_history_id: The run-script task-history id whose log explains\n    the failure, or ``None`` when no task was created (e.g. the Tasks API\n    was unreachable). Optional for backward compatibility with existing\n    plugin consumers.",
         "properties": {
           "message": {
             "title": "Message",
@@ -902,6 +902,17 @@
           "target": {
             "title": "Target",
             "type": "string"
+          },
+          "task_history_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task History Id"
           }
         },
         "required": [

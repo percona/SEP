@@ -15,69 +15,108 @@
 
 """Define tests for the alerts plugin configuration."""
 
-from unittest.mock import MagicMock, patch
+from typing import Any
+
+import pytest
+from pydantic import ValidationError
 
 from app.core.celery.models import IntervalSchedule, Period
-from app.sep.apps.alerts.config import _create_alerts_pmm_config, AlertsPMMConfig
-from app.sep.config import DeprecatedPMMConfig
+from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import (
+    is_hot_reloadable,
+    materialize_override_value,
+)
+from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
 
 DEFAULT_BACKUP_RETENTION = 10
 CUSTOM_BACKUP_RETENTION = 5
 
 
-class TestAlertsPMMConfig:
-    """Test the ``AlertsPMMConfig`` model."""
+class TestAlertsSettings:
+    """Test the ``AlertsSettings`` plugin-owned settings section."""
 
-    def test_defaults(self):
-        """Assert default values for alerts-specific PMM config."""
-        config = AlertsPMMConfig()
-        assert config.backup_interval == IntervalSchedule(every=24, period=Period.HOURS)
-        assert config.backup_retention == DEFAULT_BACKUP_RETENTION
-        assert config.alert_folder_name == "SEP Alerts"
+    def test_defaults(self) -> None:
+        """Assert default values for the alerts settings section."""
+        config = AlertsSettings()
+        assert IntervalSchedule(every=24, period=Period.HOURS) == config.BACKUP_INTERVAL
+        assert config.BACKUP_RETENTION == DEFAULT_BACKUP_RETENTION
+        assert config.ALERT_FOLDER_NAME == "SEP Alerts"
 
-    def test_custom_values(self):
+    def test_custom_values(self) -> None:
         """Assert custom values are accepted."""
-        config = AlertsPMMConfig(
-            backup_retention=CUSTOM_BACKUP_RETENTION,
-            alert_folder_name="Custom Alerts",
+        config = AlertsSettings(
+            BACKUP_RETENTION=CUSTOM_BACKUP_RETENTION,
+            ALERT_FOLDER_NAME="Custom Alerts",
         )
-        assert config.backup_retention == CUSTOM_BACKUP_RETENTION
-        assert config.alert_folder_name == "Custom Alerts"
+        assert config.BACKUP_RETENTION == CUSTOM_BACKUP_RETENTION
+        assert config.ALERT_FOLDER_NAME == "Custom Alerts"
+
+    def test_settings_prefixes(self) -> None:
+        """Assert the section is scoped under ``SEP.ALERTS``."""
+        assert AlertsSettings.SETTINGS_PREFIXES == ["SEP", "ALERTS"]
+
+    @pytest.mark.parametrize("bad", [0, -1, -10])
+    def test_backup_retention_rejects_non_positive(self, bad: int) -> None:
+        """``BACKUP_RETENTION`` is a ``PositiveInt`` and rejects 0 / negatives."""
+        with pytest.raises(ValidationError):
+            AlertsSettings(BACKUP_RETENTION=bad)
+
+    @pytest.mark.parametrize(
+        "bad",
+        [{"every": 0, "period": "hours"}, {"every": -1, "period": "hours"}, "junk"],
+    )
+    def test_backup_interval_rejects_invalid(self, bad: Any) -> None:
+        """An unparseable / non-positive ``BACKUP_INTERVAL`` is rejected."""
+        with pytest.raises((ValidationError, ValueError)):
+            AlertsSettings(BACKUP_INTERVAL=bad)
 
 
-class TestCreateAlertsPMMConfig:
-    """Test the ``_create_alerts_pmm_config`` factory function."""
+class TestAlertsSettingsProxy:
+    """The module exposes an overridable proxy bound to its enum member."""
 
-    def test_reads_fields_from_deprecated_config(self):
-        """Assert alerts fields are read from ``sep_settings.PMM``."""
-        mock_pmm = MagicMock(spec=DeprecatedPMMConfig)
-        mock_pmm.backup_retention = CUSTOM_BACKUP_RETENTION
-        mock_pmm.alert_folder_name = "Custom"
-        mock_pmm.backup_interval = IntervalSchedule(every=12, period=Period.HOURS)
-        mock_pmm.model_fields_set = {"backup_retention", "alert_folder_name"}
+    def test_alerts_settings_is_overridable_proxy(self) -> None:
+        """``alerts_settings`` is an ``OverridableSettingsProxy``."""
+        assert isinstance(alerts_settings, OverridableSettingsProxy)
 
-        with (
-            patch("app.sep.config.sep_settings") as mock_settings,
-            patch("app.sep.apps.alerts.config.logger") as mock_logger,
-        ):
-            mock_settings.PMM = mock_pmm
-            result = _create_alerts_pmm_config()
+    def test_proxy_reads_default_fields(self) -> None:
+        """Reads through the proxy resolve to the section's defaults."""
+        assert alerts_settings.ALERT_FOLDER_NAME == "SEP Alerts"
+        assert alerts_settings.BACKUP_RETENTION == DEFAULT_BACKUP_RETENTION
 
-        assert result.backup_retention == CUSTOM_BACKUP_RETENTION
-        assert result.alert_folder_name == "Custom"
-        mock_logger.info.assert_called_once()
+    def test_enum_member_exists(self) -> None:
+        """The new section has a distinct ``SettingClassEnum`` member."""
+        assert SettingClassEnum.ALERTS_SETTINGS.value == "AlertsSettings"
+        # Must not collide with the core ``AlertSettings`` section.
+        assert SettingClassEnum.ALERTS_SETTINGS != SettingClassEnum.ALERT_SETTINGS
 
-    def test_defaults_when_no_alerts_fields_set(self):
-        """Assert defaults used when no alerts fields explicitly set."""
-        mock_pmm = MagicMock(spec=DeprecatedPMMConfig)
-        mock_pmm.backup_retention = 10
-        mock_pmm.alert_folder_name = "SEP Alerts"
-        mock_pmm.backup_interval = IntervalSchedule(every=24, period=Period.HOURS)
-        mock_pmm.model_fields_set = set()
 
-        with patch("app.sep.config.sep_settings") as mock_settings:
-            mock_settings.PMM = mock_pmm
-            result = _create_alerts_pmm_config()
+class TestAlertsSettingsHotFields:
+    """All three fields are HOT-reloadable so DB overrides take effect live."""
 
-        assert result.backup_retention == DEFAULT_BACKUP_RETENTION
-        assert result.alert_folder_name == "SEP Alerts"
+    @pytest.mark.parametrize(
+        "field", ["BACKUP_INTERVAL", "BACKUP_RETENTION", "ALERT_FOLDER_NAME"]
+    )
+    def test_field_is_hot_reloadable(self, field: str) -> None:
+        """Each alerts field is declared HOT via ``hot_field``."""
+        assert is_hot_reloadable(AlertsSettings, field) is True
+
+    def test_materializes_interval_override(self) -> None:
+        """A dict override for ``BACKUP_INTERVAL`` coerces to an ``IntervalSchedule``."""
+        field_info = AlertsSettings.model_fields["BACKUP_INTERVAL"]
+        value = materialize_override_value(
+            AlertsSettings,
+            "BACKUP_INTERVAL",
+            field_info,
+            {"every": 6, "period": "hours"},
+        )
+        assert value == IntervalSchedule(every=6, period=Period.HOURS)
+
+    @pytest.mark.parametrize("bad", [0, -1])
+    def test_invalid_retention_override_rejected(self, bad: int) -> None:
+        """Non-positive ``BACKUP_RETENTION`` overrides fail coercion."""
+        field_info = AlertsSettings.model_fields["BACKUP_RETENTION"]
+        with pytest.raises((ValidationError, ValueError)):
+            materialize_override_value(
+                AlertsSettings, "BACKUP_RETENTION", field_info, bad
+            )

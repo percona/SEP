@@ -21,13 +21,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
-import type { PluginSchema } from '@sep/api';
-import { PluginDetailPage, resolveTabFromSplat } from './PluginDetailPage';
+import type { AppSchema } from '@sep/api';
+import { AppDetailPage, resolveTabFromSplat } from './AppDetailPage';
 
 const mockDeleteMutate = vi.fn();
 const mockExecuteMutate = vi.fn();
-const mockUsePluginTask = vi.fn();
-const mockUsePluginEntityDetail = vi.fn();
+const mockUseAppTask = vi.fn();
+const mockUseAppEntityDetail = vi.fn();
 const { stopMutate } = vi.hoisted(() => ({ stopMutate: vi.fn() }));
 interface MockStatsResult {
   data: unknown;
@@ -43,24 +43,24 @@ const mockUseTaskStats = vi.fn<(...args: unknown[]) => MockStatsResult>(() => ({
 
 // Manual factory keeps axios out of the resolution graph.
 vi.mock('@sep/api', () => ({
-  usePluginTask: (...args: unknown[]) => mockUsePluginTask(...args),
+  useAppTask: (...args: unknown[]) => mockUseAppTask(...args),
   // Consumed transitively by the generic ScheduleSummary (gated on
   // capabilities.scheduling) via useScheduledTasksForPlugin. No tasks ->
   // the summary renders its "Not scheduled" state, leaving the execute/delete
   // flows under test untouched.
-  usePluginTasks: () => ({
+  useAppTasks: () => ({
     data: [],
     isLoading: false,
     isError: false,
     error: null,
     refetch: vi.fn(),
   }),
-  useDeletePluginTask: () => ({
+  useDeleteAppTask: () => ({
     mutateAsync: mockDeleteMutate,
     isPending: false,
   }),
-  useDeletePluginEntity: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePluginEntityDetail: (...args: unknown[]) => mockUsePluginEntityDetail(...args),
+  useDeleteAppEntity: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useAppEntityDetail: (...args: unknown[]) => mockUseAppEntityDetail(...args),
   // Needed by useTaskLogs / useExecutionEvents in the component tree
   getToken: () => null,
   refreshAccessToken: vi.fn(),
@@ -111,7 +111,7 @@ vi.mock('./DetailSyntaxHighlighter', () => ({
   ),
 }));
 
-const schema: PluginSchema = {
+const schema: AppSchema = {
   pluginName: 'checksums',
   display_name: 'Checksum',
   description: 'Test',
@@ -124,7 +124,7 @@ const schema: PluginSchema = {
     default_sort: '-id',
   },
   formSchema: { sections: [] },
-} as unknown as PluginSchema;
+} as unknown as AppSchema;
 
 function makeClient() {
   return new QueryClient({
@@ -140,7 +140,7 @@ function renderAt(path: string) {
           <Routes>
             <Route
               path="/apps/:plugin/task/:id/*"
-              element={<PluginDetailPage schema={schema} pluginName="checksums" />}
+              element={<AppDetailPage schema={schema} pluginName="checksums" />}
             />
             <Route path="/apps/:plugin" element={<div>list page</div>} />
           </Routes>
@@ -150,8 +150,8 @@ function renderAt(path: string) {
   );
 }
 
-describe('PluginDetailPage — detail_view sections', () => {
-  function executionSchema(overrides: Partial<PluginSchema> = {}): PluginSchema {
+describe('AppDetailPage — detail_view sections', () => {
+  function executionSchema(overrides: Partial<AppSchema> = {}): AppSchema {
     return {
       pluginName: 'checksums',
       display_name: 'Checksum',
@@ -178,11 +178,11 @@ describe('PluginDetailPage — detail_view sections', () => {
         ],
       },
       ...overrides,
-    } as unknown as PluginSchema;
+    } as unknown as AppSchema;
   }
 
   it('renders a section with each labelled field resolved from the task', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -207,7 +207,7 @@ describe('PluginDetailPage — detail_view sections', () => {
   });
 
   it('skips fields whose path resolves to undefined', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -225,7 +225,7 @@ describe('PluginDetailPage — detail_view sections', () => {
   });
 
   it('skips fields whose path resolves to an empty string', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -244,7 +244,7 @@ describe('PluginDetailPage — detail_view sections', () => {
   });
 
   it('hides the whole section when every field resolves empty', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed', data: {} },
       isLoading: false,
     });
@@ -255,7 +255,7 @@ describe('PluginDetailPage — detail_view sections', () => {
   });
 
   it('renders multiple sections in declared order', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -282,7 +282,7 @@ describe('PluginDetailPage — detail_view sections', () => {
             },
           ],
         },
-      } as unknown as PluginSchema),
+      } as unknown as AppSchema),
     );
 
     const headings = screen.getAllByRole('heading', { level: 6 }).map((h) => h.textContent);
@@ -294,7 +294,7 @@ describe('PluginDetailPage — detail_view sections', () => {
   });
 
   it('does not render any section cards when detail_view is undefined', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -304,13 +304,13 @@ describe('PluginDetailPage — detail_view sections', () => {
       isLoading: false,
     });
 
-    renderWithSchema(executionSchema({ detail_view: undefined } as PluginSchema));
+    renderWithSchema(executionSchema({ detail_view: undefined } as AppSchema));
 
     expect(screen.queryByRole('heading', { name: 'Execution' })).toBeNull();
   });
 
   it('passes DetailField.highlight through to the syntax highlighter', async () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -330,7 +330,7 @@ describe('PluginDetailPage — detail_view sections', () => {
             },
           ],
         },
-      } as unknown as PluginSchema),
+      } as unknown as AppSchema),
     );
 
     const hl = await screen.findByTestId('detail-syntax-highlighter');
@@ -339,7 +339,7 @@ describe('PluginDetailPage — detail_view sections', () => {
   });
 
   it('renders boolean false and numeric zero leaves', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -383,11 +383,11 @@ describe('resolveTabFromSplat', () => {
   });
 });
 
-describe('PluginDetailPage execute flow', () => {
+describe('AppDetailPage execute flow', () => {
   it('confirms then calls execute mutation on success', async () => {
     mockExecuteMutate.mockReset();
     mockExecuteMutate.mockResolvedValue({ id: 99 });
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
@@ -405,7 +405,7 @@ describe('PluginDetailPage execute flow', () => {
   it('shows error snackbar and closes dialog on execute failure', async () => {
     mockExecuteMutate.mockReset();
     mockExecuteMutate.mockRejectedValue(new Error('Execute failed'));
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
@@ -423,7 +423,7 @@ describe('PluginDetailPage execute flow', () => {
 
   it('closes dialog without calling execute when cancelled', async () => {
     mockExecuteMutate.mockReset();
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
@@ -442,7 +442,7 @@ describe('PluginDetailPage execute flow', () => {
   it('executes a selected derived task when custom execute actions are provided', async () => {
     mockExecuteMutate.mockReset();
     mockExecuteMutate.mockResolvedValue({ id: 99 });
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'pbm-backup',
@@ -460,7 +460,7 @@ describe('PluginDetailPage execute flow', () => {
               <Route
                 path="/apps/:plugin/task/:id/*"
                 element={
-                  <PluginDetailPage
+                  <AppDetailPage
                     schema={schema}
                     pluginName="backup_mongo"
                     getTaskExecuteActions={(task) => [
@@ -497,7 +497,7 @@ describe('PluginDetailPage execute flow', () => {
   it('forwards executeBody from custom execute actions to the mutation', async () => {
     mockExecuteMutate.mockReset();
     mockExecuteMutate.mockResolvedValue({ id: 99 });
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'my-alter', status: 'completed' },
       isLoading: false,
     });
@@ -515,7 +515,7 @@ describe('PluginDetailPage execute flow', () => {
               <Route
                 path="/apps/:plugin/task/:id/*"
                 element={
-                  <PluginDetailPage
+                  <AppDetailPage
                     schema={schema}
                     pluginName="alters"
                     getTaskExecuteActions={() => [
@@ -549,7 +549,7 @@ describe('PluginDetailPage execute flow', () => {
   });
 });
 
-function renderWithSchema(customSchema: PluginSchema, path = '/apps/checksums/task/FECHK') {
+function renderWithSchema(customSchema: AppSchema, path = '/apps/checksums/task/FECHK') {
   return render(
     <QueryClientProvider client={makeClient()}>
       <SnackbarProvider>
@@ -557,7 +557,7 @@ function renderWithSchema(customSchema: PluginSchema, path = '/apps/checksums/ta
           <Routes>
             <Route
               path="/apps/:plugin/task/:id/*"
-              element={<PluginDetailPage schema={customSchema} pluginName="checksums" />}
+              element={<AppDetailPage schema={customSchema} pluginName="checksums" />}
             />
             <Route path="/apps/:plugin" element={<div>list page</div>} />
           </Routes>
@@ -567,7 +567,7 @@ function renderWithSchema(customSchema: PluginSchema, path = '/apps/checksums/ta
   );
 }
 
-function makeSchema(capabilities: Record<string, boolean> | undefined): PluginSchema {
+function makeSchema(capabilities: Record<string, boolean> | undefined): AppSchema {
   return {
     pluginName: 'checksums',
     display_name: 'Checksum',
@@ -581,7 +581,7 @@ function makeSchema(capabilities: Record<string, boolean> | undefined): PluginSc
       default_sort: '-id',
     },
     formSchema: { sections: [] },
-  } as unknown as PluginSchema;
+  } as unknown as AppSchema;
 }
 
 const POPULATED_STATS = {
@@ -592,14 +592,14 @@ const POPULATED_STATS = {
   last_finished_at: new Date(Date.now() - 60_000).toISOString(),
 };
 
-describe('PluginDetailPage — StatsCard integration', () => {
+describe('AppDetailPage — StatsCard integration', () => {
   beforeEach(() => {
     mockUseTaskStats.mockReset();
     mockUseTaskStats.mockReturnValue({ data: undefined, isLoading: false, isError: false });
   });
 
   it('renders the StatsCard when capabilities.stats is true', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
@@ -613,7 +613,7 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 
   it('forwards both taskName and enabled to useTaskStats', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
@@ -627,7 +627,7 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 
   it('does not render the StatsCard when capabilities.stats is false', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
@@ -637,7 +637,7 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 
   it('does not render the StatsCard when capabilities.stats is absent', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
@@ -647,7 +647,7 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 
   it('does not render the StatsCard when capabilities is undefined', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
@@ -657,7 +657,7 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 
   it('does not render the StatsCard when task.name is missing', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, status: 'completed' },
       isLoading: false,
     });
@@ -669,7 +669,7 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 
   it('does not render the StatsCard when task.name is numeric', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 42, status: 'completed' },
       isLoading: false,
     });
@@ -679,7 +679,7 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 
   it('renders empty state when stats.total === 0', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
@@ -700,7 +700,7 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 
   it('keeps the Task information section when stats query errors', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed' },
       isLoading: false,
     });
@@ -716,13 +716,13 @@ describe('PluginDetailPage — StatsCard integration', () => {
   });
 });
 
-describe('PluginDetailPage — Logs tab stop wiring', () => {
+describe('AppDetailPage — Logs tab stop wiring', () => {
   beforeEach(() => {
     stopMutate.mockReset();
   });
 
   it('wires the Logs-tab table Stop action to the stop-task mutation with the row id', async () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'running' },
       isLoading: false,
     });
@@ -735,9 +735,9 @@ describe('PluginDetailPage — Logs tab stop wiring', () => {
   });
 });
 
-describe('PluginDetailPage — PII Anonymization section', () => {
+describe('AppDetailPage — PII Anonymization section', () => {
   it('renders PII section with entity chips when capability is true and entities present', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -757,7 +757,7 @@ describe('PluginDetailPage — PII Anonymization section', () => {
   });
 
   it('renders empty state message when capability is true but entities list is empty', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed', anonymized_entities: [] },
       isLoading: false,
     });
@@ -769,7 +769,7 @@ describe('PluginDetailPage — PII Anonymization section', () => {
   });
 
   it('does not render PII section when capability is false', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -785,7 +785,7 @@ describe('PluginDetailPage — PII Anonymization section', () => {
   });
 
   it('does not render PII section when capability is absent', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -801,7 +801,7 @@ describe('PluginDetailPage — PII Anonymization section', () => {
   });
 
   it('does not render PII section when capabilities is undefined', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -817,7 +817,7 @@ describe('PluginDetailPage — PII Anonymization section', () => {
   });
 
   it('suppresses anonymize_mask and anonymized_entities from the Task information extras', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -835,8 +835,8 @@ describe('PluginDetailPage — PII Anonymization section', () => {
   });
 });
 
-describe('PluginDetailPage — overview_hidden_fields', () => {
-  function schemaWithHidden(overview_hidden_fields?: string[]): PluginSchema {
+describe('AppDetailPage — overview_hidden_fields', () => {
+  function schemaWithHidden(overview_hidden_fields?: string[]): AppSchema {
     return {
       pluginName: 'checksums',
       display_name: 'Checksum',
@@ -851,11 +851,11 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
         ...(overview_hidden_fields !== undefined ? { overview_hidden_fields } : {}),
       },
       formSchema: { sections: [] },
-    } as unknown as PluginSchema;
+    } as unknown as AppSchema;
   }
 
   it('hides baseline keys (id, backend, data, etc.) when overview_hidden_fields is absent', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -877,7 +877,7 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
   });
 
   it('hides a schema-declared key in addition to the baseline', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed', foo: 'secret', extra_visible: 'hello' },
       isLoading: false,
     });
@@ -890,7 +890,7 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
   });
 
   it('hides entity-level overview_hidden_fields in multi-entity detail page', () => {
-    function multiEntitySchemaWithHidden(overview_hidden_fields?: string[]): PluginSchema {
+    function multiEntitySchemaWithHidden(overview_hidden_fields?: string[]): AppSchema {
       return {
         pluginName: 'inventory',
         display_name: 'Inventory',
@@ -917,10 +917,10 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
           default_sort: '-name',
         },
         formSchema: { sections: [] },
-      } as unknown as PluginSchema;
+      } as unknown as AppSchema;
     }
 
-    mockUsePluginEntityDetail.mockReturnValue({
+    mockUseAppEntityDetail.mockReturnValue({
       data: {
         id: 1,
         name: 'mysql-01',
@@ -940,7 +940,7 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
             <Routes>
               <Route
                 path="/apps/:plugin/:entityName/:id/*"
-                element={<PluginDetailPage schema={customSchema} pluginName="inventory" />}
+                element={<AppDetailPage schema={customSchema} pluginName="inventory" />}
               />
             </Routes>
           </MemoryRouter>
@@ -956,9 +956,9 @@ describe('PluginDetailPage — overview_hidden_fields', () => {
   });
 });
 
-describe('PluginDetailPage — Edit affordance', () => {
+describe('AppDetailPage — Edit affordance', () => {
   it('enables Edit and links to the edit route when the task has a stored form', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'FECHK',
@@ -976,7 +976,7 @@ describe('PluginDetailPage — Edit affordance', () => {
   });
 
   it('disables Edit for a task with no stored form (legacy or legacy-form-created)', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'FECHK', status: 'completed', data: { meta: {} } },
       isLoading: false,
     });
@@ -987,11 +987,133 @@ describe('PluginDetailPage — Edit affordance', () => {
   });
 });
 
-describe('PluginDetailPage delete flow', () => {
+describe('AppDetailPage — connectivity warning', () => {
+  it('renders the warning message', () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        connectivity_warning: {
+          target: 'node1',
+          service_type: 'mysql',
+          message: 'Connectivity check timed out after 30s',
+          task_history_id: 555,
+        },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    expect(screen.getByText('Connectivity check timed out after 30s')).toBeInTheDocument();
+  });
+
+  it('offers a log affordance and opens the log viewer when task_history_id is present', async () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        connectivity_warning: {
+          target: 'node1',
+          service_type: 'mysql',
+          message: 'Connectivity check timed out after 30s',
+          task_history_id: 555,
+        },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    const logButton = screen.getByTestId('connectivity-log-button');
+    await userEvent.click(logButton);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/555/)).toBeInTheDocument();
+  });
+
+  it('does not offer a log affordance when task_history_id is absent', () => {
+    mockUseAppTask.mockReturnValue({
+      data: {
+        id: 1,
+        name: 'FECHK',
+        status: 'completed',
+        connectivity_warning: {
+          target: 'node1',
+          service_type: 'mysql',
+          message: 'Could not reach the Tasks API',
+        },
+      },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    expect(screen.getByText('Could not reach the Tasks API')).toBeInTheDocument();
+    expect(screen.queryByTestId('connectivity-log-button')).toBeNull();
+  });
+
+  it('renders a warning carried via navigation state when the detail query omits it', async () => {
+    // detail/list response omits connectivity_warning; carried from create
+    // response via router location state.
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+    const warning = {
+      target: 'node1',
+      service_type: 'mysql',
+      message: 'Connectivity check timed out after 30s',
+      task_history_id: 777,
+    };
+
+    render(
+      <QueryClientProvider client={makeClient()}>
+        <SnackbarProvider>
+          <MemoryRouter
+            initialEntries={[
+              {
+                pathname: '/apps/checksums/task/FECHK',
+                state: { connectivityWarning: warning },
+              },
+            ]}
+          >
+            <Routes>
+              <Route
+                path="/apps/:plugin/task/:id/*"
+                element={<AppDetailPage schema={makeSchema({})} pluginName="checksums" />}
+              />
+              <Route path="/apps/:plugin" element={<div>list page</div>} />
+            </Routes>
+          </MemoryRouter>
+        </SnackbarProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText('Connectivity check timed out after 30s')).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('connectivity-log-button'));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/777/)).toBeInTheDocument();
+  });
+
+  it('shows no warning when neither the detail query nor navigation state has one', () => {
+    mockUseAppTask.mockReturnValue({
+      data: { id: 1, name: 'FECHK', status: 'completed' },
+      isLoading: false,
+    });
+
+    renderWithSchema(makeSchema({}));
+
+    expect(screen.queryByTestId('connectivity-log-button')).toBeNull();
+  });
+});
+describe('AppDetailPage delete flow', () => {
   it('confirms then calls delete mutation and navigates to list on success', async () => {
     mockDeleteMutate.mockReset();
     mockDeleteMutate.mockResolvedValue(undefined);
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'check1', status: 'completed' },
       isLoading: false,
     });

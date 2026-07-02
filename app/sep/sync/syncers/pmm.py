@@ -20,9 +20,8 @@ from types import TracebackType
 from typing import Any, ClassVar, Self
 
 from async_lru import alru_cache
-from pydantic import Field, field_validator
 
-from app.core.config import PMMSettings, settings
+from app.core.config import settings
 from app.inventory.models import SourceEnum
 from app.sep.clients.pmm import PMMRemoteAPI, PMMService
 from app.sep.inventory import CreatedNode, CreatedService, Node
@@ -56,9 +55,6 @@ class PMMSyncer(BaseSyncer):
     :type sync_items: dict[tuple[SyncInventoryEntityTypeEnum, int | None], SyncItem]
     :param sync_id: The unique identifier for this synchronization.
     :type sync_id: UUID4
-    :param pmm: The PMM remote API data for interacting with the PMM inventory
-        system.
-    :type pmm: dict[str, Any]
     :param keepalive_api: Whether to keep the PMMRemoteAPI instance alive after
         synchronization. Defaults to True.
     :type keepalive_api: bool
@@ -67,7 +63,6 @@ class PMMSyncer(BaseSyncer):
     SYNC_TO_LIMIT: ClassVar[SyncInventoryEntityTypeEnum] = (
         SyncInventoryEntityTypeEnum.SERVICE
     )
-    pmm: PMMSettings = Field(default_factory=lambda: settings.PMM)
     keepalive_api: bool = True
     _pmm_api: PMMRemoteAPI | None = None
 
@@ -82,7 +77,7 @@ class PMMSyncer(BaseSyncer):
         """
         if getattr(self, "_pmm_api", None) is None:
             self._pmm_api = await settings.get_remote_api(
-                PMMRemoteAPI, **self.pmm.model_dump()
+                PMMRemoteAPI, **settings.PMM.model_dump()
             )
         return await super().__aenter__()
 
@@ -323,22 +318,3 @@ class PMMSyncer(BaseSyncer):
             and service.node.source == SourceEnum.PMM
             and service.external_id
         )
-
-    @field_validator("pmm", mode="before")
-    @classmethod
-    def merge_global_pmm_setting(cls, value: Any) -> Any:
-        """Merge the global PMM settings with any provided PMM settings.
-
-        This validator checks if the provided value is a dictionary and, if so, merges
-        it with the global PMM settings from ``settings.PMM``. This allows for any
-        PMMSyncer instance to override specific PMM settings while still inheriting
-        defaults from the global configuration.
-
-        :param value: The PMM settings value to validate and merge.
-        :type value: Any
-        :return: The merged PMM settings.
-        :rtype: Any
-        """
-        if isinstance(value, dict):
-            return settings.PMM.model_dump() | value
-        return value

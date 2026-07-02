@@ -173,6 +173,8 @@ def test_hot_field_names_tasks_settings() -> None:
             "PRE_EXECUTION_CONNECTIVITY_CHECK",
             "STALENESS_THRESHOLD_SECONDS",
             "SYNC_LOCK_TTL",
+            "LOG_RETENTION_DAYS",
+            "LOG_PURGE_BATCH_SIZE",
         }
     )
 
@@ -252,7 +254,7 @@ def test_sep_settings_marked_advanced(field_name: str) -> None:
     assert is_advanced_field(SEPSettings.model_fields[field_name]) is True
 
 
-@pytest.mark.parametrize("field_name", ["SYNC_REFRESH_TIME", "APPS", "DATABASE", "PMM"])
+@pytest.mark.parametrize("field_name", ["SYNC_REFRESH_TIME", "APPS", "DATABASE"])
 def test_sep_settings_not_marked_advanced(field_name: str) -> None:
     """SEP settings left basic do not carry the advanced flag (no over-marking)."""
     assert is_advanced_field(SEPSettings.model_fields[field_name]) is False

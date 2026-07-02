@@ -41,13 +41,14 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import { useSnackbar } from 'notistack';
 import {
-  useDeletePluginEntity,
-  useDeletePluginTask,
-  usePluginEntityDetail,
-  usePluginTask,
+  useDeleteAppEntity,
+  useDeleteAppTask,
+  useAppEntityDetail,
+  useAppTask,
   type DetailSection,
-  type PluginEntitySchema,
-  type PluginSchema,
+  type SepComponents,
+  type AppEntitySchema,
+  type AppSchema,
 } from '@sep/api';
 import { resolvePath } from '../../utils/resolvePath';
 import { TaskHistoryTable, type TaskHistoryEntry } from '../TaskHistoryTable';
@@ -61,7 +62,7 @@ import {
 } from '../../hooks';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { detailSyntaxBlockSx, type DetailSyntaxLanguage } from './detailSyntaxStyles';
-import { resolvePluginRouteBase } from './routeBase';
+import { resolveAppRouteBase } from './routeBase';
 import { getStoredForm } from './storedForm';
 import { StatsCard } from './StatsCard';
 
@@ -78,8 +79,8 @@ export interface TaskExecuteAction {
   executeBody?: TaskExecuteBody;
 }
 
-export interface PluginDetailPageProps {
-  schema: PluginSchema;
+export interface AppDetailPageProps {
+  schema: AppSchema;
   pluginName: string;
   /** Absolute list route prefix when the plugin is not mounted under ``/apps/{name}``. */
   routeBase?: string;
@@ -97,13 +98,13 @@ export interface PluginDetailPageProps {
   renderTaskDetailChildren?: (args: {
     task: Record<string, unknown>;
     pluginName: string;
-    schema: PluginSchema;
+    schema: AppSchema;
   }) => ReactNode;
   /** Extra content under the main detail card (e.g. child entity tables). */
   renderEntityDetailChildren?: (args: {
     entityName: string;
     record: Record<string, unknown>;
-    schema: PluginSchema;
+    schema: AppSchema;
     pathname: string;
     pluginName: string;
     mockEntityItems?: Record<string, Record<string, unknown>[]>;
@@ -263,7 +264,7 @@ function TaskOverviewDetailField({ label, value }: { label: string; value: unkno
 }
 
 interface OverviewTabProps {
-  schema: PluginSchema;
+  schema: AppSchema;
   task: Record<string, unknown>;
   hiddenFields?: string[];
   /** Owning plugin name; enables the generic schedule summary. */
@@ -303,6 +304,53 @@ function DetailViewSectionCard({
   );
 }
 
+/**
+ * Render the post-creation connectivity-check warning, with an optional link
+ * to the run-script log when the check produced a task history. The link is
+ * omitted when no ``task_history_id`` is present (e.g. the Tasks API was
+ * unreachable, so no task ran).
+ */
+function ConnectivityWarningAlert({
+  warning,
+}: {
+  warning: SepComponents['schemas']['ConnectivityWarning'];
+}) {
+  const [logOpen, setLogOpen] = useState(false);
+  const message = warning.message || 'Connectivity check returned a warning for this task.';
+  const taskHistoryId = warning.task_history_id ?? null;
+
+  return (
+    <>
+      <Alert
+        severity="warning"
+        sx={{ mb: 3, whiteSpace: 'pre-wrap' }}
+        action={
+          taskHistoryId !== null ? (
+            <Button
+              color="inherit"
+              size="small"
+              data-testid="connectivity-log-button"
+              onClick={() => setLogOpen(true)}
+            >
+              View log
+            </Button>
+          ) : undefined
+        }
+      >
+        {message}
+      </Alert>
+      {taskHistoryId !== null && (
+        <Dialog open={logOpen} onClose={() => setLogOpen(false)} fullWidth maxWidth="lg">
+          <DialogTitle>Connectivity check log — #{taskHistoryId}</DialogTitle>
+          <DialogContent dividers sx={{ p: 0 }}>
+            <TaskLogViewer taskHistoryId={taskHistoryId} height={520} />
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
 function OverviewTab({
   schema,
   task,
@@ -311,7 +359,12 @@ function OverviewTab({
   scheduleHref,
   children,
 }: OverviewTabProps) {
-  const connectivityWarning = task.connectivity_warning;
+  // The detail/list response model omits `connectivity_warning`; it rides only
+  // the create response. PluginCreatePage carries it here via navigation state
+  // so the warning surfaces once after a failing post-create check.
+  const location = useLocation();
+  const navState = (location.state ?? null) as { connectivityWarning?: unknown } | null;
+  const connectivityWarning = task.connectivity_warning ?? navState?.connectivityWarning;
   const taskName = typeof task.name === 'string' && task.name.trim() ? task.name.trim() : undefined;
   const columns = schema.list_view!.columns;
   const schemaHiddenFields = schema.list_view?.overview_hidden_fields;
@@ -334,12 +387,9 @@ function OverviewTab({
       {connectivityWarning !== null &&
         connectivityWarning !== undefined &&
         typeof connectivityWarning === 'object' && (
-          <Alert severity="warning" sx={{ mb: 3 }}>
-            {('message' in connectivityWarning &&
-              typeof connectivityWarning.message === 'string' &&
-              connectivityWarning.message) ||
-              'Connectivity check returned a warning for this task.'}
-          </Alert>
+          <ConnectivityWarningAlert
+            warning={connectivityWarning as SepComponents['schemas']['ConnectivityWarning']}
+          />
         )}
 
       <SectionCard title="Task information">
@@ -446,7 +496,7 @@ function LogsTab({ taskNames }: LogsTabProps) {
 }
 
 interface ActionBarProps {
-  schema: PluginSchema;
+  schema: AppSchema;
   pluginName: string;
   routeBase: string;
   taskName: string;
@@ -465,7 +515,7 @@ function ActionBar({
 }: ActionBarProps) {
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
-  const deleteTask = useDeletePluginTask(pluginName);
+  const deleteTask = useDeleteAppTask(pluginName);
   const executeTask = useExecuteTask(pluginName);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingExecute, setPendingExecute] = useState<TaskExecuteAction | null>(null);
@@ -636,7 +686,7 @@ function ActionBar({
   );
 }
 
-export function PluginDetailPage({
+export function AppDetailPage({
   schema,
   pluginName,
   routeBase: routeBaseProp,
@@ -653,8 +703,8 @@ export function PluginDetailPage({
   resolveParentPath,
   hideDetailChrome = false,
   allowListEntityDelete = false,
-}: PluginDetailPageProps) {
-  const routeBase = resolvePluginRouteBase(pluginName, routeBaseProp);
+}: AppDetailPageProps) {
+  const routeBase = resolveAppRouteBase(pluginName, routeBaseProp);
   const params = useParams<Record<string, string | undefined>>();
   const id = (detailIdParam && params[detailIdParam]) ?? params.id;
   const entityName = detailEntityName ?? params.entityName;
@@ -662,7 +712,7 @@ export function PluginDetailPage({
   const navigate = useNavigate();
   const location = useLocation();
   const entitySchema = useMemo(
-    () => schema.entities?.find((e: PluginEntitySchema) => e.name === entityName),
+    () => schema.entities?.find((e: AppEntitySchema) => e.name === entityName),
     [schema.entities, entityName],
   );
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
@@ -674,8 +724,8 @@ export function PluginDetailPage({
     return resolveParentPath(location.pathname);
   }, [location.pathname, resolveParentPath]);
 
-  const taskQuery = usePluginTask(pluginName, id, mockTasks, { enabled: !multi && Boolean(id) });
-  const entityQuery = usePluginEntityDetail(
+  const taskQuery = useAppTask(pluginName, id, mockTasks, { enabled: !multi && Boolean(id) });
+  const entityQuery = useAppEntityDetail(
     pluginName,
     entityName ?? '',
     id,
@@ -694,7 +744,7 @@ export function PluginDetailPage({
     [hideDetailChrome, multi, entityName, entitySchema?.display_name],
   );
 
-  const deleteEntity = useDeletePluginEntity(
+  const deleteEntity = useDeleteAppEntity(
     pluginName,
     entityName ?? '',
     multi ? mockEntityItems?.[entityName!] : undefined,

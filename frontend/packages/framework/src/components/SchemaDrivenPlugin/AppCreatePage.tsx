@@ -22,14 +22,14 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
-import { useCreatePluginEntity, useCreatePluginTask, type PluginSchema } from '@sep/api';
+import { useCreateAppEntity, useCreateAppTask, type AppSchema } from '@sep/api';
 import { SchemaFormRenderer, coerceFormValues, flattenSectionFields } from '../SchemaFormRenderer';
 import type { RenderFieldOverride } from '../SchemaFormRenderer/types';
 import type { RenderFormSlot } from './types';
 import { EMPTY_SUBMIT_ERROR, mapSubmitError, type SubmitErrorState } from './submitErrorMapping';
 
-interface PluginCreatePageProps {
-  schema: PluginSchema;
+interface AppCreatePageProps {
+  schema: AppSchema;
   pluginName: string;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
@@ -39,14 +39,14 @@ interface PluginCreatePageProps {
   renderCreateForm?: RenderFormSlot;
 }
 
-export function PluginCreatePage({
+export function AppCreatePage({
   schema,
   pluginName,
   mockTasks,
   mockEntityItems,
   renderField,
   renderCreateForm,
-}: PluginCreatePageProps) {
+}: AppCreatePageProps) {
   const navigate = useNavigate();
   const { entityName } = useParams<{ entityName?: string }>();
   const entitySchema = useMemo(
@@ -55,8 +55,8 @@ export function PluginCreatePage({
   );
   const multi = Boolean(schema.entities?.length && entityName && entitySchema);
   const { enqueueSnackbar } = useSnackbar();
-  const createTask = useCreatePluginTask(pluginName, mockTasks);
-  const createEntity = useCreatePluginEntity(
+  const createTask = useCreateAppTask(pluginName, mockTasks);
+  const createEntity = useCreateAppEntity(
     pluginName,
     entityName ?? '',
     multi ? mockEntityItems?.[entityName!] : undefined,
@@ -79,8 +79,22 @@ export function PluginCreatePage({
     // backend-ready payload. Idempotent for the default SchemaFormRenderer
     // path, which has already coerced.
     create.mutate(coerceFormValues(data, flattenSectionFields(sections)), {
-      onSuccess: () => {
+      onSuccess: (created) => {
         enqueueSnackbar(`${title} created`, { variant: 'success' });
+        // A post-create connectivity check only rides the create response; the
+        // detail/list model omits it. When present, land on the new task's
+        // detail page and carry the warning via navigation state so it surfaces
+        // there. Entities and warning-free creates go to the list.
+        const response = (created ?? {}) as Record<string, unknown>;
+        const warning = response.connectivity_warning;
+        const name = typeof response.name === 'string' ? response.name : undefined;
+        if (!multi && warning && name) {
+          navigate(`../task/${encodeURIComponent(name)}`, {
+            relative: 'path',
+            state: { connectivityWarning: warning },
+          });
+          return;
+        }
         navigate('..', { relative: 'path' });
       },
       onError: (error: unknown) => {

@@ -86,25 +86,6 @@ NOMAD_DEAD_JOB_STATUS = "dead"
 _NOMAD_LOG_STREAM_SOCK_TIMEOUT = "nomad-log-stream-sock-timeout"
 _NOMAD_LOG_STREAM_CLIENT_ERROR = "nomad-log-stream-client-error"
 
-_LOG_FETCH_OFFSETS: dict[tuple[int, str, str, TaskLogType], int] = {}
-"""Process-local Nomad-space fetch cursors keyed by
-``(task_history_id, allocation_id, step, log_type)``. Kept separate from the
-DB-persisted ``TaskHistoryLogState.producer_offset`` so the ``offset=`` kwarg
-passed to ``stream_logs.stream`` stays in raw Nomad byte space even when
-anonymization rewrites the producer-space length."""
-
-
-def _clear_log_fetch_offsets(task_history_id: int) -> None:
-    """Drop every ``_LOG_FETCH_OFFSETS`` entry for a task history.
-
-    :param task_history_id: The task history identifier whose fetch cursors
-        should be discarded.
-    :type task_history_id: int
-    """
-    for key in list(_LOG_FETCH_OFFSETS):
-        if key[0] == task_history_id:
-            del _LOG_FETCH_OFFSETS[key]
-
 
 def _nomad_event_body_text(ev: dict) -> str:
     raw = ev.get("DisplayMessage") or ev.get("Message") or ev.get("Description") or ""
@@ -1002,9 +983,11 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     ) -> None:
         """Persist this sync cycle's delta logs into the chunk store.
 
-        Resets the producer offset to ``0`` for every stream when Nomad
-        reschedules to a new allocation so the fetcher reads the new
-        allocation from the start.
+        Resets the fetch frontier (both cursors zeroed, ``allocation_epoch``
+        stamped to the new allocation's ``CreateIndex``) for every stream when
+        Nomad reschedules to a new allocation so the fetcher reads the new
+        allocation from the start; the epoch is threaded into every write so a
+        sync that overlapped the switch cannot append superseded bytes.
 
         :param writer_session: The dedicated session used for log chunk
             persistence, supplied by the caller.
@@ -1019,18 +1002,18 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type previous_allocation_id: str | None
         """
         alloc_id = alloc["ID"]
+        alloc_epoch = alloc["CreateIndex"]
         legacy_logs = decompress_legacy_logs(queue_item)
         if legacy_logs:
             await backfill_legacy_logs(writer_session, queue_item.id, legacy_logs)
 
         if previous_allocation_id is not None and previous_allocation_id != alloc_id:
-            await TaskHistoryLogWriter.drain_and_reset_producer_offsets(
-                writer_session, queue_item.id
+            await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
+                writer_session, queue_item.id, new_allocation_epoch=alloc_epoch
             )
-            _clear_log_fetch_offsets(queue_item.id)
 
         initial_offsets = await self._build_initial_log_offsets(
-            writer_session, queue_item.id, alloc_id
+            writer_session, queue_item.id, alloc_epoch
         )
         task_logs = self.get_logs_for_allocation(
             alloc,
@@ -1042,28 +1025,34 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         await self._write_nomad_deltas(
             writer_session,
             queue_item.id,
-            alloc_id,
+            alloc_epoch,
             task_logs,
             force_flush=force_flush,
         )
         if force_flush:
             await self._force_flush_remaining_streams(writer_session, queue_item.id)
-            _clear_log_fetch_offsets(queue_item.id)
 
     @staticmethod
     async def _build_initial_log_offsets(
         writer_session: AsyncSession,
         task_history_id: int,
-        alloc_id: str,
+        current_epoch: int,
     ) -> dict[str, dict[str, Any]]:
         """Return the per-stream ``initial_logs`` dict for the current cycle.
+
+        Seeds each stream's next-fetch cursor from its durable
+        ``TaskHistoryLogState`` row, but only when the row belongs to the
+        current allocation — its ``allocation_epoch`` matches ``current_epoch``
+        or is the ``0`` legacy/unknown sentinel that trusts the migration
+        backfill. A row stamped to a known *different* allocation holds a cursor
+        in that allocation's byte space, so it is skipped and the stream
+        restarts from ``0`` rather than reusing a superseded cursor.
 
         :param writer_session: The dedicated log writer session.
         :type writer_session: AsyncSession
         :param task_history_id: The task history identifier.
         :type task_history_id: int
-        :param alloc_id: The current Nomad allocation identifier.
-        :type alloc_id: str
+        :param current_epoch: The running allocation's ``CreateIndex``.
         :return: A dict shaped
             ``{source: {f"{stream.value}_last_offset": int,
             f"{stream.value}_producer_offset": int}}``.
@@ -1074,11 +1063,10 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         )
         initial_offsets = defaultdict(dict)
         for row in state_rows:
-            nomad_offset = _LOG_FETCH_OFFSETS.get(
-                (task_history_id, alloc_id, row.source, row.stream), 0
-            )
+            if row.allocation_epoch not in (0, current_epoch):
+                continue
             initial_offsets[row.source][f"{row.stream.value}_last_offset"] = (
-                nomad_offset
+                row.nomad_offset
             )
             initial_offsets[row.source][f"{row.stream.value}_producer_offset"] = (
                 row.producer_offset
@@ -1089,7 +1077,7 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     async def _write_nomad_deltas(
         writer_session: AsyncSession,
         task_history_id: int,
-        alloc_id: str,
+        alloc_epoch: int,
         task_logs: dict[str, dict[str, Any]],
         *,
         force_flush: bool,
@@ -1100,8 +1088,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         :type writer_session: AsyncSession
         :param task_history_id: The task history identifier.
         :type task_history_id: int
-        :param alloc_id: The current Nomad allocation identifier.
-        :type alloc_id: str
+        :param alloc_epoch: The current Nomad allocation's ``CreateIndex``,
+            stamped onto the state row so a write from a superseded allocation
+            is discarded by the writer's epoch guard.
         :param task_logs: The per-step/per-stream delta dict returned by
             :meth:`get_logs_for_allocation`.
         :type task_logs: dict[str, dict[str, Any]]
@@ -1112,12 +1101,9 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
         for step, payload in task_logs.items():
             for log_type in TaskLogType:
                 delta_text = payload.get(log_type) or ""
-                nomad_offset = payload.get(f"{log_type.value}_last_offset", 0)
-                _LOG_FETCH_OFFSETS[(task_history_id, alloc_id, step, log_type)] = (
-                    nomad_offset
-                )
                 if not delta_text and not force_flush:
                     continue
+                nomad_offset = payload.get(f"{log_type.value}_last_offset", 0)
                 producer_offset = payload.get(f"{log_type.value}_producer_offset", 0)
                 await TaskHistoryLogWriter.append(
                     writer_session,
@@ -1126,6 +1112,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
                     stream=log_type,
                     new_bytes=delta_text.encode("utf-8"),
                     producer_offset_after=producer_offset,
+                    nomad_offset_after=nomad_offset,
+                    allocation_epoch=alloc_epoch,
                     force_flush=force_flush,
                 )
 

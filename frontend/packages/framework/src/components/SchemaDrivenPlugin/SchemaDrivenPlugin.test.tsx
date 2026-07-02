@@ -20,13 +20,13 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
-import type { PluginSchema } from '@sep/api';
+import type { AppSchema } from '@sep/api';
 import { SchemaDrivenPlugin } from './SchemaDrivenPlugin';
 import type { RenderFormSlot } from './types';
 
 const mockUpdateMutate = vi.fn();
 
-const schema: PluginSchema = {
+const schema: AppSchema = {
   pluginName: 'inventory',
   display_name: 'Inventory',
   entities: [
@@ -37,10 +37,10 @@ const schema: PluginSchema = {
       list_view: { columns: [{ key: 'label', label: 'Label' }] },
     },
   ],
-} as unknown as PluginSchema;
+} as unknown as AppSchema;
 
 // Single-entity (task-style) schema for the task/:id/edit branch.
-const taskSchema: PluginSchema = {
+const taskSchema: AppSchema = {
   pluginName: 'checksums',
   display_name: 'Checksum',
   forms: [
@@ -53,7 +53,7 @@ const taskSchema: PluginSchema = {
     },
   ],
   list_view: { columns: [{ key: 'name', label: 'Name' }] },
-} as unknown as PluginSchema;
+} as unknown as AppSchema;
 
 const taskRecord = {
   id: 1,
@@ -61,26 +61,26 @@ const taskRecord = {
   data: { _form: { task_name: 'check1', title: 'hello' } },
 };
 
-// Schema the mocked usePluginSchema serves; per-test override, reset after each.
-let activeSchema: PluginSchema = schema;
+// Schema the mocked useAppSchema serves; per-test override, reset after each.
+let activeSchema: AppSchema = schema;
 
 // Stub sibling page modules so their @sep/api imports stay out of the graph;
 // this test exercises only the SchemaDrivenPlugin → edit-page threading.
-vi.mock('./PluginListPage', () => ({ PluginListPage: () => <div>list</div> }));
-vi.mock('./PluginDetailPage', () => ({
-  PluginDetailPage: () => <div>detail</div>,
+vi.mock('./AppListPage', () => ({ AppListPage: () => <div>list</div> }));
+vi.mock('./AppDetailPage', () => ({
+  AppDetailPage: () => <div>detail</div>,
   pathToEntityList: () => '',
 }));
-vi.mock('./PluginSchedulePage', () => ({ PluginSchedulePage: () => <div>schedule</div> }));
+vi.mock('./AppSchedulePage', () => ({ AppSchedulePage: () => <div>schedule</div> }));
 
 vi.mock('@sep/api', () => ({
-  usePluginSchema: () => ({ data: activeSchema, isLoading: false, error: null }),
-  usePluginEntityDetail: () => ({ data: { id: 5, label: 'n1' }, isLoading: false }),
-  useUpdatePluginEntity: () => ({ mutate: mockUpdateMutate, isPending: false }),
-  useCreatePluginEntity: () => ({ mutate: vi.fn(), isPending: false }),
-  useCreatePluginTask: () => ({ mutate: vi.fn(), isPending: false }),
-  usePluginTask: () => ({ data: taskRecord, isLoading: false }),
-  useUpdatePluginTask: () => ({ mutate: vi.fn(), isPending: false, isError: false, error: null }),
+  useAppSchema: () => ({ data: activeSchema, isLoading: false, error: null }),
+  useAppEntityDetail: () => ({ data: { id: 5, label: 'n1' }, isLoading: false }),
+  useUpdateAppEntity: () => ({ mutate: mockUpdateMutate, isPending: false }),
+  useCreateAppEntity: () => ({ mutate: vi.fn(), isPending: false }),
+  useCreateAppTask: () => ({ mutate: vi.fn(), isPending: false }),
+  useAppTask: () => ({ data: taskRecord, isLoading: false }),
+  useUpdateAppTask: () => ({ mutate: vi.fn(), isPending: false, isError: false, error: null }),
 }));
 
 afterEach(() => {
@@ -128,7 +128,7 @@ describe('SchemaDrivenPlugin — renderEditForm slot', () => {
 });
 
 describe('SchemaDrivenPlugin — single-entity task edit route', () => {
-  it('renders PluginTaskEditPage at task/:id/edit, prefilled from the stored form', () => {
+  it('renders AppTaskEditPage at task/:id/edit, prefilled from the stored form', () => {
     activeSchema = taskSchema;
     render(
       <SnackbarProvider>

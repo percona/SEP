@@ -20,25 +20,25 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
-import type { PluginSchema } from '@sep/api';
-import { PluginTaskEditPage, normalizeChoiceDefaults } from './PluginTaskEditPage';
+import type { AppSchema } from '@sep/api';
+import { AppTaskEditPage, normalizeChoiceDefaults } from './AppTaskEditPage';
 import type { RenderFormSlot } from './types';
 
 const mockUpdateTaskMutate = vi.fn();
-const mockUsePluginTask = vi.fn();
+const mockUseAppTask = vi.fn();
 
 vi.mock('@sep/api', () => ({
-  useUpdatePluginTask: () => ({
+  useUpdateAppTask: () => ({
     mutate: mockUpdateTaskMutate,
     isPending: false,
     isError: false,
     error: null,
   }),
-  usePluginTask: (...args: unknown[]) => mockUsePluginTask(...args),
+  useAppTask: (...args: unknown[]) => mockUseAppTask(...args),
   useAlertConfig: () => ({ data: { available: true }, isLoading: false, isError: false }),
 }));
 
-const schema: PluginSchema = {
+const schema: AppSchema = {
   pluginName: 'checksums',
   display_name: 'Checksum',
   description: 'Test',
@@ -54,7 +54,7 @@ const schema: PluginSchema = {
       ],
     },
   ],
-} as unknown as PluginSchema;
+} as unknown as AppSchema;
 
 const STORED_TASK = {
   id: 1,
@@ -73,7 +73,7 @@ function renderAt(
         <Routes>
           <Route
             path="/apps/:plugin/task/:id/edit"
-            element={<PluginTaskEditPage schema={schema} pluginName="checksums" {...extra} />}
+            element={<AppTaskEditPage schema={schema} pluginName="checksums" {...extra} />}
           />
           <Route path="/apps/:plugin/task/:id" element={<div>detail page</div>} />
         </Routes>
@@ -84,12 +84,12 @@ function renderAt(
 
 beforeEach(() => {
   mockUpdateTaskMutate.mockReset();
-  mockUsePluginTask.mockReset();
+  mockUseAppTask.mockReset();
 });
 
-describe('PluginTaskEditPage', () => {
+describe('AppTaskEditPage', () => {
   it('prefills the editable fields from the stored create-form body', () => {
-    mockUsePluginTask.mockReturnValue({ data: STORED_TASK, isLoading: false });
+    mockUseAppTask.mockReturnValue({ data: STORED_TASK, isLoading: false });
 
     renderAt();
 
@@ -98,7 +98,7 @@ describe('PluginTaskEditPage', () => {
   });
 
   it('renders the task name read-only (no editable task_name input)', () => {
-    mockUsePluginTask.mockReturnValue({ data: STORED_TASK, isLoading: false });
+    mockUseAppTask.mockReturnValue({ data: STORED_TASK, isLoading: false });
 
     renderAt();
 
@@ -108,7 +108,7 @@ describe('PluginTaskEditPage', () => {
   });
 
   it('submits coerced values and pins task_name to the route id', async () => {
-    mockUsePluginTask.mockReturnValue({ data: STORED_TASK, isLoading: false });
+    mockUseAppTask.mockReturnValue({ data: STORED_TASK, isLoading: false });
     // A slot bypassing SchemaFormRenderer submits raw string values and omits
     // task_name; the page coerces `count` and re-asserts the original name.
     const renderEditForm: RenderFormSlot = ({ onSubmit, loading }) => (
@@ -132,7 +132,7 @@ describe('PluginTaskEditPage', () => {
   });
 
   it('keeps task_name pinned even when the submitted body carries a different name', async () => {
-    mockUsePluginTask.mockReturnValue({ data: STORED_TASK, isLoading: false });
+    mockUseAppTask.mockReturnValue({ data: STORED_TASK, isLoading: false });
     const renderEditForm: RenderFormSlot = ({ onSubmit }) => (
       <button type="button" onClick={() => onSubmit({ task_name: 'renamed', title: 'x' })}>
         Submit slot
@@ -148,7 +148,7 @@ describe('PluginTaskEditPage', () => {
   });
 
   it('navigates back to the task detail on a successful update', async () => {
-    mockUsePluginTask.mockReturnValue({ data: STORED_TASK, isLoading: false });
+    mockUseAppTask.mockReturnValue({ data: STORED_TASK, isLoading: false });
     mockUpdateTaskMutate.mockImplementation((_vars, opts) => opts.onSuccess?.());
     const renderEditForm: RenderFormSlot = ({ onSubmit }) => (
       <button type="button" onClick={() => onSubmit({ title: 'x' })}>
@@ -163,7 +163,7 @@ describe('PluginTaskEditPage', () => {
   });
 
   it('redirects to detail without crashing when the task has no stored form', () => {
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: { id: 1, name: 'check1', status: 'completed', data: { meta: {} } },
       isLoading: false,
     });
@@ -181,8 +181,8 @@ describe('PluginTaskEditPage', () => {
     const alertSchema = {
       ...schema,
       capabilities: { alert_on_fail: true },
-    } as unknown as PluginSchema;
-    mockUsePluginTask.mockReturnValue({
+    } as unknown as AppSchema;
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'check1',
@@ -198,7 +198,7 @@ describe('PluginTaskEditPage', () => {
           <Routes>
             <Route
               path="/apps/:plugin/task/:id/edit"
-              element={<PluginTaskEditPage schema={alertSchema} pluginName="checksums" />}
+              element={<AppTaskEditPage schema={alertSchema} pluginName="checksums" />}
             />
             <Route path="/apps/:plugin/task/:id" element={<div>detail page</div>} />
           </Routes>
@@ -218,7 +218,7 @@ describe('PluginTaskEditPage', () => {
     // with auto() stores lowercase values ("rsync") while schema choices use the
     // member name ("RSYNC"). The mismatch left the multi-select empty on load,
     // causing the form to submit upload:[] and the backend to return 422.
-    const uploadSchema: PluginSchema = {
+    const uploadSchema: AppSchema = {
       pluginName: 'mysql_backups',
       display_name: 'MySQL Backup',
       description: 'Test',
@@ -243,9 +243,9 @@ describe('PluginTaskEditPage', () => {
           ],
         },
       ],
-    } as unknown as PluginSchema;
+    } as unknown as AppSchema;
 
-    mockUsePluginTask.mockReturnValue({
+    mockUseAppTask.mockReturnValue({
       data: {
         id: 1,
         name: 'backup1',
@@ -263,7 +263,7 @@ describe('PluginTaskEditPage', () => {
           <Routes>
             <Route
               path="/apps/:plugin/task/:id/edit"
-              element={<PluginTaskEditPage schema={uploadSchema} pluginName="mysql_backups" />}
+              element={<AppTaskEditPage schema={uploadSchema} pluginName="mysql_backups" />}
             />
             <Route path="/apps/:plugin/task/:id" element={<div>detail page</div>} />
           </Routes>

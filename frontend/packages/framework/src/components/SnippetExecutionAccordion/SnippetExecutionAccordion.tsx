@@ -33,7 +33,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, type PluginSchema } from '@sep/api';
+import { apiClient, type AppSchema } from '@sep/api';
 import {
   snippetPluginExecutePath,
   snippetPluginHistoryPath,
@@ -75,10 +75,10 @@ interface SnippetExecutionRequest {
 }
 
 function useSnippetAccordionSchema(filename: string, enabled: boolean) {
-  return useQuery<PluginSchema>({
+  return useQuery<AppSchema>({
     queryKey: ['snippets', filename, 'schema', { execution_only: true }],
     queryFn: async () => {
-      const { data } = await apiClient.get<PluginSchema>(snippetPluginSchemaPath(filename), {
+      const { data } = await apiClient.get<AppSchema>(snippetPluginSchemaPath(filename), {
         params: { execution_only: true },
       });
       return data;

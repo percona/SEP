@@ -16,7 +16,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { apiClient, type PluginSchema } from '@sep/api';
+import { apiClient, type AppSchema } from '@sep/api';
 
 const SNIPPET_PLUGIN_SCHEMA_STALE_MS = 5 * 60 * 1000;
 
@@ -28,13 +28,13 @@ const SNIPPET_PLUGIN_SCHEMA_STALE_MS = 5 * 60 * 1000;
  * like ATW that compose the same URLs client-side.
  */
 export function useSnippetPluginSchema(apiPath: string | null | undefined) {
-  return useQuery<PluginSchema>({
+  return useQuery<AppSchema>({
     queryKey: ['plugins', 'snippets', 'schema', apiPath ?? ''],
     queryFn: async () => {
       if (!apiPath) {
         throw new Error('Missing snippets plugin schema path');
       }
-      const { data } = await apiClient.get<PluginSchema>(apiPath);
+      const { data } = await apiClient.get<AppSchema>(apiPath);
       return data;
     },
     enabled: Boolean(apiPath),
