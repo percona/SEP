@@ -43,6 +43,7 @@ from app.sep.apps.framework.rules import (
     FailRule,
     truthy,
 )
+from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 DEFAULT_ALTERS_DSN_TABLE = "D=percona,t=dsns"
@@ -183,7 +184,7 @@ class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
 
     task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="task")]
     hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label="Execution Host", section="task")
+        NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="task")
     ]
     service_id: Annotated[
         int,

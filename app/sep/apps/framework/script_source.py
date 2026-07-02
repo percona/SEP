@@ -36,11 +36,11 @@ from pathlib import Path, PurePosixPath
 from typing import Annotated, Generic, Protocol, runtime_checkable, TypeVar
 
 from fastapi import Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.exceptions import HTTPBadRequestException
 from app.core.utils.fields import NonEmptyStr
-from app.sep.apps.framework.schema import AppSchema
+from app.sep.apps.framework.schema import AppSchema, EXECUTION_HOST_LABEL
 
 
 @runtime_checkable
@@ -83,7 +83,7 @@ class ScriptExecuteWrite(BaseModel):
         against the script's dynamic execution model.
     """
 
-    executor_host: NonEmptyStr
+    executor_host: NonEmptyStr = Field(title=EXECUTION_HOST_LABEL)
     sudo: bool = False
     args: dict[str, object] = {}
 

@@ -238,7 +238,7 @@
           "type": "string"
         },
         {
-          "label": "Executor Host",
+          "label": "Execution Host",
           "name": "hostname",
           "required": true,
           "type": "host"
@@ -1110,7 +1110,7 @@
       },
       {
         "key": "hostname",
-        "label": "Executor Host",
+        "label": "Execution Host",
         "sortable": false
       },
       {

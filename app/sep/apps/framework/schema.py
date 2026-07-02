@@ -790,9 +790,12 @@ class ListView(SchemaBaseModel):
         return self
 
 
-#: Read-only executor-host column shared by every host-bearing list view.
+#: Canonical UI label for the Nomad / Celery host a task runs on.
+EXECUTION_HOST_LABEL = "Execution Host"
+
+#: Read-only execution-host column shared by every host-bearing list view.
 #: Never mutate it; pass through ``default_columns()``, which copies per call.
-EXECUTOR_HOST_COLUMN = Column(key="hostname", label="Executor Host")
+EXECUTOR_HOST_COLUMN = Column(key="hostname", label=EXECUTION_HOST_LABEL)
 
 
 def default_columns(*middle: Column) -> list[Column]:

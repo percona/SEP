@@ -20,6 +20,7 @@ from pydantic import ValidationError
 
 from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.alters.schema import alters_schema
+from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 
 DATA_SECTION_FAIL_WHEN_RULE_COUNT = 2
 LEGACY_FORM_SCHEMA_ID = 10
@@ -50,18 +51,18 @@ def test_alters_schema_execution_section_host_labels():
         if section.title == "Execution"
     )
     fields = {field.label: field.path for field in execution.fields}
-    assert fields["Execution Host"] == "data.meta.target"
+    assert fields[EXECUTION_HOST_LABEL] == "data.meta.target"
     assert fields["Database Host"] == "data.meta._service_host"
     assert "Target" not in fields
 
 
 def test_alters_schema_form_hostname_label():
-    """Test create form hostname field is labeled Execution Host."""
+    """Test create form hostname field uses the global execution-host label."""
     task_section = next(
         section for section in alters_schema.forms if section.title == "Task"
     )
     hostname = next(field for field in task_section.fields if field.name == "hostname")
-    assert hostname.label == "Execution Host"
+    assert hostname.label == EXECUTION_HOST_LABEL
 
 
 def test_alters_schema_data_target_mutual_exclusion_gates():

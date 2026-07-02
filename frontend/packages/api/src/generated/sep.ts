@@ -5052,7 +5052,7 @@ export interface components {
       args?: Record<string, never>;
       /** @default environment */
       collector_type: components['schemas']['CollectorTypeEnum'];
-      /** Executor Host */
+      /** Execution Host */
       executor_host: string;
       /** Service Id */
       service_id: number;
@@ -6692,7 +6692,7 @@ export interface components {
        * @default {}
        */
       args: Record<string, never>;
-      /** Executor Host */
+      /** Execution Host */
       executor_host: string;
       /**
        * Sudo

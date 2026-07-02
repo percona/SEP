@@ -35,6 +35,7 @@ from app.sep.apps.framework.schema import (
     DetailField,
     DetailSection,
     DetailView,
+    EXECUTION_HOST_LABEL,
     EXECUTOR_HOST_COLUMN,
     ListView,
 )
@@ -80,7 +81,7 @@ restore_views = Views(
             DetailSection(
                 title="Restore Target",
                 fields=[
-                    DetailField(path="hostname", label="Executor Host"),
+                    DetailField(path="hostname", label=EXECUTION_HOST_LABEL),
                     DetailField(path="host", label="Destination Host"),
                     DetailField(path="port", label="Destination Port"),
                 ],

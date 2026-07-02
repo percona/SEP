@@ -28,6 +28,7 @@ from app.core.settings_override.registry import (
     is_hot_reloadable,
     materialize_override_value,
 )
+from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.sep.snippets.config import SnippetsSettings, SnippetSudoOption
 from app.sep.snippets.models.snippet import BaseSnippet, SUDO_INPUT_NAME
 
@@ -283,7 +284,7 @@ class TestToFormOptionalExecutorHosts:
         """Verify no executor host fieldset is rendered when hosts are ``None``."""
         html = BaseSnippet._to_form("[]", None)
         legends = _extract_fieldset_legends(html)
-        assert "Executor Host" not in legends
+        assert EXECUTION_HOST_LABEL not in legends
 
     def test_executor_hosts_none_still_renders_parameters(self):
         """Verify parameter fieldsets render even when hosts are ``None``."""
@@ -296,7 +297,7 @@ class TestToFormOptionalExecutorHosts:
         """Verify executor host fieldset renders when hosts are provided."""
         html = BaseSnippet._to_form("[]", EXECUTOR_HOSTS)
         legends = _extract_fieldset_legends(html)
-        assert "Executor Host" in legends
+        assert EXECUTION_HOST_LABEL in legends
 
     def test_custom_form_id(self):
         """Verify the form element uses a custom ID when provided."""
@@ -313,7 +314,7 @@ class TestToFormOptionalExecutorHosts:
         params = _make_params_json({"name": "host"})
         html = BaseSnippet._to_form(params, None, form_id="troubleshoot-test")
         assert 'id="troubleshoot-test"' in html
-        assert "Executor Host" not in html
+        assert EXECUTION_HOST_LABEL not in html
         assert "Parameters" in html
 
 

@@ -64,6 +64,7 @@ from app.core.utils.fields import (
     UTCDatetime,
 )
 from app.core.utils.pydantic import CustomFieldMetadata
+from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
     SnippetFilterType,
@@ -128,7 +129,7 @@ def get_executor_hosts_fieldset(
         {"value": value, "label": label} for value, label in sorted(executor_hosts)
     ]
     return FieldsetElement(
-        legend="Executor Host",
+        legend=EXECUTION_HOST_LABEL,
         children=[
             SelectElement(
                 children=options,

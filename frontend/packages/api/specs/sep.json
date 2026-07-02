@@ -4045,7 +4045,7 @@
           },
           "executor_host": {
             "minLength": 1,
-            "title": "Executor Host",
+            "title": "Execution Host",
             "type": "string"
           },
           "service_id": {
@@ -7427,7 +7427,7 @@
           },
           "executor_host": {
             "minLength": 1,
-            "title": "Executor Host",
+            "title": "Execution Host",
             "type": "string"
           },
           "sudo": {

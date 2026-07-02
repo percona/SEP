@@ -31,6 +31,7 @@ from app.sep.apps.framework.schema import (
     DetailField,
     DetailSection,
     DetailView,
+    EXECUTION_HOST_LABEL,
     FormSection,
     HostField,
     ListView,
@@ -78,7 +79,7 @@ dipper_schema = AppSchema(
                 ),
                 HostField(
                     name=_EXECUTOR_HOST_FIELD_NAME,
-                    label="Executor Host",
+                    label=EXECUTION_HOST_LABEL,
                     required=True,
                 ),
             ],
@@ -214,7 +215,7 @@ def build_dipper_form_schema(
             AnyField,
             HostField(
                 name=_EXECUTOR_HOST_FIELD_NAME,
-                label="Executor Host",
+                label=EXECUTION_HOST_LABEL,
                 required=True,
             ),
         ),

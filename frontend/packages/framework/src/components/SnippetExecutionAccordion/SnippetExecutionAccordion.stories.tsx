@@ -39,7 +39,7 @@ const baseSchema = {
         {
           type: 'string',
           name: 'executor_host',
-          label: 'Executor Host',
+          label: 'Execution Host',
           required: true,
         },
         {
@@ -129,7 +129,7 @@ export const WithExecutorHost: Story = {
     await waitFor(() => {
       expect(canvas.getByLabelText(/Table Name/i)).toBeInTheDocument();
     });
-    expect(canvas.queryByLabelText(/Executor Host/i)).not.toBeInTheDocument();
+    expect(canvas.queryByLabelText(/Execution Host/i)).not.toBeInTheDocument();
   },
 };
 
@@ -152,7 +152,7 @@ export const DefaultExpanded: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await waitFor(() => {
-      expect(canvas.getByLabelText(/Executor Host/i)).toBeInTheDocument();
+      expect(canvas.getByLabelText(/Execution Host/i)).toBeInTheDocument();
     });
     expect(canvas.getByLabelText(/Table Name/i)).toBeInTheDocument();
   },

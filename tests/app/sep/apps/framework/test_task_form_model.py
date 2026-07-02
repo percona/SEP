@@ -39,7 +39,7 @@ from app.sep.apps.framework.form_dsl import (
     TaskFormModel,
     Ui,
 )
-from app.sep.apps.framework.schema import HostField, StringField
+from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL, HostField, StringField
 from app.sep.apps.mysql_backups.models import BackupCreate
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate
 
@@ -93,7 +93,7 @@ class TestTaskFormModelFields:
         assert _marker(field, HostRef) is not None
         ui = _marker(field, Ui)
         assert ui is not None
-        assert ui.label == "Executor Host"
+        assert ui.label == EXECUTION_HOST_LABEL
         assert ui.section == "Task"
 
     def test_identity_fields_are_required_non_empty(self) -> None:

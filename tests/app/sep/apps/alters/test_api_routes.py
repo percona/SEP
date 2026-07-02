@@ -24,6 +24,7 @@ from pytest_mock import MockerFixture
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.sep.connectivity import clear_connectivity_caches
 from app.sep.inventory import CreatedService
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
@@ -196,7 +197,7 @@ class TestAltersAppSchemaEndpoint:
             if section["title"] == "Execution"
         )
         detail_labels = {field["label"]: field["path"] for field in execution["fields"]}
-        assert detail_labels["Execution Host"] == "data.meta.target"
+        assert detail_labels[EXECUTION_HOST_LABEL] == "data.meta.target"
         assert detail_labels["Database Host"] == "data.meta._service_host"
         assert "Target" not in detail_labels
 
@@ -206,7 +207,7 @@ class TestAltersAppSchemaEndpoint:
         hostname = next(
             field for field in task_section["fields"] if field["name"] == "hostname"
         )
-        assert hostname["label"] == "Execution Host"
+        assert hostname["label"] == EXECUTION_HOST_LABEL
 
 
 class TestAltersApiList:
