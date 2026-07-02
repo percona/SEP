@@ -72,11 +72,21 @@ def resolve_payload_reference(reference: str) -> Path:
 
     :param reference: The stored ``file://`` payload reference.
     :return: The first candidate path that resolves to an existing file.
-    :raises PayloadReferenceError: If no candidate resolves to a file.
+    :raises PayloadReferenceError: If a relative reference escapes ``BASE_DIR``
+        or no candidate resolves to a file.
     """
     raw = reference.strip().removeprefix("file://").strip()
     candidate = Path(raw)
-    candidates = [candidate if candidate.is_absolute() else resolve_relative_path(raw)]
+    if candidate.is_absolute():
+        base_candidate = candidate
+    else:
+        base_candidate = resolve_relative_path(raw)
+        if not base_candidate.resolve().is_relative_to(BASE_DIR.resolve()):
+            logger.error("Task payload reference escapes BASE_DIR: %s", reference)
+            raise PayloadReferenceError(
+                f"Task payload reference escapes BASE_DIR: {reference}"
+            )
+    candidates = [base_candidate]
     for base in list(candidates):
         text = str(base)
         for old, new in _PLUGIN_APP_ALIASES:

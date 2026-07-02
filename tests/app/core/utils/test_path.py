@@ -94,3 +94,8 @@ class TestResolvePayloadReference:
             resolve_payload_reference(reference)
         log_error.assert_called_once()
         assert _PLUGIN_REL in str(log_error.call_args)
+
+    def test_relative_reference_escaping_base_dir_raises(self, base_dir):
+        """Assert a relative reference resolving outside BASE_DIR is rejected."""
+        with pytest.raises(PayloadReferenceError, match="escapes BASE_DIR"):
+            resolve_payload_reference("file://../../etc/passwd")

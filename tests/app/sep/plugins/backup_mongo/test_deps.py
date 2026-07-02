@@ -93,7 +93,7 @@ def test_derived_sibling_payload_refs_resolve():
     )
     logical = base.replace("pbm_config", "pbm_logical")
     physical = logical.replace("pbm_logical", "pbm_physical")
-    status = logical.replace("pbm_physical", "pbm_status")
+    status = physical.replace("pbm_physical", "pbm_status")
 
     for reference in (base, logical, physical, status):
         assert resolve_payload_reference(reference).is_file()
