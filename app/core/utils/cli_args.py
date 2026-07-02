@@ -55,7 +55,7 @@ def is_value_arg_template(template: str) -> bool:
 def render_value_arg(
     template: str, value: Any, *, stringify: Callable[[Any], str] = str
 ) -> list[str]:
-    """Resolve a ``${value}`` template to CLI tokens.
+    """Resolve a CLI-argument template to CLI tokens, substituting ``${value}`` when present.
 
     The value is stringified (``stringify`` defaults to ``str``; callers inject
     their own serializer), ``shlex.quote``'d, substituted for ``${value}`` via
@@ -63,7 +63,8 @@ def render_value_arg(
     ``shlex.split``. The quote → substitute → split round-trip keeps a
     whitespace-bearing value a single token.
 
-    :param template: The CLI-argument template carrying ``${value}``.
+    :param template: The CLI-argument template; ``${value}`` is substituted when
+        present (a flag template without it passes through unchanged).
     :param value: The value substituted for ``${value}``.
     :param stringify: The serializer applied to ``value`` before quoting.
     :return: The resolved CLI tokens.
