@@ -164,10 +164,10 @@ describe('ReportResultPage', () => {
       tagName === 'a' ? anchor : originalCreateElement(tagName, options),
     );
     mockedApi.get.mockImplementation((url: string) => {
-      if (url.includes('/plugins/report/config')) {
+      if (url.includes('/apps/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
-      if (url.endsWith('/plugins/report/pdf-jobs/job-1/pdf')) {
+      if (url.endsWith('/apps/report/pdf-jobs/job-1/pdf')) {
         return Promise.resolve({
           data: new Blob(['%PDF'], { type: 'application/pdf' }),
           headers: {
@@ -176,7 +176,7 @@ describe('ReportResultPage', () => {
           },
         });
       }
-      if (url.endsWith('/plugins/report/pdf-jobs/job-1')) {
+      if (url.endsWith('/apps/report/pdf-jobs/job-1')) {
         return Promise.resolve({
           data: {
             job_id: 'job-1',
@@ -209,7 +209,7 @@ describe('ReportResultPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /download pdf/i }));
 
     await waitFor(() => {
-      expect(mockedApi.post).toHaveBeenCalledWith('/plugins/report/pdf-jobs', {
+      expect(mockedApi.post).toHaveBeenCalledWith('/apps/report/pdf-jobs', {
         report: MOCK_REPORT,
       });
     });
@@ -227,10 +227,10 @@ describe('ReportResultPage', () => {
       if (url.includes('/apps/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
-      if (url.endsWith('/plugins/report/pdf-jobs/job-1/pdf')) {
+      if (url.endsWith('/apps/report/pdf-jobs/job-1/pdf')) {
         return Promise.resolve({ data: new Blob(['%PDF'], { type: 'application/pdf' }) });
       }
-      if (url.endsWith('/plugins/report/pdf-jobs/job-1')) {
+      if (url.endsWith('/apps/report/pdf-jobs/job-1')) {
         return Promise.resolve({ data: jobStates.shift() });
       }
       return Promise.resolve({ data: MOCK_REPORT });
@@ -257,7 +257,7 @@ describe('ReportResultPage', () => {
 
     await waitFor(
       () => {
-        expect(mockedApi.get).toHaveBeenCalledWith('/plugins/report/pdf-jobs/job-1/pdf', {
+        expect(mockedApi.get).toHaveBeenCalledWith('/apps/report/pdf-jobs/job-1/pdf', {
           responseType: 'blob',
         });
       },
@@ -267,10 +267,10 @@ describe('ReportResultPage', () => {
 
   it('reports revoked PDF jobs as terminal failures', async () => {
     mockedApi.get.mockImplementation((url: string) => {
-      if (url.includes('/plugins/report/config')) {
+      if (url.includes('/apps/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
-      if (url.endsWith('/plugins/report/pdf-jobs/job-1')) {
+      if (url.endsWith('/apps/report/pdf-jobs/job-1')) {
         return Promise.resolve({
           data: { job_id: 'job-1', status: 'revoked', pdf_ready: false, error: 'Report disabled' },
         });
