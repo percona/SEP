@@ -1110,7 +1110,7 @@
       },
       {
         "key": "hostname",
-        "label": "Host",
+        "label": "Executor Host",
         "sortable": false
       },
       {
