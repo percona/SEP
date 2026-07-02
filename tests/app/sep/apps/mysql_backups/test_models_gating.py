@@ -236,6 +236,23 @@ class TestUploadProviderGate:
                 )
             )
 
+    def test_s3_bool_auxiliary_without_s3_fails(self):
+        """``skip_s3_safety_check=True`` without ``S3`` in upload → 422.
+
+        A *truthy* bool is "present", so its ``_S3_ONLY`` schema ``forbidden``
+        gate fires (only the ``False`` default is treated as absent); the model
+        validator's ``s3_aux`` branch is the backstop for the same contract.
+        """
+        with pytest.raises(ValidationError, match="skip_s3_safety_check"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.MYDUMPER,
+                    upload=[],
+                    s3_bucket=None,
+                    skip_s3_safety_check=True,
+                )
+            )
+
     def test_multi_provider_happy_path(self):
         """All providers selected with matching destinations validates."""
         BackupCreate(
@@ -273,6 +290,46 @@ class TestUploadProviderGate:
             BackupCreate(
                 **_base_payload(BackupType.MYDUMPER, upload=[], s3_bucket="bkt")
             )
+
+    def test_empty_upload_with_gs_bucket_set_fails(self):
+        """Reject ``upload=[]`` when ``gs_bucket`` is set → 422 (reverse-pair, GSUTIL).
+
+        The schema ``forbidden`` gate on ``gs_bucket`` fires first; the model
+        validator's reverse-pair branch is the backstop for the same contract.
+        """
+        with pytest.raises(ValidationError, match="gs_bucket|GSUTIL"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.MYDUMPER, upload=[], s3_bucket=None, gs_bucket="g"
+                )
+            )
+
+    def test_empty_upload_with_rsync_path_set_fails(self):
+        """Reject ``upload=[]`` when ``rsync_path`` is set → 422 (reverse-pair, RSYNC)."""
+        with pytest.raises(ValidationError, match="rsync_path|RSYNC"):
+            BackupCreate(
+                **_base_payload(
+                    BackupType.MYDUMPER, upload=[], s3_bucket=None, rsync_path="/r"
+                )
+            )
+
+
+class TestUploadInputNormalization:
+    """``_normalize_upload_input`` coerces legacy scalar form values to a list."""
+
+    def test_scalar_string_is_wrapped(self):
+        """A bare provider string from a legacy form is wrapped into a list."""
+        model = BackupCreate(
+            **_base_payload(BackupType.MYDUMPER, upload="S3", s3_bucket="bkt")
+        )
+        assert model.upload == [UploadProvider.S3]
+
+    def test_empty_string_becomes_empty_list(self):
+        """An empty-string ``upload`` coerces to ``[]`` (a valid "no upload")."""
+        model = BackupCreate(
+            **_base_payload(BackupType.MYDUMPER, upload="", s3_bucket=None)
+        )
+        assert model.upload == []
 
 
 class TestCompressionAlgorithmValidator:

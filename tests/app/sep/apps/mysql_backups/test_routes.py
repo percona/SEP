@@ -342,6 +342,39 @@ def test_backups_detail(
     mock_task_api_dep.get.assert_any_call(f"/stats/{created_task.name}")
 
 
+@pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
+def test_backups_detail_renders_backup_configuration(
+    test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
+):
+    """Render the SEP-1495 detail_view: executor target + YAML config on the detail page.
+
+    The always-rendered "Task information" card shows the list columns; the
+    detail_view must surface the config that is *not* a column — the executor
+    target (``data.meta.target``) and the YAML config (``data.meta.config``).
+    """
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            {},  # /hosts/
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # history
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # running_tasks
+            [],  # stats
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
+        ]
+    )
+    mock_inventory_api_dep.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
+    response = test_client.get(f"/mysql_backups/{created_task.name}")
+    assert response.status_code == status.HTTP_200_OK
+    assert "Backup Configuration" in response.text
+    assert "Executor Host" in response.text
+    assert created_task.data["meta"]["target"] in response.text
+    assert "SERVER_LIST" in response.text
+
+
 @pytest.mark.parametrize(
     ("form_data", "expected_json"),
     [
