@@ -25,6 +25,7 @@ from pydantic import SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config import (
+    _sanitize_client_kwargs,
     BaseYamlAppSettings,
     create_app,
     default_lifespan,
@@ -36,6 +37,29 @@ from app.core.config import (
 
 DEFAULT_ANNOTATIONS_TIMEOUT = 5
 CUSTOM_ANNOTATIONS_TIMEOUT = 7
+
+
+def test_sanitize_client_kwargs_redacts_url_password():
+    """``_sanitize_client_kwargs`` masks a password embedded in an endpoint URL."""
+    safe = _sanitize_client_kwargs(
+        {
+            "endpoint": "http://user:hunter2@localhost:8000/",
+            "verify_ssl": False,
+        }
+    )
+    assert "hunter2" not in safe["endpoint"]
+    assert "****" in safe["endpoint"]
+    assert safe["verify_ssl"] is False
+
+
+def test_sanitize_client_kwargs_preserves_credential_free_values():
+    """``_sanitize_client_kwargs`` leaves non-credential values untouched."""
+    api_key = SecretStr("token")
+    safe = _sanitize_client_kwargs(
+        {"endpoint": "http://localhost:8000/", "api_key": api_key}
+    )
+    assert safe["endpoint"] == "http://localhost:8000/"
+    assert safe["api_key"] is api_key
 
 
 class DummySettings(BaseSettings):

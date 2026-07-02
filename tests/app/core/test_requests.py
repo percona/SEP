@@ -290,6 +290,63 @@ async def test_auth_context(remote_api, base_url):
                 await remote_api.get("auth")
 
 
+@pytest.mark.asyncio
+async def test_request_debug_log_redacts_authorization_header(
+    remote_api, base_url, caplog
+):
+    """The request debug log masks the Authorization header injected by auth()."""
+    secret = "super-secret-token"
+    with aioresponses() as m:
+        m.get(f"{base_url}auth", status=status.HTTP_200_OK, payload={})
+        with caplog.at_level("DEBUG", logger=remote_api.logger.name):
+            async with remote_api:
+                with remote_api.auth(secret):
+                    await remote_api.get("auth")
+    sending = [r.getMessage() for r in caplog.records if "Sending" in r.getMessage()]
+    assert sending, "expected a request debug log line"
+    assert all(secret not in msg for msg in sending)
+    assert any("****" in msg for msg in sending)
+
+
+@pytest.mark.asyncio
+async def test_request_debug_log_redacts_url_credentials(caplog):
+    """The request debug log masks a password embedded in the endpoint URL."""
+    password = "hunter2"
+    api = RemoteAPI(endpoint=f"http://user:{password}@localhost:8000/")
+    with aioresponses() as m:
+        m.get(
+            "http://user:hunter2@localhost:8000/ping",
+            status=status.HTTP_200_OK,
+            payload={},
+        )
+        with caplog.at_level("DEBUG", logger=api.logger.name):
+            async with api:
+                await api.get("ping")
+    sending = [r.getMessage() for r in caplog.records if "Sending" in r.getMessage()]
+    assert sending, "expected a request debug log line"
+    assert all(password not in msg for msg in sending)
+
+
+@pytest.mark.asyncio
+async def test_response_debug_log_redacts_url_credentials(caplog):
+    """The response debug log masks a password embedded in the endpoint URL."""
+    password = "hunter2"
+    api = RemoteAPI(endpoint=f"http://user:{password}@localhost:8000/")
+    with aioresponses() as m:
+        m.get(
+            "http://user:hunter2@localhost:8000/ping",
+            status=status.HTTP_200_OK,
+            payload={"ok": True},
+        )
+        with caplog.at_level("DEBUG", logger=api.logger.name):
+            async with api:
+                await api.get("ping")
+    response = [r.getMessage() for r in caplog.records if "response" in r.getMessage()]
+    assert response, "expected a response debug log line"
+    assert all(password not in msg for msg in response)
+    assert any("****" in msg for msg in response)
+
+
 def test_create_ssl_context_without_certfile():
     """create_ssl_context returns a context without load_cert_chain when no cert."""
     ctx = BaseRemoteAPI.create_ssl_context()

@@ -2092,6 +2092,39 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sep/admin/connectivity-check/': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Check Connectivity
+     * @description Probe the requested external / inter-service endpoints and report status.
+     *
+     *     Probe only the services named in ``body.targets``, running the selected
+     *     probes concurrently. Each is isolated: one endpoint's failure is classified
+     *     independently and never fails the whole response, which always returns
+     *     ``200`` with one entry per requested service, in request order. Tasks and
+     *     Nomad share a single ``/hosts/`` probe, so requesting either (or both) runs
+     *     it once.
+     *
+     *     :param body: The request naming which services to probe.
+     *     :param pmm_api: The PMM client dependency, or ``None`` when unconfigured.
+     *     :param inventory_api: The authenticated Inventory API client.
+     *     :param tasks_api: The authenticated Tasks API client.
+     *     :return: One normalized connectivity result per requested service.
+     */
+    post: operations['sep_check_connectivity_api_sep_admin_connectivity_check__post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sep/admin/settings/': {
     parameters: {
       query?: never;
@@ -4719,6 +4752,55 @@ export interface components {
       | 'actions'
       | 'schedule';
     /**
+     * ConnectivityCheckRequest
+     * @description Carry the required set of services to probe.
+     *
+     *     :param targets: The services to probe. Must name at least one; duplicates are
+     *         collapsed so a shared probe (Tasks/Nomad) still runs once.
+     */
+    ConnectivityCheckRequest: {
+      /** Targets */
+      targets: components['schemas']['ServiceEnum'][];
+    };
+    /**
+     * ConnectivityResult
+     * @description Represent the outcome of probing a single external / inter-service endpoint.
+     *
+     *     :param service: Stable identifier of the probed service (e.g. ``"pmm"``).
+     *     :type service: str
+     *     :param reachable: ``True`` only when the endpoint answered successfully.
+     *     :type reachable: bool
+     *     :param status: Machine-readable outcome state.
+     *     :type status: ConnectivityStatusEnum
+     *     :param detail: Human-readable status / error, free of secrets.
+     *     :type detail: str
+     *     :param version: Optional remote version string when the probe exposes one.
+     *     :type version: str | None
+     */
+    ConnectivityResult: {
+      /** Detail */
+      detail: string;
+      /** Reachable */
+      reachable: boolean;
+      /** Service */
+      service: string;
+      status: components['schemas']['ConnectivityStatusEnum'];
+      /** Version */
+      version?: string | null;
+    };
+    /**
+     * ConnectivityStatusEnum
+     * @description Enumerate the mutually-exclusive outcomes of a connectivity probe.
+     * @enum {string}
+     */
+    ConnectivityStatusEnum:
+      | 'reachable'
+      | 'auth_failed'
+      | 'error'
+      | 'unreachable'
+      | 'ssl_error'
+      | 'timeout';
+    /**
      * ConnectivityWarning
      * @description Represent a connectivity-check failure on a JSON API task-creation response.
      *
@@ -6715,6 +6797,12 @@ export interface components {
       /** Language */
       language: string;
     };
+    /**
+     * ServiceEnum
+     * @description Enumerate the probeable services, used as stable ``service`` identifiers.
+     * @enum {string}
+     */
+    ServiceEnum: 'pmm' | 'inventory' | 'tasks' | 'nomad';
     /**
      * ServiceField
      * @description Represent an inventory service selector field.
@@ -11180,6 +11268,39 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TaskDetailResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  sep_check_connectivity_api_sep_admin_connectivity_check__post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['ConnectivityCheckRequest'];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ConnectivityResult'][];
         };
       };
       /** @description Validation Error */
