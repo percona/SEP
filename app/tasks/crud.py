@@ -19,7 +19,7 @@ import logging
 from collections.abc import AsyncGenerator, Sequence
 from datetime import datetime
 
-from sqlalchemy import CursorResult, func, literal, update
+from sqlalchemy import CursorResult, delete, func, literal, update
 from sqlalchemy.orm import aliased
 from sqlmodel import and_, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -585,6 +585,61 @@ class TaskHistoryLogManager(BaseSQLModelManager):
             created_at=now,
         )
         await session.exec(stmt)
+
+    @classmethod
+    async def delete_chunks_below_offset(
+        cls,
+        session: AsyncSession,
+        *,
+        task_history_id: int,
+        source: str,
+        stream: TaskLogType,
+        max_end_offset: int,
+        max_rows: int,
+    ) -> int:
+        """Delete up to ``max_rows`` oldest chunks for a stream at/under an offset.
+
+        Removes chunk rows whose ``end_offset <= max_end_offset`` for the given
+        ``(task_history_id, source, stream)``, oldest first, bounded to
+        ``max_rows`` per call. Does NOT commit: the caller (the writer's
+        ``append``) owns the transaction so eviction stays atomic with the chunk
+        insert and the version-CAS. ``DELETE`` has no ``LIMIT`` clause, so the
+        bound is applied via an ``id IN (SELECT ... ORDER BY end_offset LIMIT)``
+        subquery served by the ``(task_history_id, source, stream, end_offset)``
+        index. That id-select is nested one extra level (a derived table) because
+        MySQL rejects referencing the delete target in an uncorrelated subquery
+        (error 1093); the wrapper forces materialization and is transparent on
+        PostgreSQL and SQLite.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :param source: The execution step name.
+        :param stream: The log stream (stdout or stderr).
+        :param max_end_offset: The inclusive upper bound on ``end_offset`` of the
+            chunks eligible for deletion (the stream's low-water mark).
+        :param max_rows: The maximum number of chunk rows to delete in this call.
+        :return: The number of chunk rows deleted.
+        """
+        limited_ids = (
+            select(col(TaskHistoryLog.id))
+            .where(
+                col(TaskHistoryLog.task_history_id) == task_history_id,
+                col(TaskHistoryLog.source) == source,
+                col(TaskHistoryLog.stream) == stream,
+                col(TaskHistoryLog.end_offset) <= max_end_offset,
+            )
+            .order_by(col(TaskHistoryLog.end_offset))
+            .limit(max_rows)
+            .subquery()
+        )
+        stmt = (
+            delete(TaskHistoryLog)
+            .where(col(TaskHistoryLog.id).in_(select(limited_ids.c.id)))
+            .execution_options(synchronize_session=False)
+        )
+        result = await session.exec(stmt)
+        return result.rowcount or 0
 
 
 class TaskHistoryLogStateManager(BaseManager):

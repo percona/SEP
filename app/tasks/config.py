@@ -71,6 +71,16 @@ class TasksSettings(BaseYamlAppSettings):
         dispatch's scheduled time and its Nomad-side execution start before
         the allocation self-aborts as stale. Must be positive. Defaults to 3600.
     :type STALENESS_THRESHOLD_SECONDS: PositiveInt
+    :param LOG_STREAM_CAP_BYTES: The maximum captured-log bytes retained per
+        ``(task_history_id, source, stream)``. As a stream grows past the cap
+        the writer drops the oldest chunks, keeping a bounded recent tail so a
+        long-running execution's logs cannot grow without limit. Must be
+        positive. Defaults to 104857600 (100 MiB).
+    :type LOG_STREAM_CAP_BYTES: PositiveInt
+    :param LOG_STREAM_EVICTION_MAX_ROWS: The maximum number of chunk rows the
+        writer evicts per flush, bounding the per-append eviction work. Must be
+        positive. Defaults to 1000.
+    :type LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -83,6 +93,8 @@ class TasksSettings(BaseYamlAppSettings):
     SYNC_LOCK_TTL: timedelta = timedelta(minutes=5)
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = PreExecutionCheckMode.WARN
     STALENESS_THRESHOLD_SECONDS: PositiveInt = 3600
+    LOG_STREAM_CAP_BYTES: PositiveInt = 104857600
+    LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = 1000
 
 
 tasks_settings: TasksSettings = LazyProxy(TasksSettings)

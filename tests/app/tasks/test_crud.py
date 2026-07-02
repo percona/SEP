@@ -17,11 +17,13 @@
 
 import pytest
 import pytest_asyncio
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth.exceptions import HTTPForbiddenException
 from app.core.db.crud import DEFAULT_PAGINATION_LIMIT, DEFAULT_PAGINATION_OFFSET
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
+from app.core.utils.date_time import utc_now
 from app.tasks.crud import (
     DispatchLockManager,
     TaskHistoryLogManager,
@@ -34,6 +36,7 @@ from app.tasks.models import (
     Task,
     TaskBackendEnum,
     TaskHistory,
+    TaskHistoryLog,
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskOwner,
@@ -44,6 +47,7 @@ from tests.app.factories import TaskFactory
 HISTORY_FIXTURE_COUNT = 3
 PAGINATED_TASK_COUNT = 2
 PAGINATED_CUSTOM_TASK_COUNT = 3
+CHUNKS_AT_OR_BELOW_OFFSET = 2
 
 
 async def _create_task(
@@ -819,3 +823,173 @@ class TestTaskHistoryLogManagerIdsWithChunks:
         result = await TaskHistoryLogManager.ids_with_chunks(session, [history.id])
 
         assert result == {history.id}
+
+
+async def _insert_log_chunk(
+    session: AsyncSession,
+    task_history_id: int,
+    *,
+    start: int,
+    end: int,
+    source: str = "run-script",
+    stream: TaskLogType = TaskLogType.STDOUT,
+) -> None:
+    """Insert a chunk row spanning ``[start, end)`` for the given stream."""
+    await TaskHistoryLogManager.insert_chunk_idempotent(
+        session,
+        task_history_id=task_history_id,
+        source=source,
+        stream=stream,
+        start_offset=start,
+        chunk=b"x" * (end - start),
+        now=utc_now(),
+    )
+
+
+async def _stream_end_offsets(
+    session: AsyncSession,
+    task_history_id: int,
+    *,
+    source: str = "run-script",
+    stream: TaskLogType = TaskLogType.STDOUT,
+) -> list[int]:
+    """Return the ``end_offset`` of each chunk for a stream, ascending."""
+    result = await session.exec(
+        select(TaskHistoryLog)
+        .where(
+            col(TaskHistoryLog.task_history_id) == task_history_id,
+            col(TaskHistoryLog.source) == source,
+            col(TaskHistoryLog.stream) == stream,
+        )
+        .order_by(col(TaskHistoryLog.end_offset))
+    )
+    return [chunk.end_offset for chunk in result.all()]
+
+
+class TestTaskHistoryLogManagerDeleteChunksBelowOffset:
+    """Test ``TaskHistoryLogManager.delete_chunks_below_offset``."""
+
+    @pytest.mark.asyncio
+    async def test_deletes_chunks_at_or_below_offset_inclusive(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert ``end_offset <= max_end_offset`` rows are deleted (boundary)."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        for start in (0, 100, 200, 300):
+            await _insert_log_chunk(session, history.id, start=start, end=start + 100)
+        await session.commit()
+
+        deleted = await TaskHistoryLogManager.delete_chunks_below_offset(
+            session,
+            task_history_id=history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            max_end_offset=200,
+            max_rows=100,
+        )
+        await session.commit()
+
+        assert deleted == CHUNKS_AT_OR_BELOW_OFFSET
+        assert await _stream_end_offsets(session, history.id) == [300, 400]
+
+    @pytest.mark.asyncio
+    async def test_respects_max_rows_oldest_first(self, session: AsyncSession) -> None:
+        """Assert at most ``max_rows`` chunks are deleted, oldest first."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        for start in (0, 100, 200, 300):
+            await _insert_log_chunk(session, history.id, start=start, end=start + 100)
+        await session.commit()
+
+        max_rows = 2
+        deleted = await TaskHistoryLogManager.delete_chunks_below_offset(
+            session,
+            task_history_id=history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            max_end_offset=1000,
+            max_rows=max_rows,
+        )
+        await session.commit()
+
+        assert deleted == max_rows
+        assert await _stream_end_offsets(session, history.id) == [300, 400]
+
+    @pytest.mark.asyncio
+    async def test_no_match_returns_zero(self, session: AsyncSession) -> None:
+        """Assert a delete that matches nothing returns ``0`` and removes nothing."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        for start in (0, 100, 200):
+            await _insert_log_chunk(session, history.id, start=start, end=start + 100)
+        await session.commit()
+
+        deleted = await TaskHistoryLogManager.delete_chunks_below_offset(
+            session,
+            task_history_id=history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            max_end_offset=50,
+            max_rows=10,
+        )
+        await session.commit()
+
+        assert deleted == 0
+        assert await _stream_end_offsets(session, history.id) == [100, 200, 300]
+
+    @pytest.mark.asyncio
+    async def test_only_targets_matching_stream(self, session: AsyncSession) -> None:
+        """Assert chunks of other ``(source, stream)`` tuples are left untouched."""
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        await _insert_log_chunk(session, history.id, start=0, end=100)
+        await _insert_log_chunk(
+            session, history.id, start=0, end=100, stream=TaskLogType.STDERR
+        )
+        await _insert_log_chunk(session, history.id, start=0, end=100, source="prepare")
+        await session.commit()
+
+        deleted = await TaskHistoryLogManager.delete_chunks_below_offset(
+            session,
+            task_history_id=history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            max_end_offset=100,
+            max_rows=10,
+        )
+        await session.commit()
+
+        assert deleted == 1
+        assert await _stream_end_offsets(session, history.id) == []
+        assert await _stream_end_offsets(
+            session, history.id, stream=TaskLogType.STDERR
+        ) == [100]
+        assert await _stream_end_offsets(session, history.id, source="prepare") == [100]
+
+    @pytest.mark.asyncio
+    async def test_does_not_commit(self, session: AsyncSession) -> None:
+        """Assert the helper stages the delete without committing it.
+
+        The caller owns the transaction, so a ``rollback`` after the call must
+        restore every staged-for-deletion row.
+        """
+        task = await _create_task(session)
+        history = await _seed_task_history(session, task, "node-a")
+        history_id = history.id
+        for start in (0, 100, 200, 300):
+            await _insert_log_chunk(session, history_id, start=start, end=start + 100)
+        await session.commit()
+
+        deleted = await TaskHistoryLogManager.delete_chunks_below_offset(
+            session,
+            task_history_id=history_id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            max_end_offset=200,
+            max_rows=100,
+        )
+        assert deleted == CHUNKS_AT_OR_BELOW_OFFSET
+        await session.rollback()
+
+        assert await _stream_end_offsets(session, history_id) == [100, 200, 300, 400]
