@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "ConnectivityCheckResponse": {
-        "description": "Represent a connectivity check result.\n\n:param success: Whether the connectivity check succeeded.\n:type success: bool\n:param error: Error message if the check failed. Defaults to ``None``.\n:type error: str | None\n:param task_history_id: The ID of the task history record for this check.\n:type task_history_id: int",
+        "description": "Represent a connectivity check result.\n\n:param success: Whether the connectivity check succeeded.\n:param error: Error message if the check failed. Defaults to ``None``.\n:param task_history_id: The ID of the task history record for this check.",
         "properties": {
           "error": {
             "anyOf": [
@@ -32,7 +32,7 @@
         "type": "object"
       },
       "ConnectivityCheckWrite": {
-        "description": "Represent a connectivity check request payload.\n\n:param target: The Nomad node name to run the check on.\n:type target: str\n:param host: The database host address.\n:type host: str\n:param port: The database port number.\n:type port: int\n:param service_type: The type of database service to check.\n:type service_type: ConnectivityServiceType\n:param timeout: Maximum seconds to wait for the check. Defaults to 30.\n:type timeout: int",
+        "description": "Represent a connectivity check request payload.\n\n:param target: The Nomad node name to run the check on.\n:param host: The database host address.\n:param port: The database port number.\n:param service_type: The type of database service to check.\n:param timeout: Connect-phase budget in seconds, counted only once the\n    ``run-script`` task starts. Total server wait is ``PROVISIONING_TIMEOUT``\n    (provisioning phase) plus this value. Defaults to 30.",
         "properties": {
           "host": {
             "title": "Host",

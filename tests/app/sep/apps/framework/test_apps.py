@@ -543,6 +543,7 @@ class TestCreateRoute:
             "target": "db-host",
             "service_type": "mysql",
             "message": "unreachable",
+            "task_history_id": None,
         }
 
 

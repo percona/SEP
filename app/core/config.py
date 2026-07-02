@@ -69,6 +69,7 @@ from app.core.utils import deep_dict_update
 from app.core.utils.fields import (
     LogLevel,
     NonEmptyStr,
+    redact_credential_url,
     RelativeFilePathField,
     StrCredentialHttpUrl,
     StrHttpUrl,
@@ -77,6 +78,27 @@ from app.core.utils.fields import (
     URL,
 )
 from app.core.utils.openapi import generate_tag_prefixed_unique_id
+
+
+def _sanitize_client_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of remote-API client kwargs safe to log.
+
+    Any value carrying an embedded URL password (e.g. ``endpoint``) is
+    redacted so credentials never reach the debug log. ``SecretStr`` values
+    already mask themselves on ``repr`` and are left untouched.
+
+    :param kwargs: The client construction kwargs about to be logged.
+    :type kwargs: dict[str, Any]
+    :return: A copy with credential URLs redacted.
+    :rtype: dict[str, Any]
+    """
+    safe: dict[str, Any] = {}
+    for key, value in kwargs.items():
+        raw = str(value)
+        redacted = redact_credential_url(raw)
+        safe[key] = redacted if redacted != raw else value
+    return safe
+
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -503,7 +525,7 @@ class Settings(BaseYamlSettings):
         logger.debug(
             "Getting remote API client from registry for %s with kwargs %s",
             cls.__name__,
-            kwargs,
+            _sanitize_client_kwargs(kwargs),
         )
         return await self._CLIENT_REGISTRY.get(cls, **kwargs)
 
