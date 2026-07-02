@@ -22,7 +22,6 @@ from typing import Annotated, Any, TypeAlias
 from fastapi import Depends
 from fastapi.exceptions import HTTPException
 
-from app.core.config import settings
 from app.core.exceptions import (
     HTTPBadGatewayException,
     HTTPServiceUnavailableException,
@@ -33,7 +32,16 @@ from app.sep.apps.alerts.crud import AlertBackupManager
 from app.sep.apps.alerts.loader import get_alert_templates
 from app.sep.apps.alerts.models import AlertBackup, AlertTemplate, ServiceType
 from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
-from app.sep.deps import DefaultContext, SessionDep
+
+# ``get_pmm_api`` / ``PMMAPIDep`` now live in ``app.sep.deps`` alongside the
+# sibling Inventory / Tasks client deps; ``get_pmm_api`` is re-exported here for
+# existing importers (report, celery, tests).
+from app.sep.deps import (
+    DefaultContext,
+    get_pmm_api,  # noqa: F401 -- re-exported for existing importers
+    PMMAPIDep,
+    SessionDep,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,24 +75,6 @@ def find_pagerduty_contact_point(
 AlertTemplatesDep = Annotated[
     Mapping[ServiceType, tuple[AlertTemplate, ...]], Depends(get_alert_templates)
 ]
-
-
-async def get_pmm_api() -> PMMRemoteAPI | None:
-    """Return a ``PMMRemoteAPI`` client, or ``None`` when PMM is not configured.
-
-    :return: The PMM API client, or ``None`` if endpoint or API key is missing.
-    """
-    if not settings.PMM.endpoint or not settings.PMM.api_key:
-        return None
-    return await settings.get_remote_api(
-        PMMRemoteAPI,
-        endpoint=settings.PMM.endpoint,
-        api_key=settings.PMM.api_key,
-        verify_ssl=settings.PMM.verify_ssl,
-    )
-
-
-PMMAPIDep = Annotated[PMMRemoteAPI | None, Depends(get_pmm_api)]
 
 
 async def require_pmm_api(pmm_api: PMMAPIDep) -> PMMRemoteAPI:

@@ -15,10 +15,11 @@
 
 """PMM API client for interacting with the PMM inventory system."""
 
+import asyncio
 import logging
 from collections import defaultdict
 from collections.abc import Callable
-from typing import Any
+from typing import Any, ClassVar
 
 from aiohttp import ClientResponseError
 from async_lru import _LRUCacheWrapper, alru_cache
@@ -26,6 +27,13 @@ from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from app.core.requests import RemoteAPI
+from app.core.requests.connectivity import (
+    build_connectivity_result,
+    classify_connectivity_error,
+    ConnectivityResult,
+    ConnectivityStatusEnum,
+    PROBE_TIMEOUT_SECONDS,
+)
 from app.core.utils.dict import remove_falsy_values_from_dict
 from app.core.utils.fields import NonEmptyStr
 from app.inventory.models import SourceEnum
@@ -206,6 +214,10 @@ class PMMRemoteAPI(RemoteAPI):
     error_code_key: NonEmptyStr | None = "code"
     default_to_v3: bool = True
 
+    #: PMM exposes its version (and proves reachability) at this route, so the
+    #: connectivity probe targets it instead of the base ``/``.
+    connectivity_check_path: ClassVar[str] = "/v1/version"
+
     @property
     def headers(self) -> dict[str, str]:
         """Return the headers to be used in PMM requests.
@@ -264,6 +276,45 @@ class PMMRemoteAPI(RemoteAPI):
         """
         version_data = await self.get("/v1/version")
         return version_data["version"]
+
+    async def check_connectivity(
+        self, service: str, *, path: str | None = None
+    ) -> ConnectivityResult:
+        """Probe PMM and report the PMM version on success.
+
+        Override the generic probe so a successful check also reports the PMM
+        version. The probe route is the class-level
+        :attr:`connectivity_check_path` (``/v1/version``) unless an explicit
+        ``path`` is given. A response with an unexpected body shape (missing
+        ``version`` key) still counts as reachable -- the server answered --
+        just without a version. All other failures are classified into the same
+        outcome states as the base probe and never re-raised.
+
+        :param service: Stable identifier of the probed service (``"pmm"``).
+        :type service: str
+        :param path: Optional override for the probe route. Defaults to
+            :attr:`connectivity_check_path`.
+        :type path: str | None
+        :return: The normalized connectivity result, with ``version`` set on
+            success.
+        :rtype: ConnectivityResult
+        """
+        probe_path = path if path is not None else self.connectivity_check_path
+        try:
+            async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
+                version_data = await self.get(probe_path)
+            version = version_data["version"]
+        except (KeyError, TypeError):
+            return build_connectivity_result(
+                service,
+                ConnectivityStatusEnum.REACHABLE,
+                detail="Reachable (version unavailable).",
+            )
+        except Exception as exc:  # noqa: BLE001 -- classified, never re-raised
+            return build_connectivity_result(service, classify_connectivity_error(exc))
+        return build_connectivity_result(
+            service, ConnectivityStatusEnum.REACHABLE, version=version
+        )
 
     async def get_node(
         self,

@@ -49,6 +49,7 @@ from app.core.security import crypto_timestamp_serializer
 from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.inventory.models import ServiceTypeEnum
+from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.connectivity import (
     annotate_tasks_with_connectivity,
@@ -674,6 +675,30 @@ async def get_tasks_api(
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
+
+
+async def get_pmm_api() -> PMMRemoteAPI | None:
+    """Return a ``PMMRemoteAPI`` client, or ``None`` when PMM is not configured.
+
+    Construct the SEP-wide PMM client from settings, sitting alongside the
+    sibling Inventory / Tasks client deps so core SEP code never reaches into a
+    plugin for it.
+
+    :return: The PMM API client, or ``None`` if endpoint or API key is missing.
+    :rtype: PMMRemoteAPI | None
+    """
+    if not settings.PMM.endpoint or not settings.PMM.api_key:
+        return None
+    return await settings.get_remote_api(
+        PMMRemoteAPI,
+        endpoint=settings.PMM.endpoint,
+        api_key=settings.PMM.api_key,
+        verify_ssl=settings.PMM.verify_ssl,
+        ssl_cafile=settings.SSL_CAFILE,
+    )
+
+
+PMMAPIDep = Annotated[PMMRemoteAPI | None, Depends(get_pmm_api)]
 
 
 async def get_created_entity(
