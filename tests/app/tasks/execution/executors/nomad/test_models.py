@@ -19,6 +19,7 @@ import asyncio
 import json
 from base64 import b64encode
 from binascii import b2a_base64
+from collections import defaultdict
 from datetime import datetime, UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -31,6 +32,7 @@ from app.core.exceptions import HTTPBadRequestException
 from app.core.utils import slugify
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.config import tasks_settings
+from app.tasks.crud import TaskHistoryLogManager, TaskHistoryLogStateManager
 from app.tasks.execution.executors.nomad.exceptions import (
     AllocationNotFoundError,
     JobNotFoundError,
@@ -45,6 +47,7 @@ from app.tasks.execution.executors.nomad.models import (
     NomadExecutor,
 )
 from app.tasks.execution.utils import gzip_compress, minify_file_content
+from app.tasks.logs.log_writer import TaskHistoryLogWriter
 from app.tasks.models import (
     ExecutionEvent,
     FileMetadata,
@@ -62,6 +65,11 @@ INITIAL_LOG_OFFSET = 50
 EXPECTED_GET_LOGS_STREAM_CALLS_ONE_READY_STEP = 2
 MOCK_LOG_STREAM_BODY_START_MONOTONIC = 1000.0
 STALENESS_THRESHOLD_OVERRIDE = 300
+ALLOCATION_CREATE_INDEX = 100
+SUPERSEDED_ALLOCATION_EPOCH = 100
+CURRENT_ALLOCATION_EPOCH = 200
+SEED_OFFSET = 3
+LEGACY_SEED_PRODUCER_OFFSET = 5
 
 
 def _build_task(
@@ -2488,3 +2496,194 @@ class TestNomadTaskStatesToExecutionEvents:
         assert out[0].event_type == "Setup"
         assert "Downloading Artifacts" in out[0].description
         assert out[0].step == "step1"
+
+
+class TestPersistNomadTaskLogsCursorDurability:
+    """Test durable Nomad fetch-cursor behavior across sync cycles."""
+
+    @staticmethod
+    def _reconstruct_stream(chunks, state) -> str:
+        """Return the ordered persisted-plus-staged content for one stream."""
+        body = "".join(
+            chunk.content for chunk in sorted(chunks, key=lambda c: c.start_offset)
+        )
+        staged = state.staging.decode("utf-8") if state and state.staging else ""
+        return body + staged
+
+    @staticmethod
+    def _offset_aware_stream(raw_logs: dict):
+        """Return a ``stream_logs.stream`` mock that honors the ``offset`` kwarg.
+
+        The mock returns only the raw bytes at or after ``offset`` so a fetch
+        that wrongly restarts from ``0`` re-reads content the caller already
+        persisted — the exact regression the durable cursor prevents.
+        """
+
+        def fake_stream(alloc_id, *, task, type_, offset):
+            content = raw_logs.get((task, type_), "")
+            delta = content[offset:]
+            if not delta:
+                return ""
+            return json.dumps(
+                {"Data": b64encode(delta.encode()).decode(), "Offset": len(content)}
+            )
+
+        return fake_stream
+
+    @pytest.mark.asyncio
+    @patch("app.tasks.execution.executors.nomad.models.anonymize_text")
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    async def test_cold_worker_second_cycle_resumes_from_db_cursor(
+        self,
+        mock_nomad_cls,
+        mock_anonymize,
+        session,
+        created_task_with_history,
+    ):
+        """Assert a cold second cycle resumes from the DB cursor without re-reading.
+
+        With the process-local fetch-offset dict gone, the ``taskhistory_log_state``
+        row is the only record of the raw Nomad offset. A second sync cycle that
+        lands on a worker without the in-memory cursor must seed from that row;
+        otherwise the anonymized run-script stream re-reads from offset ``0`` and
+        the producer-offset dedup (``skip == 0``) appends the whole file again.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_anonymize.side_effect = lambda text, _entities: text.replace(
+            "4111", "[REDACTED]"
+        )
+        raw_logs = {
+            ("prepare", TaskLogType.STDOUT): "prepare-A\n",
+            ("run-script", TaskLogType.STDOUT): "cc 4111 here\n",
+        }
+        mock_backend.client.stream_logs.stream.side_effect = self._offset_aware_stream(
+            raw_logs
+        )
+
+        history = created_task_with_history
+        history.anonymize_mask = PIIEntity.CREDIT_CARD.value
+        alloc = {
+            "ID": "alloc-1",
+            "CreateIndex": ALLOCATION_CREATE_INDEX,
+            "TaskStates": {
+                "prepare": {"StartedAt": "2024-01-01T00:00:00Z"},
+                "run-script": {"StartedAt": "2024-01-01T00:00:00Z"},
+            },
+        }
+        executor = _build_executor()
+
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=alloc,
+            previous_allocation_id="alloc-1",
+        )
+        raw_logs[("prepare", TaskLogType.STDOUT)] = "prepare-A\nprepare-B\n"
+        raw_logs[("run-script", TaskLogType.STDOUT)] = "cc 4111 here\nsecond\n"
+        await executor._persist_nomad_task_logs(
+            writer_session=session,
+            queue_item=history,
+            alloc=alloc,
+            previous_allocation_id="alloc-1",
+        )
+
+        chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
+        chunks_by_stream = defaultdict(list)
+        for chunk in chunks:
+            chunks_by_stream[(chunk.source, chunk.stream)].append(chunk)
+        prepare_state = await TaskHistoryLogStateManager.get_for_stream(
+            session, history.id, "prepare", TaskLogType.STDOUT
+        )
+        run_script_state = await TaskHistoryLogStateManager.get_for_stream(
+            session, history.id, "run-script", TaskLogType.STDOUT
+        )
+
+        assert (
+            self._reconstruct_stream(
+                chunks_by_stream[("prepare", TaskLogType.STDOUT)], prepare_state
+            )
+            == "prepare-A\nprepare-B\n"
+        )
+        assert (
+            self._reconstruct_stream(
+                chunks_by_stream[("run-script", TaskLogType.STDOUT)],
+                run_script_state,
+            )
+            == "cc [REDACTED] here\nsecond\n"
+        )
+
+    @pytest.mark.asyncio
+    async def test_build_initial_log_offsets_skips_superseded_epoch_row(
+        self, session, created_task_with_history
+    ):
+        """Assert a row from a different allocation epoch is not used to seed."""
+        history = created_task_with_history
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            new_bytes=b"old",
+            force_flush=True,
+            producer_offset_after=SEED_OFFSET,
+            nomad_offset_after=SEED_OFFSET,
+            allocation_epoch=SUPERSEDED_ALLOCATION_EPOCH,
+        )
+
+        offsets = await NomadExecutor._build_initial_log_offsets(
+            session, history.id, current_epoch=CURRENT_ALLOCATION_EPOCH
+        )
+
+        assert "run-script" not in offsets
+
+    @pytest.mark.asyncio
+    async def test_build_initial_log_offsets_seeds_matching_epoch_row(
+        self, session, created_task_with_history
+    ):
+        """Assert a row matching the current epoch seeds both cursors."""
+        history = created_task_with_history
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            new_bytes=b"cur",
+            force_flush=True,
+            producer_offset_after=SEED_OFFSET,
+            nomad_offset_after=SEED_OFFSET,
+            allocation_epoch=CURRENT_ALLOCATION_EPOCH,
+        )
+
+        offsets = await NomadExecutor._build_initial_log_offsets(
+            session, history.id, current_epoch=CURRENT_ALLOCATION_EPOCH
+        )
+
+        assert offsets["run-script"]["stdout_last_offset"] == SEED_OFFSET
+        assert offsets["run-script"]["stdout_producer_offset"] == SEED_OFFSET
+
+    @pytest.mark.asyncio
+    async def test_build_initial_log_offsets_seeds_legacy_epoch_zero_row(
+        self, session, created_task_with_history
+    ):
+        """Assert a legacy ``allocation_epoch == 0`` row is trusted for seeding."""
+        history = created_task_with_history
+        await TaskHistoryLogWriter.append(
+            session,
+            history.id,
+            source="run-script",
+            stream=TaskLogType.STDOUT,
+            new_bytes=b"legacy",
+            force_flush=True,
+            producer_offset_after=LEGACY_SEED_PRODUCER_OFFSET,
+        )
+
+        offsets = await NomadExecutor._build_initial_log_offsets(
+            session, history.id, current_epoch=CURRENT_ALLOCATION_EPOCH
+        )
+
+        assert "run-script" in offsets
+        assert (
+            offsets["run-script"]["stdout_producer_offset"]
+            == LEGACY_SEED_PRODUCER_OFFSET
+        )

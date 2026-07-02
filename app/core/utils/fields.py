@@ -174,10 +174,11 @@ class URL(StarletteURL):
         source_type: Any,
         handler: GetCoreSchemaHandler,
     ) -> core_schema.CoreSchema:
-        """Provide the Pydantic core schema for URL validation.
+        """Provide the Pydantic core schema for URL validation and serialization.
 
-        This method integrates the `validate_url` method into Pydantic's
-        validation schema.
+        Integrate the ``validate_url`` method into Pydantic's validation schema
+        and serialize URL values to their string form in JSON mode, so a
+        ``URL``-typed value round-trips through ``model_dump(mode="json")``.
 
         :param source_type: The source type for validation.
         :type source_type: Any
@@ -186,7 +187,12 @@ class URL(StarletteURL):
         :return: The core schema incorporating the URL validation logic.
         :rtype: core_schema.CoreSchema
         """
-        return core_schema.no_info_plain_validator_function(cls.validate_url)
+        return core_schema.no_info_plain_validator_function(
+            cls.validate_url,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                str, when_used="json"
+            ),
+        )
 
     @classmethod
     def validate_url(cls, url: str) -> Self:
