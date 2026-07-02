@@ -774,7 +774,7 @@ class TestDefaultColumns:
         ]
 
     def test_bookends_carry_expected_attributes(self):
-        """The head/tail columns keep their labels, sortability, and formats."""
+        """Keep labels, sortability, and formats on the head/tail columns."""
         by_key = {column.key: column for column in default_columns()}
 
         assert by_key["name"].label == "Name"
@@ -784,7 +784,7 @@ class TestDefaultColumns:
         assert by_key["created_by"].format is None
 
     def test_returns_independent_instances_each_call(self):
-        """Each call builds fresh bookend instances so mutation never leaks across views."""
+        """Build fresh bookend instances each call so mutation never leaks across views."""
         first = default_columns()
         second = default_columns()
 
@@ -795,7 +795,7 @@ class TestDefaultColumns:
         assert second[0].label == "Name"
 
     def test_copies_middle_columns_each_call(self):
-        """Middle columns are copied so a shared constant never aliases across views."""
+        """Copy middle columns so a shared constant never aliases across views."""
         first = default_columns(EXECUTOR_HOST_COLUMN)
         second = default_columns(EXECUTOR_HOST_COLUMN)
 
@@ -809,7 +809,7 @@ class TestDefaultColumns:
         assert EXECUTOR_HOST_COLUMN.label == "Executor Host"
 
     def test_executor_host_column_key_and_label(self):
-        """The reusable executor-host constant carries the normalized header label."""
+        """Carry the normalized header label on the reusable executor-host constant."""
         assert EXECUTOR_HOST_COLUMN.key == "hostname"
         assert EXECUTOR_HOST_COLUMN.label == "Executor Host"
 
