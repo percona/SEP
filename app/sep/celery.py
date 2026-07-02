@@ -182,11 +182,11 @@ def render_report_pdf_job(self: Any, report_json: dict[str, Any]) -> dict[str, s
     :return: Base64-encoded PDF payload and download filename.
     :rtype: dict[str, str]
     """
-    from app.sep.plugins.report.job_service import (
+    from app.sep.apps.report.job_service import (
         report_pdf_filename,
     )
-    from app.sep.plugins.report.models import ReportData
-    from app.sep.plugins.report.service import generate_pdf_report
+    from app.sep.apps.report.models import ReportData
+    from app.sep.apps.report.service import generate_pdf_report
 
     try:
         report = ReportData.model_validate(report_json)
@@ -213,8 +213,8 @@ def upload_report_snapshot_job(
     :return: ServiceNow upload response payload.
     :rtype: dict[str, Any]
     """
-    from app.sep.plugins.report.models import ReportData
-    from app.sep.plugins.report.service import generate_pdf_report, upload_pdf_report
+    from app.sep.apps.report.models import ReportData
+    from app.sep.apps.report.service import generate_pdf_report, upload_pdf_report
 
     try:
         report = ReportData.model_validate(report_json)

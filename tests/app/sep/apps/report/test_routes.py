@@ -425,7 +425,7 @@ class TestReportGeneratePDF:
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"] == "text/html; charset=utf-8"
         assert "PDF generation started" in response.text
-        assert "/api/plugins/report/pdf-jobs/job-1" in response.text
+        assert "/api/apps/report/pdf-jobs/job-1" in response.text
         mock_delay.assert_called_once_with(report.model_dump(mode="json"))
         mock_generate.assert_not_awaited()
 
@@ -481,7 +481,7 @@ class TestReportUpload:
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"] == "text/html; charset=utf-8"
         assert "ServiceNow upload started" in response.text
-        assert "/api/plugins/report/upload-jobs/job-2" in response.text
+        assert "/api/apps/report/upload-jobs/job-2" in response.text
         mock_delay.assert_called_once_with(report.model_dump(mode="json"))
         mock_generate.assert_not_awaited()
 
