@@ -36,13 +36,11 @@ CasdoorUsernameField = Annotated[
 def _active_casdoor_sdk() -> CasdoorSDK:
     """Return the live ``CasdoorSDK`` from the active auth provider.
 
-    Import ``get_active_auth_provider`` lazily: the auth-config module imports
-    these models (via the provider bundle), so a module-level import would form
-    a cycle.
-
     :return: The active provider, which is a ``CasdoorSDK`` while Casdoor is the
         selected provider.
     """
+    # lazy import: auth/config.py imports this module via the provider bundle, so
+    # a module-level import here would cycle
     from app.core.auth.config import get_active_auth_provider
 
     return cast(CasdoorSDK, get_active_auth_provider())

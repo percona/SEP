@@ -639,10 +639,10 @@ async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa:
     properly managed during the application's startup and shutdown phases.
 
     :param app: The FastAPI application instance.
-    :type app: FastAPI
     :yield: None
-    :rtype: AsyncGenerator[None, None]
     """
+    # lazy import: auth/config.py imports BaseYamlSettings from this module, so a
+    # module-level import here would cycle
     from app.core.auth.config import get_active_auth_provider
 
     async with get_active_auth_provider().lifespan():

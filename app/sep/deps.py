@@ -396,7 +396,6 @@ async def get_username_mapping() -> dict[str, str]:
     repeated API calls.
 
     :return: A dictionary mapping user IDs to usernames.
-    :rtype: dict[str, str]
     """
     try:
         users = await User.get_users()
