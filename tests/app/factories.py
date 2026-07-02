@@ -23,7 +23,8 @@ from polyfactory.factories.sqlalchemy_factory import SQLAlchemyFactory
 from sqlalchemy_celery_beat import PeriodicTask
 
 from app.core.auth.models import OAuthToken
-from app.core.auth.providers.casdoor import CasdoorSDK
+from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.casdoor.sdk import CasdoorSDK
 from app.inventory.models import (
     HostSystemObservationWrite,
     NodeWrite,
@@ -32,7 +33,6 @@ from app.inventory.models import (
     ServiceWrite,
     TableWrite,
 )
-from app.models import CasdoorUser
 from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.archives.models import ArchivesCreate
 from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable

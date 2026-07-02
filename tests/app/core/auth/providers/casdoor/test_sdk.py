@@ -13,13 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.core.auth.providers.casdoor module."""
+"""Define tests for the Casdoor SDK."""
 
 import base64
 
 from pydantic import SecretStr
 
-from app.core.auth.providers.casdoor import CasdoorSDK
+from app.core.auth.providers.casdoor.sdk import CasdoorSDK
 
 
 def test_casdoor_credentials_masked_in_repr():

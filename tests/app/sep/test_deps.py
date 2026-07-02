@@ -30,6 +30,7 @@ from app.core.auth.exceptions import (
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
@@ -37,7 +38,6 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
-from app.models import CasdoorUser
 from app.sep.apps.framework.registry import build_app_registry
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import App, sep_settings
@@ -426,42 +426,46 @@ class TestGetUsernameMapping:
     """Test get_username_mapping dependency."""
 
     @pytest.mark.asyncio
-    async def test_casdoor_failure_returns_empty_dict(self) -> None:
-        """Assert Casdoor API failure returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
-                side_effect=ValueError("connection failed")
-            )
+    async def test_provider_failure_returns_empty_dict(self) -> None:
+        """Assert an auth-provider failure returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=ValueError("connection failed")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_http_exception_returns_empty_dict(self) -> None:
-        """Assert HTTPException from Casdoor returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
-                side_effect=HTTPException(status_code=500, detail="fail")
-            )
+        """Assert an HTTPException from the provider returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=HTTPException(status_code=500, detail="fail")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_key_error_returns_empty_dict(self) -> None:
-        """Assert KeyError from malformed response returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(side_effect=KeyError("missing"))
+        """Assert a KeyError from a malformed response returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=KeyError("missing")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_attribute_error_returns_empty_dict(self) -> None:
         """Assert AttributeError (e.g. session not initialized) returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(
                 side_effect=AttributeError(
                     "'NoneType' object has no attribute 'request'"
                 )
-            )
+            ),
+        ):
             result = await get_username_mapping()
         assert result == {}
 

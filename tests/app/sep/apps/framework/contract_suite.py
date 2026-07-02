@@ -40,8 +40,8 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from polyfactory.factories.pydantic_factory import ModelFactory
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.inventory.models import ServiceTypeEnum
-from app.models import CasdoorUser
 from app.sep.apps.framework import ConnectivityWarning, TaskExecuteWrite
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.conformance import CAPABILITY_RENDERED_CONTROLS

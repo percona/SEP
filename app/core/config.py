@@ -54,7 +54,6 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import Lifespan
 
 from app import BASE_DIR
-from app.core.auth.providers.casdoor import CasdoorSDK
 from app.core.celery.config import CeleryOptions
 from app.core.middleware.security_headers import (
     SecurityHeadersMiddleware,
@@ -73,7 +72,6 @@ from app.core.utils.fields import (
     RelativeFilePathField,
     StrCredentialHttpUrl,
     StrHttpUrl,
-    StrImportableAttribute,
     TimedeltaSeconds,
     URL,
 )
@@ -347,13 +345,8 @@ _INTERNAL_TOKEN_LABEL = b"sep-internal-token"
 class Settings(BaseYamlSettings):
     """Define the main application settings.
 
-    :param CASDOOR: Casdoor configuration options.
-    :type CASDOOR: CasdoorSDK
     :param CELERY: Celery configuration options.
     :type CELERY: CeleryOptions
-    :param AUTH_USER_MODEL: The full import path of the user model class.
-        Defaults to "app.models.CasdoorUser".
-    :type AUTH_USER_MODEL: StrImportableAttribute
     :param ALLOW_CONCURRENT_SESSIONS: Whether to allow concurrent sessions for the same
         user. Defaults to False, meaning all previous sessions will be invalidated once
         a new one is created.
@@ -395,9 +388,7 @@ class Settings(BaseYamlSettings):
     :type SETTINGS_OVERRIDE_REFRESHER_ENABLED: bool
     """
 
-    CASDOOR: CasdoorSDK
     CELERY: CeleryOptions
-    AUTH_USER_MODEL: StrImportableAttribute = "app.models.CasdoorUser"
     ALLOW_CONCURRENT_SESSIONS: bool = False
     SECRET_KEY: SecretStr = SecretStr(secrets.token_urlsafe(32))
     SEP_INTERNAL_TOKEN: SecretStr | None = None
@@ -644,15 +635,17 @@ class BaseYamlAppSettings(BaseYamlSettings):
 async def default_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:  # noqa: ARG001
     """Define the default manager for the application's lifespan.
 
-    Ensures that the CasdoorSDK and any extra client sessions are properly managed
-    during the application's startup and shutdown phases.
+    Ensures that the active auth provider's SDK and any extra client sessions are
+    properly managed during the application's startup and shutdown phases.
 
     :param app: The FastAPI application instance.
     :type app: FastAPI
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
-    async with settings.CASDOOR:
+    from app.core.auth.config import get_active_auth_provider
+
+    async with get_active_auth_provider().lifespan():
         yield
     await settings.close_client_registry()
 

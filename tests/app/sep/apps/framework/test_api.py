@@ -32,12 +32,12 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPConflictException
 from app.core.pagination import PaginatedResponse
 from app.core.pagination.deps import make_pagination_dep
 from app.core.requests.remote_api import RemoteAPI
 from app.inventory.models import ServiceTypeEnum
-from app.models import CasdoorUser
 from app.sep.apps.framework import (
     ConnectivityWarning,
     TaskExecuteWrite,
