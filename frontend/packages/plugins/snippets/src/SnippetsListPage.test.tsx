@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@sep/api';
 import { SnippetsListPage } from './SnippetsListPage';
@@ -52,6 +52,7 @@ const unapprovedSnippet = {
   filename: 'check.sh',
   title: 'Check',
   description: 'A check script',
+  service_type: 'mysql',
   size: 100,
   md5_digest: 'abc123',
   is_approved: false,
@@ -487,5 +488,160 @@ describe('SnippetsListPage — RefreshButton', () => {
     await waitFor(() => {
       expect(screen.getByRole('checkbox', { name: /select check\.sh/i })).not.toBeChecked();
     });
+  });
+});
+
+describe('SnippetsListPage — filters', () => {
+  const mysqlUnapproved = {
+    ...unapprovedSnippet,
+    filename: 'mysql-log.sh',
+    title: 'MySQL log rotate',
+    description: 'rotates logs',
+    service_type: 'mysql',
+    is_approved: false,
+  };
+  const mongoApproved = {
+    ...unapprovedSnippet,
+    filename: 'mongo-status.sh',
+    title: 'Mongo status',
+    description: 'status check',
+    service_type: 'mongodb',
+    is_approved: true,
+  };
+  const mongoUnapproved = {
+    ...unapprovedSnippet,
+    filename: 'mongo-slow.sh',
+    title: 'Mongo slow query',
+    description: 'slow query log helper',
+    service_type: 'mongodb',
+    is_approved: false,
+  };
+  const uncategorized = {
+    ...unapprovedSnippet,
+    filename: 'misc.sh',
+    title: 'Miscellaneous',
+    description: 'no service type here',
+    service_type: null,
+    is_approved: false,
+  };
+
+  const allSnippets = [mysqlUnapproved, mongoApproved, mongoUnapproved, uncategorized];
+
+  function bodyFilenames(): string[] {
+    const rows = screen.getAllByRole('row').slice(1); // drop header row
+    // Non-admin rows have no checkbox column, so the first cell is Filename.
+    return rows.map((row) => within(row).getAllByRole('cell')[0].textContent ?? '');
+  }
+
+  function selectOption(controlLabel: string, optionName: string) {
+    fireEvent.mouseDown(screen.getByLabelText(controlLabel));
+    fireEvent.click(screen.getByRole('option', { name: optionName }));
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseSnippets.mockReturnValue({
+      data: allSnippets,
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseApproveSnippet.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useApproveSnippet>);
+    mockUseRemoveSnippetApproval.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRemoveSnippetApproval>);
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: false },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+  });
+
+  it('free-text search matches filename, title, and description (case-insensitive)', () => {
+    render(<SnippetsListPage />);
+
+    fireEvent.change(screen.getByLabelText('Search snippets'), {
+      target: { value: 'SLOW' },
+    });
+
+    expect(bodyFilenames()).toEqual(['mongo-slow.sh']);
+  });
+
+  it('approval filter narrows to not-approved snippets', () => {
+    render(<SnippetsListPage />);
+
+    selectOption('Filter by approval status', 'Not approved');
+
+    expect(bodyFilenames()).toEqual(['mysql-log.sh', 'mongo-slow.sh', 'misc.sh']);
+  });
+
+  it('service-type filter narrows to a single service', () => {
+    render(<SnippetsListPage />);
+
+    selectOption('Filter by service type', 'mongodb');
+
+    expect(bodyFilenames()).toEqual(['mongo-status.sh', 'mongo-slow.sh']);
+  });
+
+  it('Uncategorized option shows only snippets without a service type', () => {
+    render(<SnippetsListPage />);
+
+    selectOption('Filter by service type', 'Uncategorized');
+
+    expect(bodyFilenames()).toEqual(['misc.sh']);
+  });
+
+  it('combines filters with AND semantics', () => {
+    render(<SnippetsListPage />);
+
+    selectOption('Filter by approval status', 'Not approved');
+    selectOption('Filter by service type', 'mongodb');
+    fireEvent.change(screen.getByLabelText('Search snippets'), {
+      target: { value: 'log' },
+    });
+
+    expect(bodyFilenames()).toEqual(['mongo-slow.sh']);
+  });
+
+  it('shows an empty state when no snippet matches the active filters', () => {
+    render(<SnippetsListPage />);
+
+    fireEvent.change(screen.getByLabelText('Search snippets'), {
+      target: { value: 'no-such-snippet' },
+    });
+
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByText(/no snippets match the current filters/i)).toBeInTheDocument();
+  });
+
+  it('drops selections for rows hidden by a filter from the batch payload', () => {
+    const batchMutate = vi.fn();
+    mockUseBatchApproveSnippets.mockReturnValue({
+      mutate: batchMutate,
+      isPending: false,
+    } as unknown as ReturnType<typeof useBatchApproveSnippets>);
+
+    render(<SnippetsListPage isAdmin />);
+
+    // Select an unapproved mysql snippet.
+    fireEvent.click(screen.getByRole('checkbox', { name: /select mysql-log\.sh/i }));
+    expect(screen.getByRole('button', { name: /batch approve \(1\)/i })).toBeInTheDocument();
+
+    // Filter to mongodb — mysql-log.sh is now hidden, so the batch action
+    // (and its payload) must no longer include it.
+    selectOption('Filter by service type', 'mongodb');
+
+    expect(screen.queryByRole('button', { name: /batch approve/i })).not.toBeInTheDocument();
+    expect(batchMutate).not.toHaveBeenCalled();
   });
 });

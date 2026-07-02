@@ -453,6 +453,18 @@ class BaseSnippet(BaseModel):
         return self.meta.get("description", "")
 
     @cached_property
+    def service_type(self) -> str | None:
+        """Get the free-form service type of the snippet.
+
+        :return: The ``service_type`` declared in the snippet metadata (for
+            example ``"mysql"`` or ``"mongodb"``), or ``None`` when the snippet
+            declares no service type. This free-form frontmatter string is
+            distinct from the inventory ``ServiceTypeEnum``.
+        :rtype: str | None
+        """
+        return self.meta.get("service_type")
+
+    @cached_property
     def allow_extra_args(self) -> bool:
         """Determine whether extra arguments are allowed for the snippet.
 
