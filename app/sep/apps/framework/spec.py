@@ -28,10 +28,14 @@ byte-uniform with the canonical hand-written envelopes in
 import shlex
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from string import Template
 from typing import Any, cast, Protocol
 
 from app.core.exceptions import HTTPBadRequestException
+from app.core.utils.cli_args import (
+    arg_template_identifiers,
+    is_value_arg_template,
+    render_value_arg,
+)
 from app.inventory.constants import DEFAULT_MYSQL_PORT, DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
@@ -311,10 +315,10 @@ async def resolve_refs(
     :raises HTTPBadRequestException: When a multi-type ``ServiceRef`` resolves to a
         service outside its allowed types.
     """
-    entities: dict[str, CreatedEntity | None] = {}
+    entities = {}
     executor_host = None
     host_field = None
-    service_candidates: list[tuple[ServiceRef, CreatedService | None]] = []
+    service_candidates = []
     for key, ref, value in _iter_ref_fields(form):
         if isinstance(ref, HostRef):
             if host_field is not None:
@@ -501,12 +505,11 @@ def build_command_args(form: AppFormModel) -> list[str]:
             continue
         value = getattr(form, name)
         resolved = _resolve_arg_template(name, field_info.annotation, marker)
-        template = Template(resolved)
-        if "value" in template.get_identifiers():
+        if is_value_arg_template(resolved):
             if value:
-                substituted = template.safe_substitute(value=shlex.quote(str(value)))
-                value_args.extend(shlex.split(substituted))
-        elif value is True:
+                value_args.extend(render_value_arg(resolved, value))
+            continue
+        if value is True:
             flag_args.extend(shlex.split(resolved))
     return value_args + flag_args
 
@@ -533,7 +536,7 @@ def validate_arg_formats(model: type[AppFormModel]) -> None:
         if marker is None:
             continue
         template = _resolve_arg_template(name, field_info.annotation, marker)
-        identifiers = set(Template(template).get_identifiers())
+        identifiers = arg_template_identifiers(template)
         unsupported = identifiers - {"value"}
         if unsupported:
             raise ValueError(
