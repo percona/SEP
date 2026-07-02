@@ -22,6 +22,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form, HTTPException, status
 
+from app.core.utils.path import to_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -225,7 +226,7 @@ async def build_backup_task_payload(
         data={
             "task": "run-python",
             "meta": meta,
-            "payload": f"file://{payload_path}",
+            "payload": to_payload_reference(payload_path),
             "backup_type": form.backup_type,
         },
         alert_on_fail=form.alert_on_fail,

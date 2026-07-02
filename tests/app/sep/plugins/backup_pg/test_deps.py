@@ -21,6 +21,7 @@ import pytest
 import yaml
 
 from app.core.exceptions import HTTPNotFoundException
+from app.core.utils.path import resolve_payload_reference
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.backup_pg.deps import (
     build_backup_task_payload,
@@ -82,8 +83,8 @@ async def test_build_backup_task_payload(
     assert server_config["BACKUP_TYPE"] == BackupType.PGBACKREST.value
     assert "PORT" not in server_config
 
-    assert data["payload"].startswith("file://")
-    assert "backup_pg/payload" in data["payload"]
+    assert data["payload"] == "file://app/sep/plugins/backup_pg/payload"
+    assert resolve_payload_reference(data["payload"]).is_file()
 
 
 @pytest.mark.asyncio

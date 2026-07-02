@@ -19,7 +19,6 @@ import json
 from datetime import datetime
 from enum import auto, StrEnum
 from functools import cached_property
-from pathlib import Path
 from statistics import mean
 from typing import Annotated, Any, Literal, Self
 
@@ -59,6 +58,7 @@ from app.core.utils.fields import (
     EnumFieldMixin,
     UTCDatetime,
 )
+from app.core.utils.path import resolve_payload_reference
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
 
@@ -282,21 +282,19 @@ class TaskExecutionRequest(BaseModel):
 
     @cached_property
     def payload_content(self) -> str | None:
-        """Retrieve the content of the payload if it's a file path.
+        """Return the payload content, resolving a ``file://`` reference to file text.
 
-        If the payload starts with "file://", it attempts to read the file content.
-        Otherwise, it returns the payload string directly.
+        If the payload is a ``file://`` reference, resolve it to an existing file
+        via :func:`resolve_payload_reference` and return the file's contents.
+        Otherwise return the payload string (possibly ``None``) unchanged.
 
-        :return: The content of the payload or None if not applicable.
+        :return: The referenced file's contents, or the payload string as-is.
         :rtype: str | None
+        :raises PayloadReferenceError: If a ``file://`` reference cannot be
+            resolved to an existing file.
         """
         if self.payload and self.payload.strip().startswith("file://"):
-            payload_path = Path(
-                self.payload.strip().replace("file://", "", 1),
-            ).resolve()
-            if payload_path.is_file():
-                with payload_path.open() as payload_file:
-                    return payload_file.read()
+            return resolve_payload_reference(self.payload).read_text()
         return self.payload
 
 

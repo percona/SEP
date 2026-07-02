@@ -22,6 +22,7 @@ import yaml
 from fastapi import Depends, Form, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 
+from app.core.utils.path import to_payload_reference
 from app.core.utils.pydantic import extract_model_from_instance
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
@@ -141,7 +142,7 @@ async def build_restore_task_payload(
         data={
             "task": "run-python",
             "meta": meta,
-            "payload": f"file://{payload_path}",
+            "payload": to_payload_reference(payload_path),
         },
     )
 

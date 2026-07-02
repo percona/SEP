@@ -23,6 +23,7 @@ import yaml
 from fastapi import Depends, Form
 from fastapi.encoders import jsonable_encoder
 
+from app.core.utils.path import to_payload_reference
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -124,7 +125,7 @@ async def build_backup_task_payload(
                 CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_POSTGRESQL_PORT,
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
             },
-            "payload": f"file://{payload_path}",
+            "payload": to_payload_reference(payload_path),
         },
         alert_on_fail=form.alert_on_fail,
     )

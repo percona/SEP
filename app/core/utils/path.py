@@ -15,10 +15,22 @@
 
 """Define path-related utilities."""
 
+import logging
 from os import PathLike
 from pathlib import Path
 
 from app import BASE_DIR
+
+logger = logging.getLogger(__name__)
+
+_PLUGIN_APP_ALIASES = (
+    ("/app/sep/plugins/", "/app/sep/apps/"),
+    ("/app/sep/apps/", "/app/sep/plugins/"),
+)
+
+
+class PayloadReferenceError(ValueError):
+    """Raise when a task payload ``file://`` reference cannot be resolved to a file."""
 
 
 def resolve_relative_path(path: str | bytes | PathLike) -> Path:
@@ -34,3 +46,44 @@ def resolve_relative_path(path: str | bytes | PathLike) -> Path:
         return BASE_DIR / path
     except TypeError as exc:
         raise ValueError(f"Unable to resolve path: {path}") from exc
+
+
+def to_payload_reference(path: Path) -> str:
+    """Build a stored task payload reference relative to ``BASE_DIR``.
+
+    The reference is location-independent: it stores the package-relative path
+    under the ``BASE_DIR`` anchor rather than a deployment-absolute path, so a
+    later relocation of the deployment root does not orphan it.
+
+    :param path: An absolute path under ``BASE_DIR`` to the payload file.
+    :return: A ``file://`` reference relative to ``BASE_DIR``.
+    :raises ValueError: If ``path`` is not located under ``BASE_DIR``.
+    """
+    return f"file://{Path(path).relative_to(BASE_DIR)}"
+
+
+def resolve_payload_reference(reference: str) -> Path:
+    """Resolve a ``file://`` task payload reference to an existing file.
+
+    Accept both the current ``BASE_DIR``-relative form and legacy absolute
+    references. When a candidate path sits under ``app/sep/plugins`` or
+    ``app/sep/apps``, also try the aliased sibling location so a
+    ``plugins``/``apps`` relocation re-anchors without a per-plugin change.
+
+    :param reference: The stored ``file://`` payload reference.
+    :return: The first candidate path that resolves to an existing file.
+    :raises PayloadReferenceError: If no candidate resolves to a file.
+    """
+    raw = reference.strip().removeprefix("file://").strip()
+    candidate = Path(raw)
+    candidates = [candidate if candidate.is_absolute() else resolve_relative_path(raw)]
+    for base in list(candidates):
+        text = str(base)
+        for old, new in _PLUGIN_APP_ALIASES:
+            if old in text:
+                candidates.append(Path(text.replace(old, new)))
+    for path in candidates:
+        if path.is_file():
+            return path
+    logger.error("Unresolvable task payload reference: %s", reference)
+    raise PayloadReferenceError(f"Unresolvable task payload reference: {reference}")

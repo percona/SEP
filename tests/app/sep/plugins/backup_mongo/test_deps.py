@@ -15,12 +15,16 @@
 
 """Define tests for the app.sep.plugins.backup_mongo.deps module."""
 
+from pathlib import Path
+
 import pytest
 from fastapi import HTTPException, status
 
+from app.core.utils.path import resolve_payload_reference, to_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
+from app.sep.plugins.backup_mongo import deps as backup_mongo_deps
 from app.sep.plugins.backup_mongo.deps import build_backup_task_payload
 from app.sep.plugins.backup_mongo.models import BackupCreate
 from app.tasks.models import TaskOwner, TaskWrite
@@ -74,3 +78,22 @@ async def test_build_backup_task_payload_swallows_404_for_missing_service(
 
     assert isinstance(task_payload, TaskWrite)
     assert "_service_name" not in task_payload.data["meta"]
+
+
+def test_derived_sibling_payload_refs_resolve():
+    """Assert the routes ``.replace()`` sibling payloads resolve on relative refs.
+
+    ``pbm_backups`` derives the logical/physical/status task payloads by
+    substring-replacing the config task's stored payload reference. The
+    plugin-relative segment is unchanged by relativization, so each derived
+    reference must still resolve to a real payload file.
+    """
+    base = to_payload_reference(
+        Path(backup_mongo_deps.__file__).parent / "pbm_config_payload"
+    )
+    logical = base.replace("pbm_config", "pbm_logical")
+    physical = logical.replace("pbm_logical", "pbm_physical")
+    status = logical.replace("pbm_physical", "pbm_status")
+
+    for reference in (base, logical, physical, status):
+        assert resolve_payload_reference(reference).is_file()
