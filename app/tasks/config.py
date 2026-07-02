@@ -17,15 +17,20 @@
 
 from datetime import timedelta
 from enum import StrEnum
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
-from pydantic import PositiveInt
+from annotated_types import Gt, Le
+from pydantic import Field, PositiveInt
+from sqlalchemy_celery_beat.models import Period
 
+from app.core.celery.models import IntervalSchedule
 from app.core.config import BaseYamlAppSettings
 from app.core.db.config import DatabaseOptions
 from app.core.middleware.security_headers import SecurityHeadersOptions
 from app.core.utils.lazy import LazyProxy
 from app.tasks.execution.executors.nomad import NomadExecutor
+
+MAX_LOG_RETENTION_DAYS = 365
 
 
 class PreExecutionCheckMode(StrEnum):
@@ -81,6 +86,14 @@ class TasksSettings(BaseYamlAppSettings):
         writer evicts per flush, bounding the per-append eviction work. Must be
         positive. Defaults to 1000.
     :type LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt
+    :param LOG_RETENTION_DAYS: The age in days beyond which finished task-execution
+        logs (``taskhistory_log`` rows) are purged. Must be a positive integer no
+        greater than 365. Defaults to 90.
+    :param LOG_PURGE_BATCH_SIZE: The maximum number of ``taskhistory_log`` rows
+        deleted per commit by the purge job. Must be positive. Defaults to 10,000.
+    :param LOG_PURGE_INTERVAL: The schedule on which the log-purge periodic task
+        runs. ``None`` disables seeding the task entirely. Read at startup.
+        Defaults to once per day.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["TASKS"]
@@ -95,6 +108,11 @@ class TasksSettings(BaseYamlAppSettings):
     STALENESS_THRESHOLD_SECONDS: PositiveInt = 3600
     LOG_STREAM_CAP_BYTES: PositiveInt = 104857600
     LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = 1000
+    LOG_RETENTION_DAYS: Annotated[int, Gt(0), Le(MAX_LOG_RETENTION_DAYS)] = 90
+    LOG_PURGE_BATCH_SIZE: PositiveInt = 10_000
+    LOG_PURGE_INTERVAL: IntervalSchedule | None = Field(
+        default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS)
+    )
 
 
 tasks_settings: TasksSettings = LazyProxy(TasksSettings)

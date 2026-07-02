@@ -178,6 +178,24 @@ class TaskHistoryStatusEnum(StrEnum):
             TaskHistoryStatusEnum.STALE,
         ]
 
+    @classmethod
+    def active_statuses(cls) -> frozenset["TaskHistoryStatusEnum"]:
+        """Return the statuses whose executions are still in flight.
+
+        These are the non-terminal statuses (``PENDING`` / ``RUNNING``); a new
+        non-terminal status only needs adding here.
+
+        :return: The frozen set of in-flight statuses.
+        """
+        return frozenset({cls.PENDING, cls.RUNNING})
+
+    def is_active(self) -> bool:
+        """Check whether the task status indicates an in-flight execution.
+
+        :return: True if the status is ``PENDING`` or ``RUNNING``; False otherwise.
+        """
+        return self in self.active_statuses()
+
 
 class TaskOwner(EnumFieldMixin, StrEnum):
     """Control the choice of task owners.

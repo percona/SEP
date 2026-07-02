@@ -19,6 +19,7 @@ import asyncio
 from contextlib import contextmanager
 from datetime import datetime, timedelta, UTC
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -31,20 +32,21 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import undefer
-from sqlmodel import SQLModel
+from sqlmodel import col, select, SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.pool import StaticPool
 
 from app.core.alerts.models import AlertService, AlertSeverity
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
-from app.core.utils import json_serializer
+from app.core.utils import json_serializer, utc_now
 from app.tasks import celery as celery_module
 from app.tasks.celery import (
     _check_nomad_cert_expiry,
     _dispatch_chained_task,
     _dispatch_queue_item,
     _MAX_CHAIN_DEPTH,
+    _purge_task_history_logs,
     _raise_if_identical_task_conflict,
     check_nomad_cert_expiry,
     delete_task_history,
@@ -52,6 +54,7 @@ from app.tasks.celery import (
     get_executor_for_task,
     maybe_dispatch_chain,
     prepare_periodic_task_history,
+    purge_task_history_logs,
     sync_queue_item,
     sync_running_items,
     task_revoked_handler,
@@ -66,6 +69,7 @@ from app.tasks.models import (
     TaskBackendEnum,
     TaskExecutionRequest,
     TaskHistory,
+    TaskHistoryLog,
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskWrite,
@@ -952,6 +956,130 @@ class TestSyncRunningItems:
             await sync_running_items()
 
         mock_sync_task.chunks.assert_not_called()
+
+
+async def _seed_purge_db(num_aged: int, *, chunks_each: int = 1):
+    """Build an in-memory tasks DB with ``num_aged`` aged finished histories.
+
+    Each history is SUCCESS, finished 100 days ago, and carries ``chunks_each``
+    log rows. Returns the session maker so the helper-under-test can be patched
+    onto it.
+    """
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    maker = get_async_session_maker_from_engine(engine)
+    old = utc_now() - timedelta(days=100)
+    async with maker() as session:
+        task = await TaskManager.create(
+            session,
+            TaskWrite.model_validate(
+                TaskFactory.build(name="aged-task", backend=TaskBackendEnum.NOMAD)
+            ),
+        )
+        for _ in range(num_aged):
+            history = await TaskHistoryManager.save(
+                session,
+                TaskHistory(
+                    task_id=task.id,
+                    status=TaskHistoryStatusEnum.SUCCESS,
+                    created_at=old,
+                    finished_at=old,
+                    execution_request={
+                        "task": task.name,
+                        "target": "localhost",
+                        "meta": {},
+                        "tracking": {"allocation_id": None, "evaluation_id": None},
+                    },
+                ),
+            )
+            for offset in range(chunks_each):
+                session.add(
+                    TaskHistoryLog(
+                        task_history_id=history.id,
+                        source="run-python",
+                        stream=TaskLogType.STDOUT,
+                        start_offset=offset * 10,
+                        end_offset=offset * 10 + 10,
+                        content="x" * 10,
+                    )
+                )
+        await session.commit()
+    return maker
+
+
+def _purge_settings(retention_days: int = 90, batch_size: int = 10):
+    """Return a stand-in settings object exposing the purge knobs."""
+    return SimpleNamespace(
+        LOG_RETENTION_DAYS=retention_days, LOG_PURGE_BATCH_SIZE=batch_size
+    )
+
+
+class TestPurgeTaskHistoryLogs:
+    """Test the task-history-log purge helper and Celery wrapper."""
+
+    @pytest.mark.asyncio
+    async def test_purges_all_aged_logs_across_batches(self):
+        """Loop batches until every aged log row is gone; audit rows survive."""
+        maker = await _seed_purge_db(1, chunks_each=5)
+        with (
+            patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+            patch(f"{MODULE}.tasks_settings", _purge_settings(batch_size=2)),
+        ):
+            await _purge_task_history_logs()
+
+        async with maker() as session:
+            logs = await session.exec(select(col(TaskHistoryLog.id)))
+            histories = await session.exec(select(col(TaskHistory.id)))
+        assert len(logs.all()) == 0
+        assert len(histories.all()) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_aged_rows_is_noop(self):
+        """A clean table deletes nothing and raises no error."""
+        maker = await _seed_purge_db(0)
+        with (
+            patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+            patch(f"{MODULE}.tasks_settings", _purge_settings()),
+        ):
+            await _purge_task_history_logs()  # must not raise
+
+    @pytest.mark.asyncio
+    async def test_error_triggers_alert_and_reraises(self):
+        """A delete failure fires a system alert and propagates the exception."""
+        maker = await _seed_purge_db(1)
+        boom = RuntimeError("db exploded")
+        with (
+            patch(f"{MODULE}.get_async_session_maker", return_value=maker),
+            patch(f"{MODULE}.tasks_settings", _purge_settings()),
+            patch(
+                f"{MODULE}.TaskHistoryLogManager.delete_aged_batch",
+                new_callable=AsyncMock,
+                side_effect=boom,
+            ),
+            patch.object(AlertService, "trigger", new_callable=AsyncMock) as mock_alert,
+            pytest.raises(RuntimeError),
+        ):
+            await _purge_task_history_logs()
+
+        mock_alert.assert_awaited_once()
+        alert = mock_alert.await_args[0][0]
+        assert alert["severity"] == AlertSeverity.ERROR
+        assert alert["dedup_key"] == "purge_task_history_logs"
+
+    def test_wrapper_runs_helper_on_loop(self):
+        """The Celery wrapper drives the async helper via the celery loop."""
+        with patch(f"{MODULE}.celery") as mock_celery:
+            mock_celery.loop.run_until_complete = MagicMock(
+                side_effect=lambda coro: coro.close()
+            )
+            purge_task_history_logs()
+        mock_celery.loop.run_until_complete.assert_called_once()
 
 
 class TestTaskRevokedHandler:
