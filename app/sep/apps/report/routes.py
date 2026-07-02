@@ -22,7 +22,10 @@ from fastapi import APIRouter, Form, Query, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
 
-from app.sep.celery import render_report_pdf_job, upload_report_snapshot_job
+from app.sep.apps.report.celery import (
+    render_report_pdf_job,
+    upload_report_snapshot_job,
+)
 from app.sep.config import sep_settings
 from app.sep.deps import IsAuthenticated, IsCsrfValidated
 from app.sep.middleware.csrf import CSRF_COOKIE_NAME

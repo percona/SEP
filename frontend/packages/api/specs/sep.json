@@ -14688,7 +14688,7 @@
     },
     "/api/apps/report/pdf-jobs/{job_id}/pdf": {
       "get": {
-        "description": "Download a ready PDF result for a report job.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: PDF file response.\n:rtype: Response\n:raises HTTPInternalServerErrorException: If the Celery job failed.\n:raises HTTPConflictException: If the PDF result is not ready yet.",
+        "description": "Download a ready PDF result for a report job.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:return: PDF file response.\n:rtype: Response\n:raises HTTPInternalServerErrorException: If the Celery job failed.\n:raises HTTPConflictException: If the PDF result is not ready yet.\n:raises HTTPGoneException: If the staged PDF artifact has expired.",
         "operationId": "report_report_download_pdf_api_api_apps_report_pdf_jobs__job_id__pdf_get",
         "parameters": [
           {

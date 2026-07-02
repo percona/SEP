@@ -1713,6 +1713,7 @@ export interface paths {
      *     :rtype: Response
      *     :raises HTTPInternalServerErrorException: If the Celery job failed.
      *     :raises HTTPConflictException: If the PDF result is not ready yet.
+     *     :raises HTTPGoneException: If the staged PDF artifact has expired.
      */
     get: operations['report_report_download_pdf_api_api_apps_report_pdf_jobs__job_id__pdf_get'];
     put?: never;

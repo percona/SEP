@@ -20,7 +20,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from celery.exceptions import Ignore
 
 import app.sep.celery as sep_celery
 from app.sep.apps.alerts.config import AlertsSettings
@@ -570,96 +569,3 @@ class TestBackupAlertConfigCooperativeCancel:
         mock_api.list_templates.assert_awaited()
         assert len(await AlertBackupManager.list(session)) == 0
         save.assert_not_called()
-
-
-class TestGenerateHealthReportCooperativeCancel:
-    """``_generate_health_report`` honours the cooperative-cancel safe points."""
-
-    @staticmethod
-    def _mock_report() -> MagicMock:
-        report = MagicMock()
-        report.metadata.title = "Health Report"
-        report.monitored.total_nodes = 1
-        report.monitored.total_services = 1
-        return report
-
-    @pytest.mark.asyncio
-    async def test_stops_before_generation_on_cancel(self, mocker):
-        """A cancel before generation skips report generation entirely."""
-        mocker.patch(
-            "app.sep.apps.report.deps.get_pmm_api",
-            new=AsyncMock(return_value=MagicMock()),
-        )
-        generate = mocker.patch(
-            "app.sep.apps.report.service.generate_report",
-            new=AsyncMock(return_value=self._mock_report()),
-        )
-        mocker.patch(f"{MODULE}.should_cancel", new=AsyncMock(return_value=True))
-
-        await sep_celery._generate_health_report(upload=True)
-
-        generate.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_scheduled_upload_reuses_generated_report(self, mocker):
-        """Scheduled upload renders/uploads same report without second collection."""
-        report = self._mock_report()
-        mocker.patch(
-            "app.sep.apps.report.deps.get_pmm_api",
-            new=AsyncMock(return_value=MagicMock()),
-        )
-        mock_settings = mocker.patch("app.sep.config.sep_settings")
-        mock_settings.HEALTH_REPORT.is_upload_configured = True
-        generate = mocker.patch(
-            "app.sep.apps.report.service.generate_report",
-            new=AsyncMock(return_value=report),
-        )
-        generate_pdf = mocker.patch(
-            "app.sep.apps.report.service.generate_pdf_report",
-            new=AsyncMock(return_value=b"%PDF-1.4"),
-        )
-        upload = mocker.patch(
-            "app.sep.apps.report.service.upload_pdf_report",
-            new=AsyncMock(return_value={"sys_id": "abc123", "status": "uploaded"}),
-        )
-        mocker.patch(f"{MODULE}.should_cancel", new=AsyncMock(return_value=False))
-
-        await sep_celery._generate_health_report(upload=True)
-
-        generate.assert_awaited_once()
-        generate_pdf.assert_awaited_once_with(report)
-        upload.assert_awaited_once_with(report, b"%PDF-1.4")
-
-
-class TestReportSnapshotJobs:
-    """Report snapshot Celery jobs expose structured validation failures."""
-
-    def test_render_pdf_invalid_snapshot_sets_failure_meta(self, mocker) -> None:
-        """Invalid PDF snapshot stores safe structured FAILURE metadata."""
-        update_state = mocker.patch.object(
-            sep_celery.render_report_pdf_job, "update_state"
-        )
-
-        with pytest.raises(Ignore):
-            sep_celery.render_report_pdf_job.run({})
-
-        update_state.assert_called_once()
-        _, kwargs = update_state.call_args
-        assert kwargs["state"] == "FAILURE"
-        assert kwargs["meta"]["error"] == "Invalid report snapshot"
-        assert isinstance(kwargs["meta"]["errors"], list)
-
-    def test_upload_invalid_snapshot_sets_failure_meta(self, mocker) -> None:
-        """Invalid upload snapshot stores safe structured FAILURE metadata."""
-        update_state = mocker.patch.object(
-            sep_celery.upload_report_snapshot_job, "update_state"
-        )
-
-        with pytest.raises(Ignore):
-            sep_celery.upload_report_snapshot_job.run({})
-
-        update_state.assert_called_once()
-        _, kwargs = update_state.call_args
-        assert kwargs["state"] == "FAILURE"
-        assert kwargs["meta"]["error"] == "Invalid report snapshot"
-        assert isinstance(kwargs["meta"]["errors"], list)

@@ -16,15 +16,9 @@
 """Define Celery tasks and utilities for the SEP app."""
 
 import asyncio
-import base64
 import logging
 from pathlib import Path
-from typing import Any, NoReturn
 
-from celery import states
-from celery import Task as CeleryTask
-from celery.exceptions import Ignore
-from pydantic import ValidationError
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -38,25 +32,6 @@ from app.sep.snippets.models.snippet import Snippet
 from app.sep.snippets.utils import guess_mime_type
 
 logger = logging.getLogger(__name__)
-
-
-def _fail_invalid_report_snapshot(self: CeleryTask, exc: ValidationError) -> NoReturn:
-    """Store structured validation failure metadata for report snapshot tasks.
-
-    :param self: Bound Celery task instance.
-    :type self: CeleryTask
-    :param exc: Pydantic validation error.
-    :type exc: ValidationError
-    :raises Ignore: Stops task execution after storing FAILURE metadata.
-    """
-    self.update_state(
-        state=states.FAILURE,
-        meta={
-            "error": "Invalid report snapshot",
-            "errors": exc.errors(),
-        },
-    )
-    raise Ignore from exc
 
 
 @owned_by("snippets")
@@ -169,192 +144,6 @@ def should_skip_snippet(snippet_path: Path) -> bool:
             )
             return True
     return False
-
-
-@owned_by("report")
-@celery.task(bind=True)
-def render_report_pdf_job(
-    self: CeleryTask, report_json: dict[str, Any]
-) -> dict[str, str]:
-    """Render a PDF artifact from a stored report JSON snapshot.
-
-    :param self: Bound Celery task instance.
-    :type self: CeleryTask
-    :param report_json: Serialized report snapshot.
-    :type report_json: dict[str, Any]
-    :return: Base64-encoded PDF payload and download filename.
-    :rtype: dict[str, str]
-    """
-    from app.sep.apps.report.job_service import (
-        report_pdf_filename,
-    )
-    from app.sep.apps.report.models import ReportData
-    from app.sep.apps.report.service import generate_pdf_report
-
-    try:
-        report = ReportData.model_validate(report_json)
-    except ValidationError as exc:
-        _fail_invalid_report_snapshot(self, exc)
-    pdf_bytes = celery.loop.run_until_complete(generate_pdf_report(report))
-    return {
-        "pdf": base64.b64encode(pdf_bytes).decode("ascii"),
-        "filename": report_pdf_filename(report),
-    }
-
-
-@owned_by("report")
-@celery.task(bind=True)
-def upload_report_snapshot_job(
-    self: CeleryTask, report_json: dict[str, Any]
-) -> dict[str, Any]:
-    """Render and upload a PDF from a report JSON snapshot.
-
-    :param self: Bound Celery task instance.
-    :type self: CeleryTask
-    :param report_json: Serialized report snapshot.
-    :type report_json: dict[str, Any]
-    :return: ServiceNow upload response payload.
-    :rtype: dict[str, Any]
-    """
-    from app.sep.apps.report.models import ReportData
-    from app.sep.apps.report.service import generate_pdf_report, upload_pdf_report
-
-    try:
-        report = ReportData.model_validate(report_json)
-    except ValidationError as exc:
-        _fail_invalid_report_snapshot(self, exc)
-    pdf_bytes = celery.loop.run_until_complete(generate_pdf_report(report))
-    return celery.loop.run_until_complete(upload_pdf_report(report, pdf_bytes))
-
-
-@owned_by("report")
-@celery.task
-def generate_health_report(
-    since: str = "now-7d",
-    until: str = "now",
-    sections: list[str] | None = None,
-    *,
-    full: bool = True,
-    refresh: bool = False,
-    upload: bool = False,
-) -> None:
-    """Define Celery task to generate a periodic PMM health report.
-
-    :param since: Relative start of the report period.
-    :type since: str
-    :param until: Relative end of the report period.
-    :type until: str
-    :param sections: Optional list of sections to include.
-    :type sections: list[str] | None
-    :param full: Include all check results and full backup history.
-    :type full: bool
-    :param refresh: Force advisor refresh before fetching results.
-    :type refresh: bool
-    :param upload: Upload generated report to ServiceNow.
-    :type upload: bool
-    :return: None.
-    :rtype: None
-    """
-    celery.loop.run_until_complete(
-        _generate_health_report(
-            since=since,
-            until=until,
-            full=full,
-            refresh=refresh,
-            sections=sections,
-            upload=upload,
-        )
-    )
-
-
-async def _generate_health_report(
-    *,
-    since: str = "now-7d",
-    until: str = "now",
-    full: bool = True,
-    refresh: bool = False,
-    sections: list[str] | None = None,
-    upload: bool = False,
-) -> None:
-    """Generate a health report from PMM, log it, and optionally upload to ServiceNow.
-
-    When *upload* is ``True`` and the global upload credentials are fully
-    configured the report is rendered to PDF and uploaded.  If *upload* is
-    requested but credentials are incomplete a warning is logged.  Upload
-    failures are logged but do not prevent the task from completing.
-
-    :param since: Relative start of the report period.
-    :type since: str
-    :param until: Relative end of the report period.
-    :type until: str
-    :param full: Include all check results and full backup history.
-    :type full: bool
-    :param refresh: Force advisor refresh before fetching results.
-    :type refresh: bool
-    :param sections: Optional list of sections to include.
-    :type sections: list[str] | None
-    :param upload: Upload generated report to ServiceNow.
-    :type upload: bool
-    :return: None.
-    :rtype: None
-    """
-    from app.sep.apps.report.deps import get_pmm_api
-    from app.sep.apps.report.service import (
-        generate_pdf_report,
-        generate_report,
-        upload_pdf_report,
-    )
-    from app.sep.config import sep_settings
-
-    pmm_api = await get_pmm_api()
-    if pmm_api is None:
-        logger.warning("PMM not configured, skipping health report generation")
-        return
-
-    if await should_cancel("report"):
-        logger.info("Report app disabling; skipping health report generation.")
-        return
-
-    try:
-        report = await generate_report(
-            pmm_api,
-            since=since,
-            until=until,
-            full=full,
-            refresh=refresh,
-            sections=sections,
-        )
-        logger.info(
-            "Health report generated: %s (%d nodes, %d services)",
-            report.metadata.title,
-            report.monitored.total_nodes,
-            report.monitored.total_services,
-        )
-    except (OSError, ValueError, LookupError, RuntimeError):
-        logger.exception("Failed to generate health report")
-        return
-
-    if not upload:
-        return
-
-    if await should_cancel("report"):
-        logger.info("Report app disabling; skipping health report upload.")
-        return
-
-    if not sep_settings.HEALTH_REPORT.is_upload_configured:
-        reasons = sep_settings.HEALTH_REPORT.upload_disabled_reasons
-        logger.warning(
-            "Scheduled upload requested but upload is not fully configured: %s",
-            "; ".join(reasons),
-        )
-        return
-
-    try:
-        pdf_bytes = await generate_pdf_report(report)
-        result = await upload_pdf_report(report, pdf_bytes)
-        logger.info("Health report uploaded to ServiceNow: %s", result)
-    except (OSError, ValueError, RuntimeError):
-        logger.exception("Failed to upload health report to ServiceNow")
 
 
 @owned_by("alerts")

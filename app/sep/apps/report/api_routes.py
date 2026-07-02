@@ -30,8 +30,6 @@ Route layout:
 * ``GET  /upload-jobs/{id}``   — return upload job status
 """
 
-import base64
-import binascii
 import logging
 from typing import Annotated
 
@@ -41,14 +39,19 @@ from fastapi.responses import JSONResponse, Response
 from app.celery import celery
 from app.core.exceptions import (
     HTTPConflictException,
+    HTTPGoneException,
     HTTPInternalServerErrorException,
     HTTPServiceUnavailableException,
+)
+from app.sep.apps.report.artifact_store import artifact_exists, read_artifact
+from app.sep.apps.report.celery import (
+    render_report_pdf_job,
+    upload_report_snapshot_job,
 )
 from app.sep.apps.report.deps import RequiredPMMAPIDep
 from app.sep.apps.report.job_service import filter_report_sections
 from app.sep.apps.report.schemas import ReportJobResponse, ReportSnapshotWrite
 from app.sep.apps.report.service import generate_report
-from app.sep.celery import render_report_pdf_job, upload_report_snapshot_job
 from app.sep.config import sep_settings
 from app.sep.deps import IsApiAuthenticated
 
@@ -68,19 +71,14 @@ def _job_response(job_id: str, *, pdf: bool = False) -> ReportJobResponse:
     """
     result = celery.AsyncResult(job_id)
     job_result = result.result if result.successful() else None
-    pdf_ready = bool(
-        pdf and isinstance(job_result, dict) and isinstance(job_result.get("pdf"), str)
-    )
+    pdf_ready = bool(pdf and result.successful() and artifact_exists(job_id))
     response = ReportJobResponse(
         job_id=job_id,
         status=result.status.lower(),
         pdf_ready=pdf_ready,
     )
     if result.successful():
-        if pdf and isinstance(job_result, dict):
-            response.result = {k: v for k, v in job_result.items() if k != "pdf"}
-        else:
-            response.result = job_result
+        response.result = job_result
     elif result.failed():
         logger.warning("Report job %s failed", job_id)
         if isinstance(result.result, dict) and result.result.get("error"):
@@ -182,24 +180,21 @@ async def report_download_pdf_api(job_id: str) -> Response:
     :rtype: Response
     :raises HTTPInternalServerErrorException: If the Celery job failed.
     :raises HTTPConflictException: If the PDF result is not ready yet.
+    :raises HTTPGoneException: If the staged PDF artifact has expired.
     """
     result = celery.AsyncResult(job_id)
     if result.failed():
         raise HTTPInternalServerErrorException(detail="PDF generation failed")
     if not result.successful() or not isinstance(result.result, dict):
         raise HTTPConflictException(detail="PDF is not ready")
-    encoded_pdf = result.result.get("pdf")
-    if not isinstance(encoded_pdf, str):
-        raise HTTPConflictException(detail="PDF is not ready")
+    pdf_bytes = read_artifact(job_id)
+    if pdf_bytes is None:
+        raise HTTPGoneException(
+            detail="PDF artifact has expired; please regenerate the report"
+        )
     filename = "Health_and_Security_Report.pdf"
     if isinstance(result.result.get("filename"), str) and result.result["filename"]:
         filename = result.result["filename"]
-    try:
-        pdf_bytes = base64.b64decode(encoded_pdf)
-    except binascii.Error as exc:
-        raise HTTPInternalServerErrorException(
-            detail="PDF artifact is corrupt"
-        ) from exc
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
