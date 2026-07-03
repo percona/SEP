@@ -133,6 +133,11 @@ class TaskHistoryLogWriter:
                         session, task_history_id, for_update=True
                     )
                 if allocation_epoch < guard_epoch:
+                    if is_new:
+                        # Release the first-insert FOR UPDATE lock before
+                        # returning, else a long-lived writer_session pins the
+                        # row and stalls frontier resets.
+                        await session.rollback()
                     return
 
             effective_bytes = cls._effective_new_bytes(

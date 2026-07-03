@@ -559,14 +559,15 @@ async def test_append_discards_stale_first_insert_during_switch(
     flushed — by consulting the task-level allocation-epoch high-water mark. The
     subsequent current-allocation write then lands normally.
     """
-    history = created_task_with_history
+    # The discard rolls back to release its lock, which expires the fixture row.
+    history_id = created_task_with_history.id
     await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+        session, history_id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
     )
 
     await TaskHistoryLogWriter.append(
         session,
-        history.id,
+        history_id,
         source="run-script",
         stream=TaskLogType.STDOUT,
         new_bytes=b"stale-first-insert",
@@ -575,16 +576,20 @@ async def test_append_discards_stale_first_insert_during_switch(
         nomad_offset_after=len(b"stale-first-insert"),
         allocation_epoch=ALLOCATION_EPOCH_OLD,
     )
+    # Discard must roll back to free the row lock. Assert before any read below,
+    # which would autobegin a fresh transaction.
+    assert not session.in_transaction()
+
     state = await TaskHistoryLogStateManager.get_for_stream(
-        session, history.id, "run-script", TaskLogType.STDOUT
+        session, history_id, "run-script", TaskLogType.STDOUT
     )
     assert state is None
-    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history_id)
     assert chunks == []
 
     await TaskHistoryLogWriter.append(
         session,
-        history.id,
+        history_id,
         source="run-script",
         stream=TaskLogType.STDOUT,
         new_bytes=b"current-alloc",
@@ -594,11 +599,11 @@ async def test_append_discards_stale_first_insert_during_switch(
         allocation_epoch=ALLOCATION_EPOCH_NEW,
     )
     state = await TaskHistoryLogStateManager.get_for_stream(
-        session, history.id, "run-script", TaskLogType.STDOUT
+        session, history_id, "run-script", TaskLogType.STDOUT
     )
     assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
     assert state.producer_offset == len(b"current-alloc")
-    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history_id)
     assert [chunk.content for chunk in chunks] == ["current-alloc"]
 
 
@@ -685,7 +690,7 @@ async def test_append_first_insert_discards_when_reset_commits_mid_append(
     the insert as lost; the second iteration re-consults the high-water mark and
     the first-insert guard drops the write.
     """
-    history = created_task_with_history
+    history_id = created_task_with_history.id
 
     real_persist_state = TaskHistoryLogWriter._persist_state
     persist_calls = {"count": 0}
@@ -694,7 +699,7 @@ async def test_append_first_insert_discards_when_reset_commits_mid_append(
         persist_calls["count"] += 1
         if persist_calls["count"] == 1:
             await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-                session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+                session, history_id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
             )
             return False
         return await real_persist_state(**kwargs)
@@ -705,7 +710,7 @@ async def test_append_first_insert_discards_when_reset_commits_mid_append(
 
     await TaskHistoryLogWriter.append(
         session,
-        history.id,
+        history_id,
         source="run-script",
         stream=TaskLogType.STDOUT,
         new_bytes=b"stale-through-first-insert",
@@ -716,10 +721,10 @@ async def test_append_first_insert_discards_when_reset_commits_mid_append(
 
     assert persist_calls["count"] == 1
     state = await TaskHistoryLogStateManager.get_for_stream(
-        session, history.id, "run-script", TaskLogType.STDOUT
+        session, history_id, "run-script", TaskLogType.STDOUT
     )
     assert state is None
-    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history_id)
     assert chunks == []
 
 
@@ -735,21 +740,21 @@ async def test_drain_does_not_regress_high_water_mark_on_out_of_order_reset(
     first-insert stays discarded instead of being re-accepted after the mark is
     clobbered downward.
     """
-    history = created_task_with_history
+    history_id = created_task_with_history.id
     await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+        session, history_id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
     )
     assert (
-        await TaskHistoryManager.get_log_allocation_epoch(session, history.id)
+        await TaskHistoryManager.get_log_allocation_epoch(session, history_id)
         == ALLOCATION_EPOCH_NEW
     )
 
     # A late drain from the superseded allocation carries the smaller epoch.
     await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_OLD
+        session, history_id, new_allocation_epoch=ALLOCATION_EPOCH_OLD
     )
     assert (
-        await TaskHistoryManager.get_log_allocation_epoch(session, history.id)
+        await TaskHistoryManager.get_log_allocation_epoch(session, history_id)
         == ALLOCATION_EPOCH_NEW
     )
 
@@ -759,7 +764,7 @@ async def test_drain_does_not_regress_high_water_mark_on_out_of_order_reset(
     mid_epoch = (ALLOCATION_EPOCH_OLD + ALLOCATION_EPOCH_NEW) // 2
     await TaskHistoryLogWriter.append(
         session,
-        history.id,
+        history_id,
         source="run-script",
         stream=TaskLogType.STDOUT,
         new_bytes=b"mid-epoch-stale",
@@ -769,10 +774,10 @@ async def test_drain_does_not_regress_high_water_mark_on_out_of_order_reset(
         allocation_epoch=mid_epoch,
     )
     state = await TaskHistoryLogStateManager.get_for_stream(
-        session, history.id, "run-script", TaskLogType.STDOUT
+        session, history_id, "run-script", TaskLogType.STDOUT
     )
     assert state is None
-    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history.id)
+    chunks = await TaskHistoryLogManager.list_chunks_for_task(session, history_id)
     assert chunks == []
 
 
@@ -788,15 +793,15 @@ async def test_append_discards_stale_first_insert_across_both_streams(
     high-water mark must discard both first-inserts, then accept both streams'
     current-allocation writes.
     """
-    history = created_task_with_history
+    history_id = created_task_with_history.id
     await TaskHistoryLogWriter.drain_and_reset_allocation_frontier(
-        session, history.id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+        session, history_id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
     )
 
     for stream in (TaskLogType.STDOUT, TaskLogType.STDERR):
         await TaskHistoryLogWriter.append(
             session,
-            history.id,
+            history_id,
             source="run-script",
             stream=stream,
             new_bytes=b"stale-" + stream.value.encode("utf-8"),
@@ -807,17 +812,17 @@ async def test_append_discards_stale_first_insert_across_both_streams(
         )
         assert (
             await TaskHistoryLogStateManager.get_for_stream(
-                session, history.id, "run-script", stream
+                session, history_id, "run-script", stream
             )
             is None
         )
-    assert await TaskHistoryLogManager.list_chunks_for_task(session, history.id) == []
+    assert await TaskHistoryLogManager.list_chunks_for_task(session, history_id) == []
 
     for stream in (TaskLogType.STDOUT, TaskLogType.STDERR):
         payload = b"live-" + stream.value.encode("utf-8")
         await TaskHistoryLogWriter.append(
             session,
-            history.id,
+            history_id,
             source="run-script",
             stream=stream,
             new_bytes=payload,
@@ -827,7 +832,7 @@ async def test_append_discards_stale_first_insert_across_both_streams(
             allocation_epoch=ALLOCATION_EPOCH_NEW,
         )
         state = await TaskHistoryLogStateManager.get_for_stream(
-            session, history.id, "run-script", stream
+            session, history_id, "run-script", stream
         )
         assert state is not None
         assert state.allocation_epoch == ALLOCATION_EPOCH_NEW
