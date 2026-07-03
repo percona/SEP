@@ -27,6 +27,7 @@ import { useConfigExport, useSettingsList } from '@sep/api';
 
 import { useAuth } from '../contexts/auth';
 import SettingsGroup from '../components/settings/SettingsGroup';
+import TestConnectionButton from '../components/settings/TestConnectionButton';
 import SettingsSearchBar from '../components/settings/SettingsSearchBar';
 import { DEFAULT_SETTINGS_FILTERS, filterSettingsGroups } from '../components/settings/filters';
 
@@ -90,14 +91,17 @@ export default function SettingsPage() {
             View and edit application configuration at runtime.
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={<DownloadIcon />}
-          onClick={() => configExport.mutate()}
-          disabled={configExport.isPending}
-        >
-          {configExport.isPending ? 'Downloading…' : 'Download YAML'}
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <TestConnectionButton />
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={() => configExport.mutate()}
+            disabled={configExport.isPending}
+          >
+            {configExport.isPending ? 'Downloading…' : 'Download YAML'}
+          </Button>
+        </Box>
       </Box>
 
       {configExport.isError && (
