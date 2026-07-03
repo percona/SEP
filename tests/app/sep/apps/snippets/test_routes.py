@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models import CasdoorUser
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.apps.snippets.routes import router as snippets_jinja_router
 from app.sep.config import sep_settings

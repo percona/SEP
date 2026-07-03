@@ -13,13 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.core.auth.providers.casdoor module."""
+"""Define tests for the Casdoor SDK."""
 
 import base64
+from math import ceil
 
+import pytest
 from pydantic import SecretStr
 
-from app.core.auth.providers.casdoor import CasdoorSDK
+from app.core.auth.providers.casdoor.sdk import CasdoorSDK
 
 
 def test_casdoor_credentials_masked_in_repr():
@@ -71,3 +73,25 @@ def test_casdoor_api_key_recomputes_after_credentials_change():
     expected = base64.b64encode(b"new-id:new-secret").decode("utf-8")
     assert sdk.api_key == expected
     assert sdk.api_key != original
+
+
+@pytest.mark.asyncio
+async def test_get_tokens_paginates_by_page_size(mocker):
+    """Verify get_tokens fetches ceil(total / page_size) pages, not ``total`` pages."""
+    sdk = CasdoorSDK(
+        endpoint="https://casdoor.example.com",
+        client_id="test-id",
+        client_secret="test-secret",
+    )
+    page_size = 100  # matches the internal page size in CasdoorSDK.get_tokens
+    total = 250
+    expected_pages = ceil(total / page_size)
+    page = {"data": [{"user": "alice", "name": "tok"}], "data2": total}
+    get_mock = mocker.patch.object(
+        CasdoorSDK, "get", new=mocker.AsyncMock(return_value=page)
+    )
+
+    yielded = [token async for token in sdk.get_tokens("built-in")]
+
+    assert get_mock.await_count == expected_pages
+    assert len(yielded) == expected_pages

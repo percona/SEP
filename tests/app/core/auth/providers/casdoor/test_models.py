@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.models module."""
+"""Define tests for the Casdoor user and token-payload models."""
 
 from datetime import datetime
 
@@ -21,7 +21,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.auth.models import OAuthToken
-from app.models import CasdoorTokenPayload, CasdoorUser
+from app.core.auth.providers.casdoor.models import CasdoorTokenPayload, CasdoorUser
 
 
 class TestCasdoorTokenPayload:
@@ -69,7 +69,7 @@ class TestCasdoorTokenPayload:
         )
         with pytest.raises(ValueError, match="Unknown token issuer"):
             CasdoorTokenPayload.validate_iss(casdoor_disallowed_issuer)
-        mocker.patch("app.core.config.settings.CASDOOR.allowed_issuers", new="*")
+        mocker.patch.object(casdoor_mock, "allowed_issuers", "*")
         assert (
             CasdoorTokenPayload.validate_iss(casdoor_disallowed_issuer)
             == casdoor_disallowed_issuer

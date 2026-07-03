@@ -24,10 +24,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
-from app.models import CasdoorUser
 from app.tasks.config import tasks_settings
 from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.executors.nomad import NomadExecutor
@@ -436,7 +436,7 @@ class TestTasksSettingsNestedOverrides:
     ) -> None:
         """Every expanded ``SECURITY_HEADERS`` leaf inherits ``is_advanced`` in LIST.
 
-        Only the ``SECURITY_HEADERS`` parent is marked advanced (SEP-1382); the
+        Only the ``SECURITY_HEADERS`` parent is marked advanced; the
         real LIST projection must propagate the flag to every leaf — including the
         two-level HSTS ``max_age`` leaf — while a basic Tasks sibling stays False.
         This exercises the live ``TasksSettings`` projection, not the SEP proxy's
