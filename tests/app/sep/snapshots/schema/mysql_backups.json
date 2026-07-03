@@ -1127,5 +1127,12 @@
     ],
     "overview_hidden_fields": []
   },
-  "name": "mysql_backups"
+  "name": "mysql_backups",
+  "related_apps": [
+    {
+      "app_key": "mysql_backups/restore",
+      "label": "Restore",
+      "route_segment": "restores"
+    }
+  ]
 }
