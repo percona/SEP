@@ -88,7 +88,7 @@ module-level object lets the derivation tell "use the Pydantic default" apart fr
 """
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Ui:
     """Carry a field's presentation metadata; never validation semantics.
 
@@ -97,7 +97,10 @@ class Ui:
     presentation extras belong on ``Ui`` while gates live in separate
     :class:`Requires` / :class:`Forbidden` markers.
 
-    :param label: The human-readable field label.
+    :param label: The human-readable field label. Optional; when omitted,
+        derived from the field name at consumption (underscores replaced by
+        spaces and title-cased). Supply an explicit label only when it diverges
+        from that default.
     :param section: The layout-section key the field belongs to; must match a
         :attr:`SectionLayout.key` in the form layout.
     :param description: Optional helper text rendered beneath the field.
@@ -120,7 +123,7 @@ class Ui:
         body validates against — is never affected.
     """
 
-    label: str
+    label: str | None = None
     section: str
     description: str | None = None
     depends_on: str | None = None

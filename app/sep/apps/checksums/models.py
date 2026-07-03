@@ -131,7 +131,6 @@ class ChecksumsForm(TaskFormModel):
         str,
         ArgFormat(),
         Ui(
-            label="Databases",
             section="Data",
             default=None,
             description="Comma-separated database names",
@@ -141,7 +140,6 @@ class ChecksumsForm(TaskFormModel):
         str,
         ArgFormat(),
         Ui(
-            label="Tables",
             section="Data",
             default=None,
             description="Comma-separated table names (schema.table format)",
@@ -158,7 +156,7 @@ class ChecksumsForm(TaskFormModel):
                 ("none", "None"),
             )
         ),
-        Ui(label="Recursion Method", section="Recursion", required=True),
+        Ui(section="Recursion", required=True),
     ] = "processlist"
     dsn_table: Annotated[
         str,
@@ -173,7 +171,6 @@ class ChecksumsForm(TaskFormModel):
         bool,
         ArgFormat(),
         Ui(
-            label="Binary Index",
             section="Flags",
             description="Use BLOB type for replicate-table boundary columns",
         ),
@@ -200,7 +197,6 @@ class ChecksumsForm(TaskFormModel):
         bool,
         ArgFormat(),
         Ui(
-            label="Truncate Replicate Table",
             section="Flags",
             description="Truncate the replicate table before starting",
         ),
@@ -209,7 +205,6 @@ class ChecksumsForm(TaskFormModel):
         str,
         ArgFormat(),
         Ui(
-            label="Pause File",
             section="Advanced",
             default=None,
             description="Execution pauses while this file exists",
@@ -219,7 +214,6 @@ class ChecksumsForm(TaskFormModel):
         str,
         ArgFormat(),
         Ui(
-            label="Set Vars",
             section="Advanced",
             order=2,
             default="transaction_isolation='READ-COMMITTED',lock_wait_timeout=5",
@@ -230,7 +224,6 @@ class ChecksumsForm(TaskFormModel):
         str,
         ArgFormat(),
         Ui(
-            label="Max Load",
             section="Advanced",
             order=3,
             default="Threads_running=50",
@@ -241,7 +234,6 @@ class ChecksumsForm(TaskFormModel):
         str,
         ArgFormat(),
         Ui(
-            label="Chunk Time",
             section="Advanced",
             order=4,
             default="0.5",
@@ -252,7 +244,6 @@ class ChecksumsForm(TaskFormModel):
         str,
         ArgFormat(),
         Ui(
-            label="Max Lag",
             section="Advanced",
             order=5,
             default="150",
@@ -263,7 +254,6 @@ class ChecksumsForm(TaskFormModel):
         str,
         ArgFormat(),
         Ui(
-            label="Progress",
             section="Advanced",
             order=1,
             default="time,10",
