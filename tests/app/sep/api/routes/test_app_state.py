@@ -27,11 +27,11 @@ from sqlalchemy_celery_beat import IntervalSchedule
 from sqlalchemy_celery_beat.models import Period, PeriodicTask
 from sqlmodel import SQLModel
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
 from app.sep.config import sep_settings
 from app.sep.crud import AppRunningTaskManager, AppStateManager
 from app.sep.deps import (

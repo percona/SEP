@@ -21,13 +21,13 @@ import pytest
 from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPBadGatewayException
 from app.core.requests.connectivity import (
     build_connectivity_result,
     ConnectivityResult,
     ConnectivityStatusEnum,
 )
-from app.models import CasdoorUser
 from app.sep.apps.alerts.deps import get_pmm_api
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.deps import (

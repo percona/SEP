@@ -38,13 +38,15 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.alerts.config import alert_settings
+from app.core.auth.base import BaseAuthProvider
+from app.core.auth.config import get_active_auth_provider
 from app.core.auth.models import OAuthToken
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
 from app.core.utils import json_serializer
 from app.inventory.models import ServiceTypeEnum
-from app.models import CasdoorUser
 from app.sep.config import sep_settings
 from app.sep.deps import (
     get_api_authenticated_user,
@@ -208,37 +210,37 @@ def casdoor_mock(
     refresh_token: str,
     casdoor_user_data: dict[str, Any],
     mocker: MockerFixture,
-) -> Mock:
+) -> BaseAuthProvider:
     """Mock CasdoorSDK methods to simulate Casdoor service interactions."""
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.introspect_token",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.introspect_token",
         new=mocker.AsyncMock(return_value=casdoor_token_payload_data),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.get_access_token",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_access_token",
         new=mocker.AsyncMock(return_value=oauth_token.model_dump()),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.refresh_token_request",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.refresh_token_request",
         new=mocker.AsyncMock(return_value=oauth_token.model_dump()),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.get_token",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_token",
         new=mocker.AsyncMock(return_value={"data": {"refreshToken": refresh_token}}),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.get_user",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_user",
         new=mocker.AsyncMock(return_value=casdoor_user_data),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.get_users",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.get_users",
         new=mocker.AsyncMock(return_value=[casdoor_user_data]),
     )
     mocker.patch(
-        "app.core.auth.providers.casdoor.CasdoorSDK.delete_token",
+        "app.core.auth.providers.casdoor.sdk.CasdoorSDK.delete_token",
         new=mocker.AsyncMock(return_value=True),
     )
-    return mocker.patch.object(settings, "CASDOOR", settings.CASDOOR)
+    return get_active_auth_provider()
 
 
 @pytest.fixture

@@ -389,18 +389,17 @@ IsCsrfValidated = Depends(validate_csrf)
 
 
 async def get_username_mapping() -> dict[str, str]:
-    """Create a mapping from user ID to username using Casdoor.
+    """Create a mapping from user ID to username using the active auth provider.
 
-    This function fetches all users from Casdoor and creates a mapping from
-    user ID to username. Caching should be implemented in the Casdoor SDK
-    to avoid repeated API calls.
+    Fetch all users from the active provider and map each user's ID to their
+    username. Caching should be implemented in the provider's SDK to avoid
+    repeated API calls.
 
     :return: A dictionary mapping user IDs to usernames.
-    :rtype: dict[str, str]
     """
     try:
-        users = await settings.CASDOOR.get_users()
-        return {str(user["id"]): user["name"] for user in users}
+        users = await User.get_users()
+        return {str(user.id): user.username for user in users}
     except (
         AttributeError,
         TimeoutError,
@@ -409,7 +408,7 @@ async def get_username_mapping() -> dict[str, str]:
         HTTPException,
         aiohttp.ClientError,
     ):
-        logger.exception("Failed to get username mapping from Casdoor")
+        logger.exception("Failed to get username mapping from the auth provider")
         return {}
 
 
@@ -573,7 +572,6 @@ async def get_default_context(
     ]
     return {
         "user": user,
-        "casdoor_url": settings.CASDOOR.get_frontend_url(base_uri),
         "base_uri": base_uri,
         "plugins": plugins,
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
