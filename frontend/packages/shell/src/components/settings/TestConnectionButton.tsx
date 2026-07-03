@@ -93,7 +93,17 @@ function ConnectivityResults({ results }: { results: ConnectivityResult[] }) {
               color={chip.color}
               data-testid={`conn-status-${result.service}`}
             />
-            <Typography variant="body2" color="text.secondary" sx={{ flex: 1, minWidth: 0 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                flex: 1,
+                minWidth: 0,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                overflowWrap: 'anywhere',
+              }}
+            >
               {result.detail}
             </Typography>
             {result.version !== null && result.version !== undefined && (
