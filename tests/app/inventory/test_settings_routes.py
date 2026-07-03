@@ -25,6 +25,7 @@ from starlette.testclient import TestClient
 
 from app import main as main_module
 from app.api.deps import get_current_user
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.settings_override.cache import build_snapshot
 from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
@@ -32,7 +33,6 @@ from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.inventory.config import inventory_settings, InventorySettings
 from app.inventory.deps import get_session
 from app.inventory.main import inventory_app
-from app.models import CasdoorUser
 
 
 @pytest.fixture(name="admin_client")

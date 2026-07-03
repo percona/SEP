@@ -1189,9 +1189,7 @@ class TestGlobalSettingsClass:
         )
         assert rows == []
 
-    @pytest.mark.parametrize(
-        "field", ["SECRET_KEY", "CASDOOR", "CELERY", "LOGGING_CONFIG"]
-    )
+    @pytest.mark.parametrize("field", ["SECRET_KEY", "CELERY", "LOGGING_CONFIG"])
     async def test_restart_only_fields_reject_patch(
         self, api_admin_client: TestClient, field: str
     ) -> None:
