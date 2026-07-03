@@ -16,7 +16,7 @@
  */
 
 import { useMemo, useState, type ReactNode } from 'react';
-import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
@@ -39,6 +39,8 @@ import { AppCreatePage } from './AppCreatePage';
 import { AppTaskEditPage } from './AppTaskEditPage';
 import { AppDetailPage, type TaskExecuteAction } from './AppDetailPage';
 import { AppSchedulePage } from './AppSchedulePage';
+import { RelatedAppTabBar, resolveRelatedAppActiveSegment } from './RelatedAppTabBar';
+import { resolveAppRouteBase } from './routeBase';
 import type { RenderFormSlot } from './types';
 import type { RenderListColumnOverride } from '../SchemaListView';
 
@@ -253,9 +255,13 @@ export function SchemaDrivenPlugin({
   renderEditForm,
   renderListColumn,
 }: SchemaDrivenPluginProps) {
+  const { pathname } = useLocation();
   const { data: schema, isLoading, error } = useAppSchema(pluginName, mockSchema);
   const showMutationRoutes = !listOnly && !browseOnly;
   const showDetailRoutes = !listOnly;
+  const resolvedRouteBase = resolveAppRouteBase(pluginName, routeBase);
+  const relatedApps = schema?.related_apps ?? [];
+  const hasRelatedApps = relatedApps.length > 0;
 
   if (isLoading && !schema) {
     return (
@@ -345,7 +351,25 @@ export function SchemaDrivenPlugin({
     );
   }
 
-  return (
+  const nestedPluginProps = {
+    mockTasks,
+    mockEntityItems,
+    listOnly,
+    browseOnly,
+    suppressDetailKeys,
+    getTaskExecuteActions,
+    getTaskHistoryNames,
+    renderTaskDetailChildren,
+    hideEntityTabs,
+    allowListEntityDelete,
+    renderEntityDetailChildren,
+    renderField,
+    renderCreateForm,
+    renderEditForm,
+    renderListColumn,
+  };
+
+  const singleEntityRoutes = (
     <Routes>
       <Route
         index
@@ -416,6 +440,36 @@ export function SchemaDrivenPlugin({
           }
         />
       )}
+      {hasRelatedApps &&
+        relatedApps.map((related) => (
+          <Route
+            key={related.app_key}
+            path={`${related.route_segment}/*`}
+            element={
+              <SchemaDrivenPlugin
+                pluginName={related.app_key}
+                routeBase={`${resolvedRouteBase}/${related.route_segment}`}
+                {...nestedPluginProps}
+              />
+            }
+          />
+        ))}
     </Routes>
   );
+
+  if (hasRelatedApps) {
+    return (
+      <Box>
+        <RelatedAppTabBar
+          parentLabel={schema.display_name}
+          routeBase={resolvedRouteBase}
+          relatedApps={relatedApps}
+          activeSegment={resolveRelatedAppActiveSegment(pathname, resolvedRouteBase, relatedApps)}
+        />
+        {singleEntityRoutes}
+      </Box>
+    );
+  }
+
+  return singleEntityRoutes;
 }
