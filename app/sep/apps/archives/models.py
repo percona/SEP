@@ -293,12 +293,12 @@ class ArchivesCreate(TaskFormModel):
     source: Annotated[
         SourceByTable | SourceByQuery,
         Field(discriminator="mode"),
-        Ui(label="Source", section="Source"),
+        Ui(section="Source"),
     ]
     destination: Annotated[
         DestByTable | DestByFile | None,
         Field(discriminator="mode"),
-        Ui(label="Destination", section="Destination"),
+        Ui(section="Destination"),
     ] = None
     host: Annotated[
         HostByService | HostManual | None,
@@ -315,28 +315,20 @@ class ArchivesCreate(TaskFormModel):
         Requires(when=F("swap_drop") != SwapDropEnum.SWAP_DROP),
         Forbidden(when=F("swap_drop") == SwapDropEnum.SWAP_DROP),
     ] = None
-    use_index: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Use Index", section="Advanced")
-    ] = None
-    extra_args: Annotated[
-        NonEmptyStr | EmptyStrToNone, Ui(label="Extra Args", section="Advanced")
-    ] = None
+    use_index: Annotated[NonEmptyStr | EmptyStrToNone, Ui(section="Advanced")] = None
+    extra_args: Annotated[NonEmptyStr | EmptyStrToNone, Ui(section="Advanced")] = None
     limit: Annotated[
         int | None,
         Field(ge=1),
-        Ui(label="Limit", section="Advanced", default=1000),
+        Ui(section="Advanced", default=1000),
     ] = None
     sleep: Annotated[
         int | None,
         Field(ge=0),
         Ui(label="Sleep (s)", section="Advanced", default=1),
     ] = None
-    disable_binlog: Annotated[
-        bool | None, Ui(label="Disable Binlog", section="Advanced")
-    ] = None
-    disable_bulk_insert: Annotated[
-        bool | None, Ui(label="Disable Bulk Insert", section="Advanced")
-    ] = None
+    disable_binlog: Annotated[bool | None, Ui(section="Advanced")] = None
+    disable_bulk_insert: Annotated[bool | None, Ui(section="Advanced")] = None
     delete_data: Annotated[
         bool | None, Ui(label="Delete Without Archiving", section="Advanced")
     ] = None

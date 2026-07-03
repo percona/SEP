@@ -81,10 +81,10 @@ class TestTaskFormModelFields:
         assert "hostname" in TaskFormModel.model_fields
 
     def test_task_name_carries_canonical_ui(self) -> None:
-        """Carry the verbatim ``Ui(label="Task Name", section="Task")`` marker."""
+        """Carry a labelless ``Ui(section="Task")`` marker; label derives from the name."""
         ui = _marker(TaskFormModel.model_fields["task_name"], Ui)
         assert ui is not None
-        assert ui.label == "Task Name"
+        assert ui.label is None
         assert ui.section == "Task"
 
     def test_hostname_carries_hostref_and_ui(self) -> None:
@@ -122,6 +122,7 @@ class TestTaskFormModelDerivation:
         sections = derive_form_sections(_Form, _TASK_LAYOUT)
         fields = [f for section in sections for f in section.fields]
         assert [f.name for f in fields[:2]] == ["task_name", "hostname"]
+        assert fields[0].label == "Task Name"
         assert isinstance(fields[0], StringField)
         assert isinstance(fields[1], HostField)
 
