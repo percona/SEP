@@ -118,6 +118,52 @@ def test_alters_create_accepts_inventory_ids_and_free_typed_names():
     assert by_name.db_table == "users"
 
 
+def test_alters_create_numeric_string_target_stays_free_typed_name():
+    """Keep a purely-numeric free-typed name a string, not coerced to an inventory id."""
+    body = AltersCreate(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        db_schema="123",
+        db_table="42",
+        alter="ADD COLUMN x INT",
+    )
+    assert body.db_schema == "123"
+    assert isinstance(body.db_schema, str)
+    assert body.db_table == "42"
+    assert isinstance(body.db_table, str)
+
+
+def test_alters_create_strips_free_typed_target_whitespace():
+    """Trim surrounding whitespace on a free-typed name at the model boundary."""
+    body = AltersCreate(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        db_schema=" app ",
+        db_table=" users ",
+        alter="ADD COLUMN x INT",
+    )
+    assert body.db_schema == "app"
+    assert body.db_table == "users"
+
+
+@pytest.mark.parametrize("field", ["db_schema", "db_table"])
+def test_alters_create_rejects_whitespace_only_target(field):
+    """Reject a whitespace-only free-typed name that fails min_length after stripping."""
+    kwargs = {
+        "task_name": "t1",
+        "hostname": "host1",
+        "service_id": 1,
+        "db_schema": "app",
+        "db_table": "users",
+        "alter": "ADD COLUMN x INT",
+    }
+    kwargs[field] = "   "
+    with pytest.raises(ValidationError):
+        AltersCreate(**kwargs)
+
+
 def test_alters_schema_dsn_table_conditional_gates():
     """Test dsn_table declares requires + forbidden gates for recursion_method dsn."""
     recursion_section = next(

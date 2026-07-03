@@ -356,6 +356,58 @@ async def test_build_alters_task_strips_free_typed_target_whitespace(
 
 
 @pytest.mark.asyncio
+async def test_build_alters_task_numeric_free_typed_name_not_resolved_as_id(
+    created_alters, created_service, mock_remote_api
+):
+    """Use a purely-numeric free-typed name verbatim, never fetch it as an id."""
+    body = AltersCreate.model_validate(
+        {**created_alters.model_dump(), "db_schema": "123", "db_table": "42"}
+    )
+    mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
+    task = await build_alters_task(body, mock_remote_api)
+    assert mock_remote_api.get.await_count == 1
+    assert task.data["meta"]["_schema_name"] == "123"
+    assert task.data["meta"]["_table_name"] == "42"
+    assert "D=123,t=42" in task.data["meta"]["args"]
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_id_schema_with_free_typed_table(
+    created_alters, created_service, created_schema, mock_remote_api
+):
+    """Resolve a schema inventory id while the table is a free-typed new name."""
+    created_schema.name = "app"
+    mock_remote_api.get = AsyncMock(
+        side_effect=[created_service.model_dump(), created_schema.model_dump()]
+    )
+    body = created_alters.model_copy(
+        update={"db_schema": created_schema.id, "db_table": "new_table"}
+    )
+    task = await build_alters_task(body, mock_remote_api)
+    assert task.data["meta"]["_schema_name"] == "app"
+    assert task.data["meta"]["_table_name"] == "new_table"
+    assert "D=app,t=new_table" in task.data["meta"]["args"]
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_free_typed_schema_with_id_table(
+    created_alters, created_service, created_table, mock_remote_api
+):
+    """Resolve a table inventory id while the schema is a free-typed new name."""
+    created_table.name = "orders"
+    mock_remote_api.get = AsyncMock(
+        side_effect=[created_service.model_dump(), created_table.model_dump()]
+    )
+    body = created_alters.model_copy(
+        update={"db_schema": "new_schema", "db_table": created_table.id}
+    )
+    task = await build_alters_task(body, mock_remote_api)
+    assert task.data["meta"]["_schema_name"] == "new_schema"
+    assert task.data["meta"]["_table_name"] == "orders"
+    assert "D=new_schema,t=orders" in task.data["meta"]["args"]
+
+
+@pytest.mark.asyncio
 async def test_build_alters_task_dsn_recursion_defaults_empty_dsn_table(
     created_alters, created_service, created_schema, created_table, mock_remote_api
 ):
@@ -908,6 +960,24 @@ class TestMapAltersLegacyForm:
     def test_missing_both_target_modes_raises_422(self):
         """Neither an id nor a name for the target folds to a 422, not a crash."""
         form = AltersLegacyForm.model_validate(_legacy_form_base())
+        with pytest.raises(HTTPException) as exc_info:
+            map_alters_legacy_form(form)
+        assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_free_typed_name_with_dsn_delimiter_raises_422(self):
+        """Fold a free-typed legacy name with a DSN delimiter to a 422, not a bad DSN."""
+        form = AltersLegacyForm.model_validate(
+            {**_legacy_form_base(), "schema_name": "a,b", "table_name": "users"}
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            map_alters_legacy_form(form)
+        assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_whitespace_only_name_collapses_to_none_and_raises_422(self):
+        """Collapse a whitespace-only legacy name to None (no target) → 422."""
+        form = AltersLegacyForm.model_validate(
+            {**_legacy_form_base(), "schema_name": "   ", "table_name": "   "}
+        )
         with pytest.raises(HTTPException) as exc_info:
             map_alters_legacy_form(form)
         assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
