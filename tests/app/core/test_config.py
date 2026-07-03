@@ -208,21 +208,26 @@ def test_settings_customise_sources(
 
 @pytest.mark.asyncio
 async def test_default_lifespan():
-    """Test default_lifespan manages CASDOOR and closes sessions."""
-    mock_casdoor = AsyncMock()
+    """Verify default_lifespan enters the active provider's lifespan and closes sessions."""
+    mock_lifespan_cm = AsyncMock()
+    mock_provider = MagicMock()
+    mock_provider.lifespan.return_value = mock_lifespan_cm
     mock_close_registry = AsyncMock()
 
     with (
         patch.object(Settings, "close_client_registry", mock_close_registry),
-        patch("app.core.config.settings.CASDOOR", mock_casdoor),
+        patch(
+            "app.core.auth.config.get_active_auth_provider", return_value=mock_provider
+        ),
     ):
         app = FastAPI()
 
         async with default_lifespan(app):
             pass
 
-    mock_casdoor.__aenter__.assert_called_once()
-    mock_casdoor.__aexit__.assert_called_once()
+    mock_provider.lifespan.assert_called_once()
+    mock_lifespan_cm.__aenter__.assert_called_once()
+    mock_lifespan_cm.__aexit__.assert_called_once()
     mock_close_registry.assert_called_once()
 
 

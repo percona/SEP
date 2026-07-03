@@ -60,7 +60,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Check migrations
-        run: CASDOOR__CLIENT_SECRET=notatoken CASDOOR__CLIENT_ID=notatoken make checkmigrations
+        run: AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=notatoken AUTH__PROVIDER__CASDOOR__CLIENT_ID=notatoken make checkmigrations
 
   test:
     name: test (${{ matrix.python }})

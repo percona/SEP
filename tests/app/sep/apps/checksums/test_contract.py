@@ -25,7 +25,7 @@ by the standalone integration test below.
 
 from fastapi import status
 
-from app.models import CasdoorUser
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.checksums.app import app as checksums_app
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,

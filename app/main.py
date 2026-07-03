@@ -30,6 +30,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app import __summary__, __version__
 from app.api.main import api_router
 from app.celery import celery as celery_app
+from app.core.auth.config import detect_removed_auth_user_model
 from app.core.config import create_app, settings
 from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
@@ -45,8 +46,8 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage the app's lifespan.
 
     Initializes the Tasks database data, the periodic tasks data, and ensures that the
-    CasdoorSDK, the NomadExecutor, and any extra client sessions are properly managed
-    during the application's startup and shutdown phases.
+    active auth provider's SDK, the NomadExecutor, and any extra client sessions are
+    properly managed during the application's startup and shutdown phases.
 
     Starlette's ``Mount`` never forwards ``lifespan`` scope to the mounted
     ``sep_app``/``inventory_app``, so their override refreshers are entered here
@@ -57,10 +58,8 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :param app: The FastAPI application instance.
     :yield: None
     """
-    validate_importable_settings(
-        settings.AUTH_USER_MODEL,
-        *(s.syncer for s in sep_settings.SYNCERS),
-    )
+    detect_removed_auth_user_model()
+    validate_importable_settings(*(s.syncer for s in sep_settings.SYNCERS))
     await sep_startup()
     async with (
         sep_overrides_lifespan(app),

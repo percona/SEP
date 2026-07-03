@@ -23,7 +23,7 @@ contract, so this mounts that router behind the production auth guard and assert
 from fastapi import APIRouter, FastAPI, status
 from fastapi.testclient import TestClient
 
-from app.models import CasdoorUser
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.deps import get_api_authenticated_user, IsApiAuthenticated
 from app.sep.apps.<< name >>.app import app as << name >>_app
 

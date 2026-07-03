@@ -38,8 +38,8 @@ import pytest
 from fastapi import APIRouter, FastAPI, status
 from fastapi.testclient import TestClient
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.requests.remote_api import RemoteAPI
-from app.models import CasdoorUser
 from app.sep.apps.framework import scaffold
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp

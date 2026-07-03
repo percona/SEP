@@ -18,7 +18,7 @@
 A single-process ``pytest`` run given an explicit file list where a shallow
 ``tests/app``-level module sits between two deep ``tests/app/sep/**`` modules used to
 drop every fixture defined in ``tests/app/sep/conftest.py`` for the second deep module,
-raising ``fixture 'test_client' not found`` (SEP-1417). The fixtures now resolve from the
+raising ``fixture 'test_client' not found``. The fixtures now resolve from the
 always-loaded ancestor ``tests/app/conftest.py``, so ordering no longer matters.
 
 Each case spawns a child ``pytest`` because the fragility only reproduces across an
@@ -35,16 +35,16 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 PMM = "tests/app/sep/clients/test_pmm.py"
-MODELS = "tests/app/test_models.py"
+CELERY = "tests/app/test_celery_signals.py"
 MAIN = "tests/app/test_main.py"
 DOWNLOAD = "tests/app/sep/routes/test_download_files.py"
 
 ORDERINGS = [
     # Shallow module between two deep sep modules — the two failing orderings.
-    pytest.param([PMM, MODELS, DOWNLOAD], id="deep-shallow-deep-models"),
+    pytest.param([PMM, CELERY, DOWNLOAD], id="deep-shallow-deep-celery"),
     pytest.param([PMM, MAIN, DOWNLOAD], id="deep-shallow-deep-main"),
     # Positive control: shallow last was always clean; assert it stays clean.
-    pytest.param([DOWNLOAD, PMM, MODELS], id="control-shallow-last"),
+    pytest.param([DOWNLOAD, PMM, CELERY], id="control-shallow-last"),
 ]
 
 
