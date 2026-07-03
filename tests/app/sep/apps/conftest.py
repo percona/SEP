@@ -28,8 +28,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.auth.exceptions import HTTPUnauthorizedException
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPConflictException
-from app.models import CasdoorUser
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.deps import check_for_conflicted_running_tasks, get_api_authenticated_user
 from app.sep.main import sep_app

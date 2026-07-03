@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock
 from fastapi import status
 
 from app.core.requests.remote_api import RemoteAPI
-from app.models import CasdoorUser
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.<< name >>.app import app as << name >>_app
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,

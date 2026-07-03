@@ -315,9 +315,9 @@ markers = [
     "postgres: require a real PostgreSQL service (SEP_TEST_POSTGRES_DSN)",
 ]
 env = [
-    "CASDOOR__CLIENT_ID=test-client-id",
-    "CASDOOR__CLIENT_SECRET=test-client-secret",
-    'CASDOOR__ALLOWED_ISSUERS=["https://allowed-issuer.com"]',
+    "AUTH__PROVIDER__CASDOOR__CLIENT_ID=test-client-id",
+    "AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=test-client-secret",
+    'AUTH__PROVIDER__CASDOOR__ALLOWED_ISSUERS=["https://allowed-issuer.com"]',
     'ALLOWED_HOSTS=["testserver", "test"]',
     "SEP__MESSAGES__LEVEL=0",
     "ALLOW_CONCURRENT_SESSIONS=false",

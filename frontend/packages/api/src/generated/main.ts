@@ -283,31 +283,20 @@ export interface components {
      * @description Represent a Casdoor user.
      *
      *     :param id: The unique identifier of the user.
-     *     :type id: UUID4
      *     :param email: The email address of the user.
-     *     :type email: EmailStr
      *     :param first_name: The first name of the user.
-     *     :type first_name: str
      *     :param last_name: The last name of the user.
-     *     :type last_name: str
      *     :param is_admin: Whether the user has administrative privileges. Defaults to False.
-     *     :type is_admin: bool
      *     :param created_time: The datetime when the user was created. Defaults to current
      *         datetime.
-     *     :type created_time: datetime | None
      *     :param updated_time: The datetime when the user was last updated. Defaults to
      *         current datetime.
-     *     :type updated_time: datetime | None
      *     :param username: The user's Casdoor username.
-     *     :type username: CasdoorUsernameField
      *     :param owner: The user's Casdoor organization.
-     *     :type owner: str
-     *     :param is_forbidden: Whether the user has the `is_forbidden` attribute set in
+     *     :param is_forbidden: Whether the user has the ``is_forbidden`` attribute set in
      *         Casdoor. Defaults to False.
-     *     :type is_forbidden: bool
-     *     :param is_deleted: Whether the user has the `is_deleted` attribute set in Casdoor.
+     *     :param is_deleted: Whether the user has the ``is_deleted`` attribute set in Casdoor.
      *         Defaults to False.
-     *     :type is_deleted: bool
      */
     CasdoorUser: {
       /** Createdtime */
@@ -340,7 +329,6 @@ export interface components {
        * @description Return True if the user is not forbidden nor deleted.
        *
        *     :return: True if the user is active.
-       *     :rtype: bool
        */
       readonly isActive: boolean;
       /**

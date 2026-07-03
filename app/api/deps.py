@@ -46,14 +46,11 @@ RefreshTokenCookie = Annotated[
 ]
 
 SERVICE_PRINCIPAL_ID = UUID("00000000-0000-4000-8000-000000000000")
-_SERVICE_PRINCIPAL = User(
-    id=SERVICE_PRINCIPAL_ID,
+_SERVICE_PRINCIPAL = User.build_service_principal(
+    user_id=SERVICE_PRINCIPAL_ID,
     username="sep-service",
-    owner="built-in",
-    email="",
     first_name="SEP",
     last_name="Service",
-    is_admin=False,
 )
 
 
