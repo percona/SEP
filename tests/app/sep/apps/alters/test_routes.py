@@ -53,6 +53,28 @@ def created_alters() -> AltersCreate:
     return AltersCreateFactory.build()
 
 
+def _legacy_form_data(alters: AltersCreate) -> dict:
+    """Render an AltersCreate as the deprecated Jinja form body (split target fields).
+
+    The Jinja create/update routes bind ``AltersLegacyForm`` (``schema_id`` /
+    ``schema_name`` / ``table_id`` / ``table_name``), so the collapsed
+    ``db_schema`` / ``db_table`` are expanded back into the split pair an id
+    populates ``*_id`` and a free-typed name populates ``*_name``.
+    """
+    data = alters.model_dump()
+    db_schema = data.pop("db_schema")
+    db_table = data.pop("db_table")
+    if isinstance(db_schema, int):
+        data["schema_id"] = db_schema
+    else:
+        data["schema_name"] = db_schema
+    if isinstance(db_table, int):
+        data["table_id"] = db_table
+    else:
+        data["table_name"] = db_table
+    return data
+
+
 @pytest.fixture
 def _mock_alters_task_payload(generated_task, created_alters):
     """Mock build_alters_task used by create/update Jinja routes."""
@@ -109,7 +131,7 @@ def test_alters_create(
 ):
     """Test creating a new alters task."""
     response = test_client.post(
-        "/alters/", data=created_alters.model_dump(), follow_redirects=False
+        "/alters/", data=_legacy_form_data(created_alters), follow_redirects=False
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
     assert (
@@ -132,8 +154,8 @@ def test_alters_create_full_form_dependency_chain_without_payload_override(
     """Test POST /alters/ route without overriding build_alters_task."""
     created_alters = AltersCreateFactory.build()
     created_alters.service_id = created_service.id
-    created_alters.schema_id = created_schema.id
-    created_alters.table_id = created_table.id
+    created_alters.db_schema = created_schema.id
+    created_alters.db_table = created_table.id
     created_alters.alter = "ADD COLUMN new_column INT"
     created_alters.recursion_method = "dsn"
     created_alters.dsn_table = "D=percona,t=dsns"
@@ -151,7 +173,7 @@ def test_alters_create_full_form_dependency_chain_without_payload_override(
 
     response = test_client.post(
         "/alters/",
-        data=created_alters.model_dump(),
+        data=_legacy_form_data(created_alters),
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -193,7 +215,7 @@ def test_alters_create_skips_connectivity_check_when_opted_out(
         mock_task_api_dep.get = AsyncMock(return_value={})
 
         response = test_client.post(
-            "/alters/", data=created_alters.model_dump(), follow_redirects=False
+            "/alters/", data=_legacy_form_data(created_alters), follow_redirects=False
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert (
@@ -248,7 +270,7 @@ def test_alters_create_pre_checks_filesystem_skip_flag(
         mock_task_api_dep.post.return_value = AsyncMock()
         mock_task_api_dep.get = AsyncMock(return_value=nomad_hosts)
         response = test_client.post(
-            "/alters/", data=created_alters.model_dump(), follow_redirects=False
+            "/alters/", data=_legacy_form_data(created_alters), follow_redirects=False
         )
         assert response.status_code == status.HTTP_303_SEE_OTHER
         mock_task_api_dep.get.assert_awaited_once_with("/hosts/")
@@ -625,8 +647,8 @@ def test_alters_update_refreshes_pre_checks_task(
     """Update main/dry-run/pre-checks tasks; pre-checks YAML reflects executor vs DB."""
     created_task.name = created_alters.task_name
     created_alters.service_id = created_service.id
-    created_alters.schema_id = created_schema.id
-    created_alters.table_id = created_table.id
+    created_alters.db_schema = created_schema.id
+    created_alters.db_table = created_table.id
     created_alters.hostname = executor_hostname
     mock_inventory_api_dep.get.side_effect = [
         created_service.model_dump(),
@@ -638,7 +660,7 @@ def test_alters_update_refreshes_pre_checks_task(
     name = created_alters.task_name
     response = test_client.post(
         f"/alters/{name}/update",
-        data=created_alters.model_dump(),
+        data=_legacy_form_data(created_alters),
         follow_redirects=False,
     )
     assert response.status_code == status.HTTP_303_SEE_OTHER
@@ -675,7 +697,7 @@ def test_alters_update_returns_409_for_protected_task(
     ):
         response = test_client.post(
             "/alters/protected-alter/update",
-            data=created_alters.model_dump(),
+            data=_legacy_form_data(created_alters),
             follow_redirects=False,
         )
 

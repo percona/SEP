@@ -21,11 +21,8 @@ from pydantic import ValidationError
 from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.alters.schema import alters_schema
 
-DATA_SECTION_FAIL_WHEN_RULE_COUNT = 2
-LEGACY_FORM_SCHEMA_ID = 10
-LEGACY_FORM_TABLE_ID = 20
-TASK_WRITE_SCHEMA_ID = 1
-TASK_WRITE_TABLE_ID = 2
+INVENTORY_SCHEMA_ID = 10
+INVENTORY_TABLE_ID = 20
 
 
 def test_alters_schema_declares_cascade_primitives():
@@ -41,22 +38,84 @@ def test_alters_schema_declares_cascade_primitives():
     assert alters_schema.predecessors[0].on_failure == "halt"
 
 
-def test_alters_schema_data_target_mutual_exclusion_gates():
-    """Test Data section gates hide inventory vs manual target fields."""
+def test_alters_schema_data_free_solo_reference_fields():
+    """Test Data section exposes collapsed free-solo schema/table reference fields."""
     data_section = next(
         section for section in alters_schema.forms if section.title == "Data"
     )
-    schema_id = next(f for f in data_section.fields if f.name == "schema_id")
-    table_id = next(f for f in data_section.fields if f.name == "table_id")
-    schema_name = next(f for f in data_section.fields if f.name == "schema_name")
-    table_name = next(f for f in data_section.fields if f.name == "table_name")
+    field_names = {field.name for field in data_section.fields}
+    assert field_names == {"db_schema", "db_table"}
 
-    assert schema_id.forbidden is not None
-    assert table_id.forbidden is not None
-    assert schema_name.forbidden is not None
-    assert table_name.forbidden is not None
-    assert data_section.fail_when is not None
-    assert len(data_section.fail_when) == DATA_SECTION_FAIL_WHEN_RULE_COUNT
+    schema_field = next(f for f in data_section.fields if f.name == "db_schema")
+    table_field = next(f for f in data_section.fields if f.name == "db_table")
+
+    assert schema_field.field_type == "schema"
+    assert schema_field.allow_custom is True
+    assert schema_field.depends_on == "service_id"
+    assert schema_field.required is True
+
+    assert table_field.field_type == "table"
+    assert table_field.allow_custom is True
+    assert table_field.depends_on == "db_schema"
+    assert table_field.required is True
+
+
+@pytest.mark.parametrize(
+    ("db_schema", "db_table"),
+    [
+        ("a,b", "users"),
+        ("a=b", "users"),
+        ("app", "a,b"),
+        ("app", "a=b"),
+    ],
+)
+def test_alters_create_rejects_dsn_delimiter_in_free_typed_target(db_schema, db_table):
+    """AltersCreate rejects DSN delimiters (, or =) in either free-typed target field."""
+    with pytest.raises(ValidationError, match="DSN delimiters"):
+        AltersCreate(
+            task_name="t1",
+            hostname="host1",
+            service_id=1,
+            db_schema=db_schema,
+            db_table=db_table,
+            alter="ADD COLUMN x INT",
+        )
+
+
+def test_alters_create_requires_schema_and_table():
+    """AltersCreate requires both schema and table."""
+    with pytest.raises(ValidationError, match="db_schema"):
+        AltersCreate(
+            task_name="t1",
+            hostname="host1",
+            service_id=1,
+            alter="ADD COLUMN x INT",
+        )
+
+
+def test_alters_create_accepts_inventory_ids_and_free_typed_names():
+    """AltersCreate accepts an inventory id or a free-typed name per target field."""
+    by_id = AltersCreate(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        db_schema=INVENTORY_SCHEMA_ID,
+        db_table=INVENTORY_TABLE_ID,
+        alter="ADD COLUMN x INT",
+    )
+    assert by_id.db_schema == INVENTORY_SCHEMA_ID
+    assert by_id.db_table == INVENTORY_TABLE_ID
+
+    by_name = AltersCreate(
+        task_name="t1",
+        hostname="host1",
+        service_id=1,
+        db_schema="app",
+        db_table="users",
+        alter="ADD COLUMN x INT",
+    )
+    assert by_name.db_schema == "app"
+    assert by_name.db_table == "users"
 
 
 def test_alters_schema_dsn_table_conditional_gates():
@@ -98,8 +157,8 @@ def test_alters_create_dsn_table_for_dsn_recursion():
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
         recursion_method="dsn",
         dsn_table="D=percona,t=dsns",
@@ -110,8 +169,8 @@ def test_alters_create_dsn_table_for_dsn_recursion():
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
         recursion_method="dsn",
         dsn_table="",
@@ -125,8 +184,8 @@ def test_alters_create_dsn_table_accepts_explicit_value():
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
         recursion_method="dsn",
         dsn_table="D=custom,t=dsns",
@@ -140,45 +199,12 @@ def test_alters_create_dsn_recursion_uses_schema_default_dsn_table() -> None:
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
         recursion_method="dsn",
     )
     assert body.dsn_table == "D=percona,t=dsns"
-
-
-def test_alters_create_rejects_dual_target_fields():
-    """AltersCreate rejects input that provides both inventory IDs and manual names."""
-    with pytest.raises(ValidationError, match="Cannot use both schema_id/table_id"):
-        AltersCreate.model_validate(
-            {
-                "task_name": "t1",
-                "hostname": "host1",
-                "service_id": 1,
-                "schema_id": str(LEGACY_FORM_SCHEMA_ID),
-                "table_id": str(LEGACY_FORM_TABLE_ID),
-                "schema_name": "app",
-                "table_name": "users",
-                "alter": "ADD COLUMN x INT",
-                "recursion_method": "processlist",
-            }
-        )
-
-
-def test_alters_create_rejects_dual_target_fields_from_kwargs():
-    """AltersCreate rejects kwargs that provide both inventory IDs and manual names."""
-    with pytest.raises(ValidationError, match="Cannot use both schema_id/table_id"):
-        AltersCreate(
-            task_name="t1",
-            hostname="host1",
-            service_id=1,
-            schema_id=TASK_WRITE_SCHEMA_ID,
-            table_id=TASK_WRITE_TABLE_ID,
-            schema_name="app",
-            table_name="users",
-            alter="ADD COLUMN x INT",
-        )
 
 
 def test_alters_create_rejects_multiline_alter():
@@ -188,8 +214,8 @@ def test_alters_create_rejects_multiline_alter():
             task_name="t1",
             hostname="host1",
             service_id=1,
-            schema_name="app",
-            table_name="users",
+            db_schema="app",
+            db_table="users",
             alter="ADD COLUMN x INT\nDROP COLUMN y",
         )
 
@@ -201,8 +227,8 @@ def test_alters_create_rejects_empty_recursion_method():
             task_name="t1",
             hostname="host1",
             service_id=1,
-            schema_name="app",
-            table_name="users",
+            db_schema="app",
+            db_table="users",
             alter="ADD COLUMN x INT",
             recursion_method="",
         )
@@ -214,8 +240,8 @@ def test_alters_create_continue_on_pre_check_failure_default_false():
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
     )
     assert body.continue_on_pre_check_failure is False

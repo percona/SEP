@@ -178,6 +178,7 @@ async def alters_api_update(
 
     logger.debug("Update alters task group (JSON path): %s", parent_task.name)
     updated_parent = await build_alters_task(body, inventory_api)
+    stamp_form_input(updated_parent, body)
     pre_checks_template = await build_pre_checks_task_payload(
         updated_parent, task_api=tasks_api
     )

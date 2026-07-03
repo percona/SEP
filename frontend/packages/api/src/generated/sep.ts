@@ -2994,10 +2994,8 @@ export interface components {
      *     :param task_name: The name of the task to be created.
      *     :param hostname: The target hostname for the task execution.
      *     :param service_id: The Inventory ID of the database service to connect to.
-     *     :param schema_id: The database schema ID on which the task will operate.
-     *     :param table_id: The table ID within the schema to be altered.
-     *     :param schema_name: Manual schema name when ``schema_id`` is not set.
-     *     :param table_name: Manual table name when ``table_id`` is not set.
+     *     :param db_schema: The schema to alter — an inventory id or a free-typed name.
+     *     :param db_table: The table to alter — an inventory id or a free-typed name.
      *     :param recursion_method: The method for handling recursion.
      *     :param alter: The specific alter command to be executed.
      *     :param dsn_table: The DSN table for recursion method when using ``dsn``. When
@@ -3043,6 +3041,10 @@ export interface components {
       continue_on_pre_check_failure: boolean;
       /** Critical Load */
       critical_load?: string | null;
+      /** Db Schema */
+      db_schema: number | string;
+      /** Db Table */
+      db_table: number | string;
       /**
        * Dsn Table
        * @default
@@ -3102,18 +3104,10 @@ export interface components {
        * @default processlist
        */
       recursion_method: string;
-      /** Schema Id */
-      schema_id?: number | null;
-      /** Schema Name */
-      schema_name?: string | null;
       /** Service Id */
       service_id: number;
       /** Set Vars */
       set_vars?: string | null;
-      /** Table Id */
-      table_id?: number | null;
-      /** Table Name */
-      table_name?: string | null;
       /** Task Name */
       task_name: string;
       /** Tries */
