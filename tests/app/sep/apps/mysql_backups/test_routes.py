@@ -138,6 +138,41 @@ def test_backups_create(test_client, mock_task_api_dep, backup_create):
     sep_app.dependency_overrides = {}
 
 
+def test_backups_create_no_upload(
+    test_client, mock_task_api_dep, mock_inventory_api_dep, created_service
+):
+    """Assert POST /backups/ with no upload provider succeeds (upload is optional).
+
+    Exercises the real ``build_backup_task_payload`` dependency (no override) so the
+    ``BackupCreate`` validation this PR relaxes is actually run: omitting ``upload``
+    from the form must not 422.
+    """
+    no_upload = BackupCreate(
+        task_name="fake_task",
+        hostname="localhost",
+        service_id=created_service.id,
+        backup_type=BackupType.MYDUMPER,
+        upload=[],
+    )
+    mock_inventory_api_dep.get = AsyncMock(return_value=created_service.model_dump())
+    mock_task_api_dep.post.return_value = AsyncMock()
+
+    response = test_client.post(
+        "/mysql_backups/",
+        data=no_upload.model_dump(exclude={"upload"}),
+        follow_redirects=False,
+    )
+    assert response.status_code == status.HTTP_303_SEE_OTHER
+    assert response.headers["location"].endswith(
+        f"/mysql_backups/{no_upload.task_name}"
+    )
+    mock_task_api_dep.post.assert_awaited_once()
+    assert mock_task_api_dep.post.await_args.args[0] == "/"
+    posted = mock_task_api_dep.post.await_args.kwargs["json"]
+    assert posted["name"] == no_upload.task_name
+    assert posted["owner"] == TaskOwner.BACKUPS.value
+
+
 def test_backups_create_full_form_dependency_chain_without_payload_override(
     test_client,
     mock_task_api_dep,
@@ -305,6 +340,39 @@ def test_backups_detail(
         params={"status": TaskHistoryStatusEnum.RUNNING},
     )
     mock_task_api_dep.get.assert_any_call(f"/stats/{created_task.name}")
+
+
+@pytest.mark.usefixtures("_mock_get_backups_task_dep", "mock_get_username_mapping")
+def test_backups_detail_renders_backup_configuration(
+    test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
+):
+    """Render the SEP-1495 detail_view: executor target + YAML config on the detail page.
+
+    The always-rendered "Task information" card shows the list columns; the
+    detail_view must surface the config that is *not* a column — the executor
+    target (``data.meta.target``) and the YAML config (``data.meta.config``).
+    """
+    mock_task_api_dep.get = AsyncMock(
+        side_effect=[
+            {},  # /hosts/
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # history
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # running_tasks
+            [],  # stats
+            {"items": [], "total": 0, "offset": 0, "limit": 50},  # chainable_tasks
+        ]
+    )
+    mock_inventory_api_dep.get.return_value = {
+        "items": [],
+        "total": 0,
+        "offset": 0,
+        "limit": 50,
+    }
+    response = test_client.get(f"/mysql_backups/{created_task.name}")
+    assert response.status_code == status.HTTP_200_OK
+    assert "Backup Configuration" in response.text
+    assert "Executor Host" in response.text
+    assert created_task.data["meta"]["target"] in response.text
+    assert "SERVER_LIST" in response.text
 
 
 @pytest.mark.parametrize(

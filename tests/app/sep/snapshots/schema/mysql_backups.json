@@ -7,6 +7,23 @@
     "stats": false
   },
   "description": "Run XtraBackup, Mydumper, and Binlog backups against MySQL hosts.",
+  "detail_view": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "label": "Executor Host",
+            "path": "data.meta.target"
+          },
+          {
+            "label": "Config (YAML)",
+            "path": "data.meta.config"
+          }
+        ],
+        "title": "Backup Configuration"
+      }
+    ]
+  },
   "display_name": "MySQL Backups",
   "fail_when": [
     {
@@ -971,7 +988,7 @@
           ],
           "label": "Upload providers",
           "name": "upload",
-          "required": true,
+          "required": false,
           "type": "multi_choice"
         },
         {
