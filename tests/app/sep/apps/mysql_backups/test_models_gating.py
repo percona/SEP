@@ -237,7 +237,7 @@ class TestUploadProviderGate:
             )
 
     def test_s3_bool_auxiliary_without_s3_fails(self):
-        """``skip_s3_safety_check=True`` without ``S3`` in upload → 422.
+        """Reject ``skip_s3_safety_check=True`` without ``S3`` in upload → 422.
 
         A *truthy* bool is "present", so its ``_S3_ONLY`` schema ``forbidden``
         gate fires (only the ``False`` default is treated as absent); the model
@@ -315,17 +315,17 @@ class TestUploadProviderGate:
 
 
 class TestUploadInputNormalization:
-    """``_normalize_upload_input`` coerces legacy scalar form values to a list."""
+    """Coerce legacy scalar form values to a list via ``_normalize_upload_input``."""
 
     def test_scalar_string_is_wrapped(self):
-        """A bare provider string from a legacy form is wrapped into a list."""
+        """Wrap a bare provider string from a legacy form into a list."""
         model = BackupCreate(
             **_base_payload(BackupType.MYDUMPER, upload="S3", s3_bucket="bkt")
         )
         assert model.upload == [UploadProvider.S3]
 
     def test_empty_string_becomes_empty_list(self):
-        """An empty-string ``upload`` coerces to ``[]`` (a valid "no upload")."""
+        """Coerce an empty-string ``upload`` to ``[]`` (a valid "no upload")."""
         model = BackupCreate(
             **_base_payload(BackupType.MYDUMPER, upload="", s3_bucket=None)
         )
