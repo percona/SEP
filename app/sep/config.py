@@ -478,13 +478,11 @@ class AppDrainSettings(BaseLowercaseModel):
     reconcile_interval: IntervalSchedule = IntervalSchedule(
         every=5, period=Period.MINUTES
     )
-    # Positivity is enforced by the ``Gt`` annotation constraint (not a
-    # ``field_validator``) so it holds both at construction *and* when the value
-    # arrives as a runtime override: nested-override coercion preserves
-    # annotated-type constraints but does not re-run model field validators. A
-    # non-positive TTL would put the reconciler's ``utc_now() - stale_task_ttl``
-    # cutoff at or after the present, pruning every in-flight ``AppRunningTask``
-    # row and finalizing a ``DISABLING`` app to ``DISABLED`` while its tasks run.
+    # Positivity uses the ``Gt`` annotation constraint rather than a
+    # ``field_validator`` because runtime-override coercion re-checks
+    # annotated-type constraints but does not re-run field validators; a
+    # non-positive TTL would trigger the premature-pruning failure mode noted in
+    # the ``stale_task_ttl`` docstring param above.
     stale_task_ttl: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(hours=1)
 
 

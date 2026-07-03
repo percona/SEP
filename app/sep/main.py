@@ -180,7 +180,6 @@ async def _apply_logging_dictconfig(_: Mapping[str, object]) -> None:
 
     :param _: The new effective ``Settings`` snapshot mapping (unused -- the level
         is re-read from the proxy).
-    :type _: Mapping[str, object]
     """
     try:
         config = deepcopy(settings.LOGGING_CONFIG)

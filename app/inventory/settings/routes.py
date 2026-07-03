@@ -25,10 +25,9 @@ from app.core.settings_override.models import SettingClassEnum
 from app.inventory.config import inventory_settings, InventorySettings
 from app.inventory.deps import SessionDep
 
-# The Inventory settings router mirrors the Tasks sub-app: an admin-gated CRUD
-# surface over ``InventorySettings`` override rows. ``InventorySettings`` carries
-# no HOT field yet, so every field lists read-only until one is promoted, but the
-# override framework is wired end-to-end (proxy, refresher, table).
+# ``InventorySettings`` carries no HOT field yet, so every field lists read-only
+# until one is promoted; the override framework (proxy, refresher, table) is
+# wired end-to-end regardless.
 
 _settings_router = build_settings_router(
     classes=[

@@ -50,8 +50,6 @@ SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
     (SettingClassEnum.ALERTS_SETTINGS, AlertsSettings, alerts_settings),
     # The global ``Settings`` class is refreshed only by the SEP web process, so
     # its override-eligible fields (e.g. ``PMM``, ``LOGGING``) are exposed here.
-    # Restart-only fields (SECRET_KEY, CASDOOR, CELERY, LOGGING_CONFIG) stay
-    # NOT_OVERRIDABLE and list read-only.
     (SettingClassEnum.SETTINGS, Settings, settings),
 ]
 
