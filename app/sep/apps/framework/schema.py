@@ -43,6 +43,7 @@ __all__ = [
     "MultiChoiceField",
     "OneOfBranch",
     "OneOfGroup",
+    "RelatedApp",
     "SchemaBaseModel",
     "SchemaField",
     "ScriptPreviewField",
@@ -983,6 +984,33 @@ class ChainedPredecessor(SchemaBaseModel):
     parent_link: bool = True
 
 
+_ROUTE_SEGMENT_PATTERN = r"^[a-z][a-z0-9_-]*$"
+
+
+class RelatedApp(SchemaBaseModel):
+    """Declare a separately registered app surfaced as a sibling tab in the UI.
+
+    Consumed by the React ``SchemaDrivenPlugin`` shell to mount a nested
+    schema-driven flow for the related registry entry (for example
+    ``mysql_backups/restore``) under ``{route_base}/{route_segment}`` without
+    re-merging the child app's API router into the parent.
+
+    :param app_key: The scoped registry key of the related app (for example
+        ``mysql_backups/restore``).
+    :type app_key: NonEmptyStr
+    :param label: The human-readable tab label (for example ``Restore``).
+    :type label: NonEmptyStr
+    :param route_segment: The React sub-path segment under the parent's
+        ``route_base`` (for example ``restores``). Must be a single URL path
+        segment — no slashes.
+    :type route_segment: NonEmptyStr
+    """
+
+    app_key: NonEmptyStr
+    label: NonEmptyStr
+    route_segment: Annotated[NonEmptyStr, Field(pattern=_ROUTE_SEGMENT_PATTERN)]
+
+
 class Capabilities(SchemaBaseModel):
     """Represent plugin-level feature flags.
 
@@ -1364,6 +1392,10 @@ class AppSchema(SchemaBaseModel):
         across the predecessors and the parent, including the chain wiring
         applied at execute time. Defaults to ``None``.
     :type predecessors: list[ChainedPredecessor] | None
+    :param related_apps: Optional separately registered apps the React shell
+        surfaces as sibling tabs (for example a restore app nested under a
+        backups parent). Defaults to ``None``.
+    :type related_apps: list[RelatedApp] | None
     """
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
@@ -1379,6 +1411,7 @@ class AppSchema(SchemaBaseModel):
     fail_when: list[FailRule] | None = None
     derived: list[DerivedTask] | None = None
     predecessors: list[ChainedPredecessor] | None = None
+    related_apps: list[RelatedApp] | None = None
 
     @model_validator(mode="after")
     def _validate_detail_view_required_for_task_type(self) -> Self:
@@ -1470,6 +1503,31 @@ class AppSchema(SchemaBaseModel):
                 "all entries must share the same on_failure value because "
                 "celery's chain machinery inherits _chain_on_failure chain-wide. "
                 f"Found: {sorted(on_failure_values)}"
+            )
+        return value
+
+    @field_validator("related_apps", mode="after")
+    @classmethod
+    def _validate_unique_related_app_route_segments(
+        cls, value: list[RelatedApp] | None
+    ) -> list[RelatedApp] | None:
+        """Ensure no two ``RelatedApp`` specs share the same ``route_segment``.
+
+        Duplicate segments would mount two nested plugin shells on the same
+        React sub-path. Reject at schema-construction time so the failure
+        surfaces at plugin load rather than at runtime routing.
+
+        :param value: The validated ``related_apps`` list, or ``None`` when unset.
+        :return: The input ``value`` unchanged when all segments are unique.
+        :raises ValueError: When two or more entries share a ``route_segment``.
+        """
+        if not value:
+            return value
+        counts = Counter(spec.route_segment for spec in value)
+        duplicates = sorted(segment for segment, count in counts.items() if count > 1)
+        if duplicates:
+            raise ValueError(
+                f"Duplicate related_apps route_segment values: {duplicates}"
             )
         return value
 

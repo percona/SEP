@@ -3459,6 +3459,10 @@ export interface components {
      *         across the predecessors and the parent, including the chain wiring
      *         applied at execute time. Defaults to ``None``.
      *     :type predecessors: list[ChainedPredecessor] | None
+     *     :param related_apps: Optional separately registered apps the React shell
+     *         surfaces as sibling tabs (for example a restore app nested under a
+     *         backups parent). Defaults to ``None``.
+     *     :type related_apps: list[RelatedApp] | None
      */
     AppSchema: {
       capabilities?: components['schemas']['Capabilities'] | null;
@@ -3482,6 +3486,8 @@ export interface components {
       name: string;
       /** Predecessors */
       predecessors?: components['schemas']['ChainedPredecessor'][] | null;
+      /** Related Apps */
+      related_apps?: components['schemas']['RelatedApp'][] | null;
       /** Task Type */
       task_type?: string | null;
     };
@@ -6110,6 +6116,33 @@ export interface components {
        * Format: date-time
        */
       refreshed_at: string;
+    };
+    /**
+     * RelatedApp
+     * @description Declare a separately registered app surfaced as a sibling tab in the UI.
+     *
+     *     Consumed by the React ``SchemaDrivenPlugin`` shell to mount a nested
+     *     schema-driven flow for the related registry entry (for example
+     *     ``mysql_backups/restore``) under ``{route_base}/{route_segment}`` without
+     *     re-merging the child app's API router into the parent.
+     *
+     *     :param app_key: The scoped registry key of the related app (for example
+     *         ``mysql_backups/restore``).
+     *     :type app_key: NonEmptyStr
+     *     :param label: The human-readable tab label (for example ``Restore``).
+     *     :type label: NonEmptyStr
+     *     :param route_segment: The React sub-path segment under the parent's
+     *         ``route_base`` (for example ``restores``). Must be a single URL path
+     *         segment — no slashes.
+     *     :type route_segment: NonEmptyStr
+     */
+    RelatedApp: {
+      /** App Key */
+      app_key: string;
+      /** Label */
+      label: string;
+      /** Route Segment */
+      route_segment: string;
     };
     /**
      * ReloadClassification
