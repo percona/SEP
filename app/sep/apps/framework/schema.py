@@ -985,6 +985,7 @@ class ChainedPredecessor(SchemaBaseModel):
 
 
 _ROUTE_SEGMENT_PATTERN = r"^[a-z][a-z0-9_-]*$"
+_RELATED_APP_RESERVED_ROUTE_SEGMENTS = frozenset({"new", "schedule", "task"})
 
 
 class RelatedApp(SchemaBaseModel):
@@ -1002,13 +1003,34 @@ class RelatedApp(SchemaBaseModel):
     :type label: NonEmptyStr
     :param route_segment: The React sub-path segment under the parent's
         ``route_base`` (for example ``restores``). Must be a single URL path
-        segment — no slashes.
+        segment — no slashes — and must not be a reserved single-entity route
+        keyword (``new``, ``schedule``, ``task``).
     :type route_segment: NonEmptyStr
     """
 
     app_key: NonEmptyStr
     label: NonEmptyStr
     route_segment: Annotated[NonEmptyStr, Field(pattern=_ROUTE_SEGMENT_PATTERN)]
+
+    @field_validator("route_segment", mode="after")
+    @classmethod
+    def _validate_route_segment_not_reserved(cls, value: str) -> str:
+        """Reject segments that collide with single-entity plugin shell routes.
+
+        ``SchemaDrivenPlugin`` registers ``new``, ``schedule``, and
+        ``task/:id/*`` alongside ``{route_segment}/*`` for related apps; a
+        reserved segment would make React Router match the wrong branch.
+
+        :param value: The validated ``route_segment``.
+        :return: The input ``value`` when it is not reserved.
+        :raises ValueError: When ``value`` is a reserved route keyword.
+        """
+        if value in _RELATED_APP_RESERVED_ROUTE_SEGMENTS:
+            raise ValueError(
+                f"route_segment {value!r} is reserved; "
+                f"reserved segments: {sorted(_RELATED_APP_RESERVED_ROUTE_SEGMENTS)}"
+            )
+        return value
 
 
 class Capabilities(SchemaBaseModel):

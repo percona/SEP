@@ -1634,6 +1634,18 @@ class TestRelatedApp:
                 route_segment="mysql_backups/restores",
             )
 
+    @pytest.mark.parametrize("segment", ["new", "schedule", "task"])
+    def test_related_app_route_segment_rejects_reserved_keywords(
+        self, segment: str
+    ) -> None:
+        """Reject ``route_segment`` values that collide with shell routes."""
+        with pytest.raises(ValidationError, match="route_segment .+ is reserved"):
+            RelatedApp(
+                app_key="parent/child",
+                label="Child",
+                route_segment=segment,
+            )
+
     def test_related_app_extra_forbidden(self) -> None:
         """Reject an unknown field on ``RelatedApp`` (``extra="forbid"``)."""
         with pytest.raises(ValidationError):

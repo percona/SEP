@@ -6133,7 +6133,8 @@ export interface components {
      *     :type label: NonEmptyStr
      *     :param route_segment: The React sub-path segment under the parent's
      *         ``route_base`` (for example ``restores``). Must be a single URL path
-     *         segment — no slashes.
+     *         segment — no slashes — and must not be a reserved single-entity route
+     *         keyword (``new``, ``schedule``, ``task``).
      *     :type route_segment: NonEmptyStr
      */
     RelatedApp: {
