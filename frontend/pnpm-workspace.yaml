@@ -1,6 +1,6 @@
 packages:
   - 'packages/*'
-  - 'packages/plugins/*'
+  - 'packages/apps/*'
 minimumReleaseAge: 10080
 minimumReleaseAgeIgnoreMissingTime: false
 minimumReleaseAgeExclude:

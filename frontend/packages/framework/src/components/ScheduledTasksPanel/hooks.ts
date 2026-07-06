@@ -45,7 +45,7 @@ export interface UseScheduledTasksOptions {
   disablePolling?: boolean;
 }
 
-export function useScheduledTasksForPlugin(
+export function useScheduledTasksForApp(
   pluginName: string,
   options: UseScheduledTasksOptions = {},
 ) {
@@ -71,7 +71,7 @@ export function useScheduledTasksForPlugin(
 
   return {
     periodicTasks: filtered,
-    pluginTasks: tasksQuery.data ?? [],
+    appTasks: tasksQuery.data ?? [],
     isLoading: tasksQuery.isLoading || periodicQuery.isLoading,
     isError: tasksQuery.isError || periodicQuery.isError,
     error: tasksQuery.error ?? periodicQuery.error,
