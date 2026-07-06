@@ -15,6 +15,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { AtwPage, AtwPage as AtwPlugin } from './AtwPage';
+export { AtwPage, AtwPage as AtwApp } from './AtwPage';
 export { useAtwCategories } from './hooks';
 export type { AtwCategoryListing, AtwSnippetSummary } from './types';

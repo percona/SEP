@@ -19,10 +19,10 @@ import { useAppSchema, type AppSchema } from '@sep/api';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Typography from '@mui/material/Typography';
-import { InventoryBreadcrumbs } from './InventoryPluginNavigation';
+import { InventoryBreadcrumbs } from './InventoryAppNavigation';
 import { InventoryRoutes } from './InventoryRoutes';
 
-export interface InventoryPluginProps {
+export interface InventoryAppProps {
   /** Optional mock schema for Storybook / offline tests. */
   mockSchema?: AppSchema;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
@@ -33,7 +33,7 @@ export interface InventoryPluginProps {
  * as the legacy UI (node → services → schemas → tables). Row delete is available on list
  * tables; detail chrome stays browse-only (no edit / header delete).
  */
-export function InventoryPlugin({ mockSchema, mockEntityItems }: InventoryPluginProps) {
+export function InventoryApp({ mockSchema, mockEntityItems }: InventoryAppProps) {
   const { data: schema, isLoading, error } = useAppSchema('inventory', mockSchema);
 
   if (isLoading && !schema) {
@@ -47,7 +47,7 @@ export function InventoryPlugin({ mockSchema, mockEntityItems }: InventoryPlugin
   if (error && !schema) {
     return (
       <Box sx={{ py: 4 }}>
-        <Typography color="error">Failed to load plugin schema: {error.message}</Typography>
+        <Typography color="error">Failed to load app schema: {error.message}</Typography>
       </Box>
     );
   }

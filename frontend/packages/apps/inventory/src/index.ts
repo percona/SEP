@@ -19,12 +19,12 @@
  * @sep/inventory — Inventory plugin entry point.
  *
  * Exports:
- * - InventoryPlugin: inventory-specific nested routes and drill-down UI.
+ * - InventoryApp: inventory-specific nested routes and drill-down UI.
  */
 
-export { InventoryPlugin } from './InventoryPlugin';
-export type { InventoryPluginProps } from './InventoryPlugin';
-export { InventoryBreadcrumbs, renderInventoryDetailChildren } from './InventoryPluginNavigation';
+export { InventoryApp } from './InventoryApp';
+export type { InventoryAppProps } from './InventoryApp';
+export { InventoryBreadcrumbs, renderInventoryDetailChildren } from './InventoryAppNavigation';
 export {
   inventoryMountPrefix,
   parseFlatInventoryRoute,

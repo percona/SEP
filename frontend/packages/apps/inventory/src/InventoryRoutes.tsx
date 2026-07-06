@@ -22,7 +22,7 @@ import ScheduleIcon from '@mui/icons-material/Schedule';
 import DeviceHubIcon from '@mui/icons-material/DeviceHub';
 import type { AppSchema } from '@sep/api';
 import { AppDetailPage, AppListPage } from '@sep/framework';
-import { renderInventoryDetailChildren } from './InventoryPluginNavigation';
+import { renderInventoryDetailChildren } from './InventoryAppNavigation';
 import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
 import { SyncControl } from './SyncControl';
 import { InventoryScheduleSummary } from './InventoryScheduleSummary';

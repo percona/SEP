@@ -15,5 +15,5 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { AltersPlugin } from './AltersPlugin';
+export { AltersApp } from './AltersApp';
 export { altersRoute, PLUGIN_NAME, PLUGIN_BASE_PATH } from './routes';

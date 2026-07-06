@@ -18,11 +18,11 @@
 import { Alert, Box, CircularProgress, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { SchemaListView } from '@sep/framework';
-import { useTasksList, useTasksPluginSchema } from './hooks';
+import { useTasksList, useTasksAppSchema } from './hooks';
 
 export function TasksListPage() {
   const navigate = useNavigate();
-  const { data: schema, isLoading: schemaLoading, error: schemaError } = useTasksPluginSchema();
+  const { data: schema, isLoading: schemaLoading, error: schemaError } = useTasksAppSchema();
   const {
     data: rows = [],
     isLoading: listLoading,

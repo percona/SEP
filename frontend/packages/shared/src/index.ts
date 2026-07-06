@@ -20,7 +20,7 @@
  *
  * API client, auth, types, and schema components have moved to:
  *   - @sep/api      — client, auth, types, hooks
- *   - @sep/framework — SchemaFormRenderer, SchemaDrivenPlugin, etc.
+ *   - @sep/framework — SchemaFormRenderer, SchemaDrivenApp, etc.
  *
  * This package now only holds cross-cutting constants and tiny utilities
  * shared across all packages (e.g., route paths, feature flags).

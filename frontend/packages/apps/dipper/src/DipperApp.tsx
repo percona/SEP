@@ -47,7 +47,7 @@ import {
   useDipperExecution,
   useDipperFormSchema,
   useDipperHistory,
-  useDipperPluginSchema,
+  useDipperAppSchema,
 } from './hooks';
 import type { DipperCollectorType } from './types';
 
@@ -77,7 +77,7 @@ function buildArgs(values: Record<string, unknown>): Record<string, unknown> {
   return args;
 }
 
-export function DipperPlugin() {
+export function DipperApp() {
   const { enqueueSnackbar } = useSnackbar();
   const selectionForm = useForm<DipperSelectionValues>({
     defaultValues: { service_id: null, collector_type: 'environment' },
@@ -86,7 +86,7 @@ export function DipperPlugin() {
   const collectorType = useWatch({ control: selectionForm.control, name: 'collector_type' });
   const serviceId = selectedServiceId(selectedService);
 
-  const pluginSchema = useDipperPluginSchema();
+  const pluginSchema = useDipperAppSchema();
   const formSchema = useDipperFormSchema(serviceId, collectorType);
   const history = useDipperHistory();
   const execution = useDipperExecution();

@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { BackupMongoPlugin } from './BackupMongoPlugin';
+export { BackupMongoApp } from './BackupMongoApp';
 export {
   backupMongoRoute,
   BACKUP_PLUGIN_NAME,

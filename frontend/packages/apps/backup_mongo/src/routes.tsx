@@ -16,7 +16,7 @@
  */
 
 import type { RouteObject } from 'react-router-dom';
-import { BackupMongoPlugin } from './BackupMongoPlugin';
+import { BackupMongoApp } from './BackupMongoApp';
 
 export const BACKUP_PLUGIN_NAME = 'backup_mongo';
 export const RESTORE_PLUGIN_NAME = 'backup_mongo/restores';
@@ -24,5 +24,5 @@ export const MONGODB_BASE_PATH = '/backups/mongodb';
 
 export const backupMongoRoute: RouteObject = {
   path: 'backups/mongodb/*',
-  element: <BackupMongoPlugin />,
+  element: <BackupMongoApp />,
 };

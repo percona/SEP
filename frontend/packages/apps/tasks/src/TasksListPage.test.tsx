@@ -20,7 +20,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSchema } from '@sep/api';
 import { TasksListPage } from './TasksListPage';
-import { useTasksList, useTasksPluginSchema } from './hooks';
+import { useTasksList, useTasksAppSchema } from './hooks';
 
 const navigate = vi.fn();
 
@@ -33,7 +33,7 @@ vi.mock('react-router-dom', async () => {
 });
 
 vi.mock('./hooks', () => ({
-  useTasksPluginSchema: vi.fn(),
+  useTasksAppSchema: vi.fn(),
   useTasksList: vi.fn(),
 }));
 
@@ -55,7 +55,7 @@ vi.mock('@sep/framework', () => ({
   ),
 }));
 
-const mockUseTasksPluginSchema = vi.mocked(useTasksPluginSchema);
+const mockUseTasksAppSchema = vi.mocked(useTasksAppSchema);
 const mockUseTasksList = vi.mocked(useTasksList);
 
 const mockSchema: AppSchema = {
@@ -75,11 +75,11 @@ const mockSchema: AppSchema = {
 describe('TasksListPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseTasksPluginSchema.mockReturnValue({
+    mockUseTasksAppSchema.mockReturnValue({
       data: mockSchema,
       isLoading: false,
       error: null,
-    } as ReturnType<typeof useTasksPluginSchema>);
+    } as ReturnType<typeof useTasksAppSchema>);
     mockUseTasksList.mockReturnValue({
       data: [
         {
@@ -130,11 +130,11 @@ describe('TasksListPage', () => {
   });
 
   it('shows a loading indicator while the schema is loading', () => {
-    mockUseTasksPluginSchema.mockReturnValue({
+    mockUseTasksAppSchema.mockReturnValue({
       data: undefined,
       isLoading: true,
       error: null,
-    } as ReturnType<typeof useTasksPluginSchema>);
+    } as ReturnType<typeof useTasksAppSchema>);
 
     render(
       <MemoryRouter>
@@ -146,11 +146,11 @@ describe('TasksListPage', () => {
   });
 
   it('shows an error when the schema fails to load', () => {
-    mockUseTasksPluginSchema.mockReturnValue({
+    mockUseTasksAppSchema.mockReturnValue({
       data: undefined,
       isLoading: false,
       error: new Error('schema unavailable'),
-    } as ReturnType<typeof useTasksPluginSchema>);
+    } as ReturnType<typeof useTasksAppSchema>);
 
     render(
       <MemoryRouter>

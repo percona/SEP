@@ -16,21 +16,14 @@
  */
 
 import { Route, Routes } from 'react-router-dom';
-import { ReportFormPage } from './ReportFormPage';
-import { ReportResultPage } from './ReportResultPage';
+import { TaskDetailPage } from './TaskDetailPage';
+import { TasksListPage } from './TasksListPage';
 
-/**
- * Report plugin entry point.
- *
- * Routes:
- *   /reports/           → parameter form
- *   /reports/result     → generated report preview + PDF download + ServiceNow upload
- */
-export function ReportPlugin() {
+export function TasksApp() {
   return (
     <Routes>
-      <Route index element={<ReportFormPage />} />
-      <Route path="result" element={<ReportResultPage />} />
+      <Route index element={<TasksListPage />} />
+      <Route path=":taskName" element={<TaskDetailPage />} />
     </Routes>
   );
 }

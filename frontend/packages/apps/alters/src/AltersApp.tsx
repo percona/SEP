@@ -15,22 +15,17 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Route, Routes } from 'react-router-dom';
-import { AlertTroubleshootingIndexPage } from './AlertTroubleshootingIndexPage';
-import { AlertTroubleshootingDetailPage } from './AlertTroubleshootingDetailPage';
+import { SchemaDrivenApp } from '@sep/framework';
+import { getAltersExecuteActions, getAltersHistoryTaskNames } from './altersTaskDetail';
+import { PLUGIN_BASE_PATH, PLUGIN_NAME } from './routes';
 
-/**
- * Alert Troubleshooting plugin entry point.
- *
- * Routes:
- *   /alerts/troubleshooting/           → grouped alert browser
- *   /alerts/troubleshooting/:serviceType/:alertName → snippet execution cards
- */
-export function AlertTroubleshootingPlugin() {
+export function AltersApp() {
   return (
-    <Routes>
-      <Route index element={<AlertTroubleshootingIndexPage />} />
-      <Route path=":serviceType/:alertName" element={<AlertTroubleshootingDetailPage />} />
-    </Routes>
+    <SchemaDrivenApp
+      pluginName={PLUGIN_NAME}
+      routeBase={PLUGIN_BASE_PATH}
+      getTaskExecuteActions={getAltersExecuteActions}
+      getTaskHistoryNames={getAltersHistoryTaskNames}
+    />
   );
 }

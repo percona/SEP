@@ -16,21 +16,21 @@
  */
 
 import { Route, Routes } from 'react-router-dom';
-import { AlertsListPage } from './AlertsListPage';
-import { AlertsDetailPage } from './AlertsDetailPage';
+import { ReportFormPage } from './ReportFormPage';
+import { ReportResultPage } from './ReportResultPage';
 
 /**
- * Alerts plugin entry point.
+ * Report plugin entry point.
  *
  * Routes:
- *   /alerts/templates/              → alert templates list + push/restore/PagerDuty wizard
- *   /alerts/templates/backup/:backupId → backup detail view
+ *   /reports/           → parameter form
+ *   /reports/result     → generated report preview + PDF download + ServiceNow upload
  */
-export function AlertsPlugin() {
+export function ReportApp() {
   return (
     <Routes>
-      <Route index element={<AlertsListPage />} />
-      <Route path="backup/:backupId" element={<AlertsDetailPage />} />
+      <Route index element={<ReportFormPage />} />
+      <Route path="result" element={<ReportResultPage />} />
     </Routes>
   );
 }

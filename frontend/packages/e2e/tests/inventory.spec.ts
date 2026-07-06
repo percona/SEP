@@ -326,7 +326,7 @@ function isBenignConsoleError(msg: string): boolean {
 
 // ── Page object ───────────────────────────────────────────────────────────────
 
-class InventoryPluginPage {
+class InventoryAppPage {
   readonly heading = (name: string) => this.page.getByRole('heading', { name });
   readonly cell = (name: string) => this.page.getByRole('cell', { name });
 
@@ -353,7 +353,7 @@ test.describe('Inventory plugin smoke', () => {
   });
 
   test('list page mounts and shows fixture node row', async ({ page }) => {
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.goto();
 
     await expect(po.heading('Nodes')).toBeVisible({ timeout: 10_000 });
@@ -361,7 +361,7 @@ test.describe('Inventory plugin smoke', () => {
   });
 
   test('node detail shows embedded services list with fixture row', async ({ page }) => {
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.gotoNodeDetail(NODE_ID);
 
     await expect(page.getByText('Services on this node')).toBeVisible({ timeout: 10_000 });
@@ -378,7 +378,7 @@ test.describe('Inventory plugin smoke', () => {
       }
     });
 
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.gotoNodeDetail(NODE_ID);
 
     await expect(page.getByText('Services on this node')).toBeVisible({ timeout: 10_000 });
@@ -408,7 +408,7 @@ test.describe('Inventory plugin smoke', () => {
       }
     });
 
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.goto();
 
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
@@ -435,7 +435,7 @@ test.describe('Inventory plugin smoke', () => {
       }
     });
 
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.goto();
 
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
@@ -455,7 +455,7 @@ test.describe('Inventory plugin smoke', () => {
   });
 
   test('flat service detail route renders service name in breadcrumb', async ({ page }) => {
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.gotoServiceDetail(SERVICE_ID);
 
     // Scoped to the breadcrumb nav so the assertion targets the crumb, not a table cell

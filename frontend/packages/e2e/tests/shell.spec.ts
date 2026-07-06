@@ -31,7 +31,7 @@ const MOCK_USER = {
   isAdmin: false,
 };
 
-// Minimal schema served for /api/apps/:name/schema. SchemaDrivenPlugin
+// Minimal schema served for /api/apps/:name/schema. SchemaDrivenApp
 // renders `display_name` as an h4 heading and "New {display_name}" as the
 // create-button label, which is enough surface for the smoke assertions.
 // Keys are snake_case to match the backend AppSchema shape — the React
@@ -192,8 +192,8 @@ test.describe('shell sanity smoke', () => {
     await mockAuthenticatedApis(page);
     await page.goto('/apps/checksums');
 
-    // SchemaDrivenPlugin renders the schema displayName as an h4 heading.
-    // Allow extra time for the lazy-loaded SchemaDrivenPlugin / framework chunk to
+    // SchemaDrivenApp renders the schema displayName as an h4 heading.
+    // Allow extra time for the lazy-loaded SchemaDrivenApp / framework chunk to
     // load (Vite preview serves a cold network roundtrip on first nav).
     await expect(page.getByRole('heading', { name: 'Checksums' })).toBeVisible({
       timeout: 30_000,

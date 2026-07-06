@@ -16,7 +16,7 @@
  */
 
 import type { CSSProperties } from 'react';
-import { SchemaDrivenPlugin } from '@sep/framework';
+import { SchemaDrivenApp } from '@sep/framework';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import {
   BackupMongoTaskDetailExtras,
@@ -77,7 +77,7 @@ function MongoBackupTabs() {
   );
 }
 
-export function BackupMongoPlugin() {
+export function BackupMongoApp() {
   return (
     <div>
       <MongoBackupTabs />
@@ -86,7 +86,7 @@ export function BackupMongoPlugin() {
         <Route
           path="backups/*"
           element={
-            <SchemaDrivenPlugin
+            <SchemaDrivenApp
               pluginName={BACKUP_PLUGIN_NAME}
               routeBase={`${MONGODB_BASE_PATH}/backups`}
               getTaskExecuteActions={getBackupMongoExecuteActions}
@@ -99,7 +99,7 @@ export function BackupMongoPlugin() {
         <Route
           path="restores/*"
           element={
-            <SchemaDrivenPlugin
+            <SchemaDrivenApp
               pluginName={RESTORE_PLUGIN_NAME}
               routeBase={`${MONGODB_BASE_PATH}/restores`}
               getTaskExecuteActions={getRestoreMongoExecuteActions}

@@ -26,7 +26,7 @@ import {
 } from './types';
 
 /** Fetch the read-only Task Manager plugin schema. */
-export function useTasksPluginSchema() {
+export function useTasksAppSchema() {
   return useAppSchema(TASKS_PLUGIN_NAME);
 }
 

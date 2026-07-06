@@ -42,7 +42,7 @@ import { AppSchedulePage } from './AppSchedulePage';
 import type { RenderFormSlot } from './types';
 import type { RenderListColumnOverride } from '../SchemaListView';
 
-interface SchemaDrivenPluginProps {
+interface SchemaDrivenAppProps {
   pluginName: string;
   /** Absolute list route prefix when the plugin is not mounted under ``/apps/{name}``. */
   routeBase?: string;
@@ -233,7 +233,7 @@ function AppEditPage({
   );
 }
 
-export function SchemaDrivenPlugin({
+export function SchemaDrivenApp({
   pluginName,
   routeBase,
   mockSchema,
@@ -252,7 +252,7 @@ export function SchemaDrivenPlugin({
   renderCreateForm,
   renderEditForm,
   renderListColumn,
-}: SchemaDrivenPluginProps) {
+}: SchemaDrivenAppProps) {
   const { data: schema, isLoading, error } = useAppSchema(pluginName, mockSchema);
   const showMutationRoutes = !listOnly && !browseOnly;
   const showDetailRoutes = !listOnly;
@@ -268,7 +268,7 @@ export function SchemaDrivenPlugin({
   if (error && !schema) {
     return (
       <Box sx={{ py: 4 }}>
-        <Typography color="error">Failed to load plugin schema: {error.message}</Typography>
+        <Typography color="error">Failed to load app schema: {error.message}</Typography>
       </Box>
     );
   }

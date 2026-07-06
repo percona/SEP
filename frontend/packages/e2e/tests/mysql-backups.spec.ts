@@ -290,7 +290,7 @@ test.describe('MySQL Backups smoke', () => {
 
 // ── Unhappy-path coverage ─────────────────────────────────────────────────────
 //
-// These tests lock in the SchemaDrivenPlugin contract under failure conditions:
+// These tests lock in the SchemaDrivenApp contract under failure conditions:
 // backend 5xx on schema/create, validation gating, double-submit guard, and the
 // forbidden-gate field-strip behaviour from the contains-tightening commit.
 
@@ -494,8 +494,8 @@ test.describe('MySQL Backups – unhappy paths', () => {
     await mockMysqlBackupsRoutes(page, { schemaStatus: 503 });
     await page.goto('/apps/mysql_backups');
 
-    // SchemaDrivenPlugin surfaces "Failed to load plugin schema" on fetch failure.
-    await expect(page.getByText(/Failed to load plugin schema/i)).toBeVisible({
+    // SchemaDrivenApp surfaces "Failed to load app schema" on fetch failure.
+    await expect(page.getByText(/Failed to load app schema/i)).toBeVisible({
       timeout: 30_000,
     });
     // List heading must not appear — the page should not silently render an empty UI.

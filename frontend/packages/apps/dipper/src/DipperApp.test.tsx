@@ -17,12 +17,12 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DipperPlugin } from './DipperPlugin';
+import { DipperApp } from './DipperApp';
 import {
   useDipperExecution,
   useDipperFormSchema,
   useDipperHistory,
-  useDipperPluginSchema,
+  useDipperAppSchema,
 } from './hooks';
 
 const { stopMutate } = vi.hoisted(() => ({ stopMutate: vi.fn() }));
@@ -32,7 +32,7 @@ vi.mock('notistack', () => ({
 }));
 
 vi.mock('./hooks', () => ({
-  useDipperPluginSchema: vi.fn(),
+  useDipperAppSchema: vi.fn(),
   useDipperFormSchema: vi.fn(),
   useDipperHistory: vi.fn(),
   useDipperExecution: vi.fn(),
@@ -97,12 +97,12 @@ vi.mock('@sep/framework', async () => {
   };
 });
 
-const mockPluginSchema = vi.mocked(useDipperPluginSchema);
+const mockPluginSchema = vi.mocked(useDipperAppSchema);
 const mockFormSchema = vi.mocked(useDipperFormSchema);
 const mockHistory = vi.mocked(useDipperHistory);
 const mockExecution = vi.mocked(useDipperExecution);
 
-describe('DipperPlugin', () => {
+describe('DipperApp', () => {
   const mutate = vi.fn();
 
   beforeEach(() => {
@@ -117,7 +117,7 @@ describe('DipperPlugin', () => {
       },
       isLoading: false,
       error: null,
-    } as unknown as ReturnType<typeof useDipperPluginSchema>);
+    } as unknown as ReturnType<typeof useDipperAppSchema>);
     mockFormSchema.mockReturnValue({
       data: {
         name: 'dipper',
@@ -147,7 +147,7 @@ describe('DipperPlugin', () => {
   });
 
   it('fetches context schema after service selection', async () => {
-    render(<DipperPlugin />);
+    render(<DipperApp />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Select service' }));
 
@@ -156,7 +156,7 @@ describe('DipperPlugin', () => {
   });
 
   it('submits selected service and nests payload args', async () => {
-    render(<DipperPlugin />);
+    render(<DipperApp />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Select service' }));
     fireEvent.click(screen.getByRole('button', { name: 'Execute' }));
@@ -174,7 +174,7 @@ describe('DipperPlugin', () => {
   });
 
   it('renders history and opens logs', async () => {
-    render(<DipperPlugin />);
+    render(<DipperApp />);
 
     expect(screen.getByText('history rows: 1')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'View logs' }));
@@ -183,7 +183,7 @@ describe('DipperPlugin', () => {
   });
 
   it('wires the Stop button to the stop-task mutation with the row id', () => {
-    render(<DipperPlugin />);
+    render(<DipperApp />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop 42' }));
 

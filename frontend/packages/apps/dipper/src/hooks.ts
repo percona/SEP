@@ -22,7 +22,7 @@ import type { DipperCollectorType, DipperExecutionResponse, DipperExecutionWrite
 
 const DIPPER_BASE = '/apps/dipper';
 
-export function useDipperPluginSchema() {
+export function useDipperAppSchema() {
   return useQuery<AppSchema>({
     queryKey: ['dipper', 'schema'],
     queryFn: async () => {

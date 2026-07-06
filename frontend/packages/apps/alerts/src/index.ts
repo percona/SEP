@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { AlertsPlugin } from './AlertsPlugin';
+export { AlertsApp } from './AlertsApp';
 export { AlertsListPage } from './AlertsListPage';
 export { AlertsDetailPage } from './AlertsDetailPage';
 export { AlertsWizard } from './AlertsWizard';

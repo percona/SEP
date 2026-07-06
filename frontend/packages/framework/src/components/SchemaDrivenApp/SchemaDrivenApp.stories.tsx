@@ -23,7 +23,7 @@ import { SnackbarProvider } from 'notistack';
 import Alert from '@mui/material/Alert';
 import Paper from '@mui/material/Paper';
 import type { AppSchema } from '@sep/api';
-import { SchemaDrivenPlugin } from './SchemaDrivenPlugin';
+import { SchemaDrivenApp } from './SchemaDrivenApp';
 import type { RenderFormSlot } from './types';
 import { SchemaFormRenderer } from '../SchemaFormRenderer';
 
@@ -82,14 +82,14 @@ const withProviders = (initialPath: string) => (Story: ComponentType) => {
   );
 };
 
-const meta: Meta<typeof SchemaDrivenPlugin> = {
-  title: 'Framework/SchemaDrivenPlugin',
-  component: SchemaDrivenPlugin,
+const meta: Meta<typeof SchemaDrivenApp> = {
+  title: 'Framework/SchemaDrivenApp',
+  component: SchemaDrivenApp,
   parameters: { layout: 'padded' },
 };
 export default meta;
 
-type Story = StoryObj<typeof SchemaDrivenPlugin>;
+type Story = StoryObj<typeof SchemaDrivenApp>;
 
 /**
  * `renderCreateForm` whole-form slot (SEP-1355). The framework keeps the route,

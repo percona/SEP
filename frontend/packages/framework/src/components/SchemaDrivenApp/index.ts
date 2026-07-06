@@ -15,15 +15,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { Route, Routes } from 'react-router-dom';
-import { TaskDetailPage } from './TaskDetailPage';
-import { TasksListPage } from './TasksListPage';
-
-export function TasksPlugin() {
-  return (
-    <Routes>
-      <Route index element={<TasksListPage />} />
-      <Route path=":taskName" element={<TaskDetailPage />} />
-    </Routes>
-  );
-}
+export { SchemaDrivenApp } from './SchemaDrivenApp';
+export { DeleteConfirmDialog } from './DeleteConfirmDialog';
+export type { DeleteConfirmDialogProps } from './DeleteConfirmDialog';
+export { AppCreatePage } from './AppCreatePage';
+export { AppTaskEditPage } from './AppTaskEditPage';
+export { AppDetailPage } from './AppDetailPage';
+export { getStoredForm, STORED_FORM_KEY } from './storedForm';
+export { AppListPage } from './AppListPage';
+export { AppSchedulePage } from './AppSchedulePage';
+export type { AppFormSlotProps, RenderFormSlot } from './types';

@@ -133,7 +133,7 @@ async function mockRoutes(page: Page) {
 }
 
 async function openCreateForm(page: Page) {
-  // SchemaDrivenPlugin (no entities) mounts the create route at /new directly.
+  // SchemaDrivenApp (no entities) mounts the create route at /new directly.
   await page.goto('/apps/mysql_backups/new');
   // Wait for the rendered InputLabel — proxy for "form is mounted".
   await expect(page.locator('label#upload-label')).toBeVisible({ timeout: 30_000 });

@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { SchemaDrivenPlugin } from '@sep/framework';
+import { SchemaDrivenApp } from '@sep/framework';
 import { getAppRouteMeta } from '../appNavConfig';
 
 interface SchemaDrivenAppRouteProps {
@@ -34,5 +34,5 @@ interface SchemaDrivenAppRouteProps {
 export function SchemaDrivenAppRoute({ appKey }: SchemaDrivenAppRouteProps) {
   const meta = getAppRouteMeta(appKey);
 
-  return <SchemaDrivenPlugin pluginName={appKey} routeBase={meta?.routeBase} />;
+  return <SchemaDrivenApp pluginName={appKey} routeBase={meta?.routeBase} />;
 }

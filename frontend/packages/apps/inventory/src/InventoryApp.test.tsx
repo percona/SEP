@@ -21,7 +21,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { apiClient, type AppSchema } from '@sep/api';
-import { InventoryPlugin } from './InventoryPlugin';
+import { InventoryApp } from './InventoryApp';
 
 const mockSchema: AppSchema = {
   name: 'inventory',
@@ -155,25 +155,21 @@ function renderWithProviders(ui: ReactElement, initialEntries: string[] = ['/inv
   return { router, ...view };
 }
 
-describe('InventoryPlugin', () => {
+describe('InventoryApp', () => {
   it('renders loading state while schema is fetched', () => {
-    renderWithProviders(<InventoryPlugin />);
+    renderWithProviders(<InventoryApp />);
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
   it('renders breadcrumb instead of entity tabs when mock schema is provided', async () => {
-    renderWithProviders(
-      <InventoryPlugin mockSchema={mockSchema} mockEntityItems={{ nodes: [] }} />,
-    );
+    renderWithProviders(<InventoryApp mockSchema={mockSchema} mockEntityItems={{ nodes: [] }} />);
     expect(await screen.findByLabelText('Inventory breadcrumb')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Inventory' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Nodes' })).not.toBeInTheDocument();
   });
 
   it('does not offer create flow (browse-only)', async () => {
-    renderWithProviders(
-      <InventoryPlugin mockSchema={mockSchema} mockEntityItems={{ nodes: [] }} />,
-    );
+    renderWithProviders(<InventoryApp mockSchema={mockSchema} mockEntityItems={{ nodes: [] }} />);
     await screen.findByLabelText('Inventory breadcrumb');
     expect(screen.queryByRole('button', { name: /New/i })).not.toBeInTheDocument();
   });
@@ -184,7 +180,7 @@ describe('InventoryPlugin', () => {
       capabilities: { scheduling: true },
     };
     renderWithProviders(
-      <InventoryPlugin mockSchema={schedulingSchema} mockEntityItems={{ nodes: [] }} />,
+      <InventoryApp mockSchema={schedulingSchema} mockEntityItems={{ nodes: [] }} />,
     );
     await screen.findByLabelText('Inventory breadcrumb');
 
@@ -200,9 +196,7 @@ describe('InventoryPlugin', () => {
     });
 
     it('shows a Target hosts navigation button on the nodes list', async () => {
-      renderWithProviders(
-        <InventoryPlugin mockSchema={mockSchema} mockEntityItems={{ nodes: [] }} />,
-      );
+      renderWithProviders(<InventoryApp mockSchema={mockSchema} mockEntityItems={{ nodes: [] }} />);
       expect(await screen.findByTestId('inv-target-hosts-link')).toBeInTheDocument();
     });
 
@@ -212,7 +206,7 @@ describe('InventoryPlugin', () => {
       } as never);
 
       const { router } = renderWithProviders(
-        <InventoryPlugin mockSchema={mockSchema} mockEntityItems={{ nodes: [] }} />,
+        <InventoryApp mockSchema={mockSchema} mockEntityItems={{ nodes: [] }} />,
       );
 
       fireEvent.click(await screen.findByTestId('inv-target-hosts-link'));
@@ -241,7 +235,7 @@ describe('InventoryPlugin', () => {
     });
 
     it('renders table detail on deep nested URL', async () => {
-      renderWithProviders(<InventoryPlugin mockSchema={inventoryNestedMockSchema} />, [
+      renderWithProviders(<InventoryApp mockSchema={inventoryNestedMockSchema} />, [
         '/inventory/nodes/1/services/2/schemas/3/tables/4',
       ]);
 
@@ -251,7 +245,7 @@ describe('InventoryPlugin', () => {
     });
 
     it('renders Prism ``pre`` blocks for create (SQL) and keys (JSON)', async () => {
-      renderWithProviders(<InventoryPlugin mockSchema={inventoryNestedMockSchema} />, [
+      renderWithProviders(<InventoryApp mockSchema={inventoryNestedMockSchema} />, [
         '/inventory/nodes/1/services/2/schemas/3/tables/4',
       ]);
 
@@ -268,7 +262,7 @@ describe('InventoryPlugin', () => {
 
     it('navigates toward parent via breadcrumb from deep table detail', async () => {
       const { router } = renderWithProviders(
-        <InventoryPlugin mockSchema={inventoryNestedMockSchema} />,
+        <InventoryApp mockSchema={inventoryNestedMockSchema} />,
         ['/inventory/nodes/1/services/2/schemas/3/tables/4'],
       );
 
@@ -286,7 +280,7 @@ describe('InventoryPlugin', () => {
 
     it('drills into a service via the nested route from a node detail page', async () => {
       const { router } = renderWithProviders(
-        <InventoryPlugin mockSchema={inventoryNestedMockSchema} />,
+        <InventoryApp mockSchema={inventoryNestedMockSchema} />,
         ['/inventory/nodes/1'],
       );
 
@@ -302,7 +296,7 @@ describe('InventoryPlugin', () => {
 
     it('drills into a schema via the nested route from a service detail page', async () => {
       const { router } = renderWithProviders(
-        <InventoryPlugin mockSchema={inventoryNestedMockSchema} />,
+        <InventoryApp mockSchema={inventoryNestedMockSchema} />,
         ['/inventory/nodes/1/services/2'],
       );
 
@@ -318,7 +312,7 @@ describe('InventoryPlugin', () => {
 
     it('drills into a table via the nested route from a schema detail page', async () => {
       const { router } = renderWithProviders(
-        <InventoryPlugin mockSchema={inventoryNestedMockSchema} />,
+        <InventoryApp mockSchema={inventoryNestedMockSchema} />,
         ['/inventory/nodes/1/services/2/schemas/3'],
       );
 

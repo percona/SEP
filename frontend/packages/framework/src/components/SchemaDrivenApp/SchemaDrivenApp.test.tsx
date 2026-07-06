@@ -21,7 +21,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { SnackbarProvider } from 'notistack';
 import type { AppSchema } from '@sep/api';
-import { SchemaDrivenPlugin } from './SchemaDrivenPlugin';
+import { SchemaDrivenApp } from './SchemaDrivenApp';
 import type { RenderFormSlot } from './types';
 
 const mockUpdateMutate = vi.fn();
@@ -65,7 +65,7 @@ const taskRecord = {
 let activeSchema: AppSchema = schema;
 
 // Stub sibling page modules so their @sep/api imports stay out of the graph;
-// this test exercises only the SchemaDrivenPlugin → edit-page threading.
+// this test exercises only the SchemaDrivenApp → edit-page threading.
 vi.mock('./AppListPage', () => ({ AppListPage: () => <div>list</div> }));
 vi.mock('./AppDetailPage', () => ({
   AppDetailPage: () => <div>detail</div>,
@@ -91,13 +91,13 @@ function renderEdit(renderEditForm?: RenderFormSlot) {
   return render(
     <SnackbarProvider>
       <MemoryRouter initialEntries={['/nodes/5/edit']}>
-        <SchemaDrivenPlugin pluginName="inventory" renderEditForm={renderEditForm} />
+        <SchemaDrivenApp pluginName="inventory" renderEditForm={renderEditForm} />
       </MemoryRouter>
     </SnackbarProvider>,
   );
 }
 
-describe('SchemaDrivenPlugin — renderEditForm slot', () => {
+describe('SchemaDrivenApp — renderEditForm slot', () => {
   it('renders the default form body when no slot is supplied', () => {
     renderEdit();
     expect(screen.getByText('Edit Nodes #5')).toBeInTheDocument();
@@ -127,13 +127,13 @@ describe('SchemaDrivenPlugin — renderEditForm slot', () => {
   });
 });
 
-describe('SchemaDrivenPlugin — single-entity task edit route', () => {
+describe('SchemaDrivenApp — single-entity task edit route', () => {
   it('renders AppTaskEditPage at task/:id/edit, prefilled from the stored form', () => {
     activeSchema = taskSchema;
     render(
       <SnackbarProvider>
         <MemoryRouter initialEntries={['/task/check1/edit']}>
-          <SchemaDrivenPlugin pluginName="checksums" />
+          <SchemaDrivenApp pluginName="checksums" />
         </MemoryRouter>
       </SnackbarProvider>,
     );

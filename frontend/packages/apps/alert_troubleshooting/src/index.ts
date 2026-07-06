@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { AlertTroubleshootingPlugin } from './AlertTroubleshootingPlugin';
+export { AlertTroubleshootingApp } from './AlertTroubleshootingApp';
 export { AlertTroubleshootingIndexPage } from './AlertTroubleshootingIndexPage';
 export { AlertTroubleshootingDetailPage } from './AlertTroubleshootingDetailPage';
 export { useAlertGroups, useAlertDetail } from './hooks';

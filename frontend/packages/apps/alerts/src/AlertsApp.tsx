@@ -15,13 +15,22 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { SchemaDrivenPlugin } from './SchemaDrivenPlugin';
-export { DeleteConfirmDialog } from './DeleteConfirmDialog';
-export type { DeleteConfirmDialogProps } from './DeleteConfirmDialog';
-export { AppCreatePage } from './AppCreatePage';
-export { AppTaskEditPage } from './AppTaskEditPage';
-export { AppDetailPage } from './AppDetailPage';
-export { getStoredForm, STORED_FORM_KEY } from './storedForm';
-export { AppListPage } from './AppListPage';
-export { AppSchedulePage } from './AppSchedulePage';
-export type { AppFormSlotProps, RenderFormSlot } from './types';
+import { Route, Routes } from 'react-router-dom';
+import { AlertsListPage } from './AlertsListPage';
+import { AlertsDetailPage } from './AlertsDetailPage';
+
+/**
+ * Alerts plugin entry point.
+ *
+ * Routes:
+ *   /alerts/templates/              → alert templates list + push/restore/PagerDuty wizard
+ *   /alerts/templates/backup/:backupId → backup detail view
+ */
+export function AlertsApp() {
+  return (
+    <Routes>
+      <Route index element={<AlertsListPage />} />
+      <Route path="backup/:backupId" element={<AlertsDetailPage />} />
+    </Routes>
+  );
+}

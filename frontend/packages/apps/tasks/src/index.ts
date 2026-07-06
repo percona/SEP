@@ -15,5 +15,5 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { TasksPlugin } from './TasksPlugin';
+export { TasksApp } from './TasksApp';
 export { TASKS_PLUGIN_NAME, TASKS_PLUGINS_API_BASE } from './types';

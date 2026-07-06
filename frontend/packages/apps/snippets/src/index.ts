@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { SnippetsPlugin } from './SnippetsPlugin';
+export { SnippetsApp } from './SnippetsApp';
 export { SnippetsListPage } from './SnippetsListPage';
 export { SnippetDetailPage } from './SnippetDetailPage';
 export {

@@ -20,11 +20,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSchema } from '@sep/api';
-import { TasksPlugin } from './TasksPlugin';
-import { useTasksList, useTasksPluginSchema } from './hooks';
+import { TasksApp } from './TasksApp';
+import { useTasksList, useTasksAppSchema } from './hooks';
 
 vi.mock('./hooks', () => ({
-  useTasksPluginSchema: vi.fn(),
+  useTasksAppSchema: vi.fn(),
   useTasksList: vi.fn(),
   useTaskDetail: vi.fn(),
 }));
@@ -43,7 +43,7 @@ vi.mock('@sep/framework', () => ({
   ),
 }));
 
-const mockUseTasksPluginSchema = vi.mocked(useTasksPluginSchema);
+const mockUseTasksAppSchema = vi.mocked(useTasksAppSchema);
 const mockUseTasksList = vi.mocked(useTasksList);
 
 const mockSchema: AppSchema = {
@@ -57,27 +57,27 @@ const mockSchema: AppSchema = {
   },
 };
 
-function renderPlugin(initialEntry: string) {
+function renderApp(initialEntry: string) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[initialEntry]}>
-        <TasksPlugin />
+        <TasksApp />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
-describe('TasksPlugin', () => {
+describe('TasksApp', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseTasksPluginSchema.mockReturnValue({
+    mockUseTasksAppSchema.mockReturnValue({
       data: mockSchema,
       isLoading: false,
       error: null,
-    } as ReturnType<typeof useTasksPluginSchema>);
+    } as ReturnType<typeof useTasksAppSchema>);
     mockUseTasksList.mockReturnValue({
       data: [],
       isLoading: false,
@@ -86,14 +86,14 @@ describe('TasksPlugin', () => {
   });
 
   it('renders the list page at the index route', () => {
-    renderPlugin('/');
+    renderApp('/');
 
     expect(screen.getByRole('heading', { name: 'Task Manager' })).toBeInTheDocument();
     expect(screen.getByTestId('schema-list')).toBeInTheDocument();
   });
 
   it('renders the detail page for a task route', () => {
-    renderPlugin('/my-task');
+    renderApp('/my-task');
 
     expect(screen.getByTestId('task-detail-page')).toBeInTheDocument();
   });

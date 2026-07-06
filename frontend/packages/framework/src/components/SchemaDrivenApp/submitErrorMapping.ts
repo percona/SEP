@@ -19,7 +19,7 @@ import { ApiError, parseFieldErrors, type FieldValidationError } from '@sep/api'
 import { flattenSectionFields } from '../SchemaFormRenderer';
 import type { FormSection } from '../SchemaFormRenderer/types';
 
-/** Error state shared by the SchemaDrivenPlugin create and edit forms. */
+/** Error state shared by the SchemaDrivenApp create and edit forms. */
 export interface SubmitErrorState {
   /** Persistent in-form banner text, or `null` to hide the banner. */
   submitError: string | null;

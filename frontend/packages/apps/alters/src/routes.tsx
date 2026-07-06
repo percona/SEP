@@ -16,12 +16,12 @@
  */
 
 import type { RouteObject } from 'react-router-dom';
-import { AltersPlugin } from './AltersPlugin';
+import { AltersApp } from './AltersApp';
 
 export const PLUGIN_NAME = 'alters';
 export const PLUGIN_BASE_PATH = '/schema-change/alters';
 
 export const altersRoute: RouteObject = {
   path: 'schema-change/alters/*',
-  element: <AltersPlugin />,
+  element: <AltersApp />,
 };

@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { ReportPlugin } from './ReportPlugin';
+export { ReportApp } from './ReportApp';
 export { ReportFormPage } from './ReportFormPage';
 export { ReportResultPage } from './ReportResultPage';
 export { useGenerateReport, useDownloadPdf, useUploadToServiceNow, useReportConfig } from './hooks';

@@ -48,30 +48,30 @@ export interface LegacyRouteAlias {
   useCustom: boolean;
 }
 
-const InventoryPlugin = lazy(() =>
-  import('@sep/inventory').then((m) => ({ default: m.InventoryPlugin })),
+const InventoryApp = lazy(() =>
+  import('@sep/inventory').then((m) => ({ default: m.InventoryApp })),
 );
-const TasksPlugin = lazy(() => import('@sep/tasks').then((m) => ({ default: m.TasksPlugin })));
-const SnippetsPluginLazy = lazy(() =>
-  import('@sep/snippets').then((m) => ({ default: m.SnippetsPlugin })),
+const TasksApp = lazy(() => import('@sep/tasks').then((m) => ({ default: m.TasksApp })));
+const SnippetsAppLazy = lazy(() =>
+  import('@sep/snippets').then((m) => ({ default: m.SnippetsApp })),
 );
-const AtwPlugin = lazy(() => import('@sep/atw').then((m) => ({ default: m.AtwPlugin })));
-const DipperPlugin = lazy(() => import('@sep/dipper').then((m) => ({ default: m.DipperPlugin })));
-const AlertsPlugin = lazy(() => import('@sep/alerts').then((m) => ({ default: m.AlertsPlugin })));
-const AlertTroubleshootingPlugin = lazy(() =>
+const AtwApp = lazy(() => import('@sep/atw').then((m) => ({ default: m.AtwApp })));
+const DipperApp = lazy(() => import('@sep/dipper').then((m) => ({ default: m.DipperApp })));
+const AlertsApp = lazy(() => import('@sep/alerts').then((m) => ({ default: m.AlertsApp })));
+const AlertTroubleshootingApp = lazy(() =>
   import('@sep/alert-troubleshooting').then((m) => ({
-    default: m.AlertTroubleshootingPlugin,
+    default: m.AlertTroubleshootingApp,
   })),
 );
-const AltersPlugin = lazy(() => import('@sep/alters').then((m) => ({ default: m.AltersPlugin })));
-const BackupMongoPlugin = lazy(() =>
-  import('@sep/backup-mongo').then((m) => ({ default: m.BackupMongoPlugin })),
+const AltersApp = lazy(() => import('@sep/alters').then((m) => ({ default: m.AltersApp })));
+const BackupMongoApp = lazy(() =>
+  import('@sep/backup-mongo').then((m) => ({ default: m.BackupMongoApp })),
 );
-const ReportPlugin = lazy(() => import('@sep/report').then((m) => ({ default: m.ReportPlugin })));
+const ReportApp = lazy(() => import('@sep/report').then((m) => ({ default: m.ReportApp })));
 
-function SnippetsPlugin() {
+function SnippetsApp() {
   const { isAdmin } = useAuth();
-  return <SnippetsPluginLazy isAdmin={isAdmin} />;
+  return <SnippetsAppLazy isAdmin={isAdmin} />;
 }
 
 function customEntry(appKey: string, Component: ComponentType): CustomAppRegistryEntry {
@@ -88,16 +88,16 @@ function customEntry(appKey: string, Component: ComponentType): CustomAppRegistr
 
 /** Bespoke apps: one registry entry per ``app_key``. */
 export const CUSTOM_APP_REGISTRY: Record<string, CustomAppRegistryEntry> = {
-  inventory: customEntry('inventory', InventoryPlugin),
-  tasks: customEntry('tasks', TasksPlugin),
-  snippets: customEntry('snippets', SnippetsPlugin),
-  atw: customEntry('atw', AtwPlugin),
-  dipper: customEntry('dipper', DipperPlugin),
-  alerts: customEntry('alerts', AlertsPlugin),
-  alert_troubleshooting: customEntry('alert_troubleshooting', AlertTroubleshootingPlugin),
-  alters: customEntry('alters', AltersPlugin),
-  backup_mongo: customEntry('backup_mongo', BackupMongoPlugin),
-  report: customEntry('report', ReportPlugin),
+  inventory: customEntry('inventory', InventoryApp),
+  tasks: customEntry('tasks', TasksApp),
+  snippets: customEntry('snippets', SnippetsApp),
+  atw: customEntry('atw', AtwApp),
+  dipper: customEntry('dipper', DipperApp),
+  alerts: customEntry('alerts', AlertsApp),
+  alert_troubleshooting: customEntry('alert_troubleshooting', AlertTroubleshootingApp),
+  alters: customEntry('alters', AltersApp),
+  backup_mongo: customEntry('backup_mongo', BackupMongoApp),
+  report: customEntry('report', ReportApp),
 };
 
 export const LEGACY_ROUTE_ALIASES: LegacyRouteAlias[] = [

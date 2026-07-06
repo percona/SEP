@@ -19,7 +19,7 @@ import { Route, Routes } from 'react-router-dom';
 import { SnippetDetailPage } from './SnippetDetailPage';
 import { SnippetsListPage } from './SnippetsListPage';
 
-interface SnippetsPluginProps {
+interface SnippetsAppProps {
   /** Whether the current user has admin privileges. Controls approval UI visibility. */
   isAdmin?: boolean;
 }
@@ -33,7 +33,7 @@ interface SnippetsPluginProps {
  * Pass `isAdmin` from the shell's auth context to enable per-row and
  * batch approval controls for admin users.
  */
-export function SnippetsPlugin({ isAdmin = false }: SnippetsPluginProps) {
+export function SnippetsApp({ isAdmin = false }: SnippetsAppProps) {
   return (
     <Routes>
       <Route index element={<SnippetsListPage isAdmin={isAdmin} />} />
