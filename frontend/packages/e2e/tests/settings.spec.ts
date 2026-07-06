@@ -58,6 +58,44 @@ function makeSetting(over: Record<string, unknown>) {
   };
 }
 
+/** Which connectivity-check response the mock backend serves for a test. */
+type ConnectivityScenario = 'mixed' | 'all-statuses' | 'error' | 'slow' | 'versions';
+
+/**
+ * Default sweep: three reachable services and one unreachable, exercising the
+ * `reachable` + `unreachable` chips and per-service isolation.
+ */
+const MIXED_RESULTS = [
+  { service: 'pmm', reachable: true, status: 'reachable', detail: 'PMM OK', version: '2.44.0' },
+  { service: 'inventory', reachable: true, status: 'reachable', detail: 'Inventory OK' },
+  { service: 'tasks', reachable: true, status: 'reachable', detail: 'Tasks OK' },
+  { service: 'nomad', reachable: false, status: 'unreachable', detail: 'Connection refused' },
+];
+
+/**
+ * One row per remaining status (auth_failed, error, ssl_error, timeout) — the
+ * four the `mixed` scenario does not cover. Between the two scenarios every
+ * ConnectivityStatusEnum value is rendered end-to-end. Only four services exist,
+ * so this is the realistic maximum (the backend returns one row per service).
+ */
+const ALL_STATUS_RESULTS = [
+  { service: 'pmm', reachable: false, status: 'auth_failed', detail: 'Authentication failed.' },
+  {
+    service: 'inventory',
+    reachable: false,
+    status: 'error',
+    detail: 'Endpoint returned an error response.',
+  },
+  { service: 'tasks', reachable: false, status: 'ssl_error', detail: 'SSL verification failed.' },
+  { service: 'nomad', reachable: false, status: 'timeout', detail: 'Connection timed out.' },
+];
+
+/** One row with a version string, one with an explicit null version. */
+const VERSION_RESULTS = [
+  { service: 'pmm', reachable: true, status: 'reachable', detail: 'PMM OK', version: '2.44.0' },
+  { service: 'nomad', reachable: true, status: 'reachable', detail: 'Nomad OK', version: null },
+];
+
 /**
  * Fail the running test if the browser ever calls the Tasks sub-app's settings
  * API directly. SEP-1330 routes the Tasks group through the SEP gateway, so any
@@ -76,7 +114,10 @@ async function installRule1Guard(page: Page): Promise<void> {
  * the proxied TasksSettings group in one `/api/sep/admin/settings` response, and
  * mutations for both classes go to `/api/sep`.
  */
-async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<void> {
+async function mockApis(
+  page: Page,
+  { isAdmin, connectivity = 'mixed' }: { isAdmin: boolean; connectivity?: ConnectivityScenario },
+): Promise<void> {
   const store = {
     syncValue: 5 as number,
     syncOverride: false,
@@ -126,7 +167,7 @@ async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<
     ],
   });
 
-  await page.route('**/api/**', (route) => {
+  await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url());
     const { pathname } = url;
     const method = route.request().method();
@@ -193,6 +234,26 @@ async function mockApis(page: Page, { isAdmin }: { isAdmin: boolean }): Promise<
       return route.fulfill({ status: 204, body: '' });
     }
 
+    // On-demand connectivity check (SEP-1413): one classified result per target.
+    // The served payload is chosen per test via the `connectivity` scenario.
+    if (method === 'POST' && pathname === '/api/sep/admin/connectivity-check/') {
+      if (connectivity === 'error') {
+        return json({ detail: 'Connectivity check failed' }, 500);
+      }
+      if (connectivity === 'slow') {
+        // Hold the response open long enough to observe the pending state.
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        return json(MIXED_RESULTS);
+      }
+      if (connectivity === 'all-statuses') {
+        return json(ALL_STATUS_RESULTS);
+      }
+      if (connectivity === 'versions') {
+        return json(VERSION_RESULTS);
+      }
+      return json(MIXED_RESULTS);
+    }
+
     return json([]);
   });
 
@@ -208,6 +269,8 @@ test.describe('Settings page smoke', () => {
 
     await expect(page.getByTestId('settings-admins-only')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('Admins only')).toBeVisible();
+    // The connectivity probe is admin-only; non-admins never see its trigger.
+    await expect(page.getByRole('button', { name: /test connection/i })).toHaveCount(0);
   });
 
   test('admin can view, edit + save, reset, and search settings', async ({ page }) => {
@@ -236,6 +299,127 @@ test.describe('Settings page smoke', () => {
     await page.getByLabel('Search settings').fill('STALENESS');
     await expect(page.getByTestId('setting-row-SYNC_REFRESH_TIME')).toBeHidden();
     await expect(page.getByTestId('setting-row-STALENESS_THRESHOLD_SECONDS')).toBeVisible();
+  });
+
+  test('admin can run a connectivity check and see per-service results', async ({ page }) => {
+    await mockApis(page, { isAdmin: true });
+    await page.goto('/settings');
+
+    await expect(page.getByRole('button', { name: /test connection/i })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: /test connection/i }).click();
+
+    // One independent row per target; an unreachable service never hides the others.
+    await expect(page.getByTestId('connectivity-results')).toBeVisible();
+    for (const service of ['pmm', 'inventory', 'tasks', 'nomad']) {
+      await expect(page.getByTestId(`conn-result-${service}`)).toBeVisible();
+    }
+    await expect(page.getByTestId('conn-status-pmm')).toHaveText(/reachable/i);
+    await expect(page.getByTestId('conn-status-nomad')).toHaveText(/unreachable/i);
+    await expect(page.getByTestId('conn-result-nomad')).toContainText('Connection refused');
+  });
+
+  test('renders a distinct chip for every connectivity status', async ({ page }) => {
+    await mockApis(page, { isAdmin: true, connectivity: 'all-statuses' });
+    await page.goto('/settings');
+
+    await expect(page.getByRole('button', { name: /test connection/i })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: /test connection/i }).click();
+
+    await expect(page.getByTestId('connectivity-results')).toBeVisible();
+    for (const service of ['pmm', 'inventory', 'tasks', 'nomad']) {
+      await expect(page.getByTestId(`conn-result-${service}`)).toBeVisible();
+    }
+    // Together with the `mixed` scenario's reachable/unreachable, every status renders.
+    await expect(page.getByTestId('conn-status-pmm')).toHaveText(/auth failed/i);
+    await expect(page.getByTestId('conn-status-inventory')).toHaveText('Error');
+    await expect(page.getByTestId('conn-status-tasks')).toHaveText(/ssl error/i);
+    await expect(page.getByTestId('conn-status-nomad')).toHaveText(/timeout/i);
+  });
+
+  test('renders a version when present and omits it when null', async ({ page }) => {
+    await mockApis(page, { isAdmin: true, connectivity: 'versions' });
+    await page.goto('/settings');
+
+    await expect(page.getByRole('button', { name: /test connection/i })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: /test connection/i }).click();
+
+    await expect(page.getByTestId('conn-result-pmm')).toContainText('v2.44.0');
+    await expect(page.getByTestId('conn-result-nomad')).not.toContainText(/null|undefined/i);
+  });
+
+  test('surfaces a request-level failure as an error alert with no rows', async ({ page }) => {
+    await mockApis(page, { isAdmin: true, connectivity: 'error' });
+    await page.goto('/settings');
+
+    await expect(page.getByRole('button', { name: /test connection/i })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: /test connection/i }).click();
+
+    await expect(page.getByTestId('connectivity-error')).toBeVisible();
+    await expect(page.getByTestId('connectivity-results')).toHaveCount(0);
+  });
+
+  test('shows a pending state while the check is in flight', async ({ page }) => {
+    await mockApis(page, { isAdmin: true, connectivity: 'slow' });
+    await page.goto('/settings');
+
+    await expect(page.getByRole('button', { name: /test connection/i })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: /test connection/i }).click();
+
+    // Disabled + relabelled while in flight, recovering once the response lands.
+    await expect(page.getByRole('button', { name: /testing/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /test connection/i })).toBeEnabled();
+    await expect(page.getByTestId('connectivity-results')).toBeVisible();
+  });
+
+  test('sends a full four-target sweep in the request body', async ({ page }) => {
+    await mockApis(page, { isAdmin: true });
+    let capturedTargets: string[] | undefined;
+    // Registered after mockApis so it takes precedence for this path and can
+    // capture the outgoing body before fulfilling.
+    await page.route('**/api/sep/admin/connectivity-check/', async (route) => {
+      const body = route.request().postDataJSON() as { targets?: string[] };
+      capturedTargets = body.targets;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(MIXED_RESULTS),
+      });
+    });
+    await page.goto('/settings');
+
+    await expect(page.getByRole('button', { name: /test connection/i })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: /test connection/i }).click();
+
+    await expect(page.getByTestId('connectivity-results')).toBeVisible();
+    expect(capturedTargets).toEqual(['pmm', 'inventory', 'tasks', 'nomad']);
+  });
+
+  test('never renders a reconstructed URL or secret', async ({ page }) => {
+    await mockApis(page, { isAdmin: true });
+    await page.goto('/settings');
+
+    await expect(page.getByRole('button', { name: /test connection/i })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: /test connection/i }).click();
+
+    const results = page.getByTestId('connectivity-results');
+    await expect(results).toBeVisible();
+    // The component must render only server-provided detail — never a synthesized
+    // endpoint URL or credential.
+    await expect(results).not.toContainText(/https?:\/\//);
   });
 
   test('admin can expand a nested setting, edit + save a leaf, and reset it', async ({ page }) => {
