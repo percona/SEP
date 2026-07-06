@@ -18,9 +18,9 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
-const PLUGIN_ROUTE = '/apps/archives';
+const APP_ROUTE = '/apps/archives';
 
-const PLUGIN_DISPLAY_NAME = 'Archives';
+const APP_DISPLAY_NAME = 'Archives';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -39,7 +39,7 @@ const MOCK_USER = {
  */
 const MOCK_ARCHIVES_SCHEMA = {
   name: 'archives',
-  display_name: PLUGIN_DISPLAY_NAME,
+  display_name: APP_DISPLAY_NAME,
   capabilities: { chaining: true, alert_on_fail: true, scheduling: true, stats: true },
   forms: [
     {
@@ -142,13 +142,13 @@ async function mockArchivesApis(page: Page): Promise<void> {
 // ── Page Object ───────────────────────────────────────────────────────────────
 
 class ArchivesPage {
-  readonly heading = this.page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME });
+  readonly heading = this.page.getByRole('heading', { name: APP_DISPLAY_NAME });
   readonly newButton = this.page.getByRole('button', { name: /new .+/i });
 
   constructor(private readonly page: Page) {}
 
   async goto(): Promise<void> {
-    await this.page.goto(PLUGIN_ROUTE);
+    await this.page.goto(APP_ROUTE);
   }
 
   async openCreateForm(): Promise<void> {
@@ -171,7 +171,7 @@ class ArchivesPage {
 
 // ── Smoke tests ───────────────────────────────────────────────────────────────
 
-test.describe(`${PLUGIN_DISPLAY_NAME} plugin smoke`, () => {
+test.describe(`${APP_DISPLAY_NAME} app smoke`, () => {
   test.beforeEach(async ({ page }) => {
     await mockArchivesApis(page);
   });

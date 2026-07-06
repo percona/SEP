@@ -270,7 +270,7 @@ export const ConditionalFields: Story = {
 };
 
 /**
- * Mirrors the pt-online-schema-change (alters) plugin's Recursion section.
+ * Mirrors the pt-online-schema-change (alters) app's Recursion section.
  * "DSN Table" is only needed when Recursion Method is "DSN" — otherwise it
  * is hidden and excluded from the submission payload.
  */
@@ -313,7 +313,7 @@ export const AltersRecursionMethod: Story = {
 };
 
 /**
- * Mirrors the pt-archiver (archives) plugin's purge-conditions section.
+ * Mirrors the pt-archiver (archives) app's purge-conditions section.
  * When Swap Drop = 1 (SWAP_DROP) the WHERE clause is forbidden — pt-archiver
  * selects all rows. Any other swap_drop value requires a WHERE clause.
  */
@@ -362,7 +362,7 @@ export const ArchivesSwapDrop: Story = {
  *  - forbidden + requires on `where`: hidden when swap_drop=1, required otherwise
  *
  * This is the "combined 5-validator" shape referenced in SEP-1077 AC #4 —
- * intended as living documentation for plugin authors migrating to Wave 2.
+ * intended as living documentation for app authors migrating to Wave 2.
  */
 export const ArchivesCombined: Story = {
   args: {
