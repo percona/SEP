@@ -188,8 +188,12 @@ class TestAppDrainSettings:
 
     @pytest.mark.parametrize("seconds", [0, -1, -3600])
     def test_non_positive_ttl_rejected(self, seconds: int) -> None:
-        """A zero or negative TTL fails validation rather than pruning live rows."""
-        with pytest.raises(ValidationError, match="positive duration"):
+        """A zero or negative TTL fails validation rather than pruning live rows.
+
+        Positivity is enforced by the ``Gt`` annotation constraint so it also
+        holds for runtime overrides, hence the standard "greater than" message.
+        """
+        with pytest.raises(ValidationError, match="greater than"):
             AppDrainSettings(stale_task_ttl=timedelta(seconds=seconds))
 
 

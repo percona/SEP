@@ -38,13 +38,13 @@ from aiohttp import (
 from fastapi import status
 from nomad import Nomad
 from nomad.api.exceptions import BaseNomadException, URLNotFoundNomadException
-from pydantic import Field
 from sqlalchemy_celery_beat.models import Period
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.celery.models import IntervalSchedule
 from app.core.exceptions import HTTPBadRequestException
 from app.core.requests import BaseRemoteAPI
+from app.core.settings_override.registry import hot_field, ReloadClassification
 from app.core.utils import (
     async_run,
     b64decode_str,
@@ -53,6 +53,8 @@ from app.core.utils import (
     sort_dict,
     utc_now,
 )
+from app.core.utils.fields import RelativeFilePathField
+from app.core.utils.pydantic import field_with_metadata
 from app.tasks import config as tasks_config
 from app.tasks.anonymizer import anonymize_text
 from app.tasks.anonymizer.entities import PIIEntity
@@ -292,12 +294,27 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :type check_cert_expiry_interval: IntervalSchedule | None
     """
 
-    secure: bool = False
-    timeout: int = 10
-    minify_payload: bool = True
-    log_socket_read_timeout: int = 10
-    cert_expiry_warn_days: int = Field(default=7, ge=1)
-    check_cert_expiry_interval: IntervalSchedule | None = Field(
+    # TLS leaves are inherited from ``BaseRemoteAPI`` (frozen); redeclared here
+    # solely to attach the display-only ``advanced`` marker per leaf. ``endpoint``
+    # is intentionally left inherited and unmarked. ``frozen=True`` is preserved so
+    # the executor's identity hash is unchanged.
+    verify_ssl: bool = hot_field(default=True, advanced=True, frozen=True)
+    ssl_cafile: RelativeFilePathField | None = hot_field(
+        None, advanced=True, frozen=True
+    )
+    ssl_keyfile: RelativeFilePathField | None = hot_field(
+        None, advanced=True, frozen=True
+    )
+    ssl_certfile: RelativeFilePathField | None = hot_field(
+        None, advanced=True, frozen=True
+    )
+    secure: bool = hot_field(default=False, advanced=True)
+    timeout: int = hot_field(10, advanced=True)
+    minify_payload: bool = hot_field(default=True, advanced=True)
+    log_socket_read_timeout: int = hot_field(10, advanced=True)
+    cert_expiry_warn_days: int = hot_field(7, ge=1, advanced=True)
+    check_cert_expiry_interval: IntervalSchedule | None = field_with_metadata(
+        metadata={"reload": ReloadClassification.HOT, "advanced": True},
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS),
     )
 
