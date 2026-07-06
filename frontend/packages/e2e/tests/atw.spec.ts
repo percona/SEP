@@ -18,9 +18,9 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
-const PLUGIN_ROUTE = '/atw';
+const APP_ROUTE = '/atw';
 
-const PLUGIN_DISPLAY_NAME = 'Collect Diagnostic Data';
+const APP_DISPLAY_NAME = 'Collect Diagnostic Data';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -53,9 +53,9 @@ const MOCK_ATW_LIST = [
 ];
 
 /** Served at ``GET /api/apps/atw/schema`` (discovery; page uses listing + per-snippet schema). */
-const MOCK_ATW_PLUGIN_SCHEMA = {
+const MOCK_ATW_APP_SCHEMA = {
   name: 'atw',
-  display_name: PLUGIN_DISPLAY_NAME,
+  display_name: APP_DISPLAY_NAME,
   forms: [],
   list_view: { columns: [], default_sort: 'category_root' },
 };
@@ -174,7 +174,7 @@ async function mockAtwApis(page: Page, options: AtwApiMockOptions = {}): Promise
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_ATW_PLUGIN_SCHEMA),
+        body: JSON.stringify(MOCK_ATW_APP_SCHEMA),
       });
     }
 
@@ -197,7 +197,7 @@ function isBenignConsoleError(msg: string): boolean {
 }
 
 async function selectAtwSnippetAndOpenForm(page: Page): Promise<void> {
-  await expect(page.getByRole('heading', { name: PLUGIN_DISPLAY_NAME })).toBeVisible({
+  await expect(page.getByRole('heading', { name: APP_DISPLAY_NAME })).toBeVisible({
     timeout: 30_000,
   });
 
@@ -230,7 +230,7 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
     });
 
     await mockAtwApis(page);
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     await selectAtwSnippetAndOpenForm(page);
 
@@ -248,7 +248,7 @@ test.describe('Collect Diagnostic Data (ATW)', () => {
       executeStatus: 400,
       executeJson: JSON.stringify({ detail: 'Execute failed (e2e)' }),
     });
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     await selectAtwSnippetAndOpenForm(page);
 

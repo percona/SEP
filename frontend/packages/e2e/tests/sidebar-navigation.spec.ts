@@ -18,7 +18,7 @@
 /**
  * Sidebar wiring regression net (SEP-1270).
  *
- * The per-plugin specs (mysql-backups, archives, …) verify each plugin page in
+ * The per-app specs (mysql-backups, archives, …) verify each app page in
  * isolation by navigating directly to its URL. They do NOT exercise the sidebar
  * itself, which is how two regressions slipped through review: the MySQL entry
  * pointed at /backups/mysql (PlaceholderPage) and the Archive entry at /archive
@@ -26,7 +26,7 @@
  *
  * This spec clicks every non-placeholder sidebar entry the way a user would and
  * asserts (1) the resulting URL, (2) a positive sentinel rendered by the target
- * plugin, and only then (3) that neither the "under construction" PlaceholderPage
+ * app, and only then (3) that neither the "under construction" PlaceholderPage
  * nor the 404 NotFoundPage is showing. The positive sentinel is essential: pages
  * are lazy()/Suspense-loaded, so the URL flips synchronously on click while the
  * chunk is still resolving — asserting placeholder/404 *absence* against that
@@ -57,12 +57,12 @@ const MOCK_USER = {
   isAdmin: false,
 };
 
-// Heading served for schema-driven plugins whose display name we don't assert
+// Heading served for schema-driven apps whose display name we don't assert
 // individually (the URL already identifies them). Schema-driven pages render
 // `schema.display_name` as their h4, so this is a deterministic sentinel.
-const GENERIC_PLUGIN_HEADING = 'SEP Plugin';
+const GENERIC_APP_HEADING = 'SEP App';
 
-// Plugins whose display-name heading we assert explicitly (keyed by the
+// Apps whose display-name heading we assert explicitly (keyed by the
 // `<name>` in /api/apps/<name>/schema). These are the schema-driven entries
 // this ticket is about — including the two that regressed.
 const SCHEMA_DISPLAY_NAMES: Record<string, string> = {
@@ -105,7 +105,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
         contentType: 'application/json',
         body: JSON.stringify({
           name,
-          display_name: SCHEMA_DISPLAY_NAMES[name] ?? GENERIC_PLUGIN_HEADING,
+          display_name: SCHEMA_DISPLAY_NAMES[name] ?? GENERIC_APP_HEADING,
           capabilities: { chaining: false, alert_on_fail: false, scheduling: false, stats: false },
           forms: [],
           list_view: { columns: [] },
@@ -133,7 +133,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       return fulfillEnabledApps(route);
     }
 
-    // Default: empty success for plugin task lists and anything else
+    // Default: empty success for app task lists and anything else
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -146,7 +146,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
 // One entry per non-placeholder leaf in shell/src/appNavConfig.ts.
 // `label` must match ``display_name`` from ``GET /api/apps/`` (see mockEnabledApps).
 // `group`      — collapsible parent that must be expanded before the child shows.
-// `urlPattern` — matched against the post-navigation URL (plugins may redirect
+// `urlPattern` — matched against the post-navigation URL (apps may redirect
 //                to a default sub-route, e.g. /backups/mongodb → /backups/mongodb/backups).
 // `sentinel`   — positive locator the target page renders; asserted before the
 //                placeholder/404 negative checks so we never assert against a
@@ -164,9 +164,9 @@ const TARGETS: SidebarTarget[] = [
   {
     label: 'Inventory',
     urlPattern: /\/inventory(\/|$)/,
-    sentinel: heading(GENERIC_PLUGIN_HEADING),
+    sentinel: heading(GENERIC_APP_HEADING),
   },
-  { label: 'Task Manager', urlPattern: /\/tasks(\/|$)/, sentinel: heading(GENERIC_PLUGIN_HEADING) },
+  { label: 'Task Manager', urlPattern: /\/tasks(\/|$)/, sentinel: heading(GENERIC_APP_HEADING) },
   {
     label: 'Snippet Manager',
     urlPattern: /\/snippets(\/|$)/,
@@ -196,7 +196,7 @@ const TARGETS: SidebarTarget[] = [
     label: 'MongoDB Backups',
     group: 'Backups',
     urlPattern: /\/backups\/mongodb(\/|$)/,
-    sentinel: heading(GENERIC_PLUGIN_HEADING),
+    sentinel: heading(GENERIC_APP_HEADING),
   },
   {
     label: 'PostgreSQL Backups',
@@ -209,7 +209,7 @@ const TARGETS: SidebarTarget[] = [
     label: 'Dipper Data Collection',
     group: 'Diagnostics',
     urlPattern: /\/dipper(\/|$)/,
-    sentinel: heading(GENERIC_PLUGIN_HEADING),
+    sentinel: heading(GENERIC_APP_HEADING),
   },
 ];
 
@@ -231,7 +231,7 @@ test.describe('sidebar navigation wiring', () => {
   });
 
   for (const target of TARGETS) {
-    test(`sidebar → ${target.group ? `${target.group} / ` : ''}${target.label} mounts its plugin`, async ({
+    test(`sidebar → ${target.group ? `${target.group} / ` : ''}${target.label} mounts its app`, async ({
       page,
     }) => {
       // Expand the parent group so its children render (Collapse uses unmountOnExit).
@@ -244,7 +244,7 @@ test.describe('sidebar navigation wiring', () => {
 
       await page.getByRole('button', { name: target.label }).click();
 
-      // URL resolves to the target plugin's route (not a placeholder / 404 path).
+      // URL resolves to the target app's route (not a placeholder / 404 path).
       await expect(page).toHaveURL(target.urlPattern, { timeout: LAZY_TIMEOUT });
 
       // Positive sentinel: wait until the target page has actually mounted. This
@@ -265,7 +265,7 @@ test.describe('sidebar navigation wiring', () => {
     // Wait for the lazy Inventory page to actually mount before navigating away.
     // The URL flips synchronously on click while the chunk is still resolving, so
     // without this sentinel the Dashboard click can be swallowed mid-load.
-    await expect(heading(GENERIC_PLUGIN_HEADING)(page)).toBeVisible({ timeout: LAZY_TIMEOUT });
+    await expect(heading(GENERIC_APP_HEADING)(page)).toBeVisible({ timeout: LAZY_TIMEOUT });
 
     await page.getByRole('button', { name: 'Dashboard' }).click();
     await expect(page).toHaveURL(/\/$/, { timeout: LAZY_TIMEOUT });

@@ -1,0 +1,23 @@
+{
+  "name": "@sep/backup-mongo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sep/api": "workspace:*",
+    "@sep/framework": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "typescript": "~6.0.3"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-router-dom": "^7.0.0"
+  }
+}
