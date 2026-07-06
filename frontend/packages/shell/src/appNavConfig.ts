@@ -57,7 +57,7 @@ export interface AppRouteMeta {
   reactRoute: string;
   /** ``react-router`` path literal relative to ``MainLayout`` (e.g. ``apps/archives/*``). */
   routePattern: string;
-  /** ``SchemaDrivenPlugin`` list/detail prefix when not ``/apps/{appKey}``. */
+  /** ``SchemaDrivenApp`` list/detail prefix when not ``/apps/{appKey}``. */
   routeBase?: string;
 }
 

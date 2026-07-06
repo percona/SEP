@@ -735,6 +735,12 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     :type task: Task
     :param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.
     :type sync_in_progress_started_at: UTCDatetime | None
+    :param log_allocation_epoch: Task-level high-water mark of the current Nomad
+        allocation ``CreateIndex``, stamped whenever the log frontier is reset. The
+        log writer consults it on the first-insert path (before any per-stream
+        ``TaskHistoryLogState`` row exists) to discard writes from a superseded
+        allocation. ``0`` is the legacy/unknown sentinel that is trusted
+        unconditionally.
     :param executed_by: The user ID of the user who executed the task.
     :type executed_by: str | None
     """
@@ -752,6 +758,13 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     sync_in_progress_started_at: UTCDatetime | None = SQLField(
         default=None,
         sa_type=DateTimeWithTimezone,
+    )
+    log_allocation_epoch: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
     )
 
     @property

@@ -35,6 +35,7 @@ from app.core.settings_override.lifecycle import (
     settings_override_refresher,
 )
 from app.core.settings_override.models import SettingClassEnum
+from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.connectivity.routes import router as connectivity_router
 from app.tasks.db import get_async_session_maker
@@ -108,9 +109,15 @@ async def tasks_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # too would, in the combined ``app.main:app`` process, have both
             # refreshers publish into it from their separate databases and clobber
             # each other every cycle.
+            # ANONYMIZER_SETTINGS is safe to wire (unlike ALERT above): its proxy
+            # is tasks-track-DB-owned, so no cross-refresher clobber. Without it
+            # the API process serves stale defaults until an in-process PATCH.
             {
                 SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
                     tasks_settings, TasksSettings
+                ),
+                SettingClassEnum.ANONYMIZER_SETTINGS: ProxyEntry(
+                    anonymizer_settings, AnonymizerSettings
                 ),
             },
             settings.SETTINGS_OVERRIDE_REFRESH_INTERVAL,

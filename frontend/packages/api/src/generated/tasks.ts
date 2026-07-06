@@ -1049,9 +1049,8 @@ export interface components {
      *
      *     The wired classes are ``SEPSettings``, ``TasksSettings``,
      *     ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
-     *     ``AlertSettings``, ``AlertsSettings`` and ``AnonymizerSettings``.
-     *     ``InventorySettings`` is intentionally NOT here -- wrapping it is deferred
-     *     to a follow-up ticket.
+     *     ``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and
+     *     ``InventorySettings``.
      *
      *     To wire a new settings class:
      *
@@ -1075,7 +1074,8 @@ export interface components {
       | 'Settings'
       | 'AlertSettings'
       | 'AnonymizerSettings'
-      | 'AlertsSettings';
+      | 'AlertsSettings'
+      | 'InventorySettings';
     /**
      * SettingClassGroup
      * @description One settings-class group in the LIST response.
@@ -1297,6 +1297,12 @@ export interface components {
      *     :type task: Task
      *     :param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.
      *     :type sync_in_progress_started_at: UTCDatetime | None
+     *     :param log_allocation_epoch: Task-level high-water mark of the current Nomad
+     *         allocation ``CreateIndex``, stamped whenever the log frontier is reset. The
+     *         log writer consults it on the first-insert path (before any per-stream
+     *         ``TaskHistoryLogState`` row exists) to discard writes from a superseded
+     *         allocation. ``0`` is the legacy/unknown sentinel that is trusted
+     *         unconditionally.
      *     :param executed_by: The user ID of the user who executed the task.
      *     :type executed_by: str | None
      */
@@ -1315,6 +1321,8 @@ export interface components {
       finished_at?: string | null;
       /** Id */
       id: number | null;
+      /** Log Allocation Epoch */
+      log_allocation_epoch: number;
       /** Started At */
       started_at?: string | null;
       /** @default pending */

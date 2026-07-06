@@ -47,7 +47,7 @@ const MOCK_SCHEMA = {
   ],
 };
 
-const MOCK_PLUGIN_TASKS = [{ name: TASK_NAME }];
+const MOCK_APP_TASKS = [{ name: TASK_NAME }];
 
 const MOCK_AVAILABLE_SYNCERS = [
   { name: 'myapp.SyncerA', display_name: 'Syncer A' },
@@ -89,7 +89,7 @@ async function mockInventoryScheduleApis(page: Page) {
       });
     }
 
-    // Plugin schema
+    // App schema
     if (pathname.endsWith('/apps/inventory/schema')) {
       return route.fulfill({
         status: 200,
@@ -98,12 +98,12 @@ async function mockInventoryScheduleApis(page: Page) {
       });
     }
 
-    // Plugin tasks list (useAppTasks)
+    // App tasks list (useAppTasks)
     if (pathname.endsWith('/apps/inventory/') && method === 'GET') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_PLUGIN_TASKS),
+        body: JSON.stringify(MOCK_APP_TASKS),
       });
     }
 

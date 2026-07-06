@@ -138,7 +138,7 @@ export function useTaskHistoryByName(
 /**
  * List task history for one or more tasks, merged newest-first.
  *
- * Used by plugins whose detail page represents a task group (parent plus derived
+ * Used by apps whose detail page represents a task group (parent plus derived
  * siblings) while executions are recorded on individual task names. Requests are
  * routed through ``GET /api/sep/task-history/`` so the browser never calls the
  * Tasks sub-app directly.
@@ -197,10 +197,10 @@ export function useStopTaskHistory() {
 /**
  * Dispatch a saved task for immediate execution.
  *
- * The request is routed through the SEP-level plugin gateway
+ * The request is routed through the SEP-level app gateway
  * (``POST /api/apps/{pluginName}/{taskName}/execute``) — the FE must not
  * call ``/api/tasks/*`` directly, as the Tasks sub-app is not exposed to the
- * browser in a production deployment. The plugin-task detail query is also
+ * browser in a production deployment. The app-task detail query is also
  * refreshed so the status chip on the detail page updates immediately after
  * execution.
  */

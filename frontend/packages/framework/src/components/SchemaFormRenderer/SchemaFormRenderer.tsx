@@ -194,7 +194,7 @@ export interface SchemaFormRendererProps {
    * previously applied errors are cleared before the new set is applied.
    */
   fieldErrors?: FieldValidationError[];
-  /** Plugin capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
+  /** App capabilities. When `alert_on_fail` is true, renders <AlertOnFailField> below the sections. */
   capabilities?: AppCapabilities;
   /**
    * Optional per-field widget override. Applied after the conditional gate

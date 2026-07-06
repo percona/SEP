@@ -20,7 +20,7 @@ import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const PLUGIN_ROUTE = '/inventory';
+const APP_ROUTE = '/inventory';
 
 const NODE_ID = 1;
 const SERVICE_ID = 10;
@@ -81,7 +81,7 @@ const MOCK_NODE_DETAIL = { ...MOCK_NODE, services: [MOCK_SERVICE] };
 /** Service detail — includes embedded schemas list for drill-down. */
 const MOCK_SERVICE_DETAIL = { ...MOCK_SERVICE, schemas: [MOCK_SCHEMA_ROW] };
 
-// ── Plugin schema ─────────────────────────────────────────────────────────────
+// ── App schema ─────────────────────────────────────────────────────────────
 //
 // Mirrors app/sep/plugins/inventory/schema.py.  All four entities include an
 // _actions column so that allowListEntityDelete wires up the delete button.
@@ -326,34 +326,34 @@ function isBenignConsoleError(msg: string): boolean {
 
 // ── Page object ───────────────────────────────────────────────────────────────
 
-class InventoryPluginPage {
+class InventoryAppPage {
   readonly heading = (name: string) => this.page.getByRole('heading', { name });
   readonly cell = (name: string) => this.page.getByRole('cell', { name });
 
   constructor(private readonly page: Page) {}
 
   async goto() {
-    await this.page.goto(PLUGIN_ROUTE);
+    await this.page.goto(APP_ROUTE);
   }
 
   async gotoNodeDetail(nodeId: number) {
-    await this.page.goto(`${PLUGIN_ROUTE}/nodes/${nodeId}`);
+    await this.page.goto(`${APP_ROUTE}/nodes/${nodeId}`);
   }
 
   async gotoServiceDetail(serviceId: number) {
-    await this.page.goto(`${PLUGIN_ROUTE}/services/${serviceId}`);
+    await this.page.goto(`${APP_ROUTE}/services/${serviceId}`);
   }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-test.describe('Inventory plugin smoke', () => {
+test.describe('Inventory app smoke', () => {
   test.beforeEach(async ({ page }) => {
     await mockInventoryApis(page);
   });
 
   test('list page mounts and shows fixture node row', async ({ page }) => {
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.goto();
 
     await expect(po.heading('Nodes')).toBeVisible({ timeout: 10_000 });
@@ -361,7 +361,7 @@ test.describe('Inventory plugin smoke', () => {
   });
 
   test('node detail shows embedded services list with fixture row', async ({ page }) => {
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.gotoNodeDetail(NODE_ID);
 
     await expect(page.getByText('Services on this node')).toBeVisible({ timeout: 10_000 });
@@ -378,7 +378,7 @@ test.describe('Inventory plugin smoke', () => {
       }
     });
 
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.gotoNodeDetail(NODE_ID);
 
     await expect(page.getByText('Services on this node')).toBeVisible({ timeout: 10_000 });
@@ -408,7 +408,7 @@ test.describe('Inventory plugin smoke', () => {
       }
     });
 
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.goto();
 
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
@@ -435,7 +435,7 @@ test.describe('Inventory plugin smoke', () => {
       }
     });
 
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.goto();
 
     await expect(po.cell('node-1')).toBeVisible({ timeout: 10_000 });
@@ -455,7 +455,7 @@ test.describe('Inventory plugin smoke', () => {
   });
 
   test('flat service detail route renders service name in breadcrumb', async ({ page }) => {
-    const po = new InventoryPluginPage(page);
+    const po = new InventoryAppPage(page);
     await po.gotoServiceDetail(SERVICE_ID);
 
     // Scoped to the breadcrumb nav so the assertion targets the crumb, not a table cell
