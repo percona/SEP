@@ -468,7 +468,7 @@ test.describe('MongoDB backup_mongo app smoke', () => {
     });
 
     await page.getByRole('textbox', { name: /task name/i }).fill(NEW_BACKUP_TASK_NAME);
-    await page.getByRole('textbox', { name: /executor host/i }).fill(NEW_BACKUP_HOSTNAME);
+    await page.getByRole('textbox', { name: /execution host/i }).fill(NEW_BACKUP_HOSTNAME);
     await page.getByRole('button', { name: /create mongodb backups/i }).click();
 
     await expect(page).toHaveURL(/\/backups\/mongodb\/backups\/?$/);
@@ -522,7 +522,7 @@ test.describe('MongoDB backup_mongo app smoke', () => {
     });
 
     await page.getByRole('textbox', { name: /task name/i }).fill(NEW_RESTORE_TASK_NAME);
-    await page.getByRole('textbox', { name: /executor host/i }).fill(NEW_RESTORE_HOSTNAME);
+    await page.getByRole('textbox', { name: /execution host/i }).fill(NEW_RESTORE_HOSTNAME);
     await page.getByRole('textbox', { name: /backup source/i }).fill(NEW_RESTORE_BACKUP_SOURCE);
     await page.getByRole('radio', { name: 'Logical' }).check();
     await page.getByRole('button', { name: /create mongodb restores/i }).click();

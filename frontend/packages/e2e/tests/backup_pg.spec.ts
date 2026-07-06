@@ -287,7 +287,7 @@ test.describe('PostgreSQL backup_pg app smoke', () => {
     });
 
     await page.getByRole('textbox', { name: /task name/i }).fill(NEW_TASK_NAME);
-    await page.getByRole('textbox', { name: /executor host/i }).fill(NEW_TASK_HOSTNAME);
+    await page.getByRole('textbox', { name: /execution host/i }).fill(NEW_TASK_HOSTNAME);
     await page.getByRole('button', { name: /create postgresql backups/i }).click();
 
     await expect(page).toHaveURL(/\/backups\/postgresql\/?$/);
