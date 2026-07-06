@@ -127,10 +127,13 @@ export {
   ADMIN_APPS_QUERY_KEY,
   ADMIN_APP_MUTATION_KEY,
   useConfigExport,
+  useConnectivityCheck,
+  CONNECTIVITY_CHECK_PATH,
   useAppInfo,
   APP_INFO_QUERY_KEY,
 } from './hooks';
 export type { AlertConfig, DashboardStats, EnabledApp, AppInfo } from './hooks';
+export type { ConnectivityCheckRequest, ConnectivityResult, ConnectivityStatus } from './hooks';
 export type {
   AdminApp,
   AppStateResult,
