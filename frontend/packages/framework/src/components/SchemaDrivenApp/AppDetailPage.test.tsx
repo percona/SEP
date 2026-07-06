@@ -45,7 +45,7 @@ const mockUseTaskStats = vi.fn<(...args: unknown[]) => MockStatsResult>(() => ({
 vi.mock('@sep/api', () => ({
   useAppTask: (...args: unknown[]) => mockUseAppTask(...args),
   // Consumed transitively by the generic ScheduleSummary (gated on
-  // capabilities.scheduling) via useScheduledTasksForPlugin. No tasks ->
+  // capabilities.scheduling) via useScheduledTasksForApp. No tasks ->
   // the summary renders its "Not scheduled" state, leaving the execute/delete
   // flows under test untouched.
   useAppTasks: () => ({

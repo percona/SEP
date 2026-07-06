@@ -18,26 +18,26 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, type AppSchema } from '@sep/api';
 
-const SNIPPET_PLUGIN_SCHEMA_STALE_MS = 5 * 60 * 1000;
+const SNIPPET_APP_SCHEMA_STALE_MS = 5 * 60 * 1000;
 
 /**
- * Load a snippets-plugin schema from an API path relative to `/api`
+ * Load a snippets-app schema from an API path relative to `/api`
  * (e.g. `/apps/snippets/my-script.sh/schema`, including encoded slashes).
  *
  * Shared by the snippets detail page (path derived from filename) and flows
  * like ATW that compose the same URLs client-side.
  */
-export function useSnippetPluginSchema(apiPath: string | null | undefined) {
+export function useSnippetAppSchema(apiPath: string | null | undefined) {
   return useQuery<AppSchema>({
-    queryKey: ['plugins', 'snippets', 'schema', apiPath ?? ''],
+    queryKey: ['apps', 'snippets', 'schema', apiPath ?? ''],
     queryFn: async () => {
       if (!apiPath) {
-        throw new Error('Missing snippets plugin schema path');
+        throw new Error('Missing snippets app schema path');
       }
       const { data } = await apiClient.get<AppSchema>(apiPath);
       return data;
     },
     enabled: Boolean(apiPath),
-    staleTime: SNIPPET_PLUGIN_SCHEMA_STALE_MS,
+    staleTime: SNIPPET_APP_SCHEMA_STALE_MS,
   });
 }

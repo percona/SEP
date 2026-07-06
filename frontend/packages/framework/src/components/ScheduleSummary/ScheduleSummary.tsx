@@ -28,7 +28,7 @@ import {
   formatAbsoluteTime,
   formatRelativeTime,
   selectSchedule,
-  useScheduledTasksForPlugin,
+  useScheduledTasksForApp,
 } from '../ScheduledTasksPanel';
 
 export interface ScheduleSummaryProps {
@@ -58,7 +58,7 @@ export function ScheduleSummary({
   scheduleHref,
   disablePolling = false,
 }: ScheduleSummaryProps) {
-  const { periodicTasks, isLoading } = useScheduledTasksForPlugin(pluginName, { disablePolling });
+  const { periodicTasks, isLoading } = useScheduledTasksForApp(pluginName, { disablePolling });
   const task = selectSchedule(periodicTasks.filter((p) => p.task === taskName));
 
   return (

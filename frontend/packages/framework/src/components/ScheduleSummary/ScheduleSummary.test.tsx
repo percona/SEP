@@ -19,8 +19,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
-const { useScheduledTasksForPluginMock } = vi.hoisted(() => ({
-  useScheduledTasksForPluginMock: vi.fn(),
+const { useScheduledTasksForAppMock } = vi.hoisted(() => ({
+  useScheduledTasksForAppMock: vi.fn(),
 }));
 
 // Mock only the schedule hook; pull the real period/time helpers from their
@@ -30,7 +30,7 @@ const { useScheduledTasksForPluginMock } = vi.hoisted(() => ({
 vi.mock('../ScheduledTasksPanel', async () => {
   const periods = await import('../ScheduledTasksPanel/periods');
   return {
-    useScheduledTasksForPlugin: (...args: unknown[]) => useScheduledTasksForPluginMock(...args),
+    useScheduledTasksForApp: (...args: unknown[]) => useScheduledTasksForAppMock(...args),
     describePeriod: periods.describePeriod,
     formatRelativeTime: periods.formatRelativeTime,
     formatAbsoluteTime: periods.formatAbsoluteTime,
@@ -64,7 +64,7 @@ function makePeriodic(overrides: Partial<PeriodicTaskResponse> = {}): PeriodicTa
 }
 
 function setup(periodicTasks: PeriodicTaskResponse[], isLoading = false) {
-  useScheduledTasksForPluginMock.mockReturnValue({ periodicTasks, isLoading });
+  useScheduledTasksForAppMock.mockReturnValue({ periodicTasks, isLoading });
 }
 
 function renderSummary(taskName = 'plugin-task') {
@@ -83,7 +83,7 @@ function renderSummary(taskName = 'plugin-task') {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
-  useScheduledTasksForPluginMock.mockReset();
+  useScheduledTasksForAppMock.mockReset();
 });
 
 afterEach(() => {

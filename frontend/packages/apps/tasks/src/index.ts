@@ -16,4 +16,4 @@
  */
 
 export { TasksApp } from './TasksApp';
-export { TASKS_PLUGIN_NAME, TASKS_PLUGINS_API_BASE } from './types';
+export { TASKS_APP_NAME, TASKS_APPS_API_BASE } from './types';

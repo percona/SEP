@@ -19,12 +19,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, ApiError, type AppSchema } from '@sep/api';
 import {
   downloadBlob,
-  SNIPPETS_PLUGINS_API_BASE,
-  snippetPluginApprovalPath,
-  snippetPluginDownloadPath,
-  snippetPluginExecutePath,
-  snippetPluginHistoryPath,
-  snippetPluginSchemaPath,
+  SNIPPETS_APPS_API_BASE,
+  snippetAppApprovalPath,
+  snippetAppDownloadPath,
+  snippetAppExecutePath,
+  snippetAppHistoryPath,
+  snippetAppSchemaPath,
   type PaginatedTaskHistory,
 } from '@sep/framework';
 import type {
@@ -38,7 +38,7 @@ import type {
   SnippetsCapabilitiesResponse,
 } from './types';
 
-const SNIPPETS_BASE = SNIPPETS_PLUGINS_API_BASE;
+const SNIPPETS_BASE = SNIPPETS_APPS_API_BASE;
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
@@ -98,7 +98,7 @@ export function useSnippetSchema(filename: string | undefined, executionOnly = f
         throw new Error('Missing snippet filename');
       }
       const { data } = await apiClient.get<AppSchema>(
-        snippetPluginSchemaPath(filename),
+        snippetAppSchemaPath(filename),
         executionOnly ? { params: { execution_only: true } } : undefined,
       );
       return data;
@@ -121,9 +121,7 @@ export function useSnippetHistory(filename: string | undefined) {
       if (!filename) {
         throw new Error('Missing snippet filename');
       }
-      const { data } = await apiClient.get<PaginatedTaskHistory>(
-        snippetPluginHistoryPath(filename),
-      );
+      const { data } = await apiClient.get<PaginatedTaskHistory>(snippetAppHistoryPath(filename));
       return data;
     },
     enabled: Boolean(filename),
@@ -143,7 +141,7 @@ export function useSnippetDownload(filename: string | undefined) {
       if (!filename) {
         throw new Error('Snippet filename is required for download.');
       }
-      const { data } = await apiClient.get<Blob>(snippetPluginDownloadPath(filename), {
+      const { data } = await apiClient.get<Blob>(snippetAppDownloadPath(filename), {
         responseType: 'blob',
       });
       downloadBlob(data, filename);
@@ -166,7 +164,7 @@ export function useSnippetExecution(filename: string | undefined) {
         throw new Error('Snippet filename is required for execution.');
       }
       const { data } = await apiClient.post<SnippetExecutionResponse>(
-        snippetPluginExecutePath(filename),
+        snippetAppExecutePath(filename),
         body,
       );
       return data;
@@ -190,7 +188,7 @@ export function useApproveSnippet(filename: string) {
   const queryClient = useQueryClient();
   return useMutation<SnippetResponse, Error, void, { previous?: SnippetResponse[] }>({
     mutationFn: async () => {
-      const { data } = await apiClient.put<SnippetResponse>(snippetPluginApprovalPath(filename));
+      const { data } = await apiClient.put<SnippetResponse>(snippetAppApprovalPath(filename));
       return data;
     },
     onMutate: async () => {
@@ -224,7 +222,7 @@ export function useRemoveSnippetApproval(filename: string) {
   const queryClient = useQueryClient();
   return useMutation<void, Error, void, { previous?: SnippetResponse[] }>({
     mutationFn: async () => {
-      await apiClient.delete(snippetPluginApprovalPath(filename));
+      await apiClient.delete(snippetAppApprovalPath(filename));
     },
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['snippets', 'list'] });

@@ -86,7 +86,7 @@ export type { ScheduleCellProps } from './components/ScheduleCell';
 export { ScheduleSummary } from './components/ScheduleSummary';
 export type { ScheduleSummaryProps } from './components/ScheduleSummary';
 export {
-  useScheduledTasksForPlugin,
+  useScheduledTasksForApp,
   useCreateScheduledTask,
   useUpdateScheduledTask,
   useDeleteScheduledTask,
@@ -123,8 +123,8 @@ export {
   useTaskHistoryByName,
   useTaskHistoryByNames,
   useStopTaskHistory,
-  useSnippetPluginExecution,
-  useSnippetPluginSchema,
+  useSnippetAppExecution,
+  useSnippetAppSchema,
   isRunningStatus,
   RUNNING_STATUSES,
   useTaskHistoryFiles,
@@ -143,7 +143,7 @@ export type {
   FileMetadata,
   TaskHistoryFilesMap,
   TaskFileDownloadParams,
-  UseSnippetPluginExecutionOptions,
+  UseSnippetAppExecutionOptions,
 } from './hooks';
 
 export {
@@ -152,19 +152,19 @@ export {
 } from './utils/snippetFormSubmission';
 export type { SnippetExecutionFormPayload } from './utils/snippetFormSubmission';
 
-export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/snippetPlugin';
+export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/snippetApp';
 
 export { resolvePath } from './utils/resolvePath';
 
 export { downloadBlob } from './utils/downloadBlob';
 
 export {
-  SNIPPETS_PLUGINS_API_BASE,
-  SNIPPET_PLUGIN_PER_SNIPPET_BASE,
-  snippetPluginApprovalPath,
-  snippetPluginDownloadPath,
-  snippetPluginExecutePath,
-  snippetPluginHistoryPath,
-  snippetPluginPreviewPath,
-  snippetPluginSchemaPath,
-} from './snippetPluginPaths';
+  SNIPPETS_APPS_API_BASE,
+  SNIPPET_APP_PER_SNIPPET_BASE,
+  snippetAppApprovalPath,
+  snippetAppDownloadPath,
+  snippetAppExecutePath,
+  snippetAppHistoryPath,
+  snippetAppPreviewPath,
+  snippetAppSchemaPath,
+} from './snippetAppPaths';

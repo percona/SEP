@@ -24,7 +24,7 @@ import {
   formatAbsoluteTime,
   formatRelativeTime,
   selectSchedule,
-  useScheduledTasksForPlugin,
+  useScheduledTasksForApp,
 } from '@sep/framework';
 
 export interface InventoryScheduleSummaryProps {
@@ -54,7 +54,7 @@ export function InventoryScheduleSummary({
   schedulingEnabled,
   disablePolling = false,
 }: InventoryScheduleSummaryProps) {
-  const { periodicTasks, isLoading, isError } = useScheduledTasksForPlugin('inventory', {
+  const { periodicTasks, isLoading, isError } = useScheduledTasksForApp('inventory', {
     disablePolling,
   });
 

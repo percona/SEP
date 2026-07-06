@@ -17,47 +17,47 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  SNIPPET_PLUGIN_PER_SNIPPET_BASE,
-  snippetPluginApprovalPath,
-  snippetPluginDownloadPath,
-  snippetPluginExecutePath,
-  snippetPluginHistoryPath,
-  snippetPluginPreviewPath,
-  snippetPluginSchemaPath,
-} from './snippetPluginPaths';
+  SNIPPET_APP_PER_SNIPPET_BASE,
+  snippetAppApprovalPath,
+  snippetAppDownloadPath,
+  snippetAppExecutePath,
+  snippetAppHistoryPath,
+  snippetAppPreviewPath,
+  snippetAppSchemaPath,
+} from './snippetAppPaths';
 
-describe('snippetPluginPaths', () => {
+describe('snippetAppPaths', () => {
   it('exposes the /snippet sub-prefix for per-snippet operations', () => {
-    expect(SNIPPET_PLUGIN_PER_SNIPPET_BASE).toBe('/apps/snippets/snippet');
+    expect(SNIPPET_APP_PER_SNIPPET_BASE).toBe('/apps/snippets/snippet');
   });
 
   it('carries the filename in the snippet_filename query parameter', () => {
-    expect(snippetPluginSchemaPath('hello.sh')).toBe(
+    expect(snippetAppSchemaPath('hello.sh')).toBe(
       '/apps/snippets/snippet/schema?snippet_filename=hello.sh',
     );
-    expect(snippetPluginExecutePath('hello.sh')).toBe(
+    expect(snippetAppExecutePath('hello.sh')).toBe(
       '/apps/snippets/snippet/execute?snippet_filename=hello.sh',
     );
-    expect(snippetPluginPreviewPath('hello.sh')).toBe(
+    expect(snippetAppPreviewPath('hello.sh')).toBe(
       '/apps/snippets/snippet/preview?snippet_filename=hello.sh',
     );
-    expect(snippetPluginDownloadPath('hello.sh')).toBe(
+    expect(snippetAppDownloadPath('hello.sh')).toBe(
       '/apps/snippets/snippet/download?snippet_filename=hello.sh',
     );
-    expect(snippetPluginHistoryPath('hello.sh')).toBe(
+    expect(snippetAppHistoryPath('hello.sh')).toBe(
       '/apps/snippets/snippet/history?snippet_filename=hello.sh',
     );
-    expect(snippetPluginApprovalPath('hello.sh')).toBe(
+    expect(snippetAppApprovalPath('hello.sh')).toBe(
       '/apps/snippets/snippet/approval?snippet_filename=hello.sh',
     );
   });
 
   it('escapes nested filenames using URLSearchParams encoding', () => {
     const filename = 'diag/slow-query.sh';
-    expect(snippetPluginSchemaPath(filename)).toBe(
+    expect(snippetAppSchemaPath(filename)).toBe(
       '/apps/snippets/snippet/schema?snippet_filename=diag%2Fslow-query.sh',
     );
-    expect(snippetPluginExecutePath(filename)).toBe(
+    expect(snippetAppExecutePath(filename)).toBe(
       '/apps/snippets/snippet/execute?snippet_filename=diag%2Fslow-query.sh',
     );
   });
@@ -65,12 +65,12 @@ describe('snippetPluginPaths', () => {
   it('never bakes nested filenames into the URL path itself', () => {
     const filename = 'diag/slow-query.sh';
     for (const builder of [
-      snippetPluginSchemaPath,
-      snippetPluginExecutePath,
-      snippetPluginPreviewPath,
-      snippetPluginDownloadPath,
-      snippetPluginHistoryPath,
-      snippetPluginApprovalPath,
+      snippetAppSchemaPath,
+      snippetAppExecutePath,
+      snippetAppPreviewPath,
+      snippetAppDownloadPath,
+      snippetAppHistoryPath,
+      snippetAppApprovalPath,
     ]) {
       const url = builder(filename);
       const [path] = url.split('?');

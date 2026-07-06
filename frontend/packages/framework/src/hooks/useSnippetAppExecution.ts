@@ -17,9 +17,9 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
-import type { SnippetExecutionRequest, SnippetExecutionResponse } from '../types/snippetPlugin';
+import type { SnippetExecutionRequest, SnippetExecutionResponse } from '../types/snippetApp';
 
-export interface UseSnippetPluginExecutionOptions {
+export interface UseSnippetAppExecutionOptions {
   /**
    * When set, invalidate per-snippet history after a successful execute
    * (`useSnippetHistory` in `@sep/snippets` uses this query-key shape).
@@ -31,9 +31,9 @@ export interface UseSnippetPluginExecutionOptions {
  * POST snippet execution against an API path relative to `/api`
  * (e.g. `/apps/snippets/my-script.sh/execute`).
  */
-export function useSnippetPluginExecution(
+export function useSnippetAppExecution(
   executePath: string | null | undefined,
-  options?: UseSnippetPluginExecutionOptions,
+  options?: UseSnippetAppExecutionOptions,
 ) {
   const queryClient = useQueryClient();
   const historyFilename = options?.invalidateHistoryForFilename;
@@ -41,7 +41,7 @@ export function useSnippetPluginExecution(
   return useMutation<SnippetExecutionResponse, Error, SnippetExecutionRequest>({
     mutationFn: async (body) => {
       if (!executePath) {
-        throw new Error('Missing snippets plugin execute path');
+        throw new Error('Missing snippets app execute path');
       }
       const { data } = await apiClient.post<SnippetExecutionResponse>(executePath, body);
       return data;

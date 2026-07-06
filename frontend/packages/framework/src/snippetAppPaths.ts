@@ -16,49 +16,49 @@
  */
 
 /**
- * Snippets plugin JSON API path prefix (axios `apiClient` uses base `/api`).
+ * Snippets app JSON API path prefix (axios `apiClient` uses base `/api`).
  *
- * Per-snippet routes live under `${SNIPPETS_PLUGINS_API_BASE}/snippet/...` and
+ * Per-snippet routes live under `${SNIPPETS_APPS_API_BASE}/snippet/...` and
  * carry the snippet filename in the `snippet_filename` query parameter.
  * Query strings are opaque to the routing layer, so the contract
  * survives the trip end-to-end regardless of intermediate normalisation.
  */
-export const SNIPPETS_PLUGINS_API_BASE = '/apps/snippets';
+export const SNIPPETS_APPS_API_BASE = '/apps/snippets';
 
 /** API path prefix for per-snippet operations (filename rides in the query string). */
-export const SNIPPET_PLUGIN_PER_SNIPPET_BASE = `${SNIPPETS_PLUGINS_API_BASE}/snippet`;
+export const SNIPPET_APP_PER_SNIPPET_BASE = `${SNIPPETS_APPS_API_BASE}/snippet`;
 
 function buildPerSnippetPath(action: string, filename: string): string {
   const params = new URLSearchParams({ snippet_filename: filename });
-  return `${SNIPPET_PLUGIN_PER_SNIPPET_BASE}/${action}?${params.toString()}`;
+  return `${SNIPPET_APP_PER_SNIPPET_BASE}/${action}?${params.toString()}`;
 }
 
-/** Path for `GET` per-snippet plugin schema. */
-export function snippetPluginSchemaPath(filename: string): string {
+/** Path for `GET` per-snippet app schema. */
+export function snippetAppSchemaPath(filename: string): string {
   return buildPerSnippetPath('schema', filename);
 }
 
 /** Path for `POST` snippet execution. */
-export function snippetPluginExecutePath(filename: string): string {
+export function snippetAppExecutePath(filename: string): string {
   return buildPerSnippetPath('execute', filename);
 }
 
 /** Path for `GET` script preview. */
-export function snippetPluginPreviewPath(filename: string): string {
+export function snippetAppPreviewPath(filename: string): string {
   return buildPerSnippetPath('preview', filename);
 }
 
 /** Path for `GET` raw snippet file download. */
-export function snippetPluginDownloadPath(filename: string): string {
+export function snippetAppDownloadPath(filename: string): string {
   return buildPerSnippetPath('download', filename);
 }
 
 /** Path for `GET` per-snippet execution history. */
-export function snippetPluginHistoryPath(filename: string): string {
+export function snippetAppHistoryPath(filename: string): string {
   return buildPerSnippetPath('history', filename);
 }
 
 /** Path for `PUT`/`DELETE` snippet approval. */
-export function snippetPluginApprovalPath(filename: string): string {
+export function snippetAppApprovalPath(filename: string): string {
   return buildPerSnippetPath('approval', filename);
 }

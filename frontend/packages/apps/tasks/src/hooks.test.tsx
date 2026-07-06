@@ -21,7 +21,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useTaskDetail, useTasksList } from './hooks';
-import { TASKS_PLUGINS_API_BASE } from './types';
+import { TASKS_APPS_API_BASE } from './types';
 
 interface CapturedRequestConfig {
   url?: string;
@@ -78,7 +78,7 @@ describe('useTasksList', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(lastConfig?.url).toBe(`${TASKS_PLUGINS_API_BASE}/`);
+    expect(lastConfig?.url).toBe(`${TASKS_APPS_API_BASE}/`);
     expect(result.current.data).toEqual([
       {
         name: 'monitor-task',
@@ -156,7 +156,7 @@ describe('useTaskDetail', () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(lastConfig?.url).toBe(`${TASKS_PLUGINS_API_BASE}/monitor-task`);
+    expect(lastConfig?.url).toBe(`${TASKS_APPS_API_BASE}/monitor-task`);
     expect(result.current.data?.task.name).toBe('monitor-task');
   });
 

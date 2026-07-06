@@ -17,11 +17,11 @@
 
 import type { TasksComponents } from '@sep/api';
 
-/** Plugin key used for ``/api/apps/{name}/`` routes and schema fetching. */
-export const TASKS_PLUGIN_NAME = 'tasks';
+/** App key used for ``/api/apps/{name}/`` routes and schema fetching. */
+export const TASKS_APP_NAME = 'tasks';
 
-/** Base path for the tasks plugin JSON API under the SEP layer. */
-export const TASKS_PLUGINS_API_BASE = '/apps/tasks';
+/** Base path for the tasks app JSON API under the SEP layer. */
+export const TASKS_APPS_API_BASE = '/apps/tasks';
 
 /** One task row from ``GET /api/apps/tasks/``. */
 export interface TaskListRow {
