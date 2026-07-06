@@ -16,80 +16,52 @@
 """Define models for the Alters plugin."""
 
 from datetime import datetime
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, Any
 
-from pydantic import AfterValidator, BaseModel, FutureDatetime, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    field_validator,
+    FutureDatetime,
+    model_validator,
+)
 
-from app.core.utils.fields import NonEmptyStr
+from app.core.utils.fields import NonEmptyStr, StrippedNonEmptyStr
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import derive_create_response_model
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
     Choices,
     Forbidden,
-    FormRules,
     HostRef,
     Requires,
     SchemaRef,
-    SectionRules,
     ServiceRef,
     TableRef,
     Ui,
 )
-from app.sep.apps.framework.rules import (
-    all_,
-    all_present,
-    F,
-    FailRule,
-    truthy,
-)
+from app.sep.apps.framework.rules import F
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 DEFAULT_ALTERS_DSN_TABLE = "D=percona,t=dsns"
 
-_MANUAL_TARGET_SET = all_(truthy("schema_name"), truthy("table_name"))
-_INVENTORY_TARGET_SET = all_present("schema_id", "table_id")
 
+def _dsn_safe(value: str | None) -> str | None:
+    """Reject DSN delimiters (``,`` / ``=``) that could split a pt-osc DSN.
 
-def _coerce_optional_int(value: Any) -> int | None:
-    """Coerce HTML form / JSON optional int fields to ``int | None``."""
-    if value is None or value == "":
-        return None
-    return int(value)
+    A free-typed schema or table name is interpolated into the
+    ``D={schema},t={table}`` DSN the spec builder emits, so a ``,`` or ``=`` in
+    the value could inject extra DSN parts.
 
-
-def normalize_alters_target_fields(data: Any) -> Any:
-    """Resolve inventory vs manual schema/table targets before conditional rules.
-
-    Legacy Jinja create/edit forms keep ``schema_name`` / ``table_name`` inputs
-    in the DOM (hidden, still submitted) while inventory selectors populate
-    ``schema_id`` / ``table_id``. Prefer the ID pair when both are present so
-    mutual-exclusion rules do not reject otherwise valid edits.
-
-    :param data: Raw model input (typically a form mapping).
-    :return: Normalized input with exactly one target mode represented.
+    :param value: The free-typed schema or table name to validate.
+    :return: The value unchanged when it carries no delimiter.
+    :raises ValueError: When the value contains a ``,`` or ``=`` character.
     """
-    if not isinstance(data, dict):
-        return data
-    normalized = dict(data)
-    schema_id = _coerce_optional_int(normalized.get("schema_id"))
-    table_id = _coerce_optional_int(normalized.get("table_id"))
-    schema_name = str(normalized.get("schema_name") or "").strip()
-    table_name = str(normalized.get("table_name") or "").strip()
-    normalized["schema_id"] = schema_id
-    normalized["table_id"] = table_id
-    if schema_id is not None and table_id is not None and schema_name and table_name:
+    if value and ("," in value or "=" in value):
         raise ValueError(
-            "Cannot use both schema_id/table_id and "
-            "schema_name/table_name at the same time."
+            "Values cannot contain ',' or '=' characters (DSN delimiters)."
         )
-    if schema_id is not None and table_id is not None:
-        normalized["schema_name"] = ""
-        normalized["table_name"] = ""
-    elif schema_name and table_name:
-        normalized["schema_id"] = None
-        normalized["table_id"] = None
-    return normalized
+    return value
 
 
 def reject_multiline_alter(value: str) -> str:
@@ -107,16 +79,7 @@ def reject_multiline_alter(value: str) -> str:
     return value
 
 
-class _AltersTargetFieldsMixin:
-    """Normalize target fields shared across Jinja form and JSON write payloads."""
-
-    @model_validator(mode="before")
-    @classmethod
-    def _normalize_target_fields(cls, data: Any) -> Any:
-        return normalize_alters_target_fields(data)
-
-
-class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
+class AltersCreate(AppFormModel):
     """Represent the single model-first declaration of the Alters create form.
 
     This one declaration drives the JSON create/update request body, the Jinja
@@ -135,10 +98,8 @@ class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
     :param task_name: The name of the task to be created.
     :param hostname: The target hostname for the task execution.
     :param service_id: The Inventory ID of the database service to connect to.
-    :param schema_id: The database schema ID on which the task will operate.
-    :param table_id: The table ID within the schema to be altered.
-    :param schema_name: Manual schema name when ``schema_id`` is not set.
-    :param table_name: Manual table name when ``table_id`` is not set.
+    :param db_schema: The schema to alter — an inventory id or a free-typed name.
+    :param db_table: The table to alter — an inventory id or a free-typed name.
     :param recursion_method: The method for handling recursion.
     :param alter: The specific alter command to be executed.
     :param dsn_table: The DSN table for recursion method when using ``dsn``. When
@@ -203,36 +164,36 @@ class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
         ),
     ] = "~/.my.cnf"
 
-    schema_id: Annotated[
-        int | None,
-        SchemaRef(),
-        Forbidden(when=_MANUAL_TARGET_SET),
-        Ui(label="Schema", section="data", depends_on="service_id"),
-    ] = None
-    table_id: Annotated[
-        int | None,
-        TableRef(),
-        Forbidden(when=_MANUAL_TARGET_SET),
-        Ui(label="Table", section="data", depends_on="schema_id"),
-    ] = None
-    schema_name: Annotated[
-        str | None,
-        Forbidden(when=_INVENTORY_TARGET_SET),
+    db_schema: Annotated[
+        int | StrippedNonEmptyStr,
+        SchemaRef(allow_custom=True),
         Ui(
-            label="Schema Name",
+            label="Schema",
             section="data",
-            description="Manual schema name when not selecting from inventory",
+            depends_on="service_id",
+            description="Schema to alter; pick from inventory or type a name.",
         ),
-    ] = None
-    table_name: Annotated[
-        str | None,
-        Forbidden(when=_INVENTORY_TARGET_SET),
+    ]
+    db_table: Annotated[
+        int | StrippedNonEmptyStr,
+        TableRef(allow_custom=True),
         Ui(
-            label="Table Name",
+            label="Table",
             section="data",
-            description="Manual table name when not selecting from inventory",
+            depends_on="db_schema",
+            description="Table to alter; pick from inventory or type a name.",
         ),
-    ] = None
+    ]
+
+    @field_validator("db_schema", "db_table")
+    @classmethod
+    def _target_dsn_safe(cls, value: int | str) -> int | str:
+        """Reject DSN delimiters in a free-typed schema or table name.
+
+        :param value: The submitted schema or table value (inventory id or name).
+        :return: The value unchanged when it carries no DSN delimiter.
+        """
+        return _dsn_safe(value) if isinstance(value, str) else value
 
     alter: Annotated[
         NonEmptyStr,
@@ -413,44 +374,6 @@ class AltersCreate(_AltersTargetFieldsMixin, AppFormModel):
             ),
         ),
     ] = False
-
-    __form_rules__: ClassVar[FormRules] = FormRules(
-        sections={
-            "data": SectionRules(
-                fail_when=(
-                    FailRule(
-                        fail_when=all_(
-                            ~_INVENTORY_TARGET_SET,
-                            ~_MANUAL_TARGET_SET,
-                        ),
-                        error_fields=[
-                            "schema_id",
-                            "table_id",
-                            "schema_name",
-                            "table_name",
-                        ],
-                        message=(
-                            "Either both schema_id and table_id or both "
-                            "schema_name and table_name must be provided."
-                        ),
-                    ),
-                    FailRule(
-                        fail_when=all_(_INVENTORY_TARGET_SET, _MANUAL_TARGET_SET),
-                        error_fields=[
-                            "schema_id",
-                            "table_id",
-                            "schema_name",
-                            "table_name",
-                        ],
-                        message=(
-                            "Cannot use both schema_id/table_id and "
-                            "schema_name/table_name at the same time."
-                        ),
-                    ),
-                ),
-            ),
-        },
-    )
 
 
 class AltersTaskResponse(BaseModel):

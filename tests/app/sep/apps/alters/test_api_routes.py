@@ -100,8 +100,8 @@ def build_alters_write_body(
         "task_name": task_name,
         "hostname": hostname,
         "service_id": service_id,
-        "schema_name": "test_schema",
-        "table_name": "test_table",
+        "db_schema": "test_schema",
+        "db_table": "test_table",
         "alter": "ADD COLUMN x INT",
         **kwargs,
     }
@@ -318,22 +318,6 @@ class TestAltersApiCreate:
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
         mock_task_api_dep.post.assert_not_called()
 
-    def test_create_returns_422_when_both_target_modes_provided(
-        self, test_client, mock_task_api_dep
-    ) -> None:
-        """POST returns 422 when both inventory and manual target fields are sent."""
-        body = build_alters_write_body(
-            schema_id=1,
-            table_id=13,
-            schema_name="app",
-            table_name="t1",
-        )
-
-        response = test_client.post(f"{API_BASE}/", json=body)
-
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
-        mock_task_api_dep.post.assert_not_called()
-
     def test_create_returns_422_for_multiline_alter(
         self, test_client, mock_task_api_dep
     ) -> None:
@@ -374,8 +358,8 @@ class TestAltersApiCreate:
         assert "_form" in posted_data
         form_input = posted_data["_form"]
         assert form_input["task_name"] == DEFAULT_TASK_NAME
-        assert form_input["schema_name"] == "test_schema"
-        assert form_input["table_name"] == "test_table"
+        assert form_input["db_schema"] == "test_schema"
+        assert form_input["db_table"] == "test_table"
 
 
 class TestAltersApiUpdate:
@@ -420,6 +404,47 @@ class TestAltersApiUpdate:
             f"/{DEFAULT_PARENT_NAME}-dry-run",
             f"/{DEFAULT_PARENT_NAME}-pre-checks",
         ]
+
+    @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
+    def test_update_stamps_form_input_on_parent_task(
+        self,
+        test_client,
+        mock_task_api_dep,
+        mock_inventory_api_dep,
+        created_service,
+    ) -> None:
+        """PUT re-stamps _form on the parent so the React Edit button survives edits."""
+        group = build_alters_task_group(DEFAULT_PARENT_NAME)
+        mock_task_api_dep.get = AsyncMock(
+            side_effect=[
+                group["parent"],
+                NOMAD_HOSTS,
+                group["parent"],
+                {"items": []},
+            ]
+        )
+        mock_inventory_api_dep.get = AsyncMock(
+            return_value=created_service.model_dump()
+        )
+        mock_task_api_dep.put = AsyncMock(return_value=group["parent"])
+
+        response = test_client.put(
+            f"{API_BASE}/{DEFAULT_PARENT_NAME}?check_connectivity=false",
+            json=build_alters_write_body(
+                task_name=DEFAULT_PARENT_NAME,
+                service_id=created_service.id,
+            ),
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        parent_put = next(
+            c
+            for c in mock_task_api_dep.put.await_args_list
+            if c.args[0] == f"/{DEFAULT_PARENT_NAME}"
+        )
+        parent_data = parent_put.kwargs["json"]["data"]
+        assert "_form" in parent_data
+        assert parent_data["_form"]["task_name"] == DEFAULT_PARENT_NAME
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_update_continue_on_pre_check_failure_uses_continue_predecessor_spec(

@@ -15,11 +15,12 @@
 
 """One-time backfill of ``data['_form']`` for legacy framework-migrated task apps.
 
-The orchestrator enumerates in-scope :class:`~app.sep.apps.framework.apps.TaskExecutionApp`
-plugins, finds tasks owned by each app that lack the reserved form key, reconstructs a
-create-model-shaped body, validates it, and stamps ``data['_form']`` on success. Each
-per-task step is isolated so one failure never aborts the batch; re-runs skip tasks
-that already carry the stamp.
+The orchestrator enumerates in-scope task apps — each a
+:class:`~app.sep.apps.framework.apps.TaskExecutionApp` or a plain
+:class:`~app.sep.apps.framework.base.BaseApp` (e.g. alters) — finds tasks owned by each
+app that lack the reserved form key, reconstructs a create-model-shaped body, validates
+it, and stamps ``data['_form']`` on success. Each per-task step is isolated so one failure
+never aborts the batch; re-runs skip tasks that already carry the stamp.
 """
 
 from __future__ import annotations
@@ -39,13 +40,16 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.inventory.db import get_async_session_maker as get_inventory_session_maker
+from app.sep.apps.alters.app import app as alters_app
+from app.sep.apps.alters.form_backfill import reconstruct_alters_form
+from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.archives.app import app as archives_app
 from app.sep.apps.archives.form_backfill import reconstruct_archives_form
 from app.sep.apps.backup_pg.app import app as backup_pg_app
 from app.sep.apps.backup_pg.form_backfill import reconstruct_backup_pg_form
 from app.sep.apps.checksums.app import app as checksums_app
 from app.sep.apps.checksums.form_backfill import reconstruct_checksums_form
-from app.sep.apps.framework.apps import TaskExecutionApp
+from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.form_backfill_inventory import (
     load_schema_id_lookup,
     load_service_id_lookup,
@@ -171,14 +175,22 @@ class _TaskBackfillOutcome:
 
 @dataclass(frozen=True)
 class _BackfillApp:
-    """Bind a :class:`~app.sep.apps.framework.apps.TaskExecutionApp` to its reconstructor.
+    """Bind an in-scope task app to its reconstructor.
 
-    :param app: The in-scope task app definition.
+    :param app: The in-scope task app definition (a ``TaskExecutionApp`` or a
+        plain :class:`~app.sep.apps.framework.base.BaseApp`).
     :param reconstructor: The per-app legacy form reconstructor.
+    :param owner_override: The task owner to list by, for a ``BaseApp`` that does
+        not expose ``owner``. Falls back to ``app.owner`` when ``None``.
+    :param create_model_override: The create/update form model, for a ``BaseApp``
+        that does not expose a derived ``create_model``. Falls back to
+        ``app.create_model`` when ``None``.
     """
 
-    app: TaskExecutionApp
+    app: BaseApp
     reconstructor: FormReconstructor
+    owner_override: TaskOwner | None = None
+    create_model_override: type[AppFormModel] | None = None
 
     @property
     def app_name(self) -> str:
@@ -188,12 +200,12 @@ class _BackfillApp:
     @property
     def owner(self) -> TaskOwner:
         """Return the task owner the app lists tasks by."""
-        return self.app.owner
+        return self.owner_override or self.app.owner
 
     @property
     def create_model(self) -> type[AppFormModel]:
         """Return the app's create/update form model."""
-        return self.app.create_model
+        return self.create_model_override or self.app.create_model
 
 
 def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
@@ -201,17 +213,24 @@ def _build_in_scope_apps() -> tuple[_BackfillApp, ...]:
 
     :return: The apps whose legacy tasks are eligible for ``data['_form']`` backfill.
     """
-    entries: list[tuple[TaskExecutionApp, FormReconstructor]] = [
-        (archives_app, reconstruct_archives_form),
-        (checksums_app, reconstruct_checksums_form),
-        (backup_pg_app, reconstruct_backup_pg_form),
-        (mysql_backups_app, reconstruct_mysql_backups_form),
-        (mysql_restores_app, reconstruct_mysql_restores_form),
+    entries: list[_BackfillApp] = [
+        _BackfillApp(app=archives_app, reconstructor=reconstruct_archives_form),
+        _BackfillApp(app=checksums_app, reconstructor=reconstruct_checksums_form),
+        _BackfillApp(app=backup_pg_app, reconstructor=reconstruct_backup_pg_form),
+        _BackfillApp(
+            app=mysql_backups_app, reconstructor=reconstruct_mysql_backups_form
+        ),
+        _BackfillApp(
+            app=mysql_restores_app, reconstructor=reconstruct_mysql_restores_form
+        ),
+        _BackfillApp(
+            app=alters_app,
+            reconstructor=reconstruct_alters_form,
+            owner_override=TaskOwner.ALTERS,
+            create_model_override=AltersCreate,
+        ),
     ]
-    return tuple(
-        _BackfillApp(app=app, reconstructor=reconstructor)
-        for app, reconstructor in entries
-    )
+    return tuple(entries)
 
 
 IN_SCOPE_APPS: tuple[_BackfillApp, ...] = _build_in_scope_apps()
@@ -515,7 +534,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Backfill data['_form'] on legacy tasks for framework-migrated apps "
-            "(archives, checksums, backup_pg, mysql_backups, restores)."
+            "(archives, checksums, backup_pg, mysql_backups, restores, alters)."
         ),
     )
     parser.add_argument(

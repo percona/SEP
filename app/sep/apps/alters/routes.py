@@ -28,6 +28,7 @@ from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import (
     alters_executor_matches_service_host,
+    AltersLegacyForm,
     AltersTask,
     build_alters_task,
     build_pre_checks_task_payload,
@@ -37,10 +38,10 @@ from app.sep.apps.alters.deps import (
     DeletableAltersParent,
     extract_service_info,
     get_alters_index_context,
+    map_alters_legacy_form,
     parse_alters_task_args,
     UnprotectedAltersTask,
 )
-from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.config import sep_settings
 from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
@@ -110,7 +111,7 @@ async def get_table_details(
 )
 async def alters_create(
     request: Request,
-    form: Annotated[AltersCreate, Form()],
+    form: Annotated[AltersLegacyForm, Form()],
     task_api: TaskAPI,
     inventory_api: InventoryAPI,
     *,
@@ -118,7 +119,8 @@ async def alters_create(
 ) -> RedirectResponse:
     """Create the alters task group (parent, dry-run, and pre-checks tasks)."""
     logger.debug("Create alters tasks: %s", form.task_name)
-    parent_task = await build_alters_task(form, inventory_api)
+    create = map_alters_legacy_form(form)
+    parent_task = await build_alters_task(create, inventory_api)
     pre_checks_template = await build_pre_checks_task_payload(
         parent_task, task_api=task_api
     )
@@ -126,7 +128,7 @@ async def alters_create(
         task_api,
         parent_task,
         pre_checks_template,
-        form,
+        create,
     )
 
     await maybe_check_connectivity(
@@ -282,13 +284,14 @@ async def alters_execute(
 async def alters_update(
     request: Request,
     task: UnprotectedAltersTask,
-    form: Annotated[AltersCreate, Form()],
+    form: Annotated[AltersLegacyForm, Form()],
     tasks_api: TaskAPI,
     inventory_api: InventoryAPI,
 ) -> RedirectResponse:
     """Update the alters task group."""
     logger.debug("Updating alters task: %s", form.task_name)
-    updated_parent = await build_alters_task(form, inventory_api)
+    create = map_alters_legacy_form(form)
+    updated_parent = await build_alters_task(create, inventory_api)
     pre_checks_template = await build_pre_checks_task_payload(
         updated_parent, task_api=tasks_api
     )
@@ -297,7 +300,7 @@ async def alters_update(
         task.name,
         updated_parent,
         pre_checks_template,
-        form,
+        create,
     )
     if not result.success:
         failed = [
