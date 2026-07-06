@@ -13,18 +13,29 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.inventory.main module."""
+"""merge tasks migration heads
 
-from app.inventory.main import inventory_lifespan
-from app.inventory.main import lifespan as inventory_module_lifespan
+Revision ID: d25887ee3fea
+Revises: a1f4c9e2b7d8, b3c4d5e6f7a8
+Create Date: 2026-07-06 13:03:34.334033
+
+"""
+from typing import Sequence, Union
 
 
-def test_inventory_app_lifespan_is_always_set():
-    """Assert the Inventory lifespan is always assigned at module level.
+# revision identifiers, used by Alembic.
+revision: str = 'd25887ee3fea'
+down_revision: Union[str, Sequence[str], None] = (
+    'a1f4c9e2b7d8',
+    'b3c4d5e6f7a8',
+)
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
 
-    The lifespan must not be gated behind a ``__name__`` check, because uvicorn
-    re-imports the module with ``__name__ == "app.inventory.main"`` rather than
-    ``"__main__"``, which would leave the lifespan as ``None``. The Inventory app
-    now wraps ``default_lifespan`` with the settings-override refresher.
-    """
-    assert inventory_module_lifespan is inventory_lifespan
+
+def upgrade() -> None:
+    """Merge the two tasks heads into one. No-op; no schema change."""
+
+
+def downgrade() -> None:
+    """Unmerge the heads. No-op; a head merge has nothing to undo."""

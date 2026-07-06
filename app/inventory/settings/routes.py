@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Compose the Tasks sub-app's settings REST API."""
+"""Compose the Inventory sub-app's settings REST API."""
 
 __all__ = ["router"]
 
@@ -22,14 +22,20 @@ from fastapi import APIRouter
 from app.api.deps import IsAdminDep
 from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.models import SettingClassEnum
-from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
-from app.tasks.config import tasks_settings, TasksSettings
-from app.tasks.deps import SessionDep
+from app.inventory.config import inventory_settings, InventorySettings
+from app.inventory.deps import SessionDep
+
+# ``InventorySettings`` carries no HOT field yet, so every field lists read-only
+# until one is promoted; the override framework (proxy, refresher, table) is
+# wired end-to-end regardless.
 
 _settings_router = build_settings_router(
     classes=[
-        (SettingClassEnum.TASKS_SETTINGS, TasksSettings, tasks_settings),
-        (SettingClassEnum.ANONYMIZER_SETTINGS, AnonymizerSettings, anonymizer_settings),
+        (
+            SettingClassEnum.INVENTORY_SETTINGS,
+            InventorySettings,
+            inventory_settings,
+        ),
     ],
     session_dep=SessionDep,
     admin_dep=IsAdminDep,
