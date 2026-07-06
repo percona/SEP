@@ -22,7 +22,7 @@ import type { SnippetExecutionRequest, SnippetExecutionResponse } from '../types
 export interface UseSnippetPluginExecutionOptions {
   /**
    * When set, invalidate per-snippet history after a successful execute
-   * (`useSnippetHistory` in `@sep/plugins-snippets` uses this query-key shape).
+   * (`useSnippetHistory` in `@sep/snippets` uses this query-key shape).
    */
   invalidateHistoryForFilename?: string;
 }

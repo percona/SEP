@@ -1,5 +1,5 @@
 {
-  "name": "@sep/plugin-alert-troubleshooting",
+  "name": "@sep/report",
   "version": "0.0.0",
   "private": true,
   "type": "module",

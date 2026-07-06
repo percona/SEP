@@ -51,33 +51,23 @@ export interface LegacyRouteAlias {
 const InventoryPlugin = lazy(() =>
   import('@sep/inventory').then((m) => ({ default: m.InventoryPlugin })),
 );
-const TasksPlugin = lazy(() =>
-  import('@sep/plugin-tasks').then((m) => ({ default: m.TasksPlugin })),
-);
+const TasksPlugin = lazy(() => import('@sep/tasks').then((m) => ({ default: m.TasksPlugin })));
 const SnippetsPluginLazy = lazy(() =>
-  import('@sep/plugins-snippets').then((m) => ({ default: m.SnippetsPlugin })),
+  import('@sep/snippets').then((m) => ({ default: m.SnippetsPlugin })),
 );
-const AtwPlugin = lazy(() => import('@sep/plugin-atw').then((m) => ({ default: m.AtwPlugin })));
-const DipperPlugin = lazy(() =>
-  import('@sep/plugin-dipper').then((m) => ({ default: m.DipperPlugin })),
-);
-const AlertsPlugin = lazy(() =>
-  import('@sep/plugin-alerts').then((m) => ({ default: m.AlertsPlugin })),
-);
+const AtwPlugin = lazy(() => import('@sep/atw').then((m) => ({ default: m.AtwPlugin })));
+const DipperPlugin = lazy(() => import('@sep/dipper').then((m) => ({ default: m.DipperPlugin })));
+const AlertsPlugin = lazy(() => import('@sep/alerts').then((m) => ({ default: m.AlertsPlugin })));
 const AlertTroubleshootingPlugin = lazy(() =>
-  import('@sep/plugin-alert-troubleshooting').then((m) => ({
+  import('@sep/alert-troubleshooting').then((m) => ({
     default: m.AlertTroubleshootingPlugin,
   })),
 );
-const AltersPlugin = lazy(() =>
-  import('@sep/plugin-alters').then((m) => ({ default: m.AltersPlugin })),
-);
+const AltersPlugin = lazy(() => import('@sep/alters').then((m) => ({ default: m.AltersPlugin })));
 const BackupMongoPlugin = lazy(() =>
-  import('@sep/plugin-backup-mongo').then((m) => ({ default: m.BackupMongoPlugin })),
+  import('@sep/backup-mongo').then((m) => ({ default: m.BackupMongoPlugin })),
 );
-const ReportPlugin = lazy(() =>
-  import('@sep/plugin-report').then((m) => ({ default: m.ReportPlugin })),
-);
+const ReportPlugin = lazy(() => import('@sep/report').then((m) => ({ default: m.ReportPlugin })));
 
 function SnippetsPlugin() {
   const { isAdmin } = useAuth();

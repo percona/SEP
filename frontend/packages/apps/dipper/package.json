@@ -1,5 +1,5 @@
 {
-  "name": "@sep/plugins-snippets",
+  "name": "@sep/dipper",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -28,8 +28,8 @@
     "@mui/icons-material": "^7.3.7",
     "@mui/material": "^7.3.7",
     "@tanstack/react-query": "^5.75.0",
+    "notistack": "^3.0.0",
     "react": "^19.0.0",
-    "react-hook-form": "^7.72.1",
-    "react-router-dom": "^7.6.0"
+    "react-hook-form": "^7.72.1"
   }
 }

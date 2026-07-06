@@ -1,5 +1,5 @@
 {
-  "name": "@sep/plugin-atw",
+  "name": "@sep/snippets",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,10 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mui/material": "^7.3.7",
     "@sep/api": "workspace:*",
-    "@sep/framework": "workspace:*",
-    "@tanstack/react-query": "^5.100.7"
+    "@sep/framework": "workspace:*"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",
@@ -27,8 +25,11 @@
   "peerDependencies": {
     "@emotion/react": "^11.0.0",
     "@emotion/styled": "^11.0.0",
+    "@mui/icons-material": "^7.3.7",
+    "@mui/material": "^7.3.7",
+    "@tanstack/react-query": "^5.75.0",
     "react": "^19.0.0",
     "react-hook-form": "^7.72.1",
-    "react-router-dom": "^7.0.0"
+    "react-router-dom": "^7.6.0"
   }
 }
