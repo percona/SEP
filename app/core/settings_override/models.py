@@ -33,9 +33,8 @@ class SettingClassEnum(StrEnum):
 
     The wired classes are ``SEPSettings``, ``TasksSettings``,
     ``SnippetsSettings``, ``MessagesSettings``, the global ``Settings``,
-    ``AlertSettings``, ``AlertsSettings`` and ``AnonymizerSettings``.
-    ``InventorySettings`` is intentionally NOT here -- wrapping it is deferred
-    to a follow-up ticket.
+    ``AlertSettings``, ``AlertsSettings``, ``AnonymizerSettings`` and
+    ``InventorySettings``.
 
     To wire a new settings class:
 
@@ -59,6 +58,7 @@ class SettingClassEnum(StrEnum):
     ALERT_SETTINGS = "AlertSettings"
     ANONYMIZER_SETTINGS = "AnonymizerSettings"
     ALERTS_SETTINGS = "AlertsSettings"
+    INVENTORY_SETTINGS = "InventorySettings"
 
 
 class SettingOverride(BaseSQLModel, table=True):
