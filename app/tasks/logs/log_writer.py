@@ -121,21 +121,18 @@ class TaskHistoryLogWriter:
                 )
 
             if allocation_epoch is not None:
-                # First-insert has no per-stream row yet, so guard against the
-                # task-level high-water mark rather than the transient row's ``0``.
+                # First insert has no per-stream row yet; guard against the
+                # task-level high-water mark, not the transient row's ``0``.
                 guard_epoch = state.allocation_epoch
                 if is_new:
-                    # Lock the TaskHistory row so a concurrent frontier reset
-                    # cannot commit a newer epoch between this read and the row
-                    # insert below; the reset acquires the same row first, so the
-                    # two serialise instead of racing (first-insert TOCTOU).
+                    # Take the row lock so a concurrent frontier reset serialises
+                    # instead of racing (first-insert TOCTOU).
                     guard_epoch = await TaskHistoryManager.get_log_allocation_epoch(
                         session, task_history_id, for_update=True
                     )
                 if allocation_epoch < guard_epoch:
-                    # Stale write from a superseded allocation: drop it, releasing
-                    # any first-insert lock so a long-lived writer_session does not
-                    # pin the row and stall frontier resets.
+                    # Stale write from a superseded allocation; drop it, releasing
+                    # any first-insert lock so it doesn't pin the row.
                     await cls._release_first_insert_lock(session, is_new=is_new)
                     return
 
