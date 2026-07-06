@@ -3985,7 +3985,7 @@ export interface components {
       /** Task Name */
       task_name: string;
       /** Upload */
-      upload: components['schemas']['UploadProvider'][];
+      upload?: components['schemas']['UploadProvider'][];
       /**
        * Upload Quiet
        * @default false

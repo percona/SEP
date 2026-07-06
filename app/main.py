@@ -30,6 +30,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from app import __summary__, __version__
 from app.api.main import api_router
 from app.celery import celery as celery_app
+from app.core.auth.config import detect_removed_auth_user_model
 from app.core.config import create_app, settings
 from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
@@ -45,8 +46,8 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage the app's lifespan.
 
     Initializes the Tasks database data, the periodic tasks data, and ensures that the
-    CasdoorSDK, the NomadExecutor, and any extra client sessions are properly managed
-    during the application's startup and shutdown phases.
+    active auth provider's SDK, the NomadExecutor, and any extra client sessions are
+    properly managed during the application's startup and shutdown phases.
 
     Also enters :func:`app.sep.main.sep_overrides_lifespan` so the
     ``SEP_SETTINGS``/``SNIPPETS_SETTINGS``/``MESSAGES_SETTINGS`` override
@@ -61,10 +62,8 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     :yield: None
     :rtype: AsyncGenerator[None, None]
     """
-    validate_importable_settings(
-        settings.AUTH_USER_MODEL,
-        *(s.syncer for s in sep_settings.SYNCERS),
-    )
+    detect_removed_auth_user_model()
+    validate_importable_settings(*(s.syncer for s in sep_settings.SYNCERS))
     await sep_startup()
     async with sep_overrides_lifespan(app), tasks_lifespan(app):
         yield

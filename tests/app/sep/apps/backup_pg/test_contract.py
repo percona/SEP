@@ -26,8 +26,8 @@ generic suite does not seed, is covered by the standalone test below.
 
 from fastapi import status
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.inventory.models import ServiceTypeEnum
-from app.models import CasdoorUser
 from app.sep.apps.backup_pg.app import app as backup_pg_app
 from tests.app.factories import MOCK_CREATED_SERVICE_ID
 from tests.app.sep.apps.framework.contract_suite import (

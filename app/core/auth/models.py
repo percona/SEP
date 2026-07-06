@@ -19,7 +19,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from datetime import datetime
 from functools import cached_property
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -186,6 +186,43 @@ class BaseUser(BaseModel, ABC):
         :type v: str
         """
         self._access_token = v
+
+    @classmethod
+    def build_service_principal(
+        cls,
+        *,
+        user_id: UUID4,
+        username: NonEmptyStr,
+        email: str = "",
+        first_name: str = "",
+        last_name: str = "",
+        is_admin: bool = False,
+        **provider_fields: Any,
+    ) -> Self:
+        """Build the synthetic service-principal user for SEP-internal auth.
+
+        Fill the fields common to every provider's user model. A provider whose
+        user model requires additional fields overrides this to inject them via
+        ``provider_fields`` before delegating here.
+
+        :param user_id: The service principal's stable unique identifier.
+        :param username: The service principal's username.
+        :param email: The service principal's email address; empty by default.
+        :param first_name: The service principal's first name; empty by default.
+        :param last_name: The service principal's last name; empty by default.
+        :param is_admin: Whether the principal has administrative privileges;
+            ``False`` by default.
+        :return: A user instance representing the service principal.
+        """
+        return cls(
+            id=user_id,
+            username=username,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            is_admin=is_admin,
+            **provider_fields,
+        )
 
     @staticmethod
     @abstractmethod

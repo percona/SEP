@@ -33,9 +33,9 @@ import pytest
 from fastapi import APIRouter, Body, status
 from fastapi.routing import APIRoute
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.pagination.deps import make_pagination_dep
 from app.inventory.models import ServiceTypeEnum
-from app.models import CasdoorUser
 from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
 from app.sep.apps.framework.task_status import batch_get_latest_statuses

@@ -35,7 +35,7 @@ import pytest
 from fastapi import APIRouter, status
 from pydantic import BaseModel
 
-from app.models import CasdoorUser
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp, Views
 from app.sep.apps.framework.conformance import (
     CAPABILITY_RENDERED_CONTROLS,

@@ -28,10 +28,10 @@ from sqlmodel.pool import StaticPool
 from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.celery.deps import get_session as get_celery_beat_session
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
 from app.tasks.deps import get_session as get_tasks_session
 from app.tasks.main import tasks_app
 from tests.app.conftest import postgres_worker_schema
