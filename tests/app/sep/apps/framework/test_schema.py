@@ -38,6 +38,7 @@ from app.sep.apps.framework.schema import (
     DetailHighlightLanguage,
     DetailSection,
     DetailView,
+    EXECUTION_HOST_LABEL,
     EXECUTOR_HOST_COLUMN,
     FileField,
     FloatField,
@@ -760,7 +761,7 @@ class TestDefaultColumns:
 
     def test_inserts_middle_between_head_and_tail(self):
         """Place ``*middle`` columns between the head and tail bookends, in order."""
-        host = Column(key="hostname", label="Executor Host")
+        host = Column(key="hostname", label=EXECUTION_HOST_LABEL)
         plugin = Column(key="backup_type", label="Type", format=ColumnFormat.CHIP)
 
         columns = default_columns(host, plugin)
@@ -806,13 +807,13 @@ class TestDefaultColumns:
 
         first[2].label = "Mutated"
 
-        assert second[2].label == "Executor Host"
-        assert EXECUTOR_HOST_COLUMN.label == "Executor Host"
+        assert second[2].label == EXECUTION_HOST_LABEL
+        assert EXECUTOR_HOST_COLUMN.label == EXECUTION_HOST_LABEL
 
     def test_executor_host_column_key_and_label(self):
         """Carry the normalized header label on the reusable executor-host constant."""
         assert EXECUTOR_HOST_COLUMN.key == "hostname"
-        assert EXECUTOR_HOST_COLUMN.label == "Executor Host"
+        assert EXECUTOR_HOST_COLUMN.label == EXECUTION_HOST_LABEL
 
 
 # ── ListView.overview_hidden_fields ──────────────────────────────────────

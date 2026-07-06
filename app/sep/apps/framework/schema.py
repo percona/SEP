@@ -77,6 +77,7 @@ from app.sep.apps.framework.rules import (
     FailRule,
     FieldGate,
 )
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
 # Dots are permitted so nested one-of branch fields can use paths such as
 # ``source.source_db_id`` (see :class:`OneOfGroup`).
@@ -791,9 +792,9 @@ class ListView(SchemaBaseModel):
         return self
 
 
-#: Read-only executor-host column shared by every host-bearing list view.
+#: Read-only execution-host column shared by every host-bearing list view.
 #: Never mutate it; pass through ``default_columns()``, which copies per call.
-EXECUTOR_HOST_COLUMN = Column(key="hostname", label="Executor Host")
+EXECUTOR_HOST_COLUMN = Column(key="hostname", label=EXECUTION_HOST_LABEL)
 
 
 def default_columns(*middle: Column) -> list[Column]:

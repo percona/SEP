@@ -63,7 +63,7 @@ const MOCK_SNIPPET_SCHEMA = {
     {
       title: 'Execution',
       fields: [
-        { type: 'host', name: 'executor_host', label: 'Executor Host', required: true },
+        { type: 'host', name: 'executor_host', label: 'Execution Host', required: true },
         { type: 'integer', name: 'limit', label: 'Row Limit', required: false },
       ],
     },

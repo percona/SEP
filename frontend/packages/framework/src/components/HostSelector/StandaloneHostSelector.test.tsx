@@ -71,7 +71,7 @@ describe('StandaloneHostSelector', () => {
     );
 
     const user = userEvent.setup();
-    await user.click(screen.getByLabelText('Executor Host'));
+    await user.click(screen.getByLabelText('Execution Host'));
     await user.click(await screen.findByRole('option', { name: 'db-mysql-prod-01' }));
 
     expect(handleChange).toHaveBeenCalledWith('nomad-1');
@@ -111,7 +111,7 @@ describe('StandaloneHostSelector', () => {
     );
 
     await screen.findByText('network error');
-    expect(screen.getByLabelText('Executor Host')).toBeDisabled();
+    expect(screen.getByLabelText('Execution Host')).toBeDisabled();
   });
 
   it('surfaces upstream Tasks-API failure via snackbar', async () => {
@@ -153,7 +153,7 @@ describe('StandaloneHostSelector', () => {
       </Wrapper>,
     );
 
-    await user.click(screen.getByLabelText('Executor Host'));
+    await user.click(screen.getByLabelText('Execution Host'));
     expect(await screen.findByText('No hosts available')).toBeInTheDocument();
   });
 
@@ -171,7 +171,7 @@ describe('StandaloneHostSelector', () => {
     await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(1));
 
     const user = userEvent.setup();
-    await user.click(screen.getByLabelText('Executor Host'));
+    await user.click(screen.getByLabelText('Execution Host'));
 
     await waitFor(() => expect(mocked.get).toHaveBeenCalledTimes(2));
   });
@@ -186,7 +186,7 @@ describe('StandaloneHostSelector', () => {
       </Wrapper>,
     );
 
-    await user.click(screen.getByLabelText('Executor Host'));
+    await user.click(screen.getByLabelText('Execution Host'));
     expect(await screen.findByText('Loading hosts…')).toBeInTheDocument();
   });
 });

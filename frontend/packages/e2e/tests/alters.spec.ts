@@ -46,7 +46,7 @@ const MOCK_ALTERS_SCHEMA = {
       title: 'Task',
       fields: [
         { type: 'string', name: 'task_name', label: 'Task Name', required: true },
-        { type: 'host', name: 'hostname', label: 'Executor Host', required: true },
+        { type: 'host', name: 'hostname', label: 'Execution Host', required: true },
         {
           type: 'service',
           name: 'service_id',
@@ -337,7 +337,7 @@ class AltersPage {
 
 async function fillRequiredCreateFields(page: Page, taskName: string): Promise<void> {
   await page.getByLabel('Task Name').fill(taskName);
-  await page.getByLabel('Executor Host').click();
+  await page.getByLabel('Execution Host').click();
   await page.getByRole('option', { name: 'host1' }).click();
   await page.getByLabel('Database Host').click();
   await page.getByRole('option', { name: 'svc1 (mysql)' }).click();
