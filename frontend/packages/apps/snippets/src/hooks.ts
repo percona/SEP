@@ -301,7 +301,7 @@ export function useBatchApproveSnippets() {
 }
 
 /**
- * Fetch per-deployment capability flags for the snippets plugin.
+ * Fetch per-deployment capability flags for the snippets app.
  *
  * The capabilities response carries no privileged data, so this hook is
  * safe to call for any authenticated user. The 5-minute ``staleTime``

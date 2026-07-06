@@ -16,7 +16,7 @@
  */
 
 export interface AtwSnippetSummary {
-  /** Snippet filename; use with snippets plugin API path helpers. */
+  /** Snippet filename; use with snippets app API path helpers. */
   name: string;
   title: string;
   description: string;

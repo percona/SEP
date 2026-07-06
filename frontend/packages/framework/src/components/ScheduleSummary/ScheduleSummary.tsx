@@ -32,11 +32,11 @@ import {
 } from '../ScheduledTasksPanel';
 
 export interface ScheduleSummaryProps {
-  /** Plugin owning the task; used to scope the periodic-task lookup. */
+  /** App owning the task; used to scope the periodic-task lookup. */
   pluginName: string;
   /** The task's name; joined client-side against the periodic-task list. */
   taskName: string;
-  /** Route to the plugin's Schedules screen (the add-a-schedule target). */
+  /** Route to the app's Schedules screen (the add-a-schedule target). */
   scheduleHref: string;
   /** Disable list polling. Used by stories/tests. */
   disablePolling?: boolean;
@@ -48,7 +48,7 @@ export interface ScheduleSummaryProps {
  * Shows the next run (relative, with the absolute timestamp on hover) and the
  * recurrence in plain language for a scheduled task, or a "Not scheduled" state
  * with a link to the Schedules screen when the task has no periodic schedule.
- * Framework component shared by any scheduling-capable plugin; it is not
+ * Framework component shared by any scheduling-capable app; it is not
  * archives-specific. The task-to-schedule join is performed client-side by
  * task name.
  */

@@ -20,7 +20,7 @@ import { ReportFormPage } from './ReportFormPage';
 import { ReportResultPage } from './ReportResultPage';
 
 /**
- * Report plugin entry point.
+ * Report app entry point.
  *
  * Routes:
  *   /reports/           → parameter form

@@ -16,7 +16,7 @@
  */
 
 /**
- * @sep/inventory — Inventory plugin entry point.
+ * @sep/inventory — Inventory app entry point.
  *
  * Exports:
  * - InventoryApp: inventory-specific nested routes and drill-down UI.

@@ -16,7 +16,7 @@
  */
 
 /**
- * Local type aliases for the plugin schema shape.
+ * Local type aliases for the app schema shape.
  *
  * Re-exports from `@sep/api` so field components and tests have a single
  * import surface. If the backend schema shape ever diverges from the api

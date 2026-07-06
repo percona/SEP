@@ -124,7 +124,7 @@ const inventoryDetailFixtures: Record<string, Record<string, unknown>> = {
 function mockInventoryDetailGets() {
   return vi.spyOn(apiClient, 'get').mockImplementation(async (url: string) => {
     const path = url.replace(/^\/api/, '').replace(/\?.*$/, '');
-    // Plugin schema URL is …/inventory/schema — must not match …/inventory/schemas/:id.
+    // App schema URL is …/inventory/schema — must not match …/inventory/schemas/:id.
     if (path.endsWith('/apps/inventory/schema')) {
       return { data: inventoryNestedMockSchema };
     }

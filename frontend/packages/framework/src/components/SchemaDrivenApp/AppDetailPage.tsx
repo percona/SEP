@@ -70,7 +70,7 @@ const DetailSyntaxHighlighter = lazy(() => import('./DetailSyntaxHighlighter'));
 
 export type { TaskExecuteBody };
 
-/** One executable target on a plugin task detail action bar. */
+/** One executable target on an app task detail action bar. */
 export interface TaskExecuteAction {
   label: string;
   taskName: string;
@@ -82,15 +82,15 @@ export interface TaskExecuteAction {
 export interface AppDetailPageProps {
   schema: AppSchema;
   pluginName: string;
-  /** Absolute list route prefix when the plugin is not mounted under ``/apps/{name}``. */
+  /** Absolute list route prefix when the app is not mounted under ``/apps/{name}``. */
   routeBase?: string;
   mockTasks?: Record<string, unknown>[];
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
-  /** Hide edit/delete (browse-only mode for multi-entity plugins). */
+  /** Hide edit/delete (browse-only mode for multi-entity apps). */
   browseOnly?: boolean;
   /** Omit these keys from the auto-rendered detail section (e.g. nested relations shown elsewhere). */
   suppressDetailKeys?: string[];
-  /** Replace the default single Execute button with plugin-specific execute targets. */
+  /** Replace the default single Execute button with app-specific execute targets. */
   getTaskExecuteActions?: (task: Record<string, unknown>) => TaskExecuteAction[] | undefined;
   /** Task names whose execution history should appear on the Logs tab. */
   getTaskHistoryNames?: (task: Record<string, unknown>) => string[] | undefined;
@@ -121,7 +121,7 @@ export interface AppDetailPageProps {
   allowListEntityDelete?: boolean;
 }
 
-/** Screen title when the back/status row is hidden (browse-only multi-entity plugins). */
+/** Screen title when the back/status row is hidden (browse-only multi-entity apps). */
 function detailScreenHeading(
   entityName: string | undefined,
   entityDisplayName: string | undefined,
@@ -197,7 +197,7 @@ function EntityDetailField({
 
 // Framework baseline: numeric `id`, internal worker plumbing (`backend`, `protected`), and
 // timestamps already shown in list_view columns. The `data` payload is rendered via
-// schema-declared ``detail_view`` sections. Plugin schemas can extend this via
+// schema-declared ``detail_view`` sections. App schemas can extend this via
 // ``list_view.overview_hidden_fields``. The PII fields are handled by the dedicated
 // "PII Anonymization" capability-gated section.
 const BASELINE_OVERVIEW_HIDDEN_FIELDS = [
@@ -267,9 +267,9 @@ interface OverviewTabProps {
   schema: AppSchema;
   task: Record<string, unknown>;
   hiddenFields?: string[];
-  /** Owning plugin name; enables the generic schedule summary. */
+  /** Owning app name; enables the generic schedule summary. */
   pluginName?: string;
-  /** Route to the plugin's Schedules screen (the add-a-schedule target). */
+  /** Route to the app's Schedules screen (the add-a-schedule target). */
   scheduleHref?: string;
   children?: ReactNode;
 }
@@ -360,7 +360,7 @@ function OverviewTab({
   children,
 }: OverviewTabProps) {
   // The detail/list response model omits `connectivity_warning`; it rides only
-  // the create response. PluginCreatePage carries it here via navigation state
+  // the create response. AppCreatePage carries it here via navigation state
   // so the warning surfaces once after a failing post-create check.
   const location = useLocation();
   const navState = (location.state ?? null) as { connectivityWarning?: unknown } | null;
@@ -376,7 +376,7 @@ function OverviewTab({
   );
 
   // Extra fields beyond the schema's list_view columns, excluding internal
-  // noise. Lets future plugin schemas surface fields without listing them
+  // noise. Lets future app schemas surface fields without listing them
   // in `list_view.columns` (which is meant for the table view).
   const extraEntries = Object.entries(task).filter(
     ([key]) => !columns.some((c) => c.key === key) && !suppressedFields.has(key),
@@ -555,7 +555,7 @@ function ActionBar({
     try {
       await deleteTask.mutateAsync(taskName);
       enqueueSnackbar(`${schema.display_name} task deleted`, { variant: 'success' });
-      // Anchor to the plugin root explicitly. Relative `..` chains depend
+      // Anchor to the app root explicitly. Relative `..` chains depend
       // on which tab the user is on (Overview vs. Logs renders a deeper
       // sub-route via nested `<Routes>`), so use an absolute path.
       navigate(routeBase);

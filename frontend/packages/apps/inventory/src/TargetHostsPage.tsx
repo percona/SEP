@@ -30,7 +30,7 @@ import { SchemaListView, useHosts, type HostOption } from '@sep/framework';
  * Sourced from the shared {@link useHosts} hook (``GET /api/sep/hosts/``) — the
  * same Tasks/Inventory merge that backs ``HostSelector``. No inventory-DB entity
  * is involved: these are transient Nomad executor nodes, so the page bypasses the
- * plugin entity machinery and renders the framework hook's data directly. Loading,
+ * app entity machinery and renders the framework hook's data directly. Loading,
  * error, and empty states are first-class (React Query ``isLoading`` / ``isError``;
  * the table's own empty render handles a successful empty list).
  */

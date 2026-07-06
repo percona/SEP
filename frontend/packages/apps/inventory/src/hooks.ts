@@ -24,7 +24,7 @@ const INVENTORY_BASE = '/apps/inventory';
 /**
  * Root query key for every inventory entity list (nodes plus the nested
  * services/schemas/tables lists). Mirrors ``entityQueriesRootKey('inventory')``
- * from the shared plugin task hooks; that helper is not exported, so the literal
+ * from the shared app task hooks; that helper is not exported, so the literal
  * is duplicated here. Invalidating this prefix cascades to all nested
  * ``['plugins', 'inventory', 'entity', <name>]`` lists by React Query's partial
  * key matching.
@@ -59,7 +59,7 @@ export type SystemObservationEntity = 'nodes' | 'services';
 
 /**
  * Fetch the system observation for a node or service through the inventory
- * plugin gateway. The upstream returns HTTP 404 when nothing has been
+ * app gateway. The upstream returns HTTP 404 when nothing has been
  * collected yet; that is the expected "not collected" signal rather than a
  * failure, so it is normalized to ``null`` (an empty state) instead of an
  * error. All other failures propagate to React Query as usual.

@@ -71,7 +71,7 @@ describe('useTasksList', () => {
     (apiClient.defaults as unknown as { adapter: unknown }).adapter = originalAdapter;
   });
 
-  it('fetches task rows from the tasks plugin list endpoint', async () => {
+  it('fetches task rows from the tasks app list endpoint', async () => {
     const { result } = renderHook(() => useTasksList(), { wrapper: makeWrapper() });
 
     await waitFor(() => {

@@ -25,7 +25,7 @@ interface SnippetsAppProps {
 }
 
 /**
- * Snippets plugin entry point — composes its own routes because the legacy
+ * Snippets app entry point — composes its own routes because the legacy
  * snippets UI is snippet-centric (list of files → detail page combining
  * preview + execution form + history) rather than the framework's
  * task-centric default.

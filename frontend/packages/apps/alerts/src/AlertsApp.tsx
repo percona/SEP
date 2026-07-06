@@ -20,7 +20,7 @@ import { AlertsListPage } from './AlertsListPage';
 import { AlertsDetailPage } from './AlertsDetailPage';
 
 /**
- * Alerts plugin entry point.
+ * Alerts app entry point.
  *
  * Routes:
  *   /alerts/templates/              → alert templates list + push/restore/PagerDuty wizard

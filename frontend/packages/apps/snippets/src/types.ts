@@ -16,7 +16,7 @@
  */
 
 /**
- * Shared types for the snippets plugin frontend package.
+ * Shared types for the snippets app frontend package.
  *
  * Mirrors the Pydantic API models defined in
  * `app/sep/plugins/snippets/models.py`.

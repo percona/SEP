@@ -226,7 +226,7 @@ test.describe('MySQL Backups smoke', () => {
     await mockMysqlBackupsRoutes(page);
   });
 
-  test('loads list page and renders schema-driven plugin', async ({ page }) => {
+  test('loads list page and renders schema-driven app', async ({ page }) => {
     await page.goto('/apps/mysql_backups');
     await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
       timeout: 30_000,
@@ -320,7 +320,7 @@ async function openCreateFormAndFillRequired(page: Page, taskName: string) {
 // Extends MOCK_SCHEMA with the three mode sections that carry ``forbidden``
 // gates mirroring the real ``mysql_backups_schema``. Each section has one
 // representative field so the test can assert presence/absence without
-// knowing every field the real plugin exposes.
+// knowing every field the real app exposes.
 const MOCK_SCHEMA_WITH_SECTION_GATES = {
   ...MOCK_SCHEMA,
   forms: [

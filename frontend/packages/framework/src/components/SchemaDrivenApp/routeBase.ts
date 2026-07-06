@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-/** Resolve the absolute URL prefix for plugin list/detail/schedule navigation. */
+/** Resolve the absolute URL prefix for app list/detail/schedule navigation. */
 export function resolveAppRouteBase(pluginName: string, routeBase?: string): string {
   return routeBase ?? `/apps/${pluginName}`;
 }

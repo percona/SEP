@@ -29,7 +29,7 @@ export interface InventoryAppProps {
 }
 
 /**
- * Inventory plugin — browse nodes, services, schemas, and tables with the same drill-down
+ * Inventory app — browse nodes, services, schemas, and tables with the same drill-down
  * as the legacy UI (node → services → schemas → tables). Row delete is available on list
  * tables; detail chrome stays browse-only (no edit / header delete).
  */

@@ -20,7 +20,7 @@ import type { AppCapabilities } from '@sep/api';
 import type { FormSection, RenderFieldOverride } from '../SchemaFormRenderer/types';
 
 /**
- * Everything a whole-form slot needs to render and submit a plugin form. The
+ * Everything a whole-form slot needs to render and submit a app form. The
  * framework still owns the route, page chrome (back navigation + title),
  * mutation wiring, and success / error snackbars; only the form body is
  * replaced. A slot composes {@link SchemaFormRenderer} internally with these
@@ -39,7 +39,7 @@ export interface AppFormSlotProps {
   loading: boolean;
   /** Initial form values (populated for edit; undefined for create). */
   defaultValues?: Record<string, unknown>;
-  /** Plugin capabilities (e.g. `alert_on_fail`) for the composed renderer. */
+  /** App capabilities (e.g. `alert_on_fail`) for the composed renderer. */
   capabilities?: AppCapabilities;
   /** Per-field override threaded through, so a composed renderer can honour it. */
   renderField?: RenderFieldOverride;

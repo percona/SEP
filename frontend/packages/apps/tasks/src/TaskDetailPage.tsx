@@ -84,7 +84,7 @@ function DetailField({ label, value }: { label: string; value: ReactNode }) {
 
 function PeriodicSummaryTable({ rows }: { rows: PeriodicTaskSummaryRow[] }) {
   // TODO(sep-frontend): Fold this read-only periodic schedule view into the framework
-  // when another plugin needs the same surface.
+  // when another app needs the same surface.
   if (rows.length === 0) {
     return (
       <Typography variant="body2" color="text.secondary">

@@ -34,7 +34,7 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:5174',
     // Pin locale + timezone so date formatting (e.g. `toLocaleString()` in the
-    // alerts plugin) renders deterministically across local and CI machines.
+    // alerts app) renders deterministically across local and CI machines.
     locale: 'en-US',
     timezoneId: 'UTC',
     // Capture a trace and screenshot only on failure — useful for debugging

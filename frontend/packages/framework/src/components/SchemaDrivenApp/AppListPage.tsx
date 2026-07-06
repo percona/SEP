@@ -231,7 +231,7 @@ export function AppListPage({
                     ? navigate(rowClickHref(row as Record<string, unknown>))
                     : navigate(String(row.id), { relative: 'path' })
               : (row) => {
-                  // Backend per-plugin detail/delete routes look up by `task_name`
+                  // Backend per-app detail/delete routes look up by `task_name`
                   // (string), not numeric `id`. The first listView column is
                   // typically `name`; fall back to id only if name is absent.
                   const key = row.name ?? row.id;

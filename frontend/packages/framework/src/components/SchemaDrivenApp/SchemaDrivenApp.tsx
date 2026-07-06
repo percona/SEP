@@ -44,7 +44,7 @@ import type { RenderListColumnOverride } from '../SchemaListView';
 
 interface SchemaDrivenAppProps {
   pluginName: string;
-  /** Absolute list route prefix when the plugin is not mounted under ``/apps/{name}``. */
+  /** Absolute list route prefix when the app is not mounted under ``/apps/{name}``. */
   routeBase?: string;
   mockSchema?: AppSchema;
   mockTasks?: Record<string, unknown>[];
@@ -175,7 +175,7 @@ function AppEditPage({
     return (
       <Box sx={{ py: 2 }}>
         <Typography color="text.secondary">
-          Edit is only available for multi-entity plugins.
+          Edit is only available for multi-entity apps.
         </Typography>
       </Box>
     );
@@ -389,7 +389,7 @@ export function SchemaDrivenApp({
           />
         </>
       )}
-      {/* Schedule route is only registered when the plugin schema opts in;
+      {/* Schedule route is only registered when the app schema opts in;
           otherwise direct navigation to `/apps/<name>/schedule` would
           show the panel even though the entry-point buttons (which gate on
           the same capability) are hidden. */}

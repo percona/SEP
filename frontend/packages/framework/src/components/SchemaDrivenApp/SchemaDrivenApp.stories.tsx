@@ -44,7 +44,7 @@ const mockSchema: AppSchema = {
   ],
 } as unknown as AppSchema;
 
-// The edit route is registered only for multi-entity plugins, so the
+// The edit route is registered only for multi-entity apps, so the
 // renderEditForm story needs an entity-backed schema (vs. the single-entity
 // `mockSchema` the create story uses).
 const mockEntitySchema: AppSchema = {
@@ -107,7 +107,7 @@ const renderCreateForm: RenderFormSlot = ({
 }) => (
   <Paper variant="outlined" sx={{ p: 2 }}>
     <Alert severity="info" sx={{ mb: 2 }}>
-      Custom create form provided by a plugin via the renderCreateForm slot.
+      Custom create form provided by a app via the renderCreateForm slot.
     </Alert>
     <SchemaFormRenderer
       sections={sections}
@@ -142,7 +142,7 @@ const renderEditForm: RenderFormSlot = ({
 }) => (
   <Paper variant="outlined" sx={{ p: 2 }}>
     <Alert severity="info" sx={{ mb: 2 }}>
-      Custom edit form provided by a plugin via the renderEditForm slot.
+      Custom edit form provided by a app via the renderEditForm slot.
     </Alert>
     <SchemaFormRenderer
       sections={sections}

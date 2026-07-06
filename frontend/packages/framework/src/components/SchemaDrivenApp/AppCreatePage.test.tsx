@@ -119,7 +119,7 @@ describe('AppCreatePage — renderCreateForm slot', () => {
   });
 });
 
-describe('PluginCreatePage — post-create navigation', () => {
+describe('AppCreatePage — post-create navigation', () => {
   const submitSlot: RenderFormSlot = ({ onSubmit }) => (
     <button type="button" onClick={() => onSubmit({ title: 'x' })}>
       Submit slot

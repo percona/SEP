@@ -25,7 +25,7 @@ import {
   type TaskListRow,
 } from './types';
 
-/** Fetch the read-only Task Manager plugin schema. */
+/** Fetch the read-only Task Manager app schema. */
 export function useTasksAppSchema() {
   return useAppSchema(TASKS_APP_NAME);
 }

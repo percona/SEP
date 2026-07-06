@@ -37,7 +37,7 @@ const MOCK_USER = {
 // Keys are snake_case to match the backend AppSchema shape — the React
 // components read `schema.display_name` / `schema.list_view` directly.
 // Fields kept intentionally minimal: empty forms/list_view ⇒ no extra UI.
-const MOCK_PLUGIN_SCHEMA = {
+const MOCK_APP_SCHEMA = {
   name: 'checksums',
   display_name: 'Checksums',
   forms: [],
@@ -92,7 +92,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_PLUGIN_SCHEMA),
+        body: JSON.stringify(MOCK_APP_SCHEMA),
       });
     }
 
@@ -116,7 +116,7 @@ async function mockAuthenticatedApis(page: Page): Promise<void> {
       return fulfillEnabledApps(route);
     }
 
-    // Default: empty success for plugin task lists and anything else
+    // Default: empty success for app task lists and anything else
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -181,7 +181,7 @@ test.describe('shell sanity smoke', () => {
     await expect(page.getByRole('button', { name: 'Collect Diagnostic Data' })).toBeVisible();
   });
 
-  test('checksums plugin route mounts without console errors', async ({ page }) => {
+  test('checksums app route mounts without console errors', async ({ page }) => {
     const consoleErrors: string[] = [];
     page.on('console', (msg) => {
       if (msg.type() === 'error') {

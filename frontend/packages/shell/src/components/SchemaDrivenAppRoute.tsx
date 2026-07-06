@@ -19,14 +19,14 @@ import { SchemaDrivenApp } from '@sep/framework';
 import { getAppRouteMeta } from '../appNavConfig';
 
 interface SchemaDrivenAppRouteProps {
-  /** Backend plugin module key (``GET /api/apps/`` ``app_key``). */
+  /** Backend app module key (``GET /api/apps/`` ``app_key``). */
   appKey: string;
 }
 
 /**
  * Generic shell route for schema-driven apps without a bespoke React package.
  *
- * ``routeBase`` comes from ``appNavConfig`` when the plugin is not mounted
+ * ``routeBase`` comes from ``appNavConfig`` when the app is not mounted
  * under the default ``/apps/{appKey}`` prefix. The derived schema now drives
  * every form (including archives' one-of groups and free-solo references), so
  * no per-app create/edit form override is injected here.

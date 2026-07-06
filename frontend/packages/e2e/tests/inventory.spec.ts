@@ -20,7 +20,7 @@ import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const PLUGIN_ROUTE = '/inventory';
+const APP_ROUTE = '/inventory';
 
 const NODE_ID = 1;
 const SERVICE_ID = 10;
@@ -81,7 +81,7 @@ const MOCK_NODE_DETAIL = { ...MOCK_NODE, services: [MOCK_SERVICE] };
 /** Service detail — includes embedded schemas list for drill-down. */
 const MOCK_SERVICE_DETAIL = { ...MOCK_SERVICE, schemas: [MOCK_SCHEMA_ROW] };
 
-// ── Plugin schema ─────────────────────────────────────────────────────────────
+// ── App schema ─────────────────────────────────────────────────────────────
 //
 // Mirrors app/sep/plugins/inventory/schema.py.  All four entities include an
 // _actions column so that allowListEntityDelete wires up the delete button.
@@ -333,21 +333,21 @@ class InventoryAppPage {
   constructor(private readonly page: Page) {}
 
   async goto() {
-    await this.page.goto(PLUGIN_ROUTE);
+    await this.page.goto(APP_ROUTE);
   }
 
   async gotoNodeDetail(nodeId: number) {
-    await this.page.goto(`${PLUGIN_ROUTE}/nodes/${nodeId}`);
+    await this.page.goto(`${APP_ROUTE}/nodes/${nodeId}`);
   }
 
   async gotoServiceDetail(serviceId: number) {
-    await this.page.goto(`${PLUGIN_ROUTE}/services/${serviceId}`);
+    await this.page.goto(`${APP_ROUTE}/services/${serviceId}`);
   }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-test.describe('Inventory plugin smoke', () => {
+test.describe('Inventory app smoke', () => {
   test.beforeEach(async ({ page }) => {
     await mockInventoryApis(page);
   });

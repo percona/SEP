@@ -20,7 +20,7 @@ import { AlertTroubleshootingIndexPage } from './AlertTroubleshootingIndexPage';
 import { AlertTroubleshootingDetailPage } from './AlertTroubleshootingDetailPage';
 
 /**
- * Alert Troubleshooting plugin entry point.
+ * Alert Troubleshooting app entry point.
  *
  * Routes:
  *   /alerts/troubleshooting/           → grouped alert browser
