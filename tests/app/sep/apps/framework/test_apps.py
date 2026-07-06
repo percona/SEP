@@ -56,6 +56,7 @@ from app.sep.apps.framework.schema import (
     Column,
     FormSection,
     ListView,
+    RelatedApp,
 )
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
@@ -1091,6 +1092,62 @@ class TestSchemaPassthrough:
 
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["name"] == "synthetic-app"
+
+
+_RESTORE_RELATED_APP = RelatedApp(
+    app_key="mysql_backups/restore",
+    label="Restore",
+    route_segment="restores",
+)
+
+
+class TestRelatedAppsKnob:
+    """Cover the ``related_apps`` definition knob and schema threading."""
+
+    def test_related_apps_surface_on_get_schema(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``GET /schema`` includes declared ``related_apps`` metadata."""
+        app_def = _synth_app(related_apps=(_RESTORE_RELATED_APP,))
+        client = _client(app_def, _make_tasks_api(), regular_user)
+
+        response = client.get(f"{_BASE}/schema")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["related_apps"] == [
+            {
+                "app_key": "mysql_backups/restore",
+                "label": "Restore",
+                "route_segment": "restores",
+            },
+        ]
+
+    def test_duplicate_route_segments_rejected_at_construction(self) -> None:
+        """Reject two ``related_apps`` entries that share a ``route_segment``."""
+        with pytest.raises(
+            ValueError, match="duplicate related_apps route_segment values"
+        ):
+            _synth_app(
+                related_apps=(
+                    _RESTORE_RELATED_APP,
+                    RelatedApp(
+                        app_key="other/restore",
+                        label="Other",
+                        route_segment="restores",
+                    ),
+                ),
+            )
+
+    def test_related_apps_rejected_on_schema_passthrough_app(self) -> None:
+        """Reject ``related_apps`` on a ``schema=`` passthrough definition."""
+        with pytest.raises(ValueError, match="schema= app carries related_apps"):
+            _synth_app(
+                create_model=None,
+                task_spec_builder=None,
+                schema=_PASSTHROUGH_SCHEMA,
+                payload_builder=_passthrough_payload_builder,
+                related_apps=(_RESTORE_RELATED_APP,),
+            )
 
 
 class TestRegistryBinding:

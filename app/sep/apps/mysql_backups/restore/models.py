@@ -16,9 +16,9 @@
 """Define models for the Restore plugin."""
 
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
@@ -432,6 +432,31 @@ class RestoreCreate(TaskFormModel):
         NonEmptyStr | EmptyStrToNone,
         Ui(label="Binlog restore extra args", section="Binlog"),
     ] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_int_reference_ids(cls, data: Any) -> Any:
+        """Coerce int ``service_id`` / ``schema_id`` (JSON body) to str.
+
+        The HTML form path receives these fields as ``NonEmptyStr |
+        EmptyStrToNone`` directly. The JSON API (React schema form) may send
+        inventory ids as ints; without coercion they fail the str-typed fields.
+        Form submissions arriving as strings are unaffected.
+
+        :param data: The raw input passed to ``model_validate``.
+        :return: The input with stringified reference ids when they were ints,
+            or ``data`` unchanged otherwise.
+        """
+        if not isinstance(data, dict):
+            return data
+        updates: dict[str, str] = {}
+        for key in ("service_id", "schema_id"):
+            value = data.get(key)
+            if isinstance(value, int):
+                updates[key] = str(value)
+        if updates:
+            return {**data, **updates}
+        return data
 
     @field_validator("backup_source")
     @classmethod
