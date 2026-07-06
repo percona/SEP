@@ -43,22 +43,6 @@ if config.config_file_name is not None:
 target_metadata = SQLModel.metadata
 
 
-def _include_object(object_, name, type_, *_):
-    """Exclude the cross-service ``settingoverride`` table from autogenerate.
-
-    ``settingoverride`` is registered on the shared ``SQLModel.metadata`` whenever
-    ``app.core.config`` is imported (it backs the global settings proxy), but the
-    table is owned by the SEP and Tasks migration tracks -- the Inventory database
-    never holds it. Excluding it (and its indexes) keeps ``alembic --name
-    inventory check`` from reporting a spurious ``add_table``.
-    """
-    if type_ == "table":
-        return name != "settingoverride"
-    if type_ == "index":
-        table = getattr(object_, "table", None)
-        return table is None or table.name != "settingoverride"
-    return True
-
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
@@ -85,7 +69,6 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         version_table="alembic_version_inventory",
         compare_type=compare_type,
-        include_object=_include_object,
     )
 
     with context.begin_transaction():
@@ -98,7 +81,6 @@ def do_run_migrations(connection: Connection) -> None:
         target_metadata=target_metadata,
         version_table="alembic_version_inventory",
         compare_type=compare_type,
-        include_object=_include_object,
     )
 
     with context.begin_transaction():
