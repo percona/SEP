@@ -79,10 +79,17 @@ def resolve_payload_reference(reference: str) -> Path:
 
     :param reference: The stored ``file://`` payload reference.
     :return: The first candidate path that resolves to an existing file.
-    :raises PayloadReferenceError: If a relative reference escapes ``BASE_DIR``
-        or no candidate resolves to a file.
+    :raises PayloadReferenceError: If ``reference`` does not carry the
+        ``file://`` scheme, a relative reference escapes ``BASE_DIR``, or no
+        candidate resolves to a file.
     """
-    raw = reference.strip().removeprefix("file://").strip()
+    stripped = reference.strip()
+    if not stripped.startswith("file://"):
+        logger.error("Task payload reference is not a file:// reference: %s", reference)
+        raise PayloadReferenceError(
+            f"Task payload reference is not a file:// reference: {reference}"
+        )
+    raw = stripped.removeprefix("file://").strip()
     candidate = Path(raw)
     if candidate.is_absolute():
         base_candidate = candidate

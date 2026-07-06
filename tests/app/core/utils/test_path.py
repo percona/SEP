@@ -106,6 +106,13 @@ class TestResolvePayloadReference:
         log_error.assert_called_once()
         assert _PLUGIN_REL in str(log_error.call_args)
 
+    def test_non_file_scheme_reference_raises(self, base_dir, mocker):
+        """Assert a reference without the file:// scheme is rejected, not silently resolved."""
+        log_error = mocker.patch("app.core.utils.path.logger.error")
+        with pytest.raises(PayloadReferenceError, match="not a file:// reference"):
+            resolve_payload_reference(_PLUGIN_REL)
+        log_error.assert_called_once()
+
     def test_relative_reference_escaping_base_dir_raises(self, base_dir):
         """Assert a relative reference resolving outside BASE_DIR is rejected."""
         with pytest.raises(PayloadReferenceError, match="escapes BASE_DIR"):

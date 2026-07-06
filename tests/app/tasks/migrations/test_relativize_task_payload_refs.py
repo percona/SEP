@@ -106,7 +106,7 @@ def test_heals_all_three_mysql_backup_types(tasks_alembic_config):
 
 
 def test_heals_doubled_app_prefix(tasks_alembic_config):
-    """Assert a doubled ``.../app/app/sep/...`` prefix slices from the first package segment."""
+    """Assert a doubled ``.../app/app/sep/...`` prefix slices from the last package segment."""
     cfg, sync_url = tasks_alembic_config
     command.upgrade(cfg, _PRE_RELATIVIZE_REVISION)
 
