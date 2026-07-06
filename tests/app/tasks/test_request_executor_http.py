@@ -29,8 +29,8 @@ from fastapi import status
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.main import app as combined_app
-from app.models import CasdoorUser
 from app.tasks.main import tasks_app
 
 

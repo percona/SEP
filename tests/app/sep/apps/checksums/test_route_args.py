@@ -22,7 +22,7 @@ regression in the declarative arg assembly surfaces here rather than in producti
 
 from fastapi import status
 
-from app.models import CasdoorUser
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.checksums.app import app as checksums_app
 from tests.app.factories import MOCK_CREATED_SERVICE_ID
 from tests.app.sep.apps.framework.contract_suite import (

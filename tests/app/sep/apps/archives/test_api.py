@@ -27,7 +27,7 @@ from typing import Any
 import pytest
 from fastapi import status
 
-from app.models import CasdoorUser
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.archives import app as archives_app
 from app.sep.apps.archives.models import ArchivesCreate
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
