@@ -205,6 +205,7 @@ class TaskOwner(EnumFieldMixin, StrEnum):
     BACKUP_MONGO = "BACKUP_MONGO"
     RESTORE_MONGO = "RESTORE_MONGO"
     BACKUP_PG = "BACKUP_PG"
+    PT_MYSQL_SUMMARY = "PT_MYSQL_SUMMARY"
 
 
 class TaskLogType(StrEnum):
