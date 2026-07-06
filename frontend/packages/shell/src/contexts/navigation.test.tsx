@@ -75,9 +75,9 @@ afterEach(() => {
 });
 
 describe('NavigationProvider', () => {
-  it('drops disabled-app items and keeps non-plugin items', () => {
+  it('drops disabled-app items and keeps non-app items', () => {
     // Snippets disabled, Tasks enabled; everything else absent → filtered out
-    // except the always-on non-plugin items (Dashboard, Inventory).
+    // except the always-on non-app items (Dashboard, Inventory).
     useEnabledApps.mockReturnValue({ data: [app('tasks', true), app('snippets', false)] });
     const titles = renderProvider();
 

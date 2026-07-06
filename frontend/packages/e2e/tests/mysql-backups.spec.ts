@@ -226,7 +226,7 @@ test.describe('MySQL Backups smoke', () => {
     await mockMysqlBackupsRoutes(page);
   });
 
-  test('loads list page and renders schema-driven plugin', async ({ page }) => {
+  test('loads list page and renders schema-driven app', async ({ page }) => {
     await page.goto('/apps/mysql_backups');
     await expect(page.getByRole('heading', { name: 'MySQL Backups' })).toBeVisible({
       timeout: 30_000,
@@ -290,7 +290,7 @@ test.describe('MySQL Backups smoke', () => {
 
 // ── Unhappy-path coverage ─────────────────────────────────────────────────────
 //
-// These tests lock in the SchemaDrivenPlugin contract under failure conditions:
+// These tests lock in the SchemaDrivenApp contract under failure conditions:
 // backend 5xx on schema/create, validation gating, double-submit guard, and the
 // forbidden-gate field-strip behaviour from the contains-tightening commit.
 
@@ -320,7 +320,7 @@ async function openCreateFormAndFillRequired(page: Page, taskName: string) {
 // Extends MOCK_SCHEMA with the three mode sections that carry ``forbidden``
 // gates mirroring the real ``mysql_backups_schema``. Each section has one
 // representative field so the test can assert presence/absence without
-// knowing every field the real plugin exposes.
+// knowing every field the real app exposes.
 const MOCK_SCHEMA_WITH_SECTION_GATES = {
   ...MOCK_SCHEMA,
   forms: [
@@ -494,8 +494,8 @@ test.describe('MySQL Backups – unhappy paths', () => {
     await mockMysqlBackupsRoutes(page, { schemaStatus: 503 });
     await page.goto('/apps/mysql_backups');
 
-    // SchemaDrivenPlugin surfaces "Failed to load plugin schema" on fetch failure.
-    await expect(page.getByText(/Failed to load plugin schema/i)).toBeVisible({
+    // SchemaDrivenApp surfaces "Failed to load app schema" on fetch failure.
+    await expect(page.getByText(/Failed to load app schema/i)).toBeVisible({
       timeout: 30_000,
     });
     // List heading must not appear — the page should not silently render an empty UI.

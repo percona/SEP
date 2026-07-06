@@ -22,12 +22,14 @@ from fastapi import APIRouter
 from app.api.deps import IsAdminDep
 from app.core.settings_override.api import build_settings_router
 from app.core.settings_override.models import SettingClassEnum
+from app.tasks.anonymizer.config import anonymizer_settings, AnonymizerSettings
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.deps import SessionDep
 
 _settings_router = build_settings_router(
     classes=[
         (SettingClassEnum.TASKS_SETTINGS, TasksSettings, tasks_settings),
+        (SettingClassEnum.ANONYMIZER_SETTINGS, AnonymizerSettings, anonymizer_settings),
     ],
     session_dep=SessionDep,
     admin_dep=IsAdminDep,

@@ -24,19 +24,19 @@ export type { RenderFieldArgs, RenderFieldOverride } from './components/SchemaFo
 export { SchemaListView } from './components/SchemaListView';
 export type { RenderListColumnArgs, RenderListColumnOverride } from './components/SchemaListView';
 export {
-  SchemaDrivenPlugin,
+  SchemaDrivenApp,
   DeleteConfirmDialog,
   AppCreatePage,
   AppDetailPage,
   AppListPage,
   AppSchedulePage,
-} from './components/SchemaDrivenPlugin';
-export type { AppFormSlotProps, RenderFormSlot } from './components/SchemaDrivenPlugin';
-export type { DeleteConfirmDialogProps } from './components/SchemaDrivenPlugin';
-export type { TaskExecuteAction } from './components/SchemaDrivenPlugin/AppDetailPage';
+} from './components/SchemaDrivenApp';
+export type { AppFormSlotProps, RenderFormSlot } from './components/SchemaDrivenApp';
+export type { DeleteConfirmDialogProps } from './components/SchemaDrivenApp';
+export type { TaskExecuteAction } from './components/SchemaDrivenApp/AppDetailPage';
 export type { TaskExecuteBody } from './hooks';
-export { pathToEntityList } from './components/SchemaDrivenPlugin/AppDetailPage';
-export { getStoredForm, STORED_FORM_KEY } from './components/SchemaDrivenPlugin';
+export { pathToEntityList } from './components/SchemaDrivenApp/AppDetailPage';
+export { getStoredForm, STORED_FORM_KEY } from './components/SchemaDrivenApp';
 export { ServiceSelector } from './components/ServiceSelector';
 export type { ServiceSelectorProps } from './components/ServiceSelector';
 export { SchemaSelector } from './components/SchemaSelector';
@@ -86,7 +86,7 @@ export type { ScheduleCellProps } from './components/ScheduleCell';
 export { ScheduleSummary } from './components/ScheduleSummary';
 export type { ScheduleSummaryProps } from './components/ScheduleSummary';
 export {
-  useScheduledTasksForPlugin,
+  useScheduledTasksForApp,
   useCreateScheduledTask,
   useUpdateScheduledTask,
   useDeleteScheduledTask,
@@ -97,9 +97,9 @@ export {
   type IntervalSchedule,
   type PeriodicTaskExecuteRequest,
 } from './components/ScheduledTasksPanel/hooks';
-export { default as DetailSyntaxHighlighter } from './components/SchemaDrivenPlugin/DetailSyntaxHighlighter';
-export { detailSyntaxBlockSx } from './components/SchemaDrivenPlugin/detailSyntaxStyles';
-export type { DetailSyntaxLanguage } from './components/SchemaDrivenPlugin/detailSyntaxStyles';
+export { default as DetailSyntaxHighlighter } from './components/SchemaDrivenApp/DetailSyntaxHighlighter';
+export { detailSyntaxBlockSx } from './components/SchemaDrivenApp/detailSyntaxStyles';
+export type { DetailSyntaxLanguage } from './components/SchemaDrivenApp/detailSyntaxStyles';
 
 // Hooks
 export { useServices, useSchemas, useTables, useHosts } from './hooks';
@@ -123,8 +123,8 @@ export {
   useTaskHistoryByName,
   useTaskHistoryByNames,
   useStopTaskHistory,
-  useSnippetPluginExecution,
-  useSnippetPluginSchema,
+  useSnippetAppExecution,
+  useSnippetAppSchema,
   isRunningStatus,
   RUNNING_STATUSES,
   useTaskHistoryFiles,
@@ -143,7 +143,7 @@ export type {
   FileMetadata,
   TaskHistoryFilesMap,
   TaskFileDownloadParams,
-  UseSnippetPluginExecutionOptions,
+  UseSnippetAppExecutionOptions,
 } from './hooks';
 
 export {
@@ -152,19 +152,19 @@ export {
 } from './utils/snippetFormSubmission';
 export type { SnippetExecutionFormPayload } from './utils/snippetFormSubmission';
 
-export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/snippetPlugin';
+export type { SnippetExecutionRequest, SnippetExecutionResponse } from './types/snippetApp';
 
 export { resolvePath } from './utils/resolvePath';
 
 export { downloadBlob } from './utils/downloadBlob';
 
 export {
-  SNIPPETS_PLUGINS_API_BASE,
-  SNIPPET_PLUGIN_PER_SNIPPET_BASE,
-  snippetPluginApprovalPath,
-  snippetPluginDownloadPath,
-  snippetPluginExecutePath,
-  snippetPluginHistoryPath,
-  snippetPluginPreviewPath,
-  snippetPluginSchemaPath,
-} from './snippetPluginPaths';
+  SNIPPETS_APPS_API_BASE,
+  SNIPPET_APP_PER_SNIPPET_BASE,
+  snippetAppApprovalPath,
+  snippetAppDownloadPath,
+  snippetAppExecutePath,
+  snippetAppHistoryPath,
+  snippetAppPreviewPath,
+  snippetAppSchemaPath,
+} from './snippetAppPaths';

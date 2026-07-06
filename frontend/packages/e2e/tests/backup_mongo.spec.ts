@@ -236,7 +236,7 @@ function restoreTaskNameFromPath(pathname: string): string | null {
 }
 
 /**
- * Authenticated session with backup_mongo and restores plugin routes mocked.
+ * Authenticated session with backup_mongo and restores app routes mocked.
  */
 async function mockBackupMongoApis(page: Page, apiState: AppApiState): Promise<void> {
   const { backup: backupState, restore: restoreState } = apiState;
@@ -411,7 +411,7 @@ async function mockBackupMongoApis(page: Page, apiState: AppApiState): Promise<v
   });
 }
 
-test.describe('MongoDB backup_mongo plugin smoke', () => {
+test.describe('MongoDB backup_mongo app smoke', () => {
   let apiState: AppApiState;
 
   test.beforeEach(async ({ page }) => {

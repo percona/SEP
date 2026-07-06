@@ -115,7 +115,7 @@ async function mockReportRoutes(page: Page) {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-test.describe('Report plugin smoke', () => {
+test.describe('Report app smoke', () => {
   test('form renders and submit navigates to result', async ({ page }) => {
     await mockReportRoutes(page);
     await page.goto('/reports');
