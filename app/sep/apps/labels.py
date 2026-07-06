@@ -21,4 +21,5 @@ importing ``framework.__init__`` and unrelated SQLModel tables into
 metadata.
 """
 
+#: Canonical UI label for the host where task commands execute.
 EXECUTION_HOST_LABEL = "Execution Host"

@@ -40,7 +40,7 @@ const MOCK_SCHEMA = {
       title: 'Task',
       fields: [
         { type: 'string', name: 'task_name', label: 'Task Name', required: true },
-        { type: 'host', name: 'hostname', label: 'Executor Host', required: true },
+        { type: 'host', name: 'hostname', label: 'Execution Host', required: true },
         {
           type: 'service',
           name: 'service_id',
@@ -258,7 +258,7 @@ test.describe('MySQL Backups smoke', () => {
       await page.getByLabel('Task Name').fill(taskName);
 
       // Fill required host + service Autocompletes (RHF blocks submit otherwise).
-      await page.getByLabel('Executor Host').click();
+      await page.getByLabel('Execution Host').click();
       await page.getByRole('option', { name: 'host1' }).click();
 
       await page.getByLabel('Database Host').click();
@@ -305,7 +305,7 @@ async function openCreateFormAndFillRequired(page: Page, taskName: string) {
     .click();
 
   await page.getByLabel('Task Name').fill(taskName);
-  await page.getByLabel('Executor Host').click();
+  await page.getByLabel('Execution Host').click();
   await page.getByRole('option', { name: 'host1' }).click();
   await page.getByLabel('Database Host').click();
   await page.getByRole('option', { name: 'svc1 (mysql)' }).click();
@@ -441,7 +441,7 @@ test.describe('MySQL Backups – section-visibility gates', () => {
       .click();
 
     await page.getByLabel('Task Name').fill('mode-switch-payload');
-    await page.getByLabel('Executor Host').click();
+    await page.getByLabel('Execution Host').click();
     await page.getByRole('option', { name: 'host1' }).click();
     await page.getByLabel('Database Host').click();
     await page.getByRole('option', { name: 'svc1 (mysql)' }).click();

@@ -34,6 +34,7 @@ from app.sep.apps.framework.schema import (
     DetailField,
     DetailSection,
     DetailView,
+    EXECUTION_HOST_LABEL,
     ListView,
 )
 
@@ -59,7 +60,7 @@ checksums_views = Views(
                 fields=[
                     DetailField(path="data.meta.command", label="Command"),
                     DetailField(path="data.meta.args", label="Args"),
-                    DetailField(path="data.meta.target", label="Target"),
+                    DetailField(path="data.meta.target", label=EXECUTION_HOST_LABEL),
                 ],
             ),
         ],

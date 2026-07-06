@@ -12,7 +12,7 @@
       {
         "fields": [
           {
-            "label": "Executor Host",
+            "label": "Execution Host",
             "path": "data.meta.target"
           },
           {

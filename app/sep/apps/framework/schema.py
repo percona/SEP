@@ -791,8 +791,6 @@ class ListView(SchemaBaseModel):
         return self
 
 
-#: Canonical UI label for the Nomad / Celery host a task runs on.
-#: Defined in :mod:`app.sep.apps.labels`; re-exported here for callers.
 #: Read-only execution-host column shared by every host-bearing list view.
 #: Never mutate it; pass through ``default_columns()``, which copies per call.
 EXECUTOR_HOST_COLUMN = Column(key="hostname", label=EXECUTION_HOST_LABEL)

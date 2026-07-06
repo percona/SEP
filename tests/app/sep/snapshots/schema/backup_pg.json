@@ -12,7 +12,7 @@
       {
         "fields": [
           {
-            "label": "Target",
+            "label": "Execution Host",
             "path": "hostname"
           },
           {

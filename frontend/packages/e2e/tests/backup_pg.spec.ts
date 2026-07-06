@@ -45,7 +45,7 @@ const MOCK_SCHEMA = {
       title: 'Task',
       fields: [
         { type: 'string', name: 'task_name', label: 'Task Name', required: true },
-        { type: 'string', name: 'hostname', label: 'Executor Host', required: true },
+        { type: 'string', name: 'hostname', label: 'Execution Host', required: true },
       ],
     },
   ],
@@ -53,7 +53,7 @@ const MOCK_SCHEMA = {
     columns: [
       { key: 'name', label: 'Name', sortable: true },
       { key: 'status', label: 'Status', format: 'status' },
-      { key: 'hostname', label: 'Executor Host' },
+      { key: 'hostname', label: 'Execution Host' },
       { key: 'created_at', label: 'Created', format: 'relative' },
       { key: 'created_by', label: 'Created By' },
     ],
