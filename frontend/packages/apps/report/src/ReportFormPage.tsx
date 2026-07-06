@@ -202,8 +202,7 @@ export function ReportFormPage() {
                 ))}
               </Select>
               <FormHelperText>
-                Filters the JSON preview only. PDF and ServiceNow upload always include all
-                sections.
+                Filters the generated report, PDF, and ServiceNow upload.
               </FormHelperText>
             </FormControl>
           )}

@@ -27,6 +27,7 @@ from sqlmodel import SQLModel
 
 from app.core.celery.crud import BasePeriodicTaskManager
 from app.core.celery.utils import SystemPeriodicTaskData, SystemPeriodicTaskSchedule
+from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep import periodic_tasks as periodic_tasks_module
@@ -37,6 +38,7 @@ from app.sep.db import seed as seed_module
 from app.sep.models import AppLifecycleEnum, AppState
 
 SNIPPETS_TASK = "sep__sync_snippets"
+CELERY_RESULT_EXPIRES_SECONDS = 3600
 
 
 def _plugin(key: str, *, enabled: bool = True) -> App:
@@ -238,6 +240,11 @@ def test_builder_reads_sync_interval_at_call_time() -> None:
         assert schedule.schedule == CoreIntervalSchedule(every=5, period=Period.MINUTES)
     finally:
         snippets_settings._set_snapshot({})
+
+
+def test_celery_result_expires_configured() -> None:
+    """Celery results have a TTL so result backends do not grow forever."""
+    assert settings.CELERY.result_expires == CELERY_RESULT_EXPIRES_SECONDS
 
 
 @pytest_asyncio.fixture(name="beat_maker")

@@ -16,6 +16,7 @@
  */
 
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
@@ -28,23 +29,68 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useDownloadPdf, useGenerateReport, useReportConfig, useUploadToServiceNow } from './hooks';
+import {
+  isReportJobActive,
+  reportJobError,
+  uploadJobResult,
+  useDownloadReportPdf,
+  useGenerateReport,
+  usePdfJob,
+  useReportConfig,
+  useStartPdfJob,
+  useStartUploadJob,
+  useUploadJob,
+} from './hooks';
 import type { ReportParams } from './types';
 
 export function ReportResultPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
   const params = (state as { params?: ReportParams } | null)?.params;
+  const [pdfJobId, setPdfJobId] = useState<string | null>(null);
+  const [downloadedPdfJobId, setDownloadedPdfJobId] = useState<string | null>(null);
+  const [uploadJobId, setUploadJobId] = useState<string | null>(null);
 
   const { data: report, isLoading, error } = useGenerateReport(params ?? null);
   const { data: config } = useReportConfig();
-  const downloadPdf = useDownloadPdf();
-  const upload = useUploadToServiceNow();
+  const startPdfJob = useStartPdfJob();
+  const pdfJob = usePdfJob(pdfJobId);
+  const downloadPdf = useDownloadReportPdf();
+  const startUploadJob = useStartUploadJob();
+  const uploadJob = useUploadJob(uploadJobId);
 
   const uploadDisabledReasons = config?.upload_disabled_reasons ?? [];
-  const uploadDisabled = upload.isPending || upload.isSuccess || uploadDisabledReasons.length > 0;
+  const pdfInProgress =
+    startPdfJob.isPending || isReportJobActive(pdfJob.data) || downloadPdf.isPending;
+  const pdfResultError =
+    pdfJob.data?.status.toLowerCase() === 'success' && !pdfJob.data.pdf_ready
+      ? 'Report job completed without required result'
+      : null;
+  const pdfError =
+    startPdfJob.error?.message ??
+    pdfJob.error?.message ??
+    pdfResultError ??
+    reportJobError(pdfJob.data) ??
+    downloadPdf.error?.message;
+  const uploadInProgress = startUploadJob.isPending || isReportJobActive(uploadJob.data);
+  const uploadResult = uploadJobResult(uploadJob.data);
+  const uploadError =
+    startUploadJob.error?.message ?? uploadJob.error?.message ?? reportJobError(uploadJob.data);
+  const uploadDisabled =
+    uploadInProgress || Boolean(uploadResult) || uploadDisabledReasons.length > 0;
   const uploadTooltip =
     uploadDisabledReasons.length > 0 ? uploadDisabledReasons.join('; ') : undefined;
+
+  useEffect(() => {
+    if (
+      pdfJob.data?.status.toLowerCase() === 'success' &&
+      pdfJob.data.pdf_ready &&
+      downloadedPdfJobId !== pdfJob.data.job_id
+    ) {
+      setDownloadedPdfJobId(pdfJob.data.job_id);
+      downloadPdf.mutate({ job: pdfJob.data });
+    }
+  }, [downloadPdf, downloadedPdfJobId, pdfJob.data]);
 
   if (!params) {
     return (
@@ -113,20 +159,31 @@ export function ReportResultPage() {
       <Stack direction="row" spacing={2} sx={{ mb: 3 }} flexWrap="wrap" useFlexGap>
         <Button
           variant="contained"
-          onClick={() => downloadPdf.mutate(params)}
-          disabled={downloadPdf.isPending}
+          onClick={() => {
+            setPdfJobId(null);
+            setDownloadedPdfJobId(null);
+            startPdfJob.mutate(report, {
+              onSuccess: (job) => setPdfJobId(job.job_id),
+            });
+          }}
+          disabled={pdfInProgress}
         >
-          {downloadPdf.isPending ? 'Generating PDF…' : 'Download PDF'}
+          {pdfInProgress ? 'Generating PDF…' : 'Download PDF'}
         </Button>
 
         <Tooltip title={uploadTooltip}>
           <span>
             <Button
               variant="outlined"
-              onClick={() => upload.mutate(params)}
+              onClick={() => {
+                setUploadJobId(null);
+                startUploadJob.mutate(report, {
+                  onSuccess: (job) => setUploadJobId(job.job_id),
+                });
+              }}
               disabled={uploadDisabled}
             >
-              {upload.isPending ? 'Uploading…' : 'Upload to ServiceNow'}
+              {uploadInProgress ? 'Uploading…' : 'Upload to ServiceNow'}
             </Button>
           </span>
         </Tooltip>
@@ -136,19 +193,19 @@ export function ReportResultPage() {
         </Button>
       </Stack>
 
-      {downloadPdf.isError && (
+      {pdfError && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          PDF download failed: {downloadPdf.error?.message}
+          PDF download failed: {pdfError}
         </Alert>
       )}
 
-      {upload.isError && (
+      {uploadError && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          Upload failed: {upload.error?.message}
+          Upload failed: {uploadError}
         </Alert>
       )}
 
-      {upload.isSuccess && (
+      {uploadResult && (
         <Alert severity="success" sx={{ mb: 2 }}>
           Report uploaded to ServiceNow successfully.
         </Alert>
