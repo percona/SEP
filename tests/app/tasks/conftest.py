@@ -27,9 +27,9 @@ from sqlmodel.pool import StaticPool
 from starlette.testclient import TestClient
 
 from app.api.deps import get_current_user
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
 from app.tasks.crud import TaskHistoryManager, TaskManager
 from app.tasks.deps import get_request_executor, get_session
 from app.tasks.execution.models import BaseExecutor

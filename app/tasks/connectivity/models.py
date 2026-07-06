@@ -47,15 +47,12 @@ class ConnectivityCheckWrite(BaseModel):
     """Represent a connectivity check request payload.
 
     :param target: The Nomad node name to run the check on.
-    :type target: str
     :param host: The database host address.
-    :type host: str
     :param port: The database port number.
-    :type port: int
     :param service_type: The type of database service to check.
-    :type service_type: ConnectivityServiceType
-    :param timeout: Maximum seconds to wait for the check. Defaults to 30.
-    :type timeout: int
+    :param timeout: Connect-phase budget in seconds, counted only once the
+        ``run-script`` task starts. Total server wait is ``PROVISIONING_TIMEOUT``
+        (provisioning phase) plus this value. Defaults to 30.
     """
 
     target: str
@@ -69,11 +66,8 @@ class ConnectivityCheckResponse(BaseModel):
     """Represent a connectivity check result.
 
     :param success: Whether the connectivity check succeeded.
-    :type success: bool
     :param error: Error message if the check failed. Defaults to ``None``.
-    :type error: str | None
     :param task_history_id: The ID of the task history record for this check.
-    :type task_history_id: int
     """
 
     success: bool

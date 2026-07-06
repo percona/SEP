@@ -205,6 +205,24 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         )
 
 
+def test_views_declare_detail_view() -> None:
+    """Assert the app declares a detail_view surfacing the backup config.
+
+    Regression guard for SEP-1495: the always-rendered "Task information" card
+    already shows the list columns (``hostname`` / ``backup_type``), so the
+    detail view must surface the config that is *not* a column — the executor
+    target and the YAML config under ``data.meta`` — rather than duplicate the
+    columns.
+    """
+    detail_view = mysql_backups_app.views.detail_view
+    assert detail_view is not None
+    assert [section.title for section in detail_view.sections] == [
+        "Backup Configuration"
+    ]
+    paths = [field.path for field in detail_view.sections[0].fields]
+    assert paths == ["data.meta.target", "data.meta.config"]
+
+
 def test_update_returns_create_mirror_shape(regular_user: Any) -> None:
     """Return the create-mirror body from the derived PUT: backup_type, hostname, warning.
 

@@ -217,8 +217,8 @@ EOL
 echo "$data_dir/casdoor_init_data.json created successfully."
 
 cat > ".env.docker" << EOL
-CASDOOR__CLIENT_ID=$clientId
-CASDOOR__CLIENT_SECRET=$clientSecret
+AUTH__PROVIDER__CASDOOR__CLIENT_ID=$clientId
+AUTH__PROVIDER__CASDOOR__CLIENT_SECRET=$clientSecret
 PMM__API_KEY=REPLACE_WITH_YOUR_PMM_API_KEY
 EOL
 

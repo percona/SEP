@@ -46,6 +46,7 @@ import {
   useAppEntityDetail,
   useAppTask,
   type DetailSection,
+  type SepComponents,
   type AppEntitySchema,
   type AppSchema,
 } from '@sep/api';
@@ -303,6 +304,53 @@ function DetailViewSectionCard({
   );
 }
 
+/**
+ * Render the post-creation connectivity-check warning, with an optional link
+ * to the run-script log when the check produced a task history. The link is
+ * omitted when no ``task_history_id`` is present (e.g. the Tasks API was
+ * unreachable, so no task ran).
+ */
+function ConnectivityWarningAlert({
+  warning,
+}: {
+  warning: SepComponents['schemas']['ConnectivityWarning'];
+}) {
+  const [logOpen, setLogOpen] = useState(false);
+  const message = warning.message || 'Connectivity check returned a warning for this task.';
+  const taskHistoryId = warning.task_history_id ?? null;
+
+  return (
+    <>
+      <Alert
+        severity="warning"
+        sx={{ mb: 3, whiteSpace: 'pre-wrap' }}
+        action={
+          taskHistoryId !== null ? (
+            <Button
+              color="inherit"
+              size="small"
+              data-testid="connectivity-log-button"
+              onClick={() => setLogOpen(true)}
+            >
+              View log
+            </Button>
+          ) : undefined
+        }
+      >
+        {message}
+      </Alert>
+      {taskHistoryId !== null && (
+        <Dialog open={logOpen} onClose={() => setLogOpen(false)} fullWidth maxWidth="lg">
+          <DialogTitle>Connectivity check log — #{taskHistoryId}</DialogTitle>
+          <DialogContent dividers sx={{ p: 0 }}>
+            <TaskLogViewer taskHistoryId={taskHistoryId} height={520} />
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
 function OverviewTab({
   schema,
   task,
@@ -311,7 +359,12 @@ function OverviewTab({
   scheduleHref,
   children,
 }: OverviewTabProps) {
-  const connectivityWarning = task.connectivity_warning;
+  // The detail/list response model omits `connectivity_warning`; it rides only
+  // the create response. PluginCreatePage carries it here via navigation state
+  // so the warning surfaces once after a failing post-create check.
+  const location = useLocation();
+  const navState = (location.state ?? null) as { connectivityWarning?: unknown } | null;
+  const connectivityWarning = task.connectivity_warning ?? navState?.connectivityWarning;
   const taskName = typeof task.name === 'string' && task.name.trim() ? task.name.trim() : undefined;
   const columns = schema.list_view!.columns;
   const schemaHiddenFields = schema.list_view?.overview_hidden_fields;
@@ -334,12 +387,9 @@ function OverviewTab({
       {connectivityWarning !== null &&
         connectivityWarning !== undefined &&
         typeof connectivityWarning === 'object' && (
-          <Alert severity="warning" sx={{ mb: 3 }}>
-            {('message' in connectivityWarning &&
-              typeof connectivityWarning.message === 'string' &&
-              connectivityWarning.message) ||
-              'Connectivity check returned a warning for this task.'}
-          </Alert>
+          <ConnectivityWarningAlert
+            warning={connectivityWarning as SepComponents['schemas']['ConnectivityWarning']}
+          />
         )}
 
       <SectionCard title="Task information">

@@ -20,7 +20,7 @@ from datetime import datetime, UTC
 import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.exceptions import HTTPConflictException
+from app.core.exceptions import HTTPBadRequestException, HTTPConflictException
 from app.core.utils.date_time import make_datetime_utc, utc_now
 from app.inventory.crud import (
     HostSystemObservationManager,
@@ -32,7 +32,10 @@ from app.inventory.models import Node, Service
 from tests.app.factories import (
     HostSystemObservationWriteFactory,
     ServiceSystemObservationWriteFactory,
+    ServiceWriteFactory,
 )
+
+NONEXISTENT_PARENT_ID = 999_999
 
 UPDATED_OBSERVED_AT = datetime(2026, 6, 2, 15, 30, 0, tzinfo=UTC)
 
@@ -40,6 +43,26 @@ UPDATED_OBSERVED_AT = datetime(2026, 6, 2, 15, 30, 0, tzinfo=UTC)
 def _assert_observed_at_equal(actual: datetime, expected: datetime) -> None:
     """Compare observed_at values (SQLite may return naive UTC datetimes)."""
     assert make_datetime_utc(actual) == make_datetime_utc(expected)
+
+
+@pytest.mark.asyncio
+async def test_dangling_parent_fk_rejected_by_database(
+    session: AsyncSession,
+) -> None:
+    """Assert the DB foreign-key constraint rejects a dangling parent reference.
+
+    ``create`` does not run the child manager's parent pre-check, so this writes a
+    child row pointing at a nonexistent parent. With SQLite foreign-key enforcement
+    enabled on the test engine (``PRAGMA foreign_keys=ON``), the database rejects the
+    insert; ``save`` surfaces that ``DatabaseError`` as ``HTTPBadRequestException``.
+    Without enforcement the insert would silently succeed and this would not raise.
+    """
+    with pytest.raises(HTTPBadRequestException):
+        await ServiceManager.create(
+            session,
+            ServiceWriteFactory.build(),
+            node_id=NONEXISTENT_PARENT_ID,
+        )
 
 
 @pytest.mark.asyncio

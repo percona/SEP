@@ -89,7 +89,7 @@ class TaskFormModel(AppFormModel):
     :param hostname: The executor host the task runs on; required and non-empty.
     """
 
-    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
+    task_name: Annotated[NonEmptyStr, Ui(section="Task")]
     hostname: Annotated[
         NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="Task")
     ]

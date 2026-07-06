@@ -211,6 +211,38 @@ class TestUpdateService:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.json()["detail"] == "Invalid node_id: None"
 
+    def test_update_service_omitting_node_id_preserves_association(
+        self, test_client: TestClient, service: Service, node: Node
+    ) -> None:
+        """Partial update without node_id succeeds and leaves the FK unchanged.
+
+        A second node exists so the omitted-FK path cannot accidentally resolve a
+        single arbitrary parent: the old override skipped the ``id=None`` filter and
+        crashed with ``MultipleResultsFound`` once more than one parent was present.
+        """
+        test_client.post(
+            "/nodes/", json=NodeWriteFactory.build().model_dump(mode="json")
+        )
+        payload = ServiceWriteFactory.build()
+        body = payload.model_dump(mode="json", exclude={"node_id"})
+        body["name"] = "renamed-without-node-id"
+        response = test_client.put(f"/services/{service.id}", json=body)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["name"] == "renamed-without-node-id"
+        assert data["node_id"] == node.id
+
+    def test_update_service_explicit_null_node_id(
+        self, test_client: TestClient, service: Service
+    ) -> None:
+        """Return 400 when node_id is explicitly null on a non-nullable relationship."""
+        payload = ServiceWriteFactory.build()
+        body = payload.model_dump(mode="json")
+        body["node_id"] = None
+        response = test_client.put(f"/services/{service.id}", json=body)
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert response.json()["detail"] == "Invalid node_id: None"
+
 
 class TestDeleteService:
     """Test DELETE /services/{service_id} endpoint."""
