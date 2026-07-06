@@ -51,6 +51,14 @@ def reconstruct_alters_form(
     for a satellite task (``-dry-run`` / ``-pre-checks``), a non-``run-command``
     row, or when the schema/table/host/service cannot be resolved.
 
+    .. note::
+
+       ``continue_on_pre_check_failure`` is not recoverable here — it is baked
+       into the pre-checks satellite's ``on_failure`` wiring, not the parent
+       execute task's ``meta`` — so a backfilled ``_form`` always defaults it to
+       ``False``. A legacy task that ran continue-on-failure therefore prefills
+       the Edit toggle as off. This is an accepted best-effort limitation.
+
     :param task: The persisted alters task row.
     :param ctx: Shared backfill context carrying the inventory lookup table.
     :return: A create-model-shaped dict, or ``None`` when reconstruction fails.
