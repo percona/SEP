@@ -85,7 +85,6 @@ def resolve_payload_reference(reference: str) -> Path:
     """
     stripped = reference.strip()
     if not stripped.startswith("file://"):
-        logger.error("Task payload reference is not a file:// reference: %s", reference)
         raise PayloadReferenceError(
             f"Task payload reference is not a file:// reference: {reference}"
         )
