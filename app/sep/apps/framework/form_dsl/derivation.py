@@ -846,6 +846,7 @@ def derive_app_schema(
     detail_view: Any = None,
     derived: Any = None,
     predecessors: Any = None,
+    related_apps: Any = None,
 ) -> AppSchema:
     """Assemble the full ``AppSchema`` for a model-first plugin.
 
@@ -866,6 +867,8 @@ def derive_app_schema(
     :param detail_view: Optional detail-page layout. Defaults to ``None``.
     :param derived: Optional derived-task specs. Defaults to ``None``.
     :param predecessors: Optional predecessor specs. Defaults to ``None``.
+    :param related_apps: Optional related-app specs for sibling UI tabs.
+        Defaults to ``None``.
     :return: The fully-assembled, validated plugin schema.
     """
     rules = getattr(model, "__form_rules__", FormRules())
@@ -880,6 +883,7 @@ def derive_app_schema(
         detail_view=detail_view,
         derived=derived,
         predecessors=predecessors,
+        related_apps=related_apps,
         fail_when=list(rules.fail_when) or None,
         cardinality_rules=list(rules.cardinality_rules) or None,
     )

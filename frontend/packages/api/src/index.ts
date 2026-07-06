@@ -92,6 +92,7 @@ export type {
   FieldGate,
   CardinalityRule,
   FailRule,
+  RelatedApp,
 } from './types/app-schema';
 
 // Hooks
