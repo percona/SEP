@@ -173,34 +173,12 @@ def map_alters_legacy_form(flat: AltersLegacyForm) -> AltersCreate:
     :return: The validated collapsed create model.
     :raises HTTPUnprocessableEntityException: When the folded model is invalid.
     """
-    data: dict[str, Any] = {
-        "task_name": flat.task_name,
-        "hostname": flat.hostname,
-        "service_id": flat.service_id,
+    data = {
+        **flat.model_dump(
+            exclude={"schema_id", "schema_name", "table_id", "table_name"}
+        ),
         "db_schema": _collapse(flat.schema_id, flat.schema_name),
         "db_table": _collapse(flat.table_id, flat.table_name),
-        "pre_checks_mysql_config_file": flat.pre_checks_mysql_config_file,
-        "alter": flat.alter,
-        "recursion_method": flat.recursion_method,
-        "dsn_table": flat.dsn_table,
-        "print_arg": flat.print_arg,
-        "progress": flat.progress,
-        "no_swap_tables": flat.no_swap_tables,
-        "no_drop_old_table": flat.no_drop_old_table,
-        "no_drop_new_table": flat.no_drop_new_table,
-        "no_drop_triggers": flat.no_drop_triggers,
-        "pause_file": flat.pause_file,
-        "new_table_name": flat.new_table_name,
-        "tries": flat.tries,
-        "set_vars": flat.set_vars,
-        "critical_load": flat.critical_load,
-        "max_load": flat.max_load,
-        "chunk_time": flat.chunk_time,
-        "max_lag": flat.max_lag,
-        "max_flow_ctl": flat.max_flow_ctl,
-        "extra_args": flat.extra_args,
-        "continue_on_pre_check_failure": flat.continue_on_pre_check_failure,
-        "alert_on_fail": flat.alert_on_fail,
     }
     try:
         return AltersCreate.model_validate(data)
@@ -220,9 +198,7 @@ async def build_alters_task(
 
     :param body: The alters create/write payload.
     :param inventory_api: The Inventory API client.
-    :type inventory_api: InventoryAPI
     :return: A fully constructed parent execute ``TaskWrite``.
-    :rtype: TaskWrite
     :raises HTTPBadRequestException: When no MySQL service is resolved.
     """
     resolved = await resolve_refs(body, inventory_api)

@@ -83,7 +83,7 @@ def reconstruct_alters_form(
     if service_id is None:
         return None
 
-    body: dict[str, Any] = parse_alters_task_args(meta)
+    body = parse_alters_task_args(meta)
     body.update(
         {
             "task_name": task.name,
