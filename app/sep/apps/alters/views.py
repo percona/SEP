@@ -34,6 +34,7 @@ from app.sep.apps.framework.schema import (
     DetailHighlightLanguage,
     DetailSection,
     DetailView,
+    EXECUTION_HOST_LABEL,
     ListView,
 )
 
@@ -63,7 +64,8 @@ alters_views = Views(
                         label="Command line",
                         highlight=DetailHighlightLanguage.BASH,
                     ),
-                    DetailField(path="data.meta.target", label="Target"),
+                    DetailField(path="data.meta.target", label=EXECUTION_HOST_LABEL),
+                    DetailField(path="data.meta._service_host", label="Database Host"),
                     DetailField(path="data.meta._schema_name", label="Schema"),
                     DetailField(path="data.meta._table_name", label="Table"),
                 ],

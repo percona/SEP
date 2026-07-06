@@ -45,7 +45,7 @@ const MOCK_SCHEMA = {
       title: 'Task',
       fields: [
         { type: 'string', name: 'task_name', label: 'Task Name', required: true },
-        { type: 'string', name: 'hostname', label: 'Executor Host', required: true },
+        { type: 'string', name: 'hostname', label: 'Execution Host', required: true },
       ],
     },
   ],
@@ -53,7 +53,7 @@ const MOCK_SCHEMA = {
     columns: [
       { key: 'name', label: 'Name', sortable: true },
       { key: 'status', label: 'Status', format: 'status' },
-      { key: 'hostname', label: 'Executor Host' },
+      { key: 'hostname', label: 'Execution Host' },
       { key: 'created_at', label: 'Created', format: 'relative' },
       { key: 'created_by', label: 'Created By' },
     ],
@@ -287,7 +287,7 @@ test.describe('PostgreSQL backup_pg app smoke', () => {
     });
 
     await page.getByRole('textbox', { name: /task name/i }).fill(NEW_TASK_NAME);
-    await page.getByRole('textbox', { name: /executor host/i }).fill(NEW_TASK_HOSTNAME);
+    await page.getByRole('textbox', { name: /execution host/i }).fill(NEW_TASK_HOSTNAME);
     await page.getByRole('button', { name: /create postgresql backups/i }).click();
 
     await expect(page).toHaveURL(/\/backups\/postgresql\/?$/);

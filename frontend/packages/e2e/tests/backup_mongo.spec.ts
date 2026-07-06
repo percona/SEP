@@ -52,7 +52,7 @@ const MOCK_BACKUPS_SCHEMA = {
       title: 'Task',
       fields: [
         { type: 'string', name: 'task_name', label: 'Task Name', required: true },
-        { type: 'string', name: 'hostname', label: 'Executor Host', required: true },
+        { type: 'string', name: 'hostname', label: 'Execution Host', required: true },
       ],
     },
   ],
@@ -60,7 +60,7 @@ const MOCK_BACKUPS_SCHEMA = {
     columns: [
       { key: 'name', label: 'Name', sortable: true },
       { key: 'status', label: 'Status', format: 'status' },
-      { key: 'hostname', label: 'Executor Host' },
+      { key: 'hostname', label: 'Execution Host' },
       { key: 'backup_type', label: 'Type', format: 'chip' },
       { key: 'created_at', label: 'Created', format: 'relative' },
       { key: 'created_by', label: 'Created By' },
@@ -77,7 +77,7 @@ const MOCK_RESTORES_SCHEMA = {
       title: 'Task',
       fields: [
         { type: 'string', name: 'task_name', label: 'Task Name', required: true },
-        { type: 'string', name: 'hostname', label: 'Executor Host', required: true },
+        { type: 'string', name: 'hostname', label: 'Execution Host', required: true },
         {
           type: 'choice',
           name: 'backup_type',
@@ -101,7 +101,7 @@ const MOCK_RESTORES_SCHEMA = {
     columns: [
       { key: 'name', label: 'Name', sortable: true },
       { key: 'status', label: 'Status', format: 'status' },
-      { key: 'hostname', label: 'Executor Host' },
+      { key: 'hostname', label: 'Execution Host' },
       { key: 'backup_type', label: 'Type', format: 'chip' },
       { key: 'backup_source', label: 'Backup Source' },
       { key: 'created_at', label: 'Created', format: 'relative' },
@@ -468,7 +468,7 @@ test.describe('MongoDB backup_mongo app smoke', () => {
     });
 
     await page.getByRole('textbox', { name: /task name/i }).fill(NEW_BACKUP_TASK_NAME);
-    await page.getByRole('textbox', { name: /executor host/i }).fill(NEW_BACKUP_HOSTNAME);
+    await page.getByRole('textbox', { name: /execution host/i }).fill(NEW_BACKUP_HOSTNAME);
     await page.getByRole('button', { name: /create mongodb backups/i }).click();
 
     await expect(page).toHaveURL(/\/backups\/mongodb\/backups\/?$/);
@@ -522,7 +522,7 @@ test.describe('MongoDB backup_mongo app smoke', () => {
     });
 
     await page.getByRole('textbox', { name: /task name/i }).fill(NEW_RESTORE_TASK_NAME);
-    await page.getByRole('textbox', { name: /executor host/i }).fill(NEW_RESTORE_HOSTNAME);
+    await page.getByRole('textbox', { name: /execution host/i }).fill(NEW_RESTORE_HOSTNAME);
     await page.getByRole('textbox', { name: /backup source/i }).fill(NEW_RESTORE_BACKUP_SOURCE);
     await page.getByRole('radio', { name: 'Logical' }).check();
     await page.getByRole('button', { name: /create mongodb restores/i }).click();

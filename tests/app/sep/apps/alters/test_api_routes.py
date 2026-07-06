@@ -24,6 +24,7 @@ from pytest_mock import MockerFixture
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.sep.connectivity import clear_connectivity_caches
 from app.sep.inventory import CreatedService
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
@@ -184,6 +185,29 @@ class TestAltersAppSchemaEndpoint:
             "-pre-checks"
         ]
         assert payload["predecessors"][0]["on_failure"] == "halt"
+
+    def test_schema_surfaces_execution_and_database_host_labels(self, test_client):
+        """Ensure detail_view and create form use Execution Host / Database Host labels."""
+        response = test_client.get(f"{API_BASE}/schema")
+
+        payload = response.json()
+        execution = next(
+            section
+            for section in payload["detail_view"]["sections"]
+            if section["title"] == "Execution"
+        )
+        detail_labels = {field["label"]: field["path"] for field in execution["fields"]}
+        assert detail_labels[EXECUTION_HOST_LABEL] == "data.meta.target"
+        assert detail_labels["Database Host"] == "data.meta._service_host"
+        assert "Target" not in detail_labels
+
+        task_section = next(
+            section for section in payload["forms"] if section["title"] == "Task"
+        )
+        hostname = next(
+            field for field in task_section["fields"] if field["name"] == "hostname"
+        )
+        assert hostname["label"] == EXECUTION_HOST_LABEL
 
 
 class TestAltersApiList:
