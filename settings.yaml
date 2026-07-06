@@ -134,6 +134,11 @@ default:
       ENDPOINT:        # ServiceNow upload API URL
       API_KEY:         # API key for authenticating with the upload endpoint
       CLIENT_ID:       # Customer identifier sent with each upload
+      # Rendered PDFs are staged on shared disk keyed by job id (worker writes,
+      # web serves) so only small metadata transits the Celery result backend.
+      ARTIFACT_DIR: data/health-reports  # Shared staging dir (mount in worker + web)
+      ARTIFACT_TTL: 3600                  # Seconds to retain a staged PDF; mirror CELERY.RESULT_EXPIRES
+      CLEANUP_INTERVAL: {EVERY: 15, PERIOD: minutes}  # purge_report_artifacts cadence
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
@@ -241,6 +246,7 @@ development:
       PROCESSED_FOLDER: data/celery/processed
       CONTROL_FOLDER: data/celery/control
     RESULT_BACKEND: file://data/celery/results
+    RESULT_EXPIRES: 3600
     RESULT_PERSISTENT: True
     BEAT_DBURI: "sqlite:///schedule.db"
   ALERTING:
@@ -270,6 +276,8 @@ production_docker:
     BEAT_DBURI: postgresql://postgres:xxx@sep-db:5432
     BEAT_SCHEMA: sep
     BROKER_URL: redis://redis:6379/0
+    RESULT_BACKEND: redis://redis:6379/1
+    RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
   DATABASE:
     ENGINE: postgresql

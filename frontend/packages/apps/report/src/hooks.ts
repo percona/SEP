@@ -18,20 +18,68 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient } from '@sep/api';
 import { downloadBlob } from '@sep/framework';
-import type { ReportConfig, ReportData, ReportParams, UploadResult } from './types';
-
-// The PDF and upload endpoints do not accept a `sections` filter (the backend
-// Form params for those routes omit it). Use this type to make the omission
-// explicit rather than silently dropping it.
-type ReportPdfParams = Omit<ReportParams, 'sections'>;
+import type {
+  ReportConfig,
+  ReportData,
+  ReportJobResponse,
+  ReportParams,
+  UploadResult,
+} from './types';
 
 const API_BASE = '/apps/report';
+const REPORT_JOB_POLL_INTERVAL_MS = 1_000;
+const DEFAULT_PDF_FILENAME = 'Health_and_Security_Report.pdf';
+const ACTIVE_JOB_STATES = new Set(['pending', 'received', 'started', 'retry']);
+
+function filenameFromContentDisposition(header: string | undefined): string | null {
+  const match = /filename="([^"]+)"/.exec(header ?? '');
+  return match?.[1] ?? null;
+}
+
+function filenameFromJob(job: ReportJobResponse | null | undefined): string | null {
+  const filename = (job?.result as Record<string, unknown> | null | undefined)?.filename;
+  return typeof filename === 'string' && filename.trim() ? filename : null;
+}
+
+function reportJobPath(kind: 'pdf' | 'upload', jobId: string): string {
+  return `${API_BASE}/${kind === 'pdf' ? 'pdf-jobs' : 'upload-jobs'}/${jobId}`;
+}
+
+export function isReportJobActive(job: ReportJobResponse | null | undefined): boolean {
+  return ACTIVE_JOB_STATES.has(job?.status.toLowerCase() ?? '');
+}
+
+export function reportJobError(job: ReportJobResponse | null | undefined): string | null {
+  const status = job?.status.toLowerCase();
+  if (status === 'failure') {
+    return job?.error || 'Report job failed';
+  }
+  if (status === 'revoked') {
+    return job?.error || 'Report job was revoked';
+  }
+  if (status && status !== 'success' && !ACTIVE_JOB_STATES.has(status)) {
+    return job?.error || `Report job entered unexpected state: ${job?.status}`;
+  }
+  return null;
+}
+
+function useReportJob(kind: 'pdf' | 'upload', jobId: string | null) {
+  return useQuery<ReportJobResponse>({
+    queryKey: ['report', kind, 'job', jobId],
+    enabled: Boolean(jobId),
+    queryFn: async () => {
+      const { data } = await apiClient.get<ReportJobResponse>(reportJobPath(kind, jobId as string));
+      return data;
+    },
+    refetchInterval: (query) =>
+      isReportJobActive(query.state.data) ? REPORT_JOB_POLL_INTERVAL_MS : false,
+  });
+}
 
 export function useGenerateReport(params: ReportParams | null) {
   return useQuery<ReportData>({
     queryKey: ['report', 'generate', params],
     queryFn: async () => {
-      // params is guaranteed non-null when enabled (params !== null guard below)
       const p = params as ReportParams;
       const { data } = await apiClient.get<ReportData>(`${API_BASE}/generate/json`, {
         params: {
@@ -41,10 +89,7 @@ export function useGenerateReport(params: ReportParams | null) {
           refresh: p.refresh,
           ...(p.sections?.length ? { sections: p.sections } : {}),
         },
-        // FastAPI's `sections: list[str] | None = Query()` only reads bracket-less
-        // repeated params (`sections=advisors&sections=alerts`). Axios's default
-        // serializer emits `sections[]=…`, which the backend ignores (binds None →
-        // "all sections"). `indexes: null` drops the brackets so the filter applies.
+        // FastAPI binds repeated bracket-less params: sections=a&sections=b.
         paramsSerializer: { indexes: null },
       });
       return data;
@@ -53,39 +98,59 @@ export function useGenerateReport(params: ReportParams | null) {
   });
 }
 
-export function useDownloadPdf() {
-  return useMutation<void, Error, ReportPdfParams>({
-    mutationFn: async (params) => {
-      const body = new URLSearchParams({
-        since: params.since,
-        until: params.until,
-        full: String(params.full),
-        refresh: String(params.refresh),
+export function useStartPdfJob() {
+  return useMutation<ReportJobResponse, Error, ReportData>({
+    mutationFn: async (report) => {
+      const { data: job } = await apiClient.post<ReportJobResponse>(`${API_BASE}/pdf-jobs`, {
+        report,
       });
-      const { data } = await apiClient.post<Blob>(`${API_BASE}/generate/pdf`, body, {
-        responseType: 'blob',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      });
-      downloadBlob(data, 'Health_and_Security_Report.pdf');
+      return job;
     },
   });
 }
 
-export function useUploadToServiceNow() {
-  return useMutation<UploadResult, Error, ReportPdfParams>({
-    mutationFn: async (params) => {
-      const body = new URLSearchParams({
-        since: params.since,
-        until: params.until,
-        full: String(params.full),
-        refresh: String(params.refresh),
+export function usePdfJob(jobId: string | null) {
+  return useReportJob('pdf', jobId);
+}
+
+export function useDownloadReportPdf() {
+  return useMutation<void, Error, { job: ReportJobResponse }>({
+    mutationFn: async ({ job }) => {
+      if (job.status.toLowerCase() !== 'success' || !job.pdf_ready) {
+        throw new Error(reportJobError(job) || 'PDF is not ready');
+      }
+      const response = await apiClient.get<Blob>(`${API_BASE}/pdf-jobs/${job.job_id}/pdf`, {
+        responseType: 'blob',
       });
-      const { data } = await apiClient.post<UploadResult>(`${API_BASE}/upload`, body, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      });
-      return data;
+      const filename =
+        filenameFromContentDisposition(response.headers['content-disposition']) ??
+        filenameFromJob(job) ??
+        DEFAULT_PDF_FILENAME;
+      downloadBlob(response.data, filename);
     },
   });
+}
+
+export function useStartUploadJob() {
+  return useMutation<ReportJobResponse, Error, ReportData>({
+    mutationFn: async (report) => {
+      const { data: job } = await apiClient.post<ReportJobResponse>(`${API_BASE}/upload-jobs`, {
+        report,
+      });
+      return job;
+    },
+  });
+}
+
+export function useUploadJob(jobId: string | null) {
+  return useReportJob('upload', jobId);
+}
+
+export function uploadJobResult(job: ReportJobResponse | null | undefined): UploadResult | null {
+  if (job?.status.toLowerCase() !== 'success') {
+    return null;
+  }
+  return (job.result as UploadResult | null) ?? { status: 'uploaded' };
 }
 
 // Probe whether ServiceNow upload is configured. Returns empty disabled_reasons

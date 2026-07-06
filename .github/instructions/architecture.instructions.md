@@ -17,7 +17,7 @@ New code lives in the sub-application of the **primary settings/config object it
 Red flags:
 
 - A new function under `app/sep/` reads `tasks_settings.*` or `inventory_settings.*`, or imports `NomadExecutor` / `LocalExecutor` / `BaseExecutor`.
-- A new entry in `app/sep/db/seed.py::SYSTEM_PERIODIC_TASKS` whose task operates on tasks/inventory state. Each sub-app has its own `celery.py` and its own `db/seed.py::SYSTEM_PERIODIC_TASKS` — use the matching pair.
+- A new entry in `app/sep/db/seed.py::get_system_periodic_tasks()` whose task operates on tasks/inventory state. `app/sep/` seeds via the `get_system_periodic_tasks()` builder; sub-apps (`app/tasks/`, `app/inventory/`) each have their own `celery.py` and `db/seed.py::SYSTEM_PERIODIC_TASKS` — use the matching pair.
 - A test for a tasks-flavored periodic task landing under `tests/app/sep/` instead of `tests/app/tasks/`.
 
 ## Database models
