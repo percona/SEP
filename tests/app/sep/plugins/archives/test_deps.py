@@ -21,6 +21,7 @@ import pytest
 import yaml
 
 from app.core.exceptions import HTTPNotFoundException
+from app.core.utils.path import resolve_payload_reference
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.inventory import CreatedTable
@@ -219,7 +220,8 @@ async def test_build_archives_task_payload(
     assert generated_task.data["task"] == "run-python"
     assert "meta" in generated_task.data
     assert "payload" in generated_task.data
-    assert "file://" in generated_task.data["payload"]
+    assert generated_task.data["payload"] == "file://app/sep/plugins/archives/payload"
+    assert resolve_payload_reference(generated_task.data["payload"]).is_file()
 
     assert generated_task.data["meta"]["_service_name"] == created_service.name
     assert generated_task.data["meta"]["_pmm_node_name"] == created_service.node.name

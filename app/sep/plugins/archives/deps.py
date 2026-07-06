@@ -22,6 +22,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
+from app.core.utils.path import to_payload_reference
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -259,7 +260,7 @@ async def build_archives_task_payload(
                 CONNECTIVITY_META_PORT_KEY: service.port or DEFAULT_MYSQL_PORT,
                 CONNECTIVITY_META_SERVICE_TYPE_KEY: service.type.value,
             },
-            "payload": f"file://{payload_path}",
+            "payload": to_payload_reference(payload_path),
         },
         alert_on_fail=form.alert_on_fail,
     )

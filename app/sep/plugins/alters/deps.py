@@ -23,6 +23,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, Form
 
+from app.core.utils.path import to_payload_reference
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.connectivity import (
@@ -380,7 +381,7 @@ async def build_pre_checks_task(
     pre_checks_task.data["meta"]["requirements"] = (
         "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
     )
-    pre_checks_task.data["payload"] = f"file://{_PRE_CHECKS_SCRIPT_PATH}"
+    pre_checks_task.data["payload"] = to_payload_reference(_PRE_CHECKS_SCRIPT_PATH)
     pre_checks_task.data["parent"] = execute_task_name
     return pre_checks_task
 

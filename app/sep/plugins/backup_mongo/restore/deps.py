@@ -22,6 +22,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form, HTTPException, status
 
+from app.core.utils.path import to_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.deps import (
     DefaultContext,
@@ -165,7 +166,7 @@ def _build_restore_config_task(
         data={
             "task": "run-python",
             "meta": meta,
-            "payload": f"file://{payload_path}",
+            "payload": to_payload_reference(payload_path),
         },
     )
 
@@ -211,7 +212,7 @@ def _build_restore_task(form: RestoreCreate, service_name: str | None) -> TaskWr
         data={
             "task": "run-python",
             "meta": meta,
-            "payload": f"file://{payload_path}",
+            "payload": to_payload_reference(payload_path),
             "parent": form.task_name,
         },
     )
@@ -241,7 +242,7 @@ def _build_pbm_list_task(form: RestoreCreate, service_name: str | None) -> TaskW
         data={
             "task": "run-python",
             "meta": meta,
-            "payload": f"file://{payload_path}",
+            "payload": to_payload_reference(payload_path),
             "parent": form.task_name,
         },
     )
@@ -273,7 +274,7 @@ def _build_pbm_force_resync_task(
         data={
             "task": "run-python",
             "meta": meta,
-            "payload": f"file://{payload_path}",
+            "payload": to_payload_reference(payload_path),
             "parent": form.task_name,
         },
     )

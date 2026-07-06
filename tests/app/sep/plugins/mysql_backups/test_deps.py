@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock
 import pytest
 import yaml
 
+from app.core.utils.path import resolve_payload_reference
 from app.sep.inventory import CreatedNode, CreatedService
 from app.sep.plugins.mysql_backups.deps import (
     build_backup_task_payload,
@@ -129,8 +130,11 @@ async def test_build_backup_task_payload(
     assert "s3" in server_config["UPLOAD"]
     assert "rsync" in server_config["UPLOAD"]
 
-    assert data["payload"].startswith("file://")
-    assert expected_payload_filename in data["payload"]
+    assert (
+        data["payload"]
+        == f"file://app/sep/plugins/mysql_backups/{expected_payload_filename}"
+    )
+    assert resolve_payload_reference(data["payload"]).is_file()
 
 
 @pytest.mark.asyncio
