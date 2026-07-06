@@ -71,11 +71,13 @@ describe('SettingsPage', () => {
     expect(screen.getByTestId('settings-admins-only')).toBeInTheDocument();
     expect(screen.getByText('Admins only')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /download yaml/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /test connection/i })).not.toBeInTheDocument();
   });
 
-  it('shows Download YAML for admins', async () => {
+  it('shows Download YAML and Test connection for admins', async () => {
     renderPage();
     expect(await screen.findByRole('button', { name: /download yaml/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /test connection/i })).toBeInTheDocument();
   });
 
   it('requests config export when Download YAML is clicked', async () => {
