@@ -492,7 +492,7 @@ class BackupCreate(TaskFormModel):
             )
         ),
         Ui(label="Upload providers", section="Upload"),
-    ] = Field(min_length=1)
+    ] = Field(default_factory=list)
     s3_bucket: Annotated[
         NonEmptyStr | EmptyStrToNone, _S3_ONLY, Ui(label="S3 bucket", section="Upload")
     ] = None
@@ -528,12 +528,12 @@ class BackupCreate(TaskFormModel):
     def _normalize_upload_input(cls, value: Any) -> Any:
         """Normalise scalar ``upload`` input from legacy form callers.
 
-        A bare string (e.g. ``upload="S3"``) is wrapped to ``["S3"]`` for
-        legacy form callers that send the multichoice as a single value.
-        Empty / missing input falls through to Pydantic's ``min_length=1``
-        constraint, which surfaces 422 with the explicit MultiChoice
-        contract error rather than silently entering a legacy
-        bucket-inference path.
+        A bare string is wrapped (``"S3"`` -> ``["S3"]``); an empty string
+        becomes ``[]``. ``upload`` is optional, so an empty selection is a
+        valid "no upload" config.
+
+        :param value: The raw ``upload`` input before validation.
+        :return: The normalised value passed on to list validation.
         """
         if isinstance(value, str):
             if not value:
@@ -545,18 +545,14 @@ class BackupCreate(TaskFormModel):
     def validate_upload_provider_consistency(self) -> Self:
         """Enforce bidirectional consistency between ``upload`` and provider fields.
 
-        ``upload`` is guaranteed non-empty by ``min_length=1``; this validator
-        only needs to check the destination-field pairing. The schema's
-        ``forbidden=`` gates on the destination string fields (powered by
-        the ``Contains`` predicate) cover the "destination set without
-        matching provider" direction at both the FE renderer (visibility)
-        and the runtime rule plan. This validator still runs to cover the
-        reverse direction (provider selected but destination empty) and
-        the S3 auxiliary-fields case, which the schema cannot express
-        symmetrically because boolean defaults trip the ``forbidden`` rule.
+        ``upload`` is optional and may be empty. Each provider must appear in
+        ``upload`` iff its destination field is set: a destination without its
+        provider fails, and a selected provider with an empty destination
+        fails. S3 auxiliary fields likewise require ``S3`` in ``upload`` (the
+        schema's ``forbidden=`` gates cannot express this symmetrically because
+        boolean defaults trip the rule).
 
         :return: The validated instance.
-        :rtype: Self
         :raises ValueError: When a provider's destination field disagrees
             with the ``upload`` list, or when S3 auxiliary fields are set
             without ``S3`` in ``upload``.

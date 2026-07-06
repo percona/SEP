@@ -593,7 +593,6 @@
             "items": {
               "$ref": "#/components/schemas/UploadProvider"
             },
-            "minItems": 1,
             "title": "Upload",
             "type": "array"
           },
@@ -806,8 +805,7 @@
           "task_name",
           "hostname",
           "service_id",
-          "backup_type",
-          "upload"
+          "backup_type"
         ],
         "title": "BackupCreate",
         "type": "object"
