@@ -48,6 +48,7 @@ app = TaskExecutionApp(
     css_class="mysql_backups",
     group="backups",
     nav_order=8,
+    sidebar=False,
     description="Restore MySQL hosts from XtraBackup, Mydumper, and Binlog backups.",
     owner=TaskOwner.RESTORES,
     create_model=RestoreCreate,

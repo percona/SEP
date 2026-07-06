@@ -136,6 +136,17 @@ class TestSchemaEndpoint:
         assert "backup_type" in names
         assert "upload" in names
 
+    def test_schema_declares_restore_related_app(self, test_client):
+        """Link the backups schema to the separately registered restore app."""
+        body = test_client.get("/api/apps/mysql_backups/schema").json()
+        assert body["related_apps"] == [
+            {
+                "app_key": "mysql_backups/restore",
+                "label": "Restore",
+                "route_segment": "restores",
+            },
+        ]
+
     def test_schema_anonymous_returns_401(self, unauthenticated_client):
         """Anonymous schema fetch is rejected by IsApiAuthenticated."""
         response = unauthenticated_client.get("/api/apps/mysql_backups/schema")

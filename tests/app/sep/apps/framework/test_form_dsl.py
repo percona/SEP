@@ -63,6 +63,7 @@ from app.sep.apps.framework.schema import (
     ListView,
     MultiChoiceField,
     OneOfGroup,
+    RelatedApp,
     SchemaField,
     ServiceField,
     StringField,
@@ -671,6 +672,30 @@ class TestScopeAttribution:
         assert schema.cardinality_rules is not None
         assert len(schema.cardinality_rules) == 1
         assert schema.fail_when is None
+
+
+class TestDeriveAppSchemaRelatedApps:
+    """Cover ``related_apps`` threading through :func:`derive_app_schema`."""
+
+    def test_related_apps_passed_through(self) -> None:
+        """Stamp ``related_apps`` onto the derived schema unchanged."""
+        related = [
+            RelatedApp(
+                app_key="mysql_backups/restore",
+                label="Restore",
+                route_segment="restores",
+            ),
+        ]
+        schema = derive_app_schema(
+            _ScopeModel,
+            _SINGLE_SECTION,
+            name="mysql_backups",
+            display_name="MySQL Backups",
+            list_view=_MINIMAL_LIST_VIEW,
+            related_apps=related,
+        )
+
+        assert schema.related_apps == related
 
 
 class _RuntimeParityModel(AppFormModel):

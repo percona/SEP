@@ -20,7 +20,7 @@
             "path": "data.meta.args"
           },
           {
-            "label": "Target",
+            "label": "Execution Host",
             "path": "data.meta.target"
           }
         ],
@@ -41,7 +41,7 @@
           "type": "string"
         },
         {
-          "label": "Executor Host",
+          "label": "Execution Host",
           "name": "hostname",
           "required": true,
           "type": "host"

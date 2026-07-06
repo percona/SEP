@@ -92,7 +92,7 @@ export interface AppDetailPageProps {
   suppressDetailKeys?: string[];
   /** Replace the default single Execute button with app-specific execute targets. */
   getTaskExecuteActions?: (task: Record<string, unknown>) => TaskExecuteAction[] | undefined;
-  /** Task names whose execution history should appear on the Logs tab. */
+  /** Task names whose execution history should appear on the Execution History tab. */
   getTaskHistoryNames?: (task: Record<string, unknown>) => string[] | undefined;
   /** Extra content below the overview cards on single-task detail pages. */
   renderTaskDetailChildren?: (args: {
@@ -556,7 +556,7 @@ function ActionBar({
       await deleteTask.mutateAsync(taskName);
       enqueueSnackbar(`${schema.display_name} task deleted`, { variant: 'success' });
       // Anchor to the app root explicitly. Relative `..` chains depend
-      // on which tab the user is on (Overview vs. Logs renders a deeper
+      // on which tab the user is on (Overview vs. Execution History renders a deeper
       // sub-route via nested `<Routes>`), so use an absolute path.
       navigate(routeBase);
     } catch (e) {
@@ -988,7 +988,13 @@ export function AppDetailPage({
 
       <Tabs value={tabValue} sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}>
         <Tab label="Overview" value="overview" component={Link} to={detailBase} replace />
-        <Tab label="Logs" value="logs" component={Link} to={`${detailBase}/logs`} replace />
+        <Tab
+          label="Execution History"
+          value="logs"
+          component={Link}
+          to={`${detailBase}/logs`}
+          replace
+        />
       </Tabs>
 
       <Routes>

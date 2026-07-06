@@ -19,7 +19,37 @@ import pytest
 from pydantic import ValidationError
 
 from app.sep.apps.mysql_backups.models import BackupType
-from app.sep.apps.mysql_backups.restore.models import RestoreConfigServer
+from app.sep.apps.mysql_backups.restore.models import RestoreConfigServer, RestoreCreate
+
+
+def _minimal_restore_create_body(**overrides: object) -> dict:
+    """Return a minimal valid :class:`RestoreCreate` payload."""
+    body = {
+        "task_name": "restore-1",
+        "hostname": "executor-1",
+        "backup_type": BackupType.MYDUMPER,
+        "backup_source": "/var/backups/latest",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_restore_create_coerces_int_reference_ids_to_str() -> None:
+    """Accept JSON inventory ids as ints (React schema form) by stringifying."""
+    model = RestoreCreate.model_validate(
+        _minimal_restore_create_body(service_id=4, schema_id=11)
+    )
+    assert model.service_id == "4"
+    assert model.schema_id == "11"
+
+
+def test_restore_create_preserves_str_reference_ids() -> None:
+    """Leave str-typed reference ids unchanged (Jinja / legacy form path)."""
+    model = RestoreCreate.model_validate(
+        _minimal_restore_create_body(service_id="4", schema_id="11")
+    )
+    assert model.service_id == "4"
+    assert model.schema_id == "11"
 
 
 def _server_with_backup_source(backup_source: str) -> dict:

@@ -38,6 +38,7 @@ from app.sep.apps.framework.schema import (
     DetailHighlightLanguage,
     DetailSection,
     DetailView,
+    EXECUTION_HOST_LABEL,
     EXECUTOR_HOST_COLUMN,
     FileField,
     FloatField,
@@ -49,6 +50,7 @@ from app.sep.apps.framework.schema import (
     MultiChoiceField,
     OneOfBranch,
     OneOfGroup,
+    RelatedApp,
     SchemaField,
     ScriptPreviewField,
     ServiceField,
@@ -759,7 +761,7 @@ class TestDefaultColumns:
 
     def test_inserts_middle_between_head_and_tail(self):
         """Place ``*middle`` columns between the head and tail bookends, in order."""
-        host = Column(key="hostname", label="Executor Host")
+        host = Column(key="hostname", label=EXECUTION_HOST_LABEL)
         plugin = Column(key="backup_type", label="Type", format=ColumnFormat.CHIP)
 
         columns = default_columns(host, plugin)
@@ -805,13 +807,13 @@ class TestDefaultColumns:
 
         first[2].label = "Mutated"
 
-        assert second[2].label == "Executor Host"
-        assert EXECUTOR_HOST_COLUMN.label == "Executor Host"
+        assert second[2].label == EXECUTION_HOST_LABEL
+        assert EXECUTOR_HOST_COLUMN.label == EXECUTION_HOST_LABEL
 
     def test_executor_host_column_key_and_label(self):
         """Carry the normalized header label on the reusable executor-host constant."""
         assert EXECUTOR_HOST_COLUMN.key == "hostname"
-        assert EXECUTOR_HOST_COLUMN.label == "Executor Host"
+        assert EXECUTOR_HOST_COLUMN.label == EXECUTION_HOST_LABEL
 
 
 # ── ListView.overview_hidden_fields ──────────────────────────────────────
@@ -1602,6 +1604,137 @@ class TestAppSchemaDerivedField:
                 derived=[
                     DerivedTask(name_suffix="-x"),
                     DerivedTask(name_suffix="-x"),
+                ],
+            )
+
+
+# ── RelatedApp primitive and AppSchema.related_apps ────────
+
+
+class TestRelatedApp:
+    """Cover the ``RelatedApp`` declarative primitive."""
+
+    def test_related_app_minimal(self) -> None:
+        """Construct a ``RelatedApp`` with the required fields."""
+        spec = RelatedApp(
+            app_key="mysql_backups/restore",
+            label="Restore",
+            route_segment="restores",
+        )
+
+        assert spec.app_key == "mysql_backups/restore"
+        assert spec.label == "Restore"
+        assert spec.route_segment == "restores"
+
+    def test_related_app_route_segment_must_be_single_segment(self) -> None:
+        """Reject a ``route_segment`` containing slashes."""
+        with pytest.raises(ValidationError):
+            RelatedApp(
+                app_key="mysql_backups/restore",
+                label="Restore",
+                route_segment="mysql_backups/restores",
+            )
+
+    @pytest.mark.parametrize("segment", ["new", "schedule", "task"])
+    def test_related_app_route_segment_rejects_reserved_keywords(
+        self, segment: str
+    ) -> None:
+        """Reject ``route_segment`` values that collide with shell routes."""
+        with pytest.raises(ValidationError, match="route_segment .+ is reserved"):
+            RelatedApp(
+                app_key="parent/child",
+                label="Child",
+                route_segment=segment,
+            )
+
+    def test_related_app_extra_forbidden(self) -> None:
+        """Reject an unknown field on ``RelatedApp`` (``extra="forbid"``)."""
+        with pytest.raises(ValidationError):
+            RelatedApp(
+                app_key="mysql_backups/restore",
+                label="Restore",
+                route_segment="restores",
+                unknown=True,
+            )
+
+    def test_serialises_to_snake_case_json(self) -> None:
+        """Serialise ``RelatedApp`` to snake_case JSON matching the React contract."""
+        dumped = RelatedApp(
+            app_key="mysql_backups/restore",
+            label="Restore",
+            route_segment="restores",
+        ).model_dump(mode="json", by_alias=True)
+
+        assert dumped == {
+            "app_key": "mysql_backups/restore",
+            "label": "Restore",
+            "route_segment": "restores",
+        }
+
+
+class TestAppSchemaRelatedAppsField:
+    """Cover the ``related_apps`` field on ``AppSchema``."""
+
+    def test_defaults_to_none(self) -> None:
+        """Confirm ``related_apps`` is ``None`` by default (BC regression guard)."""
+        schema = AppSchema(
+            name="minimal",
+            display_name="Minimal",
+            forms=[],
+            list_view=_minimal_list_view(),
+        )
+
+        assert schema.related_apps is None
+
+    def test_with_related_apps_round_trips_through_json(self) -> None:
+        """Round-trip a schema carrying ``related_apps`` losslessly via JSON."""
+        schema = AppSchema(
+            name="mysql_backups",
+            display_name="MySQL Backups",
+            forms=[],
+            list_view=_minimal_list_view(),
+            related_apps=[
+                RelatedApp(
+                    app_key="mysql_backups/restore",
+                    label="Restore",
+                    route_segment="restores",
+                ),
+            ],
+        )
+        dumped = schema.model_dump(mode="json", by_alias=True)
+
+        assert dumped["related_apps"] == [
+            {
+                "app_key": "mysql_backups/restore",
+                "label": "Restore",
+                "route_segment": "restores",
+            },
+        ]
+        reparsed = AppSchema.model_validate(dumped)
+
+        assert reparsed == schema
+
+    def test_duplicate_route_segments_rejected(self) -> None:
+        """Reject a schema with two ``RelatedApp`` specs sharing a ``route_segment``."""
+        with pytest.raises(
+            ValidationError, match="Duplicate related_apps route_segment values"
+        ):
+            AppSchema(
+                name="demo",
+                display_name="Demo",
+                forms=[],
+                list_view=_minimal_list_view(),
+                related_apps=[
+                    RelatedApp(
+                        app_key="parent/child-a",
+                        label="A",
+                        route_segment="restores",
+                    ),
+                    RelatedApp(
+                        app_key="parent/child-b",
+                        label="B",
+                        route_segment="restores",
+                    ),
                 ],
             )
 
