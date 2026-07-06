@@ -91,7 +91,7 @@ export default function SettingsPage() {
             View and edit application configuration at runtime.
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
           <TestConnectionButton />
           <Button
             variant="outlined"
