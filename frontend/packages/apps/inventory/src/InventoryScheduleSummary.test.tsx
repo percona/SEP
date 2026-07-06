@@ -19,8 +19,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type * as FrameworkModule from '@sep/framework';
 
-const { useScheduledTasksForPluginMock } = vi.hoisted(() => ({
-  useScheduledTasksForPluginMock: vi.fn(),
+const { useScheduledTasksForAppMock } = vi.hoisted(() => ({
+  useScheduledTasksForAppMock: vi.fn(),
 }));
 
 // Mock only the schedule hook; pull the real period/time helpers from the
@@ -30,7 +30,7 @@ vi.mock('@sep/framework', async (importOriginal) => {
   const actual = await importOriginal<typeof FrameworkModule>();
   return {
     ...actual,
-    useScheduledTasksForPlugin: (...args: unknown[]) => useScheduledTasksForPluginMock(...args),
+    useScheduledTasksForApp: (...args: unknown[]) => useScheduledTasksForAppMock(...args),
   };
 });
 
@@ -63,7 +63,7 @@ function setup(
   periodicTasks: PeriodicTaskResponse[],
   extra: { isLoading?: boolean; isError?: boolean } = {},
 ) {
-  useScheduledTasksForPluginMock.mockReturnValue({
+  useScheduledTasksForAppMock.mockReturnValue({
     periodicTasks,
     isLoading: extra.isLoading ?? false,
     isError: extra.isError ?? false,
@@ -73,7 +73,7 @@ function setup(
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
-  useScheduledTasksForPluginMock.mockReset();
+  useScheduledTasksForAppMock.mockReset();
 });
 
 afterEach(() => {

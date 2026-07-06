@@ -16,9 +16,4 @@
  */
 
 export { BackupMongoApp } from './BackupMongoApp';
-export {
-  backupMongoRoute,
-  BACKUP_PLUGIN_NAME,
-  RESTORE_PLUGIN_NAME,
-  MONGODB_BASE_PATH,
-} from './routes';
+export { backupMongoRoute, BACKUP_APP_NAME, RESTORE_APP_NAME, MONGODB_BASE_PATH } from './routes';

@@ -28,7 +28,7 @@ import {
   getRestoreMongoHistoryTaskNames,
   RestoreMongoTaskDetailExtras,
 } from './restoreMongoTaskDetail';
-import { BACKUP_PLUGIN_NAME, MONGODB_BASE_PATH, RESTORE_PLUGIN_NAME } from './routes';
+import { BACKUP_APP_NAME, MONGODB_BASE_PATH, RESTORE_APP_NAME } from './routes';
 
 const BACKUP_DETAIL_SUPPRESS_KEYS = ['derived_tasks', 'latest_pbm_status'];
 const RESTORE_DETAIL_SUPPRESS_KEYS = ['derived_tasks'];
@@ -87,7 +87,7 @@ export function BackupMongoApp() {
           path="backups/*"
           element={
             <SchemaDrivenApp
-              pluginName={BACKUP_PLUGIN_NAME}
+              pluginName={BACKUP_APP_NAME}
               routeBase={`${MONGODB_BASE_PATH}/backups`}
               getTaskExecuteActions={getBackupMongoExecuteActions}
               getTaskHistoryNames={getBackupMongoHistoryTaskNames}
@@ -100,7 +100,7 @@ export function BackupMongoApp() {
           path="restores/*"
           element={
             <SchemaDrivenApp
-              pluginName={RESTORE_PLUGIN_NAME}
+              pluginName={RESTORE_APP_NAME}
               routeBase={`${MONGODB_BASE_PATH}/restores`}
               getTaskExecuteActions={getRestoreMongoExecuteActions}
               getTaskHistoryNames={getRestoreMongoHistoryTaskNames}

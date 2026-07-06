@@ -18,8 +18,8 @@
 import type { RouteObject } from 'react-router-dom';
 import { BackupMongoApp } from './BackupMongoApp';
 
-export const BACKUP_PLUGIN_NAME = 'backup_mongo';
-export const RESTORE_PLUGIN_NAME = 'backup_mongo/restores';
+export const BACKUP_APP_NAME = 'backup_mongo';
+export const RESTORE_APP_NAME = 'backup_mongo/restores';
 export const MONGODB_BASE_PATH = '/backups/mongodb';
 
 export const backupMongoRoute: RouteObject = {

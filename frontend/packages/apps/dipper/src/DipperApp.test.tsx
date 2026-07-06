@@ -97,7 +97,7 @@ vi.mock('@sep/framework', async () => {
   };
 });
 
-const mockPluginSchema = vi.mocked(useDipperAppSchema);
+const mockAppSchema = vi.mocked(useDipperAppSchema);
 const mockFormSchema = vi.mocked(useDipperFormSchema);
 const mockHistory = vi.mocked(useDipperHistory);
 const mockExecution = vi.mocked(useDipperExecution);
@@ -107,7 +107,7 @@ describe('DipperApp', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockPluginSchema.mockReturnValue({
+    mockAppSchema.mockReturnValue({
       data: {
         name: 'dipper',
         display_name: 'Collect Diagnostic Data',

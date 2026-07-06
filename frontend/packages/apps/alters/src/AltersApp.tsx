@@ -17,13 +17,13 @@
 
 import { SchemaDrivenApp } from '@sep/framework';
 import { getAltersExecuteActions, getAltersHistoryTaskNames } from './altersTaskDetail';
-import { PLUGIN_BASE_PATH, PLUGIN_NAME } from './routes';
+import { APP_BASE_PATH, APP_NAME } from './routes';
 
 export function AltersApp() {
   return (
     <SchemaDrivenApp
-      pluginName={PLUGIN_NAME}
-      routeBase={PLUGIN_BASE_PATH}
+      pluginName={APP_NAME}
+      routeBase={APP_BASE_PATH}
       getTaskExecuteActions={getAltersExecuteActions}
       getTaskHistoryNames={getAltersHistoryTaskNames}
     />

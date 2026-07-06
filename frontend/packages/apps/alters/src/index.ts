@@ -16,4 +16,4 @@
  */
 
 export { AltersApp } from './AltersApp';
-export { altersRoute, PLUGIN_NAME, PLUGIN_BASE_PATH } from './routes';
+export { altersRoute, APP_NAME, APP_BASE_PATH } from './routes';

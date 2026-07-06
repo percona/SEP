@@ -32,10 +32,10 @@ import { useNavigate } from 'react-router-dom';
 import {
   SchemaFormRenderer,
   buildSnippetExecutionFormPayload,
-  snippetPluginExecutePath,
-  snippetPluginSchemaPath,
-  useSnippetPluginExecution,
-  useSnippetPluginSchema,
+  snippetAppExecutePath,
+  snippetAppSchemaPath,
+  useSnippetAppExecution,
+  useSnippetAppSchema,
 } from '@sep/framework';
 import { useAtwCategories } from './hooks';
 import type { AtwCategoryListing, AtwSnippetSummary } from './types';
@@ -110,11 +110,11 @@ export function AtwPage() {
   );
 
   const selectedSnippetFilename = selectedSnippetRow?.name ?? null;
-  const schemaQuery = useSnippetPluginSchema(
-    selectedSnippetFilename ? snippetPluginSchemaPath(selectedSnippetFilename) : undefined,
+  const schemaQuery = useSnippetAppSchema(
+    selectedSnippetFilename ? snippetAppSchemaPath(selectedSnippetFilename) : undefined,
   );
-  const executionMutation = useSnippetPluginExecution(
-    selectedSnippetFilename ? snippetPluginExecutePath(selectedSnippetFilename) : undefined,
+  const executionMutation = useSnippetAppExecution(
+    selectedSnippetFilename ? snippetAppExecutePath(selectedSnippetFilename) : undefined,
   );
 
   const submitError = executionMutation.isError

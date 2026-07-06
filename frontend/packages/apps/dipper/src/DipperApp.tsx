@@ -86,16 +86,16 @@ export function DipperApp() {
   const collectorType = useWatch({ control: selectionForm.control, name: 'collector_type' });
   const serviceId = selectedServiceId(selectedService);
 
-  const pluginSchema = useDipperAppSchema();
+  const appSchema = useDipperAppSchema();
   const formSchema = useDipperFormSchema(serviceId, collectorType);
   const history = useDipperHistory();
   const execution = useDipperExecution();
   const stop = useStopTaskHistory();
   const [logsEntry, setLogsEntry] = useState<TaskHistoryEntry | null>(null);
 
-  const title = pluginSchema.data?.display_name ?? 'Collect Diagnostic Data';
+  const title = appSchema.data?.display_name ?? 'Collect Diagnostic Data';
   const description =
-    pluginSchema.data?.description ?? 'Run diagnostic data collection scripts on managed hosts.';
+    appSchema.data?.description ?? 'Run diagnostic data collection scripts on managed hosts.';
 
   const handleSubmit = (values: Record<string, unknown>) => {
     if (serviceId === null) {
@@ -132,7 +132,7 @@ export function DipperApp() {
     setLogsEntry(null);
   }, []);
 
-  if (pluginSchema.isLoading && !pluginSchema.data) {
+  if (appSchema.isLoading && !appSchema.data) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
         <CircularProgress />
@@ -140,10 +140,8 @@ export function DipperApp() {
     );
   }
 
-  if (pluginSchema.error) {
-    return (
-      <Alert severity="error">Failed to load Dipper schema: {pluginSchema.error.message}</Alert>
-    );
+  if (appSchema.error) {
+    return <Alert severity="error">Failed to load Dipper schema: {appSchema.error.message}</Alert>;
   }
 
   return (

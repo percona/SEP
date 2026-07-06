@@ -53,7 +53,7 @@ import Typography from '@mui/material/Typography';
 import cronstrue from 'cronstrue';
 import { useNavigate } from 'react-router-dom';
 import {
-  useScheduledTasksForPlugin,
+  useScheduledTasksForApp,
   useCreateScheduledTask,
   useUpdateScheduledTask,
   useDeleteScheduledTask,
@@ -546,12 +546,12 @@ interface InventorySchedulePageProps {
 
 export function InventorySchedulePage({ schedulingEnabled }: InventorySchedulePageProps) {
   const navigate = useNavigate();
-  const { periodicTasks, pluginTasks, isLoading, isError, error } =
-    useScheduledTasksForPlugin('inventory');
+  const { periodicTasks, appTasks, isLoading, isError, error } =
+    useScheduledTasksForApp('inventory');
   const syncersQuery = useAvailableSyncers();
   const availableSyncers = syncersQuery.data ?? [];
 
-  const taskName = pluginTasks[0]?.name ?? '';
+  const taskName = appTasks[0]?.name ?? '';
 
   const createMut = useCreateScheduledTask();
   const updateMut = useUpdateScheduledTask();

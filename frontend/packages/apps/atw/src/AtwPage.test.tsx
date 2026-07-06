@@ -17,14 +17,14 @@
 
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useSnippetPluginExecution, useSnippetPluginSchema } from '@sep/framework';
+import { useSnippetAppExecution, useSnippetAppSchema } from '@sep/framework';
 import { AtwPage } from './AtwPage';
 import { useAtwCategories } from './hooks';
 
 const mocks = vi.hoisted(() => ({
   useAtwCategories: vi.fn(),
-  useSnippetPluginSchema: vi.fn(),
-  useSnippetPluginExecution: vi.fn(),
+  useSnippetAppSchema: vi.fn(),
+  useSnippetAppExecution: vi.fn(),
 }));
 
 vi.mock('@sep/framework', async (importOriginal) => {
@@ -33,8 +33,8 @@ vi.mock('@sep/framework', async (importOriginal) => {
     ...actual,
     SchemaFormRenderer: () => <div>Schema form</div>,
     buildSnippetExecutionFormPayload: (values: Record<string, unknown>) => values,
-    useSnippetPluginSchema: mocks.useSnippetPluginSchema,
-    useSnippetPluginExecution: mocks.useSnippetPluginExecution,
+    useSnippetAppSchema: mocks.useSnippetAppSchema,
+    useSnippetAppExecution: mocks.useSnippetAppExecution,
   };
 });
 
@@ -47,8 +47,8 @@ vi.mock('./hooks', () => ({
 }));
 
 const mockUseAtwCategories = vi.mocked(useAtwCategories);
-const mockUseSnippetPluginSchema = vi.mocked(useSnippetPluginSchema);
-const mockUseSnippetPluginExecution = vi.mocked(useSnippetPluginExecution);
+const mockUseSnippetAppSchema = vi.mocked(useSnippetAppSchema);
+const mockUseSnippetAppExecution = vi.mocked(useSnippetAppExecution);
 
 describe('AtwPage', () => {
   beforeEach(() => {
@@ -74,17 +74,17 @@ describe('AtwPage', () => {
       isLoading: false,
       error: null,
     } as unknown as ReturnType<typeof useAtwCategories>);
-    mockUseSnippetPluginSchema.mockReturnValue({
+    mockUseSnippetAppSchema.mockReturnValue({
       data: null,
       isLoading: false,
       error: null,
-    } as unknown as ReturnType<typeof useSnippetPluginSchema>);
-    mockUseSnippetPluginExecution.mockReturnValue({
+    } as unknown as ReturnType<typeof useSnippetAppSchema>);
+    mockUseSnippetAppExecution.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
       isError: false,
       error: null,
-    } as unknown as ReturnType<typeof useSnippetPluginExecution>);
+    } as unknown as ReturnType<typeof useSnippetAppExecution>);
   });
 
   it('hides the Category control when the listing has a single root', () => {

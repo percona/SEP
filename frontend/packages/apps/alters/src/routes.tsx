@@ -18,8 +18,8 @@
 import type { RouteObject } from 'react-router-dom';
 import { AltersApp } from './AltersApp';
 
-export const PLUGIN_NAME = 'alters';
-export const PLUGIN_BASE_PATH = '/schema-change/alters';
+export const APP_NAME = 'alters';
+export const APP_BASE_PATH = '/schema-change/alters';
 
 export const altersRoute: RouteObject = {
   path: 'schema-change/alters/*',
