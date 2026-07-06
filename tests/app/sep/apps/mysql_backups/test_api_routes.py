@@ -137,7 +137,7 @@ class TestSchemaEndpoint:
         assert "upload" in names
 
     def test_schema_declares_restore_related_app(self, test_client):
-        """The backups schema links the separately registered restore app."""
+        """Link the backups schema to the separately registered restore app."""
         body = test_client.get("/api/apps/mysql_backups/schema").json()
         assert body["related_apps"] == [
             {

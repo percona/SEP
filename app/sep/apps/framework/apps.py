@@ -26,6 +26,7 @@ is computed once at construction into ``api_router`` so the existing
 same ``api_router`` seam with no registry change.
 """
 
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -434,9 +435,12 @@ class TaskExecutionApp(BaseApp):
                 "TaskExecutionApp: a schema= app carries related_apps on "
                 "AppSchema — drop related_apps from the definition"
             )
-        segments = [spec.route_segment for spec in self.related_apps]
         duplicates = sorted(
-            segment for segment in set(segments) if segments.count(segment) > 1
+            segment
+            for segment, count in Counter(
+                spec.route_segment for spec in self.related_apps
+            ).items()
+            if count > 1
         )
         if duplicates:
             raise ValueError(
