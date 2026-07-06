@@ -1599,7 +1599,7 @@ export interface paths {
      * Report Config
      * @description Return upload configuration status.
      *
-     *     :return: JSON with ``upload_disabled_reasons`` — empty list means upload is ready.
+     *     :return: JSON response with ``upload_disabled_reasons``.
      *     :rtype: JSONResponse
      */
     get: operations['report_report_config_api_apps_report_config_get'];
@@ -1622,7 +1622,7 @@ export interface paths {
      * Report Generate Json Api
      * @description Generate a report and return as JSON.
      *
-     *     :param pmm_api: The PMM API client.
+     *     :param pmm_api: PMM API client dependency.
      *     :type pmm_api: PMMRemoteAPI
      *     :param since: Relative start of the report period.
      *     :type since: str
@@ -1630,11 +1630,11 @@ export interface paths {
      *     :type until: str
      *     :param full: Include all check results and full backup history.
      *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
+     *     :param refresh: Force advisor refresh before fetching results.
      *     :type refresh: bool
      *     :param sections: Optional list of sections to include.
      *     :type sections: list[str] | None
-     *     :return: JSON response with the full report data.
+     *     :return: JSON response with full report data.
      *     :rtype: JSONResponse
      */
     get: operations['report_report_generate_json_api_api_apps_report_generate_json_get'];
@@ -1646,7 +1646,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/report/generate/pdf': {
+  '/api/apps/report/pdf-jobs': {
     parameters: {
       query?: never;
       header?: never;
@@ -1656,30 +1656,75 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Report Generate Pdf Api
-     * @description Generate a report and return it as a downloadable PDF.
+     * Report Start Pdf Job Api
+     * @description Enqueue PDF rendering from a report JSON snapshot.
      *
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param since: Relative start of the report period.
-     *     :type since: str
-     *     :param until: Relative end of the report period.
-     *     :type until: str
-     *     :param full: Include all check results and full backup history.
-     *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
-     *     :type refresh: bool
-     *     :return: PDF file response.
-     *     :rtype: Response
+     *     :param body: Request body containing the report snapshot.
+     *     :type body: ReportSnapshotWrite
+     *     :return: PDF job status response.
+     *     :rtype: ReportJobResponse
      */
-    post: operations['report_report_generate_pdf_api_api_apps_report_generate_pdf_post'];
+    post: operations['report_report_start_pdf_job_api_api_apps_report_pdf_jobs_post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/apps/report/upload': {
+  '/api/apps/report/pdf-jobs/{job_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Report Pdf Job Api
+     * @description Return PDF job status.
+     *
+     *     :param job_id: Celery task identifier.
+     *     :type job_id: str
+     *     :return: PDF job status response.
+     *     :rtype: ReportJobResponse
+     */
+    get: operations['report_report_pdf_job_api_api_apps_report_pdf_jobs__job_id__get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/report/pdf-jobs/{job_id}/pdf': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Report Download Pdf Api
+     * @description Download a ready PDF result for a report job.
+     *
+     *     :param job_id: Celery task identifier.
+     *     :type job_id: str
+     *     :return: PDF file response.
+     *     :rtype: Response
+     *     :raises HTTPInternalServerErrorException: If the Celery job failed.
+     *     :raises HTTPConflictException: If the PDF result is not ready yet.
+     *     :raises HTTPGoneException: If the staged PDF artifact has expired.
+     */
+    get: operations['report_report_download_pdf_api_api_apps_report_pdf_jobs__job_id__pdf_get'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/report/upload-jobs': {
     parameters: {
       query?: never;
       header?: never;
@@ -1689,23 +1734,41 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Report Upload Api
-     * @description Generate a report, convert to PDF, and upload to ServiceNow.
+     * Report Start Upload Job Api
+     * @description Enqueue ServiceNow upload from a report JSON snapshot.
      *
-     *     :param pmm_api: The PMM API client.
-     *     :type pmm_api: PMMRemoteAPI
-     *     :param since: Relative start of the report period.
-     *     :type since: str
-     *     :param until: Relative end of the report period.
-     *     :type until: str
-     *     :param full: Include all check results and full backup history.
-     *     :type full: bool
-     *     :param refresh: Force a refresh of advisor checks before fetching results.
-     *     :type refresh: bool
-     *     :return: JSON response with the upload result.
-     *     :rtype: JSONResponse
+     *     :param body: Request body containing the report snapshot.
+     *     :type body: ReportSnapshotWrite
+     *     :return: Upload job status response.
+     *     :rtype: ReportJobResponse
+     *     :raises HTTPServiceUnavailableException: If ServiceNow upload is not configured.
      */
-    post: operations['report_report_upload_api_api_apps_report_upload_post'];
+    post: operations['report_report_start_upload_job_api_api_apps_report_upload_jobs_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/apps/report/upload-jobs/{job_id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Report Upload Job Api
+     * @description Return ServiceNow upload job status.
+     *
+     *     :param job_id: Celery task identifier.
+     *     :type job_id: str
+     *     :return: Upload job status response.
+     *     :rtype: ReportJobResponse
+     */
+    get: operations['report_report_upload_job_api_api_apps_report_upload_jobs__job_id__get'];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -2888,6 +2951,76 @@ export interface components {
       title: string;
     };
     /**
+     * AdvisorCheck
+     * @description A single advisor check definition (enabled only).
+     *
+     *     :param name: The unique check name.
+     *     :type name: str
+     *     :param description: Human-readable description of what the check tests.
+     *     :type description: str
+     *     :param summary: Short one-line summary of the check.
+     *     :type summary: str
+     *     :param family: The advisor family key this check belongs to, if any.
+     *     :type family: str | None
+     */
+    AdvisorCheck: {
+      /** Description */
+      description: string;
+      /** Family */
+      family?: string | null;
+      /** Name */
+      name: string;
+      /** Summary */
+      summary: string;
+    };
+    /**
+     * AdvisorFamily
+     * @description A group of advisor checks that share the same family.
+     *
+     *     :param family_key: Internal family key (e.g. ``"FAMILY_MYSQL"``).
+     *     :type family_key: str
+     *     :param display_name: Human-readable name shown in the report (e.g. ``"MySQL"``).
+     *     :type display_name: str
+     *     :param checks: All enabled checks belonging to this family.
+     *     :type checks: list[AdvisorCheck]
+     *     :param failed: Mapping of check name to its list of failed results.
+     *     :type failed: dict[str, list[FailedCheck]]
+     */
+    AdvisorFamily: {
+      /** Checks */
+      checks?: components['schemas']['AdvisorCheck'][];
+      /** Display Name */
+      display_name: string;
+      /** Failed */
+      failed?: {
+        [key: string]: components['schemas']['FailedCheck'][];
+      };
+      /** Family Key */
+      family_key: string;
+    };
+    /**
+     * AdvisorSection
+     * @description Aggregated advisor data for the report.
+     *
+     *     ``total_failed`` counts failed advisor results (rows), not distinct check names.
+     */
+    AdvisorSection: {
+      /** Families */
+      families?: components['schemas']['AdvisorFamily'][];
+      /** Refresh Issues */
+      refresh_issues?: string[];
+      /**
+       * Total Checks
+       * @default 0
+       */
+      total_checks: number;
+      /**
+       * Total Failed
+       * @default 0
+       */
+      total_failed: number;
+    };
+    /**
      * AlertDetailResponse
      * @description Wrap the response for the alert detail endpoint.
      *
@@ -2900,6 +3033,59 @@ export interface components {
       alert: components['schemas']['AlertInfo'];
       /** Snippets */
       snippets: components['schemas']['SnippetResponse'][];
+    };
+    /**
+     * AlertEntry
+     * @description A single alert annotation extracted from Grafana.
+     */
+    AlertEntry: {
+      /**
+       * Alertname
+       * @default
+       */
+      alertname: string;
+      /**
+       * Id
+       * @default 0
+       */
+      id: number;
+      /**
+       * Node Id
+       * @default
+       */
+      node_id: string;
+      /**
+       * Node Name
+       * @default
+       */
+      node_name: string;
+      /**
+       * Service
+       * @default
+       */
+      service: string;
+      /**
+       * Service Id
+       * @default
+       */
+      service_id: string;
+      /**
+       * Service Type
+       * @default
+       */
+      service_type: string;
+      /**
+       * Severity
+       * @default
+       */
+      severity: string;
+      /**
+       * Time
+       * @default 0
+       */
+      time: number;
+    } & {
+      [key: string]: unknown;
     };
     /**
      * AlertGroup
@@ -2943,6 +3129,56 @@ export interface components {
       /** Name */
       name: string;
       service_type?: components['schemas']['AlertServiceType'] | null;
+    };
+    /**
+     * AlertSection
+     * @description Aggregated alert data for the report.
+     *
+     *     :param total_alerts: Total number of alert annotations in the period.
+     *     :type total_alerts: int
+     *     :param alerts_per_service: Alert count keyed by service name.
+     *     :type alerts_per_service: dict[str, int]
+     *     :param alerts_per_rule: Alert count keyed by alert rule name.
+     *     :type alerts_per_rule: dict[str, int]
+     *     :param alerts_per_host: Alert count keyed by node name.
+     *     :type alerts_per_host: dict[str, int]
+     *     :param alerts_daily: Alert count keyed by date string (``YYYY-MM-DD``).
+     *     :type alerts_daily: dict[str, int]
+     *     :param alerts_daily_per_host: Daily alert count per host, keyed by date then host.
+     *     :type alerts_daily_per_host: dict[str, dict[str, int]]
+     *     :param alert_history: Full list of individual alert entries.
+     *     :type alert_history: list[AlertEntry]
+     */
+    AlertSection: {
+      /** Alert History */
+      alert_history?: components['schemas']['AlertEntry'][];
+      /** Alerts Daily */
+      alerts_daily?: {
+        [key: string]: number;
+      };
+      /** Alerts Daily Per Host */
+      alerts_daily_per_host?: {
+        [key: string]: {
+          [key: string]: number;
+        };
+      };
+      /** Alerts Per Host */
+      alerts_per_host?: {
+        [key: string]: number;
+      };
+      /** Alerts Per Rule */
+      alerts_per_rule?: {
+        [key: string]: number;
+      };
+      /** Alerts Per Service */
+      alerts_per_service?: {
+        [key: string]: number;
+      };
+      /**
+       * Total Alerts
+       * @default 0
+       */
+      total_alerts: number;
     };
     /**
      * AlertServiceType
@@ -3939,6 +4175,73 @@ export interface components {
       /** Summary */
       summary: string;
     };
+    /**
+     * BackupEntry
+     * @description A single backup record.
+     *
+     *     :param id: Unique identifier for this backup entry.
+     *     :type id: str
+     *     :param alias: Human-readable alias for the backup schedule.
+     *     :type alias: str
+     *     :param name: Node name where the backup was taken.
+     *     :type name: str
+     *     :param type: Backup type (e.g. ``"physical"``, ``"logical"``).
+     *     :type type: str
+     *     :param status: Result status of the backup.
+     *     :type status: BackupStatus
+     *     :param size: Raw backup size value from the metric label, or ``"0"`` if unknown.
+     *     :type size: str
+     *     :param estimated_data: ``True`` when the time period or size data is estimated.
+     *     :type estimated_data: bool
+     *     :param enabled: Whether the backup schedule is currently enabled, if available.
+     *     :type enabled: bool | None
+     *     :param encryption: Encryption state label reported by PMM.
+     *     :type encryption: str
+     *     :param period: Dictionary with ``start``, ``end``, and ``duration`` of the backup.
+     *     :type period: dict[str, Any]
+     */
+    BackupEntry: {
+      /**
+       * Alias
+       * @default
+       */
+      alias: string;
+      /** Enabled */
+      enabled?: boolean | null;
+      /**
+       * Encryption
+       * @default Unknown
+       */
+      encryption: string;
+      /**
+       * Estimated Data
+       * @default true
+       */
+      estimated_data: boolean;
+      /** Id */
+      id: string;
+      /**
+       * Name
+       * @default
+       */
+      name: string;
+      /** Period */
+      period?: Record<string, never>;
+      /**
+       * Size
+       * @default 0
+       */
+      size: string;
+      /** @default unknown */
+      status: components['schemas']['BackupStatus'];
+      /**
+       * Type
+       * @default
+       */
+      type: string;
+    } & {
+      [key: string]: unknown;
+    };
     /** BackupPgCreateResponse */
     BackupPgCreateResponse: {
       /** Alert On Fail */
@@ -4075,6 +4378,52 @@ export interface components {
       /** Updated At */
       updated_at?: string | null;
     };
+    /**
+     * BackupSection
+     * @description Aggregated backup data for the report.
+     *
+     *     :param total_backups: Total number of backup entries collected.
+     *     :type total_backups: int
+     *     :param backups_by_host: Backup count keyed by node name.
+     *     :type backups_by_host: dict[str, int]
+     *     :param backups_by_status: Backup count keyed by status string.
+     *     :type backups_by_status: dict[str, int]
+     *     :param backups_by_type: Backup count keyed by backup type.
+     *     :type backups_by_type: dict[str, int]
+     *     :param failed_backups: Subset of backups with a ``fail`` status.
+     *     :type failed_backups: list[BackupEntry]
+     *     :param all_backups: Complete list of all backup entries.
+     *     :type all_backups: list[BackupEntry]
+     */
+    BackupSection: {
+      /** All Backups */
+      all_backups?: components['schemas']['BackupEntry'][];
+      /** Backups By Host */
+      backups_by_host?: {
+        [key: string]: number;
+      };
+      /** Backups By Status */
+      backups_by_status?: {
+        [key: string]: number;
+      };
+      /** Backups By Type */
+      backups_by_type?: {
+        [key: string]: number;
+      };
+      /** Failed Backups */
+      failed_backups?: components['schemas']['BackupEntry'][];
+      /**
+       * Total Backups
+       * @default 0
+       */
+      total_backups: number;
+    };
+    /**
+     * BackupStatus
+     * @description Status values for a backup entry.
+     * @enum {string}
+     */
+    BackupStatus: 'pass' | 'fail' | 'inactive' | 'unknown';
     /**
      * BackupSummary
      * @description Represent a compact backup row used by the list endpoint.
@@ -4301,52 +4650,6 @@ export interface components {
       /** Skipped Already Approved */
       skipped_already_approved: string[];
     };
-    /** Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post */
-    Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post: {
-      /**
-       * Full
-       * @default true
-       */
-      full: boolean;
-      /**
-       * Refresh
-       * @default false
-       */
-      refresh: boolean;
-      /**
-       * Since
-       * @default now-7d
-       */
-      since: string;
-      /**
-       * Until
-       * @default now
-       */
-      until: string;
-    };
-    /** Body_report_report_upload_api_api_apps_report_upload_post */
-    Body_report_report_upload_api_api_apps_report_upload_post: {
-      /**
-       * Full
-       * @default true
-       */
-      full: boolean;
-      /**
-       * Refresh
-       * @default false
-       */
-      refresh: boolean;
-      /**
-       * Since
-       * @default now-7d
-       */
-      since: string;
-      /**
-       * Until
-       * @default now
-       */
-      until: string;
-    };
     /**
      * BoolField
      * @description Represent a boolean toggle field.
@@ -4510,6 +4813,20 @@ export interface components {
        */
       parent_link: boolean;
     };
+    /**
+     * CheckSeverity
+     * @description Severity levels for advisor check results.
+     * @enum {string}
+     */
+    CheckSeverity:
+      | 'SEVERITY_EMERGENCY'
+      | 'SEVERITY_ALERT'
+      | 'SEVERITY_CRITICAL'
+      | 'SEVERITY_ERROR'
+      | 'SEVERITY_WARNING'
+      | 'SEVERITY_NOTICE'
+      | 'SEVERITY_INFO'
+      | 'SEVERITY_DEBUG';
     /**
      * ChecksumsForm
      * @description Define the model-first create/update body and schema source for Checksums.
@@ -5089,6 +5406,56 @@ export interface components {
       task_name: string;
     };
     /**
+     * DiskUsageEntry
+     * @description Disk usage for a single mountpoint on a node.
+     *
+     *     :param node_name: Human-readable node hostname.
+     *     :type node_name: str
+     *     :param mountpoint: Filesystem mountpoint path (e.g. ``"/"``, ``"/data"``).
+     *     :type mountpoint: str
+     *     :param capacity_bytes: Total filesystem capacity in bytes.
+     *     :type capacity_bytes: int
+     *     :param used_start_bytes: Used bytes at the start of the report period.
+     *     :type used_start_bytes: float
+     *     :param used_end_bytes: Used bytes at the end of the report period.
+     *     :type used_end_bytes: float
+     *     :param used_peak_bytes: Peak used bytes observed during the report period.
+     *     :type used_peak_bytes: float
+     *     :param usage_percentage: End-of-period usage as a percentage of total capacity.
+     *     :type usage_percentage: int
+     */
+    DiskUsageEntry: {
+      /**
+       * Capacity Bytes
+       * @default 0
+       */
+      capacity_bytes: number;
+      /** Mountpoint */
+      mountpoint: string;
+      /** Node Name */
+      node_name: string;
+      /**
+       * Usage Percentage
+       * @default 0
+       */
+      usage_percentage: number;
+      /**
+       * Used End Bytes
+       * @default 0
+       */
+      used_end_bytes: number;
+      /**
+       * Used Peak Bytes
+       * @default 0
+       */
+      used_peak_bytes: number;
+      /**
+       * Used Start Bytes
+       * @default 0
+       */
+      used_start_bytes: number;
+    };
+    /**
      * ExecutionEvent
      * @description A single lifecycle event from a task executor (executor-agnostic shape).
      *
@@ -5156,6 +5523,51 @@ export interface components {
       };
       /** Message */
       message?: string | null;
+    };
+    /**
+     * FailedCheck
+     * @description A single failed advisor check result.
+     *
+     *     :param name: The check name that failed.
+     *     :type name: str
+     *     :param description: Human-readable description of what the check tests.
+     *     :type description: str
+     *     :param summary: Short one-line summary of the check.
+     *     :type summary: str
+     *     :param severity: Severity level of the failure.
+     *     :type severity: CheckSeverity
+     *     :param node_name: Name of the node affected, if applicable.
+     *     :type node_name: str | None
+     *     :param node_id: PMM node ID of the affected node, if applicable.
+     *     :type node_id: str | None
+     *     :param service_name: Name of the service affected, if applicable.
+     *     :type service_name: str | None
+     *     :param service_id: PMM service ID of the affected service, if applicable.
+     *     :type service_id: str | None
+     *     :param read_more_url: URL linking to documentation for this check.
+     *     :type read_more_url: str
+     */
+    FailedCheck: {
+      /** Description */
+      description: string;
+      /** Name */
+      name: string;
+      /** Node Id */
+      node_id?: string | null;
+      /** Node Name */
+      node_name?: string | null;
+      /**
+       * Read More Url
+       * @default
+       */
+      read_more_url: string;
+      /** Service Id */
+      service_id?: string | null;
+      /** Service Name */
+      service_name?: string | null;
+      severity: components['schemas']['CheckSeverity'];
+      /** Summary */
+      summary: string;
     };
     /**
      * FieldGate
@@ -5644,6 +6056,14 @@ export interface components {
       type: 'integer';
     };
     /**
+     * InventorySection
+     * @description Aggregated inventory data for the report.
+     */
+    InventorySection: {
+      /** Entries */
+      entries?: components['schemas']['InventoryServiceEntry'][];
+    };
+    /**
      * InventorySelectorOption
      * @description Represent a minimal ``{id, name}`` option for inventory autocomplete selectors.
      *
@@ -5657,6 +6077,23 @@ export interface components {
       id: number;
       /** Name */
       name: string;
+    };
+    /**
+     * InventoryServiceEntry
+     * @description A monitored service with its agent connectivity status.
+     */
+    InventoryServiceEntry: {
+      /**
+       * Node Name
+       * @default
+       */
+      node_name: string;
+      /** Service Name */
+      service_name: string;
+      /** Service Type */
+      service_type: string;
+      /** @default OK */
+      status: components['schemas']['ServiceStatus'];
     };
     /**
      * InventorySyncStatusResponse
@@ -5713,6 +6150,26 @@ export interface components {
       default_sort?: string | null;
       /** Overview Hidden Fields */
       overview_hidden_fields?: string[];
+    };
+    /**
+     * MonitoredSummary
+     * @description Summary of monitored nodes and services by type.
+     */
+    MonitoredSummary: {
+      /** Services By Type */
+      services_by_type?: {
+        [key: string]: number;
+      };
+      /**
+       * Total Nodes
+       * @default 0
+       */
+      total_nodes: number;
+      /**
+       * Total Services
+       * @default 0
+       */
+      total_services: number;
     };
     /**
      * MultiChoiceField
@@ -6159,6 +6616,131 @@ export interface components {
      * @enum {string}
      */
     ReloadClassification: 'hot' | 'nested_only' | 'not_overridable';
+    /**
+     * ReportData
+     * @description Complete report payload ready for rendering.
+     *
+     *     :param full: When ``True``, all check results and full backup history are included.
+     *     :type full: bool
+     *     :param refresh: When ``True``, advisor checks were refreshed before data collection.
+     *     :type refresh: bool
+     *     :param metadata: Report title, generation timestamp, and period labels.
+     *     :type metadata: ReportMetadata
+     *     :param monitored: Summary counts of monitored nodes and services.
+     *     :type monitored: MonitoredSummary
+     *     :param advisors: Advisor check results grouped by family.
+     *     :type advisors: AdvisorSection
+     *     :param alerts: Alert annotation history and aggregations.
+     *     :type alerts: AlertSection
+     *     :param backups: Backup status entries and aggregations.
+     *     :type backups: BackupSection
+     *     :param storage: Disk usage entries per node mountpoint.
+     *     :type storage: StorageSection
+     *     :param uptime: Service uptime entries for the report period.
+     *     :type uptime: UptimeSection
+     *     :param inventory: Monitored service inventory with connectivity status.
+     *     :type inventory: InventorySection
+     */
+    ReportData: {
+      advisors?: components['schemas']['AdvisorSection'];
+      alerts?: components['schemas']['AlertSection'];
+      backups?: components['schemas']['BackupSection'];
+      /**
+       * Full
+       * @default true
+       */
+      full: boolean;
+      inventory?: components['schemas']['InventorySection'];
+      metadata: components['schemas']['ReportMetadata'];
+      monitored?: components['schemas']['MonitoredSummary'];
+      /**
+       * Refresh
+       * @default false
+       */
+      refresh: boolean;
+      storage?: components['schemas']['StorageSection'];
+      uptime?: components['schemas']['UptimeSection'];
+    };
+    /**
+     * ReportJobResponse
+     * @description Expose async report job state.
+     *
+     *     :param job_id: Celery task identifier.
+     *     :type job_id: str
+     *     :param status: Lowercase Celery task state.
+     *     :type status: str
+     *     :param pdf_ready: Whether the PDF result exists and is downloadable.
+     *     :type pdf_ready: bool
+     *     :param result: Successful job result payload, if available.
+     *     :type result: dict[str, Any] | None
+     *     :param error: Failed job error text, if available.
+     *     :type error: str | None
+     */
+    ReportJobResponse: {
+      /** Error */
+      error?: string | null;
+      /** Job Id */
+      job_id: string;
+      /**
+       * Pdf Ready
+       * @default false
+       */
+      pdf_ready: boolean;
+      /** Result */
+      result?:
+        | {
+            [key: string]: unknown;
+          }
+        | Record<string, never>
+        | null;
+      /** Status */
+      status: string;
+    };
+    /**
+     * ReportMetadata
+     * @description Metadata about a generated report.
+     *
+     *     :param title: Report title string.
+     *     :type title: str
+     *     :param generated_at: Timestamp when the report was generated.
+     *     :type generated_at: datetime
+     *     :param report_week: ISO week label, e.g. ``"Report 2026 Week 15"``.
+     *     :type report_week: str
+     *     :param report_interval: Human-readable date range string for the report period.
+     *     :type report_interval: str
+     */
+    ReportMetadata: {
+      /**
+       * Generated At
+       * Format: date-time
+       */
+      generated_at: string;
+      /**
+       * Report Interval
+       * @default
+       */
+      report_interval: string;
+      /**
+       * Report Week
+       * @default
+       */
+      report_week: string;
+      /**
+       * Title
+       * @default
+       */
+      title: string;
+    };
+    /**
+     * ReportSnapshotWrite
+     * @description Define report snapshot body for PDF/upload jobs.
+     *
+     *     :param report: Generated report snapshot reused for PDF/upload work.
+     *     :type report: ReportData
+     */
+    ReportSnapshotWrite: {
+      report: components['schemas']['ReportData'];
+    };
     /**
      * RestoreCreate
      * @description Declare the model-first create/update body and ``GET /schema`` source for Restores.
@@ -6949,6 +7531,12 @@ export interface components {
       updated_at?: string | null;
     };
     /**
+     * ServiceStatus
+     * @description Agent connectivity status for an inventory service.
+     * @enum {string}
+     */
+    ServiceStatus: 'OK' | 'Not OK';
+    /**
      * ServiceTypeEnum
      * @description Enumerate the supported service types.
      *
@@ -7280,6 +7868,17 @@ export interface components {
      * @enum {string}
      */
     SourceEnum: 'pmm';
+    /**
+     * StorageSection
+     * @description Aggregated storage data for the report.
+     *
+     *     :param entries: List of per-mountpoint disk usage entries, sorted by usage descending.
+     *     :type entries: list[DiskUsageEntry]
+     */
+    StorageSection: {
+      /** Entries */
+      entries?: components['schemas']['DiskUsageEntry'][];
+    };
     /**
      * StringField
      * @description Represent a single-line string input field.
@@ -7794,6 +8393,32 @@ export interface components {
      * @enum {string}
      */
     UploadProvider: 'rsync' | 's3' | 'gsutil';
+    /**
+     * UptimeEntry
+     * @description Uptime for a single monitored service.
+     */
+    UptimeEntry: {
+      /** Service Name */
+      service_name: string;
+      /**
+       * Since
+       * @default
+       */
+      since: string;
+      /**
+       * Uptime
+       * Format: duration
+       */
+      uptime: string;
+    };
+    /**
+     * UptimeSection
+     * @description Aggregated uptime data for the report.
+     */
+    UptimeSection: {
+      /** Entries */
+      entries?: components['schemas']['UptimeEntry'][];
+    };
     /** ValidationError */
     ValidationError: {
       /** Context */
@@ -10834,18 +11459,80 @@ export interface operations {
       };
     };
   };
-  report_report_generate_pdf_api_api_apps_report_generate_pdf_post: {
+  report_report_start_pdf_job_api_api_apps_report_pdf_jobs_post: {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    requestBody?: {
+    requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_report_report_generate_pdf_api_api_apps_report_generate_pdf_post'];
+        'application/json': components['schemas']['ReportSnapshotWrite'];
       };
     };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ReportJobResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  report_report_pdf_job_api_api_apps_report_pdf_jobs__job_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        job_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ReportJobResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  report_report_download_pdf_api_api_apps_report_pdf_jobs__job_id__pdf_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        job_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {
@@ -10867,16 +11554,16 @@ export interface operations {
       };
     };
   };
-  report_report_upload_api_api_apps_report_upload_post: {
+  report_report_start_upload_job_api_api_apps_report_upload_jobs_post: {
     parameters: {
       query?: never;
       header?: never;
       path?: never;
       cookie?: never;
     };
-    requestBody?: {
+    requestBody: {
       content: {
-        'application/x-www-form-urlencoded': components['schemas']['Body_report_report_upload_api_api_apps_report_upload_post'];
+        'application/json': components['schemas']['ReportSnapshotWrite'];
       };
     };
     responses: {
@@ -10886,7 +11573,38 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': unknown;
+          'application/json': components['schemas']['ReportJobResponse'];
+        };
+      };
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  report_report_upload_job_api_api_apps_report_upload_jobs__job_id__get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        job_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ReportJobResponse'];
         };
       };
       /** @description Validation Error */
