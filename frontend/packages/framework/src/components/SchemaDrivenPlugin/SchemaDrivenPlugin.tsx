@@ -259,7 +259,7 @@ export function SchemaDrivenPlugin({
   const { data: schema, isLoading, error } = useAppSchema(pluginName, mockSchema);
   const showMutationRoutes = !listOnly && !browseOnly;
   const showDetailRoutes = !listOnly;
-  const resolvedRouteBase = resolveAppRouteBase(pluginName, routeBase);
+  const resolvedRouteBase = resolveAppRouteBase(pluginName, routeBase).replace(/\/+$/, '');
   const relatedApps = schema?.related_apps ?? [];
   const hasRelatedApps = relatedApps.length > 0;
 
