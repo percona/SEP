@@ -15,16 +15,21 @@
 
 """Define tests for ``app.tasks.logs.log_writer``."""
 
+import asyncio
 from datetime import timedelta
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils.date_time import utc_now
 from app.tasks.crud import (
     TaskHistoryLogManager,
     TaskHistoryLogStateManager,
     TaskHistoryManager,
+    TaskManager,
 )
 from app.tasks.logs.log_writer import (
     backfill_legacy_logs,
@@ -37,7 +42,9 @@ from app.tasks.logs.log_writer import (
 from app.tasks.models import (
     TaskHistory,
     TaskLogType,
+    TaskWrite,
 )
+from tests.app.factories import build_task_history, TaskFactory
 
 EXPECTED_HELLOWORLD_LEN = 10
 EXPECTED_LEGACY_STDOUT_OFFSET = 42
@@ -1071,3 +1078,68 @@ async def test_drain_and_reset_flushes_staging_before_zeroing_producer_offset(
     assert len(chunks) == EXPECTED_DRAIN_CHUNK_COUNT
     assert chunks[0].content == alloc_a_bytes.decode("utf-8")
     assert chunks[1].content == alloc_b_bytes.decode("utf-8")
+
+
+LOCK_BLOCK_TIMEOUT_SEC = 0.5
+RESET_RELEASE_TIMEOUT_SEC = 5
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_first_insert_lock_serialises_reset_on_postgres(
+    postgres_engine: AsyncEngine,
+):
+    """Assert the first-insert ``FOR UPDATE`` lock serialises a concurrent reset on real PG.
+
+    ``with_for_update()`` is a no-op on SQLite, so the rest of this module proves
+    the epoch-discard *behaviour* but never the row-lock *ordering* it rests on.
+    Here two independent PostgreSQL-bound sessions race: the holder takes the
+    first-insert lock via ``get_log_allocation_epoch(for_update=True)`` and keeps
+    its transaction open; the resetter's ``bump_log_allocation_epoch`` + commit
+    (the frontier reset) must block until the holder ends, then land — proving the
+    two serialise on the ``TaskHistory`` row rather than racing.
+    """
+    async with postgres_engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    maker = get_async_session_maker_from_engine(postgres_engine)
+    try:
+        async with maker() as seed:
+            task = await TaskManager.create(
+                seed, TaskWrite.model_validate(TaskFactory.build(name="pg-lock-task"))
+            )
+            history = await TaskHistoryManager.save(seed, build_task_history(task))
+            await seed.commit()
+            history_id = history.id
+
+        async with maker() as holder, maker() as resetter:
+            # Holder takes the first-insert lock and keeps its transaction open.
+            locked_epoch = await TaskHistoryManager.get_log_allocation_epoch(
+                holder, history_id, for_update=True
+            )
+            assert locked_epoch == 0
+
+            async def _reset() -> None:
+                await TaskHistoryManager.bump_log_allocation_epoch(
+                    resetter, history_id, new_allocation_epoch=ALLOCATION_EPOCH_NEW
+                )
+                await resetter.commit()
+
+            reset_task = asyncio.ensure_future(_reset())
+            # While the holder pins the row, the reset cannot make progress.
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    asyncio.shield(reset_task), timeout=LOCK_BLOCK_TIMEOUT_SEC
+                )
+
+            # Release the lock; the serialised reset now converges.
+            await holder.rollback()
+            await asyncio.wait_for(reset_task, timeout=RESET_RELEASE_TIMEOUT_SEC)
+
+        async with maker() as verify:
+            epoch = await TaskHistoryManager.get_log_allocation_epoch(
+                verify, history_id
+            )
+        assert epoch == ALLOCATION_EPOCH_NEW
+    finally:
+        async with postgres_engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.drop_all)

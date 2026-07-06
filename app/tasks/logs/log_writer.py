@@ -133,11 +133,10 @@ class TaskHistoryLogWriter:
                         session, task_history_id, for_update=True
                     )
                 if allocation_epoch < guard_epoch:
-                    if is_new:
-                        # Release the first-insert FOR UPDATE lock before
-                        # returning, else a long-lived writer_session pins the
-                        # row and stalls frontier resets.
-                        await session.rollback()
+                    # Stale write from a superseded allocation: drop it, releasing
+                    # any first-insert lock so a long-lived writer_session does not
+                    # pin the row and stall frontier resets.
+                    await cls._release_first_insert_lock(session, is_new=is_new)
                     return
 
             effective_bytes = cls._effective_new_bytes(
@@ -150,6 +149,9 @@ class TaskHistoryLogWriter:
                 and producer_offset_after is not None
                 and state.producer_offset >= producer_offset_after
             ):
+                # No-op early return; same first-insert lock-release invariant as
+                # the stale-discard path above.
+                await cls._release_first_insert_lock(session, is_new=is_new)
                 return
 
             now = utc_now()
@@ -320,6 +322,25 @@ class TaskHistoryLogWriter:
             session, task_history_id, new_allocation_epoch=new_allocation_epoch
         )
         await session.commit()
+
+    @staticmethod
+    async def _release_first_insert_lock(
+        session: AsyncSession, *, is_new: bool
+    ) -> None:
+        """Release the first-insert ``FOR UPDATE`` lock before an early return.
+
+        The first-insert path locks the ``TaskHistory`` row (``for_update``) to
+        serialise against a concurrent frontier reset. Any ``append`` exit that
+        returns without ending the transaction must roll back first, else a
+        long-lived ``writer_session`` pins the row and stalls resets/other
+        writers. A no-op when ``is_new`` is false — the existing-row paths take no
+        such lock.
+
+        :param session: The writer session that may hold the first-insert lock.
+        :param is_new: Whether this call took the first-insert ``FOR UPDATE`` lock.
+        """
+        if is_new:
+            await session.rollback()
 
     @staticmethod
     def _effective_new_bytes(
