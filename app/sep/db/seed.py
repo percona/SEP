@@ -114,7 +114,7 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
                     tasks=[
                         SystemPeriodicTaskData(
                             name=f"sep__generate_health_report{suffix}",
-                            task_name="app.sep.celery.generate_health_report",
+                            task_name="app.sep.apps.report.celery.generate_health_report",
                             extra_kwargs={"kwargs": json.dumps(task_kwargs)}
                             if task_kwargs
                             else None,
@@ -123,6 +123,19 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
                     ],
                 ),
             )
+
+        system_tasks.append(
+            SystemPeriodicTaskSchedule(
+                schedule=sep_settings.HEALTH_REPORT.cleanup_interval,
+                tasks=[
+                    SystemPeriodicTaskData(
+                        name="sep__purge_report_artifacts",
+                        task_name="app.sep.apps.report.celery.purge_report_artifacts",
+                        owner_app_key="report",
+                    ),
+                ],
+            ),
+        )
 
     return system_tasks
 

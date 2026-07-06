@@ -148,11 +148,19 @@ export interface ReportData {
 }
 
 export interface UploadResult {
-  sys_id: string;
+  sys_id?: string;
   status: string;
   url?: string;
 }
 
 export interface ReportConfig {
   upload_disabled_reasons: string[];
+}
+
+export interface ReportJobResponse {
+  job_id: string;
+  status: string;
+  pdf_ready: boolean;
+  result?: UploadResult | Record<string, unknown> | null;
+  error?: string | null;
 }

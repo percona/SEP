@@ -15,9 +15,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { ReactNode } from 'react';
@@ -32,13 +32,6 @@ import { apiClient } from '@sep/api';
 const mockedApi = apiClient as unknown as {
   get: ReturnType<typeof vi.fn>;
   post: ReturnType<typeof vi.fn>;
-};
-
-const MOCK_PARAMS = {
-  since: 'now-7d',
-  until: 'now',
-  full: true,
-  refresh: false,
 };
 
 const MOCK_REPORT: ReportData = {
@@ -130,6 +123,12 @@ describe('ReportResultPage', () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
   it('shows warning when no params in navigation state', () => {
     renderWithProviders(<ReportResultPage />);
     expect(screen.getByText(/no report parameters/i)).toBeInTheDocument();
@@ -143,7 +142,9 @@ describe('ReportResultPage', () => {
       return Promise.resolve({ data: MOCK_REPORT });
     });
 
-    renderWithProviders(<ReportResultPage />, { params: MOCK_PARAMS });
+    renderWithProviders(<ReportResultPage />, {
+      params: { since: 'now-7d', until: 'now', full: true, refresh: false },
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /health.*security report/i })).toBeInTheDocument();
@@ -155,14 +156,41 @@ describe('ReportResultPage', () => {
     expect(screen.getByText(/node-1/)).toBeInTheDocument();
   });
 
-  it('fires useDownloadPdf mutation on PDF button click', async () => {
+  it('starts a PDF job and downloads with the server filename', async () => {
+    const originalCreateElement = document.createElement.bind(document);
+    const anchor = originalCreateElement('a');
+    vi.spyOn(anchor, 'click').mockImplementation(() => undefined);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName, options) =>
+      tagName === 'a' ? anchor : originalCreateElement(tagName, options),
+    );
     mockedApi.get.mockImplementation((url: string) => {
       if (url.includes('/apps/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
+      if (url.endsWith('/apps/report/pdf-jobs/job-1/pdf')) {
+        return Promise.resolve({
+          data: new Blob(['%PDF'], { type: 'application/pdf' }),
+          headers: {
+            'content-disposition':
+              'attachment; filename="Health_and_Security_Report_2026-05-28.pdf"',
+          },
+        });
+      }
+      if (url.endsWith('/apps/report/pdf-jobs/job-1')) {
+        return Promise.resolve({
+          data: {
+            job_id: 'job-1',
+            status: 'success',
+            pdf_ready: true,
+            result: { filename: 'Health_and_Security_Report_2026-05-28.pdf' },
+          },
+        });
+      }
       return Promise.resolve({ data: MOCK_REPORT });
     });
-    mockedApi.post.mockResolvedValue({ data: new Blob(['%PDF'], { type: 'application/pdf' }) });
+    mockedApi.post.mockResolvedValue({
+      data: { job_id: 'job-1', status: 'pending', pdf_ready: false },
+    });
 
     vi.stubGlobal('URL', {
       ...URL,
@@ -170,7 +198,9 @@ describe('ReportResultPage', () => {
       revokeObjectURL: vi.fn(),
     });
 
-    renderWithProviders(<ReportResultPage />, { params: MOCK_PARAMS });
+    renderWithProviders(<ReportResultPage />, {
+      params: { since: 'now-7d', until: 'now', full: true, refresh: false },
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /download pdf/i })).toBeInTheDocument();
@@ -179,24 +209,122 @@ describe('ReportResultPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /download pdf/i }));
 
     await waitFor(() => {
-      expect(mockedApi.post).toHaveBeenCalledWith(
-        '/apps/report/generate/pdf',
-        expect.any(URLSearchParams),
-        expect.objectContaining({ responseType: 'blob' }),
-      );
+      expect(mockedApi.post).toHaveBeenCalledWith('/apps/report/pdf-jobs', {
+        report: MOCK_REPORT,
+      });
+    });
+    await waitFor(() => {
+      expect(anchor.download).toBe('Health_and_Security_Report_2026-05-28.pdf');
     });
   });
 
-  it('fires useUploadToServiceNow mutation on upload button click', async () => {
+  it('keeps polling retry state without a local timeout', async () => {
+    const jobStates = [
+      { job_id: 'job-1', status: 'retry', pdf_ready: false },
+      { job_id: 'job-1', status: 'success', pdf_ready: true },
+    ];
     mockedApi.get.mockImplementation((url: string) => {
       if (url.includes('/apps/report/config')) {
         return Promise.resolve({ data: { upload_disabled_reasons: [] } });
       }
+      if (url.endsWith('/apps/report/pdf-jobs/job-1/pdf')) {
+        return Promise.resolve({ data: new Blob(['%PDF'], { type: 'application/pdf' }) });
+      }
+      if (url.endsWith('/apps/report/pdf-jobs/job-1')) {
+        return Promise.resolve({ data: jobStates.shift() });
+      }
       return Promise.resolve({ data: MOCK_REPORT });
     });
-    mockedApi.post.mockResolvedValue({ data: { sys_id: 'abc123', status: 'uploaded' } });
+    mockedApi.post.mockResolvedValue({
+      data: { job_id: 'job-1', status: 'pending', pdf_ready: false },
+    });
 
-    renderWithProviders(<ReportResultPage />, { params: MOCK_PARAMS });
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:fake-url'),
+      revokeObjectURL: vi.fn(),
+    });
+
+    renderWithProviders(<ReportResultPage />, {
+      params: { since: 'now-7d', until: 'now', full: true, refresh: false },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /download pdf/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /download pdf/i }));
+
+    await waitFor(
+      () => {
+        expect(mockedApi.get).toHaveBeenCalledWith('/apps/report/pdf-jobs/job-1/pdf', {
+          responseType: 'blob',
+        });
+      },
+      { timeout: 2_500 },
+    );
+  });
+
+  it('reports revoked PDF jobs as terminal failures', async () => {
+    mockedApi.get.mockImplementation((url: string) => {
+      if (url.includes('/apps/report/config')) {
+        return Promise.resolve({ data: { upload_disabled_reasons: [] } });
+      }
+      if (url.endsWith('/apps/report/pdf-jobs/job-1')) {
+        return Promise.resolve({
+          data: { job_id: 'job-1', status: 'revoked', pdf_ready: false, error: 'Report disabled' },
+        });
+      }
+      return Promise.resolve({ data: MOCK_REPORT });
+    });
+    mockedApi.post.mockResolvedValue({
+      data: { job_id: 'job-1', status: 'pending', pdf_ready: false },
+    });
+
+    renderWithProviders(<ReportResultPage />, {
+      params: { since: 'now-7d', until: 'now', full: true, refresh: false },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /download pdf/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /download pdf/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/pdf download failed: report disabled/i)).toBeInTheDocument();
+    });
+    expect(mockedApi.get).not.toHaveBeenCalledWith('/apps/report/pdf-jobs/job-1/pdf', {
+      responseType: 'blob',
+    });
+  });
+
+  it('starts an upload job on upload button click', async () => {
+    let uploadStarted = false;
+    mockedApi.get.mockImplementation((url: string) => {
+      if (url.includes('/apps/report/config')) {
+        return Promise.resolve({ data: { upload_disabled_reasons: [] } });
+      }
+      if (uploadStarted) {
+        return Promise.resolve({
+          data: {
+            job_id: 'job-2',
+            status: 'success',
+            pdf_ready: false,
+            result: { sys_id: 'abc123', status: 'uploaded' },
+          },
+        });
+      }
+      return Promise.resolve({ data: MOCK_REPORT });
+    });
+    mockedApi.post.mockImplementation(() => {
+      uploadStarted = true;
+      return Promise.resolve({ data: { job_id: 'job-2', status: 'pending', pdf_ready: false } });
+    });
+
+    renderWithProviders(<ReportResultPage />, {
+      params: { since: 'now-7d', until: 'now', full: true, refresh: false },
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /upload to servicenow/i })).toBeInTheDocument();
@@ -205,13 +333,9 @@ describe('ReportResultPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /upload to servicenow/i }));
 
     await waitFor(() => {
-      expect(mockedApi.post).toHaveBeenCalledWith(
-        '/apps/report/upload',
-        expect.any(URLSearchParams),
-        expect.objectContaining({
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        }),
-      );
+      expect(mockedApi.post).toHaveBeenCalledWith('/apps/report/upload-jobs', {
+        report: MOCK_REPORT,
+      });
     });
   });
 
@@ -225,7 +349,9 @@ describe('ReportResultPage', () => {
       return Promise.resolve({ data: MOCK_REPORT });
     });
 
-    renderWithProviders(<ReportResultPage />, { params: MOCK_PARAMS });
+    renderWithProviders(<ReportResultPage />, {
+      params: { since: 'now-7d', until: 'now', full: true, refresh: false },
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /upload to servicenow/i })).toBeDisabled();

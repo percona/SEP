@@ -63,6 +63,7 @@ from app.core.utils.fields import (
     CredentialHttpUrl,
     RelativeDirectoryPathField,
     StrImportableAttribute,
+    StrRelativePath,
     TimedeltaSeconds,
     UniqueList,
     URIPath,
@@ -402,6 +403,17 @@ class HealthReportSettings(BaseLowercaseModel):
     :type api_key: SecretStr | None
     :param client_id: Customer identifier sent with each upload.
     :type client_id: str | None
+    :param artifact_dir: Directory where rendered PDF artifacts are staged for
+        download. Shared between the Celery worker (writer) and web (reader), so
+        only lightweight job metadata transits the Celery result backend.
+    :type artifact_dir: StrRelativePath
+    :param artifact_ttl: Maximum age (seconds) of a staged PDF artifact before the
+        cleanup task removes it. Should mirror ``CELERY.RESULT_EXPIRES`` so a
+        job's metadata and its artifact expire together.
+    :type artifact_ttl: PositiveInt
+    :param cleanup_interval: Cadence of the ``purge_report_artifacts`` sweep that
+        deletes staged PDFs older than ``artifact_ttl``.
+    :type cleanup_interval: IntervalSchedule
     """
 
     schedules: list[ReportScheduleEntry] = []
@@ -409,6 +421,11 @@ class HealthReportSettings(BaseLowercaseModel):
     endpoint: str | None = None
     api_key: SecretStr | None = None
     client_id: str | None = None
+    artifact_dir: StrRelativePath = "data/health-reports"
+    artifact_ttl: PositiveInt = 3600
+    cleanup_interval: IntervalSchedule = IntervalSchedule(
+        every=15, period=Period.MINUTES
+    )
 
     @field_validator("endpoint", "client_id", mode="before")
     @classmethod
