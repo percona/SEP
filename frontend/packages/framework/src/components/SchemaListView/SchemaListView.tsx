@@ -26,7 +26,7 @@ import { SEP_TABLE_CLASS } from '../../constants';
 import { ScheduleCell } from '../ScheduleCell';
 import {
   selectSchedule,
-  useScheduledTasksForPlugin,
+  useScheduledTasksForApp,
   type PeriodicTaskResponse,
 } from '../ScheduledTasksPanel';
 
@@ -140,7 +140,7 @@ const EMPTY_SCHEDULE = new Map<string, PeriodicTaskResponse>();
  * The schedule fetch and the client-side task-name join only happen when the
  * list view declares a `schedule`-format column and a plugin name is provided.
  * In that case rendering is delegated to {@link ScheduleJoinedListView}, which
- * is the only place that mounts `useScheduledTasksForPlugin` — so plugins
+ * is the only place that mounts `useScheduledTasksForApp` — so plugins
  * without a schedule column issue no periodic-tasks request (and need no
  * QueryClient).
  */
@@ -160,7 +160,7 @@ export function SchemaListView(props: SchemaListViewProps) {
  */
 function ScheduleJoinedListView(props: SchemaListViewProps & { pluginName: string }) {
   const { pluginName, disableSchedulePolling = false } = props;
-  const { periodicTasks, isLoading: scheduleLoading } = useScheduledTasksForPlugin(pluginName, {
+  const { periodicTasks, isLoading: scheduleLoading } = useScheduledTasksForApp(pluginName, {
     disablePolling: disableSchedulePolling,
   });
 
