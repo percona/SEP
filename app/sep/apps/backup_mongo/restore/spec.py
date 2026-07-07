@@ -63,7 +63,7 @@ def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
         requirements=leg.requirements,
         payload=to_payload_reference(Path(__file__).parent / leg.payload_name),
         service_name=leg.service_name,
-        extra_data={"parent": leg.parent} if leg.parent is not None else None,
+        extra_data=None if leg.parent is None else {"parent": leg.parent},
     )
 
 
