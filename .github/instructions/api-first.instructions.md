@@ -8,31 +8,31 @@ Mid-migration from server-rendered Jinja2 to a schema-driven React SPA backed by
 
 ## Rule 1 — Gateway pattern (most-violated)
 
-**The frontend NEVER calls the Inventory or Tasks sub-apps directly.** All FE traffic goes through SEP routes — plugin (`/api/plugins/{name}/`) or SEP-level core (`/api/sep/...`) — which proxy to sub-apps via injected deps (`tasks_api: TaskAPI`, `inventory_api: InventoryAPI`).
+**The frontend NEVER calls the Inventory or Tasks sub-apps directly.** All FE traffic goes through SEP routes — app (`/api/plugins/{name}/`) or SEP-level core (`/api/sep/...`) — which proxy to sub-apps via injected deps (`tasks_api: TaskAPI`, `inventory_api: InventoryAPI`).
 
 Flag any new FE→`/api/tasks/*` or FE→`/api/inventory/*` traffic, and any two parallel FE fetches merging data from both sub-apps client-side (should be one SEP route merging server-side).
 
-Use `/api/sep/<resource>/` when data is shared across plugins (executor hosts, current-user, global flags). Otherwise `/api/plugins/{name}/<resource>/`.
+Use `/api/sep/<resource>/` when data is shared across apps (executor hosts, current-user, global flags). Otherwise `/api/plugins/{name}/<resource>/`.
 
 **Passthrough vs transforming proxy.** A passthrough route (single upstream call, no merge/transform/projection) returns `dict[str, Any]` / `list[dict[str, Any]]` — NOT a SEP-owned model mirroring the upstream 1:1. Flag any new `{Resource}Response` alongside a bare `tasks_api.get(...)` / `inventory_api.get(...)` where no field is added, dropped, renamed, or projected. A transforming proxy (merges upstreams, projects fields, adds SEP-only data) keeps its SEP-owned model.
 
 ## Rule 2 — Schema-driven by default
 
-Default: define a `PluginSchema` in `app/sep/apps/{name}/schema.py`, register a plugin router, ship a React package that's a pass-through to `<SchemaDrivenApp pluginName="…" />`.
+Default: define an `AppSchema` in `app/sep/apps/{name}/schema.py`, register an app router, ship a React package that's a pass-through to `<SchemaDrivenApp pluginName="…" />`.
 
-**Custom React (escape hatch)** requires (a) no `PluginSchema` shape covers the plugin AND (b) the missing extension wouldn't benefit any other planned plugin. Only **alerts** and **report** qualify today. **alters** and **archives** are schema-driven via the DSL primitives (conditional rules + side-actions + derived tasks) — reject any proposal to revert either to custom React.
+**Custom React (escape hatch)** requires (a) no `AppSchema` shape covers the app AND (b) the missing extension wouldn't benefit any other planned app. Only **alerts** and **report** qualify today. **alters** and **archives** are schema-driven via the DSL primitives (conditional rules + side-actions + derived tasks) — reject any proposal to revert either to custom React.
 
-After a plugin adopts `derive_crud_routes` (deleting its hand-written `api_routes.py`), the old `<Plugin>CreateResponse = derive_create_response_model(...)` line in `models.py` and its now-unused import become dead code that lint won't flag (the assignment still references the import). Flag the leftover — a stray model sharing the auto-derived OpenAPI component name is a latent collision.
+After an app adopts `derive_crud_routes` (deleting its hand-written `api_routes.py`), the old `<App>CreateResponse = derive_create_response_model(...)` line in `models.py` and its now-unused import become dead code that lint won't flag (the assignment still references the import). Flag the leftover — a stray model sharing the auto-derived OpenAPI component name is a latent collision.
 
 ## Rule 3 — Reuse the framework layer
 
-The framework layer exists so plugin migrations don't reinvent chaining, log streaming, history, selectors, scheduling, alert-on-fail. **Custom React plugins still consume framework components** — only the form is custom. Existing primitives in `@sep/framework`: `<TaskHistoryTable>`, `<StatusBadge>`, `<ChainDisplay>`, `<ChainBuilder>`, `<TaskLogViewer>` + `useTaskLogs()`, `useExecutionEvents()`, `<ServiceSelector>`/`<SchemaSelector>`/`<TableSelector>` (cascading), `<HostSelector>`/`<StandaloneHostSelector>`, `<AlertOnFailField>`, `<ScheduledTasksPanel>`, `<ScheduleCell>`/`<ScheduleSummary>`, `<SchemaFormRenderer>`, `<SchemaListView>`, `<SchemaDrivenApp>` and its page sub-components (`AppListPage`, `AppCreatePage`, `AppDetailPage`, `AppSchedulePage`), the data hooks (`useHosts`, `useServices`, `useSchemas`, `useTables`, `useTaskHistory*`), and the API client (axios + auth interceptor + `openapi-typescript` codegen + React Query). Auth/notification context (`<AuthProvider>`/`useAuth()`, `<NotificationProvider>`/`useNotification()`) lives in `@sep/shell`, not `@sep/framework`.
+The framework layer exists so app migrations don't reinvent chaining, log streaming, history, selectors, scheduling, alert-on-fail. **Custom React apps still consume framework components** — only the form is custom. Existing primitives in `@sep/framework`: `<TaskHistoryTable>`, `<StatusBadge>`, `<ChainDisplay>`, `<ChainBuilder>`, `<TaskLogViewer>` + `useTaskLogs()`, `useExecutionEvents()`, `<ServiceSelector>`/`<SchemaSelector>`/`<TableSelector>` (cascading), `<HostSelector>`/`<StandaloneHostSelector>`, `<AlertOnFailField>`, `<ScheduledTasksPanel>`, `<ScheduleCell>`/`<ScheduleSummary>`, `<SchemaFormRenderer>`, `<SchemaListView>`, `<SchemaDrivenApp>` and its page sub-components (`AppListPage`, `AppCreatePage`, `AppDetailPage`, `AppSchedulePage`), the data hooks (`useHosts`, `useServices`, `useSchemas`, `useTables`, `useTaskHistory*`), and the API client (axios + auth interceptor + `openapi-typescript` codegen + React Query). Auth/notification context (`<AuthProvider>`/`useAuth()`, `<NotificationProvider>`/`useNotification()`) lives in `@sep/shell`, not `@sep/framework`.
 
 Source of truth: `frontend/packages/framework/src/index.ts`. A diff that adds a parallel implementation needs a sentence-level justification per primitive.
 
 ## Rule 4 — URL & response conventions
 
-- `/api/plugins/{name}/` plugin routes (default); `/api/sep/<resource>/` SEP-level core; `/api/auth/*`, `/api/me/*`, `/api/schema/*` core.
+- `/api/plugins/{name}/` app routes (default); `/api/sep/<resource>/` SEP-level core; `/api/auth/*`, `/api/me/*`, `/api/schema/*` core.
 - `/api/inventory/*`, `/api/tasks/*` are internal-only after Wave 3; FE never calls them.
 - **No versioning** — no `/api/v1/`.
 - **Bare Pydantic responses** — `response_model=ChecksumTaskResponse` (or `list[...]`), not `ApiResponse[...]` envelope wrappers.

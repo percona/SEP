@@ -31,13 +31,13 @@ Failure mode: hooking the side-effect into one observer and missing a parallel w
 To check:
 
 1. Identify the **state field** the side-effect is keyed on (e.g. `queue_item.status`, `alert.acknowledged`).
-2. Grep every writer (`<field> =`) in the affected file and sibling files in the same plugin/service.
+2. Grep every writer (`<field> =`) in the affected file and sibling files in the same app/service.
 3. For each match, ask: does this writer eventually trigger the side-effect? Writers that call the observer the new hook lives in inherit the side-effect. Writers that bypass it silently drop the side-effect — flag as **Critical**.
 4. When the field has more than ~3 writers and the side-effect is hooked at only one observer, recommend moving the side-effect to the manager `save()` layer or a SQLAlchemy event listener — only that guarantees coverage on every writer.
 
 ## Dependency aliases live in `deps.py`
 
-`Annotated[..., Depends(...)]` aliases MUST live in `app/<service>/deps.py` (or plugin `deps.py`), never in `routes.py`, `models.py`, or `loader.py`. When a dep helper exists (`get_pmm_api`, `get_or_create_alert_folder`), routes and tasks MUST use it — don't construct clients or do lookups inline.
+`Annotated[..., Depends(...)]` aliases MUST live in `app/<service>/deps.py` (or app `deps.py`), never in `routes.py`, `models.py`, or `loader.py`. When a dep helper exists (`get_pmm_api`, `get_or_create_alert_folder`), routes and tasks MUST use it — don't construct clients or do lookups inline.
 
 ## When to extract a dependency
 

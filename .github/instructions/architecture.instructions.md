@@ -12,14 +12,14 @@ New code lives in the sub-application of the **primary settings/config object it
 |---|---|---|
 | `app/inventory/` | Nodes, services, schemas, tables, inventory sync | `inventory_settings` |
 | `app/tasks/` | Task execution, Nomad/local executors, executor-config-driven side effects, executor periodic tasks | `tasks_settings` |
-| `app/sep/` | Web UI, plugins, OAuth, alerts, cross-cutting concerns not owned by a single domain | `sep_settings` |
+| `app/sep/` | Web UI, apps, OAuth, alerts, cross-cutting concerns not owned by a single domain | `sep_settings` |
 
 Red flags:
 
 - A new function under `app/sep/` reads `tasks_settings.*` or `inventory_settings.*`, or imports `NomadExecutor` / `LocalExecutor` / `BaseExecutor`.
 - A new entry in `app/sep/db/seed.py::get_system_periodic_tasks()` whose task operates on tasks/inventory state. `app/sep/` seeds via the `get_system_periodic_tasks()` builder; sub-apps (`app/tasks/`, `app/inventory/`) each have their own `celery.py` and `db/seed.py::SYSTEM_PERIODIC_TASKS` — use the matching pair.
 - A test for a tasks-flavored periodic task landing under `tests/app/sep/` instead of `tests/app/tasks/`.
-- A module in `app/tasks/` or `app/inventory/` hard-codes a specific app's parser, schema, magic strings, or enrichment for one plugin — even wrapped as "generic infra". The tell: a helper returning app-specific content for one app and `None` for the rest. App knowledge stays in the app's package; the generic service holds only the registration/hook mechanism.
+- A module in `app/tasks/` or `app/inventory/` hard-codes a specific app's parser, schema, magic strings, or enrichment for one app — even wrapped as "generic infra". The tell: a helper returning app-specific content for one app and `None` for the rest. App knowledge stays in the app's package; the generic service holds only the registration/hook mechanism.
 
 ## Database models
 
@@ -51,7 +51,7 @@ Flag new route handlers lacking explicit `dependencies=[...]` when sibling route
 
 ## CSRF on state-changing endpoints
 
-POST / PUT / DELETE / PATCH endpoints must validate CSRF. When modeling a new plugin's stack on a sibling, don't mechanically copy decorators — trace where CSRF is enforced in the sibling's **full** dependency chain (parent router, middleware, earlier dependency). Before dropping `IsCsrfValidated` anywhere, grep the sibling for `validate_csrf` and `IsCsrfValidated` across `routes.py`, `deps.py`, and any parent router inclusion.
+POST / PUT / DELETE / PATCH endpoints must validate CSRF. When modeling a new app's stack on a sibling, don't mechanically copy decorators — trace where CSRF is enforced in the sibling's **full** dependency chain (parent router, middleware, earlier dependency). Before dropping `IsCsrfValidated` anywhere, grep the sibling for `validate_csrf` and `IsCsrfValidated` across `routes.py`, `deps.py`, and any parent router inclusion.
 
 ## Periodic-task schedules
 
@@ -67,9 +67,9 @@ Hard-coded periodic schedules in seed files are a red flag when the task's confi
 
 A new or modified state machine must name, for each non-terminal state, the server-side actor that advances it (a reconciler, a `task_postrun` receiver, a `save()` hook) or a contract-permitted client action. "The edge is declared valid" is not "something drives it." Mirror-image pairs (ENABLING/DISABLING) are the canonical bug — one side gets a driver, its mirror doesn't.
 
-## Plugin layout
+## App layout
 
-`app/sep/apps/<name>/` with `routes.py`, `deps.py`, optional `models.py`. Registration in `settings.yaml` under `SEP.APPS`. Flag plugins that put dep aliases in `routes.py`/`models.py` or scatter helpers into ad-hoc module names.
+`app/sep/apps/<name>/` with `routes.py`, `deps.py`, optional `models.py`. Registration in `settings.yaml` under `SEP.APPS`. Flag apps that put dep aliases in `routes.py`/`models.py` or scatter helpers into ad-hoc module names.
 
 - **Form-DSL markers** (`Forbidden`, `Required`, `pattern`) are display-only — they drive `GET /schema` rendering and client UI but do NOT validate JSON API request bodies. A constraint that must reject invalid API input needs a real Pydantic validator (`@model_validator(mode="after")` / `AfterValidator`) in addition.
 - **Create wires; it doesn't run.** A create / cascade-create handler must not fire task execution (`.delay()`, a chained `POST /execute/...`). Creating a task is configuration; running it is a separate sanctioned trigger (`POST /execute/{name}` or a registered schedule).

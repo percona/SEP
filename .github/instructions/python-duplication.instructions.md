@@ -12,7 +12,7 @@ Same string or numeric literal appearing in 2+ files in the diff (or 1 in the di
 
 - **Important** if the literal appears in 3+ files, if changing it would require touching every occurrence, or if it encodes a convention (port, key, format string).
 - **Minor** if it appears in 2 files and is unlikely to change.
-- Flag even **single-file plugin-identity literals** — plugin slug, plugin-owned meta-key, plugin `settings.yaml` key, URL fragment routed to the plugin — they encode a cross-plugin contract. Extract to a module-level constant.
+- Flag even **single-file app-identity literals** — app slug, app-owned meta-key, app `settings.yaml` key, URL fragment routed to the app — they encode a cross-app contract. Extract to a module-level constant.
 - Don't flag test fixture values or Python builtins.
 
 Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL_PORT` in `app/inventory/constants.py`. Any hardcoded service-type string (`"mysql"`, `"postgresql"`, `"valkey"`, …) → `ServiceTypeEnum.<member>` (it's a `StrEnum` — the member *is* the string).
@@ -50,7 +50,7 @@ Compare each new pattern against the dominant form in sibling files in the same 
 Before accepting a non-trivial block of new code, grep the package's route handlers for the same logic shape — DUP-2 misses this, since route bodies aren't in the helper catalog.
 
 - **Same-package** — extract the duplicated logic into a `Depends()` or helper.
-- **Cross-plugin** — if a route in plugin A processes a domain object owned by plugin B, prefer a classmethod on B's response model (`SnippetResponse.from_snippet(snippet)`) so consumers import and call it.
+- **Cross-app** — if a route in app A processes a domain object owned by app B, prefer a classmethod on B's response model (`SnippetResponse.from_snippet(snippet)`) so consumers import and call it.
 
 Don't flag trivial duplication or new code that legitimately needs a different shape.
 

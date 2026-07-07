@@ -36,7 +36,7 @@ Every test has a **subject** (SUT + its session, model instances, loop state) an
 
 ## Body-dep override masks form/JSON parsing — critical
 
-When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()]`, the test MUST NOT override the dep that materialises that body model (`dependency_overrides[build_<plugin>_task_payload]`, `dependency_overrides[parse_<resource>_form]`, …). Such overrides remove the Pydantic model from FastAPI's body-field resolution, so body-parsing regressions (422 in production) pass green. At least one test per POST/PUT/PATCH route MUST issue a real `test_client.post(...)` with realistic data and no body-dep override. Overriding `validate_csrf`, `get_current_user`, `get_session`, `get_inventory_api`, `get_tasks_api` is fine.
+When a route's body is `Annotated[<Model>, Form()]` / `Annotated[<Model>, Body()]`, the test MUST NOT override the dep that materialises that body model (`dependency_overrides[build_<app>_task_payload]`, `dependency_overrides[parse_<resource>_form]`, …). Such overrides remove the Pydantic model from FastAPI's body-field resolution, so body-parsing regressions (422 in production) pass green. At least one test per POST/PUT/PATCH route MUST issue a real `test_client.post(...)` with realistic data and no body-dep override. Overriding `validate_csrf`, `get_current_user`, `get_session`, `get_inventory_api`, `get_tasks_api` is fine.
 
 ## Compile-only SQL ≠ engine coverage
 

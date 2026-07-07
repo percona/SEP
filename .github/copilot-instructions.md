@@ -8,11 +8,11 @@ SEP is a FastAPI application with three mounted sub-applications, each with its 
 
 - `app/inventory/` — nodes, services, schemas, tables; mounted at `/api/inventory`.
 - `app/tasks/` — task execution, Nomad/local executors, periodic tasks; mounted at `/api/tasks`.
-- `app/sep/` — web UI, Jinja templates, OAuth, plugins; mounted at `/`.
+- `app/sep/` — web UI, Jinja templates, OAuth, apps; mounted at `/`.
 
-Plugins are FastAPI routers under `app/sep/apps/<name>/` with `routes.py`, `deps.py`, and optional `models.py`. `Annotated[..., Depends(...)]` aliases live in `deps.py`.
+SEP apps are FastAPI routers under `app/sep/apps/<name>/` with `routes.py`, `deps.py`, and optional `models.py`. `Annotated[..., Depends(...)]` aliases live in `deps.py`.
 
-The codebase is undergoing an **API-First + React migration** — see `api-first.instructions.md` for rules that apply when a PR touches the API gateway, plugin schemas, or `frontend/packages/`.
+The codebase is undergoing an **API-First + React migration** — see `api-first.instructions.md` for rules that apply when a PR touches the API gateway, app schemas, or `frontend/packages/`.
 
 ## How to review
 
