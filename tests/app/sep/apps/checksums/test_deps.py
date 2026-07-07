@@ -130,7 +130,7 @@ class TestChecksumsNomadPayloadParity:
 
 
 class TestChecksumsPayloadAssembly:
-    """Tests for the shared private helper assemble_checksum_payload."""
+    """Cover the shared ``assemble_checksum_payload`` helper."""
 
     @staticmethod
     def _assemble(created_service, **overrides):
