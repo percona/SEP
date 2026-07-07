@@ -48,6 +48,20 @@ def resolve_relative_path(path: str | bytes | PathLike) -> Path:
         raise ValueError(f"Unable to resolve path: {path}") from exc
 
 
+def payload_uri(anchor_file: str, name: str) -> str:
+    """Build a ``file://`` payload reference anchored next to *anchor_file*.
+
+    Combine the directory of *anchor_file* with *name* and delegate to
+    :func:`to_payload_reference` for ``BASE_DIR``-relative ``file://``
+    construction.
+
+    :param anchor_file: The caller's ``__file__`` token.
+    :param name: Sibling file or directory name to resolve.
+    :return: A ``file://`` reference relative to ``BASE_DIR``.
+    """
+    return to_payload_reference(Path(anchor_file).parent / name)
+
+
 def to_payload_reference(path: Path) -> str:
     """Build a stored task payload reference relative to ``BASE_DIR``.
 
