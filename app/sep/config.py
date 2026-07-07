@@ -20,9 +20,10 @@ from datetime import datetime, timedelta
 from functools import cached_property
 from pathlib import Path
 from string import Template
-from typing import Any, ClassVar, Literal, Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 from urllib.parse import urlparse
 
+from annotated_types import Gt
 from fastapi.templating import Jinja2Templates
 from jinja2 import Environment, FileSystemLoader
 from pydantic import (
@@ -62,6 +63,7 @@ from app.core.utils.fields import (
     CredentialHttpUrl,
     RelativeDirectoryPathField,
     StrImportableAttribute,
+    StrRelativePath,
     TimedeltaSeconds,
     UniqueList,
     URIPath,
@@ -401,6 +403,17 @@ class HealthReportSettings(BaseLowercaseModel):
     :type api_key: SecretStr | None
     :param client_id: Customer identifier sent with each upload.
     :type client_id: str | None
+    :param artifact_dir: Directory where rendered PDF artifacts are staged for
+        download. Shared between the Celery worker (writer) and web (reader), so
+        only lightweight job metadata transits the Celery result backend.
+    :type artifact_dir: StrRelativePath
+    :param artifact_ttl: Maximum age (seconds) of a staged PDF artifact before the
+        cleanup task removes it. Should mirror ``CELERY.RESULT_EXPIRES`` so a
+        job's metadata and its artifact expire together.
+    :type artifact_ttl: PositiveInt
+    :param cleanup_interval: Cadence of the ``purge_report_artifacts`` sweep that
+        deletes staged PDFs older than ``artifact_ttl``.
+    :type cleanup_interval: IntervalSchedule
     """
 
     schedules: list[ReportScheduleEntry] = []
@@ -408,6 +421,11 @@ class HealthReportSettings(BaseLowercaseModel):
     endpoint: str | None = None
     api_key: SecretStr | None = None
     client_id: str | None = None
+    artifact_dir: StrRelativePath = "data/health-reports"
+    artifact_ttl: PositiveInt = 3600
+    cleanup_interval: IntervalSchedule = IntervalSchedule(
+        every=15, period=Period.MINUTES
+    )
 
     @field_validator("endpoint", "client_id", mode="before")
     @classmethod
@@ -477,25 +495,12 @@ class AppDrainSettings(BaseLowercaseModel):
     reconcile_interval: IntervalSchedule = IntervalSchedule(
         every=5, period=Period.MINUTES
     )
-    stale_task_ttl: TimedeltaSeconds = timedelta(hours=1)
-
-    @field_validator("stale_task_ttl")
-    @classmethod
-    def _stale_task_ttl_positive(cls, value: timedelta) -> timedelta:
-        """Reject a zero or negative stale-task TTL.
-
-        The reconciler prunes rows whose ``created_at`` predates
-        ``utc_now() - stale_task_ttl``. A non-positive TTL puts that cutoff at or
-        after the present, so every in-flight ``AppRunningTask`` row is pruned and
-        a ``DISABLING`` app finalizes to ``DISABLED`` while its tasks still run.
-
-        :param value: The configured stale-task TTL.
-        :return: The validated TTL.
-        :raises ValueError: If ``value`` is not strictly positive.
-        """
-        if value.total_seconds() <= 0:
-            raise ValueError("APP_DRAIN.stale_task_ttl must be a positive duration")
-        return value
+    # Positivity uses the ``Gt`` annotation constraint rather than a
+    # ``field_validator`` because runtime-override coercion re-checks
+    # annotated-type constraints but does not re-run field validators; a
+    # non-positive TTL would trigger the premature-pruning failure mode noted in
+    # the ``stale_task_ttl`` docstring param above.
+    stale_task_ttl: Annotated[TimedeltaSeconds, Gt(timedelta(0))] = timedelta(hours=1)
 
 
 def _warn_legacy_apps_key() -> None:
@@ -598,8 +603,8 @@ class SEPSettings(BaseYamlAppSettings):
     SYNCER_EXTRA_KWARGS: SyncerExtraKwargs = SyncerExtraKwargs()
     SYNC_REFRESH_TIME: int = hot_field(5)
     HEALTH_REPORT: HealthReportSettings = HealthReportSettings()
-    APP_DRAIN: AppDrainSettings = AppDrainSettings()
-    ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600)
+    APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
+    ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
     FOOTER_TEMPLATE: Template = hot_field(
         Template("$summary $version"),

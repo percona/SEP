@@ -19,6 +19,7 @@ import pytest
 import yaml
 
 from app.core.exceptions import HTTPConflictException
+from app.core.utils.path import resolve_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.deps import (
     get_backups_task_info,
@@ -70,8 +71,8 @@ def test_build_backup_pg_spec_produces_run_python_config():
     spec = build_backup_pg_spec(_form(service.id), _resolved(service))
 
     assert spec.requirements == "packaging\nPyYAML"
-    assert spec.payload.startswith("file://")
-    assert "backup_pg/payload" in spec.payload
+    assert spec.payload == "file://app/sep/apps/backup_pg/payload"
+    assert resolve_payload_reference(spec.payload).is_file()
 
     cfg = yaml.safe_load(spec.config)
     server_config = cfg["SERVER_LIST"][0]

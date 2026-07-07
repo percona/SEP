@@ -220,9 +220,9 @@ class TestRecordTaskSignals:
 
     def test_drainable_tasks_carry_their_owner(self) -> None:
         """Each drainable Celery task is tagged with its owning app key."""
+        from app.sep.apps.report.celery import generate_health_report
         from app.sep.celery import (
             backup_alert_config,
-            generate_health_report,
             sync_snippets,
         )
 

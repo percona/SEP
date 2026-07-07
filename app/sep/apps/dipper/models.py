@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 
 from app.core.utils.fields import NonEmptyStr
 from app.sep.apps.dipper.constants import CollectorTypeEnum, DIPPER_PAYLOADS_DIR
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 from app.sep.snippets.models.snippet import BaseSnippet
 
 
@@ -50,7 +51,7 @@ class DipperExecuteWrite(BaseModel):
 
     service_id: int
     collector_type: CollectorTypeEnum = CollectorTypeEnum.ENVIRONMENT
-    executor_host: NonEmptyStr
+    executor_host: NonEmptyStr = Field(title=EXECUTION_HOST_LABEL)
     sudo: bool | None = None
     args: dict[str, Any] = Field(default_factory=dict)
 

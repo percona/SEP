@@ -519,6 +519,7 @@ SEP_CLASS = SettingClassEnum.SEP_SETTINGS.value
 SNIPPETS_CLASS = SettingClassEnum.SNIPPETS_SETTINGS.value
 MESSAGES_CLASS = SettingClassEnum.MESSAGES_SETTINGS.value
 ALERTS_CLASS = SettingClassEnum.ALERTS_SETTINGS.value
+SETTINGS_CLASS = SettingClassEnum.SETTINGS.value
 ALERT_CLASS = SettingClassEnum.ALERT_SETTINGS.value
 TASKS_CLASS = SettingClassEnum.TASKS_SETTINGS.value
 FULL_EXPORT_CLASSES = {
@@ -526,6 +527,7 @@ FULL_EXPORT_CLASSES = {
     SNIPPETS_CLASS,
     MESSAGES_CLASS,
     ALERTS_CLASS,
+    SETTINGS_CLASS,
     ALERT_CLASS,
     TASKS_CLASS,
 }
@@ -547,7 +549,7 @@ class TestSepConfigExportFilter:
     async def test_omitted_keys_returns_full_export(
         self, api_admin_client: TestClient, mock_tasks_api: AsyncMock
     ) -> None:
-        """Yield the full six-block export and fan out once when ``keys`` is omitted."""
+        """Yield the full export and fan out once when ``keys`` is omitted."""
         response = api_admin_client.get(EXPORT_URL)
         assert response.status_code == status.HTTP_200_OK
         payload = yaml.safe_load(response.text)

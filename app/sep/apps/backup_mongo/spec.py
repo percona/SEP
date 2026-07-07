@@ -35,6 +35,7 @@ from typing import Any
 
 import yaml
 
+from app.core.utils.path import to_payload_reference
 from app.sep.apps.backup_mongo.models import (
     BackupConfig,
     BackupConfigBackup,
@@ -213,7 +214,7 @@ def build_backup_mongo_spec(
         data={
             "task": "run-python",
             "meta": meta,
-            "payload": f"file://{payload_path}",
+            "payload": to_payload_reference(payload_path),
             "backup_type": form.backup_type,
         },
         alert_on_fail=form.alert_on_fail,

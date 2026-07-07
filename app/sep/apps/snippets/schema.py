@@ -50,6 +50,7 @@ from app.sep.apps.framework.schema import (
     Column,
     ColumnFormat,
     DateTimeField,
+    EXECUTION_HOST_LABEL,
     FloatField,
     FormSection,
     HostField,
@@ -279,7 +280,7 @@ def build_snippet_schema(snippet: Snippet) -> AppSchema:
             AnyField,
             HostField(
                 name=_EXECUTOR_HOST_FIELD_NAME,
-                label="Executor Host",
+                label=EXECUTION_HOST_LABEL,
                 required=True,
             ),
         ),

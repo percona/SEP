@@ -25,6 +25,7 @@ from fastapi import HTTPException, Query
 from fastapi.responses import Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.config import Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPBadRequestException
 from app.core.settings_override.api import (
     build_settings_class_values,
@@ -52,6 +53,9 @@ SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
     (SettingClassEnum.SNIPPETS_SETTINGS, SnippetsSettings, snippets_settings),
     (SettingClassEnum.MESSAGES_SETTINGS, MessagesSettings, messages_settings),
     (SettingClassEnum.ALERTS_SETTINGS, AlertsSettings, alerts_settings),
+    # The global ``Settings`` class is refreshed only by the SEP web process, so
+    # its override-eligible fields (e.g. ``PMM``, ``LOGGING``) are exposed here.
+    (SettingClassEnum.SETTINGS, Settings, settings),
 ]
 
 SEP_APP_OWNED_SETTINGS_CLASSES = collect_app_owned_settings_classes()

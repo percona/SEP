@@ -75,7 +75,7 @@ describe('AppDisabledGuard', () => {
 
   it('shows a spinner during the cold initial load instead of mounting the route', () => {
     // No cached data yet → hold a spinner so the disabled-URL outcome is
-    // deterministic rather than racing the optimistic plugin mount.
+    // deterministic rather than racing the optimistic app mount.
     useEnabledApps.mockReturnValue({ data: undefined, isLoading: true });
     renderGuard();
     expect(screen.getByRole('progressbar')).toBeInTheDocument();

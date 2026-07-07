@@ -64,6 +64,7 @@ from app.core.utils.fields import (
     UTCDatetime,
 )
 from app.core.utils.pydantic import CustomFieldMetadata
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 from app.sep.snippets.config import (
     DEFAULT_SNIPPETS_TASK,
     SnippetFilterType,
@@ -128,7 +129,7 @@ def get_executor_hosts_fieldset(
         {"value": value, "label": label} for value, label in sorted(executor_hosts)
     ]
     return FieldsetElement(
-        legend="Executor Host",
+        legend=EXECUTION_HOST_LABEL,
         children=[
             SelectElement(
                 children=options,
@@ -451,6 +452,18 @@ class BaseSnippet(BaseModel):
         :rtype: str
         """
         return self.meta.get("description", "")
+
+    @cached_property
+    def service_type(self) -> str | None:
+        """Get the free-form service type of the snippet.
+
+        :return: The ``service_type`` declared in the snippet metadata (for
+            example ``"mysql"`` or ``"mongodb"``), or ``None`` when the snippet
+            declares no service type. This free-form frontmatter string is
+            distinct from the inventory ``ServiceTypeEnum``.
+        :rtype: str | None
+        """
+        return self.meta.get("service_type")
 
     @cached_property
     def allow_extra_args(self) -> bool:

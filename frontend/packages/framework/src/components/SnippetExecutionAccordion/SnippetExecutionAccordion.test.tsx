@@ -67,7 +67,7 @@ function makeSchema(extraFields: FormSection['fields'] = []): AppSchema {
       {
         title: 'Execution',
         fields: [
-          { type: 'host', name: 'executor_host', label: 'Executor Host', required: true },
+          { type: 'host', name: 'executor_host', label: 'Execution Host', required: true },
           { type: 'string', name: 'table_name', label: 'Table Name', required: false },
           ...extraFields,
         ],
@@ -142,7 +142,7 @@ describe('SnippetExecutionAccordion', () => {
       expect(screen.getByLabelText(/Table Name/i)).toBeInTheDocument();
     });
 
-    expect(screen.queryByLabelText(/Executor Host/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Execution Host/i)).not.toBeInTheDocument();
   });
 
   it('posts to snippets execute endpoint on submit with executorHost injected', async () => {
@@ -188,10 +188,10 @@ describe('SnippetExecutionAccordion', () => {
     renderWithProviders(<SnippetExecutionAccordion snippetFilename="check.sh" defaultExpanded />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Executor Host/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Execution Host/i)).toBeInTheDocument();
     });
 
-    await user.click(screen.getByLabelText(/Executor Host/i));
+    await user.click(screen.getByLabelText(/Execution Host/i));
     await user.click(await screen.findByRole('option', { name: 'db2' }));
     await user.click(screen.getByRole('button', { name: /execute/i }));
 
@@ -351,7 +351,7 @@ describe('SnippetExecutionAccordion', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Executor Host/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Execution Host/i)).toBeInTheDocument();
     });
   });
 
@@ -386,10 +386,10 @@ describe('SnippetExecutionAccordion', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText(/Executor Host/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Execution Host/i)).toBeInTheDocument();
     });
 
-    await user.click(screen.getByLabelText(/Executor Host/i));
+    await user.click(screen.getByLabelText(/Execution Host/i));
     await user.click(await screen.findByRole('option', { name: 'db2' }));
     await user.click(screen.getByRole('button', { name: /execute/i }));
 

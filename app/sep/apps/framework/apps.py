@@ -26,6 +26,7 @@ is computed once at construction into ``api_router`` so the existing
 same ``api_router`` seam with no registry change.
 """
 
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -63,6 +64,7 @@ from app.sep.apps.framework.schema import (
     DerivedTask,
     DetailView,
     ListView,
+    RelatedApp,
 )
 from app.sep.apps.framework.script_source import ScriptSource
 from app.sep.apps.framework.spec import (
@@ -309,6 +311,10 @@ class TaskExecutionApp(BaseApp):
         ``delete_handler``. Defaults to ``()``.
     :param description: The plugin description threaded into the derived
         ``GET /schema`` (``AppSchema.description``). Defaults to ``None``.
+    :param related_apps: Separately registered apps the React shell surfaces as
+        sibling tabs under ``{route_base}/{route_segment}``. Threaded into the
+        derived ``GET /schema`` (``AppSchema.related_apps``). Defaults to an
+        empty tuple.
     :param static_mounts: Authenticated static mounts for the app's payload
         directories, collected from the registry and mounted in ``app/sep/main.py``
         through :class:`~app.sep.utils.static.AuthenticatedStaticFiles`. Defaults to
@@ -350,6 +356,7 @@ class TaskExecutionApp(BaseApp):
     update_guard: tuple[params.Depends, ...] = ()
     delete_guard: tuple[params.Depends, ...] = ()
     description: str | None = None
+    related_apps: tuple[RelatedApp, ...] = ()
     static_mounts: tuple[StaticMount, ...] = ()
 
     _task_getter: Callable[..., Awaitable[Task]] | None = PrivateAttr(default=None)
@@ -400,6 +407,46 @@ class TaskExecutionApp(BaseApp):
         self._validate_response_knobs()
         self._validate_view_columns()
         self._validate_arg_formats()
+        self._validate_related_apps()
+
+    def _validate_related_apps(self) -> None:
+        """Reject ``related_apps`` on definitions that do not derive a schema.
+
+        ``related_apps`` is schema metadata consumed by the React shell; a
+        ``schema=`` passthrough app carries it on ``AppSchema`` directly, and a
+        ``script_source`` app serves ``static_schema`` instead. Duplicate
+        ``route_segment`` values are rejected here so a typo surfaces at
+        construction rather than at runtime routing.
+
+        :raises ValueError: When ``related_apps`` is set on a ``schema=`` or
+            ``script_source`` app, or when two entries share a
+            ``route_segment``.
+        """
+        if not self.related_apps:
+            return
+        if self.script_source is not None:
+            raise ValueError(
+                "TaskExecutionApp: related_apps is schema metadata for a "
+                "model-first app; a script_source app serves static_schema — "
+                "drop related_apps"
+            )
+        if self.app_schema is not None:
+            raise ValueError(
+                "TaskExecutionApp: a schema= app carries related_apps on "
+                "AppSchema — drop related_apps from the definition"
+            )
+        duplicates = sorted(
+            segment
+            for segment, count in Counter(
+                spec.route_segment for spec in self.related_apps
+            ).items()
+            if count > 1
+        )
+        if duplicates:
+            raise ValueError(
+                "TaskExecutionApp: duplicate related_apps route_segment "
+                f"values {duplicates}"
+            )
 
     def _validate_connectivity_refs(self) -> None:
         """Reject an ambiguous or unselectable connectivity-service configuration.
@@ -787,6 +834,7 @@ class TaskExecutionApp(BaseApp):
             detail_view=self.views.detail_view,
             derived=list(cascade.derived) or None,
             predecessors=list(cascade.predecessors) or None,
+            related_apps=list(self.related_apps) or None,
         )
 
     def _default_task_response_builder(

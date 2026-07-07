@@ -46,8 +46,6 @@ from app.sep.apps.alters.deps import (
 )
 from app.sep.apps.alters.models import (
     AltersCreate,
-    AltersExecuteWrite,
-    AltersExecutionResponse,
     AltersTaskResponse,
     AltersTaskResponseCreate,
     AltersTaskResponseUpdate,
@@ -130,10 +128,10 @@ async def alters_api_create(
     """
     logger.debug("Create alters task group (JSON path): %s", body.task_name)
     parent_task = await build_alters_task(body, inventory_api)
-    stamp_form_input(parent_task, body)
     pre_checks_template = await build_pre_checks_task_payload(
         parent_task, task_api=tasks_api
     )
+    stamp_form_input(parent_task, body)
     await cascade_create_alters_group(
         tasks_api,
         parent_task,
@@ -181,6 +179,7 @@ async def alters_api_update(
     pre_checks_template = await build_pre_checks_task_payload(
         updated_parent, task_api=tasks_api
     )
+    stamp_form_input(updated_parent, body)
     result = await cascade_update_alters_group(
         tasks_api,
         parent_task.name,
@@ -218,8 +217,6 @@ derive_execute_route(
     name="alters_api_execute",
     description="Execute an alters task (parent, dry-run, or pre-checks).",
     task_dep=AltersTask,
-    write_model=AltersExecuteWrite,
-    response_model=AltersExecutionResponse,
 )
 
 

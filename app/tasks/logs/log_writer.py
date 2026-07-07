@@ -25,6 +25,7 @@ from app.tasks import config as tasks_config
 from app.tasks.crud import (
     TaskHistoryLogManager,
     TaskHistoryLogStateManager,
+    TaskHistoryManager,
 )
 from app.tasks.models import (
     TaskHistoryLogState,
@@ -98,11 +99,14 @@ class TaskHistoryLogWriter:
             atomically with the flush; when ``None`` the existing value is
             preserved so non-Nomad callers do not disturb it.
         :param allocation_epoch: The Nomad allocation ``CreateIndex`` the bytes
-            belong to. When it is *older* than the committed row's epoch the
+            belong to. When it is *older* than the current allocation epoch the
             write is discarded — the bytes come from an allocation the frontier
             has already moved past (a sync that overlapped a reschedule) and
-            appending them would corrupt the stream. ``None`` leaves the row's
-            epoch untouched (non-Nomad callers).
+            appending them would corrupt the stream. For an existing row the
+            comparison is against that row's per-stream epoch; on the
+            first-insert path (no row yet) it is against the task-level
+            high-water mark stamped at the last frontier reset.
+            ``None`` leaves the row's epoch untouched (non-Nomad callers).
         :raises LogWriterConflictError: If the optimistic-locking retries are
             exhausted without converging on a successful update.
         """
@@ -116,11 +120,21 @@ class TaskHistoryLogWriter:
                     task_history_id, source, stream
                 )
 
-            if (
-                allocation_epoch is not None
-                and allocation_epoch < state.allocation_epoch
-            ):
-                return
+            if allocation_epoch is not None:
+                # First insert has no per-stream row yet; guard against the
+                # task-level high-water mark, not the transient row's ``0``.
+                guard_epoch = state.allocation_epoch
+                if is_new:
+                    # Take the row lock so a concurrent frontier reset serialises
+                    # instead of racing (first-insert TOCTOU).
+                    guard_epoch = await TaskHistoryManager.get_log_allocation_epoch(
+                        session, task_history_id, for_update=True
+                    )
+                if allocation_epoch < guard_epoch:
+                    # Stale write from a superseded allocation; drop it, releasing
+                    # any first-insert lock so it doesn't pin the row.
+                    await cls._release_first_insert_lock(session, is_new=is_new)
+                    return
 
             effective_bytes = cls._effective_new_bytes(
                 state, new_bytes, producer_offset_after
@@ -132,6 +146,9 @@ class TaskHistoryLogWriter:
                 and producer_offset_after is not None
                 and state.producer_offset >= producer_offset_after
             ):
+                # No-op early return; same first-insert lock-release invariant as
+                # the stale-discard path above.
+                await cls._release_first_insert_lock(session, is_new=is_new)
                 return
 
             now = utc_now()
@@ -241,6 +258,12 @@ class TaskHistoryLogWriter:
         :param new_allocation_epoch: The ``CreateIndex`` of the allocation the
             frontier is being reset onto.
         """
+        # Lock the TaskHistory row before touching any log/state rows so this
+        # reset and a concurrent first-insert append serialise in the same order
+        # (TaskHistory first), closing the first-insert TOCTOU.
+        await TaskHistoryManager.get_log_allocation_epoch(
+            session, task_history_id, for_update=True
+        )
         rows = await TaskHistoryLogStateManager.list_for_task(session, task_history_id)
         for row in rows:
             if row.staging:
@@ -289,7 +312,32 @@ class TaskHistoryLogWriter:
         await TaskHistoryLogStateManager.reset_allocation_frontier(
             session, task_history_id, new_allocation_epoch=new_allocation_epoch
         )
+        # Stamp the task-level high-water mark in the same transaction as the
+        # per-stream reset so a first-insert guard (no per-stream row yet) has a
+        # current epoch to check against.
+        await TaskHistoryManager.bump_log_allocation_epoch(
+            session, task_history_id, new_allocation_epoch=new_allocation_epoch
+        )
         await session.commit()
+
+    @staticmethod
+    async def _release_first_insert_lock(
+        session: AsyncSession, *, is_new: bool
+    ) -> None:
+        """Release the first-insert ``FOR UPDATE`` lock before an early return.
+
+        The first-insert path locks the ``TaskHistory`` row (``for_update``) to
+        serialise against a concurrent frontier reset. Any ``append`` exit that
+        returns without ending the transaction must roll back first, else a
+        long-lived ``writer_session`` pins the row and stalls resets/other
+        writers. A no-op when ``is_new`` is false — the existing-row paths take no
+        such lock.
+
+        :param session: The writer session that may hold the first-insert lock.
+        :param is_new: Whether this call took the first-insert ``FOR UPDATE`` lock.
+        """
+        if is_new:
+            await session.rollback()
 
     @staticmethod
     def _effective_new_bytes(

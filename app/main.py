@@ -35,7 +35,7 @@ from app.core.config import create_app, settings
 from app.core.middleware.log_context import LogContextMiddleware
 from app.core.utils import validate_importable_settings
 from app.core.utils.openapi import merge_openapi_documents
-from app.inventory.main import inventory_app
+from app.inventory.main import inventory_app, inventory_overrides_lifespan
 from app.sep.config import sep_settings
 from app.sep.main import sep_app, sep_overrides_lifespan, sep_startup
 from app.tasks.main import tasks_app, tasks_lifespan
@@ -49,23 +49,23 @@ async def main_lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     active auth provider's SDK, the NomadExecutor, and any extra client sessions are
     properly managed during the application's startup and shutdown phases.
 
-    Also enters :func:`app.sep.main.sep_overrides_lifespan` so the
-    ``SEP_SETTINGS``/``SNIPPETS_SETTINGS``/``MESSAGES_SETTINGS`` override
-    refresher runs. ``sep_app`` is mounted under this app via Starlette's
-    ``Mount``, which only forwards ``http``/``websocket`` scopes -- never
-    ``lifespan`` -- so its own ``sep_lifespan`` is never invoked when
-    serving ``app.main:app``. The refresher must therefore be started here,
-    analogous to how ``tasks_lifespan`` is entered for the tasks proxy.
+    Starlette's ``Mount`` never forwards ``lifespan`` scope to the mounted
+    ``sep_app``/``inventory_app``, so their override refreshers are entered here
+    (alongside ``tasks_lifespan``) rather than from their own lifespans. Only
+    ``tasks_lifespan`` enters :func:`app.core.config.default_lifespan`, so the
+    shared ``settings.CASDOOR`` / client registry is entered exactly once.
 
     :param app: The FastAPI application instance.
-    :type app: FastAPI
     :yield: None
-    :rtype: AsyncGenerator[None, None]
     """
     detect_removed_auth_user_model()
     validate_importable_settings(*(s.syncer for s in sep_settings.SYNCERS))
     await sep_startup()
-    async with sep_overrides_lifespan(app), tasks_lifespan(app):
+    async with (
+        sep_overrides_lifespan(app),
+        tasks_lifespan(app),
+        inventory_overrides_lifespan(app),
+    ):
         yield
 
 
@@ -182,7 +182,7 @@ app.mount("/", sep_app)
 def start_celery_worker() -> None:
     """Start the Celery worker process."""
     worker = celery_app.Worker(
-        include=["app.tasks.celery", "app.sep.celery"],
+        include=["app.tasks.celery", "app.sep.celery", "app.sep.apps.report.celery"],
     )
     worker.start()
 

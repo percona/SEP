@@ -15,29 +15,42 @@
 
 """Define the JSON API request and response models for the report plugin."""
 
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from app.sep.apps.report.models import ReportData
 
 
-class ReportGenerateWrite(BaseModel):
-    """Define shared JSON body parameters for report generation API routes.
+class ReportSnapshotWrite(BaseModel):
+    """Define report snapshot body for PDF/upload jobs.
 
-    Request body for ``POST /api/apps/report/generate/pdf`` and
-    ``POST /api/apps/report/upload`` only. ``GET /api/apps/report/generate``
-    uses explicit query parameters (``since``, ``until``, ``full``, ``refresh``,
-    ``sections``) and does not use this model. Legacy Jinja JSON remains at
-    ``GET /report/generate/json``.
-
-    :param since: Relative start of the report period (e.g. ``now-7d``).
-    :type since: str
-    :param until: Relative end of the report period (e.g. ``now``).
-    :type until: str
-    :param full: Include all check results and full backup history.
-    :type full: bool
-    :param refresh: Force a refresh of advisor checks before fetching results.
-    :type refresh: bool
+    :param report: Generated report snapshot reused for PDF/upload work.
+    :type report: ReportData
     """
 
-    since: str = "now-7d"
-    until: str = "now"
-    full: bool = True
-    refresh: bool = False
+    report: ReportData
+
+
+class ReportJobResponse(BaseModel):
+    """Expose async report job state.
+
+    :param job_id: Celery task identifier.
+    :type job_id: str
+    :param status: Lowercase Celery task state.
+    :type status: str
+    :param pdf_ready: Whether the PDF result exists and is downloadable.
+    :type pdf_ready: bool
+    :param result: Successful job result payload, if available.
+    :type result: dict[str, Any] | None
+    :param error: Failed job error text, if available.
+    :type error: str | None
+    """
+
+    job_id: str
+    status: str
+    pdf_ready: bool = False
+    result: dict[str, Any] | None = Field(
+        default=None, json_schema_extra={"additionalProperties": True}
+    )
+    error: str | None = None

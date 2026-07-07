@@ -192,7 +192,7 @@
       },
       "AppSchema": {
         "additionalProperties": false,
-        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None",
+        "description": "Represent a plugin's complete schema: form sections, list view, capabilities.\n\n:param name: The plugin identifier; must match Python identifier rules,\n    optionally with internal hyphens.\n:type name: NonEmptyStr\n:param display_name: The human-readable plugin title displayed in the UI.\n:type display_name: NonEmptyStr\n:param description: Optional helper text describing the plugin's\n    purpose. Defaults to ``None``.\n:type description: NonEmptyStr | None\n:param task_type: Optional task-type identifier used when creating tasks\n    via the shared task API. Defaults to ``None``.\n:type task_type: NonEmptyStr | None\n:param forms: Form sections for single-entity / task plugins. Defaults to\n    an empty list when ``entities`` is used instead.\n:type forms: list[FormSection]\n:param capabilities: Optional plugin-level feature flags. Defaults to\n    ``None``.\n:type capabilities: Capabilities | None\n:param list_view: List-view configuration when ``entities`` is unset\n    (single-entity / task plugins). Ignored when ``entities`` is set.\n:type list_view: ListView | None\n:param detail_view: Optional declarative layout for the task detail page's\n    section cards (task-style plugins only; ignored when ``entities`` is\n    set). Optional at the model layer for backwards compatibility. A\n    forward-looking guard refuses to load a plugin that sets\n    ``task_type`` without declaring ``detail_view``. Defaults to ``None``.\n:type detail_view: DetailView | None\n:param entities: Optional list of CRUD entities for multi-resource plugins.\n    When non-empty, the React shell renders one list/create/detail flow\n    per entity. Defaults to ``None`` (legacy single-entity mode).\n:param cardinality_rules: Optional plugin-wide cross-field cardinality\n    constraints (task-style plugins only; ignored when ``entities`` is set).\n    Defaults to ``None``.\n:type cardinality_rules: list[CardinalityRule] | None\n:param fail_when: Optional plugin-wide predicate-only invariants (task-style\n    plugins only; ignored when ``entities`` is set). Defaults to ``None``.\n:type fail_when: list[FailRule] | None\n:param derived: Optional declarative specs for sibling tasks derived from\n    the parent task on cascade. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the parent and N derived siblings. Defaults to ``None``.\n:type derived: list[DerivedTask] | None\n:param predecessors: Optional declarative specs for tasks that must run\n    before the parent. Consumed by\n    :mod:`app.sep.apps.framework.cascade` to drive POST/PUT/DELETE\n    across the predecessors and the parent, including the chain wiring\n    applied at execute time. Defaults to ``None``.\n:type predecessors: list[ChainedPredecessor] | None\n:param related_apps: Optional separately registered apps the React shell\n    surfaces as sibling tabs (for example a restore app nested under a\n    backups parent). Defaults to ``None``.\n:type related_apps: list[RelatedApp] | None",
         "properties": {
           "capabilities": {
             "anyOf": [
@@ -323,6 +323,20 @@
               }
             ],
             "title": "Predecessors"
+          },
+          "related_apps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RelatedApp"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Apps"
           },
           "task_type": {
             "anyOf": [
@@ -1936,6 +1950,35 @@
         "title": "OneOfGroup",
         "type": "object"
       },
+      "RelatedApp": {
+        "additionalProperties": false,
+        "description": "Declare a separately registered app surfaced as a sibling tab in the UI.\n\nConsumed by the React ``SchemaDrivenPlugin`` shell to mount a nested\nschema-driven flow for the related registry entry (for example\n``mysql_backups/restore``) under ``{route_base}/{route_segment}`` without\nre-merging the child app's API router into the parent.\n\n:param app_key: The scoped registry key of the related app (for example\n    ``mysql_backups/restore``).\n:type app_key: NonEmptyStr\n:param label: The human-readable tab label (for example ``Restore``).\n:type label: NonEmptyStr\n:param route_segment: The React sub-path segment under the parent's\n    ``route_base`` (for example ``restores``). Must be a single URL path\n    segment — no slashes — and must not be a reserved single-entity route\n    keyword (``new``, ``schedule``, ``task``).\n:type route_segment: NonEmptyStr",
+        "properties": {
+          "app_key": {
+            "minLength": 1,
+            "title": "App Key",
+            "type": "string"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "route_segment": {
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_-]*$",
+            "title": "Route Segment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_key",
+          "label",
+          "route_segment"
+        ],
+        "title": "RelatedApp",
+        "type": "object"
+      },
       "SchemaField": {
         "additionalProperties": false,
         "description": "Represent an inventory database-schema selector field.\n\n``depends_on`` is a forward reference to another field's ``name`` in the\nsame plugin schema (typically a ``ServiceField``); the React renderer\ncascades schema options from the selected service. The referenced field\nis not validated at the schema level.\n\n:param field_type: The discriminator literal; always ``\"schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"schema\"]\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:type depends_on: NonEmptyStr\n:param allow_custom: Opt-in capability flag declaring that a consuming\n    renderer may offer free-text (free-solo) entry in addition to the\n    cascaded inventory options. Optional, defaulting to ``None`` (options\n    only). Typed ``bool | None`` so the discovery endpoint's\n    ``exclude_none`` posture drops it from the wire until a plugin opts\n    in, keeping the addition byte-compatible with existing schemas. The\n    built-in SchemaFormRenderer does not yet consume the flag; the\n    free-solo widget that reads it ships with the consuming plugin.\n:type allow_custom: bool | None",
@@ -2271,7 +2314,7 @@
         "type": "string"
       },
       "SnippetResponse": {
-        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
+        "description": "Represent a snippet entity as exposed by the JSON API.\n\n:param filename: The snippet's filename on disk; doubles as its\n    identifier in the API.\n:type filename: NonEmptyStr\n:param title: The display title for the snippet (snippet metadata's\n    ``title`` field, falling back to ``filename`` when unset).\n:type title: NonEmptyStr\n:param description: The snippet's free-text description, or an empty\n    string when no description is set in metadata.\n:type description: str\n:param service_type: The snippet's free-form service type\n    (``service_type`` metadata field, for example ``\"mysql\"`` or\n    ``\"mongodb\"``), or ``None`` when the snippet declares no service\n    type. Distinct from the inventory ``ServiceTypeEnum``.\n:type service_type: str | None\n:param size: Snippet file size in bytes.\n:type size: int\n:param md5_digest: 32-character MD5 hex digest of the snippet file.\n:type md5_digest: str\n:param is_approved: Whether the snippet has been approved for execution.\n:type is_approved: bool\n:param approved_at: When the snippet was last approved, or ``None`` if\n    unapproved.\n:type approved_at: datetime | None\n:param updated_by: User id that last toggled the approval state, or\n    ``None`` if no toggle has occurred.\n:type updated_by: str | None\n:param reason: Free-form reason recorded the last time the snippet's\n    approval state changed.\n:type reason: str\n:param requires_sudo: Whether the snippet requires sudo for execution\n    (either always-sudo or sudo is user-toggleable).\n:type requires_sudo: bool\n:param sudo_optional: Whether the user can toggle sudo at execution\n    time.\n:type sudo_optional: bool\n:param sudo_default: Default value for the sudo toggle when\n    ``sudo_optional`` is ``True``.\n:type sudo_default: bool\n:param interpreter: The shell/interpreter command used to execute the\n    snippet (for example, ``\"bash\"`` or ``\"python3\"``); ``None`` when\n    no interpreter mapping resolves.\n:type interpreter: str | None\n:param created_at: When the snippet row was first inserted.\n:type created_at: datetime\n:param updated_at: When the snippet row was last updated, or ``None``\n    if never updated since insert.\n:type updated_at: datetime | None",
         "properties": {
           "approved_at": {
             "anyOf": [
@@ -2325,6 +2368,17 @@
           "requires_sudo": {
             "title": "Requires Sudo",
             "type": "boolean"
+          },
+          "service_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Type"
           },
           "size": {
             "title": "Size",

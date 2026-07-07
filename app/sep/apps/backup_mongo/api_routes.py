@@ -40,8 +40,6 @@ from app.sep.apps.backup_mongo.deps import (
     resolve_backup_parent_task,
 )
 from app.sep.apps.backup_mongo.models import (
-    BackupExecuteWrite,
-    BackupExecutionResponse,
     BackupTaskDetailResponse,
     BackupTaskResponse,
     BackupTaskWrite,
@@ -119,8 +117,6 @@ derive_execute_route(
     name="backup_mongo_api_execute",
     description="Execute a backup task.",
     task_dep=BackupsTask,
-    write_model=BackupExecuteWrite,
-    response_model=BackupExecutionResponse,
 )
 
 

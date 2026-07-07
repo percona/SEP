@@ -109,21 +109,21 @@ class TasksSettings(BaseYamlAppSettings):
         SecurityHeadersOptions(content_security_policy_strict=False), advanced=True
     )
     SYNC_LOCK_TTL: Annotated[timedelta, Gt(timedelta(0))] = hot_field(
-        timedelta(minutes=5)
+        timedelta(minutes=5), advanced=True
     )
     PRE_EXECUTION_CONNECTIVITY_CHECK: PreExecutionCheckMode = hot_field(
         PreExecutionCheckMode.WARN
     )
-    STALENESS_THRESHOLD_SECONDS: PositiveInt = hot_field(3600)
+    STALENESS_THRESHOLD_SECONDS: PositiveInt = hot_field(3600, advanced=True)
     LOG_RETENTION_DAYS: Annotated[int, Gt(0), Le(MAX_LOG_RETENTION_DAYS)] = hot_field(
-        90
+        90, advanced=True
     )
-    LOG_PURGE_BATCH_SIZE: PositiveInt = hot_field(10_000)
+    LOG_PURGE_BATCH_SIZE: PositiveInt = hot_field(10_000, advanced=True)
     LOG_PURGE_INTERVAL: IntervalSchedule | None = Field(
         default_factory=lambda: IntervalSchedule(every=1, period=Period.DAYS)
     )
-    LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(104857600)
-    LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = hot_field(1000)
+    LOG_STREAM_CAP_BYTES: PositiveInt = hot_field(104857600, advanced=True)
+    LOG_STREAM_EVICTION_MAX_ROWS: PositiveInt = hot_field(1000, advanced=True)
 
 
 tasks_settings: TasksSettings = OverridableSettingsProxy(

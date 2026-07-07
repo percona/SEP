@@ -46,7 +46,10 @@ from app.core.celery.models import IntervalSchedule
 from app.core.config import BaseYamlSettings
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
-from app.core.settings_override.registry import hot_field
+from app.core.settings_override.registry import (
+    hot_field,
+    materialize_via_owning_model,
+)
 from app.core.utils import run_pydantic_type_validator, validate_module_is_importable
 from app.core.utils.dict import merge_dict_at_start, transform_dict_keys
 from app.core.utils.fields import (
@@ -398,9 +401,15 @@ class SnippetsSettings(BaseYamlSettings):
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP", "SNIPPETS"]
     SNIPPETS_DIR: RelativeDirectoryPathField = Path("snippets")
-    SNIPPETS_BASE_URL: URL | None = None
+    # ``URL`` is a non-Pydantic Starlette type: the generic JSON serializer
+    # stores it as ``{"_url": ...}`` rather than a plain string, which then
+    # coerces back into a broken ``URL``. Persist the raw string and
+    # re-materialize through the owning model on load instead.
+    SNIPPETS_BASE_URL: URL | None = hot_field(
+        None, materializer=materialize_via_owning_model
+    )
     META: SnippetsMetaOptions = SnippetsMetaOptions()
-    SYNC_FILTER: set[SnippetFilter] | None = None
+    SYNC_FILTER: set[SnippetFilter] | None = hot_field(None)
     INTERPRETERS: OrderedDict[SnippetFilter, SnippetInterpreterConfig] = (
         DEFAULT_INTERPRETERS
     )

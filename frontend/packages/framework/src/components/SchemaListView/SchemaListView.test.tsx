@@ -19,8 +19,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { ListView } from '@sep/api';
 
-const { useScheduledTasksForPluginMock } = vi.hoisted(() => ({
-  useScheduledTasksForPluginMock: vi.fn(),
+const { useScheduledTasksForAppMock } = vi.hoisted(() => ({
+  useScheduledTasksForAppMock: vi.fn(),
 }));
 
 // Mock only the schedule hook; pull the real period/select helpers from their
@@ -30,7 +30,7 @@ const { useScheduledTasksForPluginMock } = vi.hoisted(() => ({
 vi.mock('../ScheduledTasksPanel', async () => {
   const periods = await import('../ScheduledTasksPanel/periods');
   return {
-    useScheduledTasksForPlugin: (...args: unknown[]) => useScheduledTasksForPluginMock(...args),
+    useScheduledTasksForApp: (...args: unknown[]) => useScheduledTasksForAppMock(...args),
     describePeriod: periods.describePeriod,
     formatRelativeTime: periods.formatRelativeTime,
     formatAbsoluteTime: periods.formatAbsoluteTime,
@@ -136,8 +136,8 @@ describe('SchemaListView — schedule-column glue', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
-    useScheduledTasksForPluginMock.mockReset();
-    useScheduledTasksForPluginMock.mockReturnValue({ periodicTasks: [], isLoading: false });
+    useScheduledTasksForAppMock.mockReset();
+    useScheduledTasksForAppMock.mockReturnValue({ periodicTasks: [], isLoading: false });
   });
 
   afterEach(() => {
@@ -145,7 +145,7 @@ describe('SchemaListView — schedule-column glue', () => {
   });
 
   it('fetches the plugin schedule and joins it by trimmed task name into the cell', () => {
-    useScheduledTasksForPluginMock.mockReturnValue({
+    useScheduledTasksForAppMock.mockReturnValue({
       periodicTasks: [makePeriodic({ task: 'alpha' })],
       isLoading: false,
     });
@@ -165,7 +165,7 @@ describe('SchemaListView — schedule-column glue', () => {
     );
 
     // fetch is scoped to the owning plugin
-    expect(useScheduledTasksForPluginMock).toHaveBeenCalledWith('archives', {
+    expect(useScheduledTasksForAppMock).toHaveBeenCalledWith('archives', {
       disablePolling: true,
     });
     // alpha row matched its schedule; beta row has none → unscheduled chip
@@ -174,7 +174,7 @@ describe('SchemaListView — schedule-column glue', () => {
   });
 
   it('groups several schedules per task name and renders the selected one', () => {
-    useScheduledTasksForPluginMock.mockReturnValue({
+    useScheduledTasksForAppMock.mockReturnValue({
       periodicTasks: [
         makePeriodic({
           id: 1,
@@ -210,11 +210,11 @@ describe('SchemaListView — schedule-column glue', () => {
 
   it('issues no schedule fetch when the list view has no schedule column', () => {
     render(<SchemaListView listView={listView} data={rows} pluginName="archives" />);
-    expect(useScheduledTasksForPluginMock).not.toHaveBeenCalled();
+    expect(useScheduledTasksForAppMock).not.toHaveBeenCalled();
   });
 
   it('issues no schedule fetch when a schedule column exists but no plugin name is given', () => {
     render(<SchemaListView listView={scheduleListView} data={rows} />);
-    expect(useScheduledTasksForPluginMock).not.toHaveBeenCalled();
+    expect(useScheduledTasksForAppMock).not.toHaveBeenCalled();
   });
 });
