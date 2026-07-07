@@ -24,6 +24,7 @@ import { makeSetting } from './fixtures';
 const groups: SettingClassGroup[] = [
   {
     setting_class: 'SEPSettings',
+    is_app_owned: false,
     settings: [
       makeSetting({ key: 'SYNC_REFRESH_TIME', reload: 'hot', has_override: true }),
       makeSetting({ key: 'STATIC_DIR', reload: 'not_overridable', has_override: false }),
@@ -37,6 +38,7 @@ const groups: SettingClassGroup[] = [
   },
   {
     setting_class: 'TasksSettings',
+    is_app_owned: false,
     settings: [makeSetting({ setting_class: 'TasksSettings', key: 'STALENESS_THRESHOLD_SECONDS' })],
   },
 ];
