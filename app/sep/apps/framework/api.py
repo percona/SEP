@@ -564,19 +564,56 @@ def _register_create_route(
         plugin_schema=plugin_schema,
     )
 
+    async def _build_create_response(
+        tasks_api: TaskAPI,
+        task_write: TaskWrite,
+        *,
+        check_connectivity: bool | None,
+    ) -> BaseModel:
+        """Build the create response, optionally attaching a connectivity warning.
+
+        :param tasks_api: The upstream task API client.
+        :param task_write: The validated create payload.
+        :param check_connectivity: Whether to run the connectivity probe.
+            ``None`` when the probe is disabled for the route.
+        :return: The rendered create response.
+        """
+        created = await tasks_api.post("/", json=task_write.model_dump())
+        task = Task.model_validate(created)
+        warning = (
+            await maybe_record_connectivity_warning(
+                tasks_api,
+                task.data.get("meta", {}),
+                check_connectivity=check_connectivity,
+            )
+            if check_connectivity is not None
+            else None
+        )
+        if create_response_builder is not None:
+            builder = await _bind_context(create_response_builder, context_provider)
+            result = builder(task)
+            if warning is not None:
+                return result.model_copy(
+                    update={"connectivity_warning": warning}
+                )
+            return result
+        builder = await _bind_context(base_builder, context_provider)
+        base = builder(task, status=None)
+        if warning is not None:
+            return create_model(
+                **{**base.model_dump(), "connectivity_warning": warning}
+            )
+        return base
+
     if not connectivity_check:
 
         async def _create(
             tasks_api: TaskAPI,
             task_write: Annotated[TaskWrite, Depends(create_payload)],
         ) -> BaseModel:
-            created = await tasks_api.post("/", json=task_write.model_dump())
-            task = Task.model_validate(created)
-            if create_response_builder is not None:
-                builder = await _bind_context(create_response_builder, context_provider)
-                return builder(task)
-            builder = await _bind_context(base_builder, context_provider)
-            return builder(task, status=None)
+            return await _build_create_response(
+                tasks_api, task_write, check_connectivity=None
+            )
     else:
 
         async def _create(
@@ -585,22 +622,8 @@ def _register_create_route(
             *,
             check_connectivity: Annotated[bool, Query()] = True,
         ) -> BaseModel:
-            created = await tasks_api.post("/", json=task_write.model_dump())
-            task = Task.model_validate(created)
-            warning = await maybe_record_connectivity_warning(
-                tasks_api,
-                task.data.get("meta", {}),
-                check_connectivity=check_connectivity,
-            )
-            if create_response_builder is not None:
-                builder = await _bind_context(create_response_builder, context_provider)
-                return builder(task).model_copy(
-                    update={"connectivity_warning": warning}
-                )
-            builder = await _bind_context(base_builder, context_provider)
-            base = builder(task, status=None)
-            return create_model(
-                **{**base.model_dump(), "connectivity_warning": warning}
+            return await _build_create_response(
+                tasks_api, task_write, check_connectivity=check_connectivity
             )
 
     router.add_api_route(
@@ -669,6 +692,50 @@ def _register_update_route(
         plugin_schema=plugin_schema,
     )
 
+    async def _build_update_response(
+        tasks_api: TaskAPI,
+        task: Task,
+        task_write: TaskWrite,
+        *,
+        check_connectivity: bool | None,
+    ) -> BaseModel:
+        """Build the update response, optionally attaching a connectivity warning.
+
+        :param tasks_api: The upstream task API client.
+        :param task: The resolved task (fetched by name via ``get_task``).
+        :param task_write: The validated update payload.
+        :param check_connectivity: Whether to run the connectivity probe.
+            ``None`` when the probe is disabled for the route.
+        :return: The rendered update response.
+        """
+        updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
+        updated_task = Task.model_validate(updated)
+        task_status = await get_task_latest_status(tasks_api, updated_task.name)
+        warning = (
+            await maybe_record_connectivity_warning(
+                tasks_api,
+                updated_task.data.get("meta", {}),
+                check_connectivity=check_connectivity,
+            )
+            if check_connectivity is not None
+            else None
+        )
+        if create_response_builder is not None:
+            builder = await _bind_context(create_response_builder, context_provider)
+            result = builder(updated_task, status=task_status)
+            if warning is not None:
+                return result.model_copy(
+                    update={"connectivity_warning": warning}
+                )
+            return result
+        builder = await _bind_context(base_builder, context_provider)
+        base = builder(updated_task, status=task_status)
+        if warning is not None:
+            return update_model(
+                **{**base.model_dump(), "connectivity_warning": warning}
+            )
+        return base
+
     if not connectivity_check:
 
         async def _update(
@@ -676,14 +743,9 @@ def _register_update_route(
             task: Annotated[Task, Depends(get_task)],
             task_write: Annotated[TaskWrite, Depends(create_payload)],
         ) -> BaseModel:
-            updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
-            updated_task = Task.model_validate(updated)
-            task_status = await get_task_latest_status(tasks_api, updated_task.name)
-            if create_response_builder is not None:
-                builder = await _bind_context(create_response_builder, context_provider)
-                return builder(updated_task, status=task_status)
-            builder = await _bind_context(base_builder, context_provider)
-            return builder(updated_task, status=task_status)
+            return await _build_update_response(
+                tasks_api, task, task_write, check_connectivity=None
+            )
     else:
 
         async def _update(
@@ -693,23 +755,8 @@ def _register_update_route(
             *,
             check_connectivity: Annotated[bool, Query()] = True,
         ) -> BaseModel:
-            updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
-            updated_task = Task.model_validate(updated)
-            task_status = await get_task_latest_status(tasks_api, updated_task.name)
-            warning = await maybe_record_connectivity_warning(
-                tasks_api,
-                updated_task.data.get("meta", {}),
-                check_connectivity=check_connectivity,
-            )
-            if create_response_builder is not None:
-                builder = await _bind_context(create_response_builder, context_provider)
-                return builder(updated_task, status=task_status).model_copy(
-                    update={"connectivity_warning": warning}
-                )
-            builder = await _bind_context(base_builder, context_provider)
-            base = builder(updated_task, status=task_status)
-            return update_model(
-                **{**base.model_dump(), "connectivity_warning": warning}
+            return await _build_update_response(
+                tasks_api, task, task_write, check_connectivity=check_connectivity
             )
 
     router.add_api_route(
@@ -972,7 +1019,7 @@ def _register_list_route(
                 status_filter=filters.status,
                 context_provider=context_provider,
             )
-            return cast(list[BaseModel], responses)
+            return cast("list[BaseModel]", responses)
 
         router.add_api_route(
             "/",
@@ -999,7 +1046,7 @@ def _register_list_route(
                 status_filter=filters.status,
                 context_provider=context_provider,
             )
-            return cast(PaginatedResponse, responses)
+            return cast("PaginatedResponse", responses)
 
         router.add_api_route(
             "/",
