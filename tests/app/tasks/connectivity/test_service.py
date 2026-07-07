@@ -139,7 +139,7 @@ def _make_task_history(
 
 
 class _AdvancingClock:
-    """Deterministic monotonic clock for the connectivity poll loop.
+    """Provide a deterministic monotonic clock for the connectivity poll loop.
 
     ``check_connectivity`` measures its provisioning/connect budgets against
     ``time.monotonic``. Real time would make budget tests slow (busy-looping

@@ -201,7 +201,10 @@ async def check_connectivity(
         if not connect_started:
             if time.monotonic() - provisioning_started >= PROVISIONING_TIMEOUT:
                 break
-        elif time.monotonic() - connect_started_at >= request.timeout:
+        elif (
+            connect_started_at is not None
+            and time.monotonic() - connect_started_at >= request.timeout
+        ):
             break
         await asyncio.sleep(POLL_INTERVAL)
         async with async_session() as writer_session:
