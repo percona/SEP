@@ -27,7 +27,7 @@ Red flags:
 - All table models set `table=True`. `created_at` defaults to `utc_now()` (microseconds zeroed). `updated_at` uses `func.now()` for auto-update.
 - **Enum columns** declare `EnumField(<Enum>, native_enum=False, create_constraint=True)` — a native PG ENUM is an expensive ALTER, and `native_enum=False` alone silently drops the CHECK constraint. The Alembic migration must mirror both kwargs on its `sa.Enum(...)`.
 - **Status-enum subsets** (active, finished, terminal) are named classmethods/frozensets on the enum (`TaskHistoryStatusEnum.active_statuses()`, `is_active()`), not open-coded `status.in_([PENDING, RUNNING])` at each call site.
-- A new `@dataclass(frozen=True)` must include `slots=True` — the pre-push gate `.claude/scripts/check_dataclass_slots.py` blocks omission. Opt out with `# slots-exempt: <reason>` only when a non-slottable base or runtime attribute injection requires it.
+- A new `@dataclass(frozen=True)` must include `slots=True`. Opt out with `# slots-exempt: <reason>` only when a non-slottable base or runtime attribute injection requires it.
 
 ## CRUD managers — never raw queries
 
