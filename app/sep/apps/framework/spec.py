@@ -422,10 +422,10 @@ def assemble_envelope(
 
 
 def parse_server_list_config(
-    task: dict[str, Any],
-    server_config: dict[str, Any],
-    all_servers_config: dict[str, Any],
-    extra_fields: dict[str, Any],
+    task: Mapping[str, Any],
+    server_config: Mapping[str, Any],
+    all_servers_config: Mapping[str, Any],
+    extra_fields: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Rebuild a backup edit-form dict from a parsed ``SERVER_LIST`` config.
 
