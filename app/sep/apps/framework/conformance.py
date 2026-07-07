@@ -131,7 +131,12 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
     ``param``. A route contributed by ``extra_routes`` is the app's explicit escape
     hatch (a hybrid app derives only its list/schema and keeps every mutation
     custom with the matching capability off), so it is exempt: only a *derived*
-    route contradicting a flag is a violation.
+    route contradicting a flag is a violation. The exemption is compared by
+    *count* — the disabled signature's occurrences across ``api_router`` (derived
+    plus custom, since ``build_router`` folds ``extra_routes`` in) against its
+    ``extra_routes`` count — so a leaked derived route registered *alongside* a
+    legitimate custom handler for the same ``(method, path)`` still surfaces
+    (``present`` exceeds ``custom``) instead of being masked by set membership.
 
     :param app: The migrated app whose derived router is inspected.
     :return: One message per flag/route disagreement; empty when consistent or when
@@ -148,26 +153,26 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
         "delete": ("DELETE", detail),
     }
     routes = app.api_router.routes if app.api_router is not None else []
-    present = {
+    present = Counter(
         (method, getattr(route, "path", ""))
         for route in routes
         for method in getattr(route, "methods", None) or ()
-    }
-    custom = {
+    )
+    custom = Counter(
         (method, getattr(route, "path", ""))
         for extra in app.extra_routes
         for route in extra.routes
         for method in getattr(route, "methods", None) or ()
-    }
+    )
     violations = []
     for verb, signature in expected.items():
         enabled = getattr(app.capabilities, verb)
-        if enabled and signature not in present:
+        if enabled and not present[signature]:
             violations.append(
                 f"capability {verb!r} is enabled but route {signature[0]} "
                 f"{signature[1]} is absent"
             )
-        elif not enabled and signature in present and signature not in custom:
+        elif not enabled and present[signature] > custom[signature]:
             violations.append(
                 f"capability {verb!r} is disabled but derived route {signature[0]} "
                 f"{signature[1]} is present"
