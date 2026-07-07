@@ -8,7 +8,7 @@ SEP runs three API services (SEP, Inventory, Tasks) consumed by the web UI, CLI 
 
 ## Released-ness is the precondition
 
-Before flagging any break below, check whether the symbol's introducing PR is still inside the current `[Unreleased]` window (its changelog fragment sits unreleased in `changelog.d/`). A symbol nothing has shipped a dependency on carries no backwards-compatibility obligation — do NOT demand a shim, alias, or two-phase migration for a field / enum / column / config key added earlier in the same unreleased cycle.
+Before flagging any break below, check whether the symbol's introducing PR is still inside the current `[Unreleased]` window (its changelog fragment sits unreleased in `changelog.d/`). A symbol that nothing has shipped a dependency on carries no backwards-compatibility obligation — do NOT demand a shim, alias, or two-phase migration for a field / enum / column / config key added earlier in the same unreleased cycle.
 
 ## API Response Shape (`*Response` models)
 
