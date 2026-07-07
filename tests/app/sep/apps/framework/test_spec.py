@@ -22,7 +22,7 @@ inventory backend; the assemble step is a pure function of form + resolved
 entities, so none of these need a real database.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from unittest.mock import AsyncMock
 
 import pytest
@@ -43,6 +43,7 @@ from app.sep.apps.framework.form_dsl import (
 from app.sep.apps.framework.spec import (
     assemble_envelope,
     build_command_args,
+    build_run_python_task,
     parse_server_list_config,
     RESERVED_FORM_KEY,
     resolve_refs,
@@ -875,6 +876,90 @@ class TestStampFormInput:
 
         with pytest.raises(ValueError, match="reserved key"):
             stamp_form_input(write, _StampForm(task_name="task-1"))
+
+
+class TestBuildRunPythonTask:
+    """Cover the connectivity-optional ``build_run_python_task`` builder."""
+
+    @staticmethod
+    def _write(
+        *,
+        service_name: str | None = None,
+        extra_data: dict[str, Any] | None = None,
+        alert_on_fail: bool = False,
+    ) -> TaskWrite:
+        """Build a run-python ``TaskWrite`` with fixed defaults for the required args."""
+        return build_run_python_task(
+            name="task-1",
+            owner=TaskOwner.BACKUP_MONGO,
+            target="mongo-host",
+            config="alias: stanza\n",
+            requirements="packaging\nPyYAML",
+            payload="file:///plugin/payload",
+            service_name=service_name,
+            extra_data=extra_data,
+            alert_on_fail=alert_on_fail,
+        )
+
+    def test_data_dict_shape(self) -> None:
+        """Emit the canonical run-python data shape with no connectivity meta."""
+        write = self._write()
+
+        assert write.data == {
+            "task": "run-python",
+            "meta": {
+                "config": "alias: stanza\n",
+                "target": "mongo-host",
+                "requirements": "packaging\nPyYAML",
+            },
+            "payload": "file:///plugin/payload",
+        }
+
+    def test_meta_key_order(self) -> None:
+        """Pin the canonical meta key order with ``_service_name`` last."""
+        write = self._write(service_name="mongo-svc")
+
+        assert list(write.data["meta"].keys()) == [
+            "config",
+            "target",
+            "requirements",
+            "_service_name",
+        ]
+
+    def test_service_name_omitted_when_none(self) -> None:
+        """Omit ``_service_name`` from the meta when ``service_name`` is ``None``."""
+        write = self._write(service_name=None)
+
+        assert "_service_name" not in write.data["meta"]
+
+    def test_extra_data_merged_at_top_level(self) -> None:
+        """Merge ``extra_data`` at the ``data`` top level after ``payload``."""
+        write = self._write(extra_data={"backup_type": "pbm-config"})
+
+        assert write.data["backup_type"] == "pbm-config"
+        assert list(write.data.keys()) == ["task", "meta", "payload", "backup_type"]
+
+    def test_defaults(self) -> None:
+        """Emit the PROXY backend with no failure alert or detail builder by default."""
+        write = self._write()
+
+        assert write.backend == TaskBackendEnum.PROXY
+        assert write.alert_on_fail is False
+        assert write.alert_detail_builder is None
+
+    def test_alert_on_fail_propagates(self) -> None:
+        """Propagate ``alert_on_fail=True`` onto the ``TaskWrite``."""
+        write = self._write(alert_on_fail=True)
+
+        assert write.alert_on_fail is True
+
+    @pytest.mark.parametrize(
+        "reserved_key", ["task", "meta", "payload", RESERVED_FORM_KEY]
+    )
+    def test_extra_data_reserved_key_collision_raises(self, reserved_key: str) -> None:
+        """Reject an ``extra_data`` key that collides with a reserved envelope key."""
+        with pytest.raises(ValueError, match="reserved"):
+            self._write(extra_data={reserved_key: "x"})
 
 
 class TestParseServerListConfig:
