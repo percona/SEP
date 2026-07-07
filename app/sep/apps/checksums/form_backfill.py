@@ -21,8 +21,8 @@ from typing import Any, TYPE_CHECKING
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.checksums.deps import parse_checksums_task_args
-from app.sep.apps.checksums.spec import DEFAULT_RECURSION_DSN_TABLE
 from app.sep.apps.framework.form_backfill_inventory import meta_service_hints
+from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
@@ -64,7 +64,7 @@ def _split_checksums_dsn_recursion(recursion_method: str) -> tuple[str, str]:
 def _normalize_dsn_table(dsn_table: str) -> str:
     """Return ``""`` when ``dsn_table`` matches the Percona Toolkit default."""
     normalized = dsn_table.strip()
-    if normalized == DEFAULT_RECURSION_DSN_TABLE:
+    if normalized == DSN_TABLE_DEFAULT:
         return ""
     return normalized
 

@@ -31,6 +31,7 @@ from app.sep.apps.framework import derive_create_response_model
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
     Choices,
+    DSN_TABLE_DEFAULT,
     Forbidden,
     HostRef,
     Requires,
@@ -44,8 +45,6 @@ from app.sep.apps.framework.rules import (
 )
 from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
-
-DEFAULT_ALTERS_DSN_TABLE = "D=percona,t=dsns"
 
 
 def _dsn_safe(value: str | None) -> str | None:
@@ -141,7 +140,7 @@ class AltersCreate(AppFormModel):
             data.get("recursion_method") == "dsn"
             and not str(data.get("dsn_table") or "").strip()
         ):
-            return {**data, "dsn_table": DEFAULT_ALTERS_DSN_TABLE}
+            return {**data, "dsn_table": DSN_TABLE_DEFAULT}
         return data
 
     task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="task")]
@@ -229,7 +228,7 @@ class AltersCreate(AppFormModel):
         Ui(
             label="DSN Table",
             section="recursion",
-            default=DEFAULT_ALTERS_DSN_TABLE,
+            default=DSN_TABLE_DEFAULT,
             description="Required when recursion method is 'dsn'",
         ),
     ] = ""
