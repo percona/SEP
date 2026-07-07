@@ -18,7 +18,13 @@
 import pytest
 from pydantic import ValidationError
 
-from app.sep.apps.mysql_backups.models import BackupConfigAll
+from app.sep.apps.framework import BaseTaskResponse
+from app.sep.apps.mysql_backups.models import (
+    BackupConfigAll,
+    BackupResponse,
+    BackupType,
+)
+from app.tasks.models import TaskBackendEnum, TaskOwner
 
 
 class TestXtrabackupQuietField:
@@ -105,3 +111,30 @@ class TestUploadQuietField:
         """
         with pytest.raises(ValidationError):
             BackupConfigAll.model_validate({"UPLOAD_QUIET": None})
+
+
+class TestBackupResponseModel:
+    """Tests for ``BackupResponse`` rebased onto ``BaseTaskResponse``."""
+
+    def test_exposes_inherited_task_response_surface(self) -> None:
+        """Carry the shared anonymization and connectivity surface from the base."""
+        response = BackupResponse(
+            name="mysql-backup",
+            owner=TaskOwner.BACKUPS,
+            backend=TaskBackendEnum.PROXY,
+            backup_type=BackupType.MYDUMPER,
+            hostname="db-host",
+            data={"meta": {"target": "db-host"}},
+            protected=False,
+            alert_on_fail=False,
+        )
+
+        dumped = response.model_dump(mode="json")
+
+        assert isinstance(response, BaseTaskResponse)
+        assert dumped["backup_type"] == BackupType.MYDUMPER.value
+        assert dumped["hostname"] == "db-host"
+        assert dumped["service_type"] is None
+        assert "anonymize_mask" in dumped
+        assert "anonymized_entities" in dumped
+        assert "connectivity_warning" in dumped

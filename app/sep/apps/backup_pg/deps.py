@@ -23,6 +23,7 @@ from fastapi import Depends, Form, Request
 
 from app.core.exceptions import HTTPConflictException
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.models import (
     BackupPgForm,
     BackupTaskDetailResponse,
@@ -182,7 +183,11 @@ def build_backup_pg_api_task_response(
         BackupTaskResponse,
         task,
         status,
-        extras={"hostname": meta.get("target"), "backup_type": backup_type},
+        extras={
+            "hostname": meta.get("target"),
+            "backup_type": backup_type,
+            "service_type": ServiceTypeEnum.POSTGRESQL,
+        },
     )
 
 

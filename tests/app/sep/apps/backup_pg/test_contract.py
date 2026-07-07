@@ -79,7 +79,57 @@ class TestBackupPgContract(DerivedRouterContractTests):
         response = post_create_body(contract_client, f"{base}/", self.app_def, body)
 
         assert response.status_code == status.HTTP_201_CREATED
-        assert "host" in response.json()
+        detail = response.json()
+        assert "host" in detail
+        assert detail["service_type"] == ServiceTypeEnum.POSTGRESQL.value
+        assert "anonymize_mask" in detail
+        assert "anonymized_entities" in detail
+        assert "connectivity_warning" in detail
+
+    def test_list_carries_service_type_and_anonymization(self, contract_client) -> None:
+        """Assert list rows carry the POSTGRESQL service_type and anonymization surface.
+
+        The generic inject-extras test skips for backup_pg (no response context
+        provider), so cover the newly-inherited fields explicitly.
+        """
+        response = contract_client.get(f"{app_base_url(self.app_def)}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        rows = body["items"] if isinstance(body, dict) else body
+        row = next(r for r in rows if r["name"] == SEEDED_TASK_NAME)
+        assert row["service_type"] == ServiceTypeEnum.POSTGRESQL.value
+        assert "anonymize_mask" in row
+        assert "anonymized_entities" in row
+
+    def test_detail_carries_service_type_and_anonymization(
+        self, contract_client
+    ) -> None:
+        """Assert the detail body carries the POSTGRESQL service_type and anonymization surface."""
+        response = contract_client.get(
+            f"{app_base_url(self.app_def)}/{SEEDED_TASK_NAME}"
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["service_type"] == ServiceTypeEnum.POSTGRESQL.value
+        assert "anonymize_mask" in body
+        assert "anonymized_entities" in body
+
+    def test_update_carries_service_type_and_anonymization(
+        self, contract_client
+    ) -> None:
+        """Assert the update response body carries the injected service_type + surface."""
+        body = build_valid_create_body(self.app_def, task_name=SEEDED_TASK_NAME)
+        base = app_base_url(self.app_def)
+
+        response = contract_client.put(f"{base}/{SEEDED_TASK_NAME}", json=body)
+
+        assert response.status_code == status.HTTP_200_OK
+        updated = response.json()
+        assert updated["service_type"] == ServiceTypeEnum.POSTGRESQL.value
+        assert "anonymize_mask" in updated
+        assert "anonymized_entities" in updated
 
     def test_create_extra_dep_enforced(self, contract_client, mock_task_api) -> None:
         """Assert the body-reading create guard rejects a duplicate in-flight name.
