@@ -46,8 +46,6 @@ from app.sep.apps.alters.deps import (
 )
 from app.sep.apps.alters.models import (
     AltersCreate,
-    AltersExecuteWrite,
-    AltersExecutionResponse,
     AltersTaskResponse,
     AltersTaskResponseCreate,
     AltersTaskResponseUpdate,
@@ -219,8 +217,6 @@ derive_execute_route(
     name="alters_api_execute",
     description="Execute an alters task (parent, dry-run, or pre-checks).",
     task_dep=AltersTask,
-    write_model=AltersExecuteWrite,
-    response_model=AltersExecutionResponse,
 )
 
 

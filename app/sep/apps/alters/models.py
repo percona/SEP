@@ -21,7 +21,6 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     field_validator,
-    FutureDatetime,
     model_validator,
 )
 
@@ -405,27 +404,3 @@ AltersTaskResponseUpdate = derive_create_response_model(
         "post-update connectivity warning."
     ),
 )
-
-
-class AltersExecuteWrite(BaseModel):
-    """Represent a JSON request body for executing an alters task.
-
-    :param eta: Optional future datetime to schedule execution.
-    :param chain_task_names: Optional list of task names to chain after this one.
-    :param chain_on_failure: Whether to run chained tasks even on failure.
-    """
-
-    eta: FutureDatetime | None = None
-    chain_task_names: list[str] | None = None
-    chain_on_failure: bool | None = None
-
-
-class AltersExecutionResponse(BaseModel):
-    """Represent the response from POST /api/apps/alters/{task_name}/execute.
-
-    :param task_name: The name of the task that was executed.
-    :param task_id: The id of the task-history row created by the tasks API.
-    """
-
-    task_name: str
-    task_id: int | None = None

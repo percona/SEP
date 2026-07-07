@@ -18,7 +18,7 @@
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, FutureDatetime
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
@@ -510,32 +510,3 @@ class BackupTaskDetailResponse(BackupTaskResponse):
 
     derived_tasks: list[BackupDerivedTaskSummary] = Field(default_factory=list)
     latest_pbm_status: str | None = None
-
-
-class BackupExecuteWrite(BaseModel):
-    """Represent a JSON request body for executing a backup task.
-
-    :param eta: Optional future datetime to schedule execution.
-    :type eta: FutureDatetime | None
-    :param chain_task_names: Optional list of task names to chain after this one.
-    :type chain_task_names: list[str] | None
-    :param chain_on_failure: Whether to run chained tasks even on failure.
-    :type chain_on_failure: bool | None
-    """
-
-    eta: FutureDatetime | None = None
-    chain_task_names: list[str] | None = None
-    chain_on_failure: bool | None = None
-
-
-class BackupExecutionResponse(BaseModel):
-    """Represent the response from POST /api/apps/backup_mongo/{task_name}/execute.
-
-    :param task_name: The name of the task that was executed.
-    :type task_name: str
-    :param task_id: The id of the task-history row created by the tasks API.
-    :type task_id: int | None
-    """
-
-    task_name: str
-    task_id: int | None = None

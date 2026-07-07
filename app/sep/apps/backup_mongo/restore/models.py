@@ -25,7 +25,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    FutureDatetime,
     model_validator,
 )
 
@@ -752,32 +751,3 @@ class RestoreTaskDetailResponse(RestoreTaskResponse):
     """
 
     derived_tasks: list[RestoreDerivedTaskSummary] = Field(default_factory=list)
-
-
-class RestoreExecuteWrite(BaseModel):
-    """Represent a JSON request body for executing a restore task.
-
-    :param eta: Optional future datetime to schedule execution.
-    :type eta: FutureDatetime | None
-    :param chain_task_names: Optional list of task names to chain after this one.
-    :type chain_task_names: list[str] | None
-    :param chain_on_failure: Whether to run chained tasks even on failure.
-    :type chain_on_failure: bool | None
-    """
-
-    eta: FutureDatetime | None = None
-    chain_task_names: list[str] | None = None
-    chain_on_failure: bool | None = None
-
-
-class RestoreExecutionResponse(BaseModel):
-    """Represent the response from POST .../restores/{task_name}/execute.
-
-    :param task_name: The name of the task that was executed.
-    :type task_name: str
-    :param task_id: The id of the task-history row created by the tasks API.
-    :type task_id: int | None
-    """
-
-    task_name: str
-    task_id: int | None = None

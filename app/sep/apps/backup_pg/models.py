@@ -22,7 +22,6 @@ from annotated_types import Ge
 from pydantic import (
     BaseModel,
     ConfigDict,
-    FutureDatetime,
     model_validator,
     StringConstraints,
 )
@@ -257,32 +256,3 @@ class BackupTaskDetailResponse(BackupTaskResponse):
 
     host: str | None = None
     port: int | None = None
-
-
-class BackupExecuteWrite(BaseModel):
-    """Represent a JSON request body for executing a backup task.
-
-    :param eta: Optional datetime to schedule execution. Must be in the future;
-        a past value is rejected with a 422 validation error.
-    :param chain_task_names: Optional list of task names to chain after.
-    :type chain_task_names: list[str] | None
-    :param chain_on_failure: Whether to run chained tasks even on failure.
-    :type chain_on_failure: bool | None
-    """
-
-    eta: FutureDatetime | None = None
-    chain_task_names: list[str] | None = None
-    chain_on_failure: bool | None = None
-
-
-class BackupExecutionResponse(BaseModel):
-    """Represent the response from the execute API endpoint.
-
-    :param task_name: The name of the task that was executed.
-    :type task_name: str
-    :param task_id: The id of the task-history row created by the tasks API.
-    :type task_id: int | None
-    """
-
-    task_name: str
-    task_id: int | None = None

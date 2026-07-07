@@ -615,75 +615,6 @@
         "title": "AltersCreate",
         "type": "object"
       },
-      "AltersExecuteWrite": {
-        "description": "Represent a JSON request body for executing an alters task.\n\n:param eta: Optional future datetime to schedule execution.\n:param chain_task_names: Optional list of task names to chain after this one.\n:param chain_on_failure: Whether to run chained tasks even on failure.",
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "AltersExecuteWrite",
-        "type": "object"
-      },
-      "AltersExecutionResponse": {
-        "description": "Represent the response from POST /api/apps/alters/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
-        "properties": {
-          "task_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Id"
-          },
-          "task_name": {
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name"
-        ],
-        "title": "AltersExecutionResponse",
-        "type": "object"
-      },
       "AltersTaskResponse": {
         "description": "Represent an alters task API response for list and detail surfaces.\n\nAdd no fields of its own — the alters list/detail surface is exactly the\nshared task-response surface. The create/update routes return the\n:data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models\nderived from this base, which add ``connectivity_warning`` per the\nframework's derived create-response standard.",
         "properties": {
@@ -7391,75 +7322,6 @@
         "title": "RestoreDerivedTaskSummary",
         "type": "object"
       },
-      "RestoreExecuteWrite": {
-        "description": "Represent a JSON request body for executing a restore task.\n\n:param eta: Optional future datetime to schedule execution.\n:type eta: FutureDatetime | None\n:param chain_task_names: Optional list of task names to chain after this one.\n:type chain_task_names: list[str] | None\n:param chain_on_failure: Whether to run chained tasks even on failure.\n:type chain_on_failure: bool | None",
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "RestoreExecuteWrite",
-        "type": "object"
-      },
-      "RestoreExecutionResponse": {
-        "description": "Represent the response from POST .../restores/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:type task_name: str\n:param task_id: The id of the task-history row created by the tasks API.\n:type task_id: int | None",
-        "properties": {
-          "task_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Id"
-          },
-          "task_name": {
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name"
-        ],
-        "title": "RestoreExecutionResponse",
-        "type": "object"
-      },
       "RestoreRequest": {
         "description": "Describe the request body for ``POST /api/apps/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.\n:type backup_id: int",
         "properties": {
@@ -10236,75 +10098,6 @@
         "title": "PaginatedResponse[BackupTaskResponse]",
         "type": "object"
       },
-      "app__sep__apps__backup_mongo__models__BackupExecuteWrite": {
-        "description": "Represent a JSON request body for executing a backup task.\n\n:param eta: Optional future datetime to schedule execution.\n:type eta: FutureDatetime | None\n:param chain_task_names: Optional list of task names to chain after this one.\n:type chain_task_names: list[str] | None\n:param chain_on_failure: Whether to run chained tasks even on failure.\n:type chain_on_failure: bool | None",
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "BackupExecuteWrite",
-        "type": "object"
-      },
-      "app__sep__apps__backup_mongo__models__BackupExecutionResponse": {
-        "description": "Represent the response from POST /api/apps/backup_mongo/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:type task_name: str\n:param task_id: The id of the task-history row created by the tasks API.\n:type task_id: int | None",
-        "properties": {
-          "task_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Id"
-          },
-          "task_name": {
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name"
-        ],
-        "title": "BackupExecutionResponse",
-        "type": "object"
-      },
       "app__sep__apps__backup_mongo__models__BackupTaskDetailResponse": {
         "description": "Represent a backup task detail API response.\n\n:param derived_tasks: Latest status for each derived logical, physical, and\n    status sibling.\n:type derived_tasks: list[BackupDerivedTaskSummary]\n:param latest_pbm_status: Tail of the latest PBM status task stdout, if\n    available.\n:type latest_pbm_status: str | None",
         "properties": {
@@ -10669,75 +10462,6 @@
         ],
         "title": "CompressionAlgorithm",
         "type": "string"
-      },
-      "app__sep__apps__backup_pg__models__BackupExecuteWrite": {
-        "description": "Represent a JSON request body for executing a backup task.\n\n:param eta: Optional datetime to schedule execution. Must be in the future;\n    a past value is rejected with a 422 validation error.\n:param chain_task_names: Optional list of task names to chain after.\n:type chain_task_names: list[str] | None\n:param chain_on_failure: Whether to run chained tasks even on failure.\n:type chain_on_failure: bool | None",
-        "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
-          },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "BackupExecuteWrite",
-        "type": "object"
-      },
-      "app__sep__apps__backup_pg__models__BackupExecutionResponse": {
-        "description": "Represent the response from the execute API endpoint.\n\n:param task_name: The name of the task that was executed.\n:type task_name: str\n:param task_id: The id of the task-history row created by the tasks API.\n:type task_id: int | None",
-        "properties": {
-          "task_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Id"
-          },
-          "task_name": {
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name"
-        ],
-        "title": "BackupExecutionResponse",
-        "type": "object"
       },
       "app__sep__apps__backup_pg__models__BackupTaskDetailResponse": {
         "description": "Represent a single pgBackRest backup task detail response.\n\nAdd the executor host and port resolved from the task's YAML config so the\nFE detail view can render them alongside the parity Overview block; list\nrows omit these to keep the table response compact.\n\n:param host: The PostgreSQL host the task connects to.\n:param port: The PostgreSQL port the task connects to.",
@@ -11934,7 +11658,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AltersExecuteWrite"
+                "$ref": "#/components/schemas/TaskExecuteWrite"
               }
             }
           },
@@ -11945,7 +11669,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AltersExecutionResponse"
+                  "$ref": "#/components/schemas/TaskExecutionResponse"
                 }
               }
             },
@@ -12725,7 +12449,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RestoreExecuteWrite"
+                "$ref": "#/components/schemas/TaskExecuteWrite"
               }
             }
           },
@@ -12736,7 +12460,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RestoreExecutionResponse"
+                  "$ref": "#/components/schemas/TaskExecutionResponse"
                 }
               }
             },
@@ -12877,7 +12601,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__sep__apps__backup_mongo__models__BackupExecuteWrite"
+                "$ref": "#/components/schemas/TaskExecuteWrite"
               }
             }
           },
@@ -12888,7 +12612,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__sep__apps__backup_mongo__models__BackupExecutionResponse"
+                  "$ref": "#/components/schemas/TaskExecutionResponse"
                 }
               }
             },
@@ -13210,7 +12934,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__sep__apps__backup_pg__models__BackupExecuteWrite"
+                "$ref": "#/components/schemas/TaskExecuteWrite"
               }
             }
           },
@@ -13221,7 +12945,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__sep__apps__backup_pg__models__BackupExecutionResponse"
+                  "$ref": "#/components/schemas/TaskExecutionResponse"
                 }
               }
             },
