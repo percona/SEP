@@ -70,11 +70,9 @@ _SENSITIVE_HEADERS = frozenset(
 )
 _REDACTED_HEADER_VALUE = "****"
 
-# Marker header stamped on the ``HTTPException`` raised when an error response
-# carries a non-JSON body (e.g. an nginx HTML 502 emitted when the upstream app
-# process is down, as opposed to an app-level JSON error). Callers that must tell
-# a gateway/proxy failure apart from an app-level failure at the same status code
-# can key off this header. Additive and safe to relay to downstream clients.
+# Stamped on the raised ``HTTPException`` when an error response has a non-JSON
+# body (e.g. an nginx HTML 502), letting callers tell a proxy/gateway failure
+# apart from an app-level JSON error at the same status code.
 UPSTREAM_NON_JSON_HEADER = "X-Upstream-Non-JSON"
 
 

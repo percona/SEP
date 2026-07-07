@@ -36,11 +36,6 @@ EXPECTED_SECTIONS = [
 ]
 
 
-# ``get_pmm_api`` now lives in ``app.sep.deps`` (report re-exports it); its
-# behaviour -- including the ``ssl_cafile`` kwarg -- is covered by
-# ``tests/app/sep/test_deps.py::TestGetPmmApi``, so it is not re-tested here.
-
-
 class TestRequirePmmApi:
     """Test the ``require_pmm_api`` dependency."""
 

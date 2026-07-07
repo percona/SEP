@@ -182,11 +182,9 @@ async def check_connectivity(
     # ``_connect_phase_started``. Time before it is charged against
     # ``PROVISIONING_TIMEOUT``, time after against the connect budget below.
     #
-    # Both budgets are measured against wall-clock (``time.monotonic``), not a
-    # count of ``POLL_INTERVAL`` sleeps: each iteration also spends real time on
-    # ``sync_task_history`` Nomad round-trips and DB commits, which must count
-    # against the budgets so the total server hold stays bounded within the
-    # SEP→Tasks client read timeout instead of drifting past it under latency.
+    # Budgets are charged against wall-clock (``time.monotonic``), not a count of
+    # ``POLL_INTERVAL`` sleeps, so per-iteration ``sync_task_history`` round-trips
+    # and DB commits count too and the server hold stays within the read timeout.
     provisioning_started = time.monotonic()
     connect_started_at: float | None = None
     connect_started = False

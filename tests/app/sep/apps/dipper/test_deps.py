@@ -208,11 +208,6 @@ class TestResolveExecutorHostForService:
         assert resolve_executor_host_for_service(executor_hosts, service) is None
 
 
-# ``get_pmm_api`` now lives in ``app.sep.deps`` (dipper re-exports it); its
-# behaviour -- including the ``ssl_cafile`` kwarg -- is covered by
-# ``tests/app/sep/test_deps.py::TestGetPmmApi``, so it is not re-tested here.
-
-
 def _named(*names: str) -> list[SimpleNamespace]:
     """Build a list of objects exposing a ``name`` attribute."""
     return [SimpleNamespace(name=name) for name in names]

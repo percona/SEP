@@ -24,16 +24,13 @@ from app.core.exceptions import HTTPServiceUnavailableException
 from app.sep.apps.report.models import REPORT_SECTION_LABELS
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
-
-# ``get_pmm_api`` / ``PMMAPIDep`` live in ``app.sep.deps`` alongside the sibling
-# Inventory / Tasks client deps; imported here (with the CA-aware ``ssl_cafile``)
-# so report shares one cached PMM client with consistent TLS verification instead
-# of a divergent copy that skipped the private-CA bundle.
 from app.sep.deps import (
     DefaultContext,
-    get_pmm_api,  # noqa: F401 -- re-exported for existing importers
+    get_pmm_api,
     PMMAPIDep,
 )
+
+__all__ = ["PMMAPIDep", "get_pmm_api"]
 
 logger = logging.getLogger(__name__)
 

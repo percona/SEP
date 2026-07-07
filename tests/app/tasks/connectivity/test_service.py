@@ -141,11 +141,9 @@ def _make_task_history(
 class _AdvancingClock:
     """Provide a deterministic monotonic clock for the connectivity poll loop.
 
-    ``check_connectivity`` measures its provisioning/connect budgets against
-    ``time.monotonic``. Real time would make budget tests slow (busy-looping
-    for tens of seconds) or flaky, so this clock advances only when the loop
-    awaits ``asyncio.sleep`` -- modelling wall time as the sum of the poll
-    intervals actually slept, which mirrors the loop's real pacing.
+    Advances only when the loop awaits ``asyncio.sleep``, modelling wall time as
+    the sum of the poll intervals slept -- so budget tests stay fast and
+    deterministic instead of busy-looping against the real clock.
     """
 
     def __init__(self) -> None:
@@ -176,10 +174,9 @@ class TestCheckConnectivityRealSession:
     def advancing_clock(self):
         """Advance the poll loop's wall clock only when it sleeps.
 
-        The service now charges its budgets against ``time.monotonic``; patch
-        both the clock and ``asyncio.sleep`` so a poll iteration advances time
-        by exactly its sleep interval, keeping budget-driven tests fast and
-        deterministic without busy-looping against the real clock.
+        Patch both ``time.monotonic`` and ``asyncio.sleep`` so a poll iteration
+        advances time by exactly its sleep interval, keeping budget-driven tests
+        fast and deterministic.
         """
         clock = _AdvancingClock()
         with (
@@ -1043,26 +1040,14 @@ class TestCheckConnectivityRealSession:
     ) -> None:
         """Verify the connect budget is charged for wall time spent off ``sleep``.
 
-        Regression for SEP-1507: the budget must be measured against
-        ``time.monotonic`` wall time, not a count of ``POLL_INTERVAL`` sleeps.
-        Each poll iteration also spends real time on ``sync_task_history`` Nomad
-        round-trips and two DB commits; a sleep-only budget would ignore that
-        time and let the server hold drift past the SEP→Tasks read timeout.
-
-        The connect phase starts on the first poll and the executor's first
-        ``sync_task_history`` burns more than the whole connect budget of wall
-        time **without sleeping** (it advances the shared monotonic clock
-        directly). It would flip the task to SUCCESS on its *second* call. A
-        wall-clock budget breaks on the very next top-of-loop check -- after a
-        single callback, before the SUCCESS flip -- so the check times out and
-        ``sync_task_history`` runs exactly once. A sleep-only budget would
-        charge only ``POLL_INTERVAL`` per iteration, never reach the budget,
-        and instead observe the second-call SUCCESS -- the discriminating
-        behaviour this test locks in.
+        The first ``sync_task_history`` burns the whole connect budget without
+        sleeping and would flip the task to SUCCESS on its *second* call. A
+        wall-clock budget breaks at the next top-of-loop check -- so the check
+        times out and ``sync_task_history`` runs exactly once; a sleep-only
+        budget would never expire and observe the second-call SUCCESS instead.
         """
-        # timeout >> POLL_INTERVAL (and the request-model max) so a sleep-only
-        # budget would need ~30 polls to expire, while the non-sleep callback
-        # time alone overruns the whole budget at once.
+        # timeout >> POLL_INTERVAL so a sleep-only budget would need ~30 polls to
+        # expire, while the non-sleep callback time overruns the budget at once.
         request = _make_request(timeout=POLL_INTERVAL * 30)
 
         call_count = {"n": 0}
@@ -1075,7 +1060,6 @@ class TestCheckConnectivityRealSession:
                 evaluation_id="eval-1",
                 job_id="job-1",
             )
-            # Connect phase is live from the first poll.
             self._mark_run_script_started(queue_item)
             saved = await TaskHistoryManager.save(
                 db, queue_item, flag_modified_fields=["execution_request"]
