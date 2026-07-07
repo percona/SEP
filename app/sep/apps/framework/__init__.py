@@ -102,6 +102,7 @@ from app.sep.apps.framework.script_source import ScriptSource
 from app.sep.apps.framework.spec import (
     assemble_envelope,
     EnvelopeSpec,
+    parse_server_list_config,
     resolve_refs,
     ResolvedEntities,
     RunCommandSpec,
@@ -190,6 +191,7 @@ __all__ = [
     "maybe_record_connectivity_warning",
     "none_present",
     "not_",
+    "parse_server_list_config",
     "present",
     "record_connectivity_warning",
     "resolve_refs",
