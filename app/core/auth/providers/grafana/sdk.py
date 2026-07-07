@@ -67,6 +67,8 @@ class GrafanaSDK(RemoteAPI):
         (the SPA's ``HttpOnly`` refresh cookie). Defaults to 7 days.
     :param error_detail_key: The key Grafana uses for error details. Defaults to
         "message".
+    :cvar session_cookie_name: The ``grafana_session`` cookie Grafana sets on a
+        successful password login.
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
@@ -76,7 +78,6 @@ class GrafanaSDK(RemoteAPI):
     refresh_token_max_age: TimedeltaSeconds = timedelta(days=7)
     error_detail_key: NonEmptyStr = "message"
 
-    #: Name of the session cookie Grafana sets on a successful password login.
     session_cookie_name: ClassVar[str] = "grafana_session"
 
     async def request(
