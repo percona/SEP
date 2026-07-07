@@ -22,7 +22,8 @@ from typing import Any, TYPE_CHECKING
 import yaml
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework.form_backfill_inventory import meta_service_hints
+from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
+from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.deps import parse_restore_task_data
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate
@@ -62,21 +63,15 @@ def _resolve_restore_service_id(
     ctx: FormBackfillContext,
 ) -> str | None:
     """Return the restore form ``service_id``, or ``None`` when unresolved."""
-    if ctx.service_lookup is None:
-        return None
-
-    host, port, service_name = meta_service_hints(
-        meta,
+    resolve_meta = meta
+    if parsed.get("host"):
+        resolve_meta = {**meta, "_service_name": None}
+    service_id = resolve_service_from_meta(
+        ctx,
+        resolve_meta,
+        ServiceTypeEnum.MYSQL,
         host=parsed.get("host"),
         port=parsed.get("port"),
-    )
-    if parsed.get("host"):
-        service_name = None
-    service_id = ctx.service_lookup.resolve(
-        service_type=ServiceTypeEnum.MYSQL,
-        host=host,
-        port=port,
-        service_name=service_name,
     )
     if service_id is None:
         return None
@@ -122,20 +117,12 @@ def reconstruct_mysql_restores_form(
     :param ctx: Shared backfill context carrying the inventory lookup tables.
     :return: A create-model-shaped dict, or ``None`` when reconstruction fails.
     """
-    if ctx.service_lookup is None:
-        return None
-
-    data = task.data
-    meta = data.get("meta")
-    if (
-        data.get("task") != "run-python"
-        or not isinstance(meta, dict)
-        or "config" not in meta
-    ):
+    meta = require_run_python_meta(task)
+    if meta is None:
         return None
 
     try:
-        parsed = parse_restore_task_data({"name": task.name, "data": data})
+        parsed = parse_restore_task_data({"name": task.name, "data": task.data})
     except (KeyError, TypeError, yaml.YAMLError):
         return None
 

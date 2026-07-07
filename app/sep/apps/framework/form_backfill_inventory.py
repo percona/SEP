@@ -35,6 +35,9 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from app.sep.apps.framework.form_backfill import FormBackfillContext
+
+
 __all__ = [
     "SchemaIdLookup",
     "ServiceIdLookup",
@@ -42,6 +45,7 @@ __all__ = [
     "load_schema_id_lookup",
     "load_service_id_lookup",
     "meta_service_hints",
+    "resolve_service_from_meta",
 ]
 
 _IN_SCOPE_SERVICE_TYPES = frozenset(
@@ -333,3 +337,35 @@ def meta_service_hints(
         service_name = None
 
     return resolved_host, resolved_port, service_name
+
+
+def resolve_service_from_meta(
+    ctx: FormBackfillContext,
+    meta: Mapping[str, Any],
+    service_type: ServiceTypeEnum,
+    *,
+    host: str | None = None,
+    port: int | None = None,
+) -> int | None:
+    """Resolve an inventory ``service_id`` from task ``meta`` for a reconstructor.
+
+    Wraps the :func:`meta_service_hints` -> :meth:`ServiceIdLookup.resolve` spine
+    the legacy form reconstructors share. Returns ``None`` when the run has no
+    service lookup or the hints do not resolve to a unique inventory service.
+
+    :param ctx: Shared backfill context carrying the inventory lookup table.
+    :param meta: The task ``data['meta']`` mapping.
+    :param service_type: The inventory service type to match.
+    :param host: An explicit host override from task YAML/config parsing.
+    :param port: An explicit port override from task YAML/config parsing.
+    :return: The matching service id, or ``None`` when unresolved.
+    """
+    if ctx.service_lookup is None:
+        return None
+    hint_host, hint_port, service_name = meta_service_hints(meta, host=host, port=port)
+    return ctx.service_lookup.resolve(
+        service_type=service_type,
+        host=hint_host,
+        port=hint_port,
+        service_name=service_name,
+    )
