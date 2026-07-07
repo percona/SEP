@@ -59,6 +59,7 @@ from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
 __all__ = [
     "RESERVED_FORM_KEY",
+    "RUN_PYTHON_TASK",
     "EnvelopeSpec",
     "ResolvedEntities",
     "RunCommandSpec",
@@ -74,7 +75,7 @@ __all__ = [
 
 RESERVED_FORM_KEY = "_form"
 _RUN_COMMAND_TASK = "run-command"
-_RUN_PYTHON_TASK = "run-python"
+RUN_PYTHON_TASK = "run-python"
 
 _REF_ENTITY_TYPES = {
     ServiceRef: SyncInventoryEntityTypeEnum.SERVICE,
@@ -168,7 +169,7 @@ class RunPythonSpec:
         :return: The run-python ``TaskWrite.data`` payload.
         """
         return {
-            "task": _RUN_PYTHON_TASK,
+            "task": RUN_PYTHON_TASK,
             "meta": {
                 "config": self.config,
                 "target": host,
@@ -313,9 +314,10 @@ async def resolve_refs(
     :param inventory_api: The inventory API client.
     :return: The resolved entities, the primary service (if any), and the
         captured executor host (``None`` when no ``HostRef`` is declared).
-    :raises ValueError: When the model declares more than one ``HostRef`` field, or
-        propagated from :func:`get_created_entity` on a single-type ``ServiceRef``
-        type mismatch.
+    :raises ValueError: When the model declares more than one ``HostRef`` field, when
+        a ``HostRef`` field submits a multi-value (list/set) selection that cannot
+        resolve to the single executor host, or propagated from
+        :func:`get_created_entity` on a single-type ``ServiceRef`` type mismatch.
     :raises HTTPBadRequestException: When a multi-type ``ServiceRef`` resolves to a
         service outside its allowed types.
     """
@@ -330,6 +332,14 @@ async def resolve_refs(
                     "resolve_refs found more than one HostRef field "
                     f"({host_field!r} and {key!r}); a model names at most one "
                     "executor host"
+                )
+            if ref.multiple:
+                raise ValueError(
+                    f"resolve_refs received a multi-value HostRef selection for field "
+                    f"{key!r}; a task envelope targets a single executor host and "
+                    "cannot resolve one from a list — declare a single-value HostRef "
+                    "for the executor target, or consume the multi-host list in a "
+                    "custom payload_builder"
                 )
             host_field = key
             executor_host = None if value is None else str(value)
@@ -471,7 +481,7 @@ def build_run_python_task(
     if service_name is not None:
         meta["_service_name"] = service_name
     data = {
-        "task": _RUN_PYTHON_TASK,
+        "task": RUN_PYTHON_TASK,
         "meta": meta,
         "payload": payload,
     }

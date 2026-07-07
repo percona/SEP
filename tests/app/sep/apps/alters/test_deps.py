@@ -39,7 +39,6 @@ from app.sep.apps.alters.deps import (
     get_alters_task_info,
     map_alters_legacy_form,
     parse_alters_task_args,
-    parse_single_arg,
     resolve_predecessor_specs,
 )
 from app.sep.apps.alters.models import AltersCreate
@@ -471,12 +470,11 @@ def test_parse_alters_task_args_recursion_dsn_strips_h_p():
     assert out["dsn_table"] == "D=dbx,t=tbl"
 
 
-def test_parse_single_arg_recursion_dsn_only_host_port():
-    """dsn= value with only h=/P= keeps full string as dsn_table."""
-    fv = parse_alters_task_args({"args": "--execute"})
-    parse_single_arg("--recursion-method=dsn=h=1,P=2", fv)
-    assert fv["recursion_method"] == "dsn"
-    assert fv["dsn_table"] == "h=1,P=2"
+def test_parse_alters_task_args_recursion_dsn_only_host_port():
+    """Keep the whole dsn= value as dsn_table when it has only h=/P= parts."""
+    out = parse_alters_task_args({"args": "--recursion-method=dsn=h=1,P=2 --execute"})
+    assert out["recursion_method"] == "dsn"
+    assert out["dsn_table"] == "h=1,P=2"
 
 
 @pytest.mark.asyncio

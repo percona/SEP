@@ -15,14 +15,17 @@
 
 """Tests for legacy form backfill inventory service resolution."""
 
+import logging
 from types import SimpleNamespace
 
 import pytest
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework.form_backfill import FormBackfillContext
 from app.sep.apps.framework.form_backfill_inventory import (
     default_port_for_service_type,
     meta_service_hints,
+    resolve_service_from_meta,
     SchemaIdLookup,
     ServiceIdLookup,
 )
@@ -197,6 +200,121 @@ def test_meta_service_hints_honors_explicit_host_and_port_overrides():
     assert host == "db.internal"
     assert port == expected_port
     assert service_name is None
+
+
+def _mysql_lookup(*services: SimpleNamespace) -> ServiceIdLookup:
+    """Build a MySQL service lookup, defaulting to one 10.0.0.9:3306 service."""
+    if not services:
+        services = (
+            _service(
+                21,
+                service_type=ServiceTypeEnum.MYSQL,
+                name="db1",
+                address="10.0.0.9",
+                port=3306,
+            ),
+        )
+    return ServiceIdLookup.from_services(services)
+
+
+def test_resolve_service_from_meta_resolves_by_address():
+    """Resolve a service id from the meta connectivity host/port keys."""
+    expected_service_id = 21
+    ctx = FormBackfillContext(
+        log=logging.getLogger("test"), service_lookup=_mysql_lookup()
+    )
+    meta = {CONNECTIVITY_META_HOST_KEY: "10.0.0.9", CONNECTIVITY_META_PORT_KEY: 3306}
+
+    assert (
+        resolve_service_from_meta(ctx, meta, ServiceTypeEnum.MYSQL)
+        == expected_service_id
+    )
+
+
+def test_resolve_service_from_meta_honors_explicit_host_and_port():
+    """Prefer explicit host/port overrides over meta connectivity keys."""
+    expected_service_id = 22
+    lookup = ServiceIdLookup.from_services(
+        [
+            _service(
+                expected_service_id,
+                service_type=ServiceTypeEnum.POSTGRESQL,
+                name="pg1",
+                address="db.internal",
+                port=5432,
+            )
+        ]
+    )
+    ctx = FormBackfillContext(log=logging.getLogger("test"), service_lookup=lookup)
+    meta = {CONNECTIVITY_META_HOST_KEY: "10.0.0.9", CONNECTIVITY_META_PORT_KEY: 3306}
+
+    assert (
+        resolve_service_from_meta(
+            ctx,
+            meta,
+            ServiceTypeEnum.POSTGRESQL,
+            host="db.internal",
+            port=5432,
+        )
+        == expected_service_id
+    )
+
+
+def test_resolve_service_from_meta_falls_back_to_service_name():
+    """Use ``_service_name`` when the stored host does not match."""
+    expected_service_id = 23
+    lookup = ServiceIdLookup.from_services(
+        [
+            _service(
+                expected_service_id,
+                service_type=ServiceTypeEnum.MYSQL,
+                name="prod-mysql",
+                address="10.0.0.9",
+                port=3306,
+            )
+        ]
+    )
+    ctx = FormBackfillContext(log=logging.getLogger("test"), service_lookup=lookup)
+    meta = {"_service_host": "127.0.0.1", "_service_name": "prod-mysql"}
+
+    assert (
+        resolve_service_from_meta(ctx, meta, ServiceTypeEnum.MYSQL)
+        == expected_service_id
+    )
+
+
+def test_resolve_service_from_meta_returns_none_without_service_lookup():
+    """Return ``None`` when the run has no inventory service lookup."""
+    ctx = FormBackfillContext(log=logging.getLogger("test"), service_lookup=None)
+    meta = {CONNECTIVITY_META_HOST_KEY: "10.0.0.9", CONNECTIVITY_META_PORT_KEY: 3306}
+
+    assert resolve_service_from_meta(ctx, meta, ServiceTypeEnum.MYSQL) is None
+
+
+def test_resolve_service_from_meta_returns_none_for_ambiguous_match():
+    """Return ``None`` when the meta hints match more than one service."""
+    ctx = FormBackfillContext(
+        log=logging.getLogger("test"),
+        service_lookup=_mysql_lookup(
+            _service(
+                1,
+                service_type=ServiceTypeEnum.MYSQL,
+                name="db-a",
+                address="10.0.0.9",
+                port=3306,
+            ),
+            _service(
+                2,
+                service_type=ServiceTypeEnum.MYSQL,
+                name="db-b",
+                address="10.0.0.9",
+                port=3306,
+            ),
+        ),
+    )
+    meta = {CONNECTIVITY_META_HOST_KEY: "10.0.0.9", CONNECTIVITY_META_PORT_KEY: 3306}
+
+    assert resolve_service_from_meta(ctx, meta, ServiceTypeEnum.MYSQL) is None
 
 
 def _schema(schema_id: int, *, service_id: int, name: str) -> SimpleNamespace:
