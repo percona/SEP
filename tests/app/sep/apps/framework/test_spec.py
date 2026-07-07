@@ -952,7 +952,9 @@ class TestBuildRunPythonTask:
 
         assert write.alert_on_fail is True
 
-    @pytest.mark.parametrize("reserved_key", ["task", "meta", "payload"])
+    @pytest.mark.parametrize(
+        "reserved_key", ["task", "meta", "payload", RESERVED_FORM_KEY]
+    )
     def test_extra_data_reserved_key_collision_raises(self, reserved_key: str) -> None:
         """Reject an ``extra_data`` key that collides with a reserved envelope key."""
         with pytest.raises(ValueError, match="reserved"):

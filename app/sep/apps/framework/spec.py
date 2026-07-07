@@ -456,8 +456,9 @@ def build_run_python_task(
     :param alert_on_fail: Whether to alert on task failure. Defaults to ``False``.
     :return: The assembled ``TaskWrite``, ready to POST to the Tasks API.
     :raises ValueError: When an ``extra_data`` key collides with a reserved
-        top-level envelope key (``task`` / ``meta`` / ``payload``), which would
-        silently overwrite the envelope rather than add a new key.
+        top-level envelope key — ``task`` / ``meta`` / ``payload`` (the envelope
+        structure) or ``_form`` (reserved for :func:`stamp_form_input`) — which
+        would silently overwrite the envelope or later break the form stamp.
     """
     meta = {
         "config": config,
@@ -471,10 +472,11 @@ def build_run_python_task(
         "meta": meta,
         "payload": payload,
     }
+    reserved_keys = {*data, RESERVED_FORM_KEY}
     for key, value in (extra_data or {}).items():
-        if key in data:
+        if key in reserved_keys:
             raise ValueError(
-                f"extra_data key {key!r} collides with a reserved run-python "
+                f"extra_data key {key!r} collides with a reserved top-level "
                 "envelope key; callers may only add new top-level data keys"
             )
         data[key] = value
