@@ -15,6 +15,7 @@
 
 """Define tests for the Grafana SDK."""
 
+import logging
 from http.cookies import SimpleCookie
 from unittest.mock import AsyncMock, MagicMock
 
@@ -83,12 +84,41 @@ async def test_login_returns_session_cookie():
 
 @pytest.mark.asyncio
 async def test_login_raises_unauthorized_on_bad_credentials():
-    """Verify a non-200 login response raises ``HTTPUnauthorizedException``."""
+    """Verify a 401 login response raises ``HTTPUnauthorizedException``."""
     sdk = _sdk()
     _attach_session(sdk, _mock_response(status=401))
 
     with pytest.raises(HTTPUnauthorizedException):
         await sdk.login("alice", "wrong")
+
+
+@pytest.mark.asyncio
+async def test_login_raises_grafana_error_on_upstream_failure():
+    """Verify a non-401 error status surfaces as ``GrafanaException``, not a 401.
+
+    A Grafana outage (5xx) or throttling (429) must not be reported to the user
+    as bad credentials.
+    """
+    sdk = _sdk()
+    _attach_session(sdk, _mock_response(status=500))
+
+    with pytest.raises(GrafanaException, match="login failed"):
+        await sdk.login("alice", "secret")
+
+
+@pytest.mark.asyncio
+async def test_login_does_not_log_password(caplog):
+    """Verify the login password never reaches the debug request log."""
+    sdk = _sdk()
+    cookies = SimpleCookie()
+    cookies["grafana_session"] = _SESSION_VALUE
+    _attach_session(sdk, _mock_response(status=200, cookies=cookies))
+
+    with caplog.at_level(logging.DEBUG):
+        await sdk.login("alice", "super-secret-pw")
+
+    assert "super-secret-pw" not in caplog.text
+    assert "****" in caplog.text
 
 
 @pytest.mark.asyncio

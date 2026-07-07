@@ -111,9 +111,10 @@ class GrafanaSDK(RemoteAPI):
         :param username: The Grafana username.
         :param password: The Grafana password.
         :return: The value of the established ``grafana_session`` cookie.
-        :raises HTTPUnauthorizedException: If the credentials are rejected.
-        :raises GrafanaException: If Grafana establishes no session or cannot be
-            reached.
+        :raises HTTPUnauthorizedException: If Grafana rejects the credentials
+            (HTTP 401).
+        :raises GrafanaException: If Grafana returns an unexpected status,
+            establishes no session, or cannot be reached.
         """
         try:
             async with self._request(
@@ -121,8 +122,12 @@ class GrafanaSDK(RemoteAPI):
                 "/login",
                 json={"user": username, "password": password},
             ) as response:
-                if response.status != status.HTTP_200_OK:
+                if response.status == status.HTTP_401_UNAUTHORIZED:
                     raise HTTPUnauthorizedException("Invalid username or password")
+                if response.status != status.HTTP_200_OK:
+                    raise GrafanaException(
+                        detail=f"Grafana login failed (HTTP {response.status})."
+                    )
                 session_cookie = response.cookies.get(self.session_cookie_name)
                 if session_cookie is None:
                     raise GrafanaException(
