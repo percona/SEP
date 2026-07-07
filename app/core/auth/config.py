@@ -24,6 +24,7 @@ from pydantic_settings import SettingsConfigDict
 
 from app.core.auth.base import BaseAuthProvider
 from app.core.auth.providers.casdoor.provider import CasdoorAuthProvider
+from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import BaseYamlSettings
 from app.core.utils import import_var
 
@@ -39,6 +40,7 @@ class AuthProviderEnum(Enum):
     """
 
     CASDOOR = CasdoorAuthProvider
+    GRAFANA = GrafanaAuthProvider
     CUSTOM = "custom"
 
 

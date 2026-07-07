@@ -33,11 +33,17 @@ from app.core.auth.config import AuthSettings, detect_removed_auth_user_model
 from app.core.auth.models import BaseTokenPayload, BaseUser
 from app.core.auth.providers.casdoor.models import CasdoorTokenPayload, CasdoorUser
 from app.core.auth.providers.casdoor.provider import CasdoorAuthProvider
+from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 
 _CASDOOR_CONFIG = {
     "endpoint": "http://localhost:9999",
     "client_id": "test-client-id",
     "client_secret": "test-client-secret",
+}
+
+_GRAFANA_CONFIG = {
+    "endpoint": "https://grafana.example.com",
+    "service_account_token": "test-service-account-token",
 }
 
 
@@ -96,9 +102,20 @@ class TestAuthSettingsResolution:
         settings = IsolatedAuthSettings(PROVIDER={name: _CASDOOR_CONFIG})
         assert isinstance(settings.active_provider, CasdoorAuthProvider)
 
+    def test_builtin_grafana_resolves_via_enum(self):
+        """Verify the Grafana name resolves to its provider class via the enum."""
+        settings = IsolatedAuthSettings(PROVIDER={"grafana": _GRAFANA_CONFIG})
+        assert isinstance(settings.active_provider, GrafanaAuthProvider)
+        assert (
+            settings.active_provider.service_account_token.get_secret_value()
+            == "test-service-account-token"
+        )
+
     def test_unknown_provider_errors_clearly(self):
         """Verify an unknown provider name errors and lists the available names."""
-        with pytest.raises(ValidationError, match="available: casdoor, custom"):
+        with pytest.raises(
+            ValidationError, match="available: casdoor, custom, grafana"
+        ):
             IsolatedAuthSettings(PROVIDER={"okta": _CASDOOR_CONFIG})
 
     @pytest.mark.parametrize("class_key", ["PROVIDER_CLASS", "provider_class"])
