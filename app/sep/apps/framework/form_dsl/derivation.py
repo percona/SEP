@@ -65,6 +65,10 @@ from app.sep.apps.framework.schema import (
     IntegerField,
     ListView,
     MultiChoiceField,
+    MultiHostField,
+    MultiSchemaField,
+    MultiServiceField,
+    MultiTableField,
     OneOfBranch,
     OneOfGroup,
     SchemaField,
@@ -94,6 +98,12 @@ _REF_BRANCH_META: dict[type, tuple[str, str]] = {
     TableRef: ("table", "Table"),
     HostRef: ("host", "Host"),
 }
+_REF_FIELD_CLASSES: dict[type, tuple[type[BaseField], type[BaseField]]] = {
+    ServiceRef: (ServiceField, MultiServiceField),
+    SchemaRef: (SchemaField, MultiSchemaField),
+    TableRef: (TableField, MultiTableField),
+    HostRef: (HostField, MultiHostField),
+}
 _MIN_ONE_OF_BRANCHES = 2
 _NONE_TYPE = type(None)
 _SIMPLE_SCALAR_FIELDS: dict[type, type[BaseField]] = {
@@ -119,15 +129,15 @@ class _FieldSpec:
 
 
 def resolve_base(annotation: Any) -> tuple[Any, bool]:
-    """Return ``(base, is_list)`` after stripping ``Annotated`` / ``| None`` / list.
+    """Return ``(base, is_list)`` after stripping ``Annotated`` / ``| None`` / list/set.
 
     ``Annotated`` wrappers, ``None``/``EmptyStrToNone`` union members, and a
-    ``list[...]`` container are peeled away so the inference sees the underlying
-    scalar (and learns whether the field is a list).
+    ``list[...]`` / ``set[...]`` container are peeled away so the inference sees
+    the underlying scalar (and learns whether the field is a collection).
 
     :param annotation: The field's resolved annotation.
     :return: The base type (or ``Literal[...]`` / enum class) and whether the
-        field is a list.
+        field is a list or set.
     """
     current = _strip_annotated(annotation)
     if get_origin(current) in (Union, UnionType):
@@ -137,7 +147,7 @@ def resolve_base(annotation: Any) -> tuple[Any, bool]:
             if (stripped := _strip_annotated(arg)) is not _NONE_TYPE
         ]
         current = members[0] if members else _NONE_TYPE
-    if get_origin(current) is list:
+    if get_origin(current) in (list, set):
         return _strip_annotated(get_args(current)[0]), True
     return current, False
 
@@ -355,18 +365,24 @@ def _string_constraints(metadata: list[Any]) -> dict[str, Any]:
     return {"min_length": min_length, "max_length": max_length, "pattern": pattern}
 
 
-def _build_ref_field(ref: Any, ui: Ui, common: dict[str, Any]) -> BaseField:
+def _build_ref_field(
+    ref: Any, ui: Ui, common: dict[str, Any], *, multiple: bool = False
+) -> BaseField:
     """Return the reference field selected by ``ref`` with its extras applied.
 
     :param ref: The reference marker driving the field class.
     :param ui: The field's ``Ui`` marker, source of a cascade ``depends_on``.
     :param common: The shared ``BaseField`` keyword arguments.
+    :param multiple: When ``True``, pick the multi-value field class from the
+        marker's ``(single, multi)`` pair. Defaults to ``False``.
     :return: The derived reference field.
     :raises ValueError: When a cascade reference omits ``Ui(depends_on=...)``.
     """
     allow_custom = ref.allow_custom or None
+    single_class, multi_class = _REF_FIELD_CLASSES[type(ref)]
+    field_class = multi_class if multiple else single_class
     if isinstance(ref, ServiceRef):
-        return ServiceField(
+        return field_class(
             **common, service_types=list(ref.service_types), allow_custom=allow_custom
         )
     if isinstance(ref, SchemaRef | TableRef):
@@ -376,11 +392,10 @@ def _build_ref_field(ref: Any, ui: Ui, common: dict[str, Any]) -> BaseField:
                 "Ui(depends_on=...); a SchemaRef / TableRef must name the field "
                 "whose value drives its options"
             )
-        field_class = SchemaField if isinstance(ref, SchemaRef) else TableField
         return field_class(
             **common, depends_on=ui.depends_on, allow_custom=allow_custom
         )
-    return HostField(**common, allow_custom=allow_custom)
+    return field_class(**common, allow_custom=allow_custom)
 
 
 def _union_model_members(annotation: Any) -> list[type[BaseModel]]:
@@ -527,6 +542,12 @@ def _derive_multi_ref_one_of(
     metadata: list[Any],
 ) -> OneOfGroup:
     """Derive a :class:`OneOfGroup` when multiple reference markers share one field."""
+    if any(ref.multiple for ref in ref_markers):
+        raise ValueError(
+            f"field {name!r} declares multiple reference markers with multiple=True; "
+            "multi-value one-of reference unions are not supported — use a single "
+            "reference marker per field for multi-value selection"
+        )
     common = {
         "name": name,
         "label": _field_label(name, ui),
@@ -613,13 +634,28 @@ def _build_base_field(
     ref_markers = [item for item in metadata if isinstance(item, _REF_TYPES)]
     if ref_markers:
         ref = ref_markers[0]
-        if ref.allow_custom and not _annotation_accepts_str(field_info.annotation):
+        base, is_list = resolve_base(field_info.annotation)
+        if ref.multiple and not is_list:
+            raise ValueError(
+                f"field {name!r} sets multiple=True on its reference marker but its "
+                "annotation is not a list/set; a multi-value reference must back a "
+                "list[...] or set[...] type so the model accepts the submitted values"
+            )
+        if is_list and not ref.multiple:
+            raise ValueError(
+                f"field {name!r} has a list/set annotation but its reference marker "
+                "does not set multiple=True; set multiple=True to derive a "
+                "multi-value reference field, or use a scalar annotation for a "
+                "single-value one"
+            )
+        allow_custom_target = base if ref.multiple else field_info.annotation
+        if ref.allow_custom and not _annotation_accepts_str(allow_custom_target):
             raise ValueError(
                 f"field {name!r} sets allow_custom=True but its annotation does not "
                 "accept str; widen it to include str (e.g. int | str) so the model "
                 "accepts the free-typed value the schema advertises"
             )
-        return _build_ref_field(ref, ui, common)
+        return _build_ref_field(ref, ui, common, multiple=ref.multiple)
 
     base, is_list = resolve_base(field_info.annotation)
     choices = _find_marker(metadata, (Choices,))

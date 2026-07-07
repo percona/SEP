@@ -132,6 +132,25 @@ export function coerceFormValues(
         setAtPath(out, field.name, undefined);
       }
     }
+    if (
+      field.type === 'multi_service' ||
+      field.type === 'multi_schema' ||
+      field.type === 'multi_table' ||
+      field.type === 'multi_host'
+    ) {
+      if (Array.isArray(raw)) {
+        const normalized = raw
+          .map((entry) =>
+            entry && typeof entry === 'object' && 'id' in (entry as Record<string, unknown>)
+              ? (entry as { id: unknown }).id
+              : entry,
+          )
+          .filter((entry) => entry !== '' && entry !== null && entry !== undefined);
+        setAtPath(out, field.name, normalized);
+      } else if (raw === '' || raw === null || raw === undefined) {
+        setAtPath(out, field.name, []);
+      }
+    }
   }
   return out;
 }
