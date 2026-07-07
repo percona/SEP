@@ -225,54 +225,14 @@
         "title": "AltersCreate",
         "type": "object"
       },
-      "AltersExecuteWrite": {
-        "description": "Represent a JSON request body for executing an alters task.\n\n:param eta: Optional future datetime to schedule execution.\n:param chain_task_names: Optional list of task names to chain after this one.\n:param chain_on_failure: Whether to run chained tasks even on failure.",
+      "AltersTaskResponse": {
+        "description": "Represent an alters task API response for list and detail surfaces.\n\nAdd no fields of its own — the alters list/detail surface is exactly the\nshared task-response surface. The create/update routes return the\n:data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models\nderived from this base, which add ``connectivity_warning`` per the\nframework's derived create-response standard.",
         "properties": {
-          "chain_on_failure": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain On Failure"
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
           },
-          "chain_task_names": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Chain Task Names"
-          },
-          "eta": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Eta"
-          }
-        },
-        "title": "AltersExecuteWrite",
-        "type": "object"
-      },
-      "AltersExecutionResponse": {
-        "description": "Represent the response from POST /api/apps/alters/{task_name}/execute.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
-        "properties": {
-          "task_id": {
+          "anonymize_mask": {
             "anyOf": [
               {
                 "type": "integer"
@@ -281,28 +241,29 @@
                 "type": "null"
               }
             ],
-            "title": "Task Id"
+            "title": "Anonymize Mask"
           },
-          "task_name": {
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name"
-        ],
-        "title": "AltersExecutionResponse",
-        "type": "object"
-      },
-      "AltersTaskResponse": {
-        "description": "Represent an alters task API response for list and detail surfaces.\n\nThe create/update routes return the\n:data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models\nderived from this base; both add ``connectivity_warning`` per the framework's\nderived create-response standard, so the always-null warning field stays off\nlist/detail rows.\n\n:param name: The name of the alters task.\n:param owner: The entity or user that owns the task.\n:param service_type: The type of database service (always MySQL for alters).\n:param status: The current execution status of the task.\n:param id: The unique identifier for the alters task.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for the alter execution.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: The user who initiated the task.\n:param last_updated_by: The user who last modified the task record.",
-        "properties": {
-          "alert_on_fail": {
-            "title": "Alert On Fail",
-            "type": "boolean"
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -403,7 +364,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "AltersTaskResponse",
         "type": "object"
@@ -415,6 +377,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -527,7 +509,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "AltersTaskResponseCreate",
         "type": "object"
@@ -539,6 +522,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -651,7 +654,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "AltersTaskResponseUpdate",
         "type": "object"
@@ -3143,6 +3147,75 @@
         "title": "TaskBackendEnum",
         "type": "string"
       },
+      "TaskExecuteWrite": {
+        "description": "Represent the default JSON request body for executing a task.\n\n:param eta: Optional future datetime to schedule execution.\n:param chain_task_names: Optional list of task names to chain after this one.\n:param chain_on_failure: Whether to run chained tasks even on failure.",
+        "properties": {
+          "chain_on_failure": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain On Failure"
+          },
+          "chain_task_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chain Task Names"
+          },
+          "eta": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta"
+          }
+        },
+        "title": "TaskExecuteWrite",
+        "type": "object"
+      },
+      "TaskExecutionResponse": {
+        "description": "Represent the default response from a task execute route.\n\n:param task_name: The name of the task that was executed.\n:param task_id: The id of the task-history row created by the tasks API.",
+        "properties": {
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_name": {
+            "title": "Task Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_name"
+        ],
+        "title": "TaskExecutionResponse",
+        "type": "object"
+      },
       "TaskHistoryStatusEnum": {
         "description": "Define status codes for task executions.\n\n:cvar FAILED: Enum value for failed tasks.\n:vartype FAILED: str\n:cvar PENDING: Enum value for pending tasks.\n:vartype PENDING: str\n:cvar RUNNING: Enum value for running tasks.\n:vartype RUNNING: str\n:cvar SUCCESS: Enum value for successfully completed tasks.\n:vartype SUCCESS: str\n:cvar STOPPED: Enum value for stopped tasks.\n:vartype STOPPED: str\n:cvar LOST: Enum value for tasks that are lost.\n:vartype LOST: str\n:cvar STALE: Enum value for tasks skipped because Nomad placement\n    exceeded the configured staleness threshold.\n:vartype STALE: str",
         "enum": [
@@ -3737,7 +3810,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AltersExecuteWrite"
+                "$ref": "#/components/schemas/TaskExecuteWrite"
               }
             }
           },
@@ -3748,7 +3821,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AltersExecutionResponse"
+                  "$ref": "#/components/schemas/TaskExecutionResponse"
                 }
               }
             },

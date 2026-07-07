@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 import yaml
 
+from app.core.utils.path import resolve_payload_reference
 from app.sep.apps.mysql_backups.deps import (
     _extract_backup_type_from_task,
     build_backup_task_payload,
@@ -118,6 +119,11 @@ async def test_build_backup_task_payload(
 
     data = task_payload.data
     assert data["task"] == "run-python"
+    assert (
+        data["payload"]
+        == f"file://app/sep/apps/mysql_backups/{expected_payload_filename}"
+    )
+    assert resolve_payload_reference(data["payload"]).is_file()
 
     meta = data["meta"]
     assert meta["target"] == form_data["hostname"]

@@ -15,23 +15,19 @@
 
 """Tests for the backup_pg create form and JSON API Pydantic models."""
 
-from datetime import datetime, timedelta, UTC
-
 import pytest
 from pydantic import ValidationError
 
 from app.sep.apps.backup_pg.models import (
-    BackupExecuteWrite,
-    BackupExecutionResponse,
     BackupPgForm,
     BackupTaskDetailResponse,
     BackupTaskResponse,
     PgBackRestBackupType,
 )
+from app.sep.apps.framework import BaseTaskResponse
 from app.tasks.models import TaskBackendEnum, TaskOwner
 
 DEFAULT_PG_PORT = 5432
-SAMPLE_TASK_ID = 99
 SAMPLE_BACKUP_DIR = "/var/lib/pgbackrest"
 
 
@@ -195,21 +191,6 @@ def test_backup_pg_form_rejects_negative_retention() -> None:
         )
 
 
-def test_backup_execute_write_accepts_eta_and_chain() -> None:
-    """BackupExecuteWrite accepts eta and chain options as optional."""
-    eta = datetime.now(tz=UTC) + timedelta(hours=1)
-
-    body = BackupExecuteWrite(
-        eta=eta,
-        chain_task_names=["next-task"],
-        chain_on_failure=True,
-    )
-
-    assert body.chain_task_names == ["next-task"]
-    assert body.chain_on_failure is True
-    assert body.eta == eta
-
-
 def test_backup_task_response_roundtrips_owner_and_backup_type() -> None:
     """BackupTaskResponse serializes owner and backup_type cleanly."""
     response = BackupTaskResponse(
@@ -225,8 +206,13 @@ def test_backup_task_response_roundtrips_owner_and_backup_type() -> None:
 
     dumped = response.model_dump(mode="json")
 
+    assert isinstance(response, BaseTaskResponse)
     assert dumped["owner"] == TaskOwner.BACKUP_PG.value
     assert dumped["backup_type"] == "P"
+    assert dumped["service_type"] is None
+    assert "anonymize_mask" in dumped
+    assert "anonymized_entities" in dumped
+    assert "connectivity_warning" in dumped
 
 
 def test_backup_task_detail_response_inherits_response_fields() -> None:
@@ -245,11 +231,3 @@ def test_backup_task_detail_response_inherits_response_fields() -> None:
     assert detail.created_at is None
     assert detail.host is None
     assert detail.port is None
-
-
-def test_backup_execution_response_returns_task_name_and_id() -> None:
-    """BackupExecutionResponse round-trips task_name and task_id."""
-    response = BackupExecutionResponse(task_name="pg-task", task_id=SAMPLE_TASK_ID)
-
-    assert response.task_name == "pg-task"
-    assert response.task_id == SAMPLE_TASK_ID

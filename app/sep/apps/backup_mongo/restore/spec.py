@@ -28,6 +28,7 @@ from pathlib import Path
 
 import yaml
 
+from app.core.utils.path import to_payload_reference
 from app.sep.apps.backup_mongo.restore.models import (
     PbmForceResyncPayloadModel,
     PbmListPayloadModel,
@@ -57,7 +58,7 @@ def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
     data = {
         "task": "run-python",
         "meta": meta,
-        "payload": f"file://{Path(__file__).parent / leg.payload_name}",
+        "payload": to_payload_reference(Path(__file__).parent / leg.payload_name),
         **({"parent": leg.parent} if leg.parent is not None else {}),
     }
     return TaskWrite(

@@ -235,9 +235,14 @@ class TestAltersApiList:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data) == 1
-        assert data[0]["name"] == DEFAULT_PARENT_NAME
-        assert data[0]["service_type"] == ServiceTypeEnum.MYSQL.value
-        assert data[0]["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        row = data[0]
+        assert row["name"] == DEFAULT_PARENT_NAME
+        assert row["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert row["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        assert "anonymize_mask" in row
+        assert isinstance(row["anonymized_entities"], list)
+        assert "connectivity_warning" in row
+        assert row["connectivity_warning"] is None
         mock_task_api_dep.post.assert_awaited_once_with(
             "/history/latest", json={"names": [DEFAULT_PARENT_NAME]}
         )
@@ -275,6 +280,11 @@ class TestAltersApiDetail:
         body = response.json()
         assert body["name"] == DEFAULT_PARENT_NAME
         assert body["status"] == TaskHistoryStatusEnum.RUNNING.value
+        assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "anonymize_mask" in body
+        assert isinstance(body["anonymized_entities"], list)
+        assert "connectivity_warning" in body
+        assert body["connectivity_warning"] is None
 
     def test_detail_resolves_satellite_name_to_parent(
         self, test_client, mock_task_api_dep
@@ -322,6 +332,11 @@ class TestAltersApiCreate:
         )
 
         assert response.status_code == status.HTTP_201_CREATED
+        create_body = response.json()
+        assert create_body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "anonymize_mask" in create_body
+        assert "anonymized_entities" in create_body
+        assert "connectivity_warning" in create_body
         assert mock_task_api_dep.post.await_count == EXPECTED_CASCADE_CREATE_POSTS
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
         assert first_post["owner"] == TaskOwner.ALTERS.value
@@ -421,6 +436,11 @@ class TestAltersApiUpdate:
         )
 
         assert response.status_code == status.HTTP_200_OK
+        update_body = response.json()
+        assert update_body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "anonymize_mask" in update_body
+        assert "anonymized_entities" in update_body
+        assert "connectivity_warning" in update_body
         assert mock_task_api_dep.put.await_count == EXPECTED_CASCADE_UPDATE_PUTS
         put_paths = [c.args[0] for c in mock_task_api_dep.put.await_args_list]
         assert put_paths == [
