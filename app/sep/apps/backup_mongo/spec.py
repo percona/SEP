@@ -113,12 +113,8 @@ def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
     backup_config_dict = {}
 
     if form.backup_priority:
-        # Validated at create time (see BackupPriorityYaml); re-parse here so the PBM
-        # config carries the node -> priority mapping. A present priority is never
-        # silently dropped — malformed input is rejected before reaching this builder.
-        priority_parsed = parse_backup_priority(form.backup_priority)
-        if priority_parsed:
-            backup_config_dict["priority"] = priority_parsed
+        # Already validated at create time (BackupPriorityYaml), so this won't raise.
+        backup_config_dict["priority"] = parse_backup_priority(form.backup_priority)
 
     if form.backup_compression:
         backup_config_dict["compression"] = form.backup_compression

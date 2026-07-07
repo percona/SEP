@@ -107,22 +107,18 @@ def parse_backup_priority(priority_str: str) -> dict[str, float]:
     except yaml.YAMLError as exc:
         raise ValueError(f"Node priority is not valid YAML: {exc}") from exc
     if not isinstance(parsed, dict):
-        # ValueError (not TypeError) so Pydantic converts this into a 422 validation
-        # error rather than letting it escape as a 500.
+        # Raise ValueError, not TypeError, so Pydantic surfaces a 422 instead of a 500.
         raise ValueError(  # noqa: TRY004
             "Node priority must be a YAML mapping of node address to priority number"
         )
     if not parsed:
-        # A present-but-empty mapping (e.g. ``{}``) would otherwise parse cleanly and
-        # then be dropped as falsy in the spec builder — the same silent-drop the fix
-        # exists to prevent. Reject it so a present field always takes effect.
+        # A present-but-empty mapping would be dropped as falsy in the spec builder;
+        # reject it so a present field always takes effect.
         raise ValueError("Node priority mapping is empty; provide at least one node")
     result: dict[str, float] = {}
     for node, value in parsed.items():
-        # ``bool`` is a subclass of ``int``, so ``float(True)`` is ``1.0`` — reject
-        # booleans explicitly rather than silently coercing them to a priority.
+        # Reject booleans explicitly — they would otherwise coerce to 1.0 / 0.0.
         if isinstance(value, bool) or not isinstance(value, int | float):
-            # ValueError (not TypeError) so Pydantic surfaces this as a 422.
             raise ValueError(  # noqa: TRY004
                 f"Priority for {node!r} must be a number, got {value!r}"
             )

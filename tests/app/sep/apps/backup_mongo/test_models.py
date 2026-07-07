@@ -92,6 +92,21 @@ class TestParseBackupPriority:
         with pytest.raises(ValueError, match="number"):
             parse_backup_priority('"h1:27018": high')
 
+    def test_accepts_float_value(self) -> None:
+        """Preserve a fractional priority as a float."""
+        assert parse_backup_priority('"h1:27018": 2.5') == {"h1:27018": 2.5}
+
+    def test_rejects_null_value(self) -> None:
+        """Raise ValueError on a YAML null priority value."""
+        with pytest.raises(ValueError, match="number"):
+            parse_backup_priority('"h1:27018": null')
+
+    @pytest.mark.parametrize("value", ['"h1:27018": {"a": 1}', '"h1:27018": [1, 2]'])
+    def test_rejects_collection_value(self, value: str) -> None:
+        """Raise ValueError when a priority value is a mapping or list."""
+        with pytest.raises(ValueError, match="number"):
+            parse_backup_priority(value)
+
     @pytest.mark.parametrize("value", ["{}", "  "])
     def test_rejects_empty_mapping(self, value: str) -> None:
         """Raise ValueError on a present-but-empty mapping (would be silently dropped)."""
