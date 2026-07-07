@@ -242,6 +242,28 @@ async def test_mock_task_api_latest_status_per_name() -> None:
         "/history/latest", json={"names": ["t-resolved", "t-no-history", "t-unknown"]}
     )
 
+    # Legacy endpoint yields bare status strings, not projection objects.
+    assert result["t-resolved"] == TaskHistoryStatusEnum.SUCCESS.value
+    assert result["t-no-history"] is None
+    assert result["t-unknown"] is None
+
+
+@pytest.mark.asyncio
+async def test_mock_task_api_latest_full_per_name() -> None:
+    """Assert ``/history/latest/full`` returns the projection, null if absent."""
+    api = MockTaskAPI()
+    api.seed_task(
+        "t-resolved",
+        owner=SYNTH_OWNER,
+        statuses=[TaskHistoryStatusEnum.SUCCESS, TaskHistoryStatusEnum.FAILED],
+    )
+    api.seed_task("t-no-history", owner=SYNTH_OWNER, statuses=[])
+
+    result = await api.post(
+        "/history/latest/full",
+        json={"names": ["t-resolved", "t-no-history", "t-unknown"]},
+    )
+
     assert result["t-resolved"]["status"] == TaskHistoryStatusEnum.SUCCESS.value
     assert result["t-no-history"] is None
     assert result["t-unknown"] is None

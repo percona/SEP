@@ -187,7 +187,7 @@ class TestRestoreMongoApiList:
         assert body["items"][1]["status"] is None
         assert mock_task_api_dep.get.await_count == EXPECTED_RESTORE_PARENT_LIST_GETS
         mock_task_api_dep.post.assert_awaited_once_with(
-            "/history/latest",
+            "/history/latest/full",
             json={"names": ["parent-restore", "legacy-self-parent-restore"]},
         )
 
@@ -231,7 +231,7 @@ class TestRestoreMongoApiList:
         assert len(body["items"]) == 1
         assert body["items"][0]["name"] == "parent-restore-b"
         mock_task_api_dep.post.assert_awaited_once_with(
-            "/history/latest",
+            "/history/latest/full",
             json={"names": ["parent-restore-b"]},
         )
 
@@ -283,7 +283,7 @@ class TestRestoreMongoApiList:
         assert by_name["parent-restore-a"]["status"] is None
         assert by_name["parent-restore-b"]["status"] is None
         mock_task_api_dep.post.assert_awaited_once_with(
-            "/history/latest",
+            "/history/latest/full",
             json={"names": ["parent-restore-a", "parent-restore-b"]},
         )
 

@@ -148,8 +148,28 @@ class TestBatchGetLatestStatuses:
             "b": None,
         }
         tasks_api.post.assert_awaited_once_with(
-            "/history/latest", json={"names": ["a", "b"]}
+            "/history/latest/full", json={"names": ["a", "b"]}
         )
+
+    @pytest.mark.asyncio
+    async def test_accepts_legacy_status_string_shape(self) -> None:
+        """Coerce a bare status string (legacy wire shape) into a projection.
+
+        Guards against a rolling upgrade where the endpoint still returns the
+        status-only ``{name: status}`` map: the status resolves and
+        ``finished_at`` is ``None``.
+        """
+        tasks_api = AsyncMock(spec=RemoteAPI)
+        tasks_api.post = AsyncMock(return_value={"a": "success", "b": None})
+
+        result = await batch_get_latest_statuses(tasks_api, ["a", "b"])
+
+        assert result == {
+            "a": TaskHistoryLatestStatus(
+                status=TaskHistoryStatusEnum.SUCCESS, finished_at=None
+            ),
+            "b": None,
+        }
 
     @pytest.mark.asyncio
     async def test_running_rerun_carries_prior_finish(self) -> None:
@@ -263,6 +283,23 @@ class TestExtractLatestHistory:
         result = extract_latest_history([{"status": "running", "finished_at": None}])
         assert result.status == TaskHistoryStatusEnum.RUNNING
         assert result.finished_at is None
+
+    def test_ignores_finish_from_statusless_row(self) -> None:
+        """Exclude ``finished_at`` from rows with a null status.
+
+        Mirrors the tasks-side query (``status IS NOT NULL``): a statusless row
+        carrying a ``finished_at`` must not contribute to the max, so the result
+        reflects only the status-bearing SUCCESS run.
+        """
+        result = extract_latest_history(
+            [
+                {"status": "success", "finished_at": "2026-07-07T09:00:00"},
+                {"status": None, "finished_at": "2026-07-07T12:00:00"},
+            ]
+        )
+
+        assert result.status == TaskHistoryStatusEnum.SUCCESS
+        assert result.finished_at == datetime.fromisoformat("2026-07-07T09:00:00")
 
 
 class TestGetTaskLatestHistory:

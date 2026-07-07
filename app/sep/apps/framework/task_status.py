@@ -33,12 +33,12 @@ logger = logging.getLogger(__name__)
 def _extract_last_finished_at(
     histories: Iterable[dict[str, Any]],
 ) -> datetime | None:
-    """Return the ``max`` non-null ``finished_at`` across history payloads.
+    """Return the ``max`` ``finished_at`` across status-bearing history rows.
 
-    Mirrors the tasks-side ``max(finished_at)`` window aggregation so the
-    single-task detail surface agrees with the batch list surface: an
-    in-progress re-run (whose newest row has no ``finished_at``) still reports
-    the prior completion time.
+    Mirrors the tasks-side ``max(finished_at)`` window aggregation (which filters
+    ``status IS NOT NULL``) so the single-task detail surface agrees with the
+    batch list surface: an in-progress re-run (whose newest row has no
+    ``finished_at``) still reports the prior completion time.
 
     :param histories: Task history dicts (order-independent for this aggregate).
     :return: The most recent completion timestamp, or ``None`` when no run has
@@ -47,7 +47,8 @@ def _extract_last_finished_at(
     finishes = [
         datetime.fromisoformat(value)
         for history in histories
-        if (value := history.get("finished_at")) is not None
+        if history.get("status") is not None
+        and (value := history.get("finished_at")) is not None
     ]
     return max(finishes) if finishes else None
 
@@ -127,11 +128,8 @@ async def get_task_latest_history(
     """Fetch ``GET /{task_name}/history/`` and return its latest projection.
 
     :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
     :param task_name: The name of the task whose history is queried.
-    :type task_name: str
     :param params: Optional query parameters forwarded verbatim to the GET.
-    :type params: dict[str, Any] | None
     :return: The latest-history projection; both fields ``None`` when the task
         has no history.
     :raises ValueError: If the latest status is outside ``TaskHistoryStatusEnum``.
@@ -140,6 +138,25 @@ async def get_task_latest_history(
     """
     response = await tasks_api.get(f"/{task_name}/history/", params=params)
     return extract_latest_history(response["items"])
+
+
+def _parse_latest_history(value: Any) -> TaskHistoryLatestStatus | None:
+    """Coerce a ``/history/latest`` wire value into a projection.
+
+    Tolerates both the status-only shape (a bare status string, as returned by
+    the legacy ``/history/latest`` endpoint) and the projection shape (a
+    ``{status, finished_at}`` object). ``None`` passes through unchanged.
+
+    :param value: A single per-task value from a batch history response.
+    :return: The parsed projection, or ``None`` when ``value`` is ``None``.
+    :raises ValueError: If ``value`` carries a status outside
+        ``TaskHistoryStatusEnum`` (``ValidationError`` subclasses ``ValueError``).
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return TaskHistoryLatestStatus(status=TaskHistoryStatusEnum(value))
+    return TaskHistoryLatestStatus.model_validate(value)
 
 
 async def batch_get_latest_statuses(
@@ -154,14 +171,11 @@ async def batch_get_latest_statuses(
     may index every requested name.
 
     :param tasks_api: The TaskAPI instance used to query task history.
-    :type tasks_api: TaskAPI
     :param names: Task names to resolve latest history projections for.
-    :type names: Sequence[str]
     :return: A mapping from each requested name to its latest projection or
         ``None`` (no history / failed chunk).
-    :rtype: dict[str, TaskHistoryLatestStatus | None]
     :raises ValueError: If the batch response carries a status outside
-        ``TaskHistoryStatusEnum`` (the model coercion runs outside the per-chunk
+        ``TaskHistoryStatusEnum`` (the coercion runs outside the per-chunk
         failure guard).
     """
     if not names:
@@ -171,16 +185,11 @@ async def batch_get_latest_statuses(
         chunk = names[start : start + LATEST_HISTORY_STATUS_NAMES_MAX]
         try:
             response = await tasks_api.post(
-                "/history/latest", json={"names": list(chunk)}
+                "/history/latest/full", json={"names": list(chunk)}
             )
         except Exception:
             logger.exception("Failed to batch-fetch latest history status")
             response = {}
         for name in chunk:
-            value = response.get(name)
-            resolved[name] = (
-                TaskHistoryLatestStatus.model_validate(value)
-                if value is not None
-                else None
-            )
+            resolved[name] = _parse_latest_history(response.get(name))
     return resolved

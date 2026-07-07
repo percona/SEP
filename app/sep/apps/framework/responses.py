@@ -178,17 +178,12 @@ def build_default_task_response(
     before ``extras`` so an app could still override them if ever needed.
 
     :param response_model: The response model class to construct.
-    :type response_model: type[R]
     :param task: The task to dump into the response payload.
-    :type task: Task
     :param status: The latest known execution status for the task.
-    :type status: TaskHistoryStatusEnum | None
     :param last_executed_at: The most recent time the task finished executing
         (``max`` ``finished_at``); ``None`` until it has finished once.
     :param extras: Fields merged over the dumped payload (add or override).
-    :type extras: Mapping[str, Any] | None
     :return: A validated response model instance.
-    :rtype: R
     """
     payload = task.model_dump()
     payload["status"] = status

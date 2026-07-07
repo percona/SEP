@@ -250,7 +250,7 @@ class TestAltersApiList:
         assert "connectivity_warning" in row
         assert row["connectivity_warning"] is None
         mock_task_api_dep.post.assert_awaited_once_with(
-            "/history/latest", json={"names": [DEFAULT_PARENT_NAME]}
+            "/history/latest/full", json={"names": [DEFAULT_PARENT_NAME]}
         )
 
     def test_list_returns_empty_for_non_mysql_service_type(

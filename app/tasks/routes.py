@@ -404,9 +404,28 @@ async def list_task_history(
 async def latest_task_history_status(
     session: SessionDep,
     body: TaskHistoryLatestStatusRequest,
-) -> dict[str, TaskHistoryLatestStatus | None]:
-    """Return the latest known execution projection for each requested task name."""
+) -> dict[str, TaskHistoryStatusEnum | None]:
+    """Return the latest known execution status for each requested task name."""
     logger.debug("Resolving latest history status for %s task(s)", len(body.names))
+    projection = await TaskHistoryManager.latest_status_by_task_names(
+        session, body.names
+    )
+    return {
+        name: latest.status if latest is not None else None
+        for name, latest in projection.items()
+    }
+
+
+@router.post(
+    "/history/latest/full",
+    dependencies=[IsAuthenticatedDep],
+)
+async def latest_task_history_full(
+    session: SessionDep,
+    body: TaskHistoryLatestStatusRequest,
+) -> dict[str, TaskHistoryLatestStatus | None]:
+    """Return the latest-history projection (status + finished_at) per task name."""
+    logger.debug("Resolving latest history projection for %s task(s)", len(body.names))
     return await TaskHistoryManager.latest_status_by_task_names(session, body.names)
 
 

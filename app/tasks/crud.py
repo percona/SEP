@@ -596,15 +596,12 @@ class TaskHistoryManager(BaseSQLModelManager):
         task's history rows, so an in-progress re-run (whose newest row has a
         null ``finished_at``) still reports the prior completion time.
 
-        :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
+        :param session: The asynchronous session used for query execution.
         :param names: Task names to resolve. Duplicates are ignored; order is
             preserved in the returned mapping.
-        :type names: Sequence[str]
         :return: A mapping of task name to its latest-history projection (newest
             status plus the ``max`` ``finished_at``), or ``None`` when no history
             exists or every history row has a null status.
-        :rtype: dict[str, TaskHistoryLatestStatus | None]
         """
         unique_names = list(dict.fromkeys(names))
         if not unique_names:

@@ -810,7 +810,7 @@ async def test_get_alters_api_task_responses_resolves_statuses_via_batch():
     assert results[0].status == TaskHistoryStatusEnum.SUCCESS
     assert results[0].last_executed_at == datetime.fromisoformat("2026-07-07T09:00:00")
     tasks_api.post.assert_awaited_once_with(
-        "/history/latest", json={"names": ["parent-alter"]}
+        "/history/latest/full", json={"names": ["parent-alter"]}
     )
 
 
