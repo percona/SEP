@@ -15,7 +15,6 @@
 
 """Define models for the Backups plugin."""
 
-from datetime import datetime
 from enum import auto, IntEnum, StrEnum
 from typing import Annotated, Any, ClassVar, Literal, Self
 
@@ -31,6 +30,7 @@ from pydantic import (
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import (
     Choices,
     Forbidden,
@@ -48,7 +48,6 @@ from app.sep.apps.framework.rules import (
     not_,
     truthy,
 )
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
 class SwapDropEnum(IntEnum):
@@ -646,57 +645,19 @@ class BackupConfig(BaseCaseInsensitiveModel):
     server_list: list[BackupConfigServer]
 
 
-class BackupTaskBase(BaseModel):
-    """Carry the fields common to every backup-task API response.
+class BackupTaskBase(BaseTaskResponse):
+    """Carry the mysql_backups-specific fields shared across its responses.
 
-    :param name: The name of the backup task.
-    :type name: str
-    :param owner: The entity or user that owns the task.
-    :type owner: TaskOwner
     :param backup_type: The backup type recorded in task config.
-    :type backup_type: BackupType | None
-    :param status: The latest execution status of the task.
-    :type status: TaskHistoryStatusEnum | None
     """
 
-    name: str
-    owner: TaskOwner
     backup_type: BackupType | None = None
-    status: TaskHistoryStatusEnum | None = None
 
 
 class BackupResponse(BackupTaskBase):
     """Represent a backup task API response.
 
-    :param id: The unique identifier for the backup task.
-    :type id: int | None
-    :param backend: The backend executing the task.
-    :type backend: TaskBackendEnum
-    :param data: The raw configuration and parameters for the task.
-    :type data: dict[str, Any]
     :param hostname: The executor hostname target.
-    :type hostname: str | None
-    :param protected: Whether the task is protected from deletion or modification.
-    :type protected: bool
-    :param alert_on_fail: If True, notifications fire on task failure.
-    :type alert_on_fail: bool
-    :param created_at: When the task was created.
-    :type created_at: datetime | None
-    :param updated_at: When the task was last modified.
-    :type updated_at: datetime | None
-    :param created_by: The user who initiated the task.
-    :type created_by: str | None
-    :param last_updated_by: The user who last modified the task record.
-    :type last_updated_by: str | None
     """
 
-    id: int | None = None
-    backend: TaskBackendEnum
-    data: dict[str, Any]
     hostname: str | None = None
-    protected: bool
-    alert_on_fail: bool
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    created_by: str | None = None
-    last_updated_by: str | None = None
