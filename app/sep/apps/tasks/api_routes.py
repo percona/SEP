@@ -72,9 +72,7 @@ async def tasks_api_list(tasks_api: TaskAPI) -> list[TaskListResponse]:
     ]
 
 
-@router.get(
-    "/{task_name}",
-)
+@router.get("/{task_name}")
 async def tasks_api_detail(
     task: TaskDep,
     tasks_api: TaskAPI,
