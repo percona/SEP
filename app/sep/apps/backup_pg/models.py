@@ -15,13 +15,11 @@
 
 """Define models for the Backups plugin."""
 
-from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any
 
 from annotated_types import Ge
 from pydantic import (
-    BaseModel,
     ConfigDict,
     model_validator,
     StringConstraints,
@@ -30,13 +28,13 @@ from pydantic import (
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import (
     Choices,
     ServiceRef,
     TaskFormModel,
     Ui,
 )
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -226,73 +224,33 @@ class BackupPgForm(TaskFormModel):
         return data
 
 
-class BackupTaskBase(BaseModel):
-    """Define common fields shared across backup_pg JSON API responses.
+class BackupTaskBase(BaseTaskResponse):
+    """Carry the backup_pg-specific fields shared across its API responses.
 
-    :param name: The task name.
-    :type name: str
-    :param owner: The task owner enum value.
-    :type owner: TaskOwner
     :param hostname: The Nomad executor target the task runs on.
-    :type hostname: str | None
-    :param status: The latest execution status of the task, if known.
-    :type status: TaskHistoryStatusEnum | None
     """
 
-    name: str
-    owner: TaskOwner
     hostname: str | None = None
-    status: TaskHistoryStatusEnum | None = None
 
 
 class BackupTaskResponse(BackupTaskBase):
     """Represent a pgBackRest backup task API response.
 
-    :param id: The task identifier from the Tasks service, if assigned.
-    :type id: int | None
-    :param backend: The backend executing the task.
-    :type backend: TaskBackendEnum
     :param backup_type: The ``backup_type`` discriminator stored on the task.
-    :type backup_type: str
-    :param data: The raw task ``data`` payload.
-    :type data: dict[str, Any]
-    :param protected: Whether the task is protected from deletion.
-    :type protected: bool
-    :param alert_on_fail: Whether PMM alerts fire when the task fails.
-    :type alert_on_fail: bool
-    :param created_at: Creation timestamp.
-    :type created_at: datetime | None
-    :param updated_at: Last-modification timestamp.
-    :type updated_at: datetime | None
-    :param created_by: User that created the task.
-    :type created_by: str | None
-    :param last_updated_by: User that last modified the task record.
-    :type last_updated_by: str | None
     """
 
-    id: int | None = None
-    backend: TaskBackendEnum
     backup_type: str
-    data: dict[str, Any]
-    protected: bool
-    alert_on_fail: bool
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    created_by: str | None = None
-    last_updated_by: str | None = None
 
 
 class BackupTaskDetailResponse(BackupTaskResponse):
     """Represent a single pgBackRest backup task detail response.
 
-    Adds the executor host and port resolved from the task's YAML config so
-    the FE detail view can render them alongside the parity Overview block;
-    list rows omit these to keep the table response compact.
+    Add the executor host and port resolved from the task's YAML config so the
+    FE detail view can render them alongside the parity Overview block; list
+    rows omit these to keep the table response compact.
 
     :param host: The PostgreSQL host the task connects to.
-    :type host: str | None
     :param port: The PostgreSQL port the task connects to.
-    :type port: int | None
     """
 
     host: str | None = None

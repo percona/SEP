@@ -21,6 +21,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import (
     assemble_envelope,
@@ -172,6 +173,7 @@ def build_mysql_backups_api_task_response(
         extras={
             "backup_type": _extract_backup_type_from_task(task),
             "hostname": hostname,
+            "service_type": ServiceTypeEnum.MYSQL,
         },
     )
 

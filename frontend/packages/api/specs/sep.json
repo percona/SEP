@@ -616,14 +616,44 @@
         "type": "object"
       },
       "AltersTaskResponse": {
-        "description": "Represent an alters task API response for list and detail surfaces.\n\nThe create/update routes return the\n:data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models\nderived from this base; both add ``connectivity_warning`` per the framework's\nderived create-response standard, so the always-null warning field stays off\nlist/detail rows.\n\n:param name: The name of the alters task.\n:param owner: The entity or user that owns the task.\n:param service_type: The type of database service (always MySQL for alters).\n:param status: The current execution status of the task.\n:param id: The unique identifier for the alters task.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for the alter execution.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: The user who initiated the task.\n:param last_updated_by: The user who last modified the task record.",
+        "description": "Represent an alters task API response for list and detail surfaces.\n\nAdd no fields of its own — the alters list/detail surface is exactly the\nshared task-response surface. The create/update routes return the\n:data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models\nderived from this base, which add ``connectivity_warning`` per the\nframework's derived create-response standard.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -724,7 +754,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "AltersTaskResponse",
         "type": "object"
@@ -736,6 +767,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -848,7 +899,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "AltersTaskResponseCreate",
         "type": "object"
@@ -860,6 +912,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -972,7 +1044,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "AltersTaskResponseUpdate",
         "type": "object"
@@ -2423,6 +2496,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -2533,6 +2626,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -2560,10 +2663,11 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupPgCreateResponse",
         "type": "object"
@@ -2706,11 +2810,31 @@
         "type": "object"
       },
       "BackupResponse": {
-        "description": "Represent a backup task API response.\n\n:param id: The unique identifier for the backup task.\n:type id: int | None\n:param backend: The backend executing the task.\n:type backend: TaskBackendEnum\n:param data: The raw configuration and parameters for the task.\n:type data: dict[str, Any]\n:param hostname: The executor hostname target.\n:type hostname: str | None\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications fire on task failure.\n:type alert_on_fail: bool\n:param created_at: When the task was created.\n:type created_at: datetime | None\n:param updated_at: When the task was last modified.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None",
+        "description": "Represent a backup task API response.\n\n:param hostname: The executor hostname target.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -2719,6 +2843,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/BackupType-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
               },
               {
                 "type": "null"
@@ -2796,6 +2930,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -2825,7 +2969,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "BackupResponse",
         "type": "object"
@@ -5694,6 +5839,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -5788,6 +5953,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -5817,7 +5992,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "MysqlBackupsCreateResponse",
         "type": "object"
@@ -9929,12 +10105,42 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -10025,6 +10231,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -10052,20 +10268,41 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupTaskDetailResponse",
         "type": "object"
       },
       "app__sep__apps__backup_mongo__models__BackupTaskResponse": {
-        "description": "Represent a backup task API response.\n\n:param id: The unique identifier for the backup task.\n:type id: int | None\n:param backend: The backend worker/engine executing the task.\n:type backend: TaskBackendEnum\n:param backup_type: The PBM backup type stored on the task.\n:type backup_type: str\n:param data: The raw configuration and parameters for the backup execution.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:type alert_on_fail: bool\n:param created_at: The timestamp when the task was first created.\n:type created_at: datetime | None\n:param updated_at: The timestamp of the last modification to the task.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None",
+        "description": "Represent a backup task API response.\n\n:param backup_type: The PBM backup type stored on the task.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -10073,6 +10310,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -10145,6 +10392,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -10172,10 +10429,11 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupTaskResponse",
         "type": "object"
@@ -10206,11 +10464,31 @@
         "type": "string"
       },
       "app__sep__apps__backup_pg__models__BackupTaskDetailResponse": {
-        "description": "Represent a single pgBackRest backup task detail response.\n\nAdds the executor host and port resolved from the task's YAML config so\nthe FE detail view can render them alongside the parity Overview block;\nlist rows omit these to keep the table response compact.\n\n:param host: The PostgreSQL host the task connects to.\n:type host: str | None\n:param port: The PostgreSQL port the task connects to.\n:type port: int | None",
+        "description": "Represent a single pgBackRest backup task detail response.\n\nAdd the executor host and port resolved from the task's YAML config so the\nFE detail view can render them alongside the parity Overview block; list\nrows omit these to keep the table response compact.\n\n:param host: The PostgreSQL host the task connects to.\n:param port: The PostgreSQL port the task connects to.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -10218,6 +10496,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -10312,6 +10600,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -10339,20 +10637,41 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupTaskDetailResponse",
         "type": "object"
       },
       "app__sep__apps__backup_pg__models__BackupTaskResponse": {
-        "description": "Represent a pgBackRest backup task API response.\n\n:param id: The task identifier from the Tasks service, if assigned.\n:type id: int | None\n:param backend: The backend executing the task.\n:type backend: TaskBackendEnum\n:param backup_type: The ``backup_type`` discriminator stored on the task.\n:type backup_type: str\n:param data: The raw task ``data`` payload.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion.\n:type protected: bool\n:param alert_on_fail: Whether PMM alerts fire when the task fails.\n:type alert_on_fail: bool\n:param created_at: Creation timestamp.\n:type created_at: datetime | None\n:param updated_at: Last-modification timestamp.\n:type updated_at: datetime | None\n:param created_by: User that created the task.\n:type created_by: str | None\n:param last_updated_by: User that last modified the task record.\n:type last_updated_by: str | None",
+        "description": "Represent a pgBackRest backup task API response.\n\n:param backup_type: The ``backup_type`` discriminator stored on the task.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -10360,6 +10679,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -10432,6 +10761,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -10459,10 +10798,11 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupTaskResponse",
         "type": "object"

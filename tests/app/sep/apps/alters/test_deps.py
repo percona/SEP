@@ -22,6 +22,7 @@ import pytest
 from fastapi import HTTPException, status
 
 from app.core.requests.remote_api import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import (
     alters_executor_matches_service_host,
     alters_satellite_task_names,
@@ -44,6 +45,7 @@ from app.sep.apps.alters.deps import (
 from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.alters.schema import alters_schema
 from app.sep.apps.framework.schema import ChainedPredecessor
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
@@ -913,6 +915,20 @@ class TestBuildAltersApiTaskResponse:
 
         assert result.created_by == "uid-123"
         assert result.last_updated_by == "uid-456"
+
+    def test_service_type_and_anonymization_surface_populated(self):
+        """Assert the rebased response carries service_type and anonymization fields."""
+        mask = PIIEntity.CREDIT_CARD | PIIEntity.EMAIL_ADDRESS
+        task = _make_alters_task(created_by=None, last_updated_by=None)
+        task.anonymize_mask = mask
+
+        result = build_alters_api_task_response(task)
+
+        assert result.service_type == ServiceTypeEnum.MYSQL
+        assert result.anonymize_mask == mask
+        assert result.anonymized_entities == sorted(
+            entity.name for entity in PIIEntity.decode_selection(mask)
+        )
 
 
 _LEGACY_SCHEMA_ID = 10

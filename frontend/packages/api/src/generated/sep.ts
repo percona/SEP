@@ -3353,30 +3353,24 @@ export interface components {
      * AltersTaskResponse
      * @description Represent an alters task API response for list and detail surfaces.
      *
-     *     The create/update routes return the
+     *     Add no fields of its own — the alters list/detail surface is exactly the
+     *     shared task-response surface. The create/update routes return the
      *     :data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models
-     *     derived from this base; both add ``connectivity_warning`` per the framework's
-     *     derived create-response standard, so the always-null warning field stays off
-     *     list/detail rows.
-     *
-     *     :param name: The name of the alters task.
-     *     :param owner: The entity or user that owns the task.
-     *     :param service_type: The type of database service (always MySQL for alters).
-     *     :param status: The current execution status of the task.
-     *     :param id: The unique identifier for the alters task.
-     *     :param backend: The backend worker/engine executing the task.
-     *     :param data: The raw configuration and parameters used for the alter execution.
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :param created_at: The timestamp when the task was first created.
-     *     :param updated_at: The timestamp of the last modification to the task.
-     *     :param created_by: The user who initiated the task.
-     *     :param last_updated_by: The user who last modified the task record.
+     *     derived from this base, which add ``connectivity_warning`` per the
+     *     framework's derived create-response standard.
      */
     AltersTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -3404,6 +3398,13 @@ export interface components {
     AltersTaskResponseCreate: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
@@ -3433,6 +3434,13 @@ export interface components {
     AltersTaskResponseUpdate: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
@@ -4217,6 +4225,13 @@ export interface components {
     BackupPgCreateResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
@@ -4242,6 +4257,7 @@ export interface components {
       port?: number | null;
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -4302,32 +4318,21 @@ export interface components {
      * BackupResponse
      * @description Represent a backup task API response.
      *
-     *     :param id: The unique identifier for the backup task.
-     *     :type id: int | None
-     *     :param backend: The backend executing the task.
-     *     :type backend: TaskBackendEnum
-     *     :param data: The raw configuration and parameters for the task.
-     *     :type data: dict[str, Any]
      *     :param hostname: The executor hostname target.
-     *     :type hostname: str | None
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
-     *     :param alert_on_fail: If True, notifications fire on task failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: When the task was created.
-     *     :type created_at: datetime | None
-     *     :param updated_at: When the task was last modified.
-     *     :type updated_at: datetime | None
-     *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
      */
     BackupResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       backup_type?: components['schemas']['BackupType-Output'] | null;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -4345,6 +4350,7 @@ export interface components {
       owner: components['schemas']['TaskOwner'];
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6182,6 +6188,13 @@ export interface components {
     MysqlBackupsCreateResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       backup_type?: components['schemas']['BackupType-Output'] | null;
       connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
@@ -6202,6 +6215,7 @@ export interface components {
       owner: components['schemas']['TaskOwner'];
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8459,9 +8473,17 @@ export interface components {
     app__sep__apps__backup_mongo__models__BackupTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -8483,6 +8505,7 @@ export interface components {
       owner: components['schemas']['TaskOwner'];
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8491,33 +8514,22 @@ export interface components {
      * BackupTaskResponse
      * @description Represent a backup task API response.
      *
-     *     :param id: The unique identifier for the backup task.
-     *     :type id: int | None
-     *     :param backend: The backend worker/engine executing the task.
-     *     :type backend: TaskBackendEnum
      *     :param backup_type: The PBM backup type stored on the task.
-     *     :type backup_type: str
-     *     :param data: The raw configuration and parameters for the backup execution.
-     *     :type data: dict[str, Any]
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
-     *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: The timestamp when the task was first created.
-     *     :type created_at: datetime | None
-     *     :param updated_at: The timestamp of the last modification to the task.
-     *     :type updated_at: datetime | None
-     *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
      */
     app__sep__apps__backup_mongo__models__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -8535,6 +8547,7 @@ export interface components {
       owner: components['schemas']['TaskOwner'];
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8566,21 +8579,27 @@ export interface components {
      * BackupTaskDetailResponse
      * @description Represent a single pgBackRest backup task detail response.
      *
-     *     Adds the executor host and port resolved from the task's YAML config so
-     *     the FE detail view can render them alongside the parity Overview block;
-     *     list rows omit these to keep the table response compact.
+     *     Add the executor host and port resolved from the task's YAML config so the
+     *     FE detail view can render them alongside the parity Overview block; list
+     *     rows omit these to keep the table response compact.
      *
      *     :param host: The PostgreSQL host the task connects to.
-     *     :type host: str | None
      *     :param port: The PostgreSQL port the task connects to.
-     *     :type port: int | None
      */
     app__sep__apps__backup_pg__models__BackupTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -8602,6 +8621,7 @@ export interface components {
       port?: number | null;
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8610,33 +8630,22 @@ export interface components {
      * BackupTaskResponse
      * @description Represent a pgBackRest backup task API response.
      *
-     *     :param id: The task identifier from the Tasks service, if assigned.
-     *     :type id: int | None
-     *     :param backend: The backend executing the task.
-     *     :type backend: TaskBackendEnum
      *     :param backup_type: The ``backup_type`` discriminator stored on the task.
-     *     :type backup_type: str
-     *     :param data: The raw task ``data`` payload.
-     *     :type data: dict[str, Any]
-     *     :param protected: Whether the task is protected from deletion.
-     *     :type protected: bool
-     *     :param alert_on_fail: Whether PMM alerts fire when the task fails.
-     *     :type alert_on_fail: bool
-     *     :param created_at: Creation timestamp.
-     *     :type created_at: datetime | None
-     *     :param updated_at: Last-modification timestamp.
-     *     :type updated_at: datetime | None
-     *     :param created_by: User that created the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: User that last modified the task record.
-     *     :type last_updated_by: str | None
      */
     app__sep__apps__backup_pg__models__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -8654,6 +8663,7 @@ export interface components {
       owner: components['schemas']['TaskOwner'];
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
