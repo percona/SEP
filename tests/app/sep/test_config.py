@@ -65,8 +65,13 @@ class TestFooterTemplate:
     """Define tests for the FOOTER_TEMPLATE setting."""
 
     def test_footer_template_default(self):
-        """Assert FOOTER_TEMPLATE defaults to ``$summary $version``."""
-        settings = SEPSettings()
+        """Assert FOOTER_TEMPLATE defaults to ``$summary $version``.
+
+        Load without the dotenv file so a local ``.env.local`` override (a
+        worktree hook may set ``SEP__FOOTER_TEMPLATE`` to the branch name) does
+        not mask the built-in default.
+        """
+        settings = SEPSettings(_env_file=None)
         assert settings.FOOTER_TEMPLATE.template == "$summary $version"
 
     def test_footer_template_coerced_from_string(self):
