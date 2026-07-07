@@ -28,6 +28,7 @@ import yaml
 
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.requests.remote_api import RemoteAPI
+from app.core.utils.path import resolve_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.archives.constants import SwapDropEnum
 from app.sep.apps.archives.deps import (
@@ -109,6 +110,8 @@ class TestLegacyFormPayload:
         assert item["SOURCE_TABLE"] == "src_tbl"
         assert item["DEST_TABLE"] == "dst_tbl"
         assert task.name == "arch"
+        assert task.data["payload"] == "file://app/sep/apps/archives/payload"
+        assert resolve_payload_reference(task.data["payload"]).is_file()
 
     @pytest.mark.asyncio
     async def test_manual_names(self) -> None:

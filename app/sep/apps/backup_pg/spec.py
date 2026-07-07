@@ -30,6 +30,7 @@ from pathlib import Path
 import yaml
 from fastapi.encoders import jsonable_encoder
 
+from app.core.utils.path import to_payload_reference
 from app.sep.apps.backup_pg.models import (
     BackupConfig,
     BackupConfigAll,
@@ -85,5 +86,5 @@ def build_backup_pg_spec(
             jsonable_encoder(backup_config, by_alias=True, exclude_none=True)
         ),
         requirements=_REQUIREMENTS,
-        payload=f"file://{payload_path}",
+        payload=to_payload_reference(payload_path),
     )

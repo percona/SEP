@@ -24,6 +24,7 @@ import yaml
 from pydantic import ValidationError
 
 from app.core.alerts.models import AlertService, AlertSeverity
+from app.core.utils.path import PayloadReferenceError
 from app.sep.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     ARCHIVER_TRACE_PLACEHOLDER,
@@ -336,12 +337,13 @@ class TestTaskExecutionRequest:
         )
         assert req.payload_content == '{"key": "value"}'
 
-    def test_payload_content_file_path_nonexistent(self) -> None:
-        """Assert payload_content returns payload string for non-existent file."""
+    def test_payload_content_unresolvable_file_raises(self) -> None:
+        """Assert payload_content raises for an unresolvable file:// reference."""
         req = TaskExecutionRequest(
             task="t", target="n", payload="file:///nonexistent/path.json"
         )
-        assert req.payload_content == "file:///nonexistent/path.json"
+        with pytest.raises(PayloadReferenceError):
+            _ = req.payload_content
 
     def test_payload_content_none(self) -> None:
         """Assert payload_content returns None when payload is None."""

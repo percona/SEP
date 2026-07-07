@@ -28,6 +28,7 @@ from pathlib import Path
 import yaml
 from fastapi.encoders import jsonable_encoder
 
+from app.core.utils.path import to_payload_reference
 from app.core.utils.pydantic import extract_model_from_instance
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.models import (
@@ -123,6 +124,6 @@ def build_restore_spec(form: RestoreCreate, resolved: RestoreResolved) -> TaskWr
         data={
             "task": "run-python",
             "meta": meta,
-            "payload": f"file://{payload_path}",
+            "payload": to_payload_reference(payload_path),
         },
     )

@@ -33,6 +33,7 @@ from typing import Any
 import yaml
 
 from app.core.exceptions import HTTPUnprocessableEntityException
+from app.core.utils.path import to_payload_reference
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.sep.apps.archives.models import (
     ArchivesCreate,
@@ -194,6 +195,6 @@ def build_archives_spec(
             purge_config.model_dump(mode="json", by_alias=True, exclude_none=True)
         ),
         requirements=_REQUIREMENTS,
-        payload=f"file://{payload_path}",
+        payload=to_payload_reference(payload_path),
         extra_meta={"_pmm_node_name": service.node.name},
     )

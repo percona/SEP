@@ -33,6 +33,7 @@ from app.core.exceptions import (
 )
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils.fields import EmptyStrToNone
+from app.core.utils.path import to_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.models import (
     AltersCreate,
@@ -352,7 +353,7 @@ async def build_pre_checks_task_payload(
     pre_checks_task.data["meta"]["requirements"] = (
         "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
     )
-    pre_checks_task.data["payload"] = f"file://{_PRE_CHECKS_SCRIPT_PATH}"
+    pre_checks_task.data["payload"] = to_payload_reference(_PRE_CHECKS_SCRIPT_PATH)
     return pre_checks_task
 
 
