@@ -1,5 +1,5 @@
 ---
-applyTo: "app/sep/api/**/*.py,app/sep/apps/framework/**/*.py,app/sep/apps/**/api_routes.py,app/sep/apps/**/schema.py,frontend/packages/framework/**,frontend/packages/api/**,frontend/packages/apps/**,frontend/packages/plugins/**,frontend/packages/shell/**"
+applyTo: "app/sep/api/**/*.py,app/sep/apps/framework/**/*.py,app/sep/apps/**/api_routes.py,app/sep/apps/**/schema.py,frontend/packages/framework/**,frontend/packages/api/**,frontend/packages/apps/**,frontend/packages/shell/**"
 ---
 
 # API-First + React Migration
