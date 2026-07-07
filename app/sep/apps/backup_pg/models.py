@@ -20,7 +20,6 @@ from typing import Annotated, Any
 
 from annotated_types import Ge
 from pydantic import (
-    BaseModel,
     ConfigDict,
     model_validator,
     StringConstraints,

@@ -19,7 +19,6 @@ from typing import Annotated, Any
 
 from pydantic import (
     AfterValidator,
-    BaseModel,
     field_validator,
     model_validator,
 )
