@@ -65,6 +65,7 @@ __all__ = [
     "RunPythonSpec",
     "assemble_envelope",
     "build_command_args",
+    "build_run_python_task",
     "parse_server_list_config",
     "resolve_refs",
     "stamp_form_input",
@@ -72,6 +73,8 @@ __all__ = [
 ]
 
 RESERVED_FORM_KEY = "_form"
+_RUN_COMMAND_TASK = "run-command"
+_RUN_PYTHON_TASK = "run-python"
 
 _REF_ENTITY_TYPES = {
     ServiceRef: SyncInventoryEntityTypeEnum.SERVICE,
@@ -126,7 +129,7 @@ class RunCommandSpec:
         :return: The run-command ``TaskWrite.data`` payload.
         """
         return {
-            "task": "run-command",
+            "task": _RUN_COMMAND_TASK,
             "meta": {
                 "command": self.command,
                 "args": self.args,
@@ -165,7 +168,7 @@ class RunPythonSpec:
         :return: The run-python ``TaskWrite.data`` payload.
         """
         return {
-            "task": "run-python",
+            "task": _RUN_PYTHON_TASK,
             "meta": {
                 "config": self.config,
                 "target": host,
@@ -418,6 +421,74 @@ def assemble_envelope(
         data=data,
         alert_on_fail=alert_on_fail,
         alert_detail_builder=alert_detail_builder,
+    )
+
+
+def build_run_python_task(
+    *,
+    name: str,
+    owner: TaskOwner,
+    target: str,
+    config: str,
+    requirements: str,
+    payload: str,
+    service_name: str | None = None,
+    extra_data: Mapping[str, Any] | None = None,
+    alert_on_fail: bool = False,
+) -> TaskWrite:
+    """Assemble a connectivity-optional ``run-python`` ``TaskWrite``.
+
+    The no-connectivity sibling of :func:`assemble_envelope`: emit the same
+    ``run-python`` envelope shape without the connectivity meta keys, stamping
+    ``_service_name`` only when ``service_name`` is not ``None`` and merging
+    ``extra_data`` at the ``data`` top level for caller-specific data keys. Used by
+    the task apps whose
+    tasks resolve no ``ServiceRef`` and so cannot go through
+    :func:`assemble_envelope`, which requires a service for its connectivity meta.
+
+    :param name: The task name.
+    :param owner: The task owner.
+    :param target: The executor target host placed under ``meta.target``.
+    :param config: The serialized task config placed under ``meta.config``.
+    :param requirements: The pip requirements string under ``meta.requirements``.
+    :param payload: The ``file://`` payload URI placed at ``data.payload``.
+    :param service_name: The resolved inventory service name, stamped as
+        ``meta._service_name`` only when not ``None``. Defaults to ``None``.
+    :param extra_data: Extra top-level ``data`` keys merged after ``payload``.
+        Defaults to ``None``.
+    :param alert_on_fail: Whether to alert on task failure. Defaults to ``False``.
+    :return: The assembled ``TaskWrite``, ready to POST to the Tasks API.
+    :raises ValueError: When an ``extra_data`` key collides with a reserved
+        top-level envelope key — ``task`` / ``meta`` / ``payload`` (the envelope
+        structure) or ``_form`` (reserved for :func:`stamp_form_input`) — which
+        would silently overwrite the envelope or later break the form stamp.
+    """
+    meta = {
+        "config": config,
+        "target": target,
+        "requirements": requirements,
+    }
+    if service_name is not None:
+        meta["_service_name"] = service_name
+    data = {
+        "task": _RUN_PYTHON_TASK,
+        "meta": meta,
+        "payload": payload,
+    }
+    reserved_keys = {*data, RESERVED_FORM_KEY}
+    for key, value in (extra_data or {}).items():
+        if key in reserved_keys:
+            raise ValueError(
+                f"extra_data key {key!r} collides with a reserved top-level "
+                "envelope key; callers may only add new top-level data keys"
+            )
+        data[key] = value
+    return TaskWrite(
+        name=name,
+        owner=owner,
+        backend=TaskBackendEnum.PROXY,
+        data=data,
+        alert_on_fail=alert_on_fail,
     )
 
 
