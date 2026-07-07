@@ -447,11 +447,13 @@ def build_run_python_task(
 ) -> TaskWrite:
     """Assemble a connectivity-optional ``run-python`` ``TaskWrite``.
 
-    The no-connectivity sibling of :func:`assemble_envelope` for tasks that
-    resolve no ``ServiceRef`` and so cannot supply its connectivity meta. Emits
-    the same envelope shape without the connectivity keys, stamping
+    The no-connectivity sibling of :func:`assemble_envelope`: emit the same
+    ``run-python`` envelope shape without the connectivity meta keys, stamping
     ``_service_name`` only when ``service_name`` is not ``None`` and merging
-    ``extra_data`` at the ``data`` top level for caller-specific keys.
+    ``extra_data`` at the ``data`` top level for caller-specific data keys. Used by
+    the task apps whose
+    tasks resolve no ``ServiceRef`` and so cannot go through
+    :func:`assemble_envelope`, which requires a service for its connectivity meta.
 
     :param name: The task name.
     :param owner: The task owner.

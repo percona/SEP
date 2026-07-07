@@ -52,9 +52,9 @@ from app.sep.deps import (
     CreatedServiceDep,
     ExecutorHosts,
     get_base_url,
-    get_pmm_api,
+    get_pmm_api,  # noqa: F401 -- re-exported for existing importers
     InventoryAPI,
-    PMMAPIDep,
+    PMMAPIDep,  # noqa: F401 -- re-exported for existing importers
 )
 from app.sep.inventory import CreatedService
 from app.sep.middleware import messages
@@ -66,8 +66,6 @@ from app.sep.snippets.models.snippet import (
     SUDO_INPUT_NAME,
 )
 from app.sep.snippets.utils import guess_mime_type, mime_type_to_highlighter_language
-
-__all__ = ["PMMAPIDep", "get_pmm_api"]
 
 logger = logging.getLogger(__name__)
 

@@ -51,7 +51,8 @@ _BASE_REQUIREMENTS = "packaging\nPyYAML"
 def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
     """Build the run-python ``TaskWrite`` from a typed restore leg descriptor.
 
-    :param leg: The typed restore leg descriptor.
+    :param leg: The typed restore leg carrying the envelope's target, config,
+        requirements, payload name, and optional service name and parent.
     :return: The assembled leg ``TaskWrite``.
     """
     return build_run_python_task(

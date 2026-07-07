@@ -26,11 +26,9 @@ from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.deps import (
     DefaultContext,
-    get_pmm_api,
+    get_pmm_api,  # noqa: F401 -- re-exported for existing importers
     PMMAPIDep,
 )
-
-__all__ = ["PMMAPIDep", "get_pmm_api"]
 
 logger = logging.getLogger(__name__)
 
