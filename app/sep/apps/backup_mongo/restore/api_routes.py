@@ -43,8 +43,6 @@ from app.sep.apps.backup_mongo.restore.deps import (
     update_restore_task_group,
 )
 from app.sep.apps.backup_mongo.restore.models import (
-    RestoreExecuteWrite,
-    RestoreExecutionResponse,
     RestoreTaskDetailResponse,
     RestoreTaskResponse,
 )
@@ -146,8 +144,6 @@ derive_execute_route(
     name="restore_mongo_api_execute",
     description="Execute a restore task.",
     task_dep=RestoresTask,
-    write_model=RestoreExecuteWrite,
-    response_model=RestoreExecutionResponse,
 )
 
 

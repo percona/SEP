@@ -45,8 +45,6 @@ from app.sep.apps.backup_pg.deps import (
     HasNoConflictedRunningTasksOnCreate,
 )
 from app.sep.apps.backup_pg.models import (
-    BackupExecuteWrite,
-    BackupExecutionResponse,
     BackupPgForm,
     BackupTaskDetailResponse,
     BackupTaskResponse,
@@ -81,8 +79,6 @@ app = TaskExecutionApp(
     response_builder=build_backup_pg_api_task_response,
     detail_response_builder=build_backup_pg_api_detail_response,
     detail_response_model=BackupTaskDetailResponse,
-    execute_write_model=BackupExecuteWrite,
-    execute_response_model=BackupExecutionResponse,
     create_extra_deps=(HasNoConflictedRunningTasksOnCreate,),
     update_guard=(Depends(get_unprotected_backups_task), HasNoConflictedRunningTasks),
     delete_guard=(HasNoConflictedRunningTasks,),
