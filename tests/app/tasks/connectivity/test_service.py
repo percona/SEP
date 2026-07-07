@@ -138,6 +138,26 @@ def _make_task_history(
     return history
 
 
+class _AdvancingClock:
+    """Deterministic monotonic clock for the connectivity poll loop.
+
+    ``check_connectivity`` measures its provisioning/connect budgets against
+    ``time.monotonic``. Real time would make budget tests slow (busy-looping
+    for tens of seconds) or flaky, so this clock advances only when the loop
+    awaits ``asyncio.sleep`` -- modelling wall time as the sum of the poll
+    intervals actually slept, which mirrors the loop's real pacing.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
 @pytest.mark.asyncio
 class TestCheckConnectivityRealSession:
     """Exercise ``check_connectivity`` against a real ``AsyncSession``.
@@ -151,6 +171,28 @@ class TestCheckConnectivityRealSession:
     These tests run the service against a real ``aiosqlite`` session so that
     class of bug remains observable.
     """
+
+    @pytest.fixture(autouse=True)
+    def advancing_clock(self):
+        """Advance the poll loop's wall clock only when it sleeps.
+
+        The service now charges its budgets against ``time.monotonic``; patch
+        both the clock and ``asyncio.sleep`` so a poll iteration advances time
+        by exactly its sleep interval, keeping budget-driven tests fast and
+        deterministic without busy-looping against the real clock.
+        """
+        clock = _AdvancingClock()
+        with (
+            patch(
+                "app.tasks.connectivity.service.time.monotonic",
+                new=clock.monotonic,
+            ),
+            patch(
+                "app.tasks.connectivity.service.asyncio.sleep",
+                new=clock.sleep,
+            ),
+        ):
+            yield clock
 
     @pytest_asyncio.fixture
     async def run_python_task(self, session: AsyncSession) -> Task:
@@ -263,7 +305,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -312,7 +353,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -358,7 +398,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -397,7 +436,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -444,7 +482,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -508,7 +545,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service._expire_and_fetch",
                 side_effect=delayed_log_expire_and_fetch,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -573,7 +609,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service._expire_and_fetch",
                 side_effect=delayed_log_expire_and_fetch,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -635,7 +670,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service._expire_and_fetch",
                 side_effect=delayed_population_expire_and_fetch,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -684,7 +718,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -748,7 +781,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_executor_for_task",
                 return_value=mock_executor,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -828,7 +860,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -902,7 +933,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -948,7 +978,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -997,7 +1026,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 
@@ -1005,6 +1033,105 @@ class TestCheckConnectivityRealSession:
         assert result.error is not None
         assert f"timed out after {request.timeout}s" in result.error
         assert "provision" not in result.error.lower()
+
+    async def test_connect_budget_charges_non_sleep_wall_time(
+        self,
+        session: AsyncSession,
+        run_python_task: Task,
+        async_session_maker,
+        advancing_clock: "_AdvancingClock",
+    ) -> None:
+        """Verify the connect budget is charged for wall time spent off ``sleep``.
+
+        Regression for SEP-1507: the budget must be measured against
+        ``time.monotonic`` wall time, not a count of ``POLL_INTERVAL`` sleeps.
+        Each poll iteration also spends real time on ``sync_task_history`` Nomad
+        round-trips and two DB commits; a sleep-only budget would ignore that
+        time and let the server hold drift past the SEP→Tasks read timeout.
+
+        The connect phase starts on the first poll and the executor's first
+        ``sync_task_history`` burns more than the whole connect budget of wall
+        time **without sleeping** (it advances the shared monotonic clock
+        directly). It would flip the task to SUCCESS on its *second* call. A
+        wall-clock budget breaks on the very next top-of-loop check -- after a
+        single callback, before the SUCCESS flip -- so the check times out and
+        ``sync_task_history`` runs exactly once. A sleep-only budget would
+        charge only ``POLL_INTERVAL`` per iteration, never reach the budget,
+        and instead observe the second-call SUCCESS -- the discriminating
+        behaviour this test locks in.
+        """
+        # timeout >> POLL_INTERVAL (and the request-model max) so a sleep-only
+        # budget would need ~30 polls to expire, while the non-sleep callback
+        # time alone overruns the whole budget at once.
+        request = _make_request(timeout=POLL_INTERVAL * 30)
+
+        call_count = {"n": 0}
+
+        async def started_dispatch(
+            queue_item: TaskHistory, db: AsyncSession
+        ) -> TaskHistory:
+            queue_item.status = TaskHistoryStatusEnum.RUNNING
+            queue_item.execution_request.tracking.update(
+                evaluation_id="eval-1",
+                job_id="job-1",
+            )
+            # Connect phase is live from the first poll.
+            self._mark_run_script_started(queue_item)
+            saved = await TaskHistoryManager.save(
+                db, queue_item, flag_modified_fields=["execution_request"]
+            )
+            await db.refresh(saved)
+            return saved
+
+        async def sync_task_history(
+            queue_item: TaskHistory,
+            writer_session: AsyncSession | None = None,
+        ) -> TaskHistory:
+            assert writer_session is not None
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                # Burn more than the entire connect budget in non-sleep wall
+                # time (Nomad round-trip + DB commits), staying RUNNING.
+                advancing_clock.now += request.timeout + POLL_INTERVAL
+                return queue_item
+            # A sleep-only budget would reach here and succeed; a wall-clock
+            # budget must have already broken out on the timeout.
+            await self._append_log(
+                writer_session,
+                queue_item.id,
+                TaskLogType.STDOUT,
+                json.dumps({"success": True}),
+            )
+            queue_item.status = TaskHistoryStatusEnum.SUCCESS
+            return queue_item
+
+        mock_executor = MagicMock(spec=BaseExecutor)
+        mock_executor.sync_task_history = sync_task_history
+
+        with (
+            patch(
+                "app.tasks.connectivity.service.dispatch_queue_item",
+                side_effect=started_dispatch,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_executor_for_task",
+                return_value=mock_executor,
+            ),
+            patch(
+                "app.tasks.connectivity.service.get_async_session_maker",
+                return_value=async_session_maker,
+            ),
+        ):
+            result = await check_connectivity(session, request)
+
+        assert call_count["n"] == 1, (
+            "wall-clock budget must break after the single non-sleep-heavy poll, "
+            "before the second-call SUCCESS flip"
+        )
+        assert result.success is False
+        assert result.error is not None
+        assert "timed out" in result.error
+        assert f"timed out after {request.timeout}s" in result.error
 
     async def test_timeout_surfaces_partial_run_script_logs(
         self,
@@ -1056,7 +1183,6 @@ class TestCheckConnectivityRealSession:
                 "app.tasks.connectivity.service.get_async_session_maker",
                 return_value=async_session_maker,
             ),
-            patch("app.tasks.connectivity.service.asyncio.sleep", new=AsyncMock()),
         ):
             result = await check_connectivity(session, request)
 

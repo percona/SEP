@@ -18,6 +18,7 @@
 import asyncio
 import contextvars
 import json
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any, cast
@@ -180,8 +181,14 @@ async def check_connectivity(
     # ``StartedAt`` (not ``status``) marks where the DB connect begins — see
     # ``_connect_phase_started``. Time before it is charged against
     # ``PROVISIONING_TIMEOUT``, time after against the connect budget below.
-    provisioning_elapsed = 0
-    connect_elapsed = 0
+    #
+    # Both budgets are measured against wall-clock (``time.monotonic``), not a
+    # count of ``POLL_INTERVAL`` sleeps: each iteration also spends real time on
+    # ``sync_task_history`` Nomad round-trips and DB commits, which must count
+    # against the budgets so the total server hold stays bounded within the
+    # SEP→Tasks client read timeout instead of drifting past it under latency.
+    provisioning_started = time.monotonic()
+    connect_started_at: float | None = None
     connect_started = False
     while queue_item.status in (
         TaskHistoryStatusEnum.PENDING,
@@ -189,14 +196,13 @@ async def check_connectivity(
     ):
         if not connect_started:
             connect_started = _connect_phase_started(queue_item)
+            if connect_started:
+                connect_started_at = time.monotonic()
         if not connect_started:
-            if provisioning_elapsed >= PROVISIONING_TIMEOUT:
+            if time.monotonic() - provisioning_started >= PROVISIONING_TIMEOUT:
                 break
-            provisioning_elapsed += POLL_INTERVAL
-        else:
-            if connect_elapsed >= request.timeout:
-                break
-            connect_elapsed += POLL_INTERVAL
+        elif time.monotonic() - connect_started_at >= request.timeout:
+            break
         await asyncio.sleep(POLL_INTERVAL)
         async with async_session() as writer_session:
             queue_item = await executor.sync_task_history(
