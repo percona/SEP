@@ -90,21 +90,9 @@
             "title": "Createdtime"
           },
           "email": {
-            "anyOf": [
-              {
-                "format": "email",
-                "type": "string"
-              },
-              {
-                "const": "",
-                "enum": [
-                  ""
-                ],
-                "type": "string"
-              }
-            ],
             "default": "",
-            "title": "Email"
+            "title": "Email",
+            "type": "string"
           },
           "firstName": {
             "default": "",

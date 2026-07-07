@@ -61,9 +61,10 @@ class GrafanaSDK(RemoteAPI):
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :param service_account_token: The Grafana service-account token used as a
         bearer credential for programmatic user reads.
-    :param token_max_age: How long a minted identity assertion stays valid.
-        Defaults to 7 days -- keep it in sync with a deployment override of
-        ``SESSION__MAX_AGE``.
+    :param access_token_max_age: How long a minted access assertion stays valid
+        (the per-request Bearer credential). Defaults to 1 hour.
+    :param refresh_token_max_age: How long a minted refresh assertion stays valid
+        (the SPA's ``HttpOnly`` refresh cookie). Defaults to 7 days.
     :param error_detail_key: The key Grafana uses for error details. Defaults to
         "message".
     """
@@ -71,7 +72,8 @@ class GrafanaSDK(RemoteAPI):
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     logger_name: str = __name__
     service_account_token: SecretStr
-    token_max_age: TimedeltaSeconds = timedelta(days=7)
+    access_token_max_age: TimedeltaSeconds = timedelta(hours=1)
+    refresh_token_max_age: TimedeltaSeconds = timedelta(days=7)
     error_detail_key: NonEmptyStr = "message"
 
     #: Name of the session cookie Grafana sets on a successful password login.

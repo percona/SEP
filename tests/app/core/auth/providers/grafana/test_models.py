@@ -40,6 +40,8 @@ class TestGrafanaUserIdentity:
         oauth = await GrafanaUser.get_oauth_token(username="alice", password="secret")
         assert isinstance(oauth, OAuthToken)
         assert oauth.token_type == "Bearer"
+        assert oauth.access_token
+        assert oauth.refresh_token
 
         user = await GrafanaUser.from_jwt(oauth.access_token)
 
@@ -98,15 +100,20 @@ class TestGrafanaUserFromJwt:
             await GrafanaUser.from_jwt(forged)
 
     @pytest.mark.asyncio
-    async def test_rejects_expired_token(
-        self, grafana_mock, grafana_user_record, mocker
-    ):
-        """Verify an assertion older than ``token_max_age`` raises ``ValidationError``."""
-        token = GrafanaUser._from_grafana_record(grafana_user_record, [])._mint()
-        mocker.patch.object(grafana_mock, "token_max_age", timedelta(seconds=-1))
+    async def test_rejects_expired_token(self, grafana_mock, mocker):
+        """Verify an access assertion past its lifetime raises ``ValidationError``."""
+        oauth = await GrafanaUser.get_oauth_token(username="alice", password="secret")
+        mocker.patch.object(grafana_mock, "access_token_max_age", timedelta(seconds=-1))
 
         with pytest.raises(ValidationError):
-            await GrafanaUser.from_jwt(token)
+            await GrafanaUser.from_jwt(oauth.access_token)
+
+    @pytest.mark.asyncio
+    async def test_rejects_refresh_token_as_bearer(self, grafana_mock):
+        """Verify a refresh assertion cannot authenticate as a Bearer token."""
+        oauth = await GrafanaUser.get_oauth_token(username="alice", password="secret")
+        with pytest.raises(ValidationError):
+            await GrafanaUser.from_jwt(oauth.refresh_token)
 
 
 class TestGrafanaAdminDerivation:
@@ -199,12 +206,6 @@ class TestGrafanaUnsupportedGrants:
             await GrafanaUser.get_oauth_token(code="some-code")
 
     @pytest.mark.asyncio
-    async def test_get_oauth_token_with_refresh_token(self):
-        """Verify the refresh-token grant is unsupported."""
-        with pytest.raises(GrafanaException):
-            await GrafanaUser.get_oauth_token(refresh_token="some-token")
-
-    @pytest.mark.asyncio
     async def test_from_code(self):
         """Verify from_code is unsupported."""
         with pytest.raises(GrafanaException):
@@ -221,6 +222,42 @@ class TestGrafanaUnsupportedGrants:
         """Verify ``GrafanaTokenPayload.from_jwt`` is unsupported."""
         with pytest.raises(GrafanaException):
             await GrafanaTokenPayload.from_jwt("anything")
+
+
+class TestGrafanaRefreshGrant:
+    """Test the SPA refresh grant (SEP-minted refresh assertions)."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_remints_a_rotated_pair(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify the refresh grant re-mints a usable pair without calling Grafana."""
+        login = await GrafanaUser.get_oauth_token(username="alice", password="secret")
+
+        refreshed = await GrafanaUser.get_oauth_token(refresh_token=login.refresh_token)
+
+        assert refreshed.access_token
+        assert refreshed.refresh_token
+        user = await GrafanaUser.from_jwt(refreshed.access_token)
+        assert user.username == grafana_user_record["login"]
+        grafana_mock.login.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_refresh_rejects_an_access_token(self, grafana_mock):
+        """Verify an access assertion cannot be replayed at the refresh grant."""
+        login = await GrafanaUser.get_oauth_token(username="alice", password="secret")
+        with pytest.raises(ValidationError):
+            await GrafanaUser.get_oauth_token(refresh_token=login.access_token)
+
+    @pytest.mark.asyncio
+    async def test_refresh_rejects_expired_refresh(self, grafana_mock, mocker):
+        """Verify an expired refresh assertion raises ``ValidationError``."""
+        login = await GrafanaUser.get_oauth_token(username="alice", password="secret")
+        mocker.patch.object(
+            grafana_mock, "refresh_token_max_age", timedelta(seconds=-1)
+        )
+        with pytest.raises(ValidationError):
+            await GrafanaUser.get_oauth_token(refresh_token=login.refresh_token)
 
 
 class TestGrafanaInvalidation:

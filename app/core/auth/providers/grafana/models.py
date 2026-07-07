@@ -20,7 +20,7 @@ from typing import Any, cast, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from itsdangerous import BadData, URLSafeTimedSerializer
-from pydantic import model_validator
+from pydantic import model_validator, ValidationInfo
 
 from app.core.auth.models import BaseTokenPayload, BaseUser, OAuthToken
 from app.core.auth.providers.grafana.sdk import GrafanaException, GrafanaSDK
@@ -31,6 +31,11 @@ _TOKEN_SERIALIZER = URLSafeTimedSerializer(
     settings.SECRET_KEY.get_secret_value(), salt="sep.auth.grafana.v1"
 )
 _ID_NAMESPACE = uuid5(NAMESPACE_URL, "https://percona.com/sep/auth/grafana")
+
+# Assertion ``typ`` claim values -- an access token cannot be replayed at the
+# refresh endpoint, nor a refresh token used as a Bearer credential.
+_ACCESS = "access"
+_REFRESH = "refresh"
 
 
 def _active_grafana_sdk() -> GrafanaSDK:
@@ -78,37 +83,73 @@ class GrafanaUser(BaseUser):
 
     @model_validator(mode="before")
     @classmethod
-    def _decode_signed_token(cls, data: Any) -> Any:
+    def _decode_signed_token(cls, data: Any, info: ValidationInfo) -> Any:
         """Decode a signed identity assertion into user fields.
 
-        A string input is a minted assertion: verify its signature and expiry
-        and return the embedded claims. Any other input (a mapping from a
-        Grafana record) is passed through untouched. Decode failures are raised
-        as ``ValueError`` so Pydantic surfaces them as ``ValidationError`` -- the
-        error type both auth deps expect.
+        A string input is a minted assertion: verify its signature, its expiry
+        (the access lifetime by default, or the refresh lifetime when the
+        validation context sets ``token_type`` to ``refresh``), and that its
+        ``typ`` claim matches the expected type. Any other input (a mapping from a
+        Grafana record) is passed through untouched. Decode failures are raised as
+        ``ValueError`` so Pydantic surfaces them as ``ValidationError`` -- the
+        error type both auth deps and the SPA refresh route expect.
 
         :param data: The raw model input.
+        :param info: The validation context carrying the expected ``token_type``.
         :return: The decoded claims mapping, or ``data`` unchanged.
-        :raises ValueError: If the assertion is tampered, expired, or malformed.
+        :raises ValueError: If the assertion is tampered, expired, malformed, or of
+            the wrong type.
         """
-        if isinstance(data, str):
-            try:
-                return _TOKEN_SERIALIZER.loads(
-                    data, max_age=_active_grafana_sdk().token_max_age.total_seconds()
-                )
-            except BadData as exc:
-                raise ValueError("invalid or expired Grafana session token") from exc
-        return data
+        if not isinstance(data, str):
+            return data
+        token_type = (info.context or {}).get("token_type", _ACCESS)
+        sdk = _active_grafana_sdk()
+        max_age = (
+            sdk.refresh_token_max_age
+            if token_type == _REFRESH
+            else sdk.access_token_max_age
+        ).total_seconds()
+        try:
+            payload = _TOKEN_SERIALIZER.loads(data, max_age=max_age)
+        except BadData as exc:
+            raise ValueError("invalid or expired Grafana session token") from exc
+        if payload.get("typ") != token_type:
+            raise ValueError("unexpected Grafana token type")
+        return payload
 
-    def _mint(self) -> str:
-        """Mint a signed identity assertion carrying this user's identity.
+    @staticmethod
+    def _mint(user: "GrafanaUser", token_type: str) -> str:
+        """Mint a signed identity assertion of ``token_type`` for ``user``.
 
+        :param user: The user whose identity the assertion carries.
+        :param token_type: The assertion type (``access`` or ``refresh``),
+            recorded as the ``typ`` claim.
         :return: The signed, URL-safe identity assertion.
         """
-        return _TOKEN_SERIALIZER.dumps(
-            self.model_dump(
-                mode="json", include={"id", "username", "email", "is_admin"}
-            )
+        payload = user.model_dump(
+            mode="json", include={"id", "username", "email", "is_admin"}
+        )
+        payload["typ"] = token_type
+        return _TOKEN_SERIALIZER.dumps(payload)
+
+    @staticmethod
+    def _oauth_token_for(user: "GrafanaUser", grafana: GrafanaSDK) -> OAuthToken:
+        """Build an OAuth token pair (access + refresh) for ``user``.
+
+        :param user: The authenticated user.
+        :param grafana: The active SDK, read for the access-token lifetime.
+        :return: An OAuth token whose ``access_token`` / ``refresh_token`` are
+            SEP-signed assertions.
+        """
+        empty = ""
+        bearer = "Bearer"
+        return OAuthToken(
+            access_token=GrafanaUser._mint(user, _ACCESS),
+            refresh_token=GrafanaUser._mint(user, _REFRESH),
+            id_token=empty,
+            token_type=bearer,
+            expires_in=grafana.access_token_max_age,
+            scope=empty,
         )
 
     @classmethod
@@ -161,38 +202,40 @@ class GrafanaUser(BaseUser):
         password: str | None = None,
         refresh_token: str | None = None,
     ) -> OAuthToken:
-        """Authenticate against Grafana and mint an identity assertion.
+        """Mint an access + refresh assertion pair for the password or refresh grant.
 
-        Only the resource-owner password grant is supported: Grafana issues no
-        authorization code and no refresh token, so the ``access_token`` returned
-        is a SEP-signed identity assertion rather than a Grafana credential.
+        The password grant authenticates against Grafana once and mints the pair;
+        the refresh grant verifies a prior refresh assertion locally and re-mints a
+        rotated pair with no Grafana call. Both ``access_token`` and
+        ``refresh_token`` are SEP-signed assertions rather than Grafana credentials
+        (Grafana issues no OAuth tokens).
 
         :param code: Unsupported -- Grafana has no authorization-code grant.
-        :param username: The Grafana username.
-        :param password: The Grafana password.
-        :param refresh_token: Unsupported -- Grafana issues no refresh token.
-        :return: An OAuth token whose ``access_token`` is the minted assertion.
-        :raises GrafanaException: For any grant other than username/password.
+        :param username: The Grafana username (password grant).
+        :param password: The Grafana password (password grant).
+        :param refresh_token: A prior SEP-signed refresh assertion (refresh grant).
+        :return: An OAuth token whose ``access_token`` / ``refresh_token`` are the
+            minted assertions.
+        :raises GrafanaException: For the authorization-code grant or missing
+            password-grant credentials.
+        :raises ValidationError: When the refresh assertion is invalid, expired, or
+            not a refresh token.
         """
-        if code is not None or refresh_token is not None:
-            raise GrafanaException(detail="Grafana supports only the password grant.")
+        if code is not None:
+            raise GrafanaException(detail="Grafana has no authorization-code grant.")
+        grafana = _active_grafana_sdk()
+        if refresh_token is not None:
+            user = GrafanaUser.model_validate(
+                refresh_token, context={"token_type": _REFRESH}
+            )
+            return GrafanaUser._oauth_token_for(user, grafana)
         if not (username and password):
             raise GrafanaException(detail="Grafana requires a username and password.")
-        grafana = _active_grafana_sdk()
         session = await grafana.login(username, password)
         record = await grafana.get_current_user(session)
         orgs = await grafana.get_current_user_orgs(session)
         user = GrafanaUser._from_grafana_record(record, orgs)
-        empty = ""
-        bearer = "Bearer"
-        return OAuthToken(
-            access_token=GrafanaUser._mint(user),
-            token_type=bearer,
-            expires_in=grafana.token_max_age,
-            refresh_token=empty,
-            id_token=empty,
-            scope=empty,
-        )
+        return GrafanaUser._oauth_token_for(user, grafana)
 
     @staticmethod
     async def invalidate_oauth_token(access_token: str) -> None:  # noqa: ARG004
@@ -253,14 +296,15 @@ class GrafanaUser(BaseUser):
 
     @classmethod
     async def from_jwt(cls, token: str) -> Self:
-        """Build a user by verifying a minted identity assertion.
+        """Build a user by verifying a minted access assertion.
 
-        :param token: The signed identity assertion.
+        :param token: The signed access assertion (the per-request Bearer
+            credential).
         :return: The verified ``GrafanaUser``.
-        :raises ValidationError: If the assertion is tampered, expired, or
-            malformed.
+        :raises ValidationError: If the assertion is tampered, expired, malformed,
+            or not an access token.
         """
-        user = cls.model_validate(token)
+        user = cls.model_validate(token, context={"token_type": _ACCESS})
         user.access_token = token
         return user
 

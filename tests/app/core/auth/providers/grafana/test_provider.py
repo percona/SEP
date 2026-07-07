@@ -46,7 +46,8 @@ class TestGrafanaAuthProviderBundle:
         """Verify the provider carries the flat Grafana SDK config."""
         provider = _provider()
         assert provider.service_account_token.get_secret_value() == "svc-token"
-        assert provider.token_max_age == timedelta(days=7)
+        assert provider.access_token_max_age == timedelta(hours=1)
+        assert provider.refresh_token_max_age == timedelta(days=7)
         assert callable(provider.get_org_users)
 
     @pytest.mark.asyncio
