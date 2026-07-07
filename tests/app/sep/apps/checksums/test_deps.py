@@ -21,14 +21,15 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.sep.apps.checksums.deps import (
-    _assemble_checksum_payload,
+    assemble_checksum_payload,
     build_checksums_task_payload,
+    parse_checksums_task_args,
 )
 from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm
 from app.sep.apps.checksums.spec import (
     build_checksums_spec,
-    DEFAULT_RECURSION_DSN_TABLE,
 )
+from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
 from app.tasks.models import TaskOwner, TaskWrite
 
@@ -65,7 +66,7 @@ class TestChecksumsJinjaFormDeps:
             "",
         )
         assert recursion_arg
-        assert DEFAULT_RECURSION_DSN_TABLE in recursion_arg
+        assert DSN_TABLE_DEFAULT in recursion_arg
 
 
 class TestChecksumsNomadPayloadParity:
@@ -129,11 +130,11 @@ class TestChecksumsNomadPayloadParity:
 
 
 class TestChecksumsPayloadAssembly:
-    """Tests for the shared private helper _assemble_checksum_payload."""
+    """Cover the shared ``assemble_checksum_payload`` helper."""
 
     @staticmethod
     def _assemble(created_service, **overrides):
-        """Call ``_assemble_checksum_payload`` with default kwargs, applying overrides.
+        """Run ``assemble_checksum_payload`` with default kwargs, applying overrides.
 
         :param created_service: the service fixture forwarded as the first positional arg.
         :type created_service: Service
@@ -160,13 +161,13 @@ class TestChecksumsPayloadAssembly:
             "alert_on_fail": False,
         }
         kwargs.update(overrides)
-        return _assemble_checksum_payload(created_service, **kwargs)
+        return assemble_checksum_payload(created_service, **kwargs)
 
     def test_dsn_expansion_does_not_mutate_input(self, created_service):
-        """Assert _assemble_checksum_payload does not mutate the recursion_method argument."""
+        """Assert assemble_checksum_payload does not mutate the recursion_method argument."""
         original_recursion_method = "dsn"
 
-        _assemble_checksum_payload(
+        assemble_checksum_payload(
             created_service,
             task_name="test",
             hostname="host1",
@@ -192,7 +193,7 @@ class TestChecksumsPayloadAssembly:
     @pytest.mark.parametrize(
         ("dsn_table_input", "expected_substring"),
         [
-            ("", DEFAULT_RECURSION_DSN_TABLE),
+            ("", DSN_TABLE_DEFAULT),
             ("D=mydb,t=custom_dsns", "D=mydb,t=custom_dsns"),
         ],
         ids=["default_when_empty", "provided_verbatim"],
@@ -218,7 +219,7 @@ class TestChecksumsPayloadAssembly:
         self, recursion_method, created_service
     ):
         """Assert non-DSN recursion methods are forwarded as-is without dsn= expansion."""
-        result = _assemble_checksum_payload(
+        result = assemble_checksum_payload(
             created_service,
             task_name="test",
             hostname="host1",
@@ -305,3 +306,66 @@ class TestChecksumsPayloadAssembly:
             assert present is should_appear, (
                 f"{flag} present={present}, expected {should_appear}"
             )
+
+
+class TestParseChecksumsTaskArgs:
+    """Cover the reverse parser that rebuilds form values from a stored args string."""
+
+    def test_golden_full_args_round_trip(self):
+        """Rebuild the complete form-value dict from a full checksums args string."""
+        meta = {
+            "args": (
+                "P=3306,D=percona,t=checksums "
+                "--recursion-method=dsn=h=1,P=2,D=x,t=y "
+                "--databases=db1,db2 --tables=t1,t2 --pause-file=/tmp/p "
+                "--set-vars=x=1 --max-load=Threads_running=50 --chunk-time=0.5 "
+                "--max-lag=100 --progress=time,10 "
+                "--binary-index --explain --fail-on-stopped-replication "
+                "--truncate-replicate-table"
+            ),
+        }
+
+        assert parse_checksums_task_args(meta) == {
+            "recursion_method": "dsn=h=1,P=2,D=x,t=y",
+            "databases": "db1,db2",
+            "tables": "t1,t2",
+            "pause_file": "/tmp/p",
+            "binary_index": True,
+            "explain_arg": True,
+            "fail_on_stopped_replication": True,
+            "truncate_replicate_table": True,
+            "progress": "time,10",
+            "set_vars": "x=1",
+            "max_load": "Threads_running=50",
+            "chunk_time": "0.5",
+            "max_lag": "100",
+            "extra_args": "",
+        }
+
+    def test_missing_or_empty_args_return_defaults(self):
+        """Return the default form values when args are missing or empty."""
+        defaults = parse_checksums_task_args({})
+        assert defaults["recursion_method"] == "processlist"
+        assert parse_checksums_task_args({"args": ""}) == defaults
+
+    def test_first_token_is_always_dropped(self):
+        """Drop the leading positional DSN token before parsing the rest."""
+        out = parse_checksums_task_args({"args": "--binary-index --explain"})
+        assert out["binary_index"] is False
+        assert out["explain_arg"] is True
+
+    def test_recursion_method_dsn_is_stored_raw(self):
+        """Store ``--recursion-method=dsn=…`` verbatim (checksums defers the split)."""
+        out = parse_checksums_task_args(
+            {"args": "leading --recursion-method=dsn=h=1,D=x,t=y"}
+        )
+        assert out["recursion_method"] == "dsn=h=1,D=x,t=y"
+        assert "dsn_table" not in out
+
+    def test_unknown_args_are_dropped(self):
+        """Drop unrecognized args silently (checksums keeps no extra_args)."""
+        out = parse_checksums_task_args(
+            {"args": "leading --unknown-flag --databases=db"}
+        )
+        assert out["databases"] == "db"
+        assert out["extra_args"] == ""
