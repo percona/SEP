@@ -599,7 +599,9 @@ def _register_create_route(
                 )
             builder = await _bind_context(base_builder, context_provider)
             base = builder(task, status=None)
-            return create_model(**base.model_dump(), connectivity_warning=warning)
+            return create_model(
+                **{**base.model_dump(), "connectivity_warning": warning}
+            )
 
     router.add_api_route(
         "/",
@@ -706,7 +708,9 @@ def _register_update_route(
                 )
             builder = await _bind_context(base_builder, context_provider)
             base = builder(updated_task, status=task_status)
-            return update_model(**base.model_dump(), connectivity_warning=warning)
+            return update_model(
+                **{**base.model_dump(), "connectivity_warning": warning}
+            )
 
     router.add_api_route(
         detail_path,

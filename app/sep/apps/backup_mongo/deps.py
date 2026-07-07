@@ -183,6 +183,7 @@ def build_backup_mongo_api_task_response(
         extras={
             "hostname": meta.get("target"),
             "backup_type": str(data.get("backup_type", "")),
+            "service_type": ServiceTypeEnum.MONGODB,
         },
     )
 

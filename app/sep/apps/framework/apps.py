@@ -908,8 +908,11 @@ class TaskExecutionApp(BaseApp):
         resolution applies — when create is disabled (there is no create route to
         attach a builder to), when a detail override means the create route
         renders like detail (its base is the detail model, not ``response_model``),
-        or when ``connectivity_check`` is on but ``response_model`` cannot carry
-        the probe ``connectivity_warning``.
+        when ``connectivity_check`` is on but ``response_model`` cannot carry
+        the probe ``connectivity_warning``, or when the app supplies a custom
+        ``response_builder`` (whose per-plugin extras the default builder cannot
+        replicate, so the create route must reuse that builder via the
+        ``base_builder`` fallback).
 
         :return: The explicit ``create_response_builder``; a no-extras builder over
             ``create_response_model``; the framework default builder over
@@ -943,6 +946,7 @@ class TaskExecutionApp(BaseApp):
             not self.capabilities.create
             or renders_like_detail
             or base_cannot_hold_warning
+            or self.response_builder is not None
         ):
             return None
         return self._default_task_response_builder(self.response_model)
