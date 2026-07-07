@@ -59,7 +59,10 @@ export interface FreeSoloMultiSelectProps<T extends MultiReferenceOption> {
 const isOptionEqualToValue = <T extends MultiReferenceOption>(
   option: T | string,
   value: T | string,
-): boolean => typeof option !== 'string' && typeof value !== 'string' && option.id === value.id;
+): boolean =>
+  typeof option === 'string' || typeof value === 'string'
+    ? option === value
+    : option.id === value.id;
 
 /**
  * Inner Autocomplete, split out so it can hold hooks (`useEffect`/`useMemo`)

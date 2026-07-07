@@ -25,7 +25,10 @@ import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
 const EMPTY_OPTIONS: HostOption[] = [];
 
 export interface HostSelectorProps {
-  /** react-hook-form field name. Stores a `HostOption | null`. */
+  /**
+   * react-hook-form field name. In single mode stores a `HostOption | null`;
+   * in `multiple` mode stores a `(number | string)[]` (selected host ids).
+   */
   name: string;
   label: string;
   required?: boolean;
