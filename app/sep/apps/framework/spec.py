@@ -72,6 +72,8 @@ __all__ = [
 ]
 
 RESERVED_FORM_KEY = "_form"
+_RUN_COMMAND_TASK = "run-command"
+_RUN_PYTHON_TASK = "run-python"
 
 _REF_ENTITY_TYPES = {
     ServiceRef: SyncInventoryEntityTypeEnum.SERVICE,
@@ -126,7 +128,7 @@ class RunCommandSpec:
         :return: The run-command ``TaskWrite.data`` payload.
         """
         return {
-            "task": "run-command",
+            "task": _RUN_COMMAND_TASK,
             "meta": {
                 "command": self.command,
                 "args": self.args,
@@ -165,7 +167,7 @@ class RunPythonSpec:
         :return: The run-python ``TaskWrite.data`` payload.
         """
         return {
-            "task": "run-python",
+            "task": _RUN_PYTHON_TASK,
             "meta": {
                 "config": self.config,
                 "target": host,
@@ -438,8 +440,8 @@ def build_run_python_task(
     The no-connectivity sibling of :func:`assemble_envelope`: emit the same
     ``run-python`` envelope shape without the connectivity meta keys, stamping
     ``_service_name`` only when ``service_name`` is not ``None`` and merging
-    ``extra_data`` at the ``data`` top level (for the ``backup_type`` / ``parent``
-    substitution tokens the callers keep there). Used by the task apps whose
+    ``extra_data`` at the ``data`` top level for caller-specific data keys. Used by
+    the task apps whose
     tasks resolve no ``ServiceRef`` and so cannot go through
     :func:`assemble_envelope`, which requires a service for its connectivity meta.
 
@@ -451,8 +453,8 @@ def build_run_python_task(
     :param payload: The ``file://`` payload URI placed at ``data.payload``.
     :param service_name: The resolved inventory service name, stamped as
         ``meta._service_name`` only when not ``None``. Defaults to ``None``.
-    :param extra_data: Extra top-level ``data`` keys merged after ``payload`` (the
-        ``backup_type`` / ``parent`` substitution tokens). Defaults to ``None``.
+    :param extra_data: Extra top-level ``data`` keys merged after ``payload``.
+        Defaults to ``None``.
     :param alert_on_fail: Whether to alert on task failure. Defaults to ``False``.
     :return: The assembled ``TaskWrite``, ready to POST to the Tasks API.
     :raises ValueError: When an ``extra_data`` key collides with a reserved
@@ -468,7 +470,7 @@ def build_run_python_task(
     if service_name is not None:
         meta["_service_name"] = service_name
     data = {
-        "task": "run-python",
+        "task": _RUN_PYTHON_TASK,
         "meta": meta,
         "payload": payload,
     }
