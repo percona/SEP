@@ -72,8 +72,8 @@ class GrafanaSDK(RemoteAPI):
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
-    logger_name: str = __name__
     SESSION_COOKIE_NAME: ClassVar[str] = "grafana_session"
+    logger_name: str = __name__
     service_account_token: SecretStr
     access_token_max_age: TimedeltaSeconds = timedelta(hours=1)
     refresh_token_max_age: TimedeltaSeconds = timedelta(days=7)
