@@ -354,6 +354,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -3746,6 +3758,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -3917,6 +3941,18 @@
               }
             ],
             "title": "Id"
+          },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
           },
           "last_updated_by": {
             "anyOf": [

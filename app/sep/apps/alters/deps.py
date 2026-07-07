@@ -19,6 +19,7 @@ import copy
 import json
 import logging
 import shlex
+from datetime import datetime
 from functools import partial
 from pathlib import Path
 from typing import Annotated, Any
@@ -895,6 +896,7 @@ def build_alters_api_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
     *,
+    last_executed_at: datetime | None = None,
     response_model: type[AltersTaskResponse] = AltersTaskResponse,
     connectivity_warning: ConnectivityWarning | None = None,
     username_mapping: dict[str, str] | None = None,
@@ -910,6 +912,8 @@ def build_alters_api_task_response(
     :type task: Task
     :param status: The latest known execution status for the task.
     :type status: TaskHistoryStatusEnum | None
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :param response_model: The per-verb response model to build; defaults to the
         list/detail base model.
     :param connectivity_warning: A warning to surface when a connectivity
@@ -936,6 +940,7 @@ def build_alters_api_task_response(
         response_model,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "created_by": mapping.get(task.created_by, task.created_by),
             "last_updated_by": mapping.get(task.last_updated_by, task.last_updated_by),

@@ -18,7 +18,7 @@
 import base64
 import gzip
 import json as json_lib
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -182,7 +182,13 @@ async def test_update_task_not_found(test_client):
 
 @pytest.mark.asyncio
 async def test_latest_task_history_status_batch(test_client, session):
-    """Assert POST /history/latest returns latest status keyed by task name."""
+    """Assert POST /history/latest returns the latest projection per task name.
+
+    The newest row is an in-progress RUNNING run (no finish time), while an
+    earlier SUCCESS run has one — so the projection reports RUNNING status but
+    the prior (max) finish time.
+    """
+    finished = utc_now() - timedelta(hours=1)
     task = await TaskManager.create(
         session,
         TaskWrite.model_validate(TaskFactory.build(name="route-latest-status")),
@@ -192,6 +198,7 @@ async def test_latest_task_history_status_batch(test_client, session):
         TaskHistory(
             task_id=task.id,
             status=TaskHistoryStatusEnum.SUCCESS,
+            finished_at=finished,
             execution_request={
                 "task": task.name,
                 "target": "localhost",
@@ -205,6 +212,7 @@ async def test_latest_task_history_status_batch(test_client, session):
         TaskHistory(
             task_id=task.id,
             status=TaskHistoryStatusEnum.RUNNING,
+            finished_at=None,
             execution_request={
                 "task": task.name,
                 "target": "localhost",
@@ -220,10 +228,15 @@ async def test_latest_task_history_status_batch(test_client, session):
     )
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {
-        task.name: TaskHistoryStatusEnum.RUNNING.value,
-        "route-latest-missing": None,
-    }
+    body = response.json()
+    assert body["route-latest-missing"] is None
+    assert body[task.name]["status"] == TaskHistoryStatusEnum.RUNNING.value
+    # The newest (RUNNING) row has no finish time; a non-null value proves the
+    # projection reports the prior run's max(finished_at), not the newest row.
+    assert body[task.name]["finished_at"] is not None
+    assert datetime.fromisoformat(body[task.name]["finished_at"]).replace(
+        tzinfo=None
+    ) == finished.replace(tzinfo=None)
 
 
 @pytest.mark.asyncio

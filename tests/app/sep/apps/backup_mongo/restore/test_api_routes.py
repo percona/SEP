@@ -169,7 +169,9 @@ class TestRestoreMongoApiList:
             raise AssertionError(f"Unexpected list params: {params!r}")
 
         mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
-        mock_task_api_dep.post = AsyncMock(return_value={"parent-restore": "success"})
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"parent-restore": {"status": "success", "finished_at": None}}
+        )
 
         response = test_client.get(f"{API_BASE}/")
 
@@ -214,7 +216,9 @@ class TestRestoreMongoApiList:
 
         mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
         mock_task_api_dep.post = AsyncMock(
-            return_value={"parent-restore-b": "running"},
+            return_value={
+                "parent-restore-b": {"status": "running", "finished_at": None}
+            },
         )
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")

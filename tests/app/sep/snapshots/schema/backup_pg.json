@@ -191,6 +191,12 @@
         "sortable": false
       },
       {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
+        "sortable": false
+      },
+      {
         "key": "created_by",
         "label": "Created By",
         "sortable": false

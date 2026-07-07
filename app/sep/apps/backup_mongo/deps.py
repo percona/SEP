@@ -18,6 +18,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
@@ -44,7 +45,7 @@ from app.sep.apps.framework import (
     batch_get_latest_statuses,
     build_default_task_response,
     extract_latest_task_status,
-    get_task_latest_status,
+    get_task_latest_history,
     make_task_dep,
 )
 from app.sep.deps import (
@@ -58,6 +59,7 @@ from app.sep.deps import (
 from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import (
     Task,
+    TaskHistoryLatestStatus,
     TaskHistoryStatusEnum,
     TaskLogType,
     TaskOwner,
@@ -164,6 +166,7 @@ def build_backup_mongo_api_task_response(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
 ) -> BackupTaskResponse:
     """Build a backup task response object for the JSON API.
 
@@ -171,6 +174,8 @@ def build_backup_mongo_api_task_response(
     :type task: Task
     :param status: The latest known execution status for the task.
     :type status: TaskHistoryStatusEnum | None
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :return: A validated backup task API response object.
     :rtype: BackupTaskResponse
     """
@@ -180,6 +185,7 @@ def build_backup_mongo_api_task_response(
         BackupTaskResponse,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "hostname": meta.get("target"),
             "backup_type": str(data.get("backup_type", "")),
@@ -198,10 +204,10 @@ def _backup_parent_list_params(pagination: Pagination) -> dict[str, Any]:
     }
 
 
-def _gathered_task_status(
-    result: TaskHistoryStatusEnum | BaseException | None,
-) -> TaskHistoryStatusEnum | None:
-    """Map a ``gather`` result to a status, treating failures as unknown."""
+def _gathered_latest_history(
+    result: TaskHistoryLatestStatus | BaseException | None,
+) -> TaskHistoryLatestStatus | None:
+    """Map a ``gather`` result to a latest-history projection, failures -> None."""
     return None if isinstance(result, BaseException) else result
 
 
@@ -239,7 +245,8 @@ async def get_backup_mongo_api_task_responses(
         items = [
             build_backup_mongo_api_task_response(
                 task,
-                status=status_map.get(task.name),
+                status=(latest := status_map.get(task.name)) and latest.status,
+                last_executed_at=latest.finished_at if latest else None,
             )
             for task in parents
         ]
@@ -260,19 +267,21 @@ async def get_backup_mongo_api_task_responses(
         tasks_api,
         [task.name for task in parents],
     )
-    task_status_pairs = [
-        (task, task_status)
+    task_latest_pairs = [
+        (task, latest)
         for task in parents
-        if (task_status := status_map.get(task.name)) == status
+        if (latest := status_map.get(task.name)) is not None and latest.status == status
     ]
-    page_pairs = pagination.slice(task_status_pairs)
+    page_pairs = pagination.slice(task_latest_pairs)
     items = [
-        build_backup_mongo_api_task_response(task, status=task_status)
-        for task, task_status in page_pairs
+        build_backup_mongo_api_task_response(
+            task, status=latest.status, last_executed_at=latest.finished_at
+        )
+        for task, latest in page_pairs
     ]
     return PaginatedResponse.from_pagination(
         items,
-        len(task_status_pairs),
+        len(task_latest_pairs),
         pagination,
     )
 
@@ -356,11 +365,11 @@ async def build_backup_mongo_api_detail_response(
     """
     derived_names = backup_derived_task_names(task.name)
     gather_results = await asyncio.gather(
-        get_task_latest_status(tasks_api, task.name),
+        get_task_latest_history(tasks_api, task.name),
         *(_fetch_backup_derived_detail(name, tasks_api) for name in derived_names),
         return_exceptions=True,
     )
-    parent_status = _gathered_task_status(gather_results[0])
+    parent_latest = _gathered_latest_history(gather_results[0])
     derived_results = gather_results[1:]
     derived_tasks = []
     latest_pbm_status = None
@@ -380,7 +389,11 @@ async def build_backup_mongo_api_detail_response(
         if derived.data.get("backup_type") == BackupType.PBM_STATUS.value:
             latest_pbm_status = await _fetch_latest_pbm_status(tasks_api, history_items)
 
-    base = build_backup_mongo_api_task_response(task, status=parent_status)
+    base = build_backup_mongo_api_task_response(
+        task,
+        status=parent_latest.status if parent_latest else None,
+        last_executed_at=parent_latest.finished_at if parent_latest else None,
+    )
     return BackupTaskDetailResponse(
         **base.model_dump(),
         derived_tasks=derived_tasks,

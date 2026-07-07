@@ -27,6 +27,7 @@ execute paths are tested against the same shapes production sees.
 """
 
 from collections.abc import Sequence
+from datetime import datetime
 from itertools import count
 from typing import Annotated, Any
 
@@ -160,7 +161,9 @@ class MockTaskAPI:
         """Route a Tasks-API POST to batch-status, execute, or create."""
         json = json or {}
         if path == "/history/latest":
-            return {name: self._latest_status(name) for name in json.get("names", [])}
+            return {
+                name: self._latest_projection(name) for name in json.get("names", [])
+            }
         if path == "/connectivity-check/":
             return {"success": True, "error": None}
         if path.startswith("/execute/"):
@@ -213,11 +216,21 @@ class MockTaskAPI:
             items = [item for item in items if item.get("status") == status]
         return {"items": items}
 
-    def _latest_status(self, name: str) -> str | None:
-        for item in self._history.get(name, []):
-            if (status := item.get("status")) is not None:
-                return status
-        return None
+    def _latest_projection(self, name: str) -> dict[str, Any] | None:
+        """Mirror ``latest_status_by_task_names``: newest status + max finish.
+
+        Returns ``None`` when no history row carries a non-null status (matching
+        the real endpoint, which filters null-status rows), else the newest
+        status paired with the ``max`` ``finished_at`` across the task's rows.
+        """
+        items = self._history.get(name, [])
+        status = next(
+            (s for item in items if (s := item.get("status")) is not None), None
+        )
+        if status is None:
+            return None
+        finishes = [f for item in items if (f := item.get("finished_at")) is not None]
+        return {"status": status, "finished_at": max(finishes) if finishes else None}
 
     def _create(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.create_count += 1
@@ -425,6 +438,7 @@ def synth_response_builder(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
     context: dict[str, str] | None = None,
 ) -> SynthResponse:
     """Build the synth response, injecting extras and remapping ``created_by``.
@@ -435,6 +449,8 @@ def synth_response_builder(
 
     :param task: The task to build a response for.
     :param status: The latest known execution status.
+    :param last_executed_at: The task's most recent finish time, injected by the
+        framework.
     :param context: The bound username map, or ``None`` when no provider is wired.
     :return: The synth response carrying the injected extras.
     """
@@ -443,6 +459,7 @@ def synth_response_builder(
         SynthResponse,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "service_type": ServiceTypeEnum.MYSQL,
             "created_by": mapping.get(task.created_by, task.created_by),
@@ -454,6 +471,7 @@ def synth_detail_builder(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
     context: dict[str, str] | None = None,
 ) -> SynthDetailResponse:
     """Build the richer synth detail response, injecting extras and the username.
@@ -463,6 +481,8 @@ def synth_detail_builder(
 
     :param task: The task to build a response for.
     :param status: The latest known execution status, injected by the framework.
+    :param last_executed_at: The task's most recent finish time, injected by the
+        framework.
     :param context: The bound username map, or ``None`` when no provider is wired.
     :return: The richer synth detail response.
     """
@@ -471,6 +491,7 @@ def synth_detail_builder(
         SynthDetailResponse,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "service_type": ServiceTypeEnum.MYSQL,
             "created_by": mapping.get(task.created_by, task.created_by),
@@ -482,6 +503,7 @@ def synth_create_response_builder(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
     context: dict[str, str] | None = None,
 ) -> SynthCreateResponse:
     """Build the stable create response, injecting extras and the resolved name.
@@ -493,6 +515,8 @@ def synth_create_response_builder(
 
     :param task: The task to build a response for.
     :param status: The latest known execution status.
+    :param last_executed_at: The task's most recent finish time, injected by the
+        framework.
     :param context: The bound username map, or ``None`` when no provider is wired.
     :return: The stable create response carrying the injected extras.
     """
@@ -501,6 +525,7 @@ def synth_create_response_builder(
         SynthCreateResponse,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "service_type": ServiceTypeEnum.MYSQL,
             "created_by": mapping.get(task.created_by, task.created_by),
@@ -526,7 +551,10 @@ async def synth_reject_running_task(tasks_api: TaskAPI) -> None:
     listing = await tasks_api.get("/", params={"owner": SYNTH_OWNER.value})
     names = [item["name"] for item in listing["items"]]
     statuses = await batch_get_latest_statuses(tasks_api, names)
-    if any(value == TaskHistoryStatusEnum.RUNNING for value in statuses.values()):
+    if any(
+        value is not None and value.status == TaskHistoryStatusEnum.RUNNING
+        for value in statuses.values()
+    ):
         raise HTTPConflictException("A synthetic task is already running.")
 
 

@@ -164,7 +164,12 @@ class TestListEndpoint:
             return_value={"items": [task], "total": 1, "offset": 0, "limit": 50}
         )
         mock_task_api_dep.post = AsyncMock(
-            return_value={task["name"]: TaskHistoryStatusEnum.SUCCESS.value}
+            return_value={
+                task["name"]: {
+                    "status": TaskHistoryStatusEnum.SUCCESS.value,
+                    "finished_at": None,
+                }
+            }
         )
         response = test_client.get("/api/apps/mysql_backups/")
         assert response.status_code == status.HTTP_200_OK

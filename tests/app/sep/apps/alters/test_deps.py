@@ -16,6 +16,7 @@
 """Define tests for the app.sep.apps.alters.deps module."""
 
 import shlex
+from datetime import datetime
 from unittest.mock import AsyncMock, call
 
 import pytest
@@ -796,7 +797,12 @@ async def test_get_alters_api_task_responses_resolves_statuses_via_batch():
         }
     )
     tasks_api.post = AsyncMock(
-        return_value={"parent-alter": TaskHistoryStatusEnum.SUCCESS.value}
+        return_value={
+            "parent-alter": {
+                "status": TaskHistoryStatusEnum.SUCCESS.value,
+                "finished_at": "2026-07-07T09:00:00",
+            }
+        }
     )
 
     results = await get_alters_api_task_responses(tasks_api)
@@ -804,6 +810,7 @@ async def test_get_alters_api_task_responses_resolves_statuses_via_batch():
     assert len(results) == 1
     assert results[0].name == "parent-alter"
     assert results[0].status == TaskHistoryStatusEnum.SUCCESS
+    assert results[0].last_executed_at == datetime.fromisoformat("2026-07-07T09:00:00")
     tasks_api.post.assert_awaited_once_with(
         "/history/latest", json={"names": ["parent-alter"]}
     )
@@ -836,8 +843,14 @@ async def test_get_alters_api_task_responses_filters_by_status():
     )
     tasks_api.post = AsyncMock(
         return_value={
-            "alter-a": TaskHistoryStatusEnum.SUCCESS.value,
-            "alter-b": TaskHistoryStatusEnum.FAILED.value,
+            "alter-a": {
+                "status": TaskHistoryStatusEnum.SUCCESS.value,
+                "finished_at": None,
+            },
+            "alter-b": {
+                "status": TaskHistoryStatusEnum.FAILED.value,
+                "finished_at": None,
+            },
         }
     )
 

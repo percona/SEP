@@ -107,6 +107,7 @@ async def _create_task_history(
     *,
     status: TaskHistoryStatusEnum = TaskHistoryStatusEnum.SUCCESS,
     snippet_filename: str | None = None,
+    finished_at: datetime | None = None,
 ) -> TaskHistory:
     """Create and persist a task history record.
 
@@ -118,6 +119,8 @@ async def _create_task_history(
     :type status: TaskHistoryStatusEnum
     :param snippet_filename: Optional snippet filename in meta.
     :type snippet_filename: str | None
+    :param finished_at: Optional completion timestamp for the history row.
+    :type finished_at: datetime | None
     :return: The persisted task history.
     :rtype: TaskHistory
     """
@@ -127,6 +130,7 @@ async def _create_task_history(
     history = TaskHistory(
         task_id=task.id,
         status=status,
+        finished_at=finished_at,
         execution_request={
             "task": task.name,
             "target": "localhost",
@@ -754,11 +758,9 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
             [task_a_name, task_b_name, missing_name],
         )
 
-        assert result == {
-            task_a_name: TaskHistoryStatusEnum.RUNNING,
-            task_b_name: TaskHistoryStatusEnum.FAILED,
-            missing_name: None,
-        }
+        assert result[task_a_name].status == TaskHistoryStatusEnum.RUNNING
+        assert result[task_b_name].status == TaskHistoryStatusEnum.FAILED
+        assert result[missing_name] is None
 
     @pytest.mark.asyncio
     async def test_deduplicates_duplicate_names(self, session: AsyncSession) -> None:
@@ -772,7 +774,7 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         )
 
         assert list(result.keys()) == ["latest-status-dedupe"]
-        assert result["latest-status-dedupe"] == TaskHistoryStatusEnum.SUCCESS
+        assert result["latest-status-dedupe"].status == TaskHistoryStatusEnum.SUCCESS
 
     @pytest.mark.asyncio
     async def test_latest_status_from_history_statuses_skips_nulls(self) -> None:
@@ -782,6 +784,73 @@ class TestTaskHistoryManagerLatestStatusByTaskNames:
         )
 
         assert result == TaskHistoryStatusEnum.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_finished_at_is_max_across_rows(self, session: AsyncSession) -> None:
+        """Assert finished_at is the max across rows while status is the newest.
+
+        Models the in-progress re-run case: an earlier SUCCESS/FAILED pair has
+        real finish times and the newest row is RUNNING with no finish time, so
+        the projection reports RUNNING status but still the prior (max) finish.
+        """
+        task = await _create_task(session, name="latest-mixed")
+        early = utc_now() - timedelta(hours=2)
+        later = utc_now() - timedelta(hours=1)
+        await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.SUCCESS, finished_at=early
+        )
+        failed = await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.FAILED, finished_at=later
+        )
+        await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.RUNNING, finished_at=None
+        )
+
+        result = await TaskHistoryManager.latest_status_by_task_names(
+            session, [task.name]
+        )
+
+        latest = result[task.name]
+        assert latest is not None
+        assert latest.status == TaskHistoryStatusEnum.RUNNING
+        assert latest.finished_at == failed.finished_at
+
+    @pytest.mark.asyncio
+    async def test_only_running_never_finished_has_no_finish(
+        self, session: AsyncSession
+    ) -> None:
+        """Assert a single unfinished RUNNING row yields status but no finish."""
+        task = await _create_task(session, name="latest-running")
+        await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.RUNNING, finished_at=None
+        )
+
+        result = await TaskHistoryManager.latest_status_by_task_names(
+            session, [task.name]
+        )
+
+        latest = result[task.name]
+        assert latest is not None
+        assert latest.status == TaskHistoryStatusEnum.RUNNING
+        assert latest.finished_at is None
+
+    @pytest.mark.asyncio
+    async def test_failed_run_reports_finish(self, session: AsyncSession) -> None:
+        """Assert a FAILED run still reports its finish time (it did run)."""
+        task = await _create_task(session, name="latest-failed")
+        finished = utc_now() - timedelta(minutes=30)
+        row = await _create_task_history(
+            session, task, status=TaskHistoryStatusEnum.FAILED, finished_at=finished
+        )
+
+        result = await TaskHistoryManager.latest_status_by_task_names(
+            session, [task.name]
+        )
+
+        latest = result[task.name]
+        assert latest is not None
+        assert latest.status == TaskHistoryStatusEnum.FAILED
+        assert latest.finished_at == row.finished_at
 
 
 # ---------------------------------------------------------------------------

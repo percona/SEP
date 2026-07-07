@@ -898,8 +898,9 @@ def default_columns(*middle: Column) -> list[Column]:
     """Return the standard task-plugin list-view columns wrapping ``middle``.
 
     Build the ordered column list ``[name, status, *middle, created_at,
-    created_by]`` shared by every task-plugin ``ListView``. The identity/audit
-    bookends are the part that is duplicated across all eight task plugins;
+    last_executed_at, created_by]`` shared by every task-plugin ``ListView``.
+    The identity/audit bookends are the part that is duplicated across all eight
+    task plugins;
     each plugin passes only its plugin-specific columns (and, where it has one,
     ``EXECUTOR_HOST_COLUMN``) through the ``middle`` slot, in the order they
     should appear. Fresh ``Column`` instances are built on every call — the
@@ -917,6 +918,11 @@ def default_columns(*middle: Column) -> list[Column]:
         Column(key="status", label="Status", format=ColumnFormat.STATUS),
         *(column.model_copy() for column in middle),
         Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
+        Column(
+            key="last_executed_at",
+            label="Last Executed",
+            format=ColumnFormat.RELATIVE,
+        ),
         Column(key="created_by", label="Created By"),
     ]
 

@@ -167,7 +167,7 @@ class TestBackupMongoApiList:
             return_value={"items": [parent], "total": 1, "offset": 0, "limit": 50}
         )
         mock_task_api_dep.post = AsyncMock(
-            return_value={"parent-backup": "success"},
+            return_value={"parent-backup": {"status": "success", "finished_at": None}},
         )
 
         response = test_client.get(f"{API_BASE}/")
@@ -212,7 +212,9 @@ class TestBackupMongoApiList:
                 "limit": 1,
             }
         )
-        mock_task_api_dep.post = AsyncMock(return_value={"parent-backup-b": "running"})
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"parent-backup-b": {"status": "running", "finished_at": None}}
+        )
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
 
@@ -283,7 +285,10 @@ class TestBackupMongoApiList:
             }
         )
         mock_task_api_dep.post = AsyncMock(
-            return_value={"parent-backup-a": "success", "parent-backup-b": "running"},
+            return_value={
+                "parent-backup-a": {"status": "success", "finished_at": None},
+                "parent-backup-b": {"status": "running", "finished_at": None},
+            },
         )
 
         response = test_client.get(f"{API_BASE}/?status=success")

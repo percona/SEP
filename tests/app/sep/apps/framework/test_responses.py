@@ -16,6 +16,7 @@
 """Tests for the shared JSON-API list-pipeline framework helpers."""
 
 from collections import defaultdict
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -42,13 +43,19 @@ class _TaskResponse(BaseModel):
 
     name: str
     status: TaskHistoryStatusEnum | None = None
+    last_executed_at: datetime | None = None
 
 
 def _build_response(
-    task: Task, *, status: TaskHistoryStatusEnum | None = None
+    task: Task,
+    *,
+    status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
 ) -> _TaskResponse:
-    """Build a minimal response carrying only the name and resolved status."""
-    return _TaskResponse(name=task.name, status=status)
+    """Build a minimal response carrying name, resolved status and last run."""
+    return _TaskResponse(
+        name=task.name, status=status, last_executed_at=last_executed_at
+    )
 
 
 def _task(name: str) -> Task:
@@ -65,17 +72,31 @@ def _mock_tasks_api(
     *,
     items: list[dict],
     statuses: dict[str, str | None],
+    finishes: dict[str, str | None] | None = None,
     total: int | None = None,
 ) -> AsyncMock:
-    """Build a ``RemoteAPI`` mock returning ``items`` and batch ``statuses``."""
+    """Build a ``RemoteAPI`` mock returning ``items`` and batch projections.
+
+    ``statuses`` maps name -> status string (or ``None`` for a name with no
+    history, yielding a ``None`` wire value). ``finishes`` optionally maps
+    name -> ISO ``finished_at`` string carried alongside the status.
+    """
+    finishes = finishes or {}
     payload = {"items": items}
     if total is not None:
         payload["total"] = total
+
+    def _projection(name: str) -> dict | None:
+        status = statuses.get(name)
+        if status is None:
+            return None
+        return {"status": status, "finished_at": finishes.get(name)}
+
     tasks_api = AsyncMock(spec=RemoteAPI)
     tasks_api.get = AsyncMock(return_value=payload)
     tasks_api.post = AsyncMock(
         side_effect=lambda _path, json: {
-            name: statuses.get(name) for name in json["names"]
+            name: _projection(name) for name in json["names"]
         }
     )
     return tasks_api
@@ -119,6 +140,40 @@ class TestBuildTaskListResponses:
         )
 
         assert [r.name for r in result] == ["task-a"]
+
+    @pytest.mark.asyncio
+    async def test_last_executed_at_threaded_to_items(self) -> None:
+        """Thread each task's ``finished_at`` onto the built response.
+
+        Covers the in-progress-rerun case: ``task-b`` is RUNNING (so it does not
+        match a SUCCESS filter) yet still carries its prior finish time, and a
+        never-run ``task-c`` renders empty.
+        """
+        tasks_api = _mock_tasks_api(
+            items=_items("task-a", "task-b", "task-c"),
+            statuses={"task-a": "success", "task-b": "running", "task-c": None},
+            finishes={
+                "task-a": "2026-07-07T09:00:00",
+                "task-b": "2026-07-06T12:00:00",
+            },
+        )
+
+        result = await build_task_list_responses(
+            tasks_api,
+            owner=TaskOwner.ARCHIVER.value,
+            response_builder=_build_response,
+        )
+
+        by_name = {r.name: r for r in result}
+        assert by_name["task-a"].last_executed_at == datetime.fromisoformat(
+            "2026-07-07T09:00:00"
+        )
+        assert by_name["task-b"].status == TaskHistoryStatusEnum.RUNNING
+        assert by_name["task-b"].last_executed_at == datetime.fromisoformat(
+            "2026-07-06T12:00:00"
+        )
+        assert by_name["task-c"].status is None
+        assert by_name["task-c"].last_executed_at is None
 
     @pytest.mark.asyncio
     async def test_paginated_no_filter_uses_upstream_total(self) -> None:
@@ -275,10 +330,13 @@ class TestBuildTaskListResponses:
             task: Task,
             *,
             status: TaskHistoryStatusEnum | None = None,
+            last_executed_at: datetime | None = None,
             context: dict | None = None,
         ) -> _TaskResponse:
             seen_contexts.append(context)
-            return _TaskResponse(name=task.name, status=status)
+            return _TaskResponse(
+                name=task.name, status=status, last_executed_at=last_executed_at
+            )
 
         await build_task_list_responses(
             tasks_api,
@@ -363,6 +421,28 @@ class TestBuildDefaultTaskResponse:
         result = build_default_task_response(_TaskResponse, task)
 
         assert result.status is None
+
+    def test_injects_last_executed_at(self) -> None:
+        """Inject the supplied ``last_executed_at`` onto the built response."""
+        task = _task("task-a")
+        finished = datetime.fromisoformat("2026-07-07T09:00:00")
+
+        result = build_default_task_response(
+            _TaskResponse,
+            task,
+            TaskHistoryStatusEnum.SUCCESS,
+            last_executed_at=finished,
+        )
+
+        assert result.last_executed_at == finished
+
+    def test_last_executed_at_defaults_to_none_when_omitted(self) -> None:
+        """Default ``last_executed_at`` to ``None`` when not supplied."""
+        task = _task("task-a")
+
+        result = build_default_task_response(_TaskResponse, task)
+
+        assert result.last_executed_at is None
 
 
 class _CreateBase(BaseModel):
