@@ -15,19 +15,17 @@
 
 """Define models for the Alters plugin."""
 
-from datetime import datetime
 from typing import Annotated, Any
 
 from pydantic import (
     AfterValidator,
-    BaseModel,
     field_validator,
     model_validator,
 )
 
 from app.core.utils.fields import NonEmptyStr, StrippedNonEmptyStr
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework import derive_create_response_model
+from app.sep.apps.framework import BaseTaskResponse, derive_create_response_model
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
     Choices,
@@ -43,7 +41,6 @@ from app.sep.apps.framework.rules import (
     F,
 )
 from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
 
 DEFAULT_ALTERS_DSN_TABLE = "D=percona,t=dsns"
 
@@ -378,43 +375,15 @@ class AltersCreate(AppFormModel):
     ] = False
 
 
-class AltersTaskResponse(BaseModel):
+class AltersTaskResponse(BaseTaskResponse):
     """Represent an alters task API response for list and detail surfaces.
 
-    The create/update routes return the
+    Add no fields of its own — the alters list/detail surface is exactly the
+    shared task-response surface. The create/update routes return the
     :data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models
-    derived from this base; both add ``connectivity_warning`` per the framework's
-    derived create-response standard, so the always-null warning field stays off
-    list/detail rows.
-
-    :param name: The name of the alters task.
-    :param owner: The entity or user that owns the task.
-    :param service_type: The type of database service (always MySQL for alters).
-    :param status: The current execution status of the task.
-    :param id: The unique identifier for the alters task.
-    :param backend: The backend worker/engine executing the task.
-    :param data: The raw configuration and parameters used for the alter execution.
-    :param protected: Whether the task is protected from deletion or modification.
-    :param alert_on_fail: If True, notifications are sent upon task failure.
-    :param created_at: The timestamp when the task was first created.
-    :param updated_at: The timestamp of the last modification to the task.
-    :param created_by: The user who initiated the task.
-    :param last_updated_by: The user who last modified the task record.
+    derived from this base, which add ``connectivity_warning`` per the
+    framework's derived create-response standard.
     """
-
-    name: str
-    owner: TaskOwner
-    service_type: ServiceTypeEnum | None = None
-    status: TaskHistoryStatusEnum | None = None
-    id: int | None = None
-    backend: TaskBackendEnum
-    data: dict[str, Any]
-    protected: bool
-    alert_on_fail: bool
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    created_by: str | None = None
-    last_updated_by: str | None = None
 
 
 AltersTaskResponseCreate = derive_create_response_model(
