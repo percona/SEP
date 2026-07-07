@@ -62,8 +62,8 @@ def _reconstructor_must_not_run(_task: Task, _ctx: FormBackfillContext) -> dict:
     raise AssertionError("reconstructor must not run")
 
 
+# A populated (but empty) lookup so the orchestrator's guard passes to the reconstructor.
 _EMPTY_SERVICE_LOOKUP = ServiceIdLookup.from_services([])
-"""A populated (but empty) lookup so the orchestrator's guard passes to the reconstructor."""
 
 
 @pytest_asyncio.fixture
