@@ -19,7 +19,8 @@ Mounted at ``/api/apps/report/`` via ``apps_router`` in
 ``app/sep/api/router.py``.
 """
 
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import status
@@ -27,7 +28,6 @@ from fastapi import status
 from app.sep.apps.report.deps import (
     get_pmm_api,
     require_pmm_api,
-    require_upload_configured,
 )
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.main import sep_app
@@ -251,257 +251,183 @@ class TestReportGenerateJsonApi:
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
-class TestReportGeneratePdfApi:
-    """Test POST /api/apps/report/generate/pdf."""
+class TestReportJobApi:
+    """Test snapshot-based PDF/upload job API endpoints."""
 
-    _PDF_URL = f"{API_BASE}/generate/pdf"
+    _PDF_JOBS_URL = f"{API_BASE}/pdf-jobs"
+    _UPLOAD_JOBS_URL = f"{API_BASE}/upload-jobs"
 
-    def test_returns_200_with_pdf(self, test_client, mock_pmm_api):
-        """Assert a generated report is returned as a PDF download."""
-        pdf_bytes = b"%PDF-1.4 fake content"
+    @staticmethod
+    def _async_result(
+        *,
+        status_: str = "PENDING",
+        successful: bool = False,
+        failed: bool = False,
+        result: dict | Exception | None = None,
+    ):
+        async_result = MagicMock()
+        async_result.status = status_
+        async_result.successful.return_value = successful
+        async_result.failed.return_value = failed
+        async_result.result = result
+        return async_result
+
+    def test_pdf_job_uses_snapshot_without_generate_report(self, test_client):
+        """PDF job start sends report JSON snapshot, no PMM recollection."""
+        report_json = make_report().model_dump(mode="json")
+        with (
+            patch(f"{_API}.render_report_pdf_job.delay") as mock_delay,
+            patch(
+                f"{_API}.celery.AsyncResult",
+                return_value=self._async_result(),
+            ),
+            patch(f"{_API}.generate_report", new_callable=AsyncMock) as mock_generate,
+        ):
+            mock_delay.return_value.id = "job-1"
+            response = test_client.post(
+                self._PDF_JOBS_URL, json={"report": report_json}
+            )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["job_id"] == "job-1"
+        mock_delay.assert_called_once_with(report_json)
+        mock_generate.assert_not_awaited()
+
+    def test_download_ready_pdf(self, test_client):
+        """GET /pdf-jobs/{id}/pdf streams the staged artifact from shared disk."""
         with (
             patch(
-                f"{_API}.generate_report",
-                new_callable=AsyncMock,
-                return_value=make_report(),
+                f"{_API}.celery.AsyncResult",
+                return_value=self._async_result(
+                    status_="SUCCESS",
+                    successful=True,
+                    result={"filename": "report.pdf"},
+                ),
             ),
-            patch(
-                f"{_API}.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=pdf_bytes,
-            ),
+            patch(f"{_API}.read_artifact", return_value=b"%PDF-1.4 fake"),
         ):
-            response = test_client.post(self._PDF_URL)
+            response = test_client.get(f"{self._PDF_JOBS_URL}/job-1/pdf")
 
         assert response.status_code == status.HTTP_200_OK
         assert response.headers["content-type"] == "application/pdf"
-        assert response.content == pdf_bytes
-        disposition = response.headers["content-disposition"]
-        assert "Health_and_Security_Report_2026-03-31.pdf" in disposition
-        assert disposition.startswith("attachment")
+        assert response.content == b"%PDF-1.4 fake"
+        assert 'filename="report.pdf"' in response.headers["content-disposition"]
 
-    def test_passes_default_parameters(self, test_client, mock_pmm_api):
-        """Assert default form parameters are forwarded."""
-        with (
-            patch(
-                f"{_API}.generate_report",
-                new_callable=AsyncMock,
-                return_value=make_report(),
-            ) as mock_gen,
-            patch(
-                f"{_API}.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-        ):
-            test_client.post(self._PDF_URL)
-
-        _, kwargs = mock_gen.call_args
-        assert kwargs["since"] == "now-7d"
-        assert kwargs["until"] == "now"
-        assert kwargs["full"] is True
-        assert kwargs["refresh"] is False
-
-    def test_passes_custom_parameters(self, test_client, mock_pmm_api):
-        """Assert custom form parameters are forwarded to generate_report."""
-        with (
-            patch(
-                f"{_API}.generate_report",
-                new_callable=AsyncMock,
-                return_value=make_report(),
-            ) as mock_gen,
-            patch(
-                f"{_API}.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-        ):
-            test_client.post(
-                self._PDF_URL,
-                data={
-                    "since": "now-30d",
-                    "until": "now-1d",
-                    "full": "true",
-                    "refresh": "true",
-                },
-            )
-
-        _, kwargs = mock_gen.call_args
-        assert kwargs["since"] == "now-30d"
-        assert kwargs["until"] == "now-1d"
-        assert kwargs["full"] is True
-        assert kwargs["refresh"] is True
-
-    def test_returns_503_when_pmm_unavailable(self, test_client):
-        """Assert 503 is returned when PMM is not configured."""
-        sep_app.dependency_overrides[get_pmm_api] = lambda: None
-        try:
-            response = test_client.post(self._PDF_URL)
-            assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        finally:
-            sep_app.dependency_overrides.pop(get_pmm_api, None)
-
-    def test_returns_500_on_generation_error(self, test_client, mock_pmm_api):
-        """Assert 500 is returned when report generation raises an exception."""
+    def test_download_returns_409_when_pdf_not_ready(self, test_client):
+        """GET /pdf-jobs/{id}/pdf returns conflict until the job succeeds."""
         with patch(
-            f"{_API}.generate_report",
-            new_callable=AsyncMock,
-            side_effect=RuntimeError("collection failed"),
+            f"{_API}.celery.AsyncResult",
+            return_value=self._async_result(status_="PENDING"),
         ):
-            response = test_client.post(self._PDF_URL)
+            response = test_client.get(f"{self._PDF_JOBS_URL}/job-1/pdf")
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+
+    def test_download_returns_410_when_artifact_expired(self, test_client):
+        """GET /pdf-jobs/{id}/pdf returns gone when the staged PDF was reaped."""
+        with (
+            patch(
+                f"{_API}.celery.AsyncResult",
+                return_value=self._async_result(
+                    status_="SUCCESS",
+                    successful=True,
+                    result={"filename": "report.pdf"},
+                ),
+            ),
+            patch(f"{_API}.read_artifact", return_value=None),
+        ):
+            response = test_client.get(f"{self._PDF_JOBS_URL}/job-1/pdf")
+
+        assert response.status_code == status.HTTP_410_GONE
+
+    def test_download_returns_500_when_job_failed(self, test_client):
+        """GET /pdf-jobs/{id}/pdf returns 500 when the Celery job failed."""
+        with patch(
+            f"{_API}.celery.AsyncResult",
+            return_value=self._async_result(
+                status_="FAILURE",
+                failed=True,
+                result=RuntimeError("render crashed"),
+            ),
+        ):
+            response = test_client.get(f"{self._PDF_JOBS_URL}/job-1/pdf")
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
-    def test_requires_authentication(self, unauthenticated_client):
-        """Unauthenticated requests return 401."""
-        response = unauthenticated_client.post(self._PDF_URL)
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-
-class TestReportUploadApi:
-    """Test POST /api/apps/report/upload."""
-
-    _UPLOAD_URL = f"{API_BASE}/upload"
-
-    @pytest.fixture
-    def _mock_upload_configured(self):
-        """Override the upload dependency to allow requests."""
-        sep_app.dependency_overrides[require_upload_configured] = lambda: None
-        yield
-        sep_app.dependency_overrides.pop(require_upload_configured, None)
-
-    @pytest.mark.usefixtures("_mock_upload_configured")
-    def test_returns_200_with_json(self, test_client, mock_pmm_api):
-        """Assert a successful upload returns 200 with the upload result."""
-        upload_result = {"sys_id": "abc123", "status": "uploaded"}
-        with (
-            patch(
-                f"{_API}.generate_report",
-                new_callable=AsyncMock,
-                return_value=make_report(),
-            ),
-            patch(
-                f"{_API}.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-            patch(
-                f"{_API}.upload_pdf_report",
-                new_callable=AsyncMock,
-                return_value=upload_result,
+    def test_failed_job_status_returns_sanitized_error(self, test_client):
+        """Job status hides raw exception details from clients."""
+        with patch(
+            f"{_API}.celery.AsyncResult",
+            return_value=self._async_result(
+                status_="FAILURE",
+                failed=True,
+                result=RuntimeError("https://user:secret@pmm.example failed"),
             ),
         ):
-            response = test_client.post(self._UPLOAD_URL)
+            response = test_client.get(f"{self._PDF_JOBS_URL}/job-1")
 
         assert response.status_code == status.HTTP_200_OK
-        assert response.json() == upload_result
+        body = response.json()
+        assert body["error"] == "Report job failed"
+        assert "secret" not in str(body)
 
-    @pytest.mark.usefixtures("_mock_upload_configured")
-    def test_passes_default_parameters(self, test_client, mock_pmm_api):
-        """Assert default form parameters are forwarded."""
-        with (
-            patch(
-                f"{_API}.generate_report",
-                new_callable=AsyncMock,
-                return_value=make_report(),
-            ) as mock_gen,
-            patch(
-                f"{_API}.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-            patch(
-                f"{_API}.upload_pdf_report",
-                new_callable=AsyncMock,
-                return_value={},
+    def test_failed_validation_job_returns_structured_errors(self, test_client):
+        """Validation failures keep structured error details without raw exception text."""
+        errors = [{"loc": ["metadata"], "msg": "Field required", "type": "missing"}]
+        with patch(
+            f"{_API}.celery.AsyncResult",
+            return_value=self._async_result(
+                status_="FAILURE",
+                failed=True,
+                result={"error": "Invalid report snapshot", "errors": errors},
             ),
         ):
-            test_client.post(self._UPLOAD_URL)
+            response = test_client.get(f"{self._PDF_JOBS_URL}/job-1")
 
-        _, kwargs = mock_gen.call_args
-        assert kwargs["since"] == "now-7d"
-        assert kwargs["until"] == "now"
-        assert kwargs["full"] is True
-        assert kwargs["refresh"] is False
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["error"] == "Invalid report snapshot"
+        assert body["result"] == {"errors": errors}
 
-    @pytest.mark.usefixtures("_mock_upload_configured")
-    def test_passes_custom_parameters(self, test_client, mock_pmm_api):
-        """Assert custom form parameters are forwarded to generate_report."""
+    def test_upload_job_uses_snapshot_without_generate_report(self, test_client):
+        """Upload job start sends report JSON snapshot, no PMM recollection."""
+        report_json = make_report().model_dump(mode="json")
         with (
             patch(
-                f"{_API}.generate_report",
-                new_callable=AsyncMock,
-                return_value=make_report(),
-            ) as mock_gen,
-            patch(
-                f"{_API}.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
+                f"{_API}.sep_settings",
+                SimpleNamespace(
+                    HEALTH_REPORT=SimpleNamespace(is_upload_configured=True)
+                ),
             ),
+            patch(f"{_API}.upload_report_snapshot_job.delay") as mock_delay,
             patch(
-                f"{_API}.upload_pdf_report",
-                new_callable=AsyncMock,
-                return_value={},
+                f"{_API}.celery.AsyncResult",
+                return_value=self._async_result(),
             ),
+            patch(f"{_API}.generate_report", new_callable=AsyncMock) as mock_generate,
         ):
-            test_client.post(
-                self._UPLOAD_URL,
-                data={
-                    "since": "now-30d",
-                    "until": "now-1d",
-                    "full": "true",
-                    "refresh": "true",
-                },
+            mock_delay.return_value.id = "job-2"
+            response = test_client.post(
+                self._UPLOAD_JOBS_URL,
+                json={"report": report_json},
             )
 
-        _, kwargs = mock_gen.call_args
-        assert kwargs["since"] == "now-30d"
-        assert kwargs["until"] == "now-1d"
-        assert kwargs["full"] is True
-        assert kwargs["refresh"] is True
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["job_id"] == "job-2"
+        mock_delay.assert_called_once_with(report_json)
+        mock_generate.assert_not_awaited()
 
-    def test_returns_503_when_upload_not_configured(self, test_client, mock_pmm_api):
-        """Assert 503 when upload is not configured (default settings)."""
-        response = test_client.post(self._UPLOAD_URL)
+    def test_upload_job_requires_config(self, test_client):
+        """Upload job returns 503 when ServiceNow upload is disabled."""
+        response = test_client.post(
+            self._UPLOAD_JOBS_URL,
+            json={"report": make_report().model_dump(mode="json")},
+        )
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
-    @pytest.mark.usefixtures("_mock_upload_configured")
-    def test_returns_503_when_pmm_unavailable(self, test_client):
-        """Assert 503 is returned when PMM is not configured."""
-        sep_app.dependency_overrides[get_pmm_api] = lambda: None
-        try:
-            response = test_client.post(self._UPLOAD_URL)
-            assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
-        finally:
-            sep_app.dependency_overrides.pop(get_pmm_api, None)
-
-    @pytest.mark.usefixtures("_mock_upload_configured")
-    def test_returns_500_on_upload_error(self, test_client, mock_pmm_api):
-        """Assert 500 is returned when the upload service raises an exception."""
-        with (
-            patch(
-                f"{_API}.generate_report",
-                new_callable=AsyncMock,
-                return_value=make_report(),
-            ),
-            patch(
-                f"{_API}.generate_pdf_report",
-                new_callable=AsyncMock,
-                return_value=b"%PDF-1.4",
-            ),
-            patch(
-                f"{_API}.upload_pdf_report",
-                new_callable=AsyncMock,
-                side_effect=RuntimeError("upload failed"),
-            ),
-        ):
-            response = test_client.post(self._UPLOAD_URL)
-
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-
-    def test_requires_authentication(self, unauthenticated_client):
-        """Unauthenticated requests return 401."""
-        response = unauthenticated_client.post(self._UPLOAD_URL)
+    def test_pdf_job_requires_authentication(self, unauthenticated_client):
+        """Unauthenticated PDF job creation returns 401."""
+        response = unauthenticated_client.post(self._PDF_JOBS_URL)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
@@ -524,17 +450,13 @@ class TestReportApiBearerAuthGate:
     def test_pdf_with_cookie_only_returns_401(
         self, api_admin_client_no_bearer, mock_pmm_api
     ):
-        """Reject POST /generate/pdf without Bearer at the apps_router gate."""
-        response = api_admin_client_no_bearer.post(f"{API_BASE}/generate/pdf")
+        """POST /pdf-jobs without Bearer is rejected by plugins_router gate."""
+        response = api_admin_client_no_bearer.post(f"{API_BASE}/pdf-jobs")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_upload_with_cookie_only_returns_401(
         self, api_admin_client_no_bearer, mock_pmm_api
     ):
-        """Reject POST /upload without Bearer at the apps_router gate."""
-        sep_app.dependency_overrides[require_upload_configured] = lambda: None
-        try:
-            response = api_admin_client_no_bearer.post(f"{API_BASE}/upload")
-            assert response.status_code == status.HTTP_401_UNAUTHORIZED
-        finally:
-            sep_app.dependency_overrides.pop(require_upload_configured, None)
+        """POST /upload-jobs without Bearer is rejected by plugins_router gate."""
+        response = api_admin_client_no_bearer.post(f"{API_BASE}/upload-jobs")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED

@@ -2,7 +2,6 @@ default:
   ALLOWED_HOSTS:
     - "localhost"
     - "127.0.0.1"
-  AUTH_USER_MODEL: app.models.CasdoorUser
   ALLOW_CONCURRENT_SESSIONS: False
   SECRET_KEY: "dev-only-not-for-production"  # Dev only; production must override
   LOGGING: WARNING  # LogLevel: DEBUG, INFO, WARNING, ERROR, CRITICAL
@@ -11,14 +10,16 @@ default:
   BACKEND_CORS_ORIGINS:
     - http://localhost:8000
     - http://127.0.0.1:8000
-  CASDOOR:
-    ENDPOINT: http://localhost:9999
-    FRONT_ENDPOINT: //:9999
-    ALLOWED_ISSUERS:
-      - http://localhost:9999
-      - http://127.0.0.1:9999
-    CERTIFICATE_PATH: null  # Path to JWT key certificate
-    APPLICATION_NAME: sep-app
+  AUTH:
+    PROVIDER:
+      casdoor:
+        endpoint: http://localhost:9999
+        front_endpoint: //:9999
+        allowed_issuers:
+          - http://localhost:9999
+          - http://127.0.0.1:9999
+        certificate_path: null  # Path to JWT key certificate
+        application_name: sep-app
   PMM:
     ENDPOINT: https://127.0.0.1:8443
     VERIFY_SSL: true
@@ -133,6 +134,11 @@ default:
       ENDPOINT:        # ServiceNow upload API URL
       API_KEY:         # API key for authenticating with the upload endpoint
       CLIENT_ID:       # Customer identifier sent with each upload
+      # Rendered PDFs are staged on shared disk keyed by job id (worker writes,
+      # web serves) so only small metadata transits the Celery result backend.
+      ARTIFACT_DIR: data/health-reports  # Shared staging dir (mount in worker + web)
+      ARTIFACT_TTL: 3600                  # Seconds to retain a staged PDF; mirror CELERY.RESULT_EXPIRES
+      CLEANUP_INTERVAL: {EVERY: 15, PERIOD: minutes}  # purge_report_artifacts cadence
     DATABASE:
       ENGINE: sqlite  # Database engine: sqlite, mysql, postgresql
       USER: null
@@ -228,8 +234,10 @@ development:
         DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
       - SYNCER: SystemFactsSyncer
         DEFAULT_EXECUTOR_HOST: null  # Optional: Nomad node name from /api/tasks/hosts/ for RDS/DBaaS
-  CASDOOR:
-    ORGANIZATION_NAME: built-in
+  AUTH:
+    PROVIDER:
+      casdoor:
+        organization_name: built-in
   CELERY:
     BROKER_URL: "filesystem://"
     BROKER_TRANSPORT_OPTIONS:
@@ -238,6 +246,7 @@ development:
       PROCESSED_FOLDER: data/celery/processed
       CONTROL_FOLDER: data/celery/control
     RESULT_BACKEND: file://data/celery/results
+    RESULT_EXPIRES: 3600
     RESULT_PERSISTENT: True
     BEAT_DBURI: "sqlite:///schedule.db"
   ALERTING:
@@ -247,25 +256,28 @@ production_docker:
   ALLOW_CONCURRENT_SESSIONS: True
   ALLOWED_HOSTS:
     - "*"
-  AUTH_USER_MODEL: app.models.CasdoorUser
   PMM:
     ENDPOINT: https://127.0.0.1
     VERIFY_SSL: false
   BACKEND_CORS_ORIGINS:
     - https://127.0.0.1:8444
-  CASDOOR:
-    ALLOWED_ISSUERS: '*'
-    APPLICATION_NAME: sep-app
-    CERTIFICATE_PATH: /data/certs/casdoor/sep_token_jwt_key.pem
-    CLIENT_ID: redacted_match_casdoor_json
-    CLIENT_SECRET: redacted_match_casdoor_json
-    ENDPOINT: http://127.0.0.1:8000
-    FRONT_ENDPOINT: //:9999
-    ORGANIZATION_NAME: sep
+  AUTH:
+    PROVIDER:
+      casdoor:
+        allowed_issuers: '*'
+        application_name: sep-app
+        certificate_path: /data/certs/casdoor/sep_token_jwt_key.pem
+        client_id: redacted_match_casdoor_json
+        client_secret: redacted_match_casdoor_json
+        endpoint: http://127.0.0.1:8000
+        front_endpoint: //:9999
+        organization_name: sep
   CELERY:
     BEAT_DBURI: postgresql://postgres:xxx@sep-db:5432
     BEAT_SCHEMA: sep
     BROKER_URL: redis://redis:6379/0
+    RESULT_BACKEND: redis://redis:6379/1
+    RESULT_EXPIRES: 3600
     WORKER_STATE_DB: celery_worker_state
   DATABASE:
     ENGINE: postgresql

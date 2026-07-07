@@ -49,6 +49,7 @@ from app.core.security import crypto_timestamp_serializer
 from app.core.utils.fields import URL
 from app.inventory.config import inventory_settings
 from app.inventory.models import ServiceTypeEnum
+from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
 from app.sep.connectivity import (
     annotate_tasks_with_connectivity,
@@ -388,18 +389,17 @@ IsCsrfValidated = Depends(validate_csrf)
 
 
 async def get_username_mapping() -> dict[str, str]:
-    """Create a mapping from user ID to username using Casdoor.
+    """Create a mapping from user ID to username using the active auth provider.
 
-    This function fetches all users from Casdoor and creates a mapping from
-    user ID to username. Caching should be implemented in the Casdoor SDK
-    to avoid repeated API calls.
+    Fetch all users from the active provider and map each user's ID to their
+    username. Caching should be implemented in the provider's SDK to avoid
+    repeated API calls.
 
     :return: A dictionary mapping user IDs to usernames.
-    :rtype: dict[str, str]
     """
     try:
-        users = await settings.CASDOOR.get_users()
-        return {str(user["id"]): user["name"] for user in users}
+        users = await User.get_users()
+        return {str(user.id): user.username for user in users}
     except (
         AttributeError,
         TimeoutError,
@@ -408,7 +408,7 @@ async def get_username_mapping() -> dict[str, str]:
         HTTPException,
         aiohttp.ClientError,
     ):
-        logger.exception("Failed to get username mapping from Casdoor")
+        logger.exception("Failed to get username mapping from the auth provider")
         return {}
 
 
@@ -572,7 +572,6 @@ async def get_default_context(
     ]
     return {
         "user": user,
-        "casdoor_url": settings.CASDOOR.get_frontend_url(base_uri),
         "base_uri": base_uri,
         "plugins": plugins,
         "sync_refresh_time": sep_settings.SYNC_REFRESH_TIME,
@@ -674,6 +673,30 @@ async def get_tasks_api(
 
 
 TaskAPI = Annotated[RemoteAPI, Depends(get_tasks_api)]
+
+
+async def get_pmm_api() -> PMMRemoteAPI | None:
+    """Return a ``PMMRemoteAPI`` client, or ``None`` when PMM is not configured.
+
+    Construct the SEP-wide PMM client from settings, sitting alongside the
+    sibling Inventory / Tasks client deps so core SEP code never reaches into a
+    plugin for it.
+
+    :return: The PMM API client, or ``None`` if endpoint or API key is missing.
+    :rtype: PMMRemoteAPI | None
+    """
+    if not settings.PMM.endpoint or not settings.PMM.api_key:
+        return None
+    return await settings.get_remote_api(
+        PMMRemoteAPI,
+        endpoint=settings.PMM.endpoint,
+        api_key=settings.PMM.api_key,
+        verify_ssl=settings.PMM.verify_ssl,
+        ssl_cafile=settings.SSL_CAFILE,
+    )
+
+
+PMMAPIDep = Annotated[PMMRemoteAPI | None, Depends(get_pmm_api)]
 
 
 async def get_created_entity(

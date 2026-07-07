@@ -24,12 +24,16 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends
+from pydantic import BaseModel, ValidationError
 
 from app.core.exceptions import (
     HTTPBadRequestException,
     HTTPConflictException,
+    HTTPUnprocessableEntityException,
 )
 from app.core.requests.remote_api import RemoteAPI
+from app.core.utils.fields import EmptyStrToNone
+from app.core.utils.path import to_payload_reference
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.models import (
     AltersCreate,
@@ -52,18 +56,16 @@ from app.sep.apps.framework.cascade import (
     CascadeResult,
 )
 from app.sep.apps.framework.schema import ChainedPredecessor
+from app.sep.apps.framework.spec import resolve_refs
 from app.sep.deps import (
     check_for_conflicted_running_tasks,
     DefaultContext,
     ExecutorHostsCtx,
-    get_created_entity,
     get_tasks_context,
     InventoryAPI,
     reject_if_protected,
     TaskAPI,
 )
-from app.sep.inventory import CreatedService
-from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
@@ -74,67 +76,140 @@ from app.tasks.models import (
 logger = logging.getLogger(__name__)
 
 
-async def _resolve_schema_table_names(
-    body: AltersCreate,
-    inventory_api: InventoryAPI,
-    service: CreatedService,
-) -> tuple[str, str]:
-    """Resolve schema and table names from inventory IDs or manual fields.
+class AltersLegacyForm(BaseModel):
+    """Parse the deprecated Alters HTML form's flat, urlencoded body.
 
-    :param body: The alters create/write payload.
-    :param inventory_api: The Inventory API client.
-    :type inventory_api: InventoryAPI
-    :param service: The validated MySQL service.
-    :type service: CreatedService
-    :return: The resolved ``(schema_name, table_name)`` pair.
-    :rtype: tuple[str, str]
-    :raises ValueError: When neither IDs nor manual names are provided.
+    The Jinja create/edit templates submit the historical split target fields
+    (``schema_id`` / ``schema_name`` / ``table_id`` / ``table_name``) that
+    predate the free-solo collapse, so the derived ``AltersCreate`` cannot bind
+    them directly. This model parses that flat body; :func:`map_alters_legacy_form`
+    folds it into ``AltersCreate`` for the shared task builder, keeping the legacy
+    path byte-identical. Field validation is enforced by the mapped
+    ``AltersCreate``, not here.
+
+    :param task_name: The task name.
+    :param hostname: The executor host.
+    :param service_id: The source MySQL service id.
+    :param schema_id: The schema inventory id, or empty.
+    :param schema_name: The manually-entered schema name.
+    :param table_id: The table inventory id, or empty.
+    :param table_name: The manually-entered table name.
+    :param pre_checks_mysql_config_file: The MySQL defaults file path.
+    :param alter: The pt-osc alter clause.
+    :param recursion_method: The pt-osc recursion method.
+    :param dsn_table: The DSN table (recursion method ``dsn``).
+    :param print_arg: The ``--print`` flag.
+    :param progress: The ``--progress`` value.
+    :param no_swap_tables: The ``--no-swap-tables`` flag.
+    :param no_drop_old_table: The ``--no-drop-old-table`` flag.
+    :param no_drop_new_table: The ``--no-drop-new-table`` flag.
+    :param no_drop_triggers: The ``--no-drop-triggers`` flag.
+    :param pause_file: The ``--pause-file`` path.
+    :param new_table_name: The ``--new-table-name`` value.
+    :param tries: The ``--tries`` value.
+    :param set_vars: The ``--set-vars`` value.
+    :param critical_load: The ``--critical-load`` value.
+    :param max_load: The ``--max-load`` value.
+    :param chunk_time: The ``--chunk-time`` value.
+    :param max_lag: The ``--max-lag`` value.
+    :param max_flow_ctl: The ``--max-flow-ctl`` value.
+    :param extra_args: Additional pt-osc CLI arguments.
+    :param continue_on_pre_check_failure: The continue-on-pre-check-failure toggle.
+    :param alert_on_fail: Whether to alert on failure.
     """
-    if body.schema_id and body.table_id:
-        schema = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.SCHEMA,
-            body.schema_id,
-            service_id=service.id,
-        )
-        table = await get_created_entity(
-            inventory_api,
-            SyncInventoryEntityTypeEnum.TABLE,
-            body.table_id,
-            schema_id=schema.id,
-        )
-        return schema.name, table.name
 
-    schema_name = (body.schema_name or "").strip()
-    table_name = (body.table_name or "").strip()
-    if not schema_name or not table_name:
-        raise ValueError(
-            "Either schema/table IDs or schema_name/table_name must be provided."
-        )
-    return schema_name, table_name
+    task_name: str
+    hostname: str
+    service_id: int
+    schema_id: int | EmptyStrToNone = None
+    schema_name: str = ""
+    table_id: int | EmptyStrToNone = None
+    table_name: str = ""
+    pre_checks_mysql_config_file: str = "~/.my.cnf"
+    alter: str = ""
+    recursion_method: str = "processlist"
+    dsn_table: str = ""
+    print_arg: bool = False
+    progress: str = ""
+    no_swap_tables: bool = False
+    no_drop_old_table: bool = False
+    no_drop_new_table: bool = False
+    no_drop_triggers: bool = False
+    pause_file: str | None = None
+    new_table_name: str | None = None
+    tries: str | None = None
+    set_vars: str | None = None
+    critical_load: str | None = None
+    max_load: str | None = None
+    chunk_time: str | None = None
+    max_lag: str | None = None
+    max_flow_ctl: str | None = None
+    extra_args: str | None = None
+    continue_on_pre_check_failure: bool = False
+    alert_on_fail: bool = False
+
+
+def _collapse(ref_id: int | None, name: str) -> int | str | None:
+    """Collapse a legacy id/name pair into the single free-solo value.
+
+    :param ref_id: The inventory id, or ``None`` when not selected.
+    :param name: The manually-entered name (``""`` when not entered).
+    :return: The id when present, else the trimmed name, else ``None``.
+    """
+    if ref_id is not None:
+        return ref_id
+    return name.strip() or None
+
+
+def map_alters_legacy_form(flat: AltersLegacyForm) -> AltersCreate:
+    """Fold the flat legacy form into the collapsed ``AltersCreate``.
+
+    Collapses the split ``schema_id`` / ``schema_name`` and ``table_id`` /
+    ``table_name`` pairs into the single free-solo ``db_schema`` / ``db_table``
+    fields and validates through ``AltersCreate`` so the legacy path enforces the
+    same rules as the JSON path. A validation failure surfaces as a 422, matching
+    the framework's body-validation behaviour.
+
+    :param flat: The parsed legacy form body.
+    :return: The validated collapsed create model.
+    :raises HTTPUnprocessableEntityException: When the folded model is invalid.
+    """
+    data = {
+        **flat.model_dump(
+            exclude={"schema_id", "schema_name", "table_id", "table_name"}
+        ),
+        "db_schema": _collapse(flat.schema_id, flat.schema_name),
+        "db_table": _collapse(flat.table_id, flat.table_name),
+    }
+    try:
+        return AltersCreate.model_validate(data)
+    except ValidationError as exc:
+        raise HTTPUnprocessableEntityException(detail=exc.errors()) from exc
 
 
 async def build_alters_task(
     body: AltersCreate,
     inventory_api: InventoryAPI,
 ) -> TaskWrite:
-    """Build the parent alters execute task from a form or JSON payload.
+    """Build the parent alters execute task from a JSON payload.
+
+    Resolves the ``service_id`` / ``db_schema`` / ``db_table`` reference fields
+    through the framework resolver: an inventory id is fetched to its entity name,
+    while a free-typed name falls back to the raw form value.
 
     :param body: The alters create/write payload.
     :param inventory_api: The Inventory API client.
-    :type inventory_api: InventoryAPI
     :return: A fully constructed parent execute ``TaskWrite``.
-    :rtype: TaskWrite
+    :raises HTTPBadRequestException: When no MySQL service is resolved.
     """
-    service = await get_created_entity(
-        inventory_api,
-        SyncInventoryEntityTypeEnum.SERVICE,
-        body.service_id,
-        type=ServiceTypeEnum.MYSQL,
-    )
-    schema_name, table_name = await _resolve_schema_table_names(
-        body, inventory_api, service
-    )
+    resolved = await resolve_refs(body, inventory_api)
+    service = resolved.service
+    if service is None:
+        raise HTTPBadRequestException("A MySQL service selection is required.")
+    schema_entity = resolved.entities.get("db_schema")
+    table_entity = resolved.entities.get("db_table")
+    schema_name = schema_entity.name if schema_entity else str(body.db_schema)
+    table_name = table_entity.name if table_entity else str(body.db_table)
     return build_alters_spec(service, schema_name, table_name, body)
 
 
@@ -278,7 +353,7 @@ async def build_pre_checks_task_payload(
     pre_checks_task.data["meta"]["requirements"] = (
         "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
     )
-    pre_checks_task.data["payload"] = f"file://{_PRE_CHECKS_SCRIPT_PATH}"
+    pre_checks_task.data["payload"] = to_payload_reference(_PRE_CHECKS_SCRIPT_PATH)
     return pre_checks_task
 
 

@@ -30,6 +30,7 @@ from app.core.auth.exceptions import (
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
@@ -37,8 +38,8 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
-from app.models import CasdoorUser
 from app.sep.apps.framework.registry import build_app_registry
+from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import App, sep_settings
 from app.sep.crud import AppStateManager
 from app.sep.deps import (
@@ -57,6 +58,7 @@ from app.sep.deps import (
     get_executor_hosts,
     get_executor_hosts_context,
     get_inventory_api,
+    get_pmm_api,
     get_task_by_name,
     get_task_history,
     get_tasks_api,
@@ -424,42 +426,46 @@ class TestGetUsernameMapping:
     """Test get_username_mapping dependency."""
 
     @pytest.mark.asyncio
-    async def test_casdoor_failure_returns_empty_dict(self) -> None:
-        """Assert Casdoor API failure returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
-                side_effect=ValueError("connection failed")
-            )
+    async def test_provider_failure_returns_empty_dict(self) -> None:
+        """Assert an auth-provider failure returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=ValueError("connection failed")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_http_exception_returns_empty_dict(self) -> None:
-        """Assert HTTPException from Casdoor returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
-                side_effect=HTTPException(status_code=500, detail="fail")
-            )
+        """Assert an HTTPException from the provider returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=HTTPException(status_code=500, detail="fail")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_key_error_returns_empty_dict(self) -> None:
-        """Assert KeyError from malformed response returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(side_effect=KeyError("missing"))
+        """Assert a KeyError from a malformed response returns an empty dict."""
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(side_effect=KeyError("missing")),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_attribute_error_returns_empty_dict(self) -> None:
         """Assert AttributeError (e.g. session not initialized) returns empty dict."""
-        with patch("app.sep.deps.settings") as mock_settings:
-            mock_settings.CASDOOR.get_users = AsyncMock(
+        with patch(
+            "app.sep.deps.User.get_users",
+            new=AsyncMock(
                 side_effect=AttributeError(
                     "'NoneType' object has no attribute 'request'"
                 )
-            )
+            ),
+        ):
             result = await get_username_mapping()
         assert result == {}
 
@@ -504,6 +510,48 @@ class TestGetTasksApi:
         result = await gen.__anext__()
         assert result is mock_authenticated
         mock_client.auth.assert_called_once_with("test-token")
+
+
+class TestGetPmmApi:
+    """Test the ``get_pmm_api`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_endpoint_not_configured(self):
+        """Assert ``None`` is returned when PMM endpoint is not set."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = None
+            mock_settings.PMM.api_key = None
+            result = await get_pmm_api()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_api_key_not_configured(self):
+        """Assert ``None`` is returned when PMM API key is not set."""
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = None
+            result = await get_pmm_api()
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_configured(self):
+        """Assert a ``PMMRemoteAPI`` is returned when PMM is configured."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = True
+            mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
+            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
+            result = await get_pmm_api()
+        assert result is mock_client
+        mock_settings.get_remote_api.assert_awaited_once_with(
+            PMMRemoteAPI,
+            endpoint="https://pmm.example.com",
+            api_key="secret-key",
+            verify_ssl=True,
+            ssl_cafile="/etc/ssl/ca.pem",
+        )
 
 
 class TestGetExecutorHosts:

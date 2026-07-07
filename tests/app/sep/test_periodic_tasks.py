@@ -88,12 +88,12 @@ class TestSeedAppPeriodicTaskRows:
                 tasks=[
                     SystemPeriodicTaskData(
                         name="sep__generate_health_report",
-                        task_name="app.sep.celery.generate_health_report",
+                        task_name="app.sep.apps.report.celery.generate_health_report",
                         owner_app_key="report",
                     ),
                     SystemPeriodicTaskData(
                         name="sep__generate_health_report_1",
-                        task_name="app.sep.celery.generate_health_report",
+                        task_name="app.sep.apps.report.celery.generate_health_report",
                         owner_app_key="report",
                     ),
                 ],

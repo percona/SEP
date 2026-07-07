@@ -59,6 +59,7 @@ from app.core.utils.fields import (
     EnumFieldMixin,
     UTCDatetime,
 )
+from app.core.utils.path import resolve_payload_reference
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
 
@@ -282,21 +283,18 @@ class TaskExecutionRequest(BaseModel):
 
     @cached_property
     def payload_content(self) -> str | None:
-        """Retrieve the content of the payload if it's a file path.
+        """Return the payload content, resolving a ``file://`` reference to file text.
 
-        If the payload starts with "file://", it attempts to read the file content.
-        Otherwise, it returns the payload string directly.
+        If the payload is a ``file://`` reference, resolve it to an existing file
+        via :func:`resolve_payload_reference` and return the file's contents.
+        Otherwise return the payload string (possibly ``None``) unchanged.
 
-        :return: The content of the payload or None if not applicable.
-        :rtype: str | None
+        :return: The referenced file's contents, or the payload string as-is.
+        :raises PayloadReferenceError: If a ``file://`` reference cannot be
+            resolved to an existing file.
         """
         if self.payload and self.payload.strip().startswith("file://"):
-            payload_path = Path(
-                self.payload.strip().replace("file://", "", 1),
-            ).resolve()
-            if payload_path.is_file():
-                with payload_path.open() as payload_file:
-                    return payload_file.read()
+            return resolve_payload_reference(self.payload).read_text()
         return self.payload
 
 
@@ -735,6 +733,12 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     :type task: Task
     :param sync_in_progress_started_at: Timestamp lock for a sync currently in progress.
     :type sync_in_progress_started_at: UTCDatetime | None
+    :param log_allocation_epoch: Task-level high-water mark of the current Nomad
+        allocation ``CreateIndex``, stamped whenever the log frontier is reset. The
+        log writer consults it on the first-insert path (before any per-stream
+        ``TaskHistoryLogState`` row exists) to discard writes from a superseded
+        allocation. ``0`` is the legacy/unknown sentinel that is trusted
+        unconditionally.
     :param executed_by: The user ID of the user who executed the task.
     :type executed_by: str | None
     """
@@ -752,6 +756,13 @@ class TaskHistory(TaskHistoryBase, BaseSQLModel, table=True):
     sync_in_progress_started_at: UTCDatetime | None = SQLField(
         default=None,
         sa_type=DateTimeWithTimezone,
+    )
+    log_allocation_epoch: int = SQLField(
+        sa_column=Column(
+            BigInteger,
+            nullable=False,
+            server_default="0",
+        ),
     )
 
     @property

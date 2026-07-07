@@ -42,8 +42,8 @@ def _build_body(**overrides: object) -> AltersCreate:
         "task_name": "my-alter",
         "hostname": "exec-host",
         "service_id": 1,
-        "schema_name": "app",
-        "table_name": "users",
+        "db_schema": "app",
+        "db_table": "users",
         "alter": "ADD COLUMN x INT",
         "recursion_method": "processlist",
     }

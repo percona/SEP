@@ -81,5 +81,6 @@ class CeleryOptions(BaseLowercaseModel):
         self.include = [
             "app.tasks.celery",
             "app.sep.celery",
+            "app.sep.apps.report.celery",
         ]
         return self

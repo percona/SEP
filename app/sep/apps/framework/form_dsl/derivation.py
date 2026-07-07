@@ -254,9 +254,25 @@ def _field_ui(name: str, metadata: list[Any]) -> Ui:
     if ui is None:
         raise ValueError(
             f"field {name!r} is missing a Ui(...) marker; every AppFormModel field "
-            "must declare Ui(label=..., section=...)"
+            "must declare Ui(section=...)"
         )
     return ui
+
+
+def _field_label(name: str, ui: Ui) -> str:
+    """Return the field's explicit ``Ui`` label, or derive it from the name.
+
+    A labelless marker derives the conventional shape from the field name:
+    underscores become spaces and the result is title-cased. A field declares an
+    explicit label only when its display text diverges from that default.
+
+    :param name: The field name used for derivation when ``ui.label`` is unset.
+    :param ui: The field's ``Ui`` marker.
+    :return: The explicit label, or the derived default when none was given.
+    """
+    if ui.label is not None:
+        return ui.label
+    return name.replace("_", " ").title()
 
 
 def _gates(metadata: list[Any], marker_type: type) -> list[FieldGate]:
@@ -443,7 +459,7 @@ def _derive_branch_leaves(
         if leaf_ui is None:
             raise ValueError(
                 f"field {wire_name!r} is missing a Ui(...) marker; every branch "
-                "model field must declare Ui(label=..., section=...)"
+                "model field must declare Ui(section=...)"
             )
         leaves.append(_build_base_field(wire_name, leaf_info, leaf_ui, leaf_metadata))
     if not leaves:
@@ -495,7 +511,7 @@ def _derive_one_of_from_union(
         )
     return OneOfGroup(
         name=name,
-        label=ui.label,
+        label=_field_label(name, ui),
         description=ui.description,
         discriminator=f"{name}.{disc_key}",
         default=_discriminator_default_value(field_info, ui, disc_key, members),
@@ -513,7 +529,7 @@ def _derive_multi_ref_one_of(
     """Derive a :class:`OneOfGroup` when multiple reference markers share one field."""
     common = {
         "name": name,
-        "label": ui.label,
+        "label": _field_label(name, ui),
         "required": ui.required
         if ui.required is not None
         else field_info.is_required(),
@@ -547,7 +563,7 @@ def _derive_multi_ref_one_of(
         )
     return OneOfGroup(
         name=name,
-        label=ui.label,
+        label=_field_label(name, ui),
         description=ui.description,
         discriminator=f"{name}_mode",
         default=branches[0].value,
@@ -584,7 +600,7 @@ def _build_base_field(
     """
     common = {
         "name": name,
-        "label": ui.label,
+        "label": _field_label(name, ui),
         "required": ui.required
         if ui.required is not None
         else field_info.is_required(),
@@ -830,6 +846,7 @@ def derive_app_schema(
     detail_view: Any = None,
     derived: Any = None,
     predecessors: Any = None,
+    related_apps: Any = None,
 ) -> AppSchema:
     """Assemble the full ``AppSchema`` for a model-first plugin.
 
@@ -850,6 +867,8 @@ def derive_app_schema(
     :param detail_view: Optional detail-page layout. Defaults to ``None``.
     :param derived: Optional derived-task specs. Defaults to ``None``.
     :param predecessors: Optional predecessor specs. Defaults to ``None``.
+    :param related_apps: Optional related-app specs for sibling UI tabs.
+        Defaults to ``None``.
     :return: The fully-assembled, validated plugin schema.
     """
     rules = getattr(model, "__form_rules__", FormRules())
@@ -864,6 +883,7 @@ def derive_app_schema(
         detail_view=detail_view,
         derived=derived,
         predecessors=predecessors,
+        related_apps=related_apps,
         fail_when=list(rules.fail_when) or None,
         cardinality_rules=list(rules.cardinality_rules) or None,
     )

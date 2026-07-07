@@ -28,6 +28,7 @@ from pathlib import Path
 import yaml
 from fastapi.encoders import jsonable_encoder
 
+from app.core.utils.path import to_payload_reference
 from app.sep.apps.framework.spec import ResolvedEntities, RunPythonSpec
 from app.sep.apps.mysql_backups.models import (
     BackupConfig,
@@ -113,5 +114,5 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
             jsonable_encoder(backup_config, by_alias=True, exclude_none=True)
         ),
         requirements=requirements,
-        payload=f"file://{payload_path}",
+        payload=to_payload_reference(payload_path),
     )

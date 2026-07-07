@@ -39,9 +39,9 @@ from fastapi import APIRouter, Depends, FastAPI, status
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, create_model
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.exceptions import HTTPNotFoundException
 from app.core.requests.remote_api import RemoteAPI
-from app.models import CasdoorUser
 from app.sep.apps.framework import ScriptSource, StaticMount, TaskExecutionApp
 from app.sep.apps.framework.conformance import (
     check_capability_route_consistency,

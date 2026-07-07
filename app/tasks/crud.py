@@ -316,6 +316,79 @@ class TaskHistoryManager(BaseSQLModelManager):
     Model = TaskHistory
 
     @classmethod
+    async def get_log_allocation_epoch(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        *,
+        for_update: bool = False,
+    ) -> int:
+        """Return the task-level log allocation-epoch high-water mark.
+
+        The log writer consults this on the first-insert path — before any
+        per-stream ``TaskHistoryLogState`` row exists — to discard writes from a
+        superseded allocation. A missing row yields the ``0`` sentinel so the
+        caller trusts the write.
+
+        With ``for_update`` the ``TaskHistory`` row is locked (``SELECT ... FOR
+        UPDATE``) and the lock is held until the caller's transaction ends. This
+        serialises the first-insert discard decision against
+        :meth:`bump_log_allocation_epoch` (stamped during a frontier reset) so a
+        reset cannot commit a newer epoch in the window between the guard read
+        and the row insert. Both the first-insert writer and the frontier reset
+        acquire this same row first, giving a consistent lock order. On SQLite
+        the clause is a no-op (writes already serialise at the database level).
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :param for_update: Whether to lock the row for the duration of the
+            transaction.
+        :return: The stored ``log_allocation_epoch``, or ``0`` when the row is
+            absent.
+        """
+        query = select(TaskHistory.log_allocation_epoch).where(
+            col(TaskHistory.id) == task_history_id
+        )
+        if for_update:
+            query = query.with_for_update()
+        result = await cls._exec(session, query)
+        epoch = result.first()
+        return epoch if epoch is not None else 0
+
+    @classmethod
+    async def bump_log_allocation_epoch(
+        cls,
+        session: AsyncSession,
+        task_history_id: int,
+        *,
+        new_allocation_epoch: int,
+    ) -> None:
+        """Advance the task-level allocation-epoch high-water mark monotonically.
+
+        Stamped wherever the log frontier is reset. The ``< new`` guard makes the
+        update monotonic: an out-of-order or stale reset carrying a smaller epoch
+        is a no-op, so the task-level mark never regresses below a per-stream
+        epoch. Does not commit — the caller owns the transaction so the mark and
+        the per-stream frontier reset land (or roll back) together.
+
+        :param session: The SQLAlchemy asynchronous session to use for query
+            execution.
+        :param task_history_id: The ``TaskHistory`` identifier.
+        :param new_allocation_epoch: The ``CreateIndex`` of the allocation the
+            frontier is being reset onto.
+        """
+        stmt = (
+            update(TaskHistory)
+            .where(
+                col(TaskHistory.id) == task_history_id,
+                col(TaskHistory.log_allocation_epoch) < new_allocation_epoch,
+            )
+            .values(log_allocation_epoch=new_allocation_epoch)
+        )
+        await session.exec(stmt)
+
+    @classmethod
     async def list_by_task_name(
         cls,
         *,

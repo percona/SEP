@@ -7,6 +7,23 @@
     "stats": false
   },
   "description": "Run XtraBackup, Mydumper, and Binlog backups against MySQL hosts.",
+  "detail_view": {
+    "sections": [
+      {
+        "fields": [
+          {
+            "label": "Execution Host",
+            "path": "data.meta.target"
+          },
+          {
+            "label": "Config (YAML)",
+            "path": "data.meta.config"
+          }
+        ],
+        "title": "Backup Configuration"
+      }
+    ]
+  },
   "display_name": "MySQL Backups",
   "fail_when": [
     {
@@ -238,7 +255,7 @@
           "type": "string"
         },
         {
-          "label": "Executor Host",
+          "label": "Execution Host",
           "name": "hostname",
           "required": true,
           "type": "host"
@@ -971,7 +988,7 @@
           ],
           "label": "Upload providers",
           "name": "upload",
-          "required": true,
+          "required": false,
           "type": "multi_choice"
         },
         {
@@ -1110,7 +1127,7 @@
       },
       {
         "key": "hostname",
-        "label": "Host",
+        "label": "Execution Host",
         "sortable": false
       },
       {
@@ -1127,5 +1144,12 @@
     ],
     "overview_hidden_fields": []
   },
-  "name": "mysql_backups"
+  "name": "mysql_backups",
+  "related_apps": [
+    {
+      "app_key": "mysql_backups/restore",
+      "label": "Restore",
+      "route_segment": "restores"
+    }
+  ]
 }

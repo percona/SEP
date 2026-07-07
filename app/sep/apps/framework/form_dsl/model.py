@@ -24,6 +24,7 @@ from app.sep.apps.framework.rules import (
     apply_conditional_rules,
     ConditionalRulesModel,
 )
+from app.sep.apps.labels import EXECUTION_HOST_LABEL
 
 __all__ = ["AppFormModel", "TaskFormModel"]
 
@@ -88,7 +89,7 @@ class TaskFormModel(AppFormModel):
     :param hostname: The executor host the task runs on; required and non-empty.
     """
 
-    task_name: Annotated[NonEmptyStr, Ui(label="Task Name", section="Task")]
+    task_name: Annotated[NonEmptyStr, Ui(section="Task")]
     hostname: Annotated[
-        NonEmptyStr, HostRef(), Ui(label="Executor Host", section="Task")
+        NonEmptyStr, HostRef(), Ui(label=EXECUTION_HOST_LABEL, section="Task")
     ]

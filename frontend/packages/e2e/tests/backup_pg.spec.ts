@@ -18,7 +18,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
-const PLUGIN_ROUTE = '/backups/postgresql';
+const APP_ROUTE = '/backups/postgresql';
 
 const DISPLAY_NAME = 'PostgreSQL Backups';
 
@@ -45,7 +45,7 @@ const MOCK_SCHEMA = {
       title: 'Task',
       fields: [
         { type: 'string', name: 'task_name', label: 'Task Name', required: true },
-        { type: 'string', name: 'hostname', label: 'Executor Host', required: true },
+        { type: 'string', name: 'hostname', label: 'Execution Host', required: true },
       ],
     },
   ],
@@ -53,7 +53,7 @@ const MOCK_SCHEMA = {
     columns: [
       { key: 'name', label: 'Name', sortable: true },
       { key: 'status', label: 'Status', format: 'status' },
-      { key: 'hostname', label: 'Executor Host' },
+      { key: 'hostname', label: 'Execution Host' },
       { key: 'created_at', label: 'Created', format: 'relative' },
       { key: 'created_by', label: 'Created By' },
     ],
@@ -105,7 +105,7 @@ function isBenignConsoleError(msg: string, deletedTaskNames: string[]): boolean 
     return true;
   }
   // React Query may re-fetch a just-deleted task's detail before the component
-  // unmounts; a 404 for *that specific task's* plugin endpoint is expected. Any
+  // unmounts; a 404 for *that specific task's* app endpoint is expected. Any
   // other 404 (wrong route, missing mock, unrelated endpoint) must still fail.
   if (
     msg.includes('404 (Not Found)') &&
@@ -243,7 +243,7 @@ async function mockBackupPgApis(page: Page, apiState: ApiState): Promise<void> {
   });
 }
 
-test.describe('PostgreSQL backup_pg plugin smoke', () => {
+test.describe('PostgreSQL backup_pg app smoke', () => {
   let apiState: ApiState;
   let consoleErrors: string[];
 
@@ -270,7 +270,7 @@ test.describe('PostgreSQL backup_pg plugin smoke', () => {
   });
 
   test('list page mounts with task rows', async ({ page }) => {
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     await expect(page.getByRole('heading', { name: DISPLAY_NAME })).toBeVisible({
       timeout: 30_000,
@@ -280,14 +280,14 @@ test.describe('PostgreSQL backup_pg plugin smoke', () => {
   });
 
   test('creates a backup task', async ({ page }) => {
-    await page.goto(`${PLUGIN_ROUTE}/new`);
+    await page.goto(`${APP_ROUTE}/new`);
 
     await expect(page.getByRole('heading', { name: /new postgresql backups/i })).toBeVisible({
       timeout: 30_000,
     });
 
     await page.getByRole('textbox', { name: /task name/i }).fill(NEW_TASK_NAME);
-    await page.getByRole('textbox', { name: /executor host/i }).fill(NEW_TASK_HOSTNAME);
+    await page.getByRole('textbox', { name: /execution host/i }).fill(NEW_TASK_HOSTNAME);
     await page.getByRole('button', { name: /create postgresql backups/i }).click();
 
     await expect(page).toHaveURL(/\/backups\/postgresql\/?$/);
@@ -300,7 +300,7 @@ test.describe('PostgreSQL backup_pg plugin smoke', () => {
   });
 
   test('opens detail page from list', async ({ page }) => {
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     await expect(page.getByRole('heading', { name: DISPLAY_NAME })).toBeVisible({
       timeout: 30_000,
@@ -323,7 +323,7 @@ test.describe('PostgreSQL backup_pg plugin smoke', () => {
       }
     });
 
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     await expect(page.getByRole('heading', { name: DISPLAY_NAME })).toBeVisible({
       timeout: 30_000,

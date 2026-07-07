@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP-level ``TasksSettings`` proxy (SEP-1330).
+"""Tests for the SEP-level ``TasksSettings`` proxy.
 
 ``TasksSettings`` storage lives in the Tasks sub-app, so the SEP settings router
 registers it as a *remote* class: the LIST appends its group server-side and the
@@ -37,11 +37,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
 
+from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
 from app.core.settings_override.models import SettingClassEnum
 from app.core.utils import json_serializer
-from app.models import CasdoorUser
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,

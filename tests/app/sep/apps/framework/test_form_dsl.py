@@ -63,6 +63,7 @@ from app.sep.apps.framework.schema import (
     ListView,
     MultiChoiceField,
     OneOfGroup,
+    RelatedApp,
     SchemaField,
     ServiceField,
     StringField,
@@ -150,6 +151,28 @@ class TestWireTypeInference:
         fields = _fields_by_name(_ScalarModel)
         assert isinstance(fields["note"], TextAreaField)
         assert isinstance(fields["cfg"], YamlField)
+
+
+class _LabelModel(AppFormModel):
+    oplog_span: Annotated[int, Ui(section="s")] = 0
+    custom_span: Annotated[int, Ui(label="Custom", section="s")] = 0
+    hostname: Annotated[str, Ui(label="Executor Host", section="s")] = ""
+
+
+class TestFieldLabelDerivation:
+    """Cover derived vs explicit ``Ui`` field labels."""
+
+    def test_derives_label_from_field_name(self) -> None:
+        """Title-case the field name when ``Ui.label`` is omitted."""
+        assert _fields_by_name(_LabelModel)["oplog_span"].label == "Oplog Span"
+
+    def test_explicit_label_overrides_derivation(self) -> None:
+        """Honor an explicit ``Ui.label`` over the derived default."""
+        assert _fields_by_name(_LabelModel)["custom_span"].label == "Custom"
+
+    def test_divergent_explicit_label_preserved(self) -> None:
+        """Keep an explicit label that diverges from the title-cased field name."""
+        assert _fields_by_name(_LabelModel)["hostname"].label == "Executor Host"
 
 
 class _ChoiceModel(AppFormModel):
@@ -649,6 +672,30 @@ class TestScopeAttribution:
         assert schema.cardinality_rules is not None
         assert len(schema.cardinality_rules) == 1
         assert schema.fail_when is None
+
+
+class TestDeriveAppSchemaRelatedApps:
+    """Cover ``related_apps`` threading through :func:`derive_app_schema`."""
+
+    def test_related_apps_passed_through(self) -> None:
+        """Stamp ``related_apps`` onto the derived schema unchanged."""
+        related = [
+            RelatedApp(
+                app_key="mysql_backups/restore",
+                label="Restore",
+                route_segment="restores",
+            ),
+        ]
+        schema = derive_app_schema(
+            _ScopeModel,
+            _SINGLE_SECTION,
+            name="mysql_backups",
+            display_name="MySQL Backups",
+            list_view=_MINIMAL_LIST_VIEW,
+            related_apps=related,
+        )
+
+        assert schema.related_apps == related
 
 
 class _RuntimeParityModel(AppFormModel):

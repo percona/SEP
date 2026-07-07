@@ -29,9 +29,11 @@ from app.sep.apps.framework.schema import (
     Capabilities,
     Column,
     ColumnFormat,
+    default_columns,
     DetailField,
     DetailSection,
     DetailView,
+    EXECUTION_HOST_LABEL,
     ListView,
 )
 
@@ -53,20 +55,16 @@ archives_views = Views(
         )
     ),
     list_view=ListView(
-        columns=[
-            Column(key="name", label="Name", sortable=True),
-            Column(key="status", label="Status", format=ColumnFormat.STATUS),
+        columns=default_columns(
             Column(key="service_type", label="Service Type", format=ColumnFormat.CHIP),
-            Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
-            Column(key="created_by", label="Created By"),
-        ],
+        ),
     ),
     detail_view=DetailView(
         sections=[
             DetailSection(
                 title="Archive Configuration",
                 fields=[
-                    DetailField(path="data.meta.target", label="Executor Host"),
+                    DetailField(path="data.meta.target", label=EXECUTION_HOST_LABEL),
                     DetailField(path="data.meta.config", label="Config (YAML)"),
                 ],
             ),

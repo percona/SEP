@@ -25,6 +25,7 @@ from app.core.requests.remote_api import RemoteAPI
 from app.sep.apps.alters.deps import (
     alters_executor_matches_service_host,
     alters_satellite_task_names,
+    AltersLegacyForm,
     build_alters_api_task_response,
     build_alters_task,
     build_pre_checks_task_payload,
@@ -35,6 +36,7 @@ from app.sep.apps.alters.deps import (
     get_alters_index_context,
     get_alters_task,
     get_alters_task_info,
+    map_alters_legacy_form,
     parse_alters_task_args,
     parse_single_arg,
     resolve_predecessor_specs,
@@ -61,8 +63,8 @@ def created_alters(created_service, created_schema, created_table) -> AltersCrea
     """Return a fake created AltersCreate instance."""
     created_alters = AltersCreateFactory.build()
     created_alters.service_id = created_service.id
-    created_alters.schema_id = created_schema.id
-    created_alters.table_id = created_table.id
+    created_alters.db_schema = created_schema.id
+    created_alters.db_table = created_table.id
     created_alters.alter = "ADD COLUMN new_column INT"
     created_alters.recursion_method = "dsn"
     return created_alters
@@ -294,14 +296,12 @@ def test_alters_executor_matches_service_host():
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_schema_name_table_name(
+async def test_build_alters_task_free_typed_schema_and_table(
     created_alters, created_service, mock_remote_api
 ):
-    """Build payload using schema_name/table_name when schema/table IDs are omitted."""
-    created_alters.schema_id = None
-    created_alters.table_id = None
-    created_alters.schema_name = "manual_schema"
-    created_alters.table_name = "manual_table"
+    """Build payload from free-typed schema/table names (no inventory fetch)."""
+    created_alters.db_schema = "manual_schema"
+    created_alters.db_table = "manual_table"
     mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
     task = await build_alters_task(created_alters, mock_remote_api)
     assert task.data["meta"]["_schema_name"] == "manual_schema"
@@ -310,17 +310,101 @@ async def test_build_alters_task_schema_name_table_name(
 
 
 @pytest.mark.asyncio
-async def test_build_alters_task_requires_schema_and_table(
+async def test_build_alters_task_id_and_free_typed_emit_identical_meta(
+    created_alters, created_service, created_schema, created_table, mock_remote_api
+):
+    """Guard AC4: an inventory id and the free-typed name it resolves to are byte-stable.
+
+    Building from ``db_schema``/``db_table`` inventory ids (resolved to the entity
+    names) must emit the same parent ``meta`` as building from those same names typed
+    free-hand — the pt-osc invocation cannot depend on how the target was selected.
+    """
+    created_schema.name = "app"
+    created_table.name = "users"
+
+    mock_remote_api.get = AsyncMock(
+        side_effect=[
+            created_service.model_dump(),
+            created_schema.model_dump(),
+            created_table.model_dump(),
+        ]
+    )
+    id_task = await build_alters_task(created_alters, mock_remote_api)
+
+    free_typed = created_alters.model_copy(
+        update={"db_schema": created_schema.name, "db_table": created_table.name}
+    )
+    mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
+    free_typed_task = await build_alters_task(free_typed, mock_remote_api)
+
+    assert id_task.data["meta"] == free_typed_task.data["meta"]
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_strips_free_typed_target_whitespace(
     created_alters, created_service, mock_remote_api
 ):
-    """Raise when neither IDs nor schema/table names are set."""
-    created_alters.schema_id = None
-    created_alters.table_id = None
-    created_alters.schema_name = ""
-    created_alters.table_name = ""
+    """A free-typed name with surrounding whitespace is trimmed before the DSN."""
+    body = AltersCreate.model_validate(
+        {**created_alters.model_dump(), "db_schema": " app ", "db_table": " users "}
+    )
     mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
-    with pytest.raises(ValueError, match="schema/table"):
-        await build_alters_task(created_alters, mock_remote_api)
+    task = await build_alters_task(body, mock_remote_api)
+    assert task.data["meta"]["_schema_name"] == "app"
+    assert task.data["meta"]["_table_name"] == "users"
+    assert "D=app,t=users" in task.data["meta"]["args"]
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_numeric_free_typed_name_not_resolved_as_id(
+    created_alters, created_service, mock_remote_api
+):
+    """Use a purely-numeric free-typed name verbatim, never fetch it as an id."""
+    body = AltersCreate.model_validate(
+        {**created_alters.model_dump(), "db_schema": "123", "db_table": "42"}
+    )
+    mock_remote_api.get = AsyncMock(return_value=created_service.model_dump())
+    task = await build_alters_task(body, mock_remote_api)
+    assert mock_remote_api.get.await_count == 1
+    assert task.data["meta"]["_schema_name"] == "123"
+    assert task.data["meta"]["_table_name"] == "42"
+    assert "D=123,t=42" in task.data["meta"]["args"]
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_id_schema_with_free_typed_table(
+    created_alters, created_service, created_schema, mock_remote_api
+):
+    """Resolve a schema inventory id while the table is a free-typed new name."""
+    created_schema.name = "app"
+    mock_remote_api.get = AsyncMock(
+        side_effect=[created_service.model_dump(), created_schema.model_dump()]
+    )
+    body = created_alters.model_copy(
+        update={"db_schema": created_schema.id, "db_table": "new_table"}
+    )
+    task = await build_alters_task(body, mock_remote_api)
+    assert task.data["meta"]["_schema_name"] == "app"
+    assert task.data["meta"]["_table_name"] == "new_table"
+    assert "D=app,t=new_table" in task.data["meta"]["args"]
+
+
+@pytest.mark.asyncio
+async def test_build_alters_task_free_typed_schema_with_id_table(
+    created_alters, created_service, created_table, mock_remote_api
+):
+    """Resolve a table inventory id while the schema is a free-typed new name."""
+    created_table.name = "orders"
+    mock_remote_api.get = AsyncMock(
+        side_effect=[created_service.model_dump(), created_table.model_dump()]
+    )
+    body = created_alters.model_copy(
+        update={"db_schema": "new_schema", "db_table": created_table.id}
+    )
+    task = await build_alters_task(body, mock_remote_api)
+    assert task.data["meta"]["_schema_name"] == "new_schema"
+    assert task.data["meta"]["_table_name"] == "orders"
+    assert "D=new_schema,t=orders" in task.data["meta"]["args"]
 
 
 @pytest.mark.asyncio
@@ -466,8 +550,8 @@ def test_resolve_predecessor_specs_first_halts_by_default():
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
     )
     spec = resolve_predecessor_specs(body)[0]
@@ -481,8 +565,8 @@ def test_resolve_predecessor_specs_first_continues_when_user_overrides():
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
         continue_on_pre_check_failure=True,
     )
@@ -498,8 +582,8 @@ async def test_cascade_create_alters_group_posts_three_tasks():
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
     )
 
@@ -524,8 +608,8 @@ async def test_cascade_create_alters_group_rolls_back_on_task_post_failure():
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
     )
 
@@ -551,8 +635,8 @@ async def test_cascade_update_alters_group_halt_by_default(mocker):
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
     )
     captured_specs: list = []
@@ -589,8 +673,8 @@ async def test_cascade_update_alters_group_continue_on_pre_check_failure(mocker)
         task_name="t1",
         hostname="host1",
         service_id=1,
-        schema_name="app",
-        table_name="users",
+        db_schema="app",
+        db_table="users",
         alter="ADD COLUMN x INT",
         continue_on_pre_check_failure=True,
     )
@@ -638,8 +722,8 @@ async def test_cascade_update_pairs_predecessor_names_with_specs(mocker):
             task_name="t1",
             hostname="host1",
             service_id=1,
-            schema_name="app",
-            table_name="users",
+            db_schema="app",
+            db_table="users",
             alter="ADD COLUMN x INT",
         )
         captured_specs: list[ChainedPredecessor] = []
@@ -829,3 +913,95 @@ class TestBuildAltersApiTaskResponse:
 
         assert result.created_by == "uid-123"
         assert result.last_updated_by == "uid-456"
+
+
+_LEGACY_SCHEMA_ID = 10
+_LEGACY_TABLE_ID = 20
+
+
+def _legacy_form_base() -> dict[str, object]:
+    """Return the minimal valid legacy Jinja form body (no target selected yet)."""
+    return {
+        "task_name": "alt-1",
+        "hostname": "exec-host",
+        "service_id": 1,
+        "alter": "ADD COLUMN x INT",
+        "recursion_method": "processlist",
+    }
+
+
+class TestMapAltersLegacyForm:
+    """Test folding the split legacy Jinja form into the collapsed ``AltersCreate``."""
+
+    def test_collapse_prefers_inventory_id_over_manual_name(self):
+        """An inventory id wins over a manually-typed name for the same target."""
+        form = AltersLegacyForm.model_validate(
+            {
+                **_legacy_form_base(),
+                "schema_id": _LEGACY_SCHEMA_ID,
+                "schema_name": "ignored",
+                "table_id": _LEGACY_TABLE_ID,
+                "table_name": "ignored",
+            }
+        )
+        create = map_alters_legacy_form(form)
+        assert create.db_schema == _LEGACY_SCHEMA_ID
+        assert create.db_table == _LEGACY_TABLE_ID
+
+    def test_collapse_uses_free_typed_name_when_no_id(self):
+        """A manually-typed (and whitespace-padded) name collapses to the trimmed value."""
+        form = AltersLegacyForm.model_validate(
+            {**_legacy_form_base(), "schema_name": " app ", "table_name": " users "}
+        )
+        create = map_alters_legacy_form(form)
+        assert create.db_schema == "app"
+        assert create.db_table == "users"
+
+    def test_missing_both_target_modes_raises_422(self):
+        """Neither an id nor a name for the target folds to a 422, not a crash."""
+        form = AltersLegacyForm.model_validate(_legacy_form_base())
+        with pytest.raises(HTTPException) as exc_info:
+            map_alters_legacy_form(form)
+        assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_free_typed_name_with_dsn_delimiter_raises_422(self):
+        """Fold a free-typed legacy name with a DSN delimiter to a 422, not a bad DSN."""
+        form = AltersLegacyForm.model_validate(
+            {**_legacy_form_base(), "schema_name": "a,b", "table_name": "users"}
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            map_alters_legacy_form(form)
+        assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_whitespace_only_name_collapses_to_none_and_raises_422(self):
+        """Collapse a whitespace-only legacy name to None (no target) → 422."""
+        form = AltersLegacyForm.model_validate(
+            {**_legacy_form_base(), "schema_name": "   ", "table_name": "   "}
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            map_alters_legacy_form(form)
+        assert exc_info.value.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestAltersLegacyFormCheckboxes:
+    """Test HTML checkbox binding on the legacy form (absent vs ``"1"``/``"true"``)."""
+
+    def test_absent_checkbox_defaults_to_false(self):
+        """An unchecked box (field omitted from the POST body) defaults to ``False``."""
+        form = AltersLegacyForm.model_validate(_legacy_form_base())
+        assert form.print_arg is False
+        assert form.no_swap_tables is False
+
+    def test_checkbox_value_one_is_true(self):
+        """A checked box submitting ``"1"`` binds to ``True``."""
+        form = AltersLegacyForm.model_validate(
+            {**_legacy_form_base(), "print_arg": "1"}
+        )
+        assert form.print_arg is True
+
+    def test_checkbox_value_true_is_true(self):
+        """A checked box submitting ``"true"`` binds to ``True``."""
+        form = AltersLegacyForm.model_validate(
+            {**_legacy_form_base(), "no_swap_tables": "true"}
+        )
+        assert form.no_swap_tables is True

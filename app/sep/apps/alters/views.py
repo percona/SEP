@@ -29,10 +29,12 @@ from app.sep.apps.framework.schema import (
     Capabilities,
     Column,
     ColumnFormat,
+    default_columns,
     DetailField,
     DetailHighlightLanguage,
     DetailSection,
     DetailView,
+    EXECUTION_HOST_LABEL,
     ListView,
 )
 
@@ -48,13 +50,9 @@ alters_views = Views(
         )
     ),
     list_view=ListView(
-        columns=[
-            Column(key="name", label="Name", sortable=True),
-            Column(key="status", label="Status", format=ColumnFormat.STATUS),
+        columns=default_columns(
             Column(key="service_type", label="Service Type", format=ColumnFormat.CHIP),
-            Column(key="created_at", label="Created", format=ColumnFormat.RELATIVE),
-            Column(key="created_by", label="Created By"),
-        ],
+        ),
     ),
     detail_view=DetailView(
         sections=[
@@ -66,7 +64,8 @@ alters_views = Views(
                         label="Command line",
                         highlight=DetailHighlightLanguage.BASH,
                     ),
-                    DetailField(path="data.meta.target", label="Target"),
+                    DetailField(path="data.meta.target", label=EXECUTION_HOST_LABEL),
+                    DetailField(path="data.meta._service_host", label="Database Host"),
                     DetailField(path="data.meta._schema_name", label="Schema"),
                     DetailField(path="data.meta._table_name", label="Table"),
                 ],

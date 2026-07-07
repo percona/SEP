@@ -18,7 +18,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { fulfillEnabledApps, isEnabledAppsPath } from './mockEnabledApps';
 
-const PLUGIN_ROUTE = '/inventory/nodes';
+const APP_ROUTE = '/inventory/nodes';
 
 const MOCK_TOKEN = { access_token: 'smoke-test-token', expires_in: 3600 };
 
@@ -139,7 +139,7 @@ test.describe('Inventory SyncControl smoke', () => {
       }
     });
 
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     const syncAllBtn = page.getByRole('button', { name: /sync all/i });
     await expect(syncAllBtn).toBeVisible({ timeout: 10_000 });
@@ -161,7 +161,7 @@ test.describe('Inventory SyncControl smoke', () => {
       }
     });
 
-    await page.goto(PLUGIN_ROUTE);
+    await page.goto(APP_ROUTE);
 
     await expect(page.getByRole('button', { name: /select a syncer/i })).toBeVisible({
       timeout: 10_000,
