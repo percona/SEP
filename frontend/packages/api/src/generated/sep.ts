@@ -3350,35 +3350,6 @@ export interface components {
       tries?: string | null;
     };
     /**
-     * AltersExecuteWrite
-     * @description Represent a JSON request body for executing an alters task.
-     *
-     *     :param eta: Optional future datetime to schedule execution.
-     *     :param chain_task_names: Optional list of task names to chain after this one.
-     *     :param chain_on_failure: Whether to run chained tasks even on failure.
-     */
-    AltersExecuteWrite: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
-    /**
-     * AltersExecutionResponse
-     * @description Represent the response from POST /api/apps/alters/{task_name}/execute.
-     *
-     *     :param task_name: The name of the task that was executed.
-     *     :param task_id: The id of the task-history row created by the tasks API.
-     */
-    AltersExecutionResponse: {
-      /** Task Id */
-      task_id?: number | null;
-      /** Task Name */
-      task_name: string;
-    };
-    /**
      * AltersTaskResponse
      * @description Represent an alters task API response for list and detail surfaces.
      *
@@ -6908,40 +6879,6 @@ export interface components {
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
     };
     /**
-     * RestoreExecuteWrite
-     * @description Represent a JSON request body for executing a restore task.
-     *
-     *     :param eta: Optional future datetime to schedule execution.
-     *     :type eta: FutureDatetime | None
-     *     :param chain_task_names: Optional list of task names to chain after this one.
-     *     :type chain_task_names: list[str] | None
-     *     :param chain_on_failure: Whether to run chained tasks even on failure.
-     *     :type chain_on_failure: bool | None
-     */
-    RestoreExecuteWrite: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
-    /**
-     * RestoreExecutionResponse
-     * @description Represent the response from POST .../restores/{task_name}/execute.
-     *
-     *     :param task_name: The name of the task that was executed.
-     *     :type task_name: str
-     *     :param task_id: The id of the task-history row created by the tasks API.
-     *     :type task_id: int | None
-     */
-    RestoreExecutionResponse: {
-      /** Task Id */
-      task_id?: number | null;
-      /** Task Name */
-      task_name: string;
-    };
-    /**
      * RestoreRequest
      * @description Describe the request body for ``POST /api/apps/alerts/restore``.
      *
@@ -8502,40 +8439,6 @@ export interface components {
       total: number;
     };
     /**
-     * BackupExecuteWrite
-     * @description Represent a JSON request body for executing a backup task.
-     *
-     *     :param eta: Optional future datetime to schedule execution.
-     *     :type eta: FutureDatetime | None
-     *     :param chain_task_names: Optional list of task names to chain after this one.
-     *     :type chain_task_names: list[str] | None
-     *     :param chain_on_failure: Whether to run chained tasks even on failure.
-     *     :type chain_on_failure: bool | None
-     */
-    app__sep__apps__backup_mongo__models__BackupExecuteWrite: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
-    /**
-     * BackupExecutionResponse
-     * @description Represent the response from POST /api/apps/backup_mongo/{task_name}/execute.
-     *
-     *     :param task_name: The name of the task that was executed.
-     *     :type task_name: str
-     *     :param task_id: The id of the task-history row created by the tasks API.
-     *     :type task_id: int | None
-     */
-    app__sep__apps__backup_mongo__models__BackupExecutionResponse: {
-      /** Task Id */
-      task_id?: number | null;
-      /** Task Name */
-      task_name: string;
-    };
-    /**
      * BackupTaskDetailResponse
      * @description Represent a backup task detail API response.
      *
@@ -8652,40 +8555,6 @@ export interface components {
       | 's2'
       | 'pgzip'
       | 'zstd';
-    /**
-     * BackupExecuteWrite
-     * @description Represent a JSON request body for executing a backup task.
-     *
-     *     :param eta: Optional datetime to schedule execution. Must be in the future;
-     *         a past value is rejected with a 422 validation error.
-     *     :param chain_task_names: Optional list of task names to chain after.
-     *     :type chain_task_names: list[str] | None
-     *     :param chain_on_failure: Whether to run chained tasks even on failure.
-     *     :type chain_on_failure: bool | None
-     */
-    app__sep__apps__backup_pg__models__BackupExecuteWrite: {
-      /** Chain On Failure */
-      chain_on_failure?: boolean | null;
-      /** Chain Task Names */
-      chain_task_names?: string[] | null;
-      /** Eta */
-      eta?: string | null;
-    };
-    /**
-     * BackupExecutionResponse
-     * @description Represent the response from the execute API endpoint.
-     *
-     *     :param task_name: The name of the task that was executed.
-     *     :type task_name: str
-     *     :param task_id: The id of the task-history row created by the tasks API.
-     *     :type task_id: int | None
-     */
-    app__sep__apps__backup_pg__models__BackupExecutionResponse: {
-      /** Task Id */
-      task_id?: number | null;
-      /** Task Name */
-      task_name: string;
-    };
     /**
      * BackupTaskDetailResponse
      * @description Represent a single pgBackRest backup task detail response.
@@ -9382,7 +9251,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['AltersExecuteWrite'];
+        'application/json': components['schemas']['TaskExecuteWrite'];
       };
     };
     responses: {
@@ -9392,7 +9261,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AltersExecutionResponse'];
+          'application/json': components['schemas']['TaskExecutionResponse'];
         };
       };
       /** @description Validation Error */
@@ -9922,7 +9791,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['RestoreExecuteWrite'];
+        'application/json': components['schemas']['TaskExecuteWrite'];
       };
     };
     responses: {
@@ -9932,7 +9801,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['RestoreExecutionResponse'];
+          'application/json': components['schemas']['TaskExecutionResponse'];
         };
       };
       /** @description Validation Error */
@@ -10037,7 +9906,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['app__sep__apps__backup_mongo__models__BackupExecuteWrite'];
+        'application/json': components['schemas']['TaskExecuteWrite'];
       };
     };
     responses: {
@@ -10047,7 +9916,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__apps__backup_mongo__models__BackupExecutionResponse'];
+          'application/json': components['schemas']['TaskExecutionResponse'];
         };
       };
       /** @description Validation Error */
@@ -10257,7 +10126,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        'application/json': components['schemas']['app__sep__apps__backup_pg__models__BackupExecuteWrite'];
+        'application/json': components['schemas']['TaskExecuteWrite'];
       };
     };
     responses: {
@@ -10267,7 +10136,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['app__sep__apps__backup_pg__models__BackupExecutionResponse'];
+          'application/json': components['schemas']['TaskExecutionResponse'];
         };
       };
       /** @description Validation Error */
