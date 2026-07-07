@@ -161,7 +161,7 @@ along with this program. If not, see <https://www.gnu.org/licenses />.
     </fieldset>
     <fieldset id="pgbackrest_container" style="flex-direction: column; gap: 1em">
         <legend>PgBackRest Configuration</legend>
-        {% set stanza_title = "The pgBackRest stanza name as defined in pgbackrest.conf on the host (e.g. sep-test). Passed verbatim as --stanza to every pgbackrest invocation." %}
+        {% set stanza_title = "The pgBackRest stanza name as defined in pgbackrest.conf on the host (e.g. sep-test). Whitespace is trimmed and the result is passed as --stanza to every pgbackrest invocation." %}
         <label for="stanza" title="{{ stanza_title }}">
             Stanza:
             <input type="text"
