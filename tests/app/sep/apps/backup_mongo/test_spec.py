@@ -141,3 +141,12 @@ def test_build_spec_includes_backup_block_when_options_set():
 
     assert config["backup"]["compression"] == "zstd"
     assert config["backup"]["numParallelCollections"] == PARALLEL_COLLECTIONS
+
+
+def test_build_spec_forwards_parsed_priority():
+    """Forward a valid Node Priority mapping to the PBM config as node -> float."""
+    form = _s3_form(backup_priority='"h1:27018": 2\n"h2:27018": 1')
+
+    config = _config(build_backup_mongo_spec(form, BackupMongoResolved()))
+
+    assert config["backup"]["priority"] == {"h1:27018": 2.0, "h2:27018": 1.0}

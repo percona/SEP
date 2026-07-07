@@ -29,7 +29,6 @@ meta, omits ``_service_name`` when the service was deleted, and keeps ``backup_t
 rewrite.
 """
 
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -44,11 +43,10 @@ from app.sep.apps.backup_mongo.models import (
     BackupConfigStorage,
     BackupCreate,
     CompressionAlgorithm,
+    parse_backup_priority,
 )
 from app.sep.apps.framework.spec import build_run_python_task
 from app.tasks.models import TaskOwner, TaskWrite
-
-logger = logging.getLogger(__name__)
 
 _BASE_REQUIREMENTS = "packaging\nPyYAML"
 
@@ -90,31 +88,6 @@ def _build_storage_config(form: BackupCreate) -> dict[str, Any]:
     return {"type": form.storage_type, form.storage_type: storage_config}
 
 
-def _parse_backup_priority(priority_str: str) -> dict[str, float] | None:
-    """Parse backup priority YAML string and return as dictionary.
-
-    Parses YAML input (dict format) and returns it as a dictionary
-    mapping node addresses to priority values for PBM configuration.
-
-    :param priority_str: YAML string containing priority configuration.
-    :return: Parsed priority dictionary mapping node to priority or ``None`` if parsing fails.
-    """
-    try:
-        priority_parsed = yaml.safe_load(priority_str)
-    except yaml.YAMLError:
-        logger.warning("Failed to parse backup priority YAML: %s", priority_str)
-        return None
-    else:
-        if priority_parsed is None:
-            return None
-        if isinstance(priority_parsed, dict):
-            return {str(k): float(v) for k, v in priority_parsed.items()}
-        logger.warning(
-            "Priority must be a dictionary/mapping, got: %s", type(priority_parsed)
-        )
-        return None
-
-
 def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
     """Build backup configuration dictionary from form data.
 
@@ -140,8 +113,11 @@ def _build_backup_config_dict(form: BackupCreate) -> dict[str, Any]:
     backup_config_dict = {}
 
     if form.backup_priority:
-        priority_parsed = _parse_backup_priority(form.backup_priority)
-        if priority_parsed is not None:
+        # Validated at create time (see BackupPriorityYaml); re-parse here so the PBM
+        # config carries the node -> priority mapping. A present priority is never
+        # silently dropped — malformed input is rejected before reaching this builder.
+        priority_parsed = parse_backup_priority(form.backup_priority)
+        if priority_parsed:
             backup_config_dict["priority"] = priority_parsed
 
     if form.backup_compression:
