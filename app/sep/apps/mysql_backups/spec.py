@@ -23,7 +23,6 @@ payload is byte-identical regardless of the call origin. The framework's
 connectivity meta keys around this spec.
 """
 
-
 import yaml
 from fastapi.encoders import jsonable_encoder
 

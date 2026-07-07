@@ -25,7 +25,6 @@ connectivity meta; each child carries ``data["parent"]``), so the helpers here t
 inventory or API client.
 """
 
-
 import yaml
 
 from app.core.utils.path import payload_uri

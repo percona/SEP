@@ -25,7 +25,6 @@ serialise the pgBackRest YAML config and injects :attr:`BackupType.PGBACKREST`
 ``target``, ``_service_name``, and the connectivity meta keys around this spec.
 """
 
-
 import yaml
 from fastapi.encoders import jsonable_encoder
 

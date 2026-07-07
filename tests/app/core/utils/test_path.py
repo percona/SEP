@@ -134,7 +134,9 @@ class TestPayloadUri:
     def test_returns_same_as_manual_path_construction(self, base_dir):
         """Assert payload_uri produces the same reference as the hand-rolled pattern."""
         anchor = str(base_dir / _PLUGIN_REL)
-        expected = to_payload_reference(base_dir / _PLUGIN_REL / ".." / "binlog_payload")
+        expected = to_payload_reference(
+            base_dir / _PLUGIN_REL / ".." / "binlog_payload"
+        )
         assert payload_uri(anchor, "binlog_payload") == expected
 
     def test_builds_reference_relative_to_base_dir(self, base_dir):
