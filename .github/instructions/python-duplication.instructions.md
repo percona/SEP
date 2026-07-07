@@ -15,7 +15,7 @@ Same string or numeric literal appearing in 2+ files in the diff (or 1 in the di
 - Flag even **single-file plugin-identity literals** — plugin slug, plugin-owned meta-key, plugin `settings.yaml` key, URL fragment routed to the plugin — they encode a cross-plugin contract. Extract to a module-level constant.
 - Don't flag test fixture values or Python builtins.
 
-Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL_PORT` in `app/inventory/constants.py`. `"MYSQL"`/`"POSTGRESQL"` → `ServiceTypeEnum.MYSQL.value`.
+Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL_PORT` in `app/inventory/constants.py`. Any hardcoded service-type string (`"mysql"`, `"postgresql"`, `"valkey"`, …) → `ServiceTypeEnum.<member>` (it's a `StrEnum` — the member *is* the string).
 
 ## DUP-2 — Hand-rolled where a helper exists
 
@@ -29,6 +29,10 @@ Concrete cases: `3306`/`5432` ports → `DEFAULT_MYSQL_PORT`/`DEFAULT_POSTGRESQL
 | Hardcoded `"MYSQL"`/`"POSTGRESQL"` | `ServiceTypeEnum.<member>.value` |
 | New string/dict/date helper | Check `app/core/utils/` first |
 | Raw `session.execute(select(...))` | `BaseSQLModelManager` methods |
+| `session.exec(...)` inside a Manager classmethod body | `await cls._exec(session, query)` |
+| `Manager.first(...)` then `if obj is None: raise HTTPNotFoundException(...)` | `Manager.get_or_404(session, **f)` |
+| `Manager.first(...)` → `if existing: update() else: create()` | `Manager.get_or_create(session, data, filter_include={...})` |
+| Inline `datetime.now(UTC)` / `datetime.utcnow()` timestamp | `utc_now()` from `app/core/utils/date_time` (microseconds zeroed) |
 | `fastapi.HTTPException` | `HTTPNotFoundException` / `HTTPConflictException` / etc. |
 | Inline `RemoteAPI` client | `Annotated[RemoteAPI, Depends(get_*_api)]` in `deps.py` |
 | Manual JWT/auth | `CurrentUser = Annotated[User, IsAuthenticated]` |
@@ -49,6 +53,21 @@ Before accepting a non-trivial block of new code, grep the package's route handl
 - **Cross-plugin** — if a route in plugin A processes a domain object owned by plugin B, prefer a classmethod on B's response model (`SnippetResponse.from_snippet(snippet)`) so consumers import and call it.
 
 Don't flag trivial duplication or new code that legitimately needs a different shape.
+
+## DUP-5 — Repeated call shape or boilerplate block
+
+- Same function call (name + overlapping kwargs) appearing ≥3 times in one file → extract a thin one-liner wrapper that names the intent (e.g. `hot_field(default)` for repeated `field_with_metadata(default, metadata={...})`).
+- A verbatim multi-line setup/teardown block (≥3 lines, `try`/`finally`/`async with`) duplicated ≥2 times across sibling callers → extract a shared context manager or helper.
+
+The wrapper must name the *intent*, not just collapse syntax — a 3-line helper saving 1 line per call with no clear name isn't worth it.
+
+## DUP-6 — Reuse stops at the leading underscore
+
+Before flagging "reuse the existing symbol," check for a `_` prefix. A `_`-prefixed module member is not public — importing it across module boundaries couples the importer to an internal the owner can rename or delete without notice. Fix: define a trivial literal locally, or promote the symbol to public (drop `_`, add to `__all__`) in the owning module and import that. Applies to tests too (they're `SLF001`-exempt, so nothing mechanical catches it).
+
+## DUP-7 — Conformance checks derive their expectation from the verified source
+
+When a diff adds a consistency/conformance check, the expected value must be *derived from* the production function or constant being verified (called, imported, computed) — never re-typed as an independent copy. A re-typed expectation drifts from the code silently and defeats the check.
 
 ## Pydantic — declarative over imperative
 

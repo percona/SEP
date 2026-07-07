@@ -1,5 +1,5 @@
 ---
-applyTo: "app/core/**/*.py,app/sep/deps.py,app/inventory/deps.py,app/tasks/deps.py,app/sep/apps/shared/**/*.py"
+applyTo: "app/core/**/*.py,app/sep/deps.py,app/inventory/deps.py,app/tasks/deps.py,app/sep/apps/framework/**/*.py"
 ---
 
 # Cross-Cutting Changes — Shared Helpers & Side Effects
@@ -8,7 +8,7 @@ Diffs to these paths fan out across all three sub-applications. The bug class th
 
 ## Shared-helper changes — audit every caller
 
-When a PR touches `app/core/**`, `app/<service>/deps.py`, `app/sep/apps/shared/**`, or a base class in `*/models.py` / `*/crud.py` whose subclasses live in multiple packages, the PR description should enumerate every call site and explain how the new behaviour preserves each caller's contract.
+When a PR touches `app/core/**`, `app/<service>/deps.py`, `app/sep/apps/framework/**`, or a base class in `*/models.py` / `*/crud.py` whose subclasses live in multiple packages, the PR description should enumerate every call site and explain how the new behaviour preserves each caller's contract.
 
 Specifically:
 
@@ -16,6 +16,9 @@ Specifically:
 - **Emitted SQL changes** — when a DB helper changes its compiled SQL, callers using column types the new SQL doesn't handle fail at runtime, not compile time. Verify each caller's column types.
 - **Return-shape changes** — adding/removing/reordering tuple elements, list → iterator, `None` → sentinel breaks every caller that destructures or matches the old shape.
 - **Side-effect changes** — a helper that gained or lost an emit silently rewires every caller.
+- **Exception-surface changes** — a helper that starts raising (or raises a new exception type) where it previously returned exposes every ungated caller to an uncaught failure path. This applies regardless of package (`app/tasks/**`, `app/inventory/**`, not only `app/core/**`). For each caller confirm it is gated by a `try/except` that persists a terminal state, a registered exception handler, or a short-circuit; a synchronous HTTP route with none of those turns the new raise into a bare 500 — a blocker.
+
+When a surfaced caller only wraps or re-exports the result rather than consuming it, the audit is not done — recurse into the wrapper's callers. A one-level fan-out that stops at a wrapper (e.g. `get_executor_for_task` around `get_executor`) is blind to the actual consumers.
 
 Flag any diff to these paths that lacks a caller audit. Canonical incident: a `func_json_extract` rewrite framed as a "no-op simplification" broke one caller whose column type the new form didn't support.
 
@@ -38,6 +41,8 @@ To check:
 
 ## When to extract a dependency
 
-A route handler should receive **prepared** objects via `Depends(...)` and do only HTTP-layer work. Extract when the body opens with a multi-step lookup / fetch / validation block. Extract feature-flag / config-gate guards (`if not <settings>.<FLAG>: raise HTTPForbiddenException(...)`) even at 2-3 lines — they belong in the route signature for OpenAPI visibility and reuse. Don't extract single attribute accesses, response construction, or endpoint-specific error formatting.
+A route handler should receive **prepared** objects via `Depends(...)` and do only HTTP-layer work. Extract when the body opens with a multi-step lookup / fetch / validation block. Extract feature-flag / config-gate guards (`if not <settings>.<FLAG>: raise HTTPForbiddenException(...)`) and inline resource-state preconditions (`if task.protected: raise HTTPConflictException(...)`) even at 2-3 lines — they belong in the route signature for OpenAPI visibility and reuse. Don't extract single attribute accesses, response construction, or endpoint-specific error formatting.
+
+**Reuse first, extract second.** When the package's `deps.py` already exports a typed alias covering the same resolution, flag any inline invocation of the underlying function regardless of line count — the existing alias overrides the 1–2 line threshold. A sibling input-shape route (Form vs JSON, sync vs async) that needs the same prep chain gets a parallel typed alias, not inline code.
 
 For each opening block in a new route handler, ask "could this object have arrived via `Depends`?" If yes and the block is more than 1–2 lines, flag. Guards are exempt from the line-count threshold.
