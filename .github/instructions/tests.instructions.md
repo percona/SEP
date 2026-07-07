@@ -8,7 +8,7 @@ applyTo: "tests/**/*.py"
 
 Tests mirror app structure exactly. `app/sep/snippets/config.py` → `tests/app/sep/snippets/test_config.py`. Flag tests at the wrong level.
 
-**Don't duplicate fixtures across modules — promote them.** Before adding a fixture or module-level helper, grep the nearest `conftest.py` and sibling modules for an equivalent. Any bootstrap two or more modules need (in-memory engine + `metadata.create_all`, seed-row builder, client factory) belongs in the nearest shared `conftest.py`, parametrized when call sites differ — not copied per module.
+**Don't duplicate fixtures across modules — promote them.** Before adding a fixture or module-level helper, grep the nearest `conftest.py` and sibling modules for an equivalent. Any bootstrap that two or more modules need (in-memory engine + `metadata.create_all`, seed-row builder, client factory) belongs in the nearest shared `conftest.py`, parametrized when call sites differ — not copied per module.
 
 ## Factories — never manual dicts
 
