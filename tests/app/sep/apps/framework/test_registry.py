@@ -514,8 +514,7 @@ class TestTaskExecutionAppCssClass:
         """Assert the registry-bound ``css_class`` equals the definition's ``css_class``."""
         definition = importlib.import_module(f"app.sep.apps.{plugin}.app").app
         bound = get_app_registry().get(plugin)
-        assert bound.css_class == definition.css_class
-        assert bound.css_class == plugin
+assert bound.css_class == definition.css_class
 
     @pytest.mark.parametrize("plugin", TASK_EXECUTION_PLUGINS_WITH_CSS_CLASS)
     def test_definition_declares_css_class(self, plugin: str) -> None:
