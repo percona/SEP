@@ -211,7 +211,7 @@ class TestAltersAppSchemaEndpoint:
 
 
 class TestAltersApiList:
-    """Tests for GET /api/apps/alters/ (derived, paginated, roots_only)."""
+    """Cover the derived paginated roots-only list route GET /api/apps/alters/."""
 
     def test_list_returns_roots_only_paginated(
         self, test_client, mock_task_api_dep

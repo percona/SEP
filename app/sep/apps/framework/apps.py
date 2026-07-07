@@ -126,10 +126,10 @@ class AppCapabilities(BaseModel):
 class ListFilterConfig(BaseModel):
     """Collapse the derived list route's filter knobs into one config object.
 
-    Consolidates the former ``list_status_filter`` / ``list_service_type_filter``
-    booleans and adds two server-side filters that keep the paginated ``total``
-    accurate (the Tasks API applies them upstream, so no client-side row dropping
-    corrupts the count):
+    Carries the ``status`` / ``service_type`` query-parameter toggles plus the
+    server-side ``roots_only`` and ``extra_params`` upstream filters. The
+    server-side filters keep the paginated ``total`` accurate (the Tasks API
+    applies them upstream, so no client-side row dropping corrupts the count):
 
     :param status: Whether the list route exposes a ``status`` query parameter
         wired to the pipeline's latest-status filter. Defaults to ``False``.
@@ -141,8 +141,8 @@ class ListFilterConfig(BaseModel):
         sibling tasks are hidden and only parent (root) tasks are listed. Defaults
         to ``False``.
     :param extra_params: Fixed upstream task-list query parameters merged into
-        every list request (for example ``{"backup_type": "pbm_config"}``).
-        Defaults to an empty mapping.
+        every list request (an app's own ``{"some_field": "some_value"}``
+        discriminator, applied server-side). Defaults to an empty mapping.
     """
 
     status: bool = False
