@@ -15,7 +15,7 @@
 
 """Manage remote API interactions."""
 
-__all__ = ["BaseRemoteAPI", "RemoteAPI"]
+__all__ = ["UPSTREAM_NON_JSON_HEADER", "BaseRemoteAPI", "RemoteAPI"]
 
 import asyncio
 import logging
@@ -69,6 +69,13 @@ _SENSITIVE_HEADERS = frozenset(
     {"authorization", "x-api-key", "cookie", "proxy-authorization"}
 )
 _REDACTED_HEADER_VALUE = "****"
+
+# Marker header stamped on the ``HTTPException`` raised when an error response
+# carries a non-JSON body (e.g. an nginx HTML 502 emitted when the upstream app
+# process is down, as opposed to an app-level JSON error). Callers that must tell
+# a gateway/proxy failure apart from an app-level failure at the same status code
+# can key off this header. Additive and safe to relay to downstream clients.
+UPSTREAM_NON_JSON_HEADER = "X-Upstream-Non-JSON"
 
 
 def _sanitize_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -738,7 +745,9 @@ class RemoteAPI(BaseRemoteAPI):
                     response_content,
                 )
                 raise HTTPException(
-                    err.status, detail="An unexpected error occurred on the server."
+                    err.status,
+                    detail="An unexpected error occurred on the server.",
+                    headers={UPSTREAM_NON_JSON_HEADER: "1"},
                 ) from None
             except ClientResponseError as err:
                 error_detail = response_data.get(
