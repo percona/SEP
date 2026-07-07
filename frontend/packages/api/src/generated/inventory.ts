@@ -16,8 +16,10 @@ export interface paths {
      *
      *     Local classes are read from their config singletons; remote classes
      *     (``remote_classes``) are fetched server-side from their owning sub-app
-     *     and appended in declaration order. A failed remote fetch fails the whole
-     *     request with ``502`` -- the LIST never silently drops a remote group.
+     *     and appended in declaration order; app-owned classes follow remote
+     *     groups with per-group app metadata. A failed remote fetch fails the
+     *     whole request with ``502`` -- the LIST never silently drops a remote
+     *     group.
      *
      *     :param session: The sub-app's database session.
      *     :param remote_api: The client for remote settings classes (``None`` when
@@ -1312,8 +1314,33 @@ export interface components {
      *     :param settings: The fields declared on the settings class, with their
      *         current values and metadata.
      *     :type settings: list[SettingResponse]
+     *     :param is_app_owned: Whether this group belongs to a SEP app under
+     *         ``app/sep/apps/`` rather than core SEP wiring.
+     *     :type is_app_owned: bool
+     *     :param app_id: The owning app's registry key when ``is_app_owned`` is
+     *         ``True``; ``None`` for core groups.
+     *     :type app_id: str | None
+     *     :param app_display_name: The owning app's human-facing label when
+     *         ``is_app_owned`` is ``True``; ``None`` for core groups.
+     *     :type app_display_name: str | None
+     *     :param app_enabled: Whether the owning app is currently enabled when
+     *         ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
+     *         apps remain listed so the frontend can hide them without a second
+     *         lookup.
+     *     :type app_enabled: bool | None
      */
     SettingClassGroup: {
+      /** App Display Name */
+      app_display_name?: string | null;
+      /** App Enabled */
+      app_enabled?: boolean | null;
+      /** App Id */
+      app_id?: string | null;
+      /**
+       * Is App Owned
+       * @default false
+       */
+      is_app_owned: boolean;
       setting_class: components['schemas']['SettingClassEnum'];
       /** Settings */
       settings: components['schemas']['SettingResponse'][];
