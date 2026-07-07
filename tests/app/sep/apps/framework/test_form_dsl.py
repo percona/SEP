@@ -20,7 +20,7 @@ from enum import auto, StrEnum
 from typing import Annotated, ClassVar, Literal
 
 import pytest
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, create_model, Field, ValidationError
 
 from app.core.utils.fields import EmptyStrToNone
 from app.inventory.models import ServiceTypeEnum
@@ -62,6 +62,10 @@ from app.sep.apps.framework.schema import (
     IntegerField,
     ListView,
     MultiChoiceField,
+    MultiHostField,
+    MultiSchemaField,
+    MultiServiceField,
+    MultiTableField,
     OneOfGroup,
     RelatedApp,
     SchemaField,
@@ -345,6 +349,77 @@ class _BadAllowCustomModel(AppFormModel):
     ]
 
 
+class _MultiValueRefModel(AppFormModel):
+    services: Annotated[
+        list[int],
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL], multiple=True),
+        Ui(label="Services", section="s"),
+    ] = Field(default_factory=list)
+    schemas: Annotated[
+        list[int],
+        SchemaRef(multiple=True),
+        Ui(label="Schemas", section="s", depends_on="services"),
+    ] = Field(default_factory=list)
+    tables: Annotated[
+        list[int],
+        TableRef(multiple=True),
+        Ui(label="Tables", section="s", depends_on="schemas"),
+    ] = Field(default_factory=list)
+    hosts: Annotated[
+        list[str],
+        HostRef(multiple=True),
+        Ui(label="Hosts", section="s"),
+    ] = Field(default_factory=list)
+
+
+class _MultiSetRefModel(AppFormModel):
+    services: Annotated[
+        set[int],
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL], multiple=True),
+        Ui(label="Services", section="s"),
+    ] = Field(default_factory=set)
+
+
+class _MultipleScalarRefModel(AppFormModel):
+    service: Annotated[
+        int,
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL], multiple=True),
+        Ui(label="Service", section="s"),
+    ]
+
+
+class _ListRefWithoutMultipleModel(AppFormModel):
+    services: Annotated[
+        list[int],
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL]),
+        Ui(label="Services", section="s"),
+    ] = Field(default_factory=list)
+
+
+class _MultiAllowCustomBadModel(AppFormModel):
+    schemas: Annotated[
+        list[int],
+        SchemaRef(multiple=True, allow_custom=True),
+        Ui(label="Schemas", section="s", depends_on="services"),
+    ] = Field(default_factory=list)
+
+
+class _MultiAllowCustomGoodModel(AppFormModel):
+    schemas: Annotated[
+        list[int | str],
+        SchemaRef(multiple=True, allow_custom=True),
+        Ui(label="Schemas", section="s", depends_on="services"),
+    ] = Field(default_factory=list)
+
+
+class _MultiRefValueModel(AppFormModel):
+    services: Annotated[
+        list[int | str],
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL], multiple=True),
+        Ui(label="Services", section="s"),
+    ] = Field(default_factory=list)
+
+
 class TestReferenceFields:
     """Cover ref markers driving the schema field class and their extras."""
 
@@ -388,6 +463,68 @@ class TestReferenceFields:
         """Reject allow_custom on a field whose annotation cannot accept str."""
         with pytest.raises(ValueError, match="allow_custom"):
             derive_form_sections(_BadAllowCustomModel, _SINGLE_SECTION)
+
+    def test_multiple_list_derives_multi_ref_field_classes(self) -> None:
+        """Select the four multi-value ref field classes from ``multiple=True``."""
+        fields = _fields_by_name(_MultiValueRefModel)
+        assert isinstance(fields["services"], MultiServiceField)
+        assert fields["services"].service_types == [ServiceTypeEnum.MYSQL]
+        assert isinstance(fields["schemas"], MultiSchemaField)
+        assert fields["schemas"].depends_on == "services"
+        assert isinstance(fields["tables"], MultiTableField)
+        assert fields["tables"].depends_on == "schemas"
+        assert isinstance(fields["hosts"], MultiHostField)
+
+    def test_multiple_set_annotation_derives_multi_ref_field(self) -> None:
+        """Derive the same multi-value field from a ``set[...]`` annotation."""
+        field = _fields_by_name(_MultiSetRefModel)["services"]
+        assert isinstance(field, MultiServiceField)
+
+    def test_multiple_on_scalar_annotation_errors(self) -> None:
+        """Reject ``multiple=True`` on a scalar (non-list/set) annotation."""
+        with pytest.raises(ValueError, match="multiple=True"):
+            derive_form_sections(_MultipleScalarRefModel, _SINGLE_SECTION)
+
+    def test_list_ref_without_multiple_errors(self) -> None:
+        """Reject a list/set ref annotation whose marker omits ``multiple=True``."""
+        with pytest.raises(ValueError, match="multiple=True"):
+            derive_form_sections(_ListRefWithoutMultipleModel, _SINGLE_SECTION)
+
+    def test_multi_allow_custom_requires_str_in_element(self) -> None:
+        """Reject multi allow_custom when the element type cannot accept str."""
+        with pytest.raises(ValueError, match="allow_custom"):
+            derive_form_sections(_MultiAllowCustomBadModel, _SINGLE_SECTION)
+
+    def test_multi_allow_custom_derives_when_element_accepts_str(self) -> None:
+        """Derive a multi ref with ``allow_custom`` when the element admits str."""
+        field = _fields_by_name(_MultiAllowCustomGoodModel)["schemas"]
+        assert isinstance(field, MultiSchemaField)
+        assert field.allow_custom is True
+
+    def test_multi_value_one_of_union_errors(self) -> None:
+        """Reject ``multiple=True`` inside a multi-marker one-of reference union.
+
+        The runtime rule-synthesis path derives multi-marker one-of groups at
+        class-definition time, so the guard fires as the model class is built.
+        """
+        target = (
+            Annotated[
+                list[int],
+                ServiceRef(service_types=[ServiceTypeEnum.MYSQL], multiple=True),
+                SchemaRef(multiple=True),
+                Ui(label="Target", section="s", depends_on="other"),
+            ],
+            Field(default_factory=list),
+        )
+        with pytest.raises(ValueError, match="multi-value one-of"):
+            create_model("_MultiValueOneOfModel", __base__=AppFormModel, target=target)
+
+    def test_multi_ref_model_validates_mixed_list_rejects_scalar(self) -> None:
+        """Validate a mixed ``[id, custom]`` list and reject a non-list body value."""
+        model = _MultiRefValueModel(services=[1, "custom"])
+        assert model.services == [1, "custom"]
+        with pytest.raises(ValidationError):
+            _MultiRefValueModel(services=5)
 
 
 class _SourceBySchema(BaseModel):

@@ -22,6 +22,7 @@ import { useServices, type ServiceOption, type ServiceType } from '../../hooks/u
 import { extractId } from '../../utils/extractId';
 import { isHydratedReferenceOption, resolveReferenceOption } from '../../utils/referenceOption';
 import { FreeSoloSelect } from '../FreeSoloSelect';
+import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
 
 const EMPTY_OPTIONS: ServiceOption[] = [];
 
@@ -40,6 +41,12 @@ export interface ServiceSelectorProps {
   helperText?: string;
   /** Offer free-text (free-solo) entry alongside the inventory options. */
   allowCustom?: boolean;
+  /**
+   * Render a multi-value selector committing a `(number | string)[]`. Combined
+   * with `allowCustom`, yields a free-solo multi-select; otherwise a closed
+   * multi-select combobox.
+   */
+  multiple?: boolean;
 }
 
 const getOptionLabel = (opt: ServiceOption | string) =>
@@ -60,6 +67,7 @@ export function ServiceSelector({
   disabled,
   helperText,
   allowCustom,
+  multiple,
 }: ServiceSelectorProps) {
   const { control, setValue, watch } = useFormContext();
   const storedValue = watch(name);
@@ -80,7 +88,7 @@ export function ServiceSelector({
       : helperText;
 
   useEffect(() => {
-    if (allowCustom || isHydratedReferenceOption(storedValue)) {
+    if (multiple || allowCustom || isHydratedReferenceOption(storedValue)) {
       return;
     }
     const id = extractId(storedValue);
@@ -91,7 +99,25 @@ export function ServiceSelector({
     if (match) {
       setValue(name, match, { shouldDirty: false, shouldValidate: false });
     }
-  }, [allowCustom, storedValue, services, name, setValue]);
+  }, [multiple, allowCustom, storedValue, services, name, setValue]);
+
+  if (multiple) {
+    return (
+      <FreeSoloMultiSelect<ServiceOption>
+        name={name}
+        label={label}
+        options={services}
+        getOptionLabel={getServiceOptionLabel}
+        allowCustom={Boolean(allowCustom)}
+        required={required}
+        disabled={disabled || isError}
+        loading={isLoading}
+        helperText={text}
+        error={isError}
+        noOptionsText={isLoading ? 'Loading services…' : 'No services available'}
+      />
+    );
+  }
 
   if (allowCustom) {
     return (
