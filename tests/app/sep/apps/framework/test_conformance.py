@@ -307,13 +307,18 @@ def test_capability_route_consistency_clean_app():
     assert check_capability_route_consistency(_build_app()) == []
 
 
-def test_capability_route_consistency_flags_forbidden_route():
-    """Assert an extra route contradicting a disabled flag is reported."""
+def test_capability_route_consistency_allows_custom_extra_route():
+    """Assert a custom ``extra_routes`` route for a disabled flag is exempt.
+
+    A hybrid app keeps a verb custom (capability off, route mounted via
+    ``extra_routes``); that explicit escape hatch is not a violation — only a
+    leaked *derived* route would be.
+    """
     app = _build_app(
         capabilities=AppCapabilities(create=False, execute=False),
         extra_routes=(_post_root_router(),),
     )
-    assert any("create" in w for w in check_capability_route_consistency(app))
+    assert check_capability_route_consistency(app) == []
 
 
 def test_capability_route_consistency_execute_ignores_custom_detail_path_param():

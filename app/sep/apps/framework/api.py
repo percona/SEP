@@ -923,6 +923,7 @@ def _register_list_route(
     pagination_dep: PaginationDependency | None,
     list_status_filter: bool,
     list_service_type: ServiceTypeEnum | None,
+    list_extra_params: dict[str, str] | None = None,
     context_provider: Callable[[], Awaitable[Any]] | None,
 ) -> None:
     """Register the owner-filtered ``GET /`` list route on ``router``.
@@ -941,8 +942,13 @@ def _register_list_route(
     :param list_status_filter: Whether to declare the ``status`` query param.
     :param list_service_type: The fixed service type to filter against, or ``None``
         to declare no ``service_type`` param.
+    :param list_extra_params: Fixed upstream task-list query parameters (for
+        example ``{"parent_is_null": "true"}``) forwarded to the shared pipeline.
+        These are server-side filters, so they do not perturb the paginated
+        ``total``. Defaults to ``None`` (no extra params).
     :param context_provider: The once-per-request async context provider, or ``None``.
     """
+    extra_params = list_extra_params or {}
     filters_param = Annotated[
         ListFilters,
         Depends(
@@ -970,6 +976,7 @@ def _register_list_route(
                 owner=task_owner.value,
                 response_builder=response_builder,
                 status_filter=filters.status,
+                extra_params=extra_params,
                 context_provider=context_provider,
             )
             return cast(list[BaseModel], responses)
@@ -997,6 +1004,7 @@ def _register_list_route(
                 response_builder=response_builder,
                 pagination=pagination,
                 status_filter=filters.status,
+                extra_params=extra_params,
                 context_provider=context_provider,
             )
             return cast(PaginatedResponse, responses)
@@ -1027,6 +1035,8 @@ def derive_crud_routes(
     pagination_dep: PaginationDependency | None = None,
     list_status_filter: bool = False,
     list_service_type: ServiceTypeEnum | None = None,
+    list_extra_params: dict[str, str] | None = None,
+    derive_detail: bool = True,
     context_provider: Callable[[], Awaitable[Any]] | None = None,
     create_extra_deps: Sequence[params.Depends] = (),
     update_enabled: bool = False,
@@ -1116,6 +1126,13 @@ def derive_crud_routes(
         query parameter and short-circuits to an empty result before the upstream
         fetch when the requested service type differs from this one. When ``None``
         (default) the list route declares no ``service_type`` param.
+    :param list_extra_params: Fixed upstream task-list query parameters (for
+        example ``{"parent_is_null": "true"}``) applied server-side on every list
+        request, so they filter without perturbing the paginated ``total``.
+        Defaults to ``None`` (no extra params).
+    :param derive_detail: When ``True`` (default), register the greedy derived
+        ``GET /{detail_path_param}`` detail route. Set ``False`` to suppress it so
+        a custom detail route (mounted last via ``extra_routes``) wins the path.
     :param context_provider: A zero-arg async provider whose once-awaited result
         is bound as the active builder's ``context`` keyword argument across the
         list, detail, and create builds. ``None`` (default) leaves builders unbound.
@@ -1195,31 +1212,34 @@ def derive_crud_routes(
         pagination_dep=pagination_dep,
         list_status_filter=list_status_filter,
         list_service_type=list_service_type,
+        list_extra_params=list_extra_params,
         context_provider=context_provider,
     )
 
-    async def _detail(
-        tasks_api: TaskAPI, task: Annotated[Task, Depends(get_task)]
-    ) -> BaseModel:
-        try:
-            task_status = await get_task_latest_status(tasks_api, task.name)
-        except ValueError:
-            raise
-        except Exception:
-            logger.exception("Failed to fetch history for task %s", task.name)
-            task_status = None
-        builder = await _bind_context(detail_builder, context_provider)
-        return builder(task, status=task_status)
+    if derive_detail:
 
-    router.add_api_route(
-        detail_path,
-        _detail,
-        methods=["GET"],
-        summary="Detail",
-        response_model=detail_model,
-        response_model_by_alias=True,
-        dependencies=[IsApiAuthenticated],
-    )
+        async def _detail(
+            tasks_api: TaskAPI, task: Annotated[Task, Depends(get_task)]
+        ) -> BaseModel:
+            try:
+                task_status = await get_task_latest_status(tasks_api, task.name)
+            except ValueError:
+                raise
+            except Exception:
+                logger.exception("Failed to fetch history for task %s", task.name)
+                task_status = None
+            builder = await _bind_context(detail_builder, context_provider)
+            return builder(task, status=task_status)
+
+        router.add_api_route(
+            detail_path,
+            _detail,
+            methods=["GET"],
+            summary="Detail",
+            response_model=detail_model,
+            response_model_by_alias=True,
+            dependencies=[IsApiAuthenticated],
+        )
 
     if create_payload is None:
         if connectivity_check:

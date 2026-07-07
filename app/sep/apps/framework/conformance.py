@@ -123,12 +123,15 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
     """Return violations where derived routes disagree with the capability flags.
 
     Assert each verb toggle on ``app.capabilities`` matches the presence of its
-    route: ``create`` ↔ ``POST /``, ``execute`` ↔ ``POST /{task_name}/execute``,
-    ``update`` ↔ ``PUT /{param}``, ``delete`` ↔ ``DELETE /{param}`` (``param`` is
-    ``app.detail_path_param``). The execute route always uses the literal
-    ``task_name`` path parameter, independent of ``detail_path_param`` — only the
-    CRUD detail/update/delete routes adopt ``param``. Catches an ``extra_routes``
-    override that reintroduces a route a disabled flag forbids.
+    *derived* route: ``create`` ↔ ``POST /``, ``execute`` ↔
+    ``POST /{task_name}/execute``, ``update`` ↔ ``PUT /{param}``, ``delete`` ↔
+    ``DELETE /{param}`` (``param`` is ``app.detail_path_param``). The execute route
+    always uses the literal ``task_name`` path parameter, independent of
+    ``detail_path_param`` — only the CRUD detail/update/delete routes adopt
+    ``param``. A route contributed by ``extra_routes`` is the app's explicit escape
+    hatch (a hybrid app derives only its list/schema and keeps every mutation
+    custom with the matching capability off), so it is exempt: only a *derived*
+    route contradicting a flag is a violation.
 
     :param app: The migrated app whose derived router is inspected.
     :return: One message per flag/route disagreement; empty when consistent or when
@@ -150,6 +153,12 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
         for route in routes
         for method in getattr(route, "methods", None) or ()
     }
+    custom = {
+        (method, getattr(route, "path", ""))
+        for extra in app.extra_routes
+        for route in extra.routes
+        for method in getattr(route, "methods", None) or ()
+    }
     violations = []
     for verb, signature in expected.items():
         enabled = getattr(app.capabilities, verb)
@@ -158,9 +167,9 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
                 f"capability {verb!r} is enabled but route {signature[0]} "
                 f"{signature[1]} is absent"
             )
-        elif not enabled and signature in present:
+        elif not enabled and signature in present and signature not in custom:
             violations.append(
-                f"capability {verb!r} is disabled but route {signature[0]} "
+                f"capability {verb!r} is disabled but derived route {signature[0]} "
                 f"{signature[1]} is present"
             )
     return violations
