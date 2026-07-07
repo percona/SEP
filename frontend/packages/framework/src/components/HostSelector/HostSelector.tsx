@@ -20,6 +20,7 @@ import { useFormContext } from 'react-hook-form';
 import { AutoCompleteInput } from '@percona/percona-ui';
 import { useSnackbar } from 'notistack';
 import { useHosts, type HostOption } from '../../hooks/useHosts';
+import { FreeSoloMultiSelect } from '../FreeSoloMultiSelect';
 
 const EMPTY_OPTIONS: HostOption[] = [];
 
@@ -30,13 +31,26 @@ export interface HostSelectorProps {
   required?: boolean;
   disabled?: boolean;
   helperText?: string;
+  /**
+   * Render a closed multi-value host selector committing a `(number | string)[]`.
+   * Host free-solo is not offered, so multi-host is always a closed combobox.
+   */
+  multiple?: boolean;
 }
 
 const getOptionLabel = (opt: HostOption | string) => (typeof opt === 'string' ? opt : opt.name);
+const getHostOptionLabel = (opt: HostOption) => opt.name;
 
 const isOptionEqualToValue = (a: HostOption, b: HostOption) => a.id === b.id;
 
-export function HostSelector({ name, label, required, disabled, helperText }: HostSelectorProps) {
+export function HostSelector({
+  name,
+  label,
+  required,
+  disabled,
+  helperText,
+  multiple,
+}: HostSelectorProps) {
   const {
     control,
     formState: { errors },
@@ -72,6 +86,24 @@ export function HostSelector({ name, label, required, disabled, helperText }: Ho
     text = error?.message ?? 'Failed to load hosts';
   } else if (empty) {
     text = 'No hosts available';
+  }
+
+  if (multiple) {
+    return (
+      <FreeSoloMultiSelect<HostOption>
+        name={name}
+        label={label}
+        options={hosts}
+        getOptionLabel={getHostOptionLabel}
+        allowCustom={false}
+        required={required}
+        disabled={disabled || isError}
+        loading={isLoading}
+        helperText={text}
+        error={isError || !!fieldError}
+        noOptionsText={isLoading ? 'Loading hosts…' : 'No hosts available'}
+      />
+    );
   }
 
   return (

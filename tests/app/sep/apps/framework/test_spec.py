@@ -362,6 +362,15 @@ class _TwoHostForm(AppFormModel):
     host_b: Annotated[str | None, HostRef(), Ui(label="B", section="main")] = None
 
 
+class _MultiHostForm(AppFormModel):
+    """Carry a multi-value ``HostRef`` to exercise the single-executor-host guard."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    hosts: Annotated[
+        list[str], HostRef(multiple=True), Ui(label="Hosts", section="main")
+    ]
+
+
 class _IntHostForm(AppFormModel):
     """Carry an ``int | str`` HostRef to exercise executor-host str coercion."""
 
@@ -522,6 +531,14 @@ class TestResolveRefs:
 
         with pytest.raises(ValueError, match="HostRef"):
             await resolve_refs(_TwoHostForm(host_a="a", host_b="b"), inventory)
+
+    @pytest.mark.asyncio
+    async def test_multi_host_ref_raises(self) -> None:
+        """Reject a multi-value ``HostRef`` selection that has no single executor host."""
+        inventory = _fake_inventory({})
+
+        with pytest.raises(ValueError, match="multi-value HostRef"):
+            await resolve_refs(_MultiHostForm(hosts=["h1", "h2"]), inventory)
 
     @pytest.mark.asyncio
     async def test_multi_type_service_in_tuple_resolves(self) -> None:
