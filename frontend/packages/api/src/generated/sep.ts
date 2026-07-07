@@ -7669,6 +7669,11 @@ export interface components {
      *     :param description: The snippet's free-text description, or an empty
      *         string when no description is set in metadata.
      *     :type description: str
+     *     :param service_type: The snippet's free-form service type
+     *         (``service_type`` metadata field, for example ``"mysql"`` or
+     *         ``"mongodb"``), or ``None`` when the snippet declares no service
+     *         type. Distinct from the inventory ``ServiceTypeEnum``.
+     *     :type service_type: str | None
      *     :param size: Snippet file size in bytes.
      *     :type size: int
      *     :param md5_digest: 32-character MD5 hex digest of the snippet file.
@@ -7725,6 +7730,8 @@ export interface components {
       reason: string;
       /** Requires Sudo */
       requires_sudo: boolean;
+      /** Service Type */
+      service_type?: string | null;
       /** Size */
       size: number;
       /** Sudo Default */

@@ -146,6 +146,7 @@ class TestSnippetsApiList:
         assert row["is_approved"] is True
         assert row["md5_digest"] == "a" * 32
         assert row["sudo_optional"] is False
+        assert row["service_type"] == snippet.service_type
 
 
 @pytest.mark.asyncio

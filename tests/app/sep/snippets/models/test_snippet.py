@@ -126,6 +126,21 @@ class TestBaseSnippetProperties:
         snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
         assert snippet.description == ""
 
+    def test_service_type_from_meta(self):
+        """Verify service_type is extracted from meta."""
+        snippet = BaseSnippet(
+            filename="test.sh",
+            size=100,
+            md5_digest="a" * 32,
+            meta={"service_type": "mysql"},
+        )
+        assert snippet.service_type == "mysql"
+
+    def test_service_type_defaults_to_none(self):
+        """Verify service_type defaults to None when not in meta."""
+        snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
+        assert snippet.service_type is None
+
     def test_path_property(self):
         """Verify path returns full path based on BASE_DIR."""
         snippet = BaseSnippet(filename="test.sh", size=100, md5_digest="a" * 32)
