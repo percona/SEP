@@ -489,6 +489,39 @@ describe('SnippetsListPage — RefreshButton', () => {
       expect(screen.getByRole('checkbox', { name: /select check\.sh/i })).not.toBeChecked();
     });
   });
+
+  it('resets the service-type filter after a successful refresh', async () => {
+    mockUseSnippets.mockReturnValue({
+      data: [{ ...unapprovedSnippet, filename: 'mysql.sh', service_type: 'mysql' }],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useSnippets>);
+    mockUseSnippetsCapabilities.mockReturnValue({
+      data: { manual_sync_enabled: true },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useSnippetsCapabilities>);
+    mockUseRefreshSnippets.mockReturnValue({
+      mutate: vi.fn((_, callbacks) => {
+        callbacks?.onSuccess?.({ refreshed_at: '2026-05-07T12:34:56Z' });
+      }),
+      isPending: false,
+    } as unknown as ReturnType<typeof useRefreshSnippets>);
+
+    render(<SnippetsListPage isAdmin />);
+
+    // Narrow to the mysql service type.
+    fireEvent.mouseDown(screen.getByLabelText('Filter by service type'));
+    fireEvent.click(screen.getByRole('option', { name: 'mysql' }));
+    expect(screen.getByLabelText('Filter by service type')).toHaveTextContent('mysql');
+
+    // Refresh resets the filter back to "All services".
+    fireEvent.click(screen.getByRole('button', { name: /refresh snippets/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^refresh$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Filter by service type')).toHaveTextContent('All services');
+    });
+  });
 });
 
 describe('SnippetsListPage — filters', () => {

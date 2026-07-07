@@ -476,6 +476,11 @@ export function SnippetsListPage({ isAdmin = false }: SnippetsListPageProps) {
                   setRefreshSuccess(data);
                   setDownloaded(new Set());
                   setSelected(new Set());
+                  // A refresh can drop the service type this filter is bound to,
+                  // which would strand the Select on a value with no matching
+                  // option (rendering blank and forcing the empty state). Reset
+                  // to "All services" so the refreshed list is always visible.
+                  setServiceTypeFilter(ALL_SERVICES);
                 },
                 onError: (err) => {
                   const detail =
