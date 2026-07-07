@@ -20,33 +20,22 @@ from typing import Annotated, Any
 
 from fastapi import Depends
 
-from app.core.config import settings
 from app.core.exceptions import HTTPServiceUnavailableException
 from app.sep.apps.report.models import REPORT_SECTION_LABELS
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
-from app.sep.deps import DefaultContext
+
+# ``get_pmm_api`` / ``PMMAPIDep`` live in ``app.sep.deps`` alongside the sibling
+# Inventory / Tasks client deps; imported here (with the CA-aware ``ssl_cafile``)
+# so report shares one cached PMM client with consistent TLS verification instead
+# of a divergent copy that skipped the private-CA bundle.
+from app.sep.deps import (
+    DefaultContext,
+    get_pmm_api,  # noqa: F401 -- re-exported for existing importers
+    PMMAPIDep,
+)
 
 logger = logging.getLogger(__name__)
-
-
-async def get_pmm_api() -> PMMRemoteAPI | None:
-    """Return a ``PMMRemoteAPI`` client, or ``None`` when PMM is not configured.
-
-    :return: The PMM API client, or ``None`` if endpoint or API key is missing.
-    :rtype: PMMRemoteAPI | None
-    """
-    if not settings.PMM.endpoint or not settings.PMM.api_key:
-        return None
-    return await settings.get_remote_api(
-        PMMRemoteAPI,
-        endpoint=settings.PMM.endpoint,
-        api_key=settings.PMM.api_key,
-        verify_ssl=settings.PMM.verify_ssl,
-    )
-
-
-PMMAPIDep = Annotated[PMMRemoteAPI | None, Depends(get_pmm_api)]
 
 
 async def require_pmm_api(pmm_api: PMMAPIDep) -> PMMRemoteAPI:

@@ -52,7 +52,9 @@ from app.sep.deps import (
     CreatedServiceDep,
     ExecutorHosts,
     get_base_url,
+    get_pmm_api,  # noqa: F401 -- re-exported for existing importers / overrides
     InventoryAPI,
+    PMMAPIDep,  # noqa: F401 -- re-exported for dipper api_routes / overrides
 )
 from app.sep.inventory import CreatedService
 from app.sep.middleware import messages
@@ -375,28 +377,6 @@ def get_pmm_form_defaults(
     defaults["node"] = node_name
     defaults["service"] = service_name
     return defaults
-
-
-async def get_pmm_api() -> PMMRemoteAPI | None:
-    """Return a ``PMMRemoteAPI`` client, or ``None`` when PMM is not configured.
-
-    Mirrors ``app.sep.apps.report.deps.get_pmm_api`` so the Dipper form-schema
-    endpoint can query the configured PMM server's inventory on demand.
-
-    :return: The PMM API client, or ``None`` if the endpoint or API key is missing.
-    :rtype: PMMRemoteAPI | None
-    """
-    if not settings.PMM.endpoint or not settings.PMM.api_key:
-        return None
-    return await settings.get_remote_api(
-        PMMRemoteAPI,
-        endpoint=settings.PMM.endpoint,
-        api_key=settings.PMM.api_key,
-        verify_ssl=settings.PMM.verify_ssl,
-    )
-
-
-PMMAPIDep = Annotated[PMMRemoteAPI | None, Depends(get_pmm_api)]
 
 
 def _dedupe_nonempty(names: Iterable[str]) -> list[str]:
