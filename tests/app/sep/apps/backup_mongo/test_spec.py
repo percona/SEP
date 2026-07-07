@@ -73,6 +73,7 @@ def test_build_spec_omits_service_name_when_unresolved(backup_create: BackupCrea
     task = build_backup_mongo_spec(backup_create, BackupMongoResolved())
 
     assert "_service_name" not in task.data["meta"]
+    assert list(task.data["meta"].keys()) == ["config", "target", "requirements"]
 
 
 def test_build_spec_stamps_service_name_when_resolved(backup_create: BackupCreate):
@@ -82,6 +83,12 @@ def test_build_spec_stamps_service_name_when_resolved(backup_create: BackupCreat
     )
 
     assert task.data["meta"]["_service_name"] == "mongo-svc"
+    assert list(task.data["meta"].keys()) == [
+        "config",
+        "target",
+        "requirements",
+        "_service_name",
+    ]
 
 
 def test_build_spec_filesystem_storage(backup_create: BackupCreate):
