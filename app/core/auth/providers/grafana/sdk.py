@@ -67,18 +67,17 @@ class GrafanaSDK(RemoteAPI):
         (the SPA's ``HttpOnly`` refresh cookie). Defaults to 7 days.
     :param error_detail_key: The key Grafana uses for error details. Defaults to
         "message".
-    :cvar session_cookie_name: The ``grafana_session`` cookie Grafana sets on a
+    :cvar SESSION_COOKIE_NAME: The ``grafana_session`` cookie Grafana sets on a
         successful password login.
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
     logger_name: str = __name__
+    SESSION_COOKIE_NAME: ClassVar[str] = "grafana_session"
     service_account_token: SecretStr
     access_token_max_age: TimedeltaSeconds = timedelta(hours=1)
     refresh_token_max_age: TimedeltaSeconds = timedelta(days=7)
     error_detail_key: NonEmptyStr = "message"
-
-    session_cookie_name: ClassVar[str] = "grafana_session"
 
     async def request(
         self,
@@ -129,7 +128,7 @@ class GrafanaSDK(RemoteAPI):
                     raise GrafanaException(
                         detail=f"Grafana login failed (HTTP {response.status})."
                     )
-                session_cookie = response.cookies.get(self.session_cookie_name)
+                session_cookie = response.cookies.get(self.SESSION_COOKIE_NAME)
                 if session_cookie is None:
                     raise GrafanaException(
                         detail="Grafana did not establish a session."
@@ -147,7 +146,7 @@ class GrafanaSDK(RemoteAPI):
         :param session: The ``grafana_session`` cookie value from :meth:`login`.
         :return: The Grafana ``/api/user`` record for the session's user.
         """
-        with self.extra_headers({"Cookie": f"{self.session_cookie_name}={session}"}):
+        with self.extra_headers({"Cookie": f"{self.SESSION_COOKIE_NAME}={session}"}):
             return await self.get("/api/user")
 
     async def get_current_user_orgs(self, session: str) -> list[dict[str, Any]]:
@@ -156,7 +155,7 @@ class GrafanaSDK(RemoteAPI):
         :param session: The ``grafana_session`` cookie value from :meth:`login`.
         :return: The Grafana ``/api/user/orgs`` records for the session's user.
         """
-        with self.extra_headers({"Cookie": f"{self.session_cookie_name}={session}"}):
+        with self.extra_headers({"Cookie": f"{self.SESSION_COOKIE_NAME}={session}"}):
             return await self.get("/api/user/orgs")
 
     @alru_cache(ttl=300)

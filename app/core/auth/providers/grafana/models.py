@@ -16,7 +16,7 @@
 """Define the Grafana user and token-payload models."""
 
 from collections.abc import Sequence
-from typing import Any, cast, Self
+from typing import Any, cast, NoReturn, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from itsdangerous import BadData, URLSafeTimedSerializer
@@ -30,12 +30,13 @@ from app.core.utils.fields import NonEmptyStr
 _TOKEN_SERIALIZER = URLSafeTimedSerializer(
     settings.SECRET_KEY.get_secret_value(), salt="sep.auth.grafana.v1"
 )
-_ID_NAMESPACE = uuid5(NAMESPACE_URL, "https://percona.com/sep/auth/grafana")
 
 # Assertion ``typ`` claim values -- an access token cannot be replayed at the
 # refresh endpoint, nor a refresh token used as a Bearer credential.
 _ACCESS = "access"
 _REFRESH = "refresh"
+
+_ADMIN_ROLE = "Admin"
 
 
 def _active_grafana_sdk() -> GrafanaSDK:
@@ -59,7 +60,7 @@ class GrafanaTokenPayload(BaseTokenPayload):
     """
 
     @classmethod
-    async def from_jwt(cls, token: str) -> Self:  # noqa: ARG003
+    async def from_jwt(cls, token: str) -> NoReturn:  # noqa: ARG003
         """Reject decoding -- Grafana exposes no introspectable token payload.
 
         :param token: The token that would be decoded.
@@ -168,10 +169,10 @@ class GrafanaUser(BaseUser):
         :return: The mapped ``GrafanaUser``.
         """
         is_admin = bool(record.get("isGrafanaAdmin")) or any(
-            org.get("role") == "Admin" for org in orgs
+            org.get("role") == _ADMIN_ROLE for org in orgs
         )
         return cls(
-            id=uuid5(_ID_NAMESPACE, f"grafana:{record['id']}"),
+            id=uuid5(NAMESPACE_URL, f"grafana:{record['id']}"),
             username=record["login"],
             email=record.get("email") or "",
             is_admin=is_admin,
@@ -189,10 +190,10 @@ class GrafanaUser(BaseUser):
         :return: The mapped ``GrafanaUser``.
         """
         return cls(
-            id=uuid5(_ID_NAMESPACE, f"grafana:{record['userId']}"),
+            id=uuid5(NAMESPACE_URL, f"grafana:{record['userId']}"),
             username=record["login"],
             email=record.get("email") or "",
-            is_admin=record.get("role") == "Admin",
+            is_admin=record.get("role") == _ADMIN_ROLE,
         )
 
     @staticmethod
@@ -285,7 +286,7 @@ class GrafanaUser(BaseUser):
         return [cls._from_org_user_record(record) for record in records]
 
     @classmethod
-    async def from_token_payload(cls, token_payload: BaseTokenPayload) -> Self:  # noqa: ARG003
+    async def from_token_payload(cls, token_payload: BaseTokenPayload) -> NoReturn:  # noqa: ARG003
         """Reject -- Grafana exposes no token payload to build a user from.
 
         :param token_payload: The payload that would be used.
@@ -309,7 +310,7 @@ class GrafanaUser(BaseUser):
         return user
 
     @classmethod
-    async def from_code(cls, code: str) -> Self:  # noqa: ARG003
+    async def from_code(cls, code: str) -> NoReturn:  # noqa: ARG003
         """Reject -- Grafana has no authorization-code grant.
 
         :param code: The authorization code that would be exchanged.
