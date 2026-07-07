@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any, TYPE_CHECKING
 
+from app.sep.apps.framework.spec import RUN_PYTHON_TASK
+
 if TYPE_CHECKING:
     from app.tasks.models import Task
 
@@ -38,7 +40,7 @@ def require_run_python_meta(task: Task) -> dict[str, Any] | None:
     data = task.data
     meta = data.get("meta")
     if (
-        data.get("task") != "run-python"
+        data.get("task") != RUN_PYTHON_TASK
         or not isinstance(meta, dict)
         or "config" not in meta
     ):
