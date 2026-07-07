@@ -24,7 +24,7 @@ from fastapi import HTTPException, status
 from pydantic import HttpUrl
 
 from app.core.requests import RemoteAPI
-from app.core.requests.remote_api import BaseRemoteAPI
+from app.core.requests.remote_api import BaseRemoteAPI, UPSTREAM_NON_JSON_HEADER
 
 
 @pytest.fixture
@@ -400,6 +400,9 @@ async def test_request_content_type_error(remote_api):
             await remote_api.request("GET", "/bad-content-type")
         assert exc_info.value.status_code == status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
         assert exc_info.value.detail == "An unexpected error occurred on the server."
+        # A non-JSON body (e.g. an nginx proxy page) is marked so callers can
+        # tell it apart from an app-level JSON error at the same status code.
+        assert exc_info.value.headers == {UPSTREAM_NON_JSON_HEADER: "1"}
 
 
 @pytest.mark.asyncio

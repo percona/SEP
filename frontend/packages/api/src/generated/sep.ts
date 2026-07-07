@@ -5734,6 +5734,10 @@ export interface components {
         | components['schemas']['HostField']
         | components['schemas']['IntegerField']
         | components['schemas']['MultiChoiceField']
+        | components['schemas']['MultiHostField']
+        | components['schemas']['MultiSchemaField']
+        | components['schemas']['MultiServiceField']
+        | components['schemas']['MultiTableField']
         | components['schemas']['SchemaField']
         | components['schemas']['ScriptPreviewField']
         | components['schemas']['ServiceField']
@@ -6178,6 +6182,178 @@ export interface components {
        */
       type: 'multi_choice';
     };
+    /**
+     * MultiHostField
+     * @description Represent a multi-value executor-target selector field.
+     *
+     *     The multi-value counterpart of :class:`HostField`: the renderer commits a
+     *     list of executor targets instead of a single one. Derived from a
+     *     ``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_host"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param allow_custom: When ``True``, the selector also accepts free-typed
+     *         values alongside the inventory options. ``None`` (the default) omits the
+     *         key from the wire so plugins that do not opt in stay byte-identical.
+     */
+    MultiHostField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_host';
+    };
+    /**
+     * MultiSchemaField
+     * @description Represent a multi-value inventory database-schema selector field.
+     *
+     *     The multi-value counterpart of :class:`SchemaField`: the renderer commits a
+     *     list of schemas instead of a single one. Derived from a
+     *     ``SchemaRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_schema"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param depends_on: The name of the field whose value drives the list of
+     *         available schemas.
+     *     :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+     *         the cascaded options. ``None`` (the default) omits the key from the wire
+     *         so plugins that do not opt in stay byte-identical.
+     */
+    MultiSchemaField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on: string;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_schema';
+    };
+    /**
+     * MultiServiceField
+     * @description Represent a multi-value inventory service selector field.
+     *
+     *     The multi-value counterpart of :class:`ServiceField`: the renderer commits a
+     *     list of services instead of a single one. Derived from a
+     *     ``ServiceRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_service"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param service_types: The list of service types the selector should offer
+     *         (for example, ``[ServiceTypeEnum.MYSQL]``).
+     *     :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+     *         the inventory options. ``None`` (the default) omits the key from the wire
+     *         so plugins that do not opt in stay byte-identical.
+     */
+    MultiServiceField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Service Types */
+      service_types: components['schemas']['ServiceTypeEnum'][];
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_service';
+    };
+    /**
+     * MultiTableField
+     * @description Represent a multi-value inventory table selector field.
+     *
+     *     The multi-value counterpart of :class:`TableField`: the renderer commits a
+     *     list of tables instead of a single one. Derived from a
+     *     ``TableRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_table"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param depends_on: The name of the field whose value drives the list of
+     *         available tables.
+     *     :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+     *         the cascaded options. ``None`` (the default) omits the key from the wire
+     *         so plugins that do not opt in stay byte-identical.
+     */
+    MultiTableField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on: string;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_table';
+    };
     /** MysqlBackupsCreateResponse */
     MysqlBackupsCreateResponse: {
       /** Alert On Fail */
@@ -6275,6 +6451,10 @@ export interface components {
         | components['schemas']['HostField']
         | components['schemas']['IntegerField']
         | components['schemas']['MultiChoiceField']
+        | components['schemas']['MultiHostField']
+        | components['schemas']['MultiSchemaField']
+        | components['schemas']['MultiServiceField']
+        | components['schemas']['MultiTableField']
         | components['schemas']['SchemaField']
         | components['schemas']['ScriptPreviewField']
         | components['schemas']['ServiceField']

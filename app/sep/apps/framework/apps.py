@@ -494,14 +494,33 @@ class TaskExecutionApp(BaseApp):
         the primary service onto every task's connectivity host/port and
         ``service_name``, so the primary must be unambiguous even when no probe runs.
 
-        :raises ValueError: When more than one ``ServiceRef`` is marked
-            ``check_connectivity``, or when two or more ``ServiceRef`` fields leave
-            no determinable connectivity primary.
+        :raises ValueError: When a ``check_connectivity`` ``ServiceRef`` is also
+            marked ``multiple`` (a multi-value field has no single primary), when a
+            ``multiple=True`` ``ServiceRef`` would be the connectivity primary (no
+            scalar ``check_connectivity`` ref is marked to take its place), when
+            more than one ``ServiceRef`` is marked ``check_connectivity``, or when
+            two or more ``ServiceRef`` fields leave no determinable connectivity
+            primary.
         """
         if self.create_model is None:
             return
         refs = list(iter_service_refs(self.create_model))
         marked = [ref for ref in refs if ref.check_connectivity]
+        if any(ref.multiple for ref in marked):
+            raise ValueError(
+                "TaskExecutionApp: a create_model declares a multiple=True ServiceRef "
+                "marked check_connectivity=True; the connectivity probe targets a "
+                "single primary service and cannot select one from a multi-value "
+                "field — set multiple=False or check_connectivity=False"
+            )
+        if not marked and any(ref.multiple for ref in refs):
+            raise ValueError(
+                "TaskExecutionApp: a create_model declares a multiple=True ServiceRef "
+                "with no check_connectivity=True ServiceRef to serve as the "
+                "connectivity primary; a multi-value service field cannot resolve to "
+                "the single primary assemble_envelope stamps onto every task — mark a "
+                "scalar ServiceRef check_connectivity=True"
+            )
         if len(marked) > 1:
             raise ValueError(
                 "TaskExecutionApp: a create_model declares "

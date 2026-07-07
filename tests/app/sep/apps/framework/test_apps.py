@@ -147,6 +147,32 @@ class _TwoUnmarkedServiceForm(AppFormModel):
     ] = None
 
 
+class _MultiCheckConnectivityForm(AppFormModel):
+    """Represent a create form whose multi-value ``ServiceRef`` enables the probe."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    services: Annotated[
+        list[int],
+        ServiceRef(
+            service_types=(ServiceTypeEnum.MYSQL,),
+            multiple=True,
+            check_connectivity=True,
+        ),
+        Ui(label="Services", section="main"),
+    ]
+
+
+class _SoleMultiServiceForm(AppFormModel):
+    """Represent a create form whose sole ``ServiceRef`` is multi-value (no primary)."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    services: Annotated[
+        list[int],
+        ServiceRef(service_types=(ServiceTypeEnum.MYSQL,), multiple=True),
+        Ui(label="Services", section="main"),
+    ]
+
+
 class _BadArgFormatForm(AppFormModel):
     """Represent a create form whose ``ArgFormat`` template misspells the placeholder."""
 
@@ -721,6 +747,18 @@ class TestDefinitionValidation:
         """Reject two unmarked services that leave no determinable primary."""
         with pytest.raises(ValueError, match="primary"):
             _synth_app(create_model=_TwoUnmarkedServiceForm)
+
+    def test_multiple_check_connectivity_service_raises(self) -> None:
+        """Reject a multiple=True ServiceRef that also enables the connectivity probe."""
+        with pytest.raises(ValueError, match="multiple=True"):
+            _synth_app(create_model=_MultiCheckConnectivityForm)
+
+    def test_sole_multiple_service_without_primary_raises(self) -> None:
+        """Reject a sole multiple=True ServiceRef that cannot be the connectivity primary."""
+        with pytest.raises(
+            ValueError, match="multi-value service field cannot resolve"
+        ):
+            _synth_app(create_model=_SoleMultiServiceForm)
 
     def test_single_unmarked_service_does_not_probe(self) -> None:
         """Accept a single unmarked service as the sole primary, with no probe."""
