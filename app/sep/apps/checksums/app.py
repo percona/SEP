@@ -46,6 +46,7 @@ app = TaskExecutionApp(
     name="checksums",
     display_name="Checksums",
     uri_path="/checksums",
+    css_class="checksums",
     nav_order=7,
     description="Run pt-table-checksum to verify MySQL replication consistency.",
     owner=TaskOwner.CHECKSUMS,

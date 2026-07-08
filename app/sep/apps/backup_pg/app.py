@@ -64,6 +64,7 @@ app = TaskExecutionApp(
     name="backup_pg",
     display_name="PostgreSQL Backups",
     uri_path="/backup_pg",
+    css_class="backup_pg",
     group="backups",
     nav_order=10,
     description=(
