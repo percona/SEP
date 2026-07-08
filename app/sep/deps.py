@@ -82,7 +82,6 @@ from app.tasks.models import (
     Task,
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
-    TaskOwner,
 )
 
 logger = logging.getLogger(__name__)
@@ -1024,44 +1023,33 @@ async def get_tasks_context(
     get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]],
     executor_hosts_ctx: ExecutorHostsCtx,
     default_context: DefaultContext | None = None,
-    owner: TaskOwner | None = None,
+    owner: str | None = None,
     *,
+    service_type: ServiceTypeEnum,
     alert_on_fail_default: bool = False,
 ) -> dict[str, Any]:
     """Assemble the template context for task-dependent plugins.
 
-    This function retrieves MySQL services, tasks, and their histories from the
-    Inventory and Tasks APIs. It organizes tasks based on their status and integrates
-    them into the provided context.
+    This function retrieves inventory services (scoped by ``service_type``),
+    tasks (filtered by ``owner``), and their histories from the Inventory and
+    Tasks APIs. It organizes tasks based on their status and integrates them
+    into the provided context.
 
     :param inventory_api: The API client used to interact with the inventory service.
-    :type inventory_api: RemoteAPI
     :param tasks_api: The API client used to interact with the tasks service.
-    :type tasks_api: RemoteAPI
     :param get_task_info_func: A callable that receives a task and returns
         the processed task information.
-    :type get_task_info_func: Callable[[dict[str, Any]], dict[str, Any]]
     :param executor_hosts_ctx: The enriched executor hosts context with display names.
-    :type executor_hosts_ctx: ExecutorHostsCtx
     :param default_context: The base context dictionary to update. If None (default),
         initializes an empty dictionary.
-    :type default_context: dict[str, Any] | None
-    :param owner: The owner filter for retrieving tasks. Defaults to `None`.
-    :type owner: TaskOwner | None
+    :param owner: The owner filter for retrieving tasks. Defaults to ``None``.
+    :param service_type: The inventory service type whose services scope the
+        ``/services/`` fetch.
     :param alert_on_fail_default: Default value for the alert on failure setting.
-    :type alert_on_fail_default: bool
     :return: The assembled context dictionary containing tasks and services
         information, including ``connectivity_check_default`` sourced from
         ``sep_settings.CONNECTIVITY_CHECK_DEFAULT``.
-    :rtype: dict[str, Any]
     """
-    service_type = (
-        ServiceTypeEnum.MONGODB
-        if owner in {TaskOwner.BACKUP_MONGO, TaskOwner.RESTORE_MONGO}
-        else ServiceTypeEnum.POSTGRESQL
-        if owner in {TaskOwner.BACKUP_PG}
-        else ServiceTypeEnum.MYSQL
-    )
     services = await fetch_all_dict_items(
         lambda pagination: inventory_api.get(
             "/services/",
@@ -1208,7 +1196,7 @@ async def get_tasks_index_context(
 # TODO(yan): Put get_task in a proper TasksAPI SDK class
 # SEP-130
 async def get_task_by_name(
-    tasks_api: TaskAPI, task_name: str, owner: TaskOwner | None = None
+    tasks_api: TaskAPI, task_name: str, owner: str | None = None
 ) -> Task:
     """Fetch and validate a task by name.
 
@@ -1217,14 +1205,10 @@ async def get_task_by_name(
     not owned by the specified owner, it raises a 404 HTTP exception.
 
     :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
     :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param owner: The owner filter for retrieving tasks. Defaults to `None`, meaning
+    :param owner: The owner filter for retrieving tasks. Defaults to ``None``, meaning
         no filter.
-    :type owner: TaskOwner | None
     :return: The retrieved task.
-    :rtype: Task
     :raises HTTPNotFoundException: If the task is not found or is not owned by the
         specified owner.
     """
@@ -1240,7 +1224,7 @@ async def get_task_by_name(
 # TODO(yan): Put get_task_history in a proper TasksAPI SDK class
 # SEP-130
 async def get_task_history(
-    tasks_api: TaskAPI, task_history_id: int, owner: TaskOwner | None = None
+    tasks_api: TaskAPI, task_history_id: int, owner: str | None = None
 ) -> TaskHistoryResponse:
     """Fetch and validate a task history by ID.
 
@@ -1249,14 +1233,10 @@ async def get_task_history(
     or the validation fails, it raises a 404 HTTP exception.
 
     :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
     :param task_history_id: The ID of the task history to retrieve.
-    :type task_history_id: str
-    :param owner: The owner filter for the task history's task. Defaults to `None`,
+    :param owner: The owner filter for the task history's task. Defaults to ``None``,
         meaning no filter.
-    :type owner: TaskOwner | None
     :return: The retrieved task history.
-    :rtype: TaskHistoryResponse
     :raises HTTPNotFoundException: If the task history is not found or the validation
         fails.
     """

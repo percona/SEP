@@ -34,7 +34,7 @@ from app.sep.apps.framework.form_backfill import (
 from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner
+from app.tasks.models import Task, TaskBackendEnum
 
 
 def _service(
@@ -108,7 +108,7 @@ def _legacy_backup_pg_task(
             "payload": "file://app/sep/apps/backup_pg/payload",
         },
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUP_PG,
+        owner="BACKUP_PG",
         alert_on_fail=alert_on_fail,
     )
 

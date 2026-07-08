@@ -59,11 +59,10 @@ from app.sep.apps.framework.schema import (
 from app.sep.apps.framework.script_source import ScriptExecuteWrite
 from app.sep.deps import IsApiAuthenticated
 from app.sep.utils.static import AuthenticatedStaticFiles
-from app.tasks.models import TaskOwner
 from tests.app.sep.apps.framework.contract_suite import build_contract_client
 from tests.app.sep.apps.framework.contract_suite import routes_of as _routes
 
-_OWNER = TaskOwner.ARCHIVER
+_OWNER = "ARCHIVER"
 _PREFIX = "/fixture-scripts"
 _BASE = f"/api/apps{_PREFIX}"
 _TASK_NAME = "run-bash"

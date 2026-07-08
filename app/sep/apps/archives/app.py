@@ -29,7 +29,7 @@ folded into the one-of model in ``deps``.
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.archives.alerts import ALERT_DETAIL_BUILDER
-from app.sep.apps.archives.models import ArchivesCreate
+from app.sep.apps.archives.models import ArchivesCreate, OWNER
 from app.sep.apps.archives.routes import router as jinja_router
 from app.sep.apps.archives.spec import build_archives_spec
 from app.sep.apps.archives.views import archives_views
@@ -39,7 +39,6 @@ from app.sep.apps.framework.apps import (
     TaskExecutionApp,
 )
 from app.sep.apps.nav_icons import NavIcon
-from app.tasks.models import TaskOwner
 
 app = TaskExecutionApp(
     name="archives",
@@ -49,7 +48,7 @@ app = TaskExecutionApp(
     nav_order=11,
     nav_icon=NavIcon.ARCHIVE,
     description="Run pt-archiver to purge or archive rows from a MySQL table.",
-    owner=TaskOwner.ARCHIVER,
+    owner=OWNER,
     create_model=ArchivesCreate,
     views=archives_views,
     task_spec_builder=build_archives_spec,

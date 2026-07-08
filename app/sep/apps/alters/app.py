@@ -33,7 +33,7 @@ from app.core.pagination.deps import make_pagination_dep
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.api_routes import router as alters_custom_router
 from app.sep.apps.alters.deps import build_alters_api_list_response, get_alters_task
-from app.sep.apps.alters.models import AltersTaskResponse
+from app.sep.apps.alters.models import AltersTaskResponse, OWNER
 from app.sep.apps.alters.routes import router as jinja_router
 from app.sep.apps.alters.schema import alters_schema
 from app.sep.apps.framework.apps import (
@@ -43,7 +43,6 @@ from app.sep.apps.framework.apps import (
 )
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.deps import get_username_mapping
-from app.tasks.models import TaskOwner
 
 ALTERS_MAX_PAGINATION_LIMIT = 50
 
@@ -54,7 +53,7 @@ app = TaskExecutionApp(
     css_class="alters",
     nav_order=6,
     nav_icon=NavIcon.TABLE_CHART,
-    owner=TaskOwner.ALTERS,
+    owner=OWNER,
     schema=alters_schema,
     response_model=AltersTaskResponse,
     response_builder=build_alters_api_list_response,

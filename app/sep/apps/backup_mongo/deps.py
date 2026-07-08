@@ -34,6 +34,7 @@ from app.sep.apps.backup_mongo.models import (
     BackupTaskResponse,
     BackupTaskWrite,
     BackupType,
+    OWNER,
 )
 from app.sep.apps.backup_mongo.schema import BACKUP_MONGO_DERIVED
 from app.sep.apps.backup_mongo.spec import (
@@ -60,7 +61,6 @@ from app.tasks.models import (
     TaskHistoryLatestStatus,
     TaskHistoryStatusEnum,
     TaskLogType,
-    TaskOwner,
     TaskWrite,
 )
 
@@ -333,7 +333,7 @@ async def resolve_backup_parent_task(
     return task
 
 
-get_backups_task = make_task_dep(TaskOwner.BACKUP_MONGO)
+get_backups_task = make_task_dep(OWNER)
 
 BackupsTask = Annotated[Task, Depends(get_backups_task)]
 
@@ -389,7 +389,8 @@ async def get_backups_index_context(
         get_backups_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.BACKUP_MONGO,
+        OWNER,
+        service_type=ServiceTypeEnum.MONGODB,
         alert_on_fail_default=True,
     )
 

@@ -59,6 +59,9 @@ def _validate_backup_source_shell_safe(value: str) -> str:
     return value
 
 
+OWNER = "RESTORES"
+
+
 class S3Tool(EnumFieldMixin, StrEnum):
     """Allowed tools to interact with S3-compatible services."""
 

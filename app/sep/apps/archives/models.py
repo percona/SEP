@@ -61,6 +61,9 @@ def _dsn_safe(value: str | None) -> str | None:
     return value
 
 
+OWNER = "ARCHIVER"
+
+
 class SourceByTable(BaseModel):
     """Represent a schema+table source selection (collapsed free-solo references).
 

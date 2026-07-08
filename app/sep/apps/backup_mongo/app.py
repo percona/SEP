@@ -40,7 +40,7 @@ from app.sep.apps.backup_mongo.deps import (
     build_backup_mongo_api_task_response,
     get_backups_task,
 )
-from app.sep.apps.backup_mongo.models import BackupTaskResponse, BackupType
+from app.sep.apps.backup_mongo.models import BackupTaskResponse, BackupType, OWNER
 from app.sep.apps.backup_mongo.restore.app import app as restore_app
 from app.sep.apps.backup_mongo.routes import router as jinja_router
 from app.sep.apps.backup_mongo.schema import backup_mongo_schema
@@ -50,7 +50,6 @@ from app.sep.apps.framework.apps import (
     TaskExecutionApp,
 )
 from app.sep.apps.nav_icons import NavIcon
-from app.tasks.models import TaskOwner
 
 app = TaskExecutionApp(
     name="backup_mongo",
@@ -61,7 +60,7 @@ app = TaskExecutionApp(
     nav_order=9,
     react_route="/backups/mongodb",
     nav_icon=NavIcon.MONGO,
-    owner=TaskOwner.BACKUP_MONGO,
+    owner=OWNER,
     schema=backup_mongo_schema,
     response_model=BackupTaskResponse,
     response_builder=build_backup_mongo_api_task_response,

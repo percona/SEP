@@ -24,7 +24,7 @@ from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import TaskBackendEnum, TaskWrite
 
 _PAYLOAD_DIR_BY_TYPE = {
     BackupType.MYDUMPER: "mydumper_payload",
@@ -53,7 +53,7 @@ def test_build_restore_spec_selects_payload_and_envelope(backup_type: BackupType
 
     assert isinstance(spec, TaskWrite)
     assert spec.name == "restore-task"
-    assert spec.owner == TaskOwner.RESTORES
+    assert spec.owner == "RESTORES"
     assert spec.backend == TaskBackendEnum.PROXY
     assert spec.data["task"] == "run-python"
     assert spec.data["payload"].endswith(f"/{_PAYLOAD_DIR_BY_TYPE[backup_type]}")
