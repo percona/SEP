@@ -555,7 +555,7 @@ class TestGetPmmApi:
         )
 
     @pytest.mark.asyncio
-    async def test_returns_client_when_configured_verify_ssl_false(self):
+    async def test_returns_client_when_configured_verify_ssl_false(self) -> None:
         """Assert ``verify_ssl=False`` is threaded through to ``get_remote_api``."""
         mock_client = AsyncMock(spec=PMMRemoteAPI)
         with patch("app.sep.deps.settings") as mock_settings:
@@ -579,14 +579,14 @@ class TestRequirePmmApi:
     """Test the ``require_pmm_api`` dependency."""
 
     @pytest.mark.asyncio
-    async def test_returns_client_when_available(self):
+    async def test_returns_client_when_available(self) -> None:
         """Assert the PMM API client is returned when it is not ``None``."""
         mock_client = AsyncMock(spec=PMMRemoteAPI)
         result = await require_pmm_api(mock_client)
         assert result is mock_client
 
     @pytest.mark.asyncio
-    async def test_raises_service_unavailable_when_none(self):
+    async def test_raises_service_unavailable_when_none(self) -> None:
         """Assert ``HTTPServiceUnavailableException`` is raised when PMM is ``None``."""
         with pytest.raises(HTTPServiceUnavailableException) as exc:
             await require_pmm_api(None)
