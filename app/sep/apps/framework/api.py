@@ -1079,6 +1079,7 @@ def derive_crud_routes(
     list_status_filter: bool = False,
     list_service_type: ServiceTypeEnum | None = None,
     list_extra_params: dict[str, str] | None = None,
+    derive_list: bool = True,
     derive_detail: bool = True,
     context_provider: Callable[[], Awaitable[Any]] | None = None,
     create_extra_deps: Sequence[params.Depends] = (),
@@ -1173,6 +1174,10 @@ def derive_crud_routes(
         example ``{"parent_is_null": "true"}``) applied server-side on every list
         request, so they filter without perturbing the paginated ``total``.
         Defaults to ``None`` (no extra params).
+    :param derive_list: When ``True`` (default), register the owner-filtered
+        derived ``GET /`` list route. Set ``False`` to suppress it so a custom
+        collection-root list route (mounted last via ``extra_routes``) wins the
+        path.
     :param derive_detail: When ``True`` (default), register the greedy derived
         ``GET /{detail_path_param}`` detail route. Set ``False`` to suppress it so
         a custom detail route (mounted last via ``extra_routes``) wins the path.
@@ -1247,17 +1252,18 @@ def derive_crud_routes(
 
     detail_path = f"/{{{detail_path_param}}}"
 
-    _register_list_route(
-        router,
-        task_owner=task_owner,
-        response_builder=response_builder,
-        list_detail_model=list_detail_model,
-        pagination_dep=pagination_dep,
-        list_status_filter=list_status_filter,
-        list_service_type=list_service_type,
-        list_extra_params=list_extra_params,
-        context_provider=context_provider,
-    )
+    if derive_list:
+        _register_list_route(
+            router,
+            task_owner=task_owner,
+            response_builder=response_builder,
+            list_detail_model=list_detail_model,
+            pagination_dep=pagination_dep,
+            list_status_filter=list_status_filter,
+            list_service_type=list_service_type,
+            list_extra_params=list_extra_params,
+            context_provider=context_provider,
+        )
 
     if derive_detail:
 

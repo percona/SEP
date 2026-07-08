@@ -27,7 +27,7 @@ logical, physical, and status siblings.
 from app.sep.apps.backup_mongo.models import BackupForm, BackupType
 from app.sep.apps.backup_mongo.views import backup_mongo_views
 from app.sep.apps.framework.form_dsl import derive_app_schema
-from app.sep.apps.framework.schema import DerivedTask
+from app.sep.apps.framework.schema import DerivedTask, RelatedApp
 
 BACKUP_MONGO_DERIVED = [
     DerivedTask(
@@ -68,4 +68,11 @@ backup_mongo_schema = derive_app_schema(
     list_view=backup_mongo_views.list_view,
     detail_view=backup_mongo_views.detail_view,
     derived=BACKUP_MONGO_DERIVED,
+    related_apps=[
+        RelatedApp(
+            app_key="backup_mongo/restore",
+            label="Restore",
+            route_segment="restores",
+        ),
+    ],
 )
