@@ -659,6 +659,11 @@ def test_registry_has_no_route_collisions():
     assert check_route_collisions(_REGISTRY) == []
 
 
+def test_registry_child_app_registration():
+    """Assert every parent/child binding in the live registry is consistent."""
+    assert check_child_app_registration(_REGISTRY) == []
+
+
 def test_registry_openapi_builds():
     """Assert the merged plugin OpenAPI document builds with paths."""
     assert OPENAPI.get("paths")
