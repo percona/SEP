@@ -400,6 +400,17 @@ class TestBackupMongoApiCreate:
             call("/mongo-backup-task"),
         ]
 
+    def test_create_rejects_malformed_priority_yaml(self, test_client) -> None:
+        """Reject malformed Node Priority YAML with 422 before touching the APIs."""
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_backup_write_body(
+                backup_priority='"h1:27018": 2 "h2:27018": 2',
+            ),
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
 
 class TestBackupMongoApiDetail:
     """Tests for GET /api/apps/backup_mongo/{task_name}."""
