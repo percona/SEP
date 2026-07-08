@@ -274,6 +274,24 @@ def write_settings_entry(name: str) -> bool:
     return changed
 
 
+def _holds_plugin(path: Path) -> bool:
+    """Return whether ``path`` holds a real plugin.
+
+    A path holds a plugin when it exists and, if it is a directory, contains at
+    least one entry other than ``__pycache__/``.  An absent path, an empty
+    directory, or a directory whose only child is ``__pycache__/`` is not a
+    plugin.
+
+    :param path: The filesystem path to check.
+    :return: ``True`` when ``path`` holds a real plugin.
+    """
+    if not path.exists():
+        return False
+    if not path.is_dir():
+        return True
+    return any(child.name != "__pycache__" for child in path.iterdir())
+
+
 def scaffold_app(name: str, flavor: Flavor) -> ScaffoldResult:
     """Validate, refuse to clobber, render, and register a new app disabled.
 
@@ -284,13 +302,13 @@ def scaffold_app(name: str, flavor: Flavor) -> ScaffoldResult:
     :param flavor: The flavor to render.
     :return: The scaffold outcome for the caller's summary.
     :raises ValueError: When the name is invalid.
-    :raises FileExistsError: When the app or test package directory already exists.
+    :raises FileExistsError: When the app or test package directory holds a real plugin.
     """
     validate_name(name)
     app_dir = PLUGINS_DIR / name
     tests_dir = TESTS_DIR / name
     for existing in (app_dir, tests_dir):
-        if existing.exists():
+        if _holds_plugin(existing):
             raise FileExistsError(
                 f"{existing} already exists; refusing to overwrite an existing plugin"
             )

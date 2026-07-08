@@ -163,10 +163,11 @@ def test_insertion_fails_without_default_plugins_block() -> None:
 
 
 def test_refuses_to_clobber_existing_plugin(tmp_settings: Path) -> None:
-    """Raise before any write when the target plugin directory already exists."""
+    """Raise before any write when the target plugin directory holds a real plugin."""
     name = "_scaffold_smoke_clobber"
     app_dir = scaffold.PLUGINS_DIR / name
     app_dir.mkdir(parents=True)
+    (app_dir / "routes.py").write_text("")
     before = tmp_settings.read_text()
     try:
         with pytest.raises(FileExistsError):
@@ -179,10 +180,11 @@ def test_refuses_to_clobber_existing_plugin(tmp_settings: Path) -> None:
 
 
 def test_refuses_to_clobber_existing_tests_package(tmp_settings: Path) -> None:
-    """Raise before any write when only the target test package already exists."""
+    """Raise before any write when only the target test package holds a real plugin."""
     name = "_scaffold_smoke_clobber_tests"
     tests_dir = scaffold.TESTS_DIR / name
     tests_dir.mkdir(parents=True)
+    (tests_dir / "test_routes.py").write_text("")
     before = tmp_settings.read_text()
     try:
         with pytest.raises(FileExistsError):
@@ -192,6 +194,70 @@ def test_refuses_to_clobber_existing_tests_package(tmp_settings: Path) -> None:
         assert not (scaffold.PLUGINS_DIR / name).exists()
     finally:
         shutil.rmtree(tests_dir, ignore_errors=True)
+
+
+def test_empty_app_dir_does_not_block_scaffold(tmp_settings: Path) -> None:
+    """Scaffold when the target app directory exists but is empty."""
+    name = "_scaffold_smoke_empty_app"
+    app_dir = scaffold.PLUGINS_DIR / name
+    app_dir.mkdir(parents=True)
+    try:
+        with _scaffolded(name, scaffold.Flavor.TASK):
+            assert (app_dir / "__init__.py").exists()
+    finally:
+        shutil.rmtree(app_dir, ignore_errors=True)
+
+
+def test_pycache_only_app_dir_does_not_block_scaffold(tmp_settings: Path) -> None:
+    """Scaffold when the target app directory contains only ``__pycache__/``."""
+    name = "_scaffold_smoke_pycache_app"
+    app_dir = scaffold.PLUGINS_DIR / name
+    (app_dir / "__pycache__").mkdir(parents=True)
+    try:
+        with _scaffolded(name, scaffold.Flavor.TASK):
+            assert (app_dir / "__init__.py").exists()
+    finally:
+        shutil.rmtree(app_dir, ignore_errors=True)
+
+
+def test_empty_tests_dir_does_not_block_scaffold(tmp_settings: Path) -> None:
+    """Scaffold when the target tests directory exists but is empty."""
+    name = "_scaffold_smoke_empty_tests"
+    tests_dir = scaffold.TESTS_DIR / name
+    tests_dir.mkdir(parents=True)
+    try:
+        with _scaffolded(name, scaffold.Flavor.TASK):
+            assert (tests_dir / "__init__.py").exists()
+    finally:
+        shutil.rmtree(tests_dir, ignore_errors=True)
+
+
+def test_pycache_only_tests_dir_does_not_block_scaffold(tmp_settings: Path) -> None:
+    """Scaffold when the target tests directory contains only ``__pycache__/``."""
+    name = "_scaffold_smoke_pycache_tests"
+    tests_dir = scaffold.TESTS_DIR / name
+    (tests_dir / "__pycache__").mkdir(parents=True)
+    try:
+        with _scaffolded(name, scaffold.Flavor.TASK):
+            assert (tests_dir / "__init__.py").exists()
+    finally:
+        shutil.rmtree(tests_dir, ignore_errors=True)
+
+
+def test_pycache_plus_real_file_still_aborts(tmp_settings: Path) -> None:
+    """Abort when the target directory has ``__pycache__/`` alongside a real file."""
+    name = "_scaffold_smoke_pycache_real"
+    app_dir = scaffold.PLUGINS_DIR / name
+    (app_dir / "__pycache__").mkdir(parents=True)
+    (app_dir / "routes.py").write_text("")
+    before = tmp_settings.read_text()
+    try:
+        with pytest.raises(FileExistsError):
+            scaffold.scaffold_app(name, scaffold.Flavor.TASK)
+
+        assert tmp_settings.read_text() == before
+    finally:
+        shutil.rmtree(app_dir, ignore_errors=True)
 
 
 def test_registers_app_disabled(tmp_settings: Path) -> None:
