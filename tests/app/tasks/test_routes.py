@@ -139,30 +139,6 @@ async def test_delete_task_forbidden_when_protected(test_client, session):
     assert resp.status_code == status.HTTP_403_FORBIDDEN
 
 
-async def _seed_execution(
-    session: AsyncSession, task, status_: TaskHistoryStatusEnum
-) -> None:
-    """Attach an execution in the given status to ``task``.
-
-    :param session: The shared test session backing the delete route.
-    :param task: The task the execution belongs to.
-    :param status_: The status the seeded execution should carry.
-    """
-    await TaskHistoryManager.save(
-        session,
-        TaskHistory(
-            task_id=task.id,
-            status=status_,
-            execution_request={
-                "task": task.name,
-                "target": "localhost",
-                "meta": {},
-                "tracking": {"allocation_id": None, "evaluation_id": None},
-            },
-        ),
-    )
-
-
 @pytest.mark.asyncio
 async def test_delete_running_task_returns_409(test_client, session, created_task):
     """Assert deleting a task with a running execution returns 409, not 500.
@@ -175,7 +151,10 @@ async def test_delete_running_task_returns_409(test_client, session, created_tas
     raise -- the exact regression SEP-1547 tracks.
     """
     tasks_app.dependency_overrides[get_celery_beat_session] = lambda: session
-    await _seed_execution(session, created_task, TaskHistoryStatusEnum.RUNNING)
+    await TaskHistoryManager.save(
+        session,
+        build_task_history(created_task, status=TaskHistoryStatusEnum.RUNNING),
+    )
 
     response = test_client.delete(f"/{created_task.name}")
 
@@ -192,7 +171,10 @@ async def test_delete_pending_task_returns_409(test_client, session, created_tas
     (rather than a 500) proves the pending guard short-circuits the delete.
     """
     tasks_app.dependency_overrides[get_celery_beat_session] = lambda: session
-    await _seed_execution(session, created_task, TaskHistoryStatusEnum.PENDING)
+    await TaskHistoryManager.save(
+        session,
+        build_task_history(created_task, status=TaskHistoryStatusEnum.PENDING),
+    )
 
     response = test_client.delete(f"/{created_task.name}")
 
