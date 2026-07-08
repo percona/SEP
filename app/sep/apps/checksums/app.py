@@ -52,7 +52,7 @@ app = TaskExecutionApp(
     create_model=ChecksumsForm,
     views=checksums_views,
     task_spec_builder=build_checksums_spec,
-    capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),
+    capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.MYSQL,
     list_filter=ListFilterConfig(status=True, service_type=True),
     response_context_provider=get_username_mapping,

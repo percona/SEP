@@ -52,7 +52,7 @@ app = TaskExecutionApp(
     views=archives_views,
     task_spec_builder=build_archives_spec,
     alert_detail_builder=ALERT_DETAIL_BUILDER,
-    capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),
+    capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.MYSQL,
     list_filter=ListFilterConfig(status=True),
     jinja_router=jinja_router,

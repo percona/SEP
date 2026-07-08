@@ -59,6 +59,7 @@ from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
 __all__ = [
     "RESERVED_FORM_KEY",
+    "RUN_PYTHON_TASK",
     "EnvelopeSpec",
     "ResolvedEntities",
     "RunCommandSpec",
@@ -74,7 +75,7 @@ __all__ = [
 
 RESERVED_FORM_KEY = "_form"
 _RUN_COMMAND_TASK = "run-command"
-_RUN_PYTHON_TASK = "run-python"
+RUN_PYTHON_TASK = "run-python"
 
 _REF_ENTITY_TYPES = {
     ServiceRef: SyncInventoryEntityTypeEnum.SERVICE,
@@ -168,7 +169,7 @@ class RunPythonSpec:
         :return: The run-python ``TaskWrite.data`` payload.
         """
         return {
-            "task": _RUN_PYTHON_TASK,
+            "task": RUN_PYTHON_TASK,
             "meta": {
                 "config": self.config,
                 "target": host,
@@ -480,7 +481,7 @@ def build_run_python_task(
     if service_name is not None:
         meta["_service_name"] = service_name
     data = {
-        "task": _RUN_PYTHON_TASK,
+        "task": RUN_PYTHON_TASK,
         "meta": meta,
         "payload": payload,
     }

@@ -40,6 +40,7 @@ from app.sep.apps.framework.form_backfill import (
     FormBackfillContext,
     main,
 )
+from app.sep.apps.framework.form_backfill_inventory import ServiceIdLookup
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.tasks.models import Task, TaskBackendEnum, TaskOwner
 
@@ -59,6 +60,10 @@ def _minimal_task(*, data: dict) -> Task:
 def _reconstructor_must_not_run(_task: Task, _ctx: FormBackfillContext) -> dict:
     """Fail fast when the orchestrator invokes a reconstructor unexpectedly."""
     raise AssertionError("reconstructor must not run")
+
+
+# A populated (but empty) lookup so the orchestrator's guard passes to the reconstructor.
+_EMPTY_SERVICE_LOOKUP = ServiceIdLookup.from_services([])
 
 
 @pytest_asyncio.fixture
@@ -198,6 +203,19 @@ def test_backfill_single_task_skips_existing_form_stamp():
     assert task.data[RESERVED_FORM_KEY] == {"task_name": "already-stamped"}
 
 
+def test_backfill_single_task_skips_when_service_lookup_missing():
+    """Skip a run with no inventory lookup before invoking the reconstructor."""
+    task = _minimal_task(data={"meta": {}})
+    entry = _BackfillApp(app=checksums_app, reconstructor=_reconstructor_must_not_run)
+    ctx = FormBackfillContext(log=logging.getLogger("test"), service_lookup=None)
+
+    outcome = _backfill_single_task(task, entry, ctx)
+
+    assert outcome.label == "skipped_unreconstructable"
+    assert outcome.stamped_data is None
+    assert RESERVED_FORM_KEY not in task.data
+
+
 def test_backfill_single_task_skips_invalid_reconstructed_form():
     """A reconstructed body that fails ``create_model`` validation is not stamped."""
     task = _minimal_task(data={"meta": {}})
@@ -210,7 +228,9 @@ def test_backfill_single_task_skips_invalid_reconstructed_form():
         }
 
     entry = _BackfillApp(app=checksums_app, reconstructor=_invalid_body)
-    ctx = FormBackfillContext(log=logging.getLogger("test"))
+    ctx = FormBackfillContext(
+        log=logging.getLogger("test"), service_lookup=_EMPTY_SERVICE_LOOKUP
+    )
 
     outcome = _backfill_single_task(task, entry, ctx)
 
@@ -239,7 +259,9 @@ async def test_backfill_single_task_stamp_preserves_audit_fields_on_persist(
         }
 
     entry = _BackfillApp(app=checksums_app, reconstructor=_valid_body)
-    ctx = FormBackfillContext(log=logging.getLogger("test"))
+    ctx = FormBackfillContext(
+        log=logging.getLogger("test"), service_lookup=_EMPTY_SERVICE_LOOKUP
+    )
 
     outcome = _backfill_single_task(task, entry, ctx)
 

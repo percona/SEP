@@ -75,7 +75,7 @@ app = TaskExecutionApp(
     response_model=BackupTaskResponse,
     views=backup_pg_views,
     task_spec_builder=build_backup_pg_spec,
-    capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),
+    capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.POSTGRESQL,
     pagination=make_pagination_dep(),
     list_filter=ListFilterConfig(status=True),

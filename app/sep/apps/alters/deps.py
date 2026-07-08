@@ -19,7 +19,6 @@ import copy
 import json
 import logging
 import shlex
-from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends
@@ -32,7 +31,7 @@ from app.core.exceptions import (
 )
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils.fields import EmptyStrToNone
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.models import (
     AltersCreate,
@@ -301,7 +300,6 @@ def alters_executor_matches_service_host(
     return executor_address == service_host
 
 
-_PRE_CHECKS_SCRIPT_PATH = Path(__file__).resolve().parent / "pre_checks.py"
 _PARENT_ONLY_META_KEYS = ("command", "args", "_command_line")
 
 
@@ -352,7 +350,7 @@ async def build_pre_checks_task_payload(
     pre_checks_task.data["meta"]["requirements"] = (
         "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
     )
-    pre_checks_task.data["payload"] = to_payload_reference(_PRE_CHECKS_SCRIPT_PATH)
+    pre_checks_task.data["payload"] = payload_uri(__file__, "pre_checks.py")
     return pre_checks_task
 
 

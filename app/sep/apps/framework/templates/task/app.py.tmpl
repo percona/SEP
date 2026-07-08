@@ -36,5 +36,5 @@ app = TaskExecutionApp(
     create_model=<< class_prefix >>Form,
     views=<< name >>_views,
     task_spec_builder=build_<< name >>_spec,
-    capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),
+    capabilities=AppCapabilities(update=True, delete=True),
 )

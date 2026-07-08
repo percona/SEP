@@ -61,7 +61,7 @@ app = TaskExecutionApp(
     payload_builder=build_restore_payload,
     response_builder=build_restore_api_task_response,
     pagination=make_pagination_dep(max_limit=RESTORES_MAX_PAGINATION_LIMIT),
-    capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),
+    capabilities=AppCapabilities(update=True, delete=True),
     list_filter=ListFilterConfig(status=True),
     jinja_router=jinja_router,
 )

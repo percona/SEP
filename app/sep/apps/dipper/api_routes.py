@@ -17,7 +17,8 @@
 
 Mounted at ``/api/apps/dipper/`` via ``apps_router`` in
 ``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
-level and redeclared per route for safety. Route layout:
+mount level (``IsApiAuthenticated``) and by ``RequireBearerForUnsafeMethods``
+on the ``apps_router``. Route layout:
 
 * ``GET /schema``          — static plugin schema
 * ``GET /``                — Dipper execution history
@@ -51,7 +52,7 @@ from app.sep.apps.dipper.schema import build_dipper_form_schema, dipper_schema
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.snippets.models import ScriptPreviewResponse
-from app.sep.deps import ExecutorHosts, InventoryAPI, IsApiAuthenticated, TaskAPI
+from app.sep.deps import ExecutorHosts, InventoryAPI, TaskAPI
 from app.sep.inventory import CreatedService
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ def _snippet_filename_for(history: dict[str, Any]) -> str | None:
     return str(value) if value else None
 
 
-@router.get("/", dependencies=[IsApiAuthenticated])
+@router.get("/")
 async def dipper_api_list(tasks_api: TaskAPI) -> dict[str, Any]:
     """Return Dipper execution history rows.
 
@@ -103,7 +104,6 @@ async def dipper_api_list(tasks_api: TaskAPI) -> dict[str, Any]:
 @router.get(
     "/form-schema",
     response_model_by_alias=True,
-    dependencies=[IsApiAuthenticated],
 )
 async def dipper_api_form_schema(
     service_id: int,
@@ -158,7 +158,7 @@ async def dipper_api_form_schema(
     )
 
 
-@router.get("/script-preview", dependencies=[IsApiAuthenticated])
+@router.get("/script-preview")
 async def dipper_api_script_preview(
     service_id: int,
     collector_type: CollectorTypeEnum,
@@ -195,7 +195,6 @@ async def dipper_api_script_preview(
 @router.post(
     "/",
     status_code=http_status.HTTP_201_CREATED,
-    dependencies=[IsApiAuthenticated],
 )
 async def dipper_api_execute(
     request: Request,
