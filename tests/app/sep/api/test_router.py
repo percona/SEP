@@ -661,25 +661,63 @@ class TestApiRouterConfigDrivenLoopIntegration:
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     @pytest.mark.parametrize(
-        ("method", "path"),
+        ("method", "path", "expected_prefix"),
         [
-            ("GET", "/api/apps/mysql_backups/restore/"),
-            ("POST", "/api/apps/mysql_backups/restore/"),
-            ("GET", "/api/apps/mysql_backups/restore/schema"),
-            ("GET", "/api/apps/mysql_backups/restore/some-task"),
-            ("GET", "/mysql_backups/restores/"),
-            ("GET", "/mysql_backups/restores/some-task"),
+            (
+                "GET",
+                "/api/apps/mysql_backups/restore/",
+                "/api/apps/mysql_backups/restore",
+            ),
+            (
+                "POST",
+                "/api/apps/mysql_backups/restore/",
+                "/api/apps/mysql_backups/restore",
+            ),
+            (
+                "GET",
+                "/api/apps/mysql_backups/restore/schema",
+                "/api/apps/mysql_backups/restore",
+            ),
+            (
+                "GET",
+                "/api/apps/mysql_backups/restore/some-task",
+                "/api/apps/mysql_backups/restore",
+            ),
+            ("GET", "/mysql_backups/restores/", "/mysql_backups/restores"),
+            ("GET", "/mysql_backups/restores/some-task", "/mysql_backups/restores"),
+            (
+                "GET",
+                "/api/apps/backup_mongo/restore/",
+                "/api/apps/backup_mongo/restore",
+            ),
+            (
+                "POST",
+                "/api/apps/backup_mongo/restore/",
+                "/api/apps/backup_mongo/restore",
+            ),
+            (
+                "GET",
+                "/api/apps/backup_mongo/restore/schema",
+                "/api/apps/backup_mongo/restore",
+            ),
+            (
+                "GET",
+                "/api/apps/backup_mongo/restore/some-task",
+                "/api/apps/backup_mongo/restore",
+            ),
+            ("GET", "/backup_mongo/restores/", "/backup_mongo/restores"),
+            ("GET", "/backup_mongo/restores/some-task", "/backup_mongo/restores"),
         ],
     )
     def test_scoped_restore_routes_not_shadowed_by_parent(
-        self, method: str, path: str
+        self, method: str, path: str, expected_prefix: str
     ) -> None:
-        """Assert the nested restore app's canonical routes win over the parent's.
+        """Assert each nested restore app's canonical routes win over its parent's.
 
-        The restore app mounts after ``mysql_backups`` and the parent exposes a
+        A restore child app mounts right after its parent, and the parent exposes a
         greedy ``/{task_name}`` route; this guards that a request to a canonical
-        restore URL resolves to a route under the ``mysql_backups/restore``
-        prefix rather than being captured as a parent backup task.
+        restore URL resolves to a route under the restore app's own prefix rather
+        than being captured as a parent backup task.
         """
         scope = {"type": "http", "method": method, "path": path, "headers": []}
         matched = next(
@@ -691,9 +729,4 @@ class TestApiRouterConfigDrivenLoopIntegration:
             None,
         )
         assert matched is not None
-        prefix = (
-            "/api/apps/mysql_backups/restore"
-            if path.startswith("/api")
-            else ("/mysql_backups/restores")
-        )
-        assert matched.startswith(prefix), f"{path} resolved to {matched}"
+        assert matched.startswith(expected_prefix), f"{path} resolved to {matched}"

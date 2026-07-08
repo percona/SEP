@@ -438,6 +438,13 @@ mechanism: never seeded, never guarded, always present in the sidebar, and the
 toggle endpoint returns 409 for them. The frozenset is the single source of
 truth -- the seed, both mount loops, the default-context filter, and both
 admin endpoints all consult it.
+
+The parallel exclusion category is a **child app** (``parent_key`` set): it too
+is never seeded and cannot be toggled independently (the toggle endpoint returns
+409), but -- unlike a protected app -- its runtime state is not forced on; it
+*derives* from its parent's ``AppState`` via :attr:`BaseApp.state_key`, so its
+mount gate, sidebar visibility, and admin lifecycle all follow the parent. Every
+consumer that special-cases a protected key also carries a ``parent_key`` branch.
 """
 
 
@@ -488,10 +495,9 @@ def get_toggleable_app_key(app_key: str) -> str:
     """Resolve a toggleable, configured app key.
 
     :param app_key: The plugin key from the path parameter.
-    :type app_key: str
     :return: The validated app key.
-    :rtype: str
-    :raises HTTPConflictException: If the key is protected and immutable.
+    :raises HTTPConflictException: If the key is protected, or a child app whose
+        state is managed by its parent -- neither can be toggled independently.
     :raises HTTPNotFoundException: If the key is not in configured plugins.
     """
     if app_key in PROTECTED_APP_KEYS:
@@ -502,8 +508,14 @@ def get_toggleable_app_key(app_key: str) -> str:
     # so a top-level import here would cycle.
     from app.sep.apps.framework.registry import get_app_registry
 
-    if get_app_registry().get(app_key) is None:
+    app = get_app_registry().get(app_key)
+    if app is None:
         raise HTTPNotFoundException(detail="App not found")
+    if app.parent_key is not None:
+        raise HTTPConflictException(
+            detail=f"App '{app_key}' is managed by its parent "
+            f"'{app.parent_key}' and cannot be toggled independently.",
+        )
     return app_key
 
 
@@ -535,21 +547,18 @@ async def get_default_context(
     """Return the default context for templates.
 
     The sidebar ``plugins`` list is filtered by runtime app state: protected
-    apps always pass through; non-protected apps are shown unless their
-    :class:`app.sep.models.AppState` row has ``lifecycle_state != ENABLED`` (a
-    missing row is treated as enabled). This is the single source of truth that
-    drives sidebar visibility.
+    apps always pass through; every other app is shown unless the
+    :class:`app.sep.models.AppState` row governing it has
+    ``lifecycle_state != ENABLED`` (a missing row is treated as enabled). A child
+    app owns no row, so it resolves through its parent via
+    :attr:`~app.sep.apps.framework.base.BaseApp.state_key`. This is the single
+    source of truth that drives sidebar visibility.
 
     :param request: The HTTP request object.
-    :type request: Request
     :param user: The authenticated user.
-    :type user: User
     :param base_uri: The base URI of the application.
-    :type base_uri: Any
     :param session: The database session used to read app state.
-    :type session: AsyncSession
     :return: The default context.
-    :rtype: dict[str, Any]
     """
     try:
         states = await AppStateManager.all_lifecycle_states(session)
@@ -568,8 +577,9 @@ async def get_default_context(
     plugins = [
         app
         for app in get_app_registry()
-        if app.key in PROTECTED_APP_KEYS
-        or states.get(app.key, AppLifecycleEnum.ENABLED) == AppLifecycleEnum.ENABLED
+        if app.state_key in PROTECTED_APP_KEYS
+        or states.get(app.state_key, AppLifecycleEnum.ENABLED)
+        == AppLifecycleEnum.ENABLED
     ]
     return {
         "user": user,
