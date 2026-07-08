@@ -32,7 +32,7 @@ from pydantic import Field, ValidationError
 
 from app.core.exceptions import HTTPUnprocessableEntityException
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EmptyStrToNone, NonEmptyStr
+from app.core.utils.fields import EmptyStrToNone, NonEmptyStr, TcpPort
 from app.sep.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     parse_archiver_purge_config,
@@ -115,7 +115,7 @@ class ArchivesLegacyForm(BaseCaseInsensitiveModel):
     delete_data: int | None = Field(None, ge=0, le=1)
     dest_service_id: int | EmptyStrToNone = None
     dest_host: str | None = None
-    dest_port: Annotated[int, Field(ge=1, le=65535)] | EmptyStrToNone = None
+    dest_port: TcpPort | EmptyStrToNone = None
     dest_db_id: int | EmptyStrToNone = None
     dest_db_name: str = ""
     alert_on_fail: bool = False

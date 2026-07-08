@@ -352,5 +352,12 @@
     "default_sort": "name",
     "overview_hidden_fields": []
   },
-  "name": "backup_mongo"
+  "name": "backup_mongo",
+  "related_apps": [
+    {
+      "app_key": "backup_mongo/restore",
+      "label": "Restore",
+      "route_segment": "restores"
+    }
+  ]
 }

@@ -14,16 +14,17 @@ export interface paths {
      * List Apps
      * @description List every configured app with its current enabled state.
      *
-     *     Returns one entry per ``SEP.APPS`` entry, in declaration order. Apps with
-     *     no row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);
-     *     protected apps (``inventory``) are forced to ``ENABLED`` and reported with
-     *     ``toggleable=False``. The list is non-paginated: app cardinality is bounded
-     *     (<20).
+     *     Returns one entry per registered app, in declaration order (each parent is
+     *     immediately followed by its child apps). Apps with no row default to
+     *     ``ENABLED`` (``enabled=True``, ``toggleable=True``); protected apps
+     *     (``inventory``) are forced to ``ENABLED`` and reported with
+     *     ``toggleable=False``. A child app (``parent_key`` set) is not independently
+     *     toggleable either (``toggleable=False``) and derives its lifecycle from the
+     *     parent via :attr:`~app.sep.apps.framework.base.BaseApp.state_key`. The list is
+     *     non-paginated: app cardinality is bounded (<20).
      *
      *     :param session: The database session.
-     *     :type session: SessionDep
      *     :return: The per-app info list.
-     *     :rtype: list[AppInfoResponse]
      */
     get: operations['admin_list_apps_api_admin_apps__get'];
     put?: never;
@@ -134,14 +135,14 @@ export interface paths {
      * List Apps For Navigation
      * @description Return per-app state for the current user's navigation.
      *
-     *     Protected apps are always reported ``enabled=True``. Non-protected apps
-     *     reflect their DB state (a missing row -> ``enabled=True``: a configured
-     *     plugin is active until explicitly disabled).
+     *     Protected apps are always reported ``enabled=True``. Every other app reflects
+     *     the DB state of the row governing it (a missing row -> ``enabled=True``: a
+     *     configured plugin is active until explicitly disabled). A child app owns no
+     *     row, so it resolves through its parent via
+     *     :attr:`~app.sep.apps.framework.base.BaseApp.state_key`.
      *
      *     :param session: The database session.
-     *     :type session: SessionDep
      *     :return: The per-app navigation list.
-     *     :rtype: list[AppKeyResponse]
      */
     get: operations['apps_list_apps_for_navigation_api_apps__get'];
     put?: never;
@@ -713,7 +714,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/backup_mongo/restores/': {
+  '/api/apps/backup_mongo/restore/': {
     parameters: {
       query?: never;
       header?: never;
@@ -724,7 +725,7 @@ export interface paths {
      * Restore Mongo Api List
      * @description List parent PBM restore config tasks.
      */
-    get: operations['backup_mongo_restore_mongo_api_list_api_apps_backup_mongo_restores__get'];
+    get: operations['backup_mongo_restore_restore_mongo_api_list_api_apps_backup_mongo_restore__get'];
     put?: never;
     /**
      * Restore Mongo Api Create
@@ -733,14 +734,14 @@ export interface paths {
      *     POSTs the parent config task, restore leg, pbm-list helper, and optional
      *     force-resync child for physical restores. Rolls back on any failure.
      */
-    post: operations['backup_mongo_restore_mongo_api_create_api_apps_backup_mongo_restores__post'];
+    post: operations['backup_mongo_restore_restore_mongo_api_create_api_apps_backup_mongo_restore__post'];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/apps/backup_mongo/restores/schema': {
+  '/api/apps/backup_mongo/restore/schema': {
     parameters: {
       query?: never;
       header?: never;
@@ -753,7 +754,7 @@ export interface paths {
      *
      *     :return: The plugin schema instance.
      */
-    get: operations['backup_mongo_get_schema_api_apps_backup_mongo_restores_schema_get'];
+    get: operations['backup_mongo_restore_get_schema_api_apps_backup_mongo_restore_schema_get'];
     put?: never;
     post?: never;
     delete?: never;
@@ -762,7 +763,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  '/api/apps/backup_mongo/restores/{task_name}': {
+  '/api/apps/backup_mongo/restore/{task_name}': {
     parameters: {
       query?: never;
       header?: never;
@@ -773,7 +774,7 @@ export interface paths {
      * Restore Mongo Api Detail
      * @description Retrieve a single parent restore task with child task status.
      */
-    get: operations['backup_mongo_restore_mongo_api_detail_api_apps_backup_mongo_restores__task_name__get'];
+    get: operations['backup_mongo_restore_restore_mongo_api_detail_api_apps_backup_mongo_restore__task_name__get'];
     /**
      * Restore Mongo Api Update
      * @description Update a restore task from a JSON payload request body.
@@ -781,19 +782,19 @@ export interface paths {
      *     PUTs the parent config payload to the config task name and refreshes each
      *     child leg (restore, pbm-list, optional force-resync) in place.
      */
-    put: operations['backup_mongo_restore_mongo_api_update_api_apps_backup_mongo_restores__task_name__put'];
+    put: operations['backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put'];
     post?: never;
     /**
      * Restore Mongo Api Delete
      * @description Delete a restore task group.
      */
-    delete: operations['backup_mongo_restore_mongo_api_delete_api_apps_backup_mongo_restores__task_name__delete'];
+    delete: operations['backup_mongo_restore_restore_mongo_api_delete_api_apps_backup_mongo_restore__task_name__delete'];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  '/api/apps/backup_mongo/restores/{task_name}/execute': {
+  '/api/apps/backup_mongo/restore/{task_name}/execute': {
     parameters: {
       query?: never;
       header?: never;
@@ -803,10 +804,10 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Restore Mongo Api Execute
-     * @description Execute a restore task.
+     * Backup Mongo Restores Api Execute
+     * @description Resolve, dispatch, and wrap a standard task execution.
      */
-    post: operations['backup_mongo_restore_mongo_api_execute_api_apps_backup_mongo_restores__task_name__execute_post'];
+    post: operations['backup_mongo_restore_backup_mongo_restores_api_execute_api_apps_backup_mongo_restore__task_name__execute_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -9811,7 +9812,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_list_api_apps_backup_mongo_restores__get: {
+  backup_mongo_restore_restore_mongo_api_list_api_apps_backup_mongo_restore__get: {
     parameters: {
       query?: {
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
@@ -9844,7 +9845,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_create_api_apps_backup_mongo_restores__post: {
+  backup_mongo_restore_restore_mongo_api_create_api_apps_backup_mongo_restore__post: {
     parameters: {
       query?: never;
       header?: never;
@@ -9877,7 +9878,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_get_schema_api_apps_backup_mongo_restores_schema_get: {
+  backup_mongo_restore_get_schema_api_apps_backup_mongo_restore_schema_get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9897,7 +9898,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_detail_api_apps_backup_mongo_restores__task_name__get: {
+  backup_mongo_restore_restore_mongo_api_detail_api_apps_backup_mongo_restore__task_name__get: {
     parameters: {
       query?: never;
       header?: never;
@@ -9928,7 +9929,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_update_api_apps_backup_mongo_restores__task_name__put: {
+  backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put: {
     parameters: {
       query?: never;
       header?: never;
@@ -9963,7 +9964,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_delete_api_apps_backup_mongo_restores__task_name__delete: {
+  backup_mongo_restore_restore_mongo_api_delete_api_apps_backup_mongo_restore__task_name__delete: {
     parameters: {
       query?: never;
       header?: never;
@@ -9992,7 +9993,7 @@ export interface operations {
       };
     };
   };
-  backup_mongo_restore_mongo_api_execute_api_apps_backup_mongo_restores__task_name__execute_post: {
+  backup_mongo_restore_backup_mongo_restores_api_execute_api_apps_backup_mongo_restore__task_name__execute_post: {
     parameters: {
       query?: never;
       header?: never;

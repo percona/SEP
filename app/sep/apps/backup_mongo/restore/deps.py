@@ -47,6 +47,7 @@ from app.sep.apps.framework import (
     batch_get_latest_statuses,
     extract_latest_task_status,
     get_task_latest_history,
+    make_task_dep,
 )
 from app.sep.apps.framework.cascade import (
     cascade_create_independent_tasks,
@@ -56,7 +57,6 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     protected_task_guard,
@@ -720,26 +720,7 @@ RestoreUpdateFormFromBody = Annotated[
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
-async def get_restores_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Restores plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Restores plugin. If the task does not exist or is not
-    owned by Restores, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Restores.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.RESTORE_MONGO)
-
+get_restores_task = make_task_dep(TaskOwner.RESTORE_MONGO)
 
 RestoresTask = Annotated[Task, Depends(get_restores_task)]
 

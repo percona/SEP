@@ -720,6 +720,21 @@ class TestAppStateGuards:
         assert plugin_key in response.json()["detail"]
 
     @pytest.mark.asyncio
+    async def test_child_ui_route_503s_when_parent_disabled(
+        self, guarded_client: TestClient, session
+    ) -> None:
+        """Return 503 from a child app's UI route when its parent is disabled (gate uses parent_key)."""
+        session.add(
+            AppState(app_key="backup_mongo", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get("/backup_mongo/restores/")
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "backup_mongo" in response.json()["detail"]
+
+    @pytest.mark.asyncio
     async def test_inventory_ui_route_never_503s(
         self, guarded_client: TestClient, session
     ) -> None:
