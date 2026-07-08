@@ -119,7 +119,7 @@ class TestBoundedIntFromEmptyStrFactory:
             adapter.validate_python(value)
 
     def test_lower_bound_only_factory(self) -> None:
-        """Support a factory with no upper bound (lower bound only)."""
+        """Coerce blanks and enforce only the lower bound when no upper bound is set."""
         adapter = TypeAdapter(bounded_int_from_empty_str_factory(0))
         large = 1_000_000
         assert adapter.validate_python("") is None

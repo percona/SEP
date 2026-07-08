@@ -60,7 +60,7 @@ class TestAlertBackupManager:
 
     @pytest.mark.asyncio
     async def test_list_breaks_created_at_ties_by_id_desc(self, session) -> None:
-        """Break ``created_at`` ties by ``id`` descending (the fallback ordering)."""
+        """Assert ``created_at`` ties fall back to ``id`` descending order."""
         tie = utc_now()
         first = AlertBackup(
             data={"order": "first"}, metadata_={"count": 1}, created_at=tie

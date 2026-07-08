@@ -211,7 +211,11 @@ class BackupPgForm(TaskFormModel):
     @model_validator(mode="before")
     @classmethod
     def _blank_to_none(cls, data: Any) -> Any:
-        """Coerce empty-string submissions to ``None`` before field validation."""
+        """Coerce empty-string submissions to ``None`` before field validation.
+
+        :param data: The raw pre-validation submission body.
+        :return: The submission with empty-string values coerced to ``None``.
+        """
         return blank_str_values_to_none(data)
 
 
