@@ -32,7 +32,7 @@ from app.sep.apps.framework.task_status import batch_get_latest_statuses
 from app.sep.deps import TaskAPI
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
-from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import Task, TaskBackendEnum, TaskHistoryStatusEnum
 
 R = TypeVar("R", bound=BaseModel)
 
@@ -79,7 +79,7 @@ class BaseTaskResponse(BaseModel):
     """
 
     name: str
-    owner: TaskOwner
+    owner: str
     service_type: ServiceTypeEnum | None = None
     status: TaskHistoryStatusEnum | None = None
     id: int | None = None

@@ -58,7 +58,7 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_PORT_KEY,
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import TaskBackendEnum, TaskWrite
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
@@ -108,7 +108,7 @@ class TestAssembleEnvelopeRunCommand:
             spec,
             ResolvedEntities(service=service, entities={}),
             name="task-1",
-            owner=TaskOwner.CHECKSUMS,
+            owner="CHECKSUMS",
             alert_on_fail=True,
         )
 
@@ -127,7 +127,7 @@ class TestAssembleEnvelopeRunCommand:
             },
         }
         assert write.name == "task-1"
-        assert write.owner == TaskOwner.CHECKSUMS
+        assert write.owner == "CHECKSUMS"
         assert write.backend == TaskBackendEnum.PROXY
         assert write.alert_on_fail is True
 
@@ -149,7 +149,7 @@ class TestAssembleEnvelopeRunCommand:
             spec,
             ResolvedEntities(service=service, entities={}),
             name="task-1",
-            owner=TaskOwner.CHECKSUMS,
+            owner="CHECKSUMS",
         )
 
         assert list(write.data["meta"].keys()) == [
@@ -178,7 +178,7 @@ class TestAssembleEnvelopeRunCommand:
             spec,
             ResolvedEntities(service=service, entities={}),
             name="task-1",
-            owner=TaskOwner.CHECKSUMS,
+            owner="CHECKSUMS",
         )
 
         assert write.data["meta"][CONNECTIVITY_META_PORT_KEY] == DEFAULT_MYSQL_PORT
@@ -205,7 +205,7 @@ class TestAssembleEnvelopeRunPython:
             spec,
             ResolvedEntities(service=service, entities={}),
             name="backup-1",
-            owner=TaskOwner.BACKUP_PG,
+            owner="BACKUP_PG",
         )
 
         assert write.data == {
@@ -236,7 +236,7 @@ class TestAssembleEnvelopeRunPython:
             spec,
             ResolvedEntities(service=service, entities={}),
             name="backup-1",
-            owner=TaskOwner.BACKUP_PG,
+            owner="BACKUP_PG",
         )
 
         assert write.data["meta"][CONNECTIVITY_META_PORT_KEY] == DEFAULT_POSTGRESQL_PORT
@@ -254,7 +254,7 @@ class TestAssembleEnvelopeGuards:
                 spec,
                 ResolvedEntities(service=None, entities={}),
                 name="task-1",
-                owner=TaskOwner.CHECKSUMS,
+                owner="CHECKSUMS",
             )
 
     def test_unresolvable_port_raises(self) -> None:
@@ -272,7 +272,7 @@ class TestAssembleEnvelopeGuards:
                 spec,
                 ResolvedEntities(service=service, entities={}),
                 name="task-1",
-                owner=TaskOwner.CHECKSUMS,
+                owner="CHECKSUMS",
             )
 
 
@@ -293,7 +293,7 @@ class TestAssembleEnvelopeExecutorHost:
             spec,
             ResolvedEntities(service=service, entities={}, executor_host="exec-node"),
             name="task-1",
-            owner=TaskOwner.CHECKSUMS,
+            owner="CHECKSUMS",
         )
 
         assert write.data["meta"]["target"] == "exec-node"
@@ -313,7 +313,7 @@ class TestAssembleEnvelopeExecutorHost:
             spec,
             ResolvedEntities(service=service, entities={}),
             name="task-1",
-            owner=TaskOwner.CHECKSUMS,
+            owner="CHECKSUMS",
         )
 
         assert write.data["meta"]["target"] == "db-host"
@@ -681,7 +681,7 @@ class TestAssembleEnvelopeAlertDetailBuilder:
             spec,
             ResolvedEntities(service=service, entities={}),
             name="task-1",
-            owner=TaskOwner.ARCHIVER,
+            owner="ARCHIVER",
             alert_detail_builder="pkg.mod:builder",
         )
 
@@ -701,7 +701,7 @@ class TestAssembleEnvelopeAlertDetailBuilder:
             spec,
             ResolvedEntities(service=service, entities={}),
             name="task-1",
-            owner=TaskOwner.ARCHIVER,
+            owner="ARCHIVER",
         )
 
         assert write.alert_detail_builder is None
@@ -874,7 +874,7 @@ class TestStampFormInput:
             RunCommandSpec(command="cmd", args=""),
             ResolvedEntities(service=service, entities={}),
             name="task-1",
-            owner=TaskOwner.CHECKSUMS,
+            owner="CHECKSUMS",
         )
 
     def test_stamps_dumped_form_under_reserved_key(self) -> None:
@@ -908,7 +908,7 @@ class TestBuildRunPythonTask:
         """Build a run-python ``TaskWrite`` with fixed defaults for the required args."""
         return build_run_python_task(
             name="task-1",
-            owner=TaskOwner.BACKUP_MONGO,
+            owner="BACKUP_MONGO",
             target="mongo-host",
             config="alias: stanza\n",
             requirements="packaging\nPyYAML",

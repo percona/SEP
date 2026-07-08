@@ -30,6 +30,8 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 
+OWNER = "CHECKSUMS"
+
 
 class ChecksumsCreate(BaseModel):
     """Represent a Checksums creation form.

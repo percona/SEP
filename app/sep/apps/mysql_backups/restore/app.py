@@ -39,10 +39,13 @@ from app.sep.apps.mysql_backups.restore.deps import (
     build_restore_api_task_response,
     build_restore_payload,
 )
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
+from app.sep.apps.mysql_backups.restore.models import (
+    OWNER,
+    RestoreCreate,
+    RestoresResponse,
+)
 from app.sep.apps.mysql_backups.restore.routes import router as jinja_router
 from app.sep.apps.mysql_backups.restore.views import restore_views
-from app.tasks.models import TaskOwner
 
 RESTORES_MAX_PAGINATION_LIMIT = 50
 
@@ -57,7 +60,7 @@ app = TaskExecutionApp(
     sidebar=False,
     parent_key="mysql_backups",
     description="Restore MySQL hosts from XtraBackup, Mydumper, and Binlog backups.",
-    owner=TaskOwner.RESTORES,
+    owner=OWNER,
     create_model=RestoreCreate,
     response_model=RestoresResponse,
     views=restore_views,

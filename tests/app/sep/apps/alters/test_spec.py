@@ -24,7 +24,7 @@ from app.sep.connectivity import (
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
 )
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import TaskBackendEnum, TaskWrite
 
 REMOTE_SERVICE_PORT = 3306
 
@@ -58,7 +58,7 @@ def test_build_alters_spec_builds_parent_execute_envelope(
     task = build_alters_spec(created_service, "app", "users", _build_body())
 
     assert isinstance(task, TaskWrite)
-    assert task.owner == TaskOwner.ALTERS
+    assert task.owner == "ALTERS"
     assert task.backend == TaskBackendEnum.PROXY
     assert task.name == "my-alter"
 

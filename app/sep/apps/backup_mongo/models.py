@@ -35,6 +35,8 @@ from app.sep.apps.framework.form_dsl import (
 from app.sep.apps.framework.rules import F
 from app.tasks.models import TaskHistoryStatusEnum
 
+OWNER = "BACKUP_MONGO"
+
 
 class BackupType(EnumFieldMixin, StrEnum):
     """Backup types."""

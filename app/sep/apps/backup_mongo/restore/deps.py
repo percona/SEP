@@ -31,6 +31,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.deps import _gathered_task_status
 from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.apps.backup_mongo.restore.models import (
+    OWNER,
     RestoreCreate,
     RestoreDerivedTaskSummary,
     RestoreTaskDetailResponse,
@@ -65,7 +66,6 @@ from app.sep.models import SyncInventoryEntityTypeEnum
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
-    TaskOwner,
     TaskWrite,
 )
 
@@ -440,7 +440,7 @@ async def _fetch_restore_parent_tasks(tasks_api: TaskAPI) -> list[Task]:
             lambda pagination: tasks_api.get(
                 "/",
                 params={
-                    "owner": TaskOwner.RESTORE_MONGO.value,
+                    "owner": OWNER,
                     "parent_is_null": "true",
                     **pagination.model_dump(),
                 },
@@ -450,7 +450,7 @@ async def _fetch_restore_parent_tasks(tasks_api: TaskAPI) -> list[Task]:
             lambda pagination: tasks_api.get(
                 "/",
                 params={
-                    "owner": TaskOwner.RESTORE_MONGO.value,
+                    "owner": OWNER,
                     "parent_is_null": "false",
                     "self_parent": "true",
                     **pagination.model_dump(),
@@ -708,7 +708,7 @@ RestoreUpdateFormFromBody = Annotated[
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
-get_restores_task = make_task_dep(TaskOwner.RESTORE_MONGO)
+get_restores_task = make_task_dep(OWNER)
 
 RestoresTask = Annotated[Task, Depends(get_restores_task)]
 
@@ -776,7 +776,8 @@ async def get_restores_index_context(
         get_restores_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.RESTORE_MONGO,
+        OWNER,
+        service_type=ServiceTypeEnum.MONGODB,
     )
 
 

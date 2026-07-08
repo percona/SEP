@@ -26,7 +26,7 @@ from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/backup_mongo"
@@ -52,7 +52,7 @@ def build_backup_task(name: str = "mongo-backup-task", **overrides: Any) -> dict
     parent = data_overrides.pop("parent", None)
     task = TaskFactory.build(
         name=name,
-        owner=TaskOwner.BACKUP_MONGO,
+        owner="BACKUP_MONGO",
         backend=TaskBackendEnum.PROXY,
         **overrides,
     )
@@ -187,7 +187,7 @@ class TestBackupMongoApiList:
         mock_task_api_dep.get.assert_awaited_once_with(
             "/",
             params={
-                "owner": TaskOwner.BACKUP_MONGO.value,
+                "owner": "BACKUP_MONGO",
                 "parent_is_null": "true",
                 "backup_type": BackupType.PBM_CONFIG.value,
                 "offset": 0,
@@ -226,7 +226,7 @@ class TestBackupMongoApiList:
         mock_task_api_dep.get.assert_awaited_once_with(
             "/",
             params={
-                "owner": TaskOwner.BACKUP_MONGO.value,
+                "owner": "BACKUP_MONGO",
                 "parent_is_null": "true",
                 "backup_type": BackupType.PBM_CONFIG.value,
                 "offset": 1,
@@ -359,7 +359,7 @@ class TestBackupMongoApiCreate:
         assert "connectivity_warning" in create_body
         assert mock_task_api_dep.post.await_count == EXPECTED_CASCADE_POSTS
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
-        assert first_post["owner"] == TaskOwner.BACKUP_MONGO.value
+        assert first_post["owner"] == "BACKUP_MONGO"
         assert first_post["data"]["backup_type"] == BackupType.PBM_CONFIG.value
         logical_post = mock_task_api_dep.post.await_args_list[1].kwargs["json"]
         assert logical_post["data"]["payload"].endswith("pbm_logical_payload")

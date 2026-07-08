@@ -69,7 +69,7 @@ from app.sep.apps.framework.schema import (
     ListView,
 )
 from app.sep.apps.framework.spec import ResolvedEntities, RunCommandSpec
-from app.tasks.models import TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.sep import snapshot_utils as su
 from tests.app.sep.apps.framework.contract_suite import build_contract_client
 from tests.app.sep.apps.framework.kit import (
@@ -78,7 +78,7 @@ from tests.app.sep.apps.framework.kit import (
     synth_app,
 )
 
-_OWNER = TaskOwner.ARCHIVER
+_OWNER = "ARCHIVER"
 _LAYOUT = FormLayout(sections=(SectionLayout(key="main", title="Main"),))
 _LIST_VIEW = ListView(columns=[Column(key="name", label="Name")])
 _DETAIL_VIEW = DetailView(

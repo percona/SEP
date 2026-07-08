@@ -38,7 +38,6 @@ from app.sep.main import sep_app
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
-    TaskOwner,
 )
 from tests.app.factories import (
     AltersCreateFactory,
@@ -89,7 +88,7 @@ def _mock_alters_task_payload(generated_task, created_alters):
 @pytest.fixture
 def created_task():
     """Return a fake created Task instance."""
-    return TaskFactory.build(owner=TaskOwner.ALTERS)
+    return TaskFactory.build(owner="ALTERS")
 
 
 @pytest.fixture
@@ -190,7 +189,7 @@ def test_alters_create_skips_connectivity_check_when_opted_out(
     fake_task_write = GeneratedTaskFactory.build(
         name="fake_alter",
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.ALTERS,
+        owner="ALTERS",
         data={
             "task": "run-command",
             "meta": {
@@ -405,7 +404,7 @@ def test_alters_delete_returns_303_for_protected_task(
     """POST /alters/{task_name}/delete rejects protected tasks (303 redirect for forms)."""
     protected = TaskFactory.build(
         name="protected-alter",
-        owner=TaskOwner.ALTERS,
+        owner="ALTERS",
         protected=True,
     )
     mock_task_api_dep.get = AsyncMock(return_value=protected.model_dump(mode="json"))
@@ -686,7 +685,7 @@ def test_alters_update_returns_409_for_protected_task(
     """POST /alters/{task_name}/update rejects protected tasks (303 redirect for forms)."""
     protected = TaskFactory.build(
         name="protected-alter",
-        owner=TaskOwner.ALTERS,
+        owner="ALTERS",
         protected=True,
     )
     mock_task_api_dep.get = AsyncMock(return_value=protected.model_dump(mode="json"))

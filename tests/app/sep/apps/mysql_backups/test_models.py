@@ -24,7 +24,7 @@ from app.sep.apps.mysql_backups.models import (
     BackupResponse,
     BackupType,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 
 
 class TestXtrabackupQuietField:
@@ -120,7 +120,7 @@ class TestBackupResponseModel:
         """Carry the shared anonymization and connectivity surface from the base."""
         response = BackupResponse(
             name="mysql-backup",
-            owner=TaskOwner.BACKUPS,
+            owner="BACKUPS",
             backend=TaskBackendEnum.PROXY,
             backup_type=BackupType.MYDUMPER,
             hostname="db-host",

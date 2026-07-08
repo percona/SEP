@@ -36,7 +36,6 @@ from app.sep.inventory import CreatedNode, CreatedService
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
-    TaskOwner,
     TaskWrite,
 )
 
@@ -115,7 +114,7 @@ async def test_build_backup_task_payload(
     assert isinstance(task_payload, TaskWrite)
     assert task_payload.name == form_data["task_name"]
     assert task_payload.backend == TaskBackendEnum.PROXY
-    assert task_payload.owner == TaskOwner.BACKUPS
+    assert task_payload.owner == "BACKUPS"
 
     data = task_payload.data
     assert data["task"] == "run-python"
@@ -632,7 +631,7 @@ def _task_with_raw_config(raw_config: str) -> Task:
     """Build a minimal Task whose YAML config is the given raw string."""
     return Task(
         name="t",
-        owner=TaskOwner.BACKUPS,
+        owner="BACKUPS",
         data={"meta": {"config": raw_config}},
     )
 

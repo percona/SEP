@@ -34,7 +34,6 @@ from app.sep.apps.backup_pg.models import BackupPgForm
 from app.sep.apps.backup_pg.spec import build_backup_pg_spec
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskOwner
 from tests.app.factories import CreatedNodeFactory, CreatedServiceFactory
 from tests.app.sep.snapshot_utils import assert_or_update, canonical_json, SNAPSHOTS_DIR
 
@@ -130,7 +129,7 @@ def _spec_envelope(case: dict) -> dict:
         build_backup_pg_spec(_form(case), resolved),
         resolved,
         name=_TASK_NAME,
-        owner=TaskOwner.BACKUP_PG,
+        owner="BACKUP_PG",
         alert_on_fail=case["alert_on_fail"],
     )
     return _normalize(task.model_dump())

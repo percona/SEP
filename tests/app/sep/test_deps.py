@@ -38,6 +38,7 @@ from app.core.exceptions import (
     HTTPServiceUnavailableException,
 )
 from app.core.pagination import MAX_PAGINATION_LIMIT
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.registry import build_app_registry
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import App, sep_settings
@@ -80,7 +81,6 @@ from app.sep.models import AppLifecycleEnum, AppState, SyncInventoryEntityTypeEn
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
-    TaskOwner,
 )
 from tests.app.factories import (
     CasdoorUserFactory,
@@ -683,21 +683,21 @@ class TestGetTaskByName:
     @pytest.mark.asyncio
     async def test_owner_mismatch_raises_not_found(self) -> None:
         """Assert wrong owner raises 404."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(owner="BACKUPS")
         mock_api = AsyncMock()
         mock_api.get.return_value = task.model_dump(mode="json")
 
         with pytest.raises(HTTPNotFoundException):
-            await get_task_by_name(mock_api, task.name, owner=TaskOwner.ALTERS)
+            await get_task_by_name(mock_api, task.name, owner="ALTERS")
 
     @pytest.mark.asyncio
     async def test_matching_owner_returns_task(self) -> None:
         """Assert correct owner returns the task."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(owner="BACKUPS")
         mock_api = AsyncMock()
         mock_api.get.return_value = task.model_dump(mode="json")
 
-        result = await get_task_by_name(mock_api, task.name, owner=TaskOwner.BACKUPS)
+        result = await get_task_by_name(mock_api, task.name, owner="BACKUPS")
         assert isinstance(result, Task)
         assert result.name == task.name
 
@@ -717,7 +717,7 @@ class TestGetTaskHistory:
     @pytest.mark.asyncio
     async def test_owner_mismatch_raises_not_found(self) -> None:
         """Assert wrong owner raises 404."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(owner="BACKUPS")
         history_data = {
             "id": 1,
             "execution_request": {"tracking": {}},
@@ -732,7 +732,7 @@ class TestGetTaskHistory:
         mock_api.get.return_value = history_data
 
         with pytest.raises(HTTPNotFoundException):
-            await get_task_history(mock_api, 1, owner=TaskOwner.ALTERS)
+            await get_task_history(mock_api, 1, owner="ALTERS")
 
 
 class TestGetTasksContext:
@@ -774,6 +774,7 @@ class TestGetTasksContext:
             mock_remote_api,
             get_task_info,
             executor_hosts_ctx,
+            service_type=ServiceTypeEnum.MYSQL,
         )
         assert context["services"][0]["id"] == created_service.id
         assert context["executor_hosts"] == [
@@ -806,6 +807,7 @@ class TestGetTasksContext:
             mock_api,
             lambda _: {},
             executor_hosts_ctx,
+            service_type=ServiceTypeEnum.MYSQL,
         )
 
         assert context["connectivity_check_default"] is default_value
@@ -853,6 +855,7 @@ class TestGetTasksContext:
             mock_api,
             lambda _: {},
             executor_hosts_ctx,
+            service_type=ServiceTypeEnum.MYSQL,
         )
         assert len(context["pending_tasks"]) == 1
         assert context["pending_tasks"][0]["id"] == PENDING_HISTORY_ID
@@ -860,6 +863,41 @@ class TestGetTasksContext:
         assert context["running_tasks"][0]["id"] == RUNNING_HISTORY_ID
         assert len(context["history_tasks"]) == 1
         assert context["history_tasks"][0]["id"] == SUCCESS_HISTORY_ID
+
+    @pytest.mark.asyncio
+    async def test_service_type_scopes_services_and_owner_filters_tasks(self) -> None:
+        """Assert the ``/services/`` fetch scopes by ``service_type``, tasks by owner.
+
+        Exercises AC6's ``get_tasks_context`` clause: a brand-new owner string no
+        core module knows still round-trips, with the caller-supplied
+        ``service_type`` driving the inventory fetch.
+        """
+        mock_api = AsyncMock()
+        mock_api.get = AsyncMock(
+            side_effect=[
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                {"items": [], "total": 0, "offset": 0, "limit": 50},
+                [],
+            ]
+        )
+        executor_hosts_ctx = ExecutorHostsContext(hosts={}, display_names={})
+
+        await get_tasks_context(
+            mock_api,
+            mock_api,
+            lambda _: {},
+            executor_hosts_ctx,
+            owner="CONTRACT_NEW_OWNER",
+            service_type=ServiceTypeEnum.POSTGRESQL,
+        )
+
+        calls = mock_api.get.await_args_list
+        services_call = next(call for call in calls if call.args[0] == "/services/")
+        assert (
+            services_call.kwargs["params"]["service_type"] == ServiceTypeEnum.POSTGRESQL
+        )
+        tasks_call = next(call for call in calls if call.args[0] == "/")
+        assert tasks_call.kwargs["params"]["owner"] == "CONTRACT_NEW_OWNER"
 
 
 class TestGetTasksIndexContext:
@@ -886,7 +924,7 @@ class TestGetTasksIndexContext:
                 },
                 [{"task": "backup-task", "enabled": True}],
                 {
-                    "items": [{"name": "backup-task", "owner": TaskOwner.BACKUPS}],
+                    "items": [{"name": "backup-task", "owner": "BACKUPS"}],
                     "total": 1,
                     "offset": 0,
                     "limit": 50,
@@ -914,7 +952,7 @@ class TestGetTasksIndexContext:
         assert "is_task_manager_enabled" in context
         assert context["is_task_manager_enabled"] is False
         assert context["nodes"] == EXPECTED_NODE_COUNT
-        assert context["periodic_tasks"][0]["owner"] == TaskOwner.BACKUPS
+        assert context["periodic_tasks"][0]["owner"] == "BACKUPS"
 
     @pytest.mark.asyncio
     async def test_task_manager_enabled(self) -> None:
@@ -1034,26 +1072,26 @@ class TestRejectIfProtected:
 
     def test_protected_task_raises_edit_message(self) -> None:
         """Assert a protected task raises 409 with the default edit message."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=True)
+        task = TaskFactory.build(owner="BACKUPS", protected=True)
         with pytest.raises(HTTPConflictException) as exc_info:
             reject_if_protected(task)
         assert exc_info.value.detail == "Cannot edit a protected task."
 
     def test_protected_task_raises_delete_message(self) -> None:
         """Assert action='delete' yields the delete-specific 409 message."""
-        task = TaskFactory.build(owner=TaskOwner.ALTERS, protected=True)
+        task = TaskFactory.build(owner="ALTERS", protected=True)
         with pytest.raises(HTTPConflictException) as exc_info:
             reject_if_protected(task, action="delete")
         assert exc_info.value.detail == "Cannot delete a protected task."
 
     def test_unprotected_task_returns_same_task(self) -> None:
         """Assert an unprotected task is returned unchanged."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=False)
+        task = TaskFactory.build(owner="BACKUPS", protected=False)
         assert reject_if_protected(task) is task
 
     def test_protected_none_returns_task(self) -> None:
         """Assert a falsy/None protected flag does not raise."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(owner="BACKUPS")
         task.protected = None
         assert reject_if_protected(task, action="delete") is task
 
@@ -1103,7 +1141,7 @@ class TestProtectedTaskGuard:
 
     def test_guard_rejects_protected_task(self) -> None:
         """Assert the built dependency resolves task_dep then raises 409."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=True)
+        task = TaskFactory.build(owner="BACKUPS", protected=True)
         client, calls = self._build_client(task)
         response = client.get("/probe")
         assert response.status_code == status.HTTP_409_CONFLICT
@@ -1112,7 +1150,7 @@ class TestProtectedTaskGuard:
 
     def test_guard_delete_verb(self) -> None:
         """Assert action='delete' propagates to the built dependency message."""
-        task = TaskFactory.build(owner=TaskOwner.ALTERS, protected=True)
+        task = TaskFactory.build(owner="ALTERS", protected=True)
         client, calls = self._build_client(task, action="delete")
         response = client.get("/probe")
         assert response.status_code == status.HTTP_409_CONFLICT
@@ -1121,7 +1159,7 @@ class TestProtectedTaskGuard:
 
     def test_guard_passes_unprotected_task(self) -> None:
         """Assert the built dependency returns an unprotected task unchanged."""
-        task = TaskFactory.build(owner=TaskOwner.BACKUPS, protected=False)
+        task = TaskFactory.build(owner="BACKUPS", protected=False)
         client, calls = self._build_client(task)
         response = client.get("/probe")
         assert response.status_code == status.HTTP_200_OK

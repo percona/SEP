@@ -21,7 +21,6 @@ from fastapi import status
 
 from app.sep.apps.backup_mongo.models import BackupCreate
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskOwner
 
 EXPECTED_PBM_TASK_POSTS = 4
 
@@ -47,5 +46,5 @@ def test_pbm_backups_create_full_form_dependency_chain_without_payload_override(
     assert mock_task_api_dep.post.await_count == EXPECTED_PBM_TASK_POSTS
     posted = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
     assert posted["name"] == backup_create.task_name
-    assert posted["owner"] == TaskOwner.BACKUP_MONGO.value
+    assert posted["owner"] == "BACKUP_MONGO"
     assert posted["data"]["meta"]["_service_name"] == mongo_service.name

@@ -48,7 +48,6 @@ from app.tasks.models import (
     TaskHistoryLog,
     TaskHistoryStatusEnum,
     TaskLogType,
-    TaskOwner,
     TaskWrite,
 )
 from tests.app.factories import TaskFactory
@@ -65,7 +64,7 @@ async def _create_task(
     session: AsyncSession,
     *,
     name: str = "test-task",
-    owner: TaskOwner = TaskOwner.ANY,
+    owner: str = "ANY",
     is_template: bool = False,
     protected: bool = False,
     backend: TaskBackendEnum = TaskBackendEnum.NOMAD,
@@ -78,7 +77,7 @@ async def _create_task(
     :param name: The task name.
     :type name: str
     :param owner: The task owner.
-    :type owner: TaskOwner
+    :type owner: str
     :param is_template: Whether the task is a template.
     :type is_template: bool
     :param protected: Whether the task is protected.
@@ -160,10 +159,10 @@ class TestTaskManagerListActive:
     @pytest.mark.asyncio
     async def test_with_owner_filter(self, session: AsyncSession) -> None:
         """Assert owner filter restricts returned tasks."""
-        await _create_task(session, name="backup-task", owner=TaskOwner.BACKUPS)
-        await _create_task(session, name="alter-task", owner=TaskOwner.ALTERS)
+        await _create_task(session, name="backup-task", owner="BACKUPS")
+        await _create_task(session, name="alter-task", owner="ALTERS")
 
-        result = await TaskManager.list_active(session, owner=TaskOwner.BACKUPS)
+        result = await TaskManager.list_active(session, owner="BACKUPS")
 
         assert len(result) == 1
         assert result[0].name == "backup-task"
@@ -554,11 +553,11 @@ class TestTaskManagerListActivePaginated:
     @pytest.mark.asyncio
     async def test_with_owner_filter(self, session: AsyncSession) -> None:
         """Assert owner filter works with pagination."""
-        await _create_task(session, name="pag-backup", owner=TaskOwner.BACKUPS)
-        await _create_task(session, name="pag-alter", owner=TaskOwner.ALTERS)
+        await _create_task(session, name="pag-backup", owner="BACKUPS")
+        await _create_task(session, name="pag-alter", owner="ALTERS")
 
         result = await TaskManager.list_active_paginated(
-            session, owner=TaskOwner.BACKUPS, pagination=Pagination()
+            session, owner="BACKUPS", pagination=Pagination()
         )
 
         assert result.total == 1

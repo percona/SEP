@@ -29,7 +29,7 @@ from app.sep.apps.mysql_backups.restore.deps import (
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate
 from app.sep.inventory import CreatedService
 from app.sep.main import sep_app
-from app.tasks.models import TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
 
 
@@ -47,7 +47,7 @@ def _mock_get_restores_index_context_dep():
 def created_restore_task():
     """Return a fake Task instance owned by Restores."""
     return TaskFactory.build(
-        owner=TaskOwner.RESTORES,
+        owner="RESTORES",
         data={
             "meta": {
                 "target": "restore-host",

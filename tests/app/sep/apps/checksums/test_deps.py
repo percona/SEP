@@ -31,7 +31,7 @@ from app.sep.apps.checksums.spec import (
 )
 from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 from app.sep.apps.framework.spec import assemble_envelope, ResolvedEntities
-from app.tasks.models import TaskOwner, TaskWrite
+from app.tasks.models import TaskWrite
 
 
 class TestChecksumsJinjaFormDeps:
@@ -59,7 +59,7 @@ class TestChecksumsJinjaFormDeps:
         )
 
         assert isinstance(generated_task, TaskWrite)
-        assert generated_task.owner == TaskOwner.CHECKSUMS
+        assert generated_task.owner == "CHECKSUMS"
         args = shlex.split(generated_task.data["meta"]["args"])
         recursion_arg = next(
             (arg for arg in args if arg.startswith("--recursion-method=")),
@@ -122,7 +122,7 @@ class TestChecksumsNomadPayloadParity:
             build_checksums_spec(ChecksumsForm(**common_fields), resolved),
             resolved,
             name=common_fields["task_name"],
-            owner=TaskOwner.CHECKSUMS,
+            owner="CHECKSUMS",
             alert_on_fail=common_fields["alert_on_fail"],
         )
 

@@ -25,7 +25,11 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.apps.mysql_backups.models import BackupType
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
+from app.sep.apps.mysql_backups.restore.models import (
+    OWNER,
+    RestoreCreate,
+    RestoresResponse,
+)
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
@@ -39,7 +43,7 @@ from app.sep.deps import (
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 UNKNOWN_SERVICE_SENTINEL = "-1"
 
@@ -236,7 +240,7 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
-get_restores_task = make_task_dep(TaskOwner.RESTORES)
+get_restores_task = make_task_dep(OWNER)
 
 RestoresTask = Annotated[Task, Depends(get_restores_task)]
 
@@ -295,7 +299,8 @@ async def get_restores_index_context(
         get_restores_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.RESTORES,
+        OWNER,
+        service_type=ServiceTypeEnum.MYSQL,
     )
 
 

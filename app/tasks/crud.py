@@ -46,7 +46,6 @@ from app.tasks.models import (
     TaskHistoryLogState,
     TaskHistoryStatusEnum,
     TaskLogType,
-    TaskOwner,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,21 +98,17 @@ class TaskManager(BaseSQLModelManager):
     async def list_active(
         cls,
         session: AsyncSession,
-        owner: TaskOwner | None = None,
+        owner: str | None = None,
         target: str | None = None,
     ) -> list[Task]:
         """List all active (non-deleted) tasks.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
         :param owner: The owner of the tasks. If provided, only tasks for this owner
             will be listed.
-        :type owner: TaskOwner | None
         :param target: The execution target hostname. If provided, only tasks whose
             ``data["meta"]["target"]`` matches will be listed.
-        :type target: str | None
         :return: A list of active tasks.
-        :rtype: list[Task]
         """
         where = [col(Task.deleted_at).is_(None)]
         kwargs = {}
@@ -127,7 +122,7 @@ class TaskManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         pagination: Pagination,
-        owner: TaskOwner | None = None,
+        owner: str | None = None,
         target: str | None = None,
         parent_is_null: bool | None = None,
         backup_type: str | None = None,
@@ -136,27 +131,19 @@ class TaskManager(BaseSQLModelManager):
         """Return a paginated response of active (non-deleted) tasks.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
         :param owner: The owner of the tasks. If provided, only tasks for this owner
             will be listed.
-        :type owner: TaskOwner | None
         :param target: The execution target hostname. If provided, only tasks whose
             ``data["meta"]["target"]`` matches will be listed.
-        :type target: str | None
         :param parent_is_null: When ``True``, only tasks with a null ``data["parent"]``
             key; when ``False``, only tasks with a non-null parent. When ``None``,
             do not filter on parent.
-        :type parent_is_null: bool | None
         :param backup_type: When provided, only tasks whose ``data["backup_type"]``
             matches this string.
-        :type backup_type: str | None
         :param self_parent: When ``True``, only tasks whose ``data["parent"]`` equals
             ``Task.name`` are returned.
-        :type self_parent: bool | None
         :param pagination: Validated offset/limit window for this page.
-        :type pagination: Pagination
         :return: A paginated response containing active tasks and metadata.
-        :rtype: PaginatedResponse[Task]
         """
         where = [col(Task.deleted_at).is_(None)]
         kwargs = {}

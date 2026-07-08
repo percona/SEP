@@ -43,9 +43,10 @@ from app.sep.apps.backup_mongo.models import (
     BackupConfigStorage,
     BackupCreate,
     CompressionAlgorithm,
+    OWNER,
 )
 from app.sep.apps.framework.spec import build_run_python_task
-from app.tasks.models import TaskOwner, TaskWrite
+from app.tasks.models import TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +198,7 @@ def build_backup_mongo_spec(
 
     return build_run_python_task(
         name=form.task_name,
-        owner=TaskOwner.BACKUP_MONGO,
+        owner=OWNER,
         target=form.hostname,
         config=yaml.dump(
             backup_config.model_dump(by_alias=True, exclude_none=True, mode="json"),

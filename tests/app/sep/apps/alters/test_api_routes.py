@@ -27,7 +27,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.sep.connectivity import clear_connectivity_caches
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/alters"
@@ -50,7 +50,7 @@ def build_alters_task(
     meta_overrides = data_overrides.pop("meta", {})
     task = TaskFactory.build(
         name=name,
-        owner=TaskOwner.ALTERS,
+        owner="ALTERS",
         backend=TaskBackendEnum.PROXY,
         protected=protected,
         **overrides,
@@ -255,7 +255,7 @@ class TestAltersApiList:
             if call.args[0] == "/"
         )
         assert list_call.kwargs["params"]["parent_is_null"] == "true"
-        assert list_call.kwargs["params"]["owner"] == TaskOwner.ALTERS.value
+        assert list_call.kwargs["params"]["owner"] == "ALTERS"
 
 
 class TestAltersApiDetail:
@@ -336,7 +336,7 @@ class TestAltersApiCreate:
         assert "connectivity_warning" in create_body
         assert mock_task_api_dep.post.await_count == EXPECTED_CASCADE_CREATE_POSTS
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
-        assert first_post["owner"] == TaskOwner.ALTERS.value
+        assert first_post["owner"] == "ALTERS"
         assert "--execute" in first_post["data"]["meta"]["args"]
         dry_run_post = mock_task_api_dep.post.await_args_list[1].kwargs["json"]
         assert dry_run_post["name"] == f"{DEFAULT_TASK_NAME}-dry-run"
