@@ -31,18 +31,23 @@ if TYPE_CHECKING:
 
 
 @functools.cache
-def _anonymizer_operators() -> dict[str, "OperatorConfig"]:
-    """Build the Presidio anonymizer operator config.
+def _default_operator_config() -> "OperatorConfig":
+    """Build the default Presidio anonymizer operator config.
 
     The ``presidio_anonymizer`` import is deferred to first call so it stays off
     the module-import path that the backend and Celery worker pay on every
     startup, even when no text is ever anonymized.
 
-    :return: The operator configuration mapping used by the anonymizer engine.
+    :return: The default operator configuration used by the anonymizer engine.
     """
     from presidio_anonymizer import OperatorConfig
 
-    return {"DEFAULT": OperatorConfig("replace", {})}
+    return OperatorConfig("replace", {})
+
+
+def _anonymizer_operators() -> dict[str, "OperatorConfig"]:
+    """Return the operator configuration mapping used by the anonymizer engine."""
+    return {"DEFAULT": _default_operator_config()}
 
 
 class PresidioEngineManager:
