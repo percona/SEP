@@ -4,7 +4,7 @@
 # title: PostgreSQL Config File Collector
 # description: Collects postgresql.conf and postgresql.auto.conf (plus any files referenced via include / include_if_exists / include_dir directives) into a tar.gz archive. Optionally masks values for sensitive parameters.
 # allow_extra_args: false
-# sudo: always
+# sudo: optional
 # service_type: postgresql
 # parameters:
 #  - name: config-file
@@ -197,7 +197,7 @@ if [[ -z $CONFIG_FILE ]]; then
     exit 1
 fi
 
-if [[ ! -r $CONFIG_FILE ]]; then
+if ! sudo -u postgres test -r "$CONFIG_FILE"; then
     echo "Error: cannot read postgresql.conf at '$CONFIG_FILE' (check permissions)." >&2
     exit 1
 fi
@@ -205,18 +205,13 @@ fi
 AUTO_CONFIG_FILE=""
 if [[ -n $AUTO_CONFIG_FILE_ARG ]]; then
     AUTO_CONFIG_FILE="$AUTO_CONFIG_FILE_ARG"
-elif [[ -n $DATA_DIR && -f $DATA_DIR/postgresql.auto.conf ]]; then
+elif [[ -n $DATA_DIR ]] && sudo -u postgres test -r "$DATA_DIR/postgresql.auto.conf"; then
     AUTO_CONFIG_FILE="$DATA_DIR/postgresql.auto.conf"
 else
     candidate="$(dirname "$CONFIG_FILE")/postgresql.auto.conf"
-    if [[ -f $candidate ]]; then
+    if sudo -u postgres test -r "$candidate"; then
         AUTO_CONFIG_FILE="$candidate"
     fi
-fi
-
-if [[ -n $AUTO_CONFIG_FILE && ! -r $AUTO_CONFIG_FILE ]]; then
-    echo "Warning: postgresql.auto.conf at '$AUTO_CONFIG_FILE' is not readable; skipping." >&2
-    AUTO_CONFIG_FILE=""
 fi
 
 echo "postgresql.conf:      $CONFIG_FILE" >&2
@@ -345,8 +340,13 @@ mkdir -p "$STAGE_DIR"
 
 copy_into_stage() {
     local src="$1"
+    local elevated="${2:-}"
     local src_abs
-    src_abs=$(readlink -f "$src" 2> /dev/null || echo "$src")
+    if [[ -n $elevated ]]; then
+        src_abs=$(sudo readlink -f "$src" 2> /dev/null || echo "$src")
+    else
+        src_abs=$(readlink -f "$src" 2> /dev/null || echo "$src")
+    fi
     if [[ $src_abs != /* ]]; then
         echo "Warning: refusing to stage non-absolute path '$src'" >&2
         return
@@ -360,7 +360,28 @@ copy_into_stage() {
     local dst="$STAGE_DIR/$rel"
     mkdir -p "$(dirname "$dst")"
     if [[ $MASK -eq 1 ]]; then
-        mask_file "$src_abs" "$dst"
+        if [[ -n $elevated ]]; then
+            sudo cat "$src_abs" | awk -v pat="$SENSITIVE_PATTERN" '
+            {
+                line = $0
+                if (match(line, /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/)) {
+                    name = substr(line, RSTART, RLENGTH - 1)
+                    sub(/[[:space:]]*$/, "", name)
+                    sub(/^[[:space:]]+/, "", name)
+                    lower = tolower(name)
+                    if (lower ~ pat) {
+                        print name " = ***REDACTED***"
+                        next
+                    }
+                }
+                print line
+            }
+            ' > "$dst"
+        else
+            mask_file "$src_abs" "$dst"
+        fi
+    elif [[ -n $elevated ]]; then
+        sudo cp "$src_abs" "$dst"
     else
         cp "$src_abs" "$dst"
     fi
@@ -368,13 +389,13 @@ copy_into_stage() {
 
 copy_into_stage "$CONFIG_FILE"
 if [[ -n $AUTO_CONFIG_FILE ]]; then
-    copy_into_stage "$AUTO_CONFIG_FILE"
+    copy_into_stage "$AUTO_CONFIG_FILE" sudo
 fi
 
 declare -A COPIED=()
 COPIED["$(readlink -f "$CONFIG_FILE")"]=1
 if [[ -n $AUTO_CONFIG_FILE ]]; then
-    COPIED["$(readlink -f "$AUTO_CONFIG_FILE")"]=1
+    COPIED["$(sudo readlink -f "$AUTO_CONFIG_FILE")"]=1
 fi
 for extra in "${EXTRA_FILES[@]+"${EXTRA_FILES[@]}"}"; do
     abs=$(readlink -f "$extra" 2> /dev/null || echo "$extra")
@@ -401,7 +422,7 @@ done
     done | sort
 } > "$STAGE_DIR/MANIFEST.txt"
 
-tar -czf "$OUTPUT_ARG" -C "$TMPDIR_STAGE" "$STAGE_DIRNAME"
+sudo tar -czf "$OUTPUT_ARG" -C "$TMPDIR_STAGE" "$STAGE_DIRNAME"
 
 echo "Archive written to: $OUTPUT_ARG" >&2
 echo "Files included:     ${#COPIED[@]}" >&2
