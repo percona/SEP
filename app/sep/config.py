@@ -271,7 +271,7 @@ class SessionOptions(BaseModel):
 def _reject_removed_syncer_pmm(data: Any) -> Any:
     """Reject a removed per-syncer ``pmm`` override key.
 
-    The per-syncer ``pmm:`` override was removed in SEP-1477; PMM synchronizers now
+    The per-syncer ``pmm:`` override was removed; PMM synchronizers now
     read the top-level ``PMM`` section directly. A leftover ``pmm`` key (any case) is
     rejected with a ``ValueError`` -- which pydantic wraps into a ``ValidationError``
     -- so upgraded deployments fail fast at startup instead of silently honoring dead
@@ -741,7 +741,7 @@ class SEPSettings(BaseYamlAppSettings):
     def reject_removed_sep_pmm(cls, data: Any) -> Any:
         """Reject a removed ``SEP.PMM`` section.
 
-        ``SEP.PMM`` was removed in SEP-1477; PMM connection/auth config now lives
+        ``SEP.PMM`` was removed; PMM connection/auth config now lives
         only under the top-level ``PMM`` section, and the alerts fields it used to
         carry moved to the alerts-owned ``SEP.ALERTS`` section. A leftover ``PMM``
         key under ``SEP`` (any case, including the ``SEP__PMM__*`` env-var path) is
