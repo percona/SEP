@@ -9055,8 +9055,46 @@
         "type": "string"
       },
       "SettingClassGroup": {
-        "description": "One settings-class group in the LIST response.\n\n:param setting_class: The settings class this group represents.\n:type setting_class: SettingClassEnum\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:type settings: list[SettingResponse]",
+        "description": "One settings-class group in the LIST response.\n\n:param setting_class: The settings class this group represents.\n:type setting_class: SettingClassEnum\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:type settings: list[SettingResponse]\n:param is_app_owned: Whether this group belongs to a SEP app under\n    ``app/sep/apps/`` rather than core SEP wiring.\n:type is_app_owned: bool\n:param app_id: The owning app's registry key when ``is_app_owned`` is\n    ``True``; ``None`` for core groups.\n:type app_id: str | None\n:param app_display_name: The owning app's human-facing label when\n    ``is_app_owned`` is ``True``; ``None`` for core groups.\n:type app_display_name: str | None\n:param app_enabled: Whether the owning app is currently enabled when\n    ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled\n    apps remain listed so the frontend can hide them without a second\n    lookup.\n:type app_enabled: bool | None",
         "properties": {
+          "app_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Display Name"
+          },
+          "app_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Enabled"
+          },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Id"
+          },
+          "is_app_owned": {
+            "default": false,
+            "title": "Is App Owned",
+            "type": "boolean"
+          },
           "setting_class": {
             "$ref": "#/components/schemas/SettingClassEnum"
           },
@@ -15999,7 +16037,7 @@
     },
     "/api/sep/admin/settings/": {
       "get": {
-        "description": "List every exposed settings class with current values and metadata.\n\nLocal classes are read from their config singletons; remote classes\n(``remote_classes``) are fetched server-side from their owning sub-app\nand appended in declaration order. A failed remote fetch fails the whole\nrequest with ``502`` -- the LIST never silently drops a remote group.\n\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: Grouped responses, one group per configured settings class.",
+        "description": "List every exposed settings class with current values and metadata.\n\nLocal classes are read from their config singletons; remote classes\n(``remote_classes``) are fetched server-side from their owning sub-app\nand appended in declaration order; app-owned classes follow remote\ngroups with per-group app metadata. A failed remote fetch fails the\nwhole request with ``502`` -- the LIST never silently drops a remote\ngroup.\n\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: Grouped responses, one group per configured settings class.",
         "operationId": "sep_list_settings_api_sep_admin_settings__get",
         "responses": {
           "200": {
@@ -16021,7 +16059,7 @@
     },
     "/api/sep/admin/settings/export": {
       "get": {
-        "description": "Return the merged effective configuration as a YAML attachment.\n\nAggregates the three SEP-wired settings classes locally and fans out to\n``GET /admin/settings/`` on the Tasks API for ``TasksSettings``. Values\nuse the same dump path as the settings LIST endpoints. On upstream failure,\nre-raise as :class:`~app.core.exceptions.HTTPBadGatewayException` — no\npartial export.\n\nWhen ``keys`` is omitted the full merged export is returned exactly as\nbefore. When provided, each entry is a fully-qualified selector\n(``Class.KEY`` or a bare ``Class``); the response is narrowed to only the\nrequested classes/keys. Class names and SEP keys are validated with no\nupstream call; the Tasks fan-out is skipped entirely unless a selector\ntargets ``TasksSettings``, and Tasks keys are validated against the fetched\nblock. Output blocks always follow the canonical declaration order\n(``SEP_ADMIN_SETTINGS_CLASSES`` then ``TasksSettings``), independent of\nselector order.\n\n:param session: The active database session for SEP override queries.\n:type session: AsyncSession\n:param tasks_api: The Tasks API client used to fetch ``TasksSettings``.\n:type tasks_api: TaskAPI\n:param keys: Optional, repeatable selectors restricting the export to a\n    subset of classes/keys. ``None`` (omitted) means the full export.\n:type keys: list[str] | None\n:return: YAML bytes with ``Content-Disposition`` set for download.\n:rtype: Response\n:raises HTTPBadRequestException: If a selector is blank, malformed, names an\n    unwired class, or names a key that does not exist on its class.\n:raises HTTPBadGatewayException: If the Tasks settings LIST call fails\n    with an ``HTTPException`` (e.g. an upstream non-2xx response), an\n    ``OSError`` (e.g. a connection failure), an unexpected payload shape,\n    or a missing ``TasksSettings`` group.",
+        "description": "Return the merged effective configuration as a YAML attachment.\n\nAggregates the SEP-wired core settings classes and app-owned settings\nclasses locally and fans out to ``GET /admin/settings/`` on the Tasks API\nfor ``TasksSettings``. Values use the same dump path as the settings LIST\nendpoints. On upstream failure, re-raise as\n:class:`~app.core.exceptions.HTTPBadGatewayException` — no partial export.\n\nWhen ``keys`` is omitted the full merged export is returned exactly as\nbefore. When provided, each entry is a fully-qualified selector\n(``Class.KEY`` or a bare ``Class``); the response is narrowed to only the\nrequested classes/keys. Class names and SEP keys are validated with no\nupstream call; the Tasks fan-out is skipped entirely unless a selector\ntargets ``TasksSettings``, and Tasks keys are validated against the fetched\nblock. Output blocks always follow the canonical declaration order\n(``SEP_ADMIN_SETTINGS_CLASSES``, then app-owned classes, then\n``TasksSettings``), independent of selector order.\n\n:param session: The active database session for SEP override queries.\n:type session: AsyncSession\n:param tasks_api: The Tasks API client used to fetch ``TasksSettings``.\n:type tasks_api: TaskAPI\n:param keys: Optional, repeatable selectors restricting the export to a\n    subset of classes/keys. ``None`` (omitted) means the full export.\n:type keys: list[str] | None\n:return: YAML bytes with ``Content-Disposition`` set for download.\n:rtype: Response\n:raises HTTPBadRequestException: If a selector is blank, malformed, names an\n    unwired class, or names a key that does not exist on its class.\n:raises HTTPBadGatewayException: If the Tasks settings LIST call fails\n    with an ``HTTPException`` (e.g. an upstream non-2xx response), an\n    ``OSError`` (e.g. a connection failure), an unexpected payload shape,\n    or a missing ``TasksSettings`` group.",
         "operationId": "sep_export_settings_api_sep_admin_settings_export_get",
         "parameters": [
           {

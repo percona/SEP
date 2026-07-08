@@ -23,8 +23,9 @@ from typing import Annotated, Any
 import yaml
 from fastapi import HTTPException, Query
 from fastapi.responses import Response
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import Settings, settings
+from app.core.config import BaseYamlSettings, Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPBadRequestException
 from app.core.settings_override.api import (
     build_settings_class_values,
@@ -32,9 +33,14 @@ from app.core.settings_override.api import (
 )
 from app.core.settings_override.api.routes import ClassEntry
 from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils.date_time import utc_now
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
+from app.sep.apps.framework.registry import (
+    collect_app_owned_settings_classes,
+    resolve_app_settings_metadata,
+)
 from app.sep.config import sep_settings, SEPSettings
 from app.sep.deps import IsApiAdmin, RequireBearerForUnsafeMethods, SessionDep, TaskAPI
 from app.sep.middleware.messages.config import messages_settings, MessagesSettings
@@ -53,6 +59,8 @@ SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
     (SettingClassEnum.SETTINGS, Settings, settings),
 ]
 
+SEP_APP_OWNED_SETTINGS_CLASSES = collect_app_owned_settings_classes()
+
 router = build_settings_router(
     classes=SEP_ADMIN_SETTINGS_CLASSES,
     session_dep=SessionDep,
@@ -60,6 +68,8 @@ router = build_settings_router(
     mutation_deps=[RequireBearerForUnsafeMethods],
     remote_classes=[(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")],
     remote_api_dep=TaskAPI,
+    app_owned_classes=SEP_APP_OWNED_SETTINGS_CLASSES,
+    resolve_app_metadata=resolve_app_settings_metadata,
 )
 
 
@@ -157,7 +167,7 @@ def _parse_export_selectors(
     :param keys: The raw, repeatable ``keys`` query values.
     :type keys: list[str]
     :param allowed_classes: The set of wired settings-class names a selector may
-        reference (the SEP-wired classes plus ``TasksSettings``).
+        reference (core SEP classes, app-owned classes, and ``TasksSettings``).
     :type allowed_classes: set[str]
     :return: A mapping from class name to its parsed :class:`_ClassRequest`.
     :rtype: dict[str, _ClassRequest]
@@ -219,6 +229,110 @@ def _filter_class_block(
     return {key: value for key, value in block.items() if key in req.keys}
 
 
+def _wired_export_class_names() -> set[str]:
+    """Return every settings-class name the export endpoint may emit.
+
+    :return: Core SEP, app-owned, and proxied Tasks class names.
+    :rtype: set[str]
+    """
+    names = {member.value for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES}
+    names.update(entry.setting_class.value for entry in SEP_APP_OWNED_SETTINGS_CLASSES)
+    names.add(SettingClassEnum.TASKS_SETTINGS.value)
+    return names
+
+
+async def _append_local_class_export(
+    payload: dict[str, dict[str, Any]],
+    *,
+    session: AsyncSession,
+    setting_class: SettingClassEnum,
+    settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
+    requested: dict[str, _ClassRequest] | None,
+) -> None:
+    """Append one locally-wired settings class block to an export payload.
+
+    :param payload: The export payload being assembled in canonical order.
+    :param session: The active database session for SEP override queries.
+    :param setting_class: The settings class identifier.
+    :param settings_cls: The Pydantic settings model class.
+    :param proxy: The live override proxy for the class.
+    :param requested: Parsed export selectors, or ``None`` for a full export.
+    """
+    class_name = setting_class.value
+    if requested is not None and class_name not in requested:
+        return
+    block = await build_settings_class_values(
+        session=session,
+        setting_class=setting_class,
+        settings_cls=settings_cls,
+        proxy=proxy,
+    )
+    if requested is not None:
+        block = _filter_class_block(class_name, block, requested)
+    payload[class_name] = block
+
+
+async def _append_tasks_export_block(
+    payload: dict[str, dict[str, Any]],
+    *,
+    tasks_api: TaskAPI,
+    tasks_key: str,
+    requested: dict[str, _ClassRequest] | None,
+) -> None:
+    """Append the proxied ``TasksSettings`` block to an export payload.
+
+    :param payload: The export payload being assembled in canonical order.
+    :param tasks_api: The Tasks API client used to fetch ``TasksSettings``.
+    :param tasks_key: The ``TasksSettings`` class name.
+    :param requested: Parsed export selectors, or ``None`` for a full export.
+    :raises HTTPBadGatewayException: If the upstream Tasks LIST call fails or
+        returns an unexpected payload shape.
+    """
+    if requested is not None and tasks_key not in requested:
+        return
+    try:
+        tasks_payload = await tasks_api.get("/admin/settings/")
+    except (HTTPException, OSError) as exc:
+        detail = getattr(exc, "detail", str(exc))
+        raise HTTPBadGatewayException(detail=str(detail)) from exc
+
+    if not isinstance(tasks_payload, dict):
+        raise HTTPBadGatewayException(
+            detail="Tasks settings LIST returned an unexpected payload.",
+        )
+
+    tasks_groups = _tasks_settings_groups(tasks_payload)
+    if tasks_key not in tasks_groups:
+        raise HTTPBadGatewayException(
+            detail=f"Tasks settings LIST response missing {tasks_key!r} group.",
+        )
+    tasks_block = tasks_groups[tasks_key]
+    if requested is not None:
+        tasks_block = _filter_class_block(tasks_key, tasks_block, requested)
+    payload[tasks_key] = tasks_block
+
+
+def _export_yaml_response(payload: dict[str, dict[str, Any]]) -> Response:
+    """Serialize an export payload as a YAML download response.
+
+    :param payload: The merged ``{class_name: {key: value}}`` export body.
+    :return: YAML bytes with ``Content-Disposition`` set for download.
+    :rtype: Response
+    """
+    yaml_body = yaml.safe_dump(
+        payload,
+        default_flow_style=False,
+        sort_keys=False,
+    )
+    filename = f"sep-config-{utc_now():%Y-%m-%d}.yaml"
+    return Response(
+        content=yaml_body,
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get(
     "/export",
     responses=UPSTREAM_TASKS_502_RESPONSE,
@@ -230,11 +344,11 @@ async def export_settings(
 ) -> Response:
     """Return the merged effective configuration as a YAML attachment.
 
-    Aggregates the three SEP-wired settings classes locally and fans out to
-    ``GET /admin/settings/`` on the Tasks API for ``TasksSettings``. Values
-    use the same dump path as the settings LIST endpoints. On upstream failure,
-    re-raise as :class:`~app.core.exceptions.HTTPBadGatewayException` — no
-    partial export.
+    Aggregates the SEP-wired core settings classes and app-owned settings
+    classes locally and fans out to ``GET /admin/settings/`` on the Tasks API
+    for ``TasksSettings``. Values use the same dump path as the settings LIST
+    endpoints. On upstream failure, re-raise as
+    :class:`~app.core.exceptions.HTTPBadGatewayException` — no partial export.
 
     When ``keys`` is omitted the full merged export is returned exactly as
     before. When provided, each entry is a fully-qualified selector
@@ -243,8 +357,8 @@ async def export_settings(
     upstream call; the Tasks fan-out is skipped entirely unless a selector
     targets ``TasksSettings``, and Tasks keys are validated against the fetched
     block. Output blocks always follow the canonical declaration order
-    (``SEP_ADMIN_SETTINGS_CLASSES`` then ``TasksSettings``), independent of
-    selector order.
+    (``SEP_ADMIN_SETTINGS_CLASSES``, then app-owned classes, then
+    ``TasksSettings``), independent of selector order.
 
     :param session: The active database session for SEP override queries.
     :type session: AsyncSession
@@ -263,58 +377,35 @@ async def export_settings(
         or a missing ``TasksSettings`` group.
     """
     tasks_key = SettingClassEnum.TASKS_SETTINGS.value
-    requested: dict[str, _ClassRequest] | None = None
-    if keys is not None:
-        allowed_classes = {member.value for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES}
-        allowed_classes.add(tasks_key)
-        requested = _parse_export_selectors(keys, allowed_classes)
+    requested = (
+        _parse_export_selectors(keys, _wired_export_class_names())
+        if keys is not None
+        else None
+    )
 
     payload: dict[str, dict[str, Any]] = {}
-
     for setting_class, settings_cls, proxy in SEP_ADMIN_SETTINGS_CLASSES:
-        class_name = setting_class.value
-        if requested is not None and class_name not in requested:
-            continue
-        block = await build_settings_class_values(
+        await _append_local_class_export(
+            payload,
             session=session,
             setting_class=setting_class,
             settings_cls=settings_cls,
             proxy=proxy,
+            requested=requested,
         )
-        if requested is not None:
-            block = _filter_class_block(class_name, block, requested)
-        payload[class_name] = block
-
-    if requested is None or tasks_key in requested:
-        try:
-            tasks_payload = await tasks_api.get("/admin/settings/")
-        except (HTTPException, OSError) as exc:
-            detail = getattr(exc, "detail", str(exc))
-            raise HTTPBadGatewayException(detail=str(detail)) from exc
-
-        if not isinstance(tasks_payload, dict):
-            raise HTTPBadGatewayException(
-                detail="Tasks settings LIST returned an unexpected payload.",
-            )
-
-        tasks_groups = _tasks_settings_groups(tasks_payload)
-        if tasks_key not in tasks_groups:
-            raise HTTPBadGatewayException(
-                detail=f"Tasks settings LIST response missing {tasks_key!r} group.",
-            )
-        tasks_block = tasks_groups[tasks_key]
-        if requested is not None:
-            tasks_block = _filter_class_block(tasks_key, tasks_block, requested)
-        payload[tasks_key] = tasks_block
-
-    yaml_body = yaml.safe_dump(
+    for entry in SEP_APP_OWNED_SETTINGS_CLASSES:
+        await _append_local_class_export(
+            payload,
+            session=session,
+            setting_class=entry.setting_class,
+            settings_cls=entry.settings_cls,
+            proxy=entry.proxy,
+            requested=requested,
+        )
+    await _append_tasks_export_block(
         payload,
-        default_flow_style=False,
-        sort_keys=False,
+        tasks_api=tasks_api,
+        tasks_key=tasks_key,
+        requested=requested,
     )
-    filename = f"sep-config-{utc_now():%Y-%m-%d}.yaml"
-    return Response(
-        content=yaml_body,
-        media_type="application/x-yaml",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return _export_yaml_response(payload)
