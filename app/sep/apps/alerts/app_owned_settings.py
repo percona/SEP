@@ -13,8 +13,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-from app.sep.apps.alerts.app import app
-from app.sep.apps.alerts.app_owned_settings import APP_OWNED_SETTINGS_CLASSES
-from app.sep.apps.alerts.routes import router
+"""Declare settings classes owned by the alerts app."""
 
-__all__ = ["APP_OWNED_SETTINGS_CLASSES", "app", "router"]
+from app.core.alerts.config import alert_settings, AlertSettings
+from app.core.settings_override.api.routes import AppOwnedClassEntry
+from app.core.settings_override.models import SettingClassEnum
+
+APP_OWNED_SETTINGS_CLASSES: list[AppOwnedClassEntry] = [
+    AppOwnedClassEntry(
+        setting_class=SettingClassEnum.ALERT_SETTINGS,
+        settings_cls=AlertSettings,
+        proxy=alert_settings,
+        app_key="alerts",
+    ),
+]
