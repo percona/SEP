@@ -114,7 +114,7 @@ async def test_login_does_not_log_password(caplog):
     cookies["grafana_session"] = _SESSION_VALUE
     _attach_session(sdk, _mock_response(status=200, cookies=cookies))
 
-    with caplog.at_level(logging.DEBUG):
+    with caplog.at_level(logging.DEBUG, logger=sdk.logger_name):
         await sdk.login("alice", "super-secret-pw")
 
     assert "super-secret-pw" not in caplog.text
