@@ -137,24 +137,40 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     drift = []
+    rewritten = []
     for path in payloads:
+        rel = path.relative_to(REPO_ROOT)
         current = path.read_text(encoding="utf-8")
         updated = render(current, region, PREAMBLE_BEGIN, PREAMBLE_END)
         if updated == current:
+            print(f"unchanged  {rel}")
             continue
         if args.check:
             drift.append(path)
+            print(f"drifted    {rel}")
         else:
             path.write_text(updated, encoding="utf-8")
+            rewritten.append(path)
+            print(f"rewrote    {rel}")
 
-    if args.check and drift:
-        rels = [str(path.relative_to(REPO_ROOT)) for path in drift]
+    if args.check:
+        if drift:
+            rels = [str(path.relative_to(REPO_ROOT)) for path in drift]
+            print(
+                f"PBM creds preamble drift: {rels}; regenerate with "
+                "`python scripts/gen_pbm_payloads.py`",
+                file=sys.stderr,
+            )
+            return 1
         print(
-            f"PBM creds preamble drift: {rels}; regenerate with "
-            "`python scripts/gen_pbm_payloads.py`",
-            file=sys.stderr,
+            f"All {len(payloads)} PBM payloads are in sync with the canonical region."
         )
-        return 1
+        return 0
+
+    print(
+        f"Synced {len(payloads)} PBM payloads: "
+        f"{len(rewritten)} rewritten, {len(payloads) - len(rewritten)} already in sync."
+    )
     return 0
 
 
