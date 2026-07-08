@@ -19,7 +19,6 @@ import { Suspense, type ReactNode } from 'react';
 import CircularProgress from '@mui/material/CircularProgress';
 import Box from '@mui/material/Box';
 import { AuthProvider } from './contexts/auth';
-import { NavigationProvider } from './contexts/navigation';
 import { NotificationProvider } from './contexts/notification';
 
 function LoadingFallback() {
@@ -36,9 +35,7 @@ export default function Providers({ children }: { children: ReactNode }) {
   return (
     <NotificationProvider>
       <AuthProvider>
-        <NavigationProvider>
-          <Suspense fallback={<LoadingFallback />}>{children}</Suspense>
-        </NavigationProvider>
+        <Suspense fallback={<LoadingFallback />}>{children}</Suspense>
       </AuthProvider>
     </NotificationProvider>
   );
