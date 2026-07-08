@@ -74,6 +74,7 @@ from app.sep.deps import (
     reject_if_protected,
     require_app_enabled,
     require_bearer_for_unsafe_methods,
+    require_pmm_api,
     resolve_ambient_grafana_token,
 )
 from app.sep.exceptions import LoginRedirectException
@@ -618,6 +619,44 @@ class TestGetPmmApi:
             verify_ssl=True,
             ssl_cafile="/etc/ssl/ca.pem",
         )
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_configured_verify_ssl_false(self) -> None:
+        """Assert ``verify_ssl=False`` is threaded through to ``get_remote_api``."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = False
+            mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
+            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
+            result = await get_pmm_api()
+        assert result is mock_client
+        mock_settings.get_remote_api.assert_awaited_once_with(
+            PMMRemoteAPI,
+            endpoint="https://pmm.example.com",
+            api_key="secret-key",
+            verify_ssl=False,
+            ssl_cafile="/etc/ssl/ca.pem",
+        )
+
+
+class TestRequirePmmApi:
+    """Test the ``require_pmm_api`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_available(self) -> None:
+        """Assert the PMM API client is returned when it is not ``None``."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        result = await require_pmm_api(mock_client)
+        assert result is mock_client
+
+    @pytest.mark.asyncio
+    async def test_raises_service_unavailable_when_none(self) -> None:
+        """Assert ``HTTPServiceUnavailableException`` is raised when PMM is ``None``."""
+        with pytest.raises(HTTPServiceUnavailableException) as exc:
+            await require_pmm_api(None)
+        assert exc.value.detail == "PMM is not configured"
 
 
 class TestGetExecutorHosts:

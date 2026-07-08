@@ -13,17 +13,17 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define database operations for AlertBackup."""
+"""Declare settings classes owned by the alerts app."""
 
-from app.core.db.crud import BaseSQLModelManager
-from app.sep.apps.alerts.models import AlertBackup
+from app.core.alerts.config import alert_settings, AlertSettings
+from app.core.settings_override.api.routes import AppOwnedClassEntry
+from app.core.settings_override.models import SettingClassEnum
 
-
-class AlertBackupManager(BaseSQLModelManager):
-    """Manage AlertBackup CRUD operations.
-
-    :cvar Model: The SQLModel class this manager is responsible for (``AlertBackup``).
-    :vartype Model: type[AlertBackup]
-    """
-
-    Model = AlertBackup
+APP_OWNED_SETTINGS_CLASSES: list[AppOwnedClassEntry] = [
+    AppOwnedClassEntry(
+        setting_class=SettingClassEnum.ALERT_SETTINGS,
+        settings_cls=AlertSettings,
+        proxy=alert_settings,
+        app_key="alerts",
+    ),
+]

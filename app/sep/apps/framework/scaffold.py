@@ -33,6 +33,8 @@ package ``__init__``, never by this module.
 import argparse
 import keyword
 import re
+import shutil
+import subprocess  # nosec B404
 import sys
 from dataclasses import dataclass
 from enum import StrEnum
@@ -170,7 +172,34 @@ def render_app(name: str, flavor: Flavor, context: dict[str, str]) -> list[Path]
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(rendered)
         written.append(target)
+    _ruff_fix(written)
     return written
+
+
+def _ruff_fix(paths: list[Path]) -> None:
+    """Run ruff lint-autofix and format on ``paths``.
+
+    Silently skips the step when ``ruff`` is not on ``$PATH`` so the
+    scaffolder stays usable in minimal environments.
+
+    :param paths: The rendered files to lint-fix and format.
+    """
+    py_files = [str(p) for p in paths if p.suffix == ".py"]
+    if not py_files:
+        return
+    ruff = shutil.which("ruff")
+    if ruff is None:
+        return
+    subprocess.run(  # noqa: S603 # nosec B603
+        [ruff, "check", "--fix", "--quiet", *py_files],
+        check=False,
+        cwd=_REPO_ROOT,
+    )
+    subprocess.run(  # noqa: S603 # nosec B603
+        [ruff, "format", "--quiet", *py_files],
+        check=False,
+        cwd=_REPO_ROOT,
+    )
 
 
 def _indent_width(line: str) -> int:
@@ -274,6 +303,24 @@ def write_settings_entry(name: str) -> bool:
     return changed
 
 
+def _holds_plugin(path: Path) -> bool:
+    """Return whether ``path`` holds a real plugin.
+
+    A path holds a plugin when it is a file, a broken symlink (one that does not
+    resolve yet still occupies the path), or a directory containing at least one
+    entry other than ``__pycache__/``.  A truly absent path, an empty directory,
+    or a directory whose only child is ``__pycache__/`` is not a plugin.
+
+    :param path: The filesystem path to check.
+    :return: ``True`` when ``path`` holds a real plugin.
+    """
+    if not path.exists():
+        return path.is_symlink()
+    if not path.is_dir():
+        return True
+    return any(child.name != "__pycache__" for child in path.iterdir())
+
+
 def scaffold_app(name: str, flavor: Flavor) -> ScaffoldResult:
     """Validate, refuse to clobber, render, and register a new app disabled.
 
@@ -284,13 +331,13 @@ def scaffold_app(name: str, flavor: Flavor) -> ScaffoldResult:
     :param flavor: The flavor to render.
     :return: The scaffold outcome for the caller's summary.
     :raises ValueError: When the name is invalid.
-    :raises FileExistsError: When the app or test package directory already exists.
+    :raises FileExistsError: When the app or test package directory holds a real plugin.
     """
     validate_name(name)
     app_dir = PLUGINS_DIR / name
     tests_dir = TESTS_DIR / name
     for existing in (app_dir, tests_dir):
-        if existing.exists():
+        if _holds_plugin(existing):
             raise FileExistsError(
                 f"{existing} already exists; refusing to overwrite an existing plugin"
             )

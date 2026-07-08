@@ -19,7 +19,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+import app.sep.deps as sep_deps
 from app.core.exceptions import HTTPServiceUnavailableException
+from app.sep.apps.report import deps as report_deps
 from app.sep.apps.report.deps import (
     get_report_index_context,
     require_pmm_api,
@@ -49,8 +51,28 @@ class TestRequirePmmApi:
     @pytest.mark.asyncio
     async def test_raises_service_unavailable_when_none(self):
         """Assert ``HTTPServiceUnavailableException`` is raised when PMM is ``None``."""
-        with pytest.raises(HTTPServiceUnavailableException):
+        with pytest.raises(HTTPServiceUnavailableException) as exc:
             await require_pmm_api(None)
+        assert exc.value.detail == "PMM is not configured"
+
+
+class TestPmmDepReExports:
+    """Assert the report PMM deps are re-exports of the ``app.sep.deps`` originals."""
+
+    @pytest.mark.parametrize(
+        "name",
+        ["get_pmm_api", "require_pmm_api", "PMMAPIDep", "RequiredPMMAPIDep"],
+    )
+    def test_symbol_is_same_object_as_sep_deps(self, name):
+        """Assert each re-exported symbol is identical to its ``app.sep.deps`` original.
+
+        Identity is load-bearing: ``dependency_overrides`` and ``mocker.patch`` bind by
+        object identity, so a local re-definition would silently break production overrides
+        while leaving the suite green.
+
+        :param name: The re-exported symbol name to compare.
+        """
+        assert getattr(report_deps, name) is getattr(sep_deps, name)
 
 
 class TestGetReportIndexContext:

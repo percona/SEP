@@ -15,7 +15,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { STORED_FORM_KEY } from '@sep/framework';
 import { describe, expect, it } from 'vitest';
 import { getAltersExecuteActions, getAltersHistoryTaskNames } from './altersTaskDetail';
 
@@ -35,15 +34,8 @@ describe('getAltersHistoryTaskNames', () => {
 });
 
 describe('getAltersExecuteActions', () => {
-  it('wires pre-checks execute with chain fields from stored form', () => {
-    const task = {
-      name: 'my-alter',
-      data: {
-        [STORED_FORM_KEY]: {
-          continue_on_pre_check_failure: true,
-        },
-      },
-    };
+  it('wires pre-checks action without executeBody (no chaining)', () => {
+    const task = { name: 'my-alter' };
 
     const actions = getAltersExecuteActions(task);
 
@@ -52,11 +44,8 @@ describe('getAltersExecuteActions', () => {
       label: 'Pre-checks',
       taskName: 'my-alter-pre-checks',
       testId: 'alters-pre-checks-execute',
-      executeBody: {
-        chain_task_names: ['my-alter'],
-        chain_on_failure: true,
-      },
     });
+    expect(actions[0]).not.toHaveProperty('executeBody');
     expect(actions[1]).toMatchObject({
       label: 'Dry run',
       taskName: 'my-alter-dry-run',
@@ -69,15 +58,6 @@ describe('getAltersExecuteActions', () => {
       testId: 'alters-execute',
     });
     expect(actions[2]).not.toHaveProperty('executeBody');
-  });
-
-  it('defaults chain_on_failure to false when the stored form omits it', () => {
-    const actions = getAltersExecuteActions({ name: 'my-alter' });
-
-    expect(actions[0]?.executeBody).toEqual({
-      chain_task_names: ['my-alter'],
-      chain_on_failure: false,
-    });
   });
 
   it('returns no actions when the parent name is missing', () => {

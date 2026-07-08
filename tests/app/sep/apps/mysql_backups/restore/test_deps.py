@@ -18,6 +18,7 @@
 import pytest
 from fastapi import HTTPException, status
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.models import BackupType
@@ -133,7 +134,7 @@ async def test_build_restore_task_payload_mydumper_without_service_id_raises(
     """MYDUMPER preserves the eager-raise contract when service_id is unset."""
     get_created_entity = mocker.patch(
         "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
-        side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND),
+        side_effect=HTTPNotFoundException(),
     )
 
     form = RestoreCreate(
@@ -226,15 +227,14 @@ async def test_build_restore_task_payload_swallows_404_for_non_mydumper(
     mocker,
     mock_remote_api,
 ):
-    """xtrabackup/binlog gracefully degrade to node-only annotations on stale service_id.
+    """Resolve xtrabackup/binlog to node-only annotations on a stale service_id.
 
-    ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not the
-    project's ``HTTPNotFoundException``; the mock mirrors production behavior
-    so the swallow path is exercised end-to-end.
+    ``RemoteAPI.get`` raises the project's ``HTTPNotFoundException`` on 404, which
+    the narrowed handler swallows to fall back to a node-only annotation.
     """
     mocker.patch(
         "app.sep.apps.mysql_backups.restore.deps.get_created_entity",
-        side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND),
+        side_effect=HTTPNotFoundException(),
     )
 
     form = RestoreCreate(

@@ -45,6 +45,7 @@ export const sepListResponse = {
   groups: [
     {
       setting_class: 'SEPSettings',
+      is_app_owned: false,
       settings: [
         makeSetting({ key: 'SYNC_REFRESH_TIME', value: 5, default_value: 5, type: 'int' }),
         makeSetting({
@@ -77,6 +78,7 @@ export const sepListResponse = {
     },
     {
       setting_class: 'SnippetsSettings',
+      is_app_owned: false,
       settings: [
         makeSetting({
           setting_class: 'SnippetsSettings',
@@ -95,6 +97,7 @@ export const tasksListResponse = {
   groups: [
     {
       setting_class: 'TasksSettings',
+      is_app_owned: false,
       settings: [
         makeSetting({
           setting_class: 'TasksSettings',

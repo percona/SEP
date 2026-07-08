@@ -16,8 +16,8 @@
 """Define tests for the app.sep.apps.backup_mongo.deps module."""
 
 import pytest
-from fastapi import HTTPException, status
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.deps import build_backup_task_payload
 from app.sep.apps.backup_mongo.models import BackupCreate
@@ -59,15 +59,14 @@ async def test_build_backup_task_payload_swallows_404_for_missing_service(
     mock_remote_api,
     backup_create: BackupCreate,
 ):
-    """A stale service_id (service deleted) degrades to a node-only annotation.
+    """Resolve a stale service_id (deleted service) to a node-only annotation.
 
-    ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not the
-    project's ``HTTPNotFoundException``; the mock mirrors production behavior
-    so the swallow path is exercised end-to-end.
+    ``RemoteAPI.get`` raises the project's ``HTTPNotFoundException`` on 404, which
+    the narrowed handler swallows to fall back to a node-only annotation.
     """
     mocker.patch(
         "app.sep.apps.backup_mongo.deps.get_created_entity",
-        side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND),
+        side_effect=HTTPNotFoundException(),
     )
 
     task_payload = await build_backup_task_payload(backup_create, mock_remote_api)

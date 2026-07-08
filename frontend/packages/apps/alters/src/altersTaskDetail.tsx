@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { getStoredForm, type TaskExecuteAction } from '@sep/framework';
+import type { TaskExecuteAction } from '@sep/framework';
 
 /** Must stay in sync with ``alters_schema.derived[0].name_suffix``. */
 const DRY_RUN_SUFFIX = '-dry-run';
@@ -25,11 +25,6 @@ const PRE_CHECKS_SUFFIX = '-pre-checks';
 
 function readParentTaskName(task: Record<string, unknown>): string {
   return typeof task.name === 'string' ? task.name.trim() : '';
-}
-
-function readContinueOnPreCheckFailure(task: Record<string, unknown>): boolean {
-  const stored = getStoredForm(task);
-  return stored?.continue_on_pre_check_failure === true;
 }
 
 function altersGroupTaskNames(parentName: string): string[] {
@@ -60,10 +55,6 @@ export function getAltersExecuteActions(task: Record<string, unknown>): TaskExec
       taskName: preChecksName,
       testId: 'alters-pre-checks-execute',
       confirmMessage: `Run pre-checks for "${parentName}" now?`,
-      executeBody: {
-        chain_task_names: [parentName],
-        chain_on_failure: readContinueOnPreCheckFailure(task),
-      },
     },
     {
       label: 'Dry run',
