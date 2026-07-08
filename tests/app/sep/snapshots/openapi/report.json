@@ -595,7 +595,7 @@
         "type": "object"
       },
       "ReportJobResponse": {
-        "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:param status: Lowercase Celery task state.\n:type status: str\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:type pdf_ready: bool\n:param result: Successful job result payload, if available.\n:type result: dict[str, Any] | None\n:param error: Failed job error text, if available.\n:type error: str | None",
+        "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:param status: Lowercase Celery task state.\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:param result: Successful job result payload, if available.\n:param error: Failed job error text, if available.",
         "properties": {
           "error": {
             "anyOf": [
@@ -672,7 +672,7 @@
         "type": "object"
       },
       "ReportSnapshotWrite": {
-        "description": "Define report snapshot body for PDF/upload jobs.\n\n:param report: Generated report snapshot reused for PDF/upload work.\n:type report: ReportData",
+        "description": "Define report snapshot body for PDF/upload jobs.\n\n:param report: Generated report snapshot reused for PDF/upload work.",
         "properties": {
           "report": {
             "$ref": "#/components/schemas/ReportData"
