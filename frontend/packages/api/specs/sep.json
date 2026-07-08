@@ -11345,7 +11345,7 @@
   "paths": {
     "/api/admin/apps/": {
       "get": {
-        "description": "List every configured app with its current enabled state.\n\nReturns one entry per ``SEP.APPS`` entry, in declaration order. Apps with\nno row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);\nprotected apps (``inventory``) are forced to ``ENABLED`` and reported with\n``toggleable=False``. The list is non-paginated: app cardinality is bounded\n(<20).\n\n:param session: The database session.\n:type session: SessionDep\n:return: The per-app info list.\n:rtype: list[AppInfoResponse]",
+        "description": "List every configured app with its current enabled state.\n\nReturns one entry per registered app, in declaration order (each parent is\nimmediately followed by its child apps). Apps with no row default to\n``ENABLED`` (``enabled=True``, ``toggleable=True``); protected apps\n(``inventory``) are forced to ``ENABLED`` and reported with\n``toggleable=False``. A child app (``parent_key`` set) is not independently\ntoggleable either (``toggleable=False``) and derives its lifecycle from the\nparent via :attr:`~app.sep.apps.framework.base.BaseApp.state_key`. The list is\nnon-paginated: app cardinality is bounded (<20).\n\n:param session: The database session.\n:return: The per-app info list.",
         "operationId": "admin_list_apps_api_admin_apps__get",
         "responses": {
           "200": {
@@ -11467,7 +11467,7 @@
     },
     "/api/apps/": {
       "get": {
-        "description": "Return per-app state for the current user's navigation.\n\nProtected apps are always reported ``enabled=True``. Non-protected apps\nreflect their DB state (a missing row -> ``enabled=True``: a configured\nplugin is active until explicitly disabled).\n\n:param session: The database session.\n:type session: SessionDep\n:return: The per-app navigation list.\n:rtype: list[AppKeyResponse]",
+        "description": "Return per-app state for the current user's navigation.\n\nProtected apps are always reported ``enabled=True``. Every other app reflects\nthe DB state of the row governing it (a missing row -> ``enabled=True``: a\nconfigured plugin is active until explicitly disabled). A child app owns no\nrow, so it resolves through its parent via\n:attr:`~app.sep.apps.framework.base.BaseApp.state_key`.\n\n:param session: The database session.\n:return: The per-app navigation list.",
         "operationId": "apps_list_apps_for_navigation_api_apps__get",
         "responses": {
           "200": {
@@ -12690,10 +12690,10 @@
         ]
       }
     },
-    "/api/apps/backup_mongo/restores/": {
+    "/api/apps/backup_mongo/restore/": {
       "get": {
         "description": "List parent PBM restore config tasks.",
-        "operationId": "backup_mongo_restore_mongo_api_list_api_apps_backup_mongo_restores__get",
+        "operationId": "backup_mongo_restore_restore_mongo_api_list_api_apps_backup_mongo_restore__get",
         "parameters": [
           {
             "in": "query",
@@ -12759,12 +12759,12 @@
         },
         "summary": "Restore Mongo Api List",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       },
       "post": {
         "description": "Create a restore task group from a JSON payload request body.\n\nPOSTs the parent config task, restore leg, pbm-list helper, and optional\nforce-resync child for physical restores. Rolls back on any failure.",
-        "operationId": "backup_mongo_restore_mongo_api_create_api_apps_backup_mongo_restores__post",
+        "operationId": "backup_mongo_restore_restore_mongo_api_create_api_apps_backup_mongo_restore__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -12799,14 +12799,14 @@
         },
         "summary": "Restore Mongo Api Create",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       }
     },
-    "/api/apps/backup_mongo/restores/schema": {
+    "/api/apps/backup_mongo/restore/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "backup_mongo_get_schema_api_apps_backup_mongo_restores_schema_get",
+        "operationId": "backup_mongo_restore_get_schema_api_apps_backup_mongo_restore_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -12821,14 +12821,14 @@
         },
         "summary": "Get Schema",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       }
     },
-    "/api/apps/backup_mongo/restores/{task_name}": {
+    "/api/apps/backup_mongo/restore/{task_name}": {
       "delete": {
         "description": "Delete a restore task group.",
-        "operationId": "backup_mongo_restore_mongo_api_delete_api_apps_backup_mongo_restores__task_name__delete",
+        "operationId": "backup_mongo_restore_restore_mongo_api_delete_api_apps_backup_mongo_restore__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -12857,12 +12857,12 @@
         },
         "summary": "Restore Mongo Api Delete",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       },
       "get": {
         "description": "Retrieve a single parent restore task with child task status.",
-        "operationId": "backup_mongo_restore_mongo_api_detail_api_apps_backup_mongo_restores__task_name__get",
+        "operationId": "backup_mongo_restore_restore_mongo_api_detail_api_apps_backup_mongo_restore__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -12898,12 +12898,12 @@
         },
         "summary": "Restore Mongo Api Detail",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       },
       "put": {
         "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place.",
-        "operationId": "backup_mongo_restore_mongo_api_update_api_apps_backup_mongo_restores__task_name__put",
+        "operationId": "backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -12949,14 +12949,14 @@
         },
         "summary": "Restore Mongo Api Update",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       }
     },
-    "/api/apps/backup_mongo/restores/{task_name}/execute": {
+    "/api/apps/backup_mongo/restore/{task_name}/execute": {
       "post": {
-        "description": "Execute a restore task.",
-        "operationId": "backup_mongo_restore_mongo_api_execute_api_apps_backup_mongo_restores__task_name__execute_post",
+        "description": "Resolve, dispatch, and wrap a standard task execution.",
+        "operationId": "backup_mongo_restore_backup_mongo_restores_api_execute_api_apps_backup_mongo_restore__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -13000,9 +13000,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Restore Mongo Api Execute",
+        "summary": "Backup Mongo Restores Api Execute",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       }
     },

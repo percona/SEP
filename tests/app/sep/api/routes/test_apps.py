@@ -29,7 +29,6 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
 from app.sep.apps.framework.registry import get_app_registry
-from app.sep.config import sep_settings
 from app.sep.deps import (
     get_api_authenticated_user,
     get_current_user,
@@ -91,7 +90,7 @@ class TestListAppsForNavigation:
         response = api_user_client.get("/api/apps/")
         assert response.status_code == status.HTTP_200_OK
         payload = response.json()
-        assert len(payload) == len(sep_settings.APPS)
+        assert len(payload) == len(get_app_registry().keys())
         assert set(payload[0]) == {
             "app_key",
             "enabled",
@@ -126,6 +125,27 @@ class TestListAppsForNavigation:
             definition = registry.get(app_key)
             assert entry["group"] == definition.group
             assert entry["nav_order"] == definition.nav_order
+
+    async def test_child_enabled_follows_parent(
+        self, api_user_client: TestClient, override_session: AsyncSession
+    ) -> None:
+        """Derive a child app's reported ``enabled`` from the parent's state, not its own key.
+
+        Disabling the parent must flip the child to disabled even though the
+        child's own key never owns a row — a ``key``-based lookup would default it
+        to enabled, so this pins the ``state_key`` derivation on the nav surface.
+        """
+        override_session.add(
+            AppState(app_key="mysql_backups", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await override_session.commit()
+
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        assert entries["mysql_backups"]["enabled"] is False
+        assert entries["mysql_backups/restore"]["enabled"] is False
+        assert entries["backup_mongo"]["enabled"] is True
+        assert entries["backup_mongo/restore"]["enabled"] is True
 
     async def test_inventory_reported_enabled(
         self, api_user_client: TestClient

@@ -189,7 +189,7 @@ def schema_path_to_slug(path: str) -> str:
 
     Strip the ``/api/apps/`` prefix and ``/schema`` suffix, then replace
     inner slashes with ``__`` so a nested route maps to a flat filename
-    (``/api/apps/backup_mongo/restores/schema`` -> ``backup_mongo__restores``).
+    (``/api/apps/backup_mongo/restore/schema`` -> ``backup_mongo__restore``).
 
     :param path: The discovered ``…/schema`` path.
     :type path: str
