@@ -1220,7 +1220,7 @@ async def _fake_tasks_post(
     create_error: Exception | None,
 ) -> dict:
     """Route a fake Tasks-API ``POST`` by path for the in-memory backend."""
-    if path == "/history/latest/full":
+    if path == "/history/latest":
         if batch_error is not None:
             raise batch_error
         names = (json or {}).get("names", [])

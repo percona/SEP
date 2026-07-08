@@ -256,30 +256,10 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Latest Task History Status
-     * @description Return the latest known execution status for each requested task name.
-     */
-    post: operations['tasks_latest_task_history_status_history_latest_post'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/history/latest/full': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Latest Task History Full
+     * Latest Task History
      * @description Return the latest-history projection (status + finished_at) per task name.
      */
-    post: operations['tasks_latest_task_history_full_history_latest_full_post'];
+    post: operations['tasks_latest_task_history_history_latest_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -2109,42 +2089,7 @@ export interface operations {
       };
     };
   };
-  tasks_latest_task_history_status_history_latest_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['TaskHistoryLatestStatusRequest'];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': {
-            [key: string]: components['schemas']['TaskHistoryStatusEnum'] | null;
-          };
-        };
-      };
-      /** @description Validation Error */
-      422: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['HTTPValidationError'];
-        };
-      };
-    };
-  };
-  tasks_latest_task_history_full_history_latest_full_post: {
+  tasks_latest_task_history_history_latest_post: {
     parameters: {
       query?: never;
       header?: never;

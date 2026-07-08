@@ -214,26 +214,8 @@ async def _seed_running_over_success(session, name: str, finished):
 
 
 @pytest.mark.asyncio
-async def test_latest_task_history_status_batch(test_client, session):
-    """Assert POST /history/latest returns the status-only map per task name."""
-    finished = utc_now() - timedelta(hours=1)
-    task = await _seed_running_over_success(session, "route-latest-status", finished)
-
-    response = test_client.post(
-        "/history/latest",
-        json={"names": [task.name, "route-latest-missing"]},
-    )
-
-    assert response.status_code == status.HTTP_200_OK
-    body = response.json()
-    assert body["route-latest-missing"] is None
-    # Legacy shape is a bare status string, not a {status, finished_at} object.
-    assert body[task.name] == TaskHistoryStatusEnum.RUNNING.value
-
-
-@pytest.mark.asyncio
-async def test_latest_task_history_full_batch(test_client, session):
-    """Assert POST /history/latest/full returns the latest projection per name.
+async def test_latest_task_history_batch(test_client, session):
+    """Assert POST /history/latest returns the latest projection per name.
 
     The newest row is an in-progress RUNNING run (no finish time), while an
     earlier SUCCESS run has one — so the projection reports RUNNING status but
@@ -243,7 +225,7 @@ async def test_latest_task_history_full_batch(test_client, session):
     task = await _seed_running_over_success(session, "route-latest-full", finished)
 
     response = test_client.post(
-        "/history/latest/full",
+        "/history/latest",
         json={"names": [task.name, "route-latest-missing"]},
     )
 

@@ -2240,66 +2240,8 @@
     },
     "/history/latest": {
       "post": {
-        "description": "Return the latest known execution status for each requested task name.",
-        "operationId": "tasks_latest_task_history_status_history_latest_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TaskHistoryLatestStatusRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "anyOf": [
-                      {
-                        "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "title": "Response Tasks Latest Task History Status History Latest Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "summary": "Latest Task History Status",
-        "tags": [
-          "tasks"
-        ]
-      }
-    },
-    "/history/latest/full": {
-      "post": {
         "description": "Return the latest-history projection (status + finished_at) per task name.",
-        "operationId": "tasks_latest_task_history_full_history_latest_full_post",
+        "operationId": "tasks_latest_task_history_history_latest_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2325,7 +2267,7 @@
                       }
                     ]
                   },
-                  "title": "Response Tasks Latest Task History Full History Latest Full Post",
+                  "title": "Response Tasks Latest Task History History Latest Post",
                   "type": "object"
                 }
               }
@@ -2348,7 +2290,7 @@
             "OAuth2PasswordBearer": []
           }
         ],
-        "summary": "Latest Task History Full",
+        "summary": "Latest Task History",
         "tags": [
           "tasks"
         ]

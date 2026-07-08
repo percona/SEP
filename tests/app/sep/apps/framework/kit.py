@@ -85,8 +85,8 @@ class MockTaskAPI:
 
     A stateful, ``RemoteAPI``-shaped boundary mock installed through
     ``dependency_overrides[get_tasks_api]``. Each task carries a newest-first
-    history list. ``POST /history/latest`` serves the status-only map, while
-    ``POST /history/latest/full`` serves the projection consumed by
+    history list. ``POST /history/latest`` serves the ``{status, finished_at}``
+    projection consumed by
     :func:`~app.sep.apps.framework.task_status.batch_get_latest_statuses` — the
     latest non-``None`` status per requested name and ``None`` for unknown names.
     Unknown detail names raise :class:`HTTPNotFoundException`, so
@@ -175,8 +175,6 @@ class MockTaskAPI:
         """Route a Tasks-API POST to batch-status, execute, or create."""
         json = json or {}
         if path == "/history/latest":
-            return {name: self._latest_status(name) for name in json.get("names", [])}
-        if path == "/history/latest/full":
             return {
                 name: self._latest_projection(name) for name in json.get("names", [])
             }
@@ -257,17 +255,6 @@ class MockTaskAPI:
             items = [item for item in items if item.get("status") == status]
         return {"items": items}
 
-    def _latest_status(self, name: str) -> str | None:
-        """Mirror the legacy ``/history/latest``: newest non-null status only.
-
-        :param name: The task name to resolve.
-        :return: The newest non-null status, or ``None`` when the task has none.
-        """
-        items = self._history.get(name, [])
-        return next(
-            (s for item in items if (s := item.get("status")) is not None), None
-        )
-
     def _latest_projection(self, name: str) -> dict[str, Any] | None:
         """Mirror ``latest_status_by_task_names``: newest status + max finish.
 
@@ -277,7 +264,9 @@ class MockTaskAPI:
         status-bearing rows.
         """
         items = self._history.get(name, [])
-        status = self._latest_status(name)
+        status = next(
+            (s for item in items if (s := item.get("status")) is not None), None
+        )
         if status is None:
             return None
         finishes = [

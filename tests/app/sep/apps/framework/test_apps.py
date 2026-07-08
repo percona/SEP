@@ -279,7 +279,7 @@ def _make_tasks_api(
         return detail_task if detail_task is not None else {}
 
     async def _post(path: str, json: dict | None = None) -> dict:
-        if path == "/history/latest/full":
+        if path == "/history/latest":
             names = (json or {}).get("names", [])
             statuses = latest_statuses or {}
             return {

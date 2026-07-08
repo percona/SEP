@@ -187,7 +187,7 @@ class TestListEndpoint:
         assert "anonymize_mask" in row
         assert "anonymized_entities" in row
         mock_task_api_dep.post.assert_awaited_once_with(
-            "/history/latest/full", json={"names": [task["name"]]}
+            "/history/latest", json={"names": [task["name"]]}
         )
 
     def test_list_returns_empty(self, test_client, mock_task_api_dep):

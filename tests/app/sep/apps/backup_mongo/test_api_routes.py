@@ -195,7 +195,7 @@ class TestBackupMongoApiList:
             },
         )
         mock_task_api_dep.post.assert_awaited_once_with(
-            "/history/latest/full",
+            "/history/latest",
             json={"names": ["parent-backup"]},
         )
 
@@ -236,7 +236,7 @@ class TestBackupMongoApiList:
             },
         )
         mock_task_api_dep.post.assert_awaited_once_with(
-            "/history/latest/full",
+            "/history/latest",
             json={"names": ["parent-backup-b"]},
         )
 
@@ -266,7 +266,7 @@ class TestBackupMongoApiList:
         assert by_name["parent-backup-a"]["status"] is None
         assert by_name["parent-backup-b"]["status"] is None
         mock_task_api_dep.post.assert_awaited_once_with(
-            "/history/latest/full",
+            "/history/latest",
             json={"names": ["parent-backup-a", "parent-backup-b"]},
         )
 

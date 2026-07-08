@@ -148,7 +148,7 @@ class TestBatchGetLatestStatuses:
             "b": None,
         }
         tasks_api.post.assert_awaited_once_with(
-            "/history/latest/full", json={"names": ["a", "b"]}
+            "/history/latest", json={"names": ["a", "b"]}
         )
 
     @pytest.mark.asyncio

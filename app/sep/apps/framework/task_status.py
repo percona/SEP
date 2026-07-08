@@ -50,7 +50,7 @@ def _extract_last_finished_at(
         if history.get("status") is not None
         and (value := history.get("finished_at")) is not None
     ]
-    return max(finishes) if finishes else None
+    return max(finishes, default=None)
 
 
 def extract_latest_task_status(
@@ -143,9 +143,9 @@ async def get_task_latest_history(
 def _parse_latest_history(value: Any) -> TaskHistoryLatestStatus | None:
     """Coerce a ``/history/latest`` wire value into a projection.
 
-    Tolerates both the status-only shape (a bare status string, as returned by
-    the legacy ``/history/latest`` endpoint) and the projection shape (a
-    ``{status, finished_at}`` object). ``None`` passes through unchanged.
+    Tolerates both a bare status string and the projection shape (a
+    ``{status, finished_at}`` object) so older ``/history/latest`` payloads
+    still parse during a rolling upgrade. ``None`` passes through unchanged.
 
     :param value: A single per-task value from a batch history response.
     :return: The parsed projection, or ``None`` when ``value`` is ``None``.
@@ -185,7 +185,7 @@ async def batch_get_latest_statuses(
         chunk = names[start : start + LATEST_HISTORY_STATUS_NAMES_MAX]
         try:
             response = await tasks_api.post(
-                "/history/latest/full", json={"names": list(chunk)}
+                "/history/latest", json={"names": list(chunk)}
             )
         except Exception:
             logger.exception("Failed to batch-fetch latest history status")

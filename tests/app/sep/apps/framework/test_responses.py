@@ -236,7 +236,7 @@ class TestBuildTaskListResponses:
 
         assert [r.name for r in result] == ["task-a"]
         tasks_api.post.assert_awaited_once_with(
-            "/history/latest/full", json={"names": ["task-a"]}
+            "/history/latest", json={"names": ["task-a"]}
         )
 
     @pytest.mark.asyncio
