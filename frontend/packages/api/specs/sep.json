@@ -6715,6 +6715,37 @@
         "title": "PagerDutyResponse",
         "type": "object"
       },
+      "PaginatedResponse_AltersTaskResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AltersTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[AltersTaskResponse]",
+        "type": "object"
+      },
       "PaginatedResponse_BackupResponse_": {
         "properties": {
           "items": {
@@ -11795,9 +11826,31 @@
     },
     "/api/apps/alters/": {
       "get": {
-        "description": "List parent alters execute tasks.",
-        "operationId": "alters_alters_api_list_api_apps_alters__get",
+        "operationId": "alters__list_paginated_api_apps_alters__get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "service_type",
@@ -11836,11 +11889,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AltersTaskResponse"
-                  },
-                  "title": "Response Alters Alters Api List Api Apps Alters  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_AltersTaskResponse_"
                 }
               }
             },
@@ -11857,7 +11906,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Alters Api List",
+        "summary": "List",
         "tags": [
           "alters"
         ]
@@ -12492,25 +12541,8 @@
     },
     "/api/apps/backup_mongo/": {
       "get": {
-        "description": "List parent PBM backup config tasks.",
-        "operationId": "backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get",
+        "operationId": "backup_mongo__list_paginated_api_apps_backup_mongo__get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
           {
             "in": "query",
             "name": "offset",
@@ -12532,6 +12564,22 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
             }
           }
         ],
@@ -12557,7 +12605,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Backup Mongo Api List",
+        "summary": "List",
         "tags": [
           "backup_mongo"
         ]
