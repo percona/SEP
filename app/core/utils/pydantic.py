@@ -217,17 +217,17 @@ def loc_to_dot_sep(loc: tuple[str | int, ...]) -> str:
 
 
 def blank_str_values_to_none(data: Any) -> Any:
-    """Coerce every empty-string value in a submission mapping to ``None``.
+    """Coerce every empty-string value in a submission ``dict`` to ``None``.
 
     Intended as the body of a ``@model_validator(mode="before")`` on form models whose
     HTML path submits ``""`` for unset fields where the JSON path sends ``null``;
     normalising ``""`` to ``None`` lets one model validate both paths identically (a
-    blank required field still fails as ``None``). A non-mapping input is returned
+    blank required field still fails as ``None``). A non-``dict`` input is returned
     unchanged so it flows through to the model's own validation.
 
     :param data: The raw pre-validation input; only ``dict`` values are transformed.
-    :return: The mapping with empty-string values replaced by ``None``, or ``data``
-        unchanged when it is not a mapping.
+    :return: The ``dict`` with empty-string values replaced by ``None``, or ``data``
+        unchanged when it is not a ``dict``.
     """
     if isinstance(data, dict):
         return {key: (None if value == "" else value) for key, value in data.items()}
