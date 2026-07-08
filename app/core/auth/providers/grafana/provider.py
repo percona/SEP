@@ -35,10 +35,13 @@ class GrafanaAuthProvider(GrafanaSDK, BaseAuthProvider):
 
     :cvar user_model: The Grafana user model.
     :cvar token_payload_model: The Grafana token-payload model.
+    :cvar supports_ambient_session: ``True`` -- Grafana validates an ambient
+        session cookie, so ambient SSO applies under this provider.
     """
 
     user_model: ClassVar[type[BaseUser]] = GrafanaUser
     token_payload_model: ClassVar[type[BaseTokenPayload]] = GrafanaTokenPayload
+    supports_ambient_session: ClassVar[bool] = True
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncGenerator[None, None]:

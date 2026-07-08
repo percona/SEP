@@ -57,6 +57,19 @@ export async function postRefresh(): Promise<SPAOAuthTokenResponse> {
 }
 
 /**
+ * POST /api/oauth/session
+ *
+ * Ambient auto-login from an existing PMM/Grafana session cookie. The browser
+ * sends the `grafana_session` cookie automatically; there is no request body.
+ * On success the backend sets the `HttpOnly` refresh cookie and returns the
+ * slim access shape; a 401 (no valid ambient session) means "not signed in".
+ */
+export async function postSession(): Promise<SPAOAuthTokenResponse> {
+  const { data } = await apiClient.post<SPAOAuthTokenResponse>('/oauth/session');
+  return data;
+}
+
+/**
  * POST /api/oauth/logout
  *
  * End the SPA session server-side: clears/rotates the `HttpOnly` refresh

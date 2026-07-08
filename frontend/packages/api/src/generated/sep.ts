@@ -7735,6 +7735,10 @@ export interface components {
      *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
      *         present it separately from everyday settings. Display-only:
      *         it does not affect PATCH/DELETE eligibility.
+     *     :param is_applicable: Whether the setting applies under current runtime state
+     *         (e.g. the active auth provider). ``False`` lets the UI present the field
+     *         as inert. Display-only, like ``is_advanced``: it does not block
+     *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
      */
     SettingResponse: {
       /** Default Value */
@@ -7748,6 +7752,11 @@ export interface components {
        * @default false
        */
       is_advanced: boolean;
+      /**
+       * Is Applicable
+       * @default true
+       */
+      is_applicable: boolean;
       /** Is Complex */
       is_complex: boolean;
       /** Is Secret */

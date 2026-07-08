@@ -155,6 +155,7 @@ def test_hot_field_names_sep_settings() -> None:
     assert hot_field_names(SEPSettings) == frozenset(
         {
             "CONNECTIVITY_CHECK_DEFAULT",
+            "AMBIENT_SESSION_SSO_ENABLED",
             "ARTIFACT_DOWNLOAD_TTL",
             "SYNC_REFRESH_TIME",
             "INVENTORY_ENDPOINT",

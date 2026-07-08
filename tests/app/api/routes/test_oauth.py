@@ -455,6 +455,52 @@ def test_session_refresh_defaults_match_plan():
     assert sep_settings.SESSION_REFRESH.PATH == "/api/oauth"
 
 
+def test_spa_session_login_success(
+    test_client, grafana_mock, grafana_user_record, mocker
+):
+    """Assert POST /session mints a session from an ambient Grafana cookie."""
+    mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+    test_client.cookies.set("grafana_session", "ambient")
+
+    response = test_client.post("/api/oauth/session")
+
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["access_token"]
+    assert "expires_in" in body
+    assert "refresh_token" not in body
+    refresh_headers = _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+    assert len(refresh_headers) == 1
+    assert "HttpOnly" in refresh_headers[0]
+    assert "Path=/api/oauth" in refresh_headers[0]
+
+
+def test_spa_session_login_no_cookie_returns_401(test_client, grafana_mock, mocker):
+    """Assert POST /session returns 401 (silent fallback) with no ambient cookie."""
+    mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+
+    response = test_client.post("/api/oauth/session")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
+def test_spa_session_login_toggle_off_returns_401(test_client, grafana_mock):
+    """Assert POST /session returns 401 when ambient SSO is disabled (default)."""
+    test_client.cookies.set("grafana_session", "ambient")
+
+    response = test_client.post("/api/oauth/session")
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert not _set_cookies_matching(
+        response.headers.get_list("set-cookie"), "refreshToken"
+    )
+
+
 def test_grafana_spa_login_then_refresh(
     test_client, grafana_mock, grafana_user_record, mocker
 ):

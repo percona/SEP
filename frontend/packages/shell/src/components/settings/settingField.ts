@@ -79,9 +79,14 @@ export function getFieldKind(setting: SettingResponse): FieldKind {
   return 'text';
 }
 
-/** Whether a setting can be edited at all (HOT and not a nested submodel). */
+/**
+ * Whether a setting can be edited at all: HOT, not a nested submodel, and
+ * applicable under the current runtime state (e.g. the active auth provider).
+ * A not-applicable field renders inert, so it is also not saveable
+ * ({@link isSaveable} short-circuits through this helper).
+ */
 export function isEditable(setting: SettingResponse): boolean {
-  return setting.reload === 'hot' && !setting.is_complex;
+  return setting.reload === 'hot' && !setting.is_complex && setting.is_applicable !== false;
 }
 
 // ── Nested-setting grouping ────────────────────────────────────────────────

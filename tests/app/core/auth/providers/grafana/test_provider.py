@@ -42,6 +42,10 @@ class TestGrafanaAuthProviderBundle:
         """Verify the provider exposes the Grafana token-payload model."""
         assert GrafanaAuthProvider.token_payload_model is GrafanaTokenPayload
 
+    def test_supports_ambient_session(self):
+        """Verify the Grafana provider advertises ambient-session support."""
+        assert GrafanaAuthProvider.supports_ambient_session is True
+
     def test_provider_is_a_grafana_sdk(self):
         """Verify the provider carries the flat Grafana SDK config."""
         provider = _provider()

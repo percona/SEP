@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from typing import Any, cast, NoReturn, NotRequired, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from fastapi import HTTPException, status
 from itsdangerous import BadData, URLSafeTimedSerializer
 from pydantic import ConfigDict, model_validator, ValidationInfo
 from pydantic.alias_generators import to_camel
@@ -264,6 +265,32 @@ class GrafanaUser(BaseUser):
         session = await grafana.login(username, password)
         record = cast(_GrafanaUserRecord, await grafana.get_current_user(session))
         orgs = await grafana.get_current_user_orgs(session)
+        user = GrafanaUser._from_grafana_record(record, orgs)
+        return GrafanaUser._oauth_token_for(user, grafana)
+
+    @staticmethod
+    async def oauth_token_from_session(session: str) -> OAuthToken | None:
+        """Mint an access + refresh assertion pair from an ambient Grafana session.
+
+        Validate the ambient session cookie value against Grafana and mint a SEP
+        token pair, mirroring the password grant without a fresh ``login()`` --
+        the caller already holds the cookie off the incoming request.
+
+        :param session: The ambient Grafana session cookie value off the request.
+        :return: A minted ``OAuthToken`` on a valid session, or ``None`` when
+            Grafana rejects the session (HTTP 401) so the caller falls back to the
+            login form.
+        :raises HTTPException: For a non-401 upstream error (5xx or other),
+            including the ``GrafanaException`` raised when Grafana is unreachable.
+        """
+        grafana = _active_grafana_sdk()
+        try:
+            record = cast(_GrafanaUserRecord, await grafana.get_current_user(session))
+            orgs = await grafana.get_current_user_orgs(session)
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+                return None
+            raise
         user = GrafanaUser._from_grafana_record(record, orgs)
         return GrafanaUser._oauth_token_for(user, grafana)
 

@@ -130,6 +130,32 @@ describe('SettingRow', () => {
     expect(screen.queryByRole('button', { name: 'Reset to default' })).not.toBeInTheDocument();
   });
 
+  it('renders a disabled explanation and no Save for a not-applicable setting', () => {
+    renderRow(
+      makeSetting({
+        key: 'AMBIENT_SESSION_SSO_ENABLED',
+        type: 'bool',
+        value: false,
+        is_applicable: false,
+      }),
+    );
+    expect(screen.getByText(/Not applicable with the current auth provider/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  });
+
+  it('renders an editable control for an applicable hot bool', () => {
+    renderRow(
+      makeSetting({
+        key: 'AMBIENT_SESSION_SSO_ENABLED',
+        type: 'bool',
+        value: false,
+        is_applicable: true,
+      }),
+    );
+    expect(screen.queryByText(/Not applicable/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+  });
+
   it('shows a read-only note (not a duplicated value) for complex fields', () => {
     renderRow(
       makeSetting({

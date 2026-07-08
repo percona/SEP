@@ -17,7 +17,7 @@
 
 __all__ = ["build_settings_router", "collect_class_setting_responses"]
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, params, Request, status
@@ -76,6 +76,12 @@ ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettings
 #: remote sub-app mounts its settings router at (e.g. ``"/admin/settings"``),
 #: relative to the injected ``RemoteAPI`` client's base URL.
 RemoteClassEntry = tuple[SettingClassEnum, str]
+
+#: Predicate deciding whether a field applies under current runtime state (e.g.
+#: the active auth provider). ``None`` at a router or call site means every field
+#: applies. Display-only: it drives ``SettingResponse.is_applicable`` for the UI
+#: and never blocks PATCH/DELETE.
+ApplicabilityPredicate = Callable[[SettingClassEnum, FieldMetadata], bool]
 
 
 async def _no_remote_api() -> None:
@@ -254,6 +260,7 @@ async def collect_class_setting_responses(
     setting_class: SettingClassEnum,
     settings_cls: type[BaseYamlSettings],
     proxy: OverridableSettingsProxy,
+    applicability: ApplicabilityPredicate | None = None,
 ) -> list[SettingResponse]:
     """Return every LIST-projection entry for one wired settings class.
 
@@ -262,15 +269,12 @@ async def collect_class_setting_responses(
     :func:`dump_field_value` so the key set matches ``GET /settings/``.
 
     :param session: The sub-app's database session.
-    :type session: AsyncSession
     :param setting_class: The settings class identifier (enum member).
-    :type setting_class: SettingClassEnum
     :param settings_cls: The Pydantic settings class to introspect.
-    :type settings_cls: type[BaseYamlSettings]
     :param proxy: The proxy whose attribute access yields current values.
-    :type proxy: OverridableSettingsProxy
+    :param applicability: Optional predicate deciding whether each field applies
+        under current runtime state; ``None`` marks every field applicable.
     :return: One :class:`SettingResponse` per LIST row for the class.
-    :rtype: list[SettingResponse]
     """
     rows = await SettingsOverrideManager.list(
         session, setting_class=setting_class, is_active=True
@@ -285,6 +289,7 @@ async def collect_class_setting_responses(
             proxy=proxy,
             field_meta=field_meta,
             override_keys=override_keys,
+            applicability=applicability,
         )
     ]
 
@@ -296,6 +301,7 @@ def _settings_response_from_field(
     proxy: OverridableSettingsProxy,
     field_meta: FieldMetadata,
     has_override: bool,
+    applicability: ApplicabilityPredicate | None = None,
 ) -> SettingResponse:
     """Build a :class:`SettingResponse` for one field on a settings class.
 
@@ -306,6 +312,8 @@ def _settings_response_from_field(
     :param field_meta: The introspected metadata for the field.
     :param has_override: Whether a ``settingoverride`` row exists for this
         ``(class, key)`` pair.
+    :param applicability: Optional predicate deciding whether the field applies
+        under current runtime state; ``None`` marks the field applicable.
     :return: The structured response for the field.
     """
     if "__" in field_meta.key:
@@ -336,6 +344,11 @@ def _settings_response_from_field(
         is_complex=field_meta.is_complex,
         has_override=has_override,
         is_advanced=field_meta.is_advanced,
+        is_applicable=(
+            applicability(setting_class, field_meta)
+            if applicability is not None
+            else True
+        ),
     )
 
 
@@ -346,6 +359,7 @@ def _field_responses(
     proxy: OverridableSettingsProxy,
     field_meta: FieldMetadata,
     override_keys: set[str],
+    applicability: ApplicabilityPredicate | None = None,
 ) -> list[SettingResponse]:
     """Return one response for a plain field, or one per leaf for a nested parent.
 
@@ -360,6 +374,8 @@ def _field_responses(
     :param proxy: The proxy whose attribute access yields current values.
     :param field_meta: The introspected metadata for the top-level field.
     :param override_keys: The canonical keys (and prefixes) carrying an override.
+    :param applicability: Optional predicate deciding whether each field applies
+        under current runtime state; ``None`` marks every field applicable.
     :return: One or more responses for the field.
     """
     leaves = (
@@ -375,6 +391,7 @@ def _field_responses(
                 proxy=proxy,
                 field_meta=field_meta,
                 has_override=field_meta.key in override_keys,
+                applicability=applicability,
             )
         ]
     responses = []
@@ -389,6 +406,7 @@ def _field_responses(
                 proxy=proxy,
                 field_meta=leaf_meta,
                 has_override=leaf_key in override_keys,
+                applicability=applicability,
             )
         )
     return responses
@@ -638,6 +656,7 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
     mutation_deps: list[params.Depends] | None = None,
     remote_classes: list[RemoteClassEntry] | None = None,
     remote_api_dep: Any = None,
+    applicability: ApplicabilityPredicate | None = None,
 ) -> APIRouter:
     """Build an :class:`APIRouter` exposing the settings CRUD endpoints.
 
@@ -678,6 +697,11 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
         which forwards the caller's Bearer token). Required when ``remote_classes``
         is non-empty; ignored otherwise. Used as the parameter annotation on each
         handler so FastAPI resolves the client per-request.
+    :param applicability: Optional predicate deciding whether each field applies
+        under current runtime state (e.g. the active auth provider). It drives
+        ``SettingResponse.is_applicable`` for the LIST and DETAIL responses;
+        ``None`` (the default) marks every field applicable, so callers that omit
+        it behave exactly as before. Display-only -- it never blocks PATCH/DELETE.
     :return: A configured :class:`APIRouter` ready to mount under a sub-app's
         ``/settings`` prefix.
     """
@@ -727,6 +751,7 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
                 setting_class=setting_class,
                 settings_cls=settings_cls,
                 proxy=proxy,
+                applicability=applicability,
             )
             groups.append(
                 SettingClassGroup(setting_class=setting_class, settings=settings_list)
@@ -772,6 +797,7 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
             proxy=proxy,
             field_meta=field_meta,
             has_override=key in override_keys,
+            applicability=applicability,
         )
 
     @router.patch("/{setting_class}", dependencies=mutation_deps or [])
@@ -832,6 +858,7 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
                 proxy=proxy,
                 field_meta=field_meta_by_key[key],
                 has_override=True,
+                applicability=applicability,
             )
             for key, _ in to_apply
         ]

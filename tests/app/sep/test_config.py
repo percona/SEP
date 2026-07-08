@@ -22,9 +22,11 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
+from app.core.settings_override.registry import is_hot_reloadable
 from app.sep.config import (
     App,
     AppDrainSettings,
+    sep_settings,
     SEPSettings,
     SessionOptions,
     SyncerExtraKwargs,
@@ -59,6 +61,18 @@ class TestSessionRefreshDefault:
         assert settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
         assert settings.SESSION_REFRESH.PATH == "/api/oauth"
         assert settings.SESSION.PATH is None
+
+
+class TestAmbientSessionSSO:
+    """Test the ambient Grafana SSO feature toggle."""
+
+    def test_defaults_to_disabled(self):
+        """Verify ambient SSO is opt-in, reading ``False`` through the proxy."""
+        assert sep_settings.AMBIENT_SESSION_SSO_ENABLED is False
+
+    def test_is_hot_reloadable(self):
+        """Verify the toggle is a hot field, so a DB override can enable it live."""
+        assert is_hot_reloadable(SEPSettings, "AMBIENT_SESSION_SSO_ENABLED")
 
 
 class TestFooterTemplate:

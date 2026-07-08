@@ -36,10 +36,14 @@ class BaseAuthProvider(ABC):
     :cvar user_model: The provider's concrete :class:`BaseUser` subclass.
     :cvar token_payload_model: The provider's concrete :class:`BaseTokenPayload`
         subclass.
+    :cvar supports_ambient_session: Whether the provider can sign a caller in
+        from an ambient session cookie already carried on the request. Defaults
+        to ``False``; a provider that validates such a cookie overrides it.
     """
 
     user_model: ClassVar[type[BaseUser]]
     token_payload_model: ClassVar[type[BaseTokenPayload]]
+    supports_ambient_session: ClassVar[bool] = False
 
     @asynccontextmanager
     async def lifespan(self) -> AsyncGenerator[None, None]:
