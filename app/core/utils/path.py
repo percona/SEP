@@ -18,18 +18,16 @@
 import logging
 from os import PathLike
 from pathlib import Path
+from typing import TypeAlias
 
 from app import BASE_DIR
 
 logger = logging.getLogger(__name__)
 
+PathInput: TypeAlias = str | PathLike[str]
 _PLUGIN_APP_ALIASES = (
     ("/app/sep/plugins/", "/app/sep/apps/"),
     ("/app/sep/apps/", "/app/sep/plugins/"),
-PathInput: TypeAlias = str | PathLike[str]
-_PLUGIN_APP_ALIASES = (
-("/app/sep/plugins/", "/app/sep/apps/"),
-("/app/sep/apps/", "/app/sep/plugins/"),
 )
 
 
