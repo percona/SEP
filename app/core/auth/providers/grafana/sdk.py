@@ -57,6 +57,8 @@ class GrafanaSDK(RemoteAPI):
     header: the human-login flow authenticates via Grafana's session cookie,
     while the programmatic calls inject the service-account bearer per request.
 
+    :cvar SESSION_COOKIE_NAME: The ``grafana_session`` cookie Grafana sets on a
+        successful password login.
     :param endpoint: The base URL for the Grafana API endpoint.
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :param service_account_token: The Grafana service-account token used as a
@@ -67,8 +69,6 @@ class GrafanaSDK(RemoteAPI):
         (the SPA's ``HttpOnly`` refresh cookie). Defaults to 7 days.
     :param error_detail_key: The key Grafana uses for error details. Defaults to
         "message".
-    :cvar SESSION_COOKIE_NAME: The ``grafana_session`` cookie Grafana sets on a
-        successful password login.
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
