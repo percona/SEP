@@ -63,7 +63,7 @@ def _backup_write(**overrides: object) -> BackupTaskWrite:
 
 
 class TestParseBackupPriority:
-    """Tests for the shared ``parse_backup_priority`` helper."""
+    """Cover the shared ``parse_backup_priority`` helper."""
 
     def test_parses_block_mapping_to_floats(self) -> None:
         """Return a node -> float mapping from a valid block mapping."""
@@ -120,7 +120,7 @@ class TestParseBackupPriority:
 
 
 class TestBackupPriorityValidation:
-    """Tests that both create models validate the Node Priority YAML."""
+    """Validate that both create models enforce Node Priority YAML checks."""
 
     @pytest.mark.parametrize("factory", [_backup_create, _backup_write])
     def test_accepts_valid_block_mapping(self, factory) -> None:

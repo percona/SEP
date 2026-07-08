@@ -99,8 +99,8 @@ def parse_backup_priority(priority_str: str) -> dict[str, float]:
 
     :param priority_str: Raw YAML from the Node Priority field.
     :return: Mapping of node address to numeric priority.
-    :raises ValueError: On invalid YAML, a non-mapping result, or a non-numeric
-        priority value.
+    :raises ValueError: On invalid YAML, a non-mapping result, an empty mapping,
+        or a non-numeric priority value.
     """
     try:
         parsed = yaml.safe_load(priority_str)
@@ -115,7 +115,7 @@ def parse_backup_priority(priority_str: str) -> dict[str, float]:
         # A present-but-empty mapping would be dropped as falsy in the spec builder;
         # reject it so a present field always takes effect.
         raise ValueError("Node priority mapping is empty; provide at least one node")
-    result: dict[str, float] = {}
+    result = {}
     for node, value in parsed.items():
         # Reject booleans explicitly — they would otherwise coerce to 1.0 / 0.0.
         if isinstance(value, bool) or not isinstance(value, int | float):
@@ -137,8 +137,8 @@ def _validate_priority_yaml(value: str) -> str:
     return value
 
 
+# A non-empty Node Priority YAML string, validated as a node -> number mapping.
 BackupPriorityYaml = Annotated[NonEmptyStr, AfterValidator(_validate_priority_yaml)]
-"""A non-empty Node Priority YAML string, validated as a node -> number mapping."""
 
 
 class BackupConfigPITR(BaseCaseInsensitiveModel):

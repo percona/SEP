@@ -58,12 +58,10 @@ def test_pbm_backups_create_rejects_malformed_priority_yaml(
     backup_create: BackupCreate,
     mongo_service: CreatedService,
 ):
-    """POST /backup_mongo/ rejects malformed Node Priority YAML without creating tasks.
+    """Reject malformed Node Priority YAML without creating tasks.
 
     The legacy Jinja path surfaces validation errors as a flash message + 303 redirect
-    (see the app-wide ``RequestValidationError`` handler), not a raw 422. The fix is that
-    the malformed priority is *rejected* — no task is created — rather than silently
-    dropped as it was before.
+    (see the app-wide ``RequestValidationError`` handler), not a raw 422.
     """
     mock_inventory_api_dep.get = AsyncMock(return_value=mongo_service.model_dump())
     data = backup_create.model_dump(exclude_none=True)
