@@ -16,6 +16,9 @@
 """Define models for the Backups plugin."""
 
 from enum import StrEnum
+from typing import Annotated
+
+from pydantic import StringConstraints
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
@@ -32,6 +35,17 @@ class PgBackRestBackupType(EnumFieldMixin, StrEnum):
 
     INCR = "incr"
     DIFF = "diff"
+
+
+SafeStanza = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$",
+    ),
+]
+"""Define a safe pgBackRest stanza name."""
 
 
 class BackupConfigAll(BaseCaseInsensitiveModel):
@@ -77,6 +91,7 @@ class BackupCreate(BackupConfigAll):
     hostname: NonEmptyStr
     service_id: int
     backup_type: BackupType
+    stanza: SafeStanza
     alert_on_fail: bool = False
 
 
