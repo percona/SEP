@@ -17,19 +17,33 @@
 
 __all__ = ["anonymize_text"]
 
+import functools
 import threading
-from typing import Any
-
-from presidio_analyzer import AnalyzerEngine
-from presidio_analyzer.nlp_engine import NlpEngine, NlpEngineProvider
-from presidio_anonymizer import AnonymizerEngine, OperatorConfig
+from typing import Any, TYPE_CHECKING
 
 from app.tasks.anonymizer.config import anonymizer_settings
 from app.tasks.anonymizer.entities import PIIEntity
 
-ANONYMIZER_OPERATORS = {
-    "DEFAULT": OperatorConfig("replace", {}),
-}
+if TYPE_CHECKING:
+    from presidio_analyzer import AnalyzerEngine
+    from presidio_analyzer.nlp_engine import NlpEngine
+    from presidio_anonymizer import AnonymizerEngine, OperatorConfig
+
+
+@functools.cache
+def _anonymizer_operators() -> dict[str, "OperatorConfig"]:
+    """Build the Presidio anonymizer operator config.
+
+    The ``presidio_anonymizer`` import is deferred to first call so it stays off
+    the module-import path that the backend and Celery worker pay on every
+    startup, even when no text is ever anonymized.
+
+    :return: The operator configuration mapping used by the anonymizer engine.
+    :rtype: dict[str, OperatorConfig]
+    """
+    from presidio_anonymizer import OperatorConfig
+
+    return {"DEFAULT": OperatorConfig("replace", {})}
 
 
 class PresidioEngineManager:
@@ -42,7 +56,7 @@ class PresidioEngineManager:
         self._engine_lock = threading.RLock()
 
     @property
-    def nlp_engine(self) -> NlpEngine:
+    def nlp_engine(self) -> "NlpEngine":
         """Initialize and return the NLP engine.
 
         This property initializes the NLP engine if it hasn't been created yet,
@@ -55,6 +69,8 @@ class PresidioEngineManager:
         if self._nlp_engine is None:
             with self._engine_lock:
                 if self._nlp_engine is None:
+                    from presidio_analyzer.nlp_engine import NlpEngineProvider
+
                     nlp_provider = NlpEngineProvider(
                         nlp_configuration=self._build_nlp_config()
                     )
@@ -62,7 +78,7 @@ class PresidioEngineManager:
         return self._nlp_engine
 
     @property
-    def analyzer(self) -> AnalyzerEngine:
+    def analyzer(self) -> "AnalyzerEngine":
         """Initialize and return the Analyzer engine.
 
         This property initializes the Analyzer engine if it hasn't been created yet,
@@ -75,6 +91,8 @@ class PresidioEngineManager:
         if self._analyzer_engine is None:
             with self._engine_lock:
                 if self._analyzer_engine is None:
+                    from presidio_analyzer import AnalyzerEngine
+
                     self._analyzer_engine = AnalyzerEngine(
                         nlp_engine=self.nlp_engine,
                         supported_languages=list(anonymizer_settings.NLP_MODELS),
@@ -82,7 +100,7 @@ class PresidioEngineManager:
         return self._analyzer_engine
 
     @property
-    def anonymizer(self) -> AnonymizerEngine:
+    def anonymizer(self) -> "AnonymizerEngine":
         """Initialize and return the Anonymizer engine.
 
         This property initializes the Anonymizer engine if it hasn't been created yet.
@@ -94,6 +112,8 @@ class PresidioEngineManager:
         if self._anonymizer_engine is None:
             with self._engine_lock:
                 if self._anonymizer_engine is None:
+                    from presidio_anonymizer import AnonymizerEngine
+
                     self._anonymizer_engine = AnonymizerEngine()
         return self._anonymizer_engine
 
@@ -144,7 +164,7 @@ def anonymize_text(
         )
         if results:
             anonymized_result = engine_manager.anonymizer.anonymize(
-                text, results, ANONYMIZER_OPERATORS
+                text, results, _anonymizer_operators()
             )
             return anonymized_result.text
     return text
