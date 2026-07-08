@@ -37,7 +37,6 @@ from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.sep.deps import (
     ExecutorHostsCtx,
     get_username_mapping,
-    IsApiAuthenticated,
     TaskAPI,
 )
 from app.tasks.models import TaskBackendEnum, TaskResponse
@@ -46,7 +45,7 @@ router = APIRouter(tags=["Task Manager"])
 schema_endpoint(router=router, plugin_schema=TASKS_PLUGIN_SCHEMA)
 
 
-@router.get("/", dependencies=[IsApiAuthenticated])
+@router.get("/")
 async def tasks_api_list(tasks_api: TaskAPI) -> list[TaskListResponse]:
     """List task definitions for the read-only plugin UI.
 
@@ -73,10 +72,7 @@ async def tasks_api_list(tasks_api: TaskAPI) -> list[TaskListResponse]:
     ]
 
 
-@router.get(
-    "/{task_name}",
-    dependencies=[IsApiAuthenticated],
-)
+@router.get("/{task_name}")
 async def tasks_api_detail(
     task: TaskDep,
     tasks_api: TaskAPI,

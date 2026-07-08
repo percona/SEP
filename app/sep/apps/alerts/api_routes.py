@@ -17,8 +17,9 @@
 
 Mounted at ``/api/apps/alerts/`` via ``apps_router`` in
 ``app/sep/api/router.py`` through the ``api_routes.py`` convention validator
-in ``app/sep/config.py``. Each route redeclares ``IsApiAuthenticated`` so the
-OpenAPI surface is explicit and survives changes to the parent router.
+in ``app/sep/config.py``. Authentication is enforced at the ``api_router``
+mount level (``IsApiAuthenticated``) and by ``RequireBearerForUnsafeMethods``
+on the ``apps_router``.
 
 Route layout:
 
@@ -77,13 +78,13 @@ from app.sep.apps.alerts.schemas import (
     RestoreRequest,
     RestoreResponse,
 )
-from app.sep.deps import IsApiAuthenticated, SessionDep
+from app.sep.deps import SessionDep
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/", dependencies=[IsApiAuthenticated])
+@router.get("/")
 async def alerts_api_index(
     alert_templates: AlertTemplatesDep,
     present_names: PMMPresentNamesDep,
@@ -152,7 +153,7 @@ async def alerts_api_index(
     )
 
 
-@router.get("/backups", dependencies=[IsApiAuthenticated])
+@router.get("/backups")
 async def alerts_api_list_backups(
     session: SessionDep,
     pagination: AlertsBackupsPaginationDep,
@@ -179,7 +180,7 @@ async def alerts_api_list_backups(
     return PaginatedResponse.from_pagination(items, page.total, pagination)
 
 
-@router.get("/backups/{backup_id}", dependencies=[IsApiAuthenticated])
+@router.get("/backups/{backup_id}")
 async def alerts_api_get_backup(session: SessionDep, backup_id: int) -> BackupDetail:
     """Return a categorised view of a single backup.
 
@@ -218,7 +219,7 @@ async def alerts_api_get_backup(session: SessionDep, backup_id: int) -> BackupDe
     )
 
 
-@router.post("/restore", dependencies=[IsApiAuthenticated])
+@router.post("/restore")
 async def alerts_api_restore(
     payload: RestoreRequest,
     pmm_api: RequiredPMMAPIDep,
@@ -252,7 +253,7 @@ async def alerts_api_restore(
     return RestoreResponse(status="success", details=details)
 
 
-@router.post("/pagerduty", dependencies=[IsApiAuthenticated])
+@router.post("/pagerduty")
 async def alerts_api_pagerduty_save(
     payload: PagerDutyRequest,
     pmm_api: RequiredPMMAPIDep,
@@ -299,7 +300,7 @@ async def alerts_api_pagerduty_save(
     return response
 
 
-@router.post("/pagerduty/delete", dependencies=[IsApiAuthenticated])
+@router.post("/pagerduty/delete")
 async def alerts_api_pagerduty_delete(
     pmm_api: RequiredPMMAPIDep,
 ) -> PagerDutyResponse:
@@ -339,7 +340,7 @@ async def alerts_api_pagerduty_delete(
     return PagerDutyResponse(status="deleted")
 
 
-@router.post("/push", dependencies=[IsApiAuthenticated])
+@router.post("/push")
 async def alerts_api_push(
     payload: PushRequest,
     pmm_api: RequiredPMMAPIDep,
