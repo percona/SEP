@@ -66,7 +66,7 @@
 | app/core/utils/iterators.py                                                                                     |       18 |        0 |        6 |        0 |    100% |           |
 | app/core/utils/lazy.py                                                                                          |       31 |        0 |        4 |        0 |    100% |           |
 | app/core/utils/openapi.py                                                                                       |      129 |        6 |       82 |        8 |     91% |73-\>75, 78-79, 155, 157-\>156, 162-163, 206-\>208, 225-\>224, 242 |
-| app/core/utils/path.py                                                                                          |       36 |        0 |       14 |        0 |    100% |           |
+| app/core/utils/path.py                                                                                          |       40 |        0 |       14 |        0 |    100% |           |
 | app/core/utils/pydantic.py                                                                                      |       59 |        0 |       20 |        0 |    100% |           |
 | app/core/utils/serialization.py                                                                                 |        7 |        0 |        0 |        0 |    100% |           |
 | app/core/utils/strings.py                                                                                       |       24 |        3 |        4 |        1 |     79% |     64-69 |
@@ -122,7 +122,7 @@
 | app/sep/apps/alerts/schemas.py                                                                                  |       25 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/alters/api\_routes.py                                                                              |       61 |        8 |        4 |        1 |     86% |81, 98, 143-148, 191-194, 201-206 |
 | app/sep/apps/alters/app.py                                                                                      |        4 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/alters/deps.py                                                                                     |      263 |       10 |       68 |       10 |     94% |209, 257-\>269, 263-\>262, 267-\>262, 491, 558-559, 643, 666-667, 815, 826, 828, 864-\>868 |
+| app/sep/apps/alters/deps.py                                                                                     |      261 |       10 |       68 |       10 |     94% |208, 256-\>268, 262-\>261, 266-\>261, 489, 556-557, 641, 664-665, 813, 824, 826, 862-\>866 |
 | app/sep/apps/alters/form\_backfill.py                                                                           |       29 |        1 |       10 |        1 |     95% |        98 |
 | app/sep/apps/alters/models.py                                                                                   |       52 |        1 |        8 |        1 |     97% |       135 |
 | app/sep/apps/alters/pre\_checks.py                                                                              |      236 |      236 |       72 |        0 |      0% |    27-638 |
@@ -138,7 +138,7 @@
 | app/sep/apps/archives/models.py                                                                                 |       79 |        0 |        6 |        0 |    100% |           |
 | app/sep/apps/archives/payload                                                                                   |      195 |      135 |       60 |        2 |     28% |44-235, 240-246, 295, 300-309, 385-400, 405-409, 413 |
 | app/sep/apps/archives/routes.py                                                                                 |       91 |        3 |       16 |        5 |     93% |136-\>138, 143, 145, 147, 150-\>152 |
-| app/sep/apps/archives/spec.py                                                                                   |       57 |        2 |       24 |        4 |     93% |107, 134, 157-\>165, 179-\>186 |
+| app/sep/apps/archives/spec.py                                                                                   |       55 |        2 |       24 |        4 |     92% |106, 133, 156-\>164, 178-\>185 |
 | app/sep/apps/archives/views.py                                                                                  |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/atw/api\_routes.py                                                                                 |       42 |        0 |       14 |        1 |     98% | 111-\>121 |
 | app/sep/apps/atw/app.py                                                                                         |        4 |        0 |        0 |        0 |    100% |           |
@@ -153,18 +153,18 @@
 | app/sep/apps/backup\_mongo/restore/models.py                                                                    |      148 |        7 |       20 |        5 |     93% |60-62, 64, 67-71, 269-\>273, 295-\>297, 560 |
 | app/sep/apps/backup\_mongo/restore/routes.py                                                                    |      140 |       36 |       18 |        9 |     72% |71-72, 80-81, 106-111, 121-126, 143-144, 147-152, 173, 196, 214, 245-246, 252, 289-290, 295-296, 321-322, 352-361, 400-402 |
 | app/sep/apps/backup\_mongo/restore/schema.py                                                                    |        4 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/backup\_mongo/restore/spec.py                                                                      |       32 |        0 |        0 |        0 |    100% |           |
+| app/sep/apps/backup\_mongo/restore/spec.py                                                                      |       31 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/backup\_mongo/restore/views.py                                                                     |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/backup\_mongo/routes.py                                                                            |       83 |       35 |        2 |        0 |     56% |66, 147-208, 229-238, 252-255 |
 | app/sep/apps/backup\_mongo/schema.py                                                                            |        6 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/backup\_mongo/spec.py                                                                              |       63 |       17 |       24 |        7 |     66% |87-\>90, 102-115, 143-145, 147-\>150, 151, 154, 159, 161-\>166 |
+| app/sep/apps/backup\_mongo/spec.py                                                                              |       61 |       17 |       24 |        7 |     65% |86-\>89, 101-114, 142-144, 146-\>149, 150, 153, 158, 160-\>165 |
 | app/sep/apps/backup\_mongo/views.py                                                                             |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/backup\_pg/app.py                                                                                  |       12 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/backup\_pg/deps.py                                                                                 |       75 |        7 |       10 |        1 |     91% |118-119, 122, 156-158, 276 |
 | app/sep/apps/backup\_pg/form\_backfill.py                                                                       |       44 |        4 |       16 |        4 |     87% |43-\>56, 46-47, 48-\>56, 50-\>56, 52-\>56, 84-85 |
 | app/sep/apps/backup\_pg/models.py                                                                               |       50 |        1 |        2 |        1 |     96% |       224 |
 | app/sep/apps/backup\_pg/routes.py                                                                               |       62 |        0 |        0 |        0 |    100% |           |
-| app/sep/apps/backup\_pg/spec.py                                                                                 |       13 |        0 |        0 |        0 |    100% |           |
+| app/sep/apps/backup\_pg/spec.py                                                                                 |       11 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/backup\_pg/views.py                                                                                |        4 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/checksums/app.py                                                                                   |       11 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/checksums/deps.py                                                                                  |       88 |       35 |       26 |        3 |     53% |73-74, 76-77, 97-135, 336-338, 355-360, 450 |
@@ -223,10 +223,10 @@
 | app/sep/apps/mysql\_backups/restore/form\_backfill.py                                                           |       53 |        3 |       18 |        1 |     94% |126-127, 140 |
 | app/sep/apps/mysql\_backups/restore/models.py                                                                   |      140 |        2 |       14 |        2 |     97% |   51, 451 |
 | app/sep/apps/mysql\_backups/restore/routes.py                                                                   |       66 |        8 |        0 |        0 |     88% |147-148, 177-186, 223-225 |
-| app/sep/apps/mysql\_backups/restore/spec.py                                                                     |       36 |        1 |        8 |        1 |     95% |       103 |
+| app/sep/apps/mysql\_backups/restore/spec.py                                                                     |       34 |        1 |        8 |        1 |     95% |       102 |
 | app/sep/apps/mysql\_backups/restore/views.py                                                                    |        5 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/routes.py                                                                           |       75 |        6 |        0 |        0 |     92% |74, 182-183, 236-241 |
-| app/sep/apps/mysql\_backups/spec.py                                                                             |       26 |        0 |        8 |        0 |    100% |           |
+| app/sep/apps/mysql\_backups/spec.py                                                                             |       24 |        0 |        8 |        0 |    100% |           |
 | app/sep/apps/mysql\_backups/views.py                                                                            |        5 |        0 |        0 |        0 |    100% |           |
 | app/sep/apps/report/api\_routes.py                                                                              |       68 |        2 |       18 |        3 |     94% |80, 86-\>90, 195-\>197, 231 |
 | app/sep/apps/report/app.py                                                                                      |        4 |        0 |        0 |        0 |    100% |           |
@@ -304,7 +304,7 @@
 | app/sep/sync/models.py                                                                                          |      368 |       42 |      100 |       20 |     85% |81-90, 102-\>104, 104-\>106, 125, 131-\>133, 134-\>136, 195-\>201, 273-275, 304-\>302, 336, 396-397, 544, 592, 698-\>exit, 716, 730, 750-751, 786-\>exit, 831, 845, 867-868, 904-\>exit, 949, 962, 986-988, 1021-\>exit, 1130-\>exit, 1169, 1313-1315, 1422-1424, 1429-1435, 1439 |
 | app/sep/sync/syncers/mysql/payload.py                                                                           |      175 |       47 |       54 |        5 |     69% |156-\>164, 240-244, 249-254, 267-273, 277-300, 354-\>370, 373, 394-402, 421 |
 | app/sep/sync/syncers/mysql/syncer.py                                                                            |      222 |        1 |       86 |        7 |     97% |112, 268-\>270, 272-\>274, 586-\>594, 595-\>599, 676-\>687, 762-\>766 |
-| app/sep/sync/syncers/pmm.py                                                                                     |       85 |       19 |       28 |        6 |     71% |78-82, 102-105, 116, 171-179, 226-\>228, 228-\>224, 231-247, 286-289 |
+| app/sep/sync/syncers/pmm.py                                                                                     |       85 |       18 |       28 |        6 |     72% |78-82, 102-105, 116, 171-179, 227, 228-\>224, 231-247, 285-\>290 |
 | app/sep/sync/syncers/system\_facts/payload.py                                                                   |      235 |       19 |       78 |       12 |     90% |52-\>58, 147-148, 176, 222-224, 231, 233-\>229, 244-251, 261-\>263, 263-\>265, 265-\>267, 282-284, 290-292, 316, 415-\>417, 417-\>419, 522, 533 |
 | app/sep/sync/syncers/system\_facts/syncer.py                                                                    |      118 |        7 |       28 |        3 |     93% |104, 169-170, 245, 256-\>254, 310-311, 350 |
 | app/sep/tasks.py                                                                                                |       31 |        0 |       12 |        1 |     98% |   69-\>84 |
@@ -385,7 +385,7 @@
 | app/tasks/periodic/routes.py                                                                                    |       56 |        4 |       12 |        3 |     90% |64-68, 111-\>113, 133-136 |
 | app/tasks/routes.py                                                                                             |      227 |       28 |       44 |        2 |     87% |139-143, 200, 221-227, 260, 316, 323, 367-368, 396, 436, 455, 595, 619, 632-633, 641-644, 667, 674, 680, 696-697 |
 | app/tasks/settings/routes.py                                                                                    |       11 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                       | **24336** | **2703** | **5732** |  **583** | **87%** |           |
+| **TOTAL**                                                                                                       | **24327** | **2702** | **5732** |  **583** | **87%** |           |
 
 
 ## Setup coverage badge
