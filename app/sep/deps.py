@@ -32,7 +32,9 @@ from app import __summary__, __version__
 from app.api.deps import get_current_user as get_current_user_api
 from app.api.deps import oauth2_scheme
 from app.core.alerts.config import alert_settings
+from app.core.auth import config as auth_config
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
+from app.core.auth.models import OAuthToken
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
@@ -335,6 +337,34 @@ async def redirect_if_user_is_authenticated(request: Request) -> None:
 
 
 IsNotAuthenticated = Depends(redirect_if_user_is_authenticated)
+
+
+async def resolve_ambient_session_token(request: Request) -> OAuthToken | None:
+    """Resolve an ambient provider session on the request into a SEP token pair.
+
+    A no-op (``None``) unless ambient SSO is enabled and the active auth provider
+    supports ambient sessions. Operational or upstream failures are logged and
+    swallowed so auto-login degrades silently to the login form; a rejected
+    session (upstream 401) likewise resolves to ``None`` in the provider.
+
+    :param request: The incoming request, whose provider session cookie carries
+        the ambient session.
+    :return: A minted ``OAuthToken`` on a valid ambient session, else ``None``.
+    """
+    if not sep_settings.AMBIENT_SESSION_SSO_ENABLED:
+        return None
+    provider = auth_config.get_active_auth_provider()
+    if not provider.supports_ambient_session:
+        return None
+    try:
+        return await provider.resolve_ambient_session(request.cookies)
+    except HTTPException:
+        logger.warning(
+            "Ambient auto-login failed (upstream/operational); "
+            "falling back to the login form.",
+            exc_info=True,
+        )
+        return None
 
 
 async def validate_csrf(request: Request) -> None:

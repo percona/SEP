@@ -30,7 +30,9 @@ from app.core.auth.exceptions import (
     HTTPForbiddenException,
     HTTPUnauthorizedException,
 )
+from app.core.auth.models import OAuthToken
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.grafana.sdk import GrafanaException
 from app.core.exceptions import (
     HTTPConflictException,
     HTTPNotFoundException,
@@ -73,6 +75,7 @@ from app.sep.deps import (
     require_app_enabled,
     require_bearer_for_unsafe_methods,
     require_pmm_api,
+    resolve_ambient_session_token,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
@@ -119,6 +122,69 @@ def _make_request(method: str = "GET", authorization: str | None = None) -> Requ
     req = Request(scope)
     req.state.messages = OrderedDict()
     return req
+
+
+class TestResolveAmbientSessionToken:
+    """Test ``resolve_ambient_session_token`` gating and silent-fallback behavior."""
+
+    @staticmethod
+    def _request(cookies: dict[str, str] | None = None) -> Request:
+        """Build a minimal GET request carrying ``cookies`` in the Cookie header."""
+        headers = []
+        if cookies:
+            joined = "; ".join(f"{name}={value}" for name, value in cookies.items())
+            headers.append((b"cookie", joined.encode()))
+        return Request(
+            {"type": "http", "headers": headers, "method": "GET", "path": "/"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_none_when_toggle_disabled(self, grafana_mock) -> None:
+        """Assert the helper no-ops when the toggle is off, even under Grafana."""
+        request = self._request({"grafana_session": "s"})
+        assert await resolve_ambient_session_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_provider_not_grafana(self, mocker) -> None:
+        """Assert a non-Grafana active provider yields ``None`` (AC #7)."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request({"grafana_session": "s"})
+        assert await resolve_ambient_session_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_cookie_absent(self, grafana_mock, mocker) -> None:
+        """Assert an absent session cookie yields ``None``."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request()
+        assert await resolve_ambient_session_token(request) is None
+
+    @pytest.mark.asyncio
+    async def test_returns_token_on_happy_path(
+        self, grafana_mock, grafana_user_record, mocker
+    ) -> None:
+        """Assert a valid ambient session mints a token pair through the real model."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        request = self._request({"grafana_session": "ambient"})
+
+        token = await resolve_ambient_session_token(request)
+
+        assert isinstance(token, OAuthToken)
+        assert token.access_token
+        assert token.refresh_token
+        grafana_mock.get_current_user.assert_awaited_once_with("ambient")
+
+    @pytest.mark.asyncio
+    async def test_operational_failure_logs_and_returns_none(
+        self, grafana_mock, mocker
+    ) -> None:
+        """Assert an operational upstream failure logs a warning and falls back to ``None``."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        grafana_mock.get_current_user.side_effect = GrafanaException()
+        warning = mocker.patch("app.sep.deps.logger.warning")
+        request = self._request({"grafana_session": "s"})
+
+        assert await resolve_ambient_session_token(request) is None
+        warning.assert_called_once()
 
 
 class TestGetBaseUrl:

@@ -7754,39 +7754,32 @@ export interface components {
      * @description Represent a single setting's metadata and current value.
      *
      *     :param setting_class: The settings class the field belongs to.
-     *     :type setting_class: SettingClassEnum
      *     :param key: The field name on the settings class.
-     *     :type key: str
      *     :param key_path: Carry the canonical key segments for ``key`` such that
      *         ``"__".join(key_path) == key``.
-     *     :type key_path: list[str]
      *     :param value: The current value visible through the proxy, dumped to a
      *         JSON-safe shape via the field's annotation. ``SecretStr`` fields are
      *         redacted to ``"**********"``.
-     *     :type value: Any
      *     :param default_value: The field's declared default value, dumped via the
      *         same JSON serialiser. ``None`` when no default exists.
-     *     :type default_value: Any
      *     :param type: A human-readable representation of the field's declared
      *         annotation (for operator visibility; validation uses the actual
      *         ``FieldInfo``).
-     *     :type type: str
      *     :param reload: The reload classification (HOT or NOT_OVERRIDABLE).
-     *     :type reload: ReloadClassification
      *     :param description: The field's free-text description, or ``None``.
-     *     :type description: str | None
      *     :param is_secret: Whether the field's annotation contains a Pydantic secret
      *         (``SecretStr`` / ``SecretBytes``) at any depth.
-     *     :type is_secret: bool
      *     :param is_complex: Whether the field's annotation is or contains a Pydantic
      *         ``BaseModel`` subclass (true for nested submodels).
-     *     :type is_complex: bool
      *     :param has_override: Whether a row exists in the ``settingoverride`` table
      *         for this ``(setting_class, key)`` pair, regardless of ``is_active``.
-     *     :type has_override: bool
      *     :param is_advanced: Whether the setting is flagged ``advanced`` so the UI can
      *         present it separately from everyday settings. Display-only:
      *         it does not affect PATCH/DELETE eligibility.
+     *     :param is_applicable: Whether the setting applies under current runtime state
+     *         (e.g. the active auth provider). ``False`` lets the UI present the field
+     *         as inert. Display-only, like ``is_advanced``: it does not block
+     *         PATCH/DELETE server-side; the runtime gate is the real enforcement.
      */
     SettingResponse: {
       /** Default Value */
@@ -7800,6 +7793,11 @@ export interface components {
        * @default false
        */
       is_advanced: boolean;
+      /**
+       * Is Applicable
+       * @default true
+       */
+      is_applicable: boolean;
       /** Is Complex */
       is_complex: boolean;
       /** Is Secret */

@@ -132,6 +132,37 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/oauth/session': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Spa Session Login
+     * @description Authenticate the SPA from an ambient Grafana session cookie.
+     *
+     *     Read the ambient Grafana session cookie off the request, validate it against
+     *     Grafana, set the ``HttpOnly`` refresh cookie scoped to ``/api/oauth``, and
+     *     return the slim access assertion in JSON. A ``401`` (no valid ambient
+     *     session) tells the SPA to show its login screen.
+     *
+     *     :param request: The incoming request, carrying the ambient Grafana session
+     *         cookie.
+     *     :param response: The HTTP response on which to set the refresh cookie.
+     *     :return: The slim OAuth token response for the SPA.
+     *     :raises HTTPUnauthorizedException: If there is no valid ambient session.
+     */
+    post: operations['oauth_spa_session_login_api_oauth_session_post'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/oauth/token': {
     parameters: {
       query?: never;
@@ -549,6 +580,26 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['HTTPValidationError'];
+        };
+      };
+    };
+  };
+  oauth_spa_session_login_api_oauth_session_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SPAOAuthTokenResponse'];
         };
       };
     };
