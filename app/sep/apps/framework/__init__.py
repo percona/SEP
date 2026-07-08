@@ -110,7 +110,9 @@ from app.sep.apps.framework.spec import (
 )
 from app.sep.apps.framework.task_status import (
     batch_get_latest_statuses,
+    extract_latest_history,
     extract_latest_task_status,
+    get_task_latest_history,
     get_task_latest_status,
 )
 
@@ -185,8 +187,10 @@ __all__ = [
     "derive_create_response_model",
     "derive_form_sections",
     "evaluate_conditional_rules",
+    "extract_latest_history",
     "extract_latest_task_status",
     "falsy",
+    "get_task_latest_history",
     "get_task_latest_status",
     "make_task_dep",
     "maybe_record_connectivity_warning",

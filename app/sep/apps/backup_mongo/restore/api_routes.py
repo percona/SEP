@@ -48,7 +48,7 @@ from app.sep.apps.backup_mongo.restore.models import (
     RestoreTaskDetailResponse,
     RestoreTaskResponse,
 )
-from app.sep.apps.framework import get_task_latest_status
+from app.sep.apps.framework import get_task_latest_history
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -134,8 +134,10 @@ async def restore_mongo_api_update(
         form,
         inventory_api,
     )
-    task_status = await get_task_latest_status(tasks_api, updated_task.name)
-    return build_restore_mongo_api_task_response(updated_task, status=task_status)
+    latest = await get_task_latest_history(tasks_api, updated_task.name)
+    return build_restore_mongo_api_task_response(
+        updated_task, status=latest.status, last_executed_at=latest.finished_at
+    )
 
 
 @router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)

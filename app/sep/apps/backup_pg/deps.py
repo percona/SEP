@@ -16,6 +16,7 @@
 """Define dependencies for the Backups plugin."""
 
 import logging
+from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
@@ -159,6 +160,7 @@ def build_backup_pg_api_task_response(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
     server_config: dict[str, Any] | None = None,
 ) -> BackupTaskResponse:
     """Build a backup_pg task response for the JSON API.
@@ -167,6 +169,8 @@ def build_backup_pg_api_task_response(
     :type task: Task
     :param status: The latest known execution status for the task.
     :type status: TaskHistoryStatusEnum | None
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :param server_config: Pre-parsed first ``SERVER_LIST`` entry. When ``None``
         (the default) the YAML config is parsed here; callers that already
         parsed it can pass it through to avoid a second ``yaml.safe_load``.
@@ -182,6 +186,7 @@ def build_backup_pg_api_task_response(
         BackupTaskResponse,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "hostname": meta.get("target"),
             "backup_type": backup_type,
@@ -194,22 +199,28 @@ def build_backup_pg_api_detail_response(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
 ) -> BackupTaskDetailResponse:
     """Build a backup_pg task detail response for the JSON API.
 
-    The latest status is supplied by the framework's detail/create pipeline
-    rather than fetched here, so this builder stays a sync
-    ``(task, *, status) -> BackupTaskDetailResponse`` consumed directly by the
-    derived detail, create, and update routes.
+    The latest status and finish time are supplied by the framework's
+    detail/create pipeline rather than fetched here, so this builder stays a
+    sync ``(task, *, status, last_executed_at) -> BackupTaskDetailResponse``
+    consumed directly by the derived detail, create, and update routes.
 
     :param task: The task to render.
     :param status: The latest known execution status for the task.
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :return: A validated backup_pg task detail API response.
     """
     meta = (task.data or {}).get("meta") or {}
     server_config = _parse_first_server_config(task)
     base = build_backup_pg_api_task_response(
-        task, status=status, server_config=server_config
+        task,
+        status=status,
+        last_executed_at=last_executed_at,
+        server_config=server_config,
     )
     return BackupTaskDetailResponse(
         **base.model_dump(),

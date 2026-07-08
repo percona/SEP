@@ -169,7 +169,14 @@ class TestRestoreMongoApiList:
             raise AssertionError(f"Unexpected list params: {params!r}")
 
         mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
-        mock_task_api_dep.post = AsyncMock(return_value={"parent-restore": "success"})
+        mock_task_api_dep.post = AsyncMock(
+            return_value={
+                "parent-restore": {
+                    "status": "success",
+                    "finished_at": "2026-05-01T12:00:00",
+                }
+            }
+        )
 
         response = test_client.get(f"{API_BASE}/")
 
@@ -181,8 +188,10 @@ class TestRestoreMongoApiList:
         assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
         assert body["items"][0]["name"] == "parent-restore"
         assert body["items"][0]["status"] == "success"
+        assert body["items"][0]["last_executed_at"] == "2026-05-01T12:00:00"
         assert body["items"][1]["name"] == "legacy-self-parent-restore"
         assert body["items"][1]["status"] is None
+        assert body["items"][1]["last_executed_at"] is None
         assert mock_task_api_dep.get.await_count == EXPECTED_RESTORE_PARENT_LIST_GETS
         mock_task_api_dep.post.assert_awaited_once_with(
             "/history/latest",
@@ -214,7 +223,9 @@ class TestRestoreMongoApiList:
 
         mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
         mock_task_api_dep.post = AsyncMock(
-            return_value={"parent-restore-b": "running"},
+            return_value={
+                "parent-restore-b": {"status": "running", "finished_at": None}
+            },
         )
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")

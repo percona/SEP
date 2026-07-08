@@ -15,6 +15,7 @@
 
 """Define dependencies for the Restores plugin."""
 
+from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
@@ -177,11 +178,15 @@ def _extract_restore_config(task: Task) -> tuple[BackupType | None, Any, Any]:
 def build_restore_api_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
+    *,
+    last_executed_at: datetime | None = None,
 ) -> RestoresResponse:
     """Build a ``RestoresResponse`` for the JSON API list/detail routes.
 
     :param task: The restore task retrieved from the Tasks API.
     :param status: The latest known execution status for the task.
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :return: A validated restore task API response object.
     """
     backup_type, host, port = _extract_restore_config(task)
@@ -190,6 +195,7 @@ def build_restore_api_task_response(
         RestoresResponse,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "backup_type": backup_type,
             "host": host,
