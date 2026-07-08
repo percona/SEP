@@ -15,8 +15,6 @@
 
 """Define database operations for AlertBackup."""
 
-from sqlmodel import col
-
 from app.core.db.crud import BaseSQLModelManager
 from app.sep.apps.alerts.models import AlertBackup
 
@@ -26,10 +24,6 @@ class AlertBackupManager(BaseSQLModelManager):
 
     :cvar Model: The SQLModel class this manager is responsible for (``AlertBackup``).
     :vartype Model: type[AlertBackup]
-    :cvar ordering: The default ordering for listing backups, by ``created_at``
-        descending with ``id`` descending as tiebreaker.
-    :vartype ordering: list[ColumnExpressionOrStrLabelArgument]
     """
 
     Model = AlertBackup
-    ordering = [col(AlertBackup.created_at).desc(), col(AlertBackup.id).desc()]

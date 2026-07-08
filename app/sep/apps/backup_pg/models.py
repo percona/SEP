@@ -27,6 +27,7 @@ from pydantic import (
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.core.utils.pydantic import blank_str_values_to_none
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import (
@@ -210,18 +211,8 @@ class BackupPgForm(TaskFormModel):
     @model_validator(mode="before")
     @classmethod
     def _blank_to_none(cls, data: Any) -> Any:
-        """Coerce empty-string submissions to ``None`` before field validation.
-
-        HTML form bodies submit ``""`` for unset optional fields where the JSON
-        API sends ``null``; normalising ``""`` to ``None`` lets this single model
-        validate both the JSON path and the legacy Jinja form path identically (a
-        blank required field still fails as ``None``).
-        """
-        if isinstance(data, dict):
-            return {
-                key: (None if value == "" else value) for key, value in data.items()
-            }
-        return data
+        """Coerce empty-string submissions to ``None`` before field validation."""
+        return blank_str_values_to_none(data)
 
 
 class BackupTaskBase(BaseTaskResponse):

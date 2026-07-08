@@ -15,6 +15,7 @@
 
 """Define the AppSchema for the Inventory plugin."""
 
+from app.core.utils.fields import TCP_PORT_MAX, TCP_PORT_MIN
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.schema import (
     AppEntitySchema,
@@ -100,7 +101,9 @@ _services_entity = AppEntitySchema(
                     required=True,
                     choices=_SERVICE_TYPE_CHOICES,
                 ),
-                IntegerField(name="port", label="Port", ge=1, le=65535),
+                IntegerField(
+                    name="port", label="Port", ge=TCP_PORT_MIN, le=TCP_PORT_MAX
+                ),
                 StringField(name="external_id", label="External ID"),
                 StringField(name="environment", label="Environment"),
                 StringField(name="cluster", label="Cluster"),
