@@ -292,6 +292,11 @@ order-by-type = false
     "T201", # CLI scripts use print() for user-facing output
     "S603", # CLI scripts coordinate git/gh/make subprocesses with literal arg lists
 ]
+"app/sep/apps/framework/pbm_creds_common.py" = [
+    "T201",   # canonical payload preamble prints diagnostics to stderr (as the shipped payloads do)
+    "PTH123", # payload preamble uses builtin open(); no pathlib is available at exec time
+    "BLE001", # payload preamble mirrors a deliberate catch-all credentials-read guard
+]
 "app/sep/sync/syncers/system_facts/payload.py" = [
     "S603", # host-run payload coordinates rpm/dpkg-query with literal arg lists
 ]
