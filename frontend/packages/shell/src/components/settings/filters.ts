@@ -85,7 +85,7 @@ export interface PartitionedSettingsGroups {
 }
 
 /**
- * Split the (already filtered) groups into core and app-owned regions. App-owned
+ * Split the given groups into core and app-owned regions. App-owned
  * groups whose owning app is disabled or not enabled are dropped entirely, so the
  * page never shows settings for apps the admin is not running. Core groups are
  * always kept regardless of any app metadata.

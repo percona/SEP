@@ -36,7 +36,10 @@ const EXPORT_URL = 'http://localhost/api/sep/admin/settings/export';
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;
 
-/** SEP aggregates its local classes and the proxied TasksSettings into one list. */
+/**
+ * SEP aggregates its local classes, the proxied TasksSettings, and app-owned
+ * groups (both enabled and disabled) into one list.
+ */
 const combinedListResponse = {
   groups: [...sepListResponse.groups, ...tasksListResponse.groups, ...appsListResponse.groups],
 };
