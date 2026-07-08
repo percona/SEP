@@ -19,9 +19,12 @@ import { describe, expect, it } from 'vitest';
 import { ICON_BY_KEY } from './appNavConfig';
 
 /**
- * The `NavIcon` vocabulary, mirrored from the backend `app.sep.apps.nav_icons`
- * StrEnum. This copy and `ICON_BY_KEY` are the two halves of one cross-language
- * contract; the assertions below fail if either half drifts.
+ * The `NavIcon` vocabulary, hand-mirrored from the backend
+ * `app.sep.apps.nav_icons` StrEnum. Both this list and `ICON_BY_KEY` are
+ * hand-maintained frontend copies; the assertions below only check that the two
+ * agree with each other, not that either matches the backend enum. A backend key
+ * added to neither still passes, so keeping both in sync with the backend
+ * remains a manual step.
  */
 const NAV_ICON_KEYS = [
   'assignment',
