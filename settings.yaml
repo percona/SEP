@@ -56,51 +56,20 @@ default:
       SAMESITE: lax
       MAX_AGE: 604800
     APPS:
-      - NAME: Inventory
-        MODULE_NAME: inventory
-        URI_PATH: /inventory
-        CSS_CLASS: inventory
+      - MODULE_NAME: inventory
       - MODULE_NAME: snippets
       - MODULE_NAME: atw
-      - NAME: Schema Change
-        MODULE_NAME: alters
-      - NAME: Archive
-        MODULE_NAME: archives
-        URI_PATH: /archives
-        CSS_CLASS: archive
-        NAV_ORDER: 11
+      - MODULE_NAME: alters
+      - MODULE_NAME: archives
       - MODULE_NAME: mysql_backups
       - MODULE_NAME: mysql_backups.restore
-      - NAME: Checksums
-        MODULE_NAME: checksums
-        URI_PATH: /checksums
-        CSS_CLASS: checksums
+      - MODULE_NAME: checksums
       - MODULE_NAME: backup_mongo
-      - NAME: PostgreSQL Backups
-        MODULE_NAME: backup_pg
-        URI_PATH: /backup_pg
-        CSS_CLASS: backup_pg
-        GROUP: backups
-        NAV_ORDER: 10
-      - NAME: Dipper Data Collection
-        MODULE_NAME: dipper
-        URI_PATH: /dipper
-        CSS_CLASS: dipper
-        NAV_ORDER: 12
-      - NAME: Alert Templates
-        MODULE_NAME: alerts
-        URI_PATH: /alerts
-        CSS_CLASS: alerts
-      - NAME: Alert Troubleshooting
-        MODULE_NAME: alert_troubleshooting
-        URI_PATH: /alert-troubleshooting
-        CSS_CLASS: alert-troubleshooting
-        GROUP: alerts
-        NAV_ORDER: 5
-      - NAME: Health & Security Report
-        MODULE_NAME: report
-        URI_PATH: /report
-        CSS_CLASS: report
+      - MODULE_NAME: backup_pg
+      - MODULE_NAME: dipper
+      - MODULE_NAME: alerts
+      - MODULE_NAME: alert_troubleshooting
+      - MODULE_NAME: report
     HEALTH_REPORT:
       # Periodic report generation - empty by default (no automatic generation).
       # Each entry pairs a SCHEDULE (interval or crontab) with optional params:
@@ -218,11 +187,7 @@ development:
         - /api/inventory/docs
         - /api/tasks/docs
     APPS:
-      - NAME: Task Manager
-        MODULE_NAME: tasks
-        URI_PATH: /tasks
-        CSS_CLASS: tasks
-        NAV_ORDER: 1
+      - MODULE_NAME: tasks
     SYNCERS:
       - SYNCER: PMMSyncer
       - SYNCER: MySQLSyncer
