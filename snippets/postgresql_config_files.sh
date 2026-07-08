@@ -197,8 +197,8 @@ if [[ -z $CONFIG_FILE ]]; then
     exit 1
 fi
 
-if ! sudo -u postgres test -r "$CONFIG_FILE"; then
-    echo "Error: cannot read postgresql.conf at '$CONFIG_FILE' (check permissions)." >&2
+if [[ ! -r "$CONFIG_FILE" ]] && ! sudo -u postgres test -r "$CONFIG_FILE"; then
+    echo "Error: cannot read postgresql.conf at '$CONFIG_FILE' (check permissions or run with sudo)." >&2
     exit 1
 fi
 
@@ -422,7 +422,7 @@ done
     done | sort
 } > "$STAGE_DIR/MANIFEST.txt"
 
-sudo tar -czf "$OUTPUT_ARG" -C "$TMPDIR_STAGE" "$STAGE_DIRNAME"
+sudo tar -czf - -C "$TMPDIR_STAGE" "$STAGE_DIRNAME" > "$OUTPUT_ARG"
 
 echo "Archive written to: $OUTPUT_ARG" >&2
 echo "Files included:     ${#COPIED[@]}" >&2
