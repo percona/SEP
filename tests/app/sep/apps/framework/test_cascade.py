@@ -23,6 +23,7 @@ import pytest
 from fastapi import HTTPException, status
 from pytest_mock import MockerFixture
 
+from app.core.exceptions import HTTPNotFoundException
 from app.core.requests.remote_api import RemoteAPI
 from app.sep.apps.framework.cascade import (
     build_derived_payload,
@@ -661,7 +662,7 @@ class TestCascadeDeleteTasks:
         """Treat HTTP 404 on any leg as success (idempotent intent)."""
         tasks_api = AsyncMock(spec=RemoteAPI)
         tasks_api.delete.side_effect = [
-            HTTPException(status_code=status.HTTP_404_NOT_FOUND),
+            HTTPNotFoundException(),
             None,
         ]
 
@@ -1190,7 +1191,7 @@ class TestCascadeDeletePredecessors:
         """Treat HTTP 404 on any leg as success (idempotent intent)."""
         tasks_api = AsyncMock(spec=RemoteAPI)
         tasks_api.delete.side_effect = [
-            HTTPException(status_code=status.HTTP_404_NOT_FOUND),
+            HTTPNotFoundException(),
             None,
         ]
 

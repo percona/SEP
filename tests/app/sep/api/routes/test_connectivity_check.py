@@ -22,7 +22,10 @@ from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
-from app.core.exceptions import HTTPBadGatewayException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPInternalServerErrorException,
+)
 from app.core.requests.connectivity import (
     build_connectivity_result,
     ConnectivityResult,
@@ -217,9 +220,7 @@ class TestConnectivityCheckEndpoint:
         """
         mock_pmm_api.check_connectivity.return_value = _reachable("pmm")
         mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
-        mock_task_api_dep.get.side_effect = HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        mock_task_api_dep.get.side_effect = HTTPInternalServerErrorException()
 
         results = _results_by_service(
             admin_client.post(ENDPOINT, json=ALL_TARGETS).json()

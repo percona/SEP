@@ -37,9 +37,10 @@ both) runs ``/hosts/`` exactly once.
 import asyncio
 from enum import StrEnum
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from app.core.exceptions import HTTPBadGatewayException
 from app.core.requests.connectivity import (
     build_connectivity_result,
     classify_connectivity_error,
@@ -120,10 +121,8 @@ async def _probe_tasks_and_nomad(
         async with asyncio.timeout(PROBE_TIMEOUT_SECONDS):
             await tasks_api.get(_HOSTS_PROBE_PATH)
     except Exception as exc:  # noqa: BLE001 -- classified, never re-raised
-        if (
-            isinstance(exc, HTTPException)
-            and exc.status_code == status.HTTP_502_BAD_GATEWAY
-            and not (exc.headers or {}).get(UPSTREAM_NON_JSON_HEADER)
+        if isinstance(exc, HTTPBadGatewayException) and not (exc.headers or {}).get(
+            UPSTREAM_NON_JSON_HEADER
         ):
             # The Tasks app answered with a JSON 502 but its executor backend is
             # down, so Tasks is reachable but Nomad is not. A bare non-JSON 502

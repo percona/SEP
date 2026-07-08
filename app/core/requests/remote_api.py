@@ -39,7 +39,16 @@ from aiohttp import (
 from fastapi import HTTPException, status
 from pydantic import computed_field, Field, PrivateAttr
 
-from app.core.exceptions import HTTPGoneException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPBadRequestException,
+    HTTPConflictException,
+    HTTPGoneException,
+    HTTPInternalServerErrorException,
+    HTTPNotFoundException,
+    HTTPServiceUnavailableException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.log import correlation_id_var
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.requests.connectivity import (
@@ -77,6 +86,42 @@ _REDACTED_VALUE = "****"
 # body (e.g. an nginx HTML 502), letting callers tell a proxy/gateway failure
 # apart from an app-level JSON error at the same status code.
 UPSTREAM_NON_JSON_HEADER = "X-Upstream-Non-JSON"
+
+# Maps an upstream error status to the project exception that represents it, so
+# RemoteAPI raises app/core/exceptions classes instead of a bare HTTPException.
+_HTTP_EXCEPTION_BY_STATUS: dict[int, type[HTTPException]] = {
+    status.HTTP_400_BAD_REQUEST: HTTPBadRequestException,
+    status.HTTP_404_NOT_FOUND: HTTPNotFoundException,
+    status.HTTP_409_CONFLICT: HTTPConflictException,
+    status.HTTP_410_GONE: HTTPGoneException,
+    status.HTTP_422_UNPROCESSABLE_CONTENT: HTTPUnprocessableEntityException,
+    status.HTTP_500_INTERNAL_SERVER_ERROR: HTTPInternalServerErrorException,
+    status.HTTP_502_BAD_GATEWAY: HTTPBadGatewayException,
+    status.HTTP_503_SERVICE_UNAVAILABLE: HTTPServiceUnavailableException,
+}
+
+
+def _exception_for_status(
+    status_code: int, *, detail: Any, headers: dict[str, str] | None = None
+) -> HTTPException:
+    """Return the project exception mapped to ``status_code``, else a bare HTTPException.
+
+    Fall back to a bare :class:`fastapi.HTTPException` when no project class is
+    mapped, or when ``headers`` are present but the mapped class cannot carry them
+    -- only :class:`HTTPGoneException` accepts headers today, so headers are never
+    dropped.
+
+    :param status_code: The upstream HTTP error status to translate.
+    :param detail: The error detail payload to attach to the exception.
+    :param headers: Optional response headers to preserve (e.g. ``X-Error-Code``).
+    :return: The mapped project exception, or a bare HTTPException.
+    """
+    exc_class = _HTTP_EXCEPTION_BY_STATUS.get(status_code)
+    if exc_class is HTTPGoneException:
+        return exc_class(detail, headers=headers)
+    if exc_class is None or headers:
+        return HTTPException(status_code=status_code, detail=detail, headers=headers)
+    return exc_class(detail)
 
 
 def _sanitize_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -477,11 +522,14 @@ class BaseRemoteAPI(BaseCaseInsensitiveModel):
         detail: Any,
         headers: dict[str, str] | None = None,
     ) -> NoReturn:
-        """Raise :class:`HTTPGoneException` or :class:`HTTPException` for a failed stream response."""
-        if status_code == status.HTTP_410_GONE:
-            raise HTTPGoneException(detail, headers=headers) from None
-        raise HTTPException(
-            status_code=status_code, detail=detail, headers=headers
+        """Raise the mapped project exception (or bare HTTPException) for a failed stream.
+
+        :param status_code: The upstream HTTP error status.
+        :param detail: The error detail payload for the raised exception.
+        :param headers: Optional response headers to preserve.
+        """
+        raise _exception_for_status(
+            status_code, detail=detail, headers=headers
         ) from None
 
     async def stream_chunks(
@@ -723,15 +771,14 @@ class RemoteAPI(BaseRemoteAPI):
         """Perform an HTTP request and return the JSON response.
 
         :param method: The HTTP method to use for the request.
-        :type method: str
         :param path: The API endpoint path to request.
-        :type path: str
         :param kwargs: Additional keyword arguments to pass to the request.
-        :type kwargs: Any
         :return: The JSON response as a Python object, or ``None`` when the
             server returns HTTP 204 No Content (no response body).
-        :rtype: dict[str, Any] | list[dict[str, Any]] | None
-        :raises HTTPException: If the request returns an error response.
+        :raises HTTPException: If the request returns an error response -- the
+            project exception mapped to the status (a subclass of
+            :class:`fastapi.HTTPException`), or a bare :class:`fastapi.HTTPException`
+            when the status is unmapped or carries headers the mapped class cannot.
         """
         async with self._request(method, path, **kwargs) as response:
             if response.status == status.HTTP_204_NO_CONTENT:
@@ -757,7 +804,7 @@ class RemoteAPI(BaseRemoteAPI):
                     response.status,
                     response_content,
                 )
-                raise HTTPException(
+                raise _exception_for_status(
                     err.status,
                     detail="An unexpected error occurred on the server.",
                     headers={UPSTREAM_NON_JSON_HEADER: "1"},
@@ -771,8 +818,8 @@ class RemoteAPI(BaseRemoteAPI):
                     error_code := response_data.get(self.error_code_key)
                 ):
                     error_headers = {"X-Error-Code": error_code}
-                raise HTTPException(
-                    status_code=err.status, detail=error_detail, headers=error_headers
+                raise _exception_for_status(
+                    err.status, detail=error_detail, headers=error_headers
                 ) from None
 
             return response_data

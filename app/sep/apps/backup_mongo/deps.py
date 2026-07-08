@@ -22,7 +22,7 @@ from typing import Annotated, Any
 
 import yaml
 from aiohttp import ClientResponseError
-from fastapi import Depends, Form, HTTPException, status
+from fastapi import Depends, Form
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
@@ -120,15 +120,11 @@ async def build_backup_task_payload(
             form.service_id,
             type=ServiceTypeEnum.MONGODB,
         )
-    except HTTPException as exc:
-        # ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not
-        # the project's ``HTTPNotFoundException``. PBM tasks run off
-        # ``form.hostname`` and the generated config; the service is only
-        # fetched to populate ``_service_name`` for PMM. Fall back to a
-        # node-only annotation if the service was deleted between form load
-        # and form submit, but re-raise any other error.
-        if exc.status_code != status.HTTP_404_NOT_FOUND:
-            raise
+    except HTTPNotFoundException:
+        # PBM tasks run off ``form.hostname`` and the generated config; the
+        # service is only fetched to populate ``_service_name`` for PMM, so a
+        # service deleted between form load and submit degrades to a node-only
+        # annotation.
         service = None
 
     resolved = BackupMongoResolved(
