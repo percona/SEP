@@ -699,6 +699,8 @@ class RestoreTaskBase(BaseModel):
     :type backup_type: str
     :param backup_source: The backup name or timestamp to restore from.
     :type backup_source: str
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     """
 
     name: str
@@ -707,6 +709,7 @@ class RestoreTaskBase(BaseModel):
     status: TaskHistoryStatusEnum | None = None
     backup_type: str
     backup_source: str
+    last_executed_at: datetime | None = None
 
 
 class RestoreTaskResponse(RestoreTaskBase):

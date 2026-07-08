@@ -180,7 +180,7 @@ async def batch_get_latest_statuses(
     """
     if not names:
         return {}
-    resolved: dict[str, TaskHistoryLatestStatus | None] = {}
+    resolved = {}
     for start in range(0, len(names), LATEST_HISTORY_STATUS_NAMES_MAX):
         chunk = names[start : start + LATEST_HISTORY_STATUS_NAMES_MAX]
         try:

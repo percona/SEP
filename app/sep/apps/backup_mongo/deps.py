@@ -26,7 +26,6 @@ from aiohttp import ClientResponseError
 from fastapi import Depends, Form
 
 from app.core.exceptions import HTTPNotFoundException
-from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import (
     BackupCreate,
@@ -42,7 +41,6 @@ from app.sep.apps.backup_mongo.spec import (
     build_backup_mongo_spec,
 )
 from app.sep.apps.framework import (
-    batch_get_latest_statuses,
     build_default_task_response,
     extract_latest_task_status,
     get_task_latest_history,
@@ -190,16 +188,6 @@ def build_backup_mongo_api_task_response(
     )
 
 
-def _backup_parent_list_params(pagination: Pagination) -> dict[str, Any]:
-    """Build upstream task-list query params for parent ``pbm_config`` rows."""
-    return {
-        "owner": TaskOwner.BACKUP_MONGO.value,
-        "parent_is_null": "true",
-        "backup_type": BackupType.PBM_CONFIG.value,
-        **pagination.model_dump(),
-    }
-
-
 def _gathered_latest_history(
     result: TaskHistoryLatestStatus | BaseException | None,
 ) -> TaskHistoryLatestStatus | None:
@@ -207,79 +195,6 @@ def _gathered_latest_history(
     return None if isinstance(result, BaseException) else result
 
 
-async def get_backup_mongo_api_task_responses(
-    tasks_api: TaskAPI,
-    *,
-    pagination: Pagination,
-    status: TaskHistoryStatusEnum | None = None,
-) -> PaginatedResponse[BackupTaskResponse]:
-    """Retrieve a page of backup task responses for the JSON API.
-
-    Uses one filtered upstream task list plus one batch latest-status lookup per
-    page. When ``status`` is set, walks parent-task pages with bounded ``limit``
-    and applies latest-status filtering in-memory before slicing.
-
-    :param tasks_api: The TaskAPI instance used to query backup tasks.
-    :type tasks_api: TaskAPI
-    :param pagination: Validated offset/limit window for this page.
-    :type pagination: Pagination
-    :param status: Optional latest-history status filter for the list.
-    :type status: TaskHistoryStatusEnum | None
-    :return: The paginated backup task responses matching the requested filters.
-    :rtype: PaginatedResponse[BackupTaskResponse]
-    """
-    if status is None:
-        response = await tasks_api.get(
-            "/",
-            params=_backup_parent_list_params(pagination),
-        )
-        parents = [Task.model_validate(item) for item in response["items"]]
-        status_map = await batch_get_latest_statuses(
-            tasks_api,
-            [task.name for task in parents],
-        )
-        items = [
-            build_backup_mongo_api_task_response(
-                task,
-                status=(latest := status_map.get(task.name)) and latest.status,
-                last_executed_at=latest.finished_at if latest else None,
-            )
-            for task in parents
-        ]
-        return PaginatedResponse.from_pagination(
-            items,
-            response["total"],
-            pagination,
-        )
-
-    parent_items = await fetch_all_dict_items(
-        lambda page_pagination: tasks_api.get(
-            "/",
-            params=_backup_parent_list_params(page_pagination),
-        )
-    )
-    parents = [Task.model_validate(item) for item in parent_items]
-    status_map = await batch_get_latest_statuses(
-        tasks_api,
-        [task.name for task in parents],
-    )
-    task_latest_pairs = [
-        (task, latest)
-        for task in parents
-        if (latest := status_map.get(task.name)) is not None and latest.status == status
-    ]
-    page_pairs = pagination.slice(task_latest_pairs)
-    items = [
-        build_backup_mongo_api_task_response(
-            task, status=latest.status, last_executed_at=latest.finished_at
-        )
-        for task, latest in page_pairs
-    ]
-    return PaginatedResponse.from_pagination(
-        items,
-        len(task_latest_pairs),
-        pagination,
-    )
 async def _fetch_latest_pbm_status(
     tasks_api: TaskAPI, pbm_status_tasks: list[dict[str, Any]]
 ) -> str | None:

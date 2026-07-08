@@ -80,9 +80,9 @@ interface SchemaListViewProps {
 function formatCellValue(value: unknown, format: ListColumn['format']): ReactNode {
   if (value === null || value === undefined) {
     // Time-based columns render an absent value as an empty cell — a
-    // never-executed task has no Last Executed time (SEP-1401), and an em-dash
-    // there would read as a misleading placeholder. Other formats keep the
-    // em-dash to signal "no value".
+    // never-executed task has no Last Executed time, and an em-dash there would
+    // read as a misleading placeholder. Other formats keep the em-dash to
+    // signal "no value".
     return format === 'relative' || format === 'date' ? null : '—';
   }
   const str = String(value);
