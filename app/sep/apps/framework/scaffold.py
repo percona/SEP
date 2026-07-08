@@ -33,6 +33,8 @@ package ``__init__``, never by this module.
 import argparse
 import keyword
 import re
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from enum import StrEnum
@@ -170,7 +172,32 @@ def render_app(name: str, flavor: Flavor, context: dict[str, str]) -> list[Path]
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(rendered)
         written.append(target)
+    _ruff_fix(written)
     return written
+
+
+def _ruff_fix(paths: list[Path]) -> None:
+    """Run ruff lint-autofix and format on ``paths``.
+
+    Silently skips the step when ``ruff`` is not on ``$PATH`` so the
+    scaffolder stays usable in minimal environments.
+
+    :param paths: The rendered files to lint-fix and format.
+    """
+    py_files = [str(p) for p in paths if p.suffix == ".py"]
+    if not py_files:
+        return
+    ruff = shutil.which("ruff")
+    if ruff is None:
+        return
+    subprocess.run(  # noqa: S603
+        [ruff, "check", "--fix", "--quiet", *py_files],
+        check=False,
+    )
+    subprocess.run(  # noqa: S603
+        [ruff, "format", "--quiet", *py_files],
+        check=False,
+    )
 
 
 def _indent_width(line: str) -> int:
