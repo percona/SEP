@@ -199,7 +199,7 @@ class TestSepSettingsList:
     async def test_core_groups_are_not_app_owned(
         self, api_admin_client: TestClient
     ) -> None:
-        """Core and proxied groups carry no app-ownership metadata."""
+        """Leave core and proxied groups free of app-ownership metadata."""
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         core_and_remote = {
@@ -218,7 +218,7 @@ class TestSepSettingsList:
     async def test_alert_settings_group_carries_app_metadata(
         self, api_admin_client: TestClient
     ) -> None:
-        """``AlertSettings`` is tagged as owned by the alerts app when enabled."""
+        """Tag ``AlertSettings`` as owned by the alerts app when enabled."""
         response = api_admin_client.get("/api/sep/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         alert_group = _find_group(
@@ -235,7 +235,7 @@ class TestSepSettingsList:
         api_admin_client: TestClient,
         override_session: AsyncSession,
     ) -> None:
-        """A disabled owning app is still listed with ``app_enabled=False``."""
+        """List a disabled owning app with ``app_enabled=False``."""
         override_session.add(
             AppState(app_key="alerts", lifecycle_state=AppLifecycleEnum.DISABLED)
         )
@@ -1061,10 +1061,10 @@ class TestSepSettingsSecondaryClasses:
 
 @pytest.mark.asyncio
 class TestSepSettingsAlertSettings:
-    """Smoke tests for the app-owned AlertSettings class."""
+    """Smoke-test the app-owned AlertSettings class."""
 
     async def test_get_alert_setting(self, api_admin_client: TestClient) -> None:
-        """``GET /settings/AlertSettings/{key}`` returns one alert field."""
+        """Return one alert field from ``GET /settings/AlertSettings/{key}``."""
         response = api_admin_client.get(
             "/api/sep/admin/settings/AlertSettings/SOURCE_PREFIX"
         )
@@ -1074,7 +1074,7 @@ class TestSepSettingsAlertSettings:
         assert payload["key"] == "SOURCE_PREFIX"
 
     async def test_patch_alert_setting(self, api_admin_client: TestClient) -> None:
-        """A AlertSettings HOT field is patchable via the SEP router."""
+        """Patch an AlertSettings HOT field via the SEP router."""
         response = api_admin_client.patch(
             "/api/sep/admin/settings/AlertSettings",
             json={"SOURCE_PREFIX": "test-prefix-"},

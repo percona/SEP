@@ -106,6 +106,10 @@ class AppOwnedClassEntry:
 #: relative to the injected ``RemoteAPI`` client's base URL.
 RemoteClassEntry = tuple[SettingClassEnum, str]
 
+#: Async callback resolving app identity and enabled state for one ``app_key``.
+#: Injected by the SEP wiring so this factory stays free of ``app.sep`` imports.
+ResolveAppMetadata = Callable[[AsyncSession, str], Awaitable[SettingClassAppMetadata]]
+
 
 async def _no_remote_api() -> None:
     """Return ``None`` as the remote-API dependency when no remote classes wire one.
@@ -661,10 +665,7 @@ async def _fire_inline_rebind_callbacks(
 
 def _validate_app_owned_wiring(
     app_owned: list[AppOwnedClassEntry],
-    resolve_app_metadata: Callable[
-        [AsyncSession, str], Awaitable[SettingClassAppMetadata]
-    ]
-    | None,
+    resolve_app_metadata: ResolveAppMetadata | None,
 ) -> None:
     """Reject app-owned wiring that omits the metadata resolver.
 
@@ -710,9 +711,7 @@ def _merge_app_owned_into_lookup(
 async def _collect_app_owned_list_groups(
     session: AsyncSession,
     app_owned: list[AppOwnedClassEntry],
-    resolve_app_metadata: Callable[
-        [AsyncSession, str], Awaitable[SettingClassAppMetadata]
-    ],
+    resolve_app_metadata: ResolveAppMetadata,
 ) -> list[SettingClassGroup]:
     """Build LIST groups for app-owned settings classes with app metadata.
 
@@ -749,10 +748,7 @@ async def _collect_settings_list_groups(
     classes: list[ClassEntry],
     remote_lookup: dict[SettingClassEnum, str],
     app_owned: list[AppOwnedClassEntry],
-    resolve_app_metadata: Callable[
-        [AsyncSession, str], Awaitable[SettingClassAppMetadata]
-    ]
-    | None,
+    resolve_app_metadata: ResolveAppMetadata | None,
 ) -> list[SettingClassGroup]:
     """Collect every settings-class group for the LIST endpoint.
 
@@ -800,10 +796,7 @@ def build_settings_router(
     remote_classes: list[RemoteClassEntry] | None = None,
     remote_api_dep: Any = None,
     app_owned_classes: list[AppOwnedClassEntry] | None = None,
-    resolve_app_metadata: Callable[
-        [AsyncSession, str], Awaitable[SettingClassAppMetadata]
-    ]
-    | None = None,
+    resolve_app_metadata: ResolveAppMetadata | None = None,
 ) -> APIRouter:
     """Build an :class:`APIRouter` exposing the settings CRUD endpoints.
 

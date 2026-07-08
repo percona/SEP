@@ -25,7 +25,7 @@ from fastapi import HTTPException, Query
 from fastapi.responses import Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.config import Settings, settings
+from app.core.config import BaseYamlSettings, Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPBadRequestException
 from app.core.settings_override.api import (
     build_settings_class_values,
@@ -33,6 +33,7 @@ from app.core.settings_override.api import (
 )
 from app.core.settings_override.api.routes import ClassEntry
 from app.core.settings_override.models import SettingClassEnum
+from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils.date_time import utc_now
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
@@ -245,8 +246,8 @@ async def _append_local_class_export(
     *,
     session: AsyncSession,
     setting_class: SettingClassEnum,
-    settings_cls: Any,
-    proxy: Any,
+    settings_cls: type[BaseYamlSettings],
+    proxy: OverridableSettingsProxy,
     requested: dict[str, _ClassRequest] | None,
 ) -> None:
     """Append one locally-wired settings class block to an export payload.
