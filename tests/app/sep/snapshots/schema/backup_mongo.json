@@ -238,7 +238,7 @@
       "collapsible": false,
       "fields": [
         {
-          "description": "YAML mapping of mongod addresses to backup priority",
+          "description": "YAML mapping of mongod addresses to backup priority (highest wins). One entry per line, e.g.:\n\"host1:27018\": 2\n\"host2:27018\": 1",
           "label": "Node Priority (YAML)",
           "name": "backup_priority",
           "required": false,

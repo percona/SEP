@@ -3172,6 +3172,7 @@
           "backup_priority": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
