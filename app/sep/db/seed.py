@@ -143,10 +143,13 @@ def get_system_periodic_tasks() -> list[SystemPeriodicTaskSchedule]:
 async def init_sep_db() -> None:
     """Initialize the SEP database with app state and periodic tasks.
 
-    Seeds one :class:`app.sep.models.AppState` row per non-protected plugin in
-    ``SEP.APPS`` using get-or-create (the YAML ``enabled`` flag is mapped to
-    ``ENABLED`` / ``DISABLED`` only on insert; existing rows are never
-    overwritten), removes rows for apps no longer configured, then seeds the SEP
+    Seeds one :class:`app.sep.models.AppState` row per non-protected, top-level
+    plugin in ``SEP.APPS`` using get-or-create (the YAML ``enabled`` flag is mapped
+    to ``ENABLED`` / ``DISABLED`` only on insert; existing rows are never
+    overwritten). Child apps (``parent_key`` set) are parent-bound and own no row
+    of their own, so they are excluded here; a previously-seeded row for an app
+    that has since become a child is removed by the orphan cleanup below. Removes
+    rows for apps no longer configured, then seeds the SEP
     periodic tasks and gates each plugin-owned schedule by its app state via
     :func:`app.sep.periodic_tasks.sync_app_periodic_task_gating`.
     """
@@ -155,7 +158,7 @@ async def init_sep_db() -> None:
         configured = [
             (app.key, app.enabled)
             for app in get_app_registry()
-            if app.key not in PROTECTED_APP_KEYS
+            if app.key not in PROTECTED_APP_KEYS and app.parent_key is None
         ]
         configured_keys = {key for key, _ in configured}
         existing_keys = set(await AppStateManager.all_lifecycle_states(session))

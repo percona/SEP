@@ -18,10 +18,12 @@
 The declarative :class:`~app.sep.apps.framework.apps.TaskExecutionApp` in
 ``app.py`` derives the ``GET /schema`` and paginated ``roots_only`` +
 ``backup_type`` list routes; this router carries the per-app routes it keeps
-custom — the sibling-aggregating detail, the cascade create/delete, the execute
-route, and the mounted ``/restores`` sub-router — served as its ``extra_routes``.
-The framework's derived detail route is suppressed (``capabilities.detail=False``)
-so the custom ``GET /{task_name}`` here wins.
+custom — the sibling-aggregating detail, the cascade create/delete, and the
+execute route — served as its ``extra_routes``. The framework's derived detail
+route is suppressed (``capabilities.detail=False``) so the custom ``GET
+/{task_name}`` here wins. The restore subpackage is now a structurally-bound
+child app (declared via ``child_apps`` on the parent), not a ``/restores``
+sub-router mounted here.
 """
 
 import logging
@@ -43,9 +45,6 @@ from app.sep.apps.backup_mongo.models import (
     BackupTaskDetailResponse,
     BackupTaskWrite,
 )
-from app.sep.apps.backup_mongo.restore.api_routes import (
-    router as restore_api_router,
-)
 from app.sep.apps.backup_mongo.schema import backup_mongo_schema
 from app.sep.apps.framework.api import derive_execute_route
 from app.sep.apps.framework.cascade import cascade_create_tasks, cascade_delete_tasks
@@ -57,7 +56,6 @@ from app.sep.deps import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-router.include_router(restore_api_router, prefix="/restores")
 
 
 @router.get("/{task_name}")

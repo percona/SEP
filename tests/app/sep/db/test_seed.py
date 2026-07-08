@@ -177,6 +177,28 @@ class TestInitSepDbAppStateSeeding:
             states = await AppStateManager.all_lifecycle_states(session)
         assert states == {"snippets": AppLifecycleEnum.ENABLED}
 
+    async def test_child_app_not_seeded_and_stale_child_row_orphaned(
+        self, mocker, patched_seed, seed_maker
+    ) -> None:
+        """Seed no row for a child app and orphan-delete a pre-existing child row."""
+        async with seed_maker() as session:
+            session.add(
+                AppState(
+                    app_key="mysql_backups/restore",
+                    lifecycle_state=AppLifecycleEnum.ENABLED,
+                )
+            )
+            await session.commit()
+
+        mocker.patch.object(
+            seed_module.sep_settings, "APPS", [_plugin("mysql_backups")]
+        )
+        await seed_module.init_sep_db()
+
+        async with seed_maker() as session:
+            states = await AppStateManager.all_lifecycle_states(session)
+        assert states == {"mysql_backups": AppLifecycleEnum.ENABLED}
+
     async def test_periodic_task_seeding_still_runs(
         self, mocker, patched_seed, seed_maker
     ) -> None:

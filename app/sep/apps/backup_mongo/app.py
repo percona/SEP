@@ -23,11 +23,15 @@ paginated ``total``; its rows are built by
 :func:`~app.sep.apps.backup_mongo.deps.build_backup_mongo_api_task_response`. Every
 mutation is kept per-app: all :class:`~app.sep.apps.framework.apps.AppCapabilities`
 are off and the sibling-aggregating detail (with its PBM-status tail), the cascade
-create, delete, and execute routes — plus the ``/restores`` sub-router — ride the
-``extra_routes`` router. ``capabilities.detail=False`` suppresses the greedy derived
-detail so the custom ``GET /{task_name}`` wins. The schema is the model-first
+create, delete, and execute routes ride the ``extra_routes`` router.
+``capabilities.detail=False`` suppresses the greedy derived detail so the custom
+``GET /{task_name}`` wins. The schema is the model-first
 :data:`~app.sep.apps.backup_mongo.schema.backup_mongo_schema` passed through
-verbatim. The Jinja UI router is threaded explicitly.
+verbatim, and it carries the ``RelatedApp`` sibling-tab metadata for the restore
+app. The restore subpackage is a structurally-bound child app declared via
+``child_apps`` (mounted at ``/api/apps/backup_mongo/restore/`` with its own
+derived router), so it is no longer mounted as a ``/restores`` sub-router here.
+The Jinja UI router is threaded explicitly.
 """
 
 from app.core.pagination.deps import pagination_dep
@@ -37,6 +41,7 @@ from app.sep.apps.backup_mongo.deps import (
     get_backups_task,
 )
 from app.sep.apps.backup_mongo.models import BackupTaskResponse, BackupType
+from app.sep.apps.backup_mongo.restore.app import app as restore_app
 from app.sep.apps.backup_mongo.routes import router as jinja_router
 from app.sep.apps.backup_mongo.schema import backup_mongo_schema
 from app.sep.apps.framework.apps import (
@@ -69,4 +74,5 @@ app = TaskExecutionApp(
     ),
     extra_routes=(backup_mongo_custom_router,),
     jinja_router=jinja_router,
+    child_apps=(restore_app,),
 )

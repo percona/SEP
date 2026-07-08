@@ -26,9 +26,10 @@ stamping ``backup_type`` / ``hostname`` on list, detail, and create; delete is
 the framework's plain default. The display fields (``display_name`` / ``uri_path``
 / ``css_class``) are supplied here because ``settings.yaml`` no longer carries
 them. The Jinja UI router is threaded explicitly as ``jinja_router``; the
-registry does not. The restore subpackage is its own registered
-``TaskExecutionApp`` (``mysql_backups.restore``), so it is no longer mounted as a
-sub-router here.
+registry does not. The restore subpackage is a structurally-bound child app
+declared via ``child_apps`` (key ``mysql_backups/restore``), so it is mounted and
+toggled with this parent rather than as an independent ``settings.yaml`` entry or
+a sub-router here.
 """
 
 from app.core.pagination.deps import make_pagination_dep
@@ -43,6 +44,7 @@ from app.sep.apps.mysql_backups.models import (
     BackupCreate,
     BackupResponse,
 )
+from app.sep.apps.mysql_backups.restore.app import app as restore_app
 from app.sep.apps.mysql_backups.routes import router as jinja_router
 from app.sep.apps.mysql_backups.spec import build_backup_spec
 from app.sep.apps.mysql_backups.views import mysql_backups_views
@@ -75,4 +77,5 @@ app = TaskExecutionApp(
         ),
     ),
     jinja_router=jinja_router,
+    child_apps=(restore_app,),
 )

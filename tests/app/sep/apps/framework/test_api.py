@@ -1320,6 +1320,21 @@ class TestDeriveCrudRoutesComposition:
         assert "PUT" not in methods
         assert "DELETE" not in methods
 
+    def test_derive_list_false_suppresses_derived_list(self) -> None:
+        """Assert ``derive_list=False`` registers no ``GET /`` list route."""
+        router = _crud_router(derive_list=False)
+        registered = {(r.path, frozenset(r.methods)) for r in _api_routes(router)}
+
+        assert ("/", frozenset({"GET"})) not in registered
+        assert ("/schema", frozenset({"GET"})) in registered
+
+    def test_derive_list_true_registers_derived_list(self) -> None:
+        """Assert the default ``derive_list=True`` still registers ``GET /``."""
+        router = _crud_router(derive_list=True)
+        registered = {(r.path, frozenset(r.methods)) for r in _api_routes(router)}
+
+        assert ("/", frozenset({"GET"})) in registered
+
     def test_update_route_only_when_handler_passed(self) -> None:
         """Assert a ``PUT /{task_name}`` route appears only with an update handler."""
         router = _crud_router(update_handler=_synthetic_update_handler)
