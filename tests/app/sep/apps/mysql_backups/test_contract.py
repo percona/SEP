@@ -32,6 +32,7 @@ from unittest.mock import AsyncMock
 
 from fastapi import status
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
 from app.sep.apps.mysql_backups.app import app as mysql_backups_app
@@ -98,6 +99,9 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
         body = response.json()
         assert body["backup_type"] == BackupType.MYDUMPER.value
         assert body["hostname"] == SYNTH_EXECUTOR_HOST
+        assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+        assert "anonymize_mask" in body
+        assert "anonymized_entities" in body
 
     def test_create_422(self, contract_client: Any, mock_task_api: Any) -> None:
         """Reject a body missing the required ``backup_type`` with 422, before any POST."""
@@ -208,11 +212,10 @@ class TestMysqlBackupsContract(DerivedRouterContractTests):
 def test_views_declare_detail_view() -> None:
     """Assert the app declares a detail_view surfacing the backup config.
 
-    Regression guard for SEP-1495: the always-rendered "Task information" card
-    already shows the list columns (``hostname`` / ``backup_type``), so the
-    detail view must surface the config that is *not* a column — the executor
-    target and the YAML config under ``data.meta`` — rather than duplicate the
-    columns.
+    Regression guard: the always-rendered "Task information" card already shows
+    the list columns (``hostname`` / ``backup_type``), so the detail view must
+    surface the config that is *not* a column — the executor target and the YAML
+    config under ``data.meta`` — rather than duplicate the columns.
     """
     detail_view = mysql_backups_app.views.detail_view
     assert detail_view is not None
@@ -250,6 +253,9 @@ def test_update_returns_create_mirror_shape(regular_user: Any) -> None:
     assert body["backup_type"] == BackupType.XTRABACKUP.value
     assert body["hostname"] == SYNTH_EXECUTOR_HOST
     assert "connectivity_warning" in body
+    assert body["service_type"] == ServiceTypeEnum.MYSQL.value
+    assert "anonymize_mask" in body
+    assert "anonymized_entities" in body
 
 
 def test_create_check_connectivity_false_skips_probe(

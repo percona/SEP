@@ -22,12 +22,16 @@ from fastapi import HTTPException, status
 from fastapi.testclient import TestClient
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
-from app.core.exceptions import HTTPBadGatewayException
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPInternalServerErrorException,
+)
 from app.core.requests.connectivity import (
     build_connectivity_result,
     ConnectivityResult,
     ConnectivityStatusEnum,
 )
+from app.core.requests.remote_api import UPSTREAM_NON_JSON_HEADER
 from app.sep.apps.alerts.deps import get_pmm_api
 from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.deps import (
@@ -170,6 +174,38 @@ class TestConnectivityCheckEndpoint:
         assert results["nomad"]["reachable"] is False
         assert results["nomad"]["status"] == "unreachable"
 
+    def test_nginx_502_marks_tasks_unreachable(
+        self,
+        admin_client: TestClient,
+        mock_pmm_api: AsyncMock,
+        mock_inventory_api_dep: AsyncMock,
+        mock_task_api_dep: AsyncMock,
+    ) -> None:
+        """Treat a non-JSON (nginx) 502 as the whole Tasks app being down.
+
+        nginx answers with an HTML 502 when the Tasks process is unreachable;
+        ``RemoteAPI.request`` stamps ``UPSTREAM_NON_JSON_HEADER`` on that
+        ``HTTPException``. Unlike an app-level JSON 502 (Nomad down), Tasks must
+        not be reported reachable: the marked 502 is classified like any other
+        error response the server returned.
+        """
+        mock_pmm_api.check_connectivity.return_value = _reachable("pmm")
+        mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
+        mock_task_api_dep.get.side_effect = HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            detail="An unexpected error occurred on the server.",
+            headers={UPSTREAM_NON_JSON_HEADER: "1"},
+        )
+
+        results = _results_by_service(
+            admin_client.post(ENDPOINT, json=ALL_TARGETS).json()
+        )
+
+        assert results["tasks"]["reachable"] is False
+        assert results["tasks"]["status"] == "error"
+        assert results["nomad"]["reachable"] is False
+        assert results["nomad"]["status"] == "error"
+
     def test_hosts_non_502_error_marks_both_error(
         self,
         admin_client: TestClient,
@@ -184,9 +220,7 @@ class TestConnectivityCheckEndpoint:
         """
         mock_pmm_api.check_connectivity.return_value = _reachable("pmm")
         mock_inventory_api_dep.check_connectivity.return_value = _reachable("inventory")
-        mock_task_api_dep.get.side_effect = HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+        mock_task_api_dep.get.side_effect = HTTPInternalServerErrorException()
 
         results = _results_by_service(
             admin_client.post(ENDPOINT, json=ALL_TARGETS).json()

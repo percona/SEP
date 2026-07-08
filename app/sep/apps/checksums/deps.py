@@ -27,6 +27,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm
 from app.sep.apps.checksums.spec import build_checksums_arg_prefix
 from app.sep.apps.framework import make_task_dep
+from app.sep.apps.framework.form_dsl import make_arg_parser
 from app.sep.apps.framework.spec import build_command_args
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
@@ -134,7 +135,7 @@ async def process_schema_and_table_ids(
         form.tables = ",".join(table_entries)
 
 
-def _assemble_checksum_payload(
+def assemble_checksum_payload(
     service: CreatedService,
     *,
     task_name: str,
@@ -283,7 +284,7 @@ async def build_checksums_task_payload(
     await process_schema_and_table_ids(form, inventory_api)
     remaining_args = extract_databases_and_tables_from_extra_args(form)
 
-    return _assemble_checksum_payload(
+    return assemble_checksum_payload(
         service,
         task_name=form.task_name,
         hostname=form.hostname,
@@ -364,82 +365,48 @@ def get_checksums_task_info(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def parse_single_checksums_arg(arg: str, form_values: dict[str, Any]) -> None:
-    """Parse a single checksums argument and update form values.
+_CHECKSUMS_DEFAULTS = {
+    "recursion_method": "processlist",
+    "databases": "",
+    "tables": "",
+    "pause_file": "",
+    "binary_index": False,
+    "explain_arg": False,
+    "fail_on_stopped_replication": False,
+    "truncate_replicate_table": False,
+    "progress": "",
+    "set_vars": "",
+    "max_load": "",
+    "chunk_time": "",
+    "max_lag": "",
+    "extra_args": "",
+}
 
-    :param arg: The argument to parse.
-    :type arg: str
-    :param form_values: The form values dictionary to update.
-    :type form_values: dict[str, Any]
-    """
-    arg_mappings = {
-        "--recursion-method=": "recursion_method",
-        "--databases=": "databases",
-        "--tables=": "tables",
-        "--pause-file=": "pause_file",
-        "--set-vars=": "set_vars",
-        "--max-load=": "max_load",
-        "--chunk-time=": "chunk_time",
-        "--max-lag=": "max_lag",
-        "--progress=": "progress",
-    }
+_CHECKSUMS_ARG_MAPPINGS = {
+    "--recursion-method=": "recursion_method",
+    "--databases=": "databases",
+    "--tables=": "tables",
+    "--pause-file=": "pause_file",
+    "--set-vars=": "set_vars",
+    "--max-load=": "max_load",
+    "--chunk-time=": "chunk_time",
+    "--max-lag=": "max_lag",
+    "--progress=": "progress",
+}
 
-    for arg_pattern, field_name in arg_mappings.items():
-        if arg.startswith(arg_pattern):
-            form_values[field_name] = arg.split("=", 1)[1]
-            return
+_CHECKSUMS_FLAG_MAPPINGS = {
+    "--binary-index": "binary_index",
+    "--explain": "explain_arg",
+    "--fail-on-stopped-replication": "fail_on_stopped_replication",
+    "--truncate-replicate-table": "truncate_replicate_table",
+}
 
-    flag_mappings = {
-        "--binary-index": "binary_index",
-        "--explain": "explain_arg",
-        "--fail-on-stopped-replication": "fail_on_stopped_replication",
-        "--truncate-replicate-table": "truncate_replicate_table",
-    }
-
-    for flag, field_name in flag_mappings.items():
-        if arg == flag:
-            form_values[field_name] = True
-            return
-
-
-def parse_checksums_task_args(meta: dict[str, Any]) -> dict[str, Any]:
-    """Parse existing task arguments back into form field values.
-
-    Extracts form field values from the task configuration arguments for editing.
-
-    :param meta: The task meta containing the args string.
-    :type meta: dict[str, Any]
-    :return: A dictionary containing form field values.
-    :rtype: dict[str, Any]
-    """
-    form_values = {
-        "recursion_method": "processlist",
-        "databases": "",
-        "tables": "",
-        "pause_file": "",
-        "binary_index": False,
-        "explain_arg": False,
-        "fail_on_stopped_replication": False,
-        "truncate_replicate_table": False,
-        "progress": "",
-        "set_vars": "",
-        "max_load": "",
-        "chunk_time": "",
-        "max_lag": "",
-        "extra_args": "",
-    }
-
-    args_string = meta.get("args", "")
-    args = shlex.split(args_string)
-
-    # Skip the first argument (DSN)
-    if args:
-        args = args[1:]
-
-    for arg in args:
-        parse_single_checksums_arg(arg, form_values)
-
-    return form_values
+parse_checksums_task_args = make_arg_parser(
+    defaults=_CHECKSUMS_DEFAULTS,
+    arg_mappings=_CHECKSUMS_ARG_MAPPINGS,
+    flag_mappings=_CHECKSUMS_FLAG_MAPPINGS,
+    skip_leading_positional=True,
+)
 
 
 def extract_service_info(meta: dict[str, Any]) -> dict[str, Any]:
@@ -489,3 +456,6 @@ async def get_checksums_index_context(
         TaskOwner.CHECKSUMS,
         alert_on_fail_default=True,
     )
+
+
+ChecksumsIndexContext = Annotated[dict[str, Any], Depends(get_checksums_index_context)]

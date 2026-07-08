@@ -25,6 +25,7 @@ from sqlalchemy_celery_beat import PeriodicTask
 from app.core.auth.models import OAuthToken
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.auth.providers.casdoor.sdk import CasdoorSDK
+from app.core.auth.providers.grafana.models import GrafanaUser
 from app.inventory.models import (
     HostSystemObservationWrite,
     NodeWrite,
@@ -89,6 +90,10 @@ class CasdoorUserFactory(ModelFactory[CasdoorUser]):
 
     is_forbidden: bool = False
     is_deleted: bool = False
+
+
+class GrafanaUserFactory(ModelFactory[GrafanaUser]):
+    """Define factory for GrafanaUser instances."""
 
 
 class TaskFactory(ModelFactory[Task]):

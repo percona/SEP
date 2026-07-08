@@ -101,7 +101,9 @@ from app.sep.apps.framework.rules import (
 from app.sep.apps.framework.script_source import ScriptSource
 from app.sep.apps.framework.spec import (
     assemble_envelope,
+    build_run_python_task,
     EnvelopeSpec,
+    parse_server_list_config,
     resolve_refs,
     ResolvedEntities,
     RunCommandSpec,
@@ -171,6 +173,7 @@ __all__ = [
     "build_derived_payload",
     "build_predecessor_chain_execute_body",
     "build_predecessor_payload",
+    "build_run_python_task",
     "build_task_list_responses",
     "cascade_create_predecessors",
     "cascade_create_tasks",
@@ -190,6 +193,7 @@ __all__ = [
     "maybe_record_connectivity_warning",
     "none_present",
     "not_",
+    "parse_server_list_config",
     "present",
     "record_connectivity_warning",
     "resolve_refs",

@@ -22,7 +22,7 @@ inventory backend; the assemble step is a pure function of form + resolved
 entities, so none of these need a real database.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from unittest.mock import AsyncMock
 
 import pytest
@@ -43,6 +43,8 @@ from app.sep.apps.framework.form_dsl import (
 from app.sep.apps.framework.spec import (
     assemble_envelope,
     build_command_args,
+    build_run_python_task,
+    parse_server_list_config,
     RESERVED_FORM_KEY,
     resolve_refs,
     ResolvedEntities,
@@ -361,6 +363,15 @@ class _TwoHostForm(AppFormModel):
     host_b: Annotated[str | None, HostRef(), Ui(label="B", section="main")] = None
 
 
+class _MultiHostForm(AppFormModel):
+    """Carry a multi-value ``HostRef`` to exercise the single-executor-host guard."""
+
+    task_name: Annotated[str, Ui(label="Name", section="main")] = ""
+    hosts: Annotated[
+        list[str], HostRef(multiple=True), Ui(label="Hosts", section="main")
+    ]
+
+
 class _IntHostForm(AppFormModel):
     """Carry an ``int | str`` HostRef to exercise executor-host str coercion."""
 
@@ -521,6 +532,14 @@ class TestResolveRefs:
 
         with pytest.raises(ValueError, match="HostRef"):
             await resolve_refs(_TwoHostForm(host_a="a", host_b="b"), inventory)
+
+    @pytest.mark.asyncio
+    async def test_multi_host_ref_raises(self) -> None:
+        """Reject a multi-value ``HostRef`` selection that has no single executor host."""
+        inventory = _fake_inventory({})
+
+        with pytest.raises(ValueError, match="multi-value HostRef"):
+            await resolve_refs(_MultiHostForm(hosts=["h1", "h2"]), inventory)
 
     @pytest.mark.asyncio
     async def test_multi_type_service_in_tuple_resolves(self) -> None:
@@ -874,3 +893,185 @@ class TestStampFormInput:
 
         with pytest.raises(ValueError, match="reserved key"):
             stamp_form_input(write, _StampForm(task_name="task-1"))
+
+
+class TestBuildRunPythonTask:
+    """Cover the connectivity-optional ``build_run_python_task`` builder."""
+
+    @staticmethod
+    def _write(
+        *,
+        service_name: str | None = None,
+        extra_data: dict[str, Any] | None = None,
+        alert_on_fail: bool = False,
+    ) -> TaskWrite:
+        """Build a run-python ``TaskWrite`` with fixed defaults for the required args."""
+        return build_run_python_task(
+            name="task-1",
+            owner=TaskOwner.BACKUP_MONGO,
+            target="mongo-host",
+            config="alias: stanza\n",
+            requirements="packaging\nPyYAML",
+            payload="file:///plugin/payload",
+            service_name=service_name,
+            extra_data=extra_data,
+            alert_on_fail=alert_on_fail,
+        )
+
+    def test_data_dict_shape(self) -> None:
+        """Emit the canonical run-python data shape with no connectivity meta."""
+        write = self._write()
+
+        assert write.data == {
+            "task": "run-python",
+            "meta": {
+                "config": "alias: stanza\n",
+                "target": "mongo-host",
+                "requirements": "packaging\nPyYAML",
+            },
+            "payload": "file:///plugin/payload",
+        }
+
+    def test_meta_key_order(self) -> None:
+        """Pin the canonical meta key order with ``_service_name`` last."""
+        write = self._write(service_name="mongo-svc")
+
+        assert list(write.data["meta"].keys()) == [
+            "config",
+            "target",
+            "requirements",
+            "_service_name",
+        ]
+
+    def test_service_name_omitted_when_none(self) -> None:
+        """Omit ``_service_name`` from the meta when ``service_name`` is ``None``."""
+        write = self._write(service_name=None)
+
+        assert "_service_name" not in write.data["meta"]
+
+    def test_extra_data_merged_at_top_level(self) -> None:
+        """Merge ``extra_data`` at the ``data`` top level after ``payload``."""
+        write = self._write(extra_data={"backup_type": "pbm-config"})
+
+        assert write.data["backup_type"] == "pbm-config"
+        assert list(write.data.keys()) == ["task", "meta", "payload", "backup_type"]
+
+    def test_defaults(self) -> None:
+        """Emit the PROXY backend with no failure alert or detail builder by default."""
+        write = self._write()
+
+        assert write.backend == TaskBackendEnum.PROXY
+        assert write.alert_on_fail is False
+        assert write.alert_detail_builder is None
+
+    def test_alert_on_fail_propagates(self) -> None:
+        """Propagate ``alert_on_fail=True`` onto the ``TaskWrite``."""
+        write = self._write(alert_on_fail=True)
+
+        assert write.alert_on_fail is True
+
+    @pytest.mark.parametrize(
+        "reserved_key", ["task", "meta", "payload", RESERVED_FORM_KEY]
+    )
+    def test_extra_data_reserved_key_collision_raises(self, reserved_key: str) -> None:
+        """Reject an ``extra_data`` key that collides with a reserved envelope key."""
+        with pytest.raises(ValueError, match="reserved"):
+            self._write(extra_data={reserved_key: "x"})
+
+
+class TestParseServerListConfig:
+    """Cover the shared SERVER_LIST edit-form backfill helper."""
+
+    @staticmethod
+    def _task(*, name: str = "edit-task", target: str = "host.example.com") -> dict:
+        """Build the minimal task dict the helper reads identity fields from."""
+        return {"name": name, "data": {"meta": {"target": target}}}
+
+    def test_builds_common_base_and_merges_extra_fields(self) -> None:
+        """Build the shared base dict and layer the caller's app-specific keys."""
+        server_config = {"HOST": "10.0.0.5", "BACKUP_TYPE": "pgbackrest"}
+
+        result = parse_server_list_config(
+            self._task(),
+            server_config,
+            {},
+            {"port": 5432, "alias": "db1"},
+        )
+
+        assert result == {
+            "name": "edit-task",
+            "hostname": "host.example.com",
+            "backup_type": "pgbackrest",
+            "service_id": None,
+            "host": "10.0.0.5",
+            "port": 5432,
+            "alias": "db1",
+        }
+
+    def test_extracts_upload_provider_targets(self) -> None:
+        """Build the S3/GSUTIL/RSYNC targets from ALL_SERVERS for the providers."""
+        server_config = {
+            "HOST": "10.0.0.5",
+            "BACKUP_TYPE": "xtrabackup",
+            "UPLOAD": ["s3", "gsutil", "rsync"],
+        }
+        all_servers_config = {
+            "S3_BUCKET": "my-bucket",
+            "S3_STORAGE_CLASS": "STANDARD_IA",
+            "SKIP_S3_SAFETY_CHECK": True,
+            "GS_BUCKET": "my-gs-bucket",
+            "RSYNC_PATH": "/mnt/backups",
+        }
+
+        result = parse_server_list_config(
+            self._task(), server_config, all_servers_config, {}
+        )
+
+        assert result["s3_bucket"] == "my-bucket"
+        assert result["s3_storage_class"] == "STANDARD_IA"
+        assert result["skip_s3_safety_check"] is True
+        assert result["gs_bucket"] == "my-gs-bucket"
+        assert result["rsync_path"] == "/mnt/backups"
+
+    def test_upload_targets_default_when_all_servers_empty(self) -> None:
+        """Cover the None/False defaults for providers with an empty ALL_SERVERS."""
+        server_config = {
+            "HOST": "10.0.0.5",
+            "BACKUP_TYPE": "xtrabackup",
+            "UPLOAD": ["s3"],
+        }
+
+        result = parse_server_list_config(self._task(), server_config, {}, {})
+
+        assert result["s3_bucket"] is None
+        assert result["s3_storage_class"] is None
+        assert result["skip_s3_safety_check"] is False
+
+    def test_lowercases_remaining_all_servers_keys(self) -> None:
+        """Cover the catch-all lowering of leftover ALL_SERVERS keys not yet present."""
+        retention_days = 7
+        server_config = {"HOST": "10.0.0.5", "BACKUP_TYPE": "pgbackrest"}
+        all_servers_config = {"LOGGING_DIR": "/var/log", "RETENTION": retention_days}
+
+        result = parse_server_list_config(
+            self._task(), server_config, all_servers_config, {}
+        )
+
+        assert result["logging_dir"] == "/var/log"
+        assert result["retention"] == retention_days
+
+    def test_explicit_keys_win_over_lowered_all_servers_fallback(self) -> None:
+        """Assert explicit keys win over an ALL_SERVERS key lowering onto them."""
+        explicit_port = 5432
+        server_config = {"HOST": "10.0.0.5", "BACKUP_TYPE": "pgbackrest"}
+        all_servers_config = {"HOST": "should-not-win", "PORT": 9999}
+
+        result = parse_server_list_config(
+            self._task(),
+            server_config,
+            all_servers_config,
+            {"port": explicit_port},
+        )
+
+        assert result["host"] == "10.0.0.5"
+        assert result["port"] == explicit_port

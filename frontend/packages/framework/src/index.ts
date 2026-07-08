@@ -45,6 +45,8 @@ export { TableSelector } from './components/TableSelector';
 export type { TableSelectorProps } from './components/TableSelector';
 export { FreeSoloSelect } from './components/FreeSoloSelect';
 export type { FreeSoloSelectProps } from './components/FreeSoloSelect';
+export { FreeSoloMultiSelect } from './components/FreeSoloMultiSelect';
+export type { FreeSoloMultiSelectProps } from './components/FreeSoloMultiSelect';
 export { HostSelector, StandaloneHostSelector } from './components/HostSelector';
 export type { StandaloneHostSelectorProps } from './components/HostSelector';
 export {

@@ -59,6 +59,7 @@ def test_build_restore_spec_selects_payload_and_envelope(backup_type: BackupType
     assert spec.data["payload"].endswith(f"/{_PAYLOAD_DIR_BY_TYPE[backup_type]}")
     assert spec.data["meta"]["target"] == "restore-host"
     assert "_service_name" not in spec.data["meta"]
+    assert list(spec.data["meta"].keys()) == ["config", "target", "requirements"]
 
 
 def test_build_restore_spec_xtrabackup_requires_filelock():
@@ -85,3 +86,9 @@ def test_build_restore_spec_injects_resolved_destination_and_service_name():
     assert server["DEST_PORT"] == resolved.dest_port
     assert server["DATABASE"] == resolved.database
     assert spec.data["meta"]["_service_name"] == resolved.service_name
+    assert list(spec.data["meta"].keys()) == [
+        "config",
+        "target",
+        "requirements",
+        "_service_name",
+    ]

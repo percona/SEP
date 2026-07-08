@@ -58,6 +58,10 @@ function fieldDefault(field: AppField): unknown {
     case 'float':
       return field.default ?? '';
     case 'multi_choice':
+    case 'multi_service':
+    case 'multi_schema':
+    case 'multi_table':
+    case 'multi_host':
       return field.default ?? [];
     case 'file':
       return undefined;

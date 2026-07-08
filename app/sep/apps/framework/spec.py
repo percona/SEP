@@ -59,18 +59,23 @@ from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
 
 __all__ = [
     "RESERVED_FORM_KEY",
+    "RUN_PYTHON_TASK",
     "EnvelopeSpec",
     "ResolvedEntities",
     "RunCommandSpec",
     "RunPythonSpec",
     "assemble_envelope",
     "build_command_args",
+    "build_run_python_task",
+    "parse_server_list_config",
     "resolve_refs",
     "stamp_form_input",
     "validate_arg_formats",
 ]
 
 RESERVED_FORM_KEY = "_form"
+_RUN_COMMAND_TASK = "run-command"
+RUN_PYTHON_TASK = "run-python"
 
 _REF_ENTITY_TYPES = {
     ServiceRef: SyncInventoryEntityTypeEnum.SERVICE,
@@ -125,7 +130,7 @@ class RunCommandSpec:
         :return: The run-command ``TaskWrite.data`` payload.
         """
         return {
-            "task": "run-command",
+            "task": _RUN_COMMAND_TASK,
             "meta": {
                 "command": self.command,
                 "args": self.args,
@@ -164,7 +169,7 @@ class RunPythonSpec:
         :return: The run-python ``TaskWrite.data`` payload.
         """
         return {
-            "task": "run-python",
+            "task": RUN_PYTHON_TASK,
             "meta": {
                 "config": self.config,
                 "target": host,
@@ -309,9 +314,10 @@ async def resolve_refs(
     :param inventory_api: The inventory API client.
     :return: The resolved entities, the primary service (if any), and the
         captured executor host (``None`` when no ``HostRef`` is declared).
-    :raises ValueError: When the model declares more than one ``HostRef`` field, or
-        propagated from :func:`get_created_entity` on a single-type ``ServiceRef``
-        type mismatch.
+    :raises ValueError: When the model declares more than one ``HostRef`` field, when
+        a ``HostRef`` field submits a multi-value (list/set) selection that cannot
+        resolve to the single executor host, or propagated from
+        :func:`get_created_entity` on a single-type ``ServiceRef`` type mismatch.
     :raises HTTPBadRequestException: When a multi-type ``ServiceRef`` resolves to a
         service outside its allowed types.
     """
@@ -326,6 +332,14 @@ async def resolve_refs(
                     "resolve_refs found more than one HostRef field "
                     f"({host_field!r} and {key!r}); a model names at most one "
                     "executor host"
+                )
+            if ref.multiple:
+                raise ValueError(
+                    f"resolve_refs received a multi-value HostRef selection for field "
+                    f"{key!r}; a task envelope targets a single executor host and "
+                    "cannot resolve one from a list — declare a single-value HostRef "
+                    "for the executor target, or consume the multi-host list in a "
+                    "custom payload_builder"
                 )
             host_field = key
             executor_host = None if value is None else str(value)
@@ -418,6 +432,137 @@ def assemble_envelope(
         alert_on_fail=alert_on_fail,
         alert_detail_builder=alert_detail_builder,
     )
+
+
+def build_run_python_task(
+    *,
+    name: str,
+    owner: TaskOwner,
+    target: str,
+    config: str,
+    requirements: str,
+    payload: str,
+    service_name: str | None = None,
+    extra_data: Mapping[str, Any] | None = None,
+    alert_on_fail: bool = False,
+) -> TaskWrite:
+    """Assemble a connectivity-optional ``run-python`` ``TaskWrite``.
+
+    The no-connectivity sibling of :func:`assemble_envelope`: emit the same
+    ``run-python`` envelope shape without the connectivity meta keys, stamping
+    ``_service_name`` only when ``service_name`` is not ``None`` and merging
+    ``extra_data`` at the ``data`` top level for caller-specific data keys. Used by
+    the task apps whose
+    tasks resolve no ``ServiceRef`` and so cannot go through
+    :func:`assemble_envelope`, which requires a service for its connectivity meta.
+
+    :param name: The task name.
+    :param owner: The task owner.
+    :param target: The executor target host placed under ``meta.target``.
+    :param config: The serialized task config placed under ``meta.config``.
+    :param requirements: The pip requirements string under ``meta.requirements``.
+    :param payload: The ``file://`` payload URI placed at ``data.payload``.
+    :param service_name: The resolved inventory service name, stamped as
+        ``meta._service_name`` only when not ``None``. Defaults to ``None``.
+    :param extra_data: Extra top-level ``data`` keys merged after ``payload``.
+        Defaults to ``None``.
+    :param alert_on_fail: Whether to alert on task failure. Defaults to ``False``.
+    :return: The assembled ``TaskWrite``, ready to POST to the Tasks API.
+    :raises ValueError: When an ``extra_data`` key collides with a reserved
+        top-level envelope key — ``task`` / ``meta`` / ``payload`` (the envelope
+        structure) or ``_form`` (reserved for :func:`stamp_form_input`) — which
+        would silently overwrite the envelope or later break the form stamp.
+    """
+    meta = {
+        "config": config,
+        "target": target,
+        "requirements": requirements,
+    }
+    if service_name is not None:
+        meta["_service_name"] = service_name
+    data = {
+        "task": RUN_PYTHON_TASK,
+        "meta": meta,
+        "payload": payload,
+    }
+    reserved_keys = {*data, RESERVED_FORM_KEY}
+    for key, value in (extra_data or {}).items():
+        if key in reserved_keys:
+            raise ValueError(
+                f"extra_data key {key!r} collides with a reserved top-level "
+                "envelope key; callers may only add new top-level data keys"
+            )
+        data[key] = value
+    return TaskWrite(
+        name=name,
+        owner=owner,
+        backend=TaskBackendEnum.PROXY,
+        data=data,
+        alert_on_fail=alert_on_fail,
+    )
+
+
+def parse_server_list_config(
+    task: Mapping[str, Any],
+    server_config: Mapping[str, Any],
+    all_servers_config: Mapping[str, Any],
+    extra_fields: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Rebuild a backup edit-form dict from a parsed ``SERVER_LIST`` config.
+
+    The reverse of the create path: where :func:`assemble_envelope` writes the
+    ``SERVER_LIST`` / ``ALL_SERVERS`` envelope, this reads the first server entry
+    and the shared ``ALL_SERVERS`` block back into the flat dict a backup app's
+    Jinja edit form is populated from. It owns the parts identical across the
+    backup apps -- the common base fields, the S3/GSUTIL/RSYNC upload-target
+    extraction keyed off ``server_config["UPLOAD"]``, and the catch-all loop that
+    lowercases every remaining ``ALL_SERVERS`` key not already present.
+
+    The caller has already parsed the YAML config -- it needs ``server_config``
+    and ``all_servers_config`` to compute its own ``extra_fields`` -- so both are
+    passed in rather than re-parsed here. ``extra_fields`` (the app-specific keys
+    such as ``port``, ``alias``, or the encryption recipient) is merged before the
+    catch-all loop so those explicit values win over any lowered ``ALL_SERVERS``
+    fallback.
+
+    :param task: The task data retrieved from the Tasks API; supplies ``name`` and
+        the ``target`` hostname.
+    :param server_config: The first ``SERVER_LIST`` entry.
+    :param all_servers_config: The ``ALL_SERVERS`` block (empty dict when absent).
+    :param extra_fields: App-specific result keys, merged ahead of the catch-all
+        loop so they take precedence over lowered ``ALL_SERVERS`` fallbacks.
+    :return: The flat dict used to repopulate the backup edit form.
+    """
+    result = {
+        "name": task["name"],
+        "hostname": task["data"]["meta"]["target"],
+        "backup_type": server_config["BACKUP_TYPE"],
+        "service_id": None,
+        "host": server_config["HOST"],
+        **extra_fields,
+    }
+
+    upload_providers = {
+        provider.upper()
+        for provider in server_config.get("UPLOAD", [])
+        if isinstance(provider, str)
+    }
+    if "S3" in upload_providers:
+        result["s3_bucket"] = all_servers_config.get("S3_BUCKET")
+        result["s3_storage_class"] = all_servers_config.get("S3_STORAGE_CLASS")
+        result["skip_s3_safety_check"] = all_servers_config.get(
+            "SKIP_S3_SAFETY_CHECK", False
+        )
+    if "GSUTIL" in upload_providers:
+        result["gs_bucket"] = all_servers_config.get("GS_BUCKET")
+    if "RSYNC" in upload_providers:
+        result["rsync_path"] = all_servers_config.get("RSYNC_PATH")
+
+    for key, value in all_servers_config.items():
+        if key.lower() not in result:
+            result[key.lower()] = value
+
+    return result
 
 
 def stamp_form_input(write: TaskWrite, form: AppFormModel) -> None:

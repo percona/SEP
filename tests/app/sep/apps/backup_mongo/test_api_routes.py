@@ -23,6 +23,7 @@ from fastapi import HTTPException, status
 
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.inventory import CreatedService
 from app.tasks.models import TaskBackendEnum, TaskOwner
@@ -177,8 +178,12 @@ class TestBackupMongoApiList:
         assert body["offset"] == 0
         assert body["limit"] == DEFAULT_PAGE_LIMIT
         assert len(body["items"]) == 1
-        assert body["items"][0]["name"] == "parent-backup"
-        assert body["items"][0]["status"] == "success"
+        row = body["items"][0]
+        assert row["name"] == "parent-backup"
+        assert row["status"] == "success"
+        assert row["service_type"] == ServiceTypeEnum.MONGODB.value
+        assert "anonymize_mask" in row
+        assert "anonymized_entities" in row
         mock_task_api_dep.get.assert_awaited_once_with(
             "/",
             params={
@@ -261,42 +266,6 @@ class TestBackupMongoApiList:
         mock_task_api_dep.post.assert_awaited_once_with(
             "/history/latest",
             json={"names": ["parent-backup-a", "parent-backup-b"]},
-        )
-
-    def test_list_with_status_filter_uses_bounded_limit(
-        self, test_client, mock_task_api_dep
-    ) -> None:
-        """When ``status`` is set, fetch parents with bounded limit (not 0)."""
-        parent_a = build_backup_task("parent-backup-a")
-        parent_b = build_backup_task("parent-backup-b")
-        mock_task_api_dep.get = AsyncMock(
-            return_value={
-                "items": [parent_a, parent_b],
-                "total": TWO_PARENT_FIXTURE_TOTAL,
-                "offset": 0,
-                "limit": MAX_PAGINATION_LIMIT,
-            }
-        )
-        mock_task_api_dep.post = AsyncMock(
-            return_value={"parent-backup-a": "success", "parent-backup-b": "running"},
-        )
-
-        response = test_client.get(f"{API_BASE}/?status=success")
-
-        assert response.status_code == status.HTTP_200_OK
-        body = response.json()
-        assert body["total"] == 1
-        assert len(body["items"]) == 1
-        assert body["items"][0]["name"] == "parent-backup-a"
-        mock_task_api_dep.get.assert_awaited_once_with(
-            "/",
-            params={
-                "owner": TaskOwner.BACKUP_MONGO.value,
-                "parent_is_null": "true",
-                "backup_type": BackupType.PBM_CONFIG.value,
-                "offset": 0,
-                "limit": MAX_PAGINATION_LIMIT,
-            },
         )
 
     @pytest.mark.parametrize(
@@ -383,6 +352,11 @@ class TestBackupMongoApiCreate:
         )
 
         assert response.status_code == status.HTTP_201_CREATED
+        create_body = response.json()
+        assert create_body["service_type"] == ServiceTypeEnum.MONGODB.value
+        assert "anonymize_mask" in create_body
+        assert "anonymized_entities" in create_body
+        assert "connectivity_warning" in create_body
         assert mock_task_api_dep.post.await_count == EXPECTED_CASCADE_POSTS
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
         assert first_post["owner"] == TaskOwner.BACKUP_MONGO.value
@@ -470,6 +444,9 @@ class TestBackupMongoApiDetail:
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
         assert body["name"] == "parent-backup"
+        assert body["service_type"] == ServiceTypeEnum.MONGODB.value
+        assert "anonymize_mask" in body
+        assert "anonymized_entities" in body
         derived_names = {item["name"] for item in body["derived_tasks"]}
         assert derived_names == {
             "parent-backup-logical",

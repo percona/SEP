@@ -19,16 +19,15 @@
 RestoreTaskGroupPayloads`` builder shared by the JSON create route and the legacy
 Jinja form path (both feed it the service name resolved by the impure, 404-tolerant
 ``_resolve_service_name`` in ``deps``), so a restore task group's payloads are
-byte-identical regardless of the call origin. Each leg's envelope is assembled
-directly (``run-python`` tasks carry no connectivity meta; each child carries
-``data["parent"]``), so the helpers here take no inventory or API client.
+byte-identical regardless of the call origin. Each leg's envelope is assembled through
+the framework's ``build_run_python_task`` builder (``run-python`` tasks carry no
+connectivity meta; each child carries ``data["parent"]``), so the helpers here take no
+inventory or API client.
 """
-
-from pathlib import Path
 
 import yaml
 
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.sep.apps.backup_mongo.restore.models import (
     PbmForceResyncPayloadModel,
     PbmListPayloadModel,
@@ -40,32 +39,29 @@ from app.sep.apps.backup_mongo.restore.models import (
     RestoreTaskGroupPayloads,
     RestoreTaskLegModel,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.sep.apps.framework.spec import build_run_python_task
+from app.tasks.models import TaskOwner, TaskWrite
 
 RESTORE_CONFIG_PAYLOAD_MARKER = "pbm_restore_config_payload"
 _BASE_REQUIREMENTS = "packaging\nPyYAML"
 
 
 def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
-    """Build TaskWrite from typed leg descriptor."""
-    meta = {
-        "target": leg.target,
-        "config": leg.config_yaml,
-        "requirements": leg.requirements,
-    }
-    if leg.service_name is not None:
-        meta["_service_name"] = leg.service_name
-    data = {
-        "task": "run-python",
-        "meta": meta,
-        "payload": to_payload_reference(Path(__file__).parent / leg.payload_name),
-        **({"parent": leg.parent} if leg.parent is not None else {}),
-    }
-    return TaskWrite(
+    """Build the run-python ``TaskWrite`` from a typed restore leg descriptor.
+
+    :param leg: The typed restore leg carrying the envelope's target, config,
+        requirements, payload name, and optional service name and parent.
+    :return: The assembled leg ``TaskWrite``.
+    """
+    return build_run_python_task(
         name=leg.name,
-        backend=TaskBackendEnum.PROXY,
         owner=TaskOwner.RESTORE_MONGO,
-        data=data,
+        target=leg.target,
+        config=leg.config_yaml,
+        requirements=leg.requirements,
+        payload=payload_uri(__file__, leg.payload_name),
+        service_name=leg.service_name,
+        extra_data=None if leg.parent is None else {"parent": leg.parent},
     )
 
 

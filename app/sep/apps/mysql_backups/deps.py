@@ -21,15 +21,19 @@ from typing import Annotated, Any
 import yaml
 from fastapi import Depends, Form
 
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response, make_task_dep
-from app.sep.apps.framework.spec import assemble_envelope, resolve_refs
+from app.sep.apps.framework.spec import (
+    assemble_envelope,
+    parse_server_list_config,
+    resolve_refs,
+)
 from app.sep.apps.mysql_backups.models import (
     BackupCreate,
     BackupResponse,
     BackupType,
 )
 from app.sep.apps.mysql_backups.spec import build_backup_spec
-from app.sep.connectivity import get_check_connectivity_flag
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -77,60 +81,36 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
 
     Extracts configuration from an existing backup task to populate the edit form.
 
+    Delegates the shared ``SERVER_LIST`` parsing to
+    :func:`~app.sep.apps.framework.spec.parse_server_list_config`, layering on the
+    mysql-specific alias, encryption recipient, and the mydumper / xtrabackup /
+    binlog / upload-quiet keys.
+
     :param task: The task data retrieved from the Tasks API.
-    :type task: dict[str, Any]
     :return: A dictionary containing parsed backup configuration.
-    :rtype: dict[str, Any]
     """
-    data = task["data"]
-    meta = data["meta"]
-    task_config = yaml.safe_load(meta["config"])
+    task_config = yaml.safe_load(task["data"]["meta"]["config"])
     server_config = task_config["SERVER_LIST"][0]
     all_servers_config = task_config.get("ALL_SERVERS", {})
 
-    result = {
-        "name": task["name"],
-        "hostname": meta["target"],
-        "backup_type": server_config["BACKUP_TYPE"],
-        "service_id": None,
-        "host": server_config["HOST"],
+    extra_fields = {
         "port": server_config.get("PORT"),
         "alias": server_config.get("ALIAS"),
     }
-
     if "dir_encrypt_config" in server_config:
-        result["encryption_recipient"] = server_config["dir_encrypt_config"].get(
+        extra_fields["encryption_recipient"] = server_config["dir_encrypt_config"].get(
             "encryption_recipient"
         )
-
-    upload_providers = {
-        provider.upper()
-        for provider in server_config.get("UPLOAD", [])
-        if isinstance(provider, str)
-    }
-    if "S3" in upload_providers:
-        result["s3_bucket"] = all_servers_config.get("S3_BUCKET")
-        result["s3_storage_class"] = all_servers_config.get("S3_STORAGE_CLASS")
-        result["skip_s3_safety_check"] = all_servers_config.get(
-            "SKIP_S3_SAFETY_CHECK", False
-        )
-    if "GSUTIL" in upload_providers:
-        result["gs_bucket"] = all_servers_config.get("GS_BUCKET")
-    if "RSYNC" in upload_providers:
-        result["rsync_path"] = all_servers_config.get("RSYNC_PATH")
-
-    result["binlog_alternative_host"] = all_servers_config.get(
+    extra_fields["binlog_alternative_host"] = all_servers_config.get(
         "BINLOG_ALTERNATIVE_HOST"
     )
-    result["mydumper_verbose"] = all_servers_config.get("MYDUMPER_VERBOSE")
-    result["xtrabackup_quiet"] = all_servers_config.get("XTRABACKUP_QUIET")
-    result["upload_quiet"] = all_servers_config.get("UPLOAD_QUIET")
+    extra_fields["mydumper_verbose"] = all_servers_config.get("MYDUMPER_VERBOSE")
+    extra_fields["xtrabackup_quiet"] = all_servers_config.get("XTRABACKUP_QUIET")
+    extra_fields["upload_quiet"] = all_servers_config.get("UPLOAD_QUIET")
 
-    for key, value in all_servers_config.items():
-        if key.lower() not in result:
-            result[key.lower()] = value
-
-    return result
+    return parse_server_list_config(
+        task, server_config, all_servers_config, extra_fields
+    )
 
 
 BackupGeneratedTask = Annotated[TaskWrite, Depends(build_backup_task_payload)]
@@ -192,6 +172,7 @@ def build_mysql_backups_api_task_response(
         extras={
             "backup_type": _extract_backup_type_from_task(task),
             "hostname": hostname,
+            "service_type": ServiceTypeEnum.MYSQL,
         },
     )
 
@@ -257,4 +238,3 @@ async def get_backups_index_context(
 
 
 BackupsIndexContext = Annotated[dict[str, Any], Depends(get_backups_index_context)]
-CheckConnectivityFlag = Annotated[bool, Depends(get_check_connectivity_flag)]

@@ -21,7 +21,7 @@ from typing import Any, TYPE_CHECKING
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import parse_alters_task_args
-from app.sep.apps.framework.form_backfill_inventory import meta_service_hints
+from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
@@ -63,9 +63,6 @@ def reconstruct_alters_form(
     :param ctx: Shared backfill context carrying the inventory lookup table.
     :return: A create-model-shaped dict, or ``None`` when reconstruction fails.
     """
-    if ctx.service_lookup is None:
-        return None
-
     data = task.data
     meta = data.get("meta")
     if (
@@ -81,13 +78,7 @@ def reconstruct_alters_form(
     if schema_name is None or table_name is None or hostname is None:
         return None
 
-    host, port, service_name = meta_service_hints(meta)
-    service_id = ctx.service_lookup.resolve(
-        service_type=ServiceTypeEnum.MYSQL,
-        host=host,
-        port=port,
-        service_name=service_name,
-    )
+    service_id = resolve_service_from_meta(ctx, meta, ServiceTypeEnum.MYSQL)
     if service_id is None:
         return None
 

@@ -1,0 +1,70 @@
+{
+  "display_name": "Multi Ref",
+  "forms": [
+    {
+      "collapsed_by_default": false,
+      "collapsible": false,
+      "fields": [
+        {
+          "label": "Services",
+          "name": "services",
+          "required": false,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "multi_service"
+        },
+        {
+          "allow_custom": true,
+          "label": "Free Services",
+          "name": "free_services",
+          "required": false,
+          "service_types": [
+            "mysql"
+          ],
+          "type": "multi_service"
+        },
+        {
+          "depends_on": "services",
+          "label": "Schemas",
+          "name": "schemas",
+          "required": false,
+          "type": "multi_schema"
+        },
+        {
+          "depends_on": "schemas",
+          "label": "Tables",
+          "name": "tables",
+          "required": false,
+          "type": "multi_table"
+        },
+        {
+          "label": "Hosts",
+          "name": "hosts",
+          "required": false,
+          "type": "multi_host"
+        },
+        {
+          "allow_custom": true,
+          "label": "Free Hosts",
+          "name": "free_hosts",
+          "required": false,
+          "type": "multi_host"
+        }
+      ],
+      "render_after_submit": false,
+      "title": "Main"
+    }
+  ],
+  "list_view": {
+    "columns": [
+      {
+        "key": "name",
+        "label": "Name",
+        "sortable": false
+      }
+    ],
+    "overview_hidden_fields": []
+  },
+  "name": "multi_ref"
+}

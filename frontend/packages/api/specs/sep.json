@@ -616,14 +616,44 @@
         "type": "object"
       },
       "AltersTaskResponse": {
-        "description": "Represent an alters task API response for list and detail surfaces.\n\nThe create/update routes return the\n:data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models\nderived from this base; both add ``connectivity_warning`` per the framework's\nderived create-response standard, so the always-null warning field stays off\nlist/detail rows.\n\n:param name: The name of the alters task.\n:param owner: The entity or user that owns the task.\n:param service_type: The type of database service (always MySQL for alters).\n:param status: The current execution status of the task.\n:param id: The unique identifier for the alters task.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for the alter execution.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: The user who initiated the task.\n:param last_updated_by: The user who last modified the task record.",
+        "description": "Represent an alters task API response for list and detail surfaces.\n\nAdd no fields of its own — the alters list/detail surface is exactly the\nshared task-response surface. The create/update routes return the\n:data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models\nderived from this base, which add ``connectivity_warning`` per the\nframework's derived create-response standard.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -724,7 +754,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "AltersTaskResponse",
         "type": "object"
@@ -736,6 +767,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -848,7 +899,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "AltersTaskResponseCreate",
         "type": "object"
@@ -860,6 +912,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -972,7 +1044,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "AltersTaskResponseUpdate",
         "type": "object"
@@ -2224,7 +2297,7 @@
         "type": "object"
       },
       "BackupDetail": {
-        "description": "Describe the full detail response for a single backup.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime\n:param templates: Templates captured in the backup.\n:type templates: list[BackupDetailTemplate]\n:param rules: Rules captured in the backup.\n:type rules: list[BackupDetailRule]\n:param contact_points: Contact points captured in the backup.\n:type contact_points: list[BackupDetailContactPoint]\n:param folders: Folders captured in the backup.\n:type folders: list[BackupDetailFolder]\n:param notification_policy_receiver: Top-level receiver from the captured\n    notification policy, or ``None`` when no policy was captured.\n:type notification_policy_receiver: str | None",
+        "description": "Describe the full detail response for a single backup.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.\n:param templates: Templates captured in the backup.\n:param rules: Rules captured in the backup.\n:param contact_points: Contact points captured in the backup.\n:param folders: Folders captured in the backup.\n:param notification_policy_receiver: Top-level receiver from the captured\n    notification policy, or ``None`` when no policy was captured.",
         "properties": {
           "contact_points": {
             "items": {
@@ -2288,7 +2361,7 @@
         "type": "object"
       },
       "BackupDetailContactPoint": {
-        "description": "Represent a contact-point entry inside a backup snapshot.\n\n:param name: The contact point name.\n:type name: str\n:param type: The contact point type (e.g. ``\"pagerduty\"``).\n:type type: str",
+        "description": "Represent a contact-point entry inside a backup snapshot.\n\n:param name: The contact point name.\n:param type: The contact point type (e.g. ``\"pagerduty\"``).",
         "properties": {
           "name": {
             "title": "Name",
@@ -2307,7 +2380,7 @@
         "type": "object"
       },
       "BackupDetailFolder": {
-        "description": "Represent a folder entry inside a backup snapshot.\n\n:param title: The folder title.\n:type title: str",
+        "description": "Represent a folder entry inside a backup snapshot.\n\n:param title: The folder title.",
         "properties": {
           "title": {
             "title": "Title",
@@ -2321,7 +2394,7 @@
         "type": "object"
       },
       "BackupDetailRule": {
-        "description": "Represent a rule entry inside a backup snapshot.\n\n:param title: The rule title.\n:type title: str",
+        "description": "Represent a rule entry inside a backup snapshot.\n\n:param title: The rule title.",
         "properties": {
           "title": {
             "title": "Title",
@@ -2335,7 +2408,7 @@
         "type": "object"
       },
       "BackupDetailTemplate": {
-        "description": "Represent a template entry inside a backup snapshot.\n\n:param name: The template name.\n:type name: str\n:param summary: The template summary blurb.\n:type summary: str",
+        "description": "Represent a template entry inside a backup snapshot.\n\n:param name: The template name.\n:param summary: The template summary blurb.",
         "properties": {
           "name": {
             "title": "Name",
@@ -2422,6 +2495,26 @@
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -2533,6 +2626,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -2560,10 +2663,11 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupPgCreateResponse",
         "type": "object"
@@ -2706,11 +2810,31 @@
         "type": "object"
       },
       "BackupResponse": {
-        "description": "Represent a backup task API response.\n\n:param id: The unique identifier for the backup task.\n:type id: int | None\n:param backend: The backend executing the task.\n:type backend: TaskBackendEnum\n:param data: The raw configuration and parameters for the task.\n:type data: dict[str, Any]\n:param hostname: The executor hostname target.\n:type hostname: str | None\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications fire on task failure.\n:type alert_on_fail: bool\n:param created_at: When the task was created.\n:type created_at: datetime | None\n:param updated_at: When the task was last modified.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None",
+        "description": "Represent a backup task API response.\n\n:param hostname: The executor hostname target.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -2719,6 +2843,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/BackupType-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
               },
               {
                 "type": "null"
@@ -2796,6 +2930,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -2825,7 +2969,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "BackupResponse",
         "type": "object"
@@ -2889,7 +3034,7 @@
         "type": "string"
       },
       "BackupSummary": {
-        "description": "Represent a compact backup row used by the list endpoint.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime\n:param metadata: Summary counts persisted alongside the backup snapshot.\n:type metadata: dict[str, Any]",
+        "description": "Represent a compact backup row used by the list endpoint.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.\n:param metadata: Summary counts persisted alongside the backup snapshot.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -4901,6 +5046,18 @@
                   "$ref": "#/components/schemas/MultiChoiceField"
                 },
                 {
+                  "$ref": "#/components/schemas/MultiHostField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiSchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiTableField"
+                },
+                {
                   "$ref": "#/components/schemas/SchemaField"
                 },
                 {
@@ -5156,7 +5313,7 @@
         "type": "object"
       },
       "IndexBackupSummary": {
-        "description": "Represent a compact backup row for the index \"recent backups\" widget.\n\nLeaner than :class:`BackupSummary` (no ``metadata``): the list page only\nrenders the id and timestamp, so the index payload omits the summary counts.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime",
+        "description": "Represent a compact backup row for the index \"recent backups\" widget.\n\nLeaner than :class:`BackupSummary` (no ``metadata``): the list page only\nrenders the id and timestamp, so the index payload omits the summary counts.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -5176,7 +5333,7 @@
         "type": "object"
       },
       "IndexPagerDutyStatus": {
-        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:type configured: bool\n:param uid: The contact point UID when configured, otherwise ``None``.\n:type uid: str | None",
+        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:param uid: The contact point UID when configured, otherwise ``None``.",
         "properties": {
           "configured": {
             "title": "Configured",
@@ -5201,7 +5358,7 @@
         "type": "object"
       },
       "IndexResponse": {
-        "description": "Describe the response body for ``GET /api/apps/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:type groups: list[IndexTemplateGroup]\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:type pmm_connected: bool\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:type pagerduty: IndexPagerDutyStatus | None\n:param recent_backups: The most recent alert backups, newest first.\n:type recent_backups: list[IndexBackupSummary]",
+        "description": "Describe the response body for ``GET /api/apps/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:param recent_backups: The most recent alert backups, newest first.",
         "properties": {
           "groups": {
             "items": {
@@ -5242,7 +5399,7 @@
         "type": "object"
       },
       "IndexTemplate": {
-        "description": "Represent a single alert template row on the index page.\n\n:param name: The display name of the alert template.\n:type name: str\n:param service_type: The service category this template applies to.\n:type service_type: str\n:param expression: The PromQL expression backing the alert.\n:type expression: str\n:param default_threshold: The default numeric threshold for the UI.\n:type default_threshold: float\n:param severity: The severity level (``\"info\"``, ``\"warning\"``, ``\"critical\"``).\n:type severity: str\n:param description: A human-readable description of the alert.\n:type description: str\n:param summary: A short summary template for notifications.\n:type summary: str\n:param in_pmm: ``True`` when a template of this name is already present in PMM.\n:type in_pmm: bool",
+        "description": "Represent a single alert template row on the index page.\n\n:param name: The display name of the alert template.\n:param service_type: The service category this template applies to.\n:param expression: The PromQL expression backing the alert.\n:param default_threshold: The default numeric threshold for the UI.\n:param severity: The severity level (``\"info\"``, ``\"warning\"``, ``\"critical\"``).\n:param description: A human-readable description of the alert.\n:param summary: A short summary template for notifications.\n:param in_pmm: ``True`` when a template of this name is already present in PMM.",
         "properties": {
           "default_threshold": {
             "title": "Default Threshold",
@@ -5291,7 +5448,7 @@
         "type": "object"
       },
       "IndexTemplateGroup": {
-        "description": "Group index templates by service type.\n\n:param service_type: The service type identifier (e.g. ``\"mysql\"``).\n:type service_type: str\n:param label: The human-readable service type label (e.g. ``\"MySQL\"``).\n:type label: str\n:param templates: The templates belonging to this service type.\n:type templates: list[IndexTemplate]",
+        "description": "Group index templates by service type.\n\n:param service_type: The service type identifier (e.g. ``\"mysql\"``).\n:param label: The human-readable service type label (e.g. ``\"MySQL\"``).\n:param templates: The templates belonging to this service type.",
         "properties": {
           "label": {
             "title": "Label",
@@ -5688,11 +5845,439 @@
         "title": "MultiChoiceField",
         "type": "object"
       },
+      "MultiHostField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_host",
+            "default": "multi_host",
+            "enum": [
+              "multi_host"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "MultiHostField",
+        "type": "object"
+      },
+      "MultiSchemaField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory database-schema selector field.\n\nThe multi-value counterpart of :class:`SchemaField`: the renderer commits a\nlist of schemas instead of a single one. Derived from a\n``SchemaRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the cascaded options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "minLength": 1,
+            "title": "Depends On",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_schema",
+            "default": "multi_schema",
+            "enum": [
+              "multi_schema"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "depends_on"
+        ],
+        "title": "MultiSchemaField",
+        "type": "object"
+      },
+      "MultiServiceField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory service selector field.\n\nThe multi-value counterpart of :class:`ServiceField`: the renderer commits a\nlist of services instead of a single one. Derived from a\n``ServiceRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the inventory options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "service_types": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceTypeEnum"
+            },
+            "title": "Service Types",
+            "type": "array"
+          },
+          "type": {
+            "const": "multi_service",
+            "default": "multi_service",
+            "enum": [
+              "multi_service"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "service_types"
+        ],
+        "title": "MultiServiceField",
+        "type": "object"
+      },
+      "MultiTableField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory table selector field.\n\nThe multi-value counterpart of :class:`TableField`: the renderer commits a\nlist of tables instead of a single one. Derived from a\n``TableRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_table\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: The name of the field whose value drives the list of\n    available tables.\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the cascaded options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "minLength": 1,
+            "title": "Depends On",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_table",
+            "default": "multi_table",
+            "enum": [
+              "multi_table"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "depends_on"
+        ],
+        "title": "MultiTableField",
+        "type": "object"
+      },
       "MysqlBackupsCreateResponse": {
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -5788,6 +6373,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -5817,7 +6412,8 @@
           "backend",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "anonymized_entities"
         ],
         "title": "MysqlBackupsCreateResponse",
         "type": "object"
@@ -5916,6 +6512,10 @@
                   "host": "#/components/schemas/HostField",
                   "integer": "#/components/schemas/IntegerField",
                   "multi_choice": "#/components/schemas/MultiChoiceField",
+                  "multi_host": "#/components/schemas/MultiHostField",
+                  "multi_schema": "#/components/schemas/MultiSchemaField",
+                  "multi_service": "#/components/schemas/MultiServiceField",
+                  "multi_table": "#/components/schemas/MultiTableField",
                   "schema": "#/components/schemas/SchemaField",
                   "script_preview": "#/components/schemas/ScriptPreviewField",
                   "service": "#/components/schemas/ServiceField",
@@ -5950,6 +6550,18 @@
                 },
                 {
                   "$ref": "#/components/schemas/MultiChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiHostField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiSchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiTableField"
                 },
                 {
                   "$ref": "#/components/schemas/SchemaField"
@@ -6070,7 +6682,7 @@
         "type": "object"
       },
       "PagerDutyRequest": {
-        "description": "Describe the request body for ``POST /api/apps/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.\n:type integration_key: NonEmptyStr",
+        "description": "Describe the request body for ``POST /api/apps/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.",
         "properties": {
           "integration_key": {
             "minLength": 1,
@@ -6085,7 +6697,7 @@
         "type": "object"
       },
       "PagerDutyResponse": {
-        "description": "Describe the response body for the PagerDuty save / delete endpoints.\n\n:param status: ``\"created\"``, ``\"updated\"`` (save) or ``\"deleted\"`` (delete).\n:type status: Literal[\"created\", \"updated\", \"deleted\"]",
+        "description": "Describe the response body for the PagerDuty save / delete endpoints.\n\n:param status: ``\"created\"``, ``\"updated\"`` (save) or ``\"deleted\"`` (delete).",
         "properties": {
           "status": {
             "enum": [
@@ -6101,6 +6713,37 @@
           "status"
         ],
         "title": "PagerDutyResponse",
+        "type": "object"
+      },
+      "PaginatedResponse_AltersTaskResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AltersTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[AltersTaskResponse]",
         "type": "object"
       },
       "PaginatedResponse_BackupResponse_": {
@@ -6395,7 +7038,7 @@
         "type": "object"
       },
       "PushItemResult": {
-        "description": "Represent a per-template result row returned by the push endpoint.\n\n:param name: The template name the result applies to.\n:type name: str\n:param status: One of ``\"success\"``, ``\"skipped\"``, ``\"error\"``.\n:type status: Literal[\"success\", \"skipped\", \"error\"]\n:param message: A human-readable description of the outcome.\n:type message: str",
+        "description": "Represent a per-template result row returned by the push endpoint.\n\n:param name: The template name the result applies to.\n:param status: One of ``\"success\"``, ``\"skipped\"``, ``\"error\"``.\n:param message: A human-readable description of the outcome.",
         "properties": {
           "message": {
             "title": "Message",
@@ -6424,7 +7067,7 @@
         "type": "object"
       },
       "PushRequest": {
-        "description": "Describe the request body for ``POST /api/apps/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.\n:type selected_templates: list[NonEmptyStr]",
+        "description": "Describe the request body for ``POST /api/apps/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.",
         "properties": {
           "selected_templates": {
             "items": {
@@ -6443,7 +7086,7 @@
         "type": "object"
       },
       "PushResponse": {
-        "description": "Wrap the per-template results returned by the push endpoint.\n\n:param results: One :class:`PushItemResult` per template in the request.\n:type results: list[PushItemResult]",
+        "description": "Wrap the per-template results returned by the push endpoint.\n\n:param results: One :class:`PushItemResult` per template in the request.",
         "properties": {
           "results": {
             "items": {
@@ -6558,7 +7201,7 @@
         "type": "object"
       },
       "ReportJobResponse": {
-        "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:param status: Lowercase Celery task state.\n:type status: str\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:type pdf_ready: bool\n:param result: Successful job result payload, if available.\n:type result: dict[str, Any] | None\n:param error: Failed job error text, if available.\n:type error: str | None",
+        "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:param status: Lowercase Celery task state.\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:param result: Successful job result payload, if available.\n:param error: Failed job error text, if available.",
         "properties": {
           "error": {
             "anyOf": [
@@ -6635,7 +7278,7 @@
         "type": "object"
       },
       "ReportSnapshotWrite": {
-        "description": "Define report snapshot body for PDF/upload jobs.\n\n:param report: Generated report snapshot reused for PDF/upload work.\n:type report: ReportData",
+        "description": "Define report snapshot body for PDF/upload jobs.\n\n:param report: Generated report snapshot reused for PDF/upload work.",
         "properties": {
           "report": {
             "$ref": "#/components/schemas/ReportData"
@@ -7147,7 +7790,7 @@
         "type": "object"
       },
       "RestoreRequest": {
-        "description": "Describe the request body for ``POST /api/apps/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.\n:type backup_id: int",
+        "description": "Describe the request body for ``POST /api/apps/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.",
         "properties": {
           "backup_id": {
             "exclusiveMinimum": 0.0,
@@ -7162,7 +7805,7 @@
         "type": "object"
       },
       "RestoreResponse": {
-        "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:type status: Literal[\"success\"]\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.\n:type details: dict[str, Any]",
+        "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.",
         "properties": {
           "details": {
             "title": "Details",
@@ -9967,12 +10610,42 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -10063,6 +10736,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -10090,20 +10773,41 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupTaskDetailResponse",
         "type": "object"
       },
       "app__sep__apps__backup_mongo__models__BackupTaskResponse": {
-        "description": "Represent a backup task API response.\n\n:param id: The unique identifier for the backup task.\n:type id: int | None\n:param backend: The backend worker/engine executing the task.\n:type backend: TaskBackendEnum\n:param backup_type: The PBM backup type stored on the task.\n:type backup_type: str\n:param data: The raw configuration and parameters for the backup execution.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:type alert_on_fail: bool\n:param created_at: The timestamp when the task was first created.\n:type created_at: datetime | None\n:param updated_at: The timestamp of the last modification to the task.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None",
+        "description": "Represent a backup task API response.\n\n:param backup_type: The PBM backup type stored on the task.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -10111,6 +10815,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -10183,6 +10897,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -10210,10 +10934,11 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupTaskResponse",
         "type": "object"
@@ -10244,11 +10969,31 @@
         "type": "string"
       },
       "app__sep__apps__backup_pg__models__BackupTaskDetailResponse": {
-        "description": "Represent a single pgBackRest backup task detail response.\n\nAdds the executor host and port resolved from the task's YAML config so\nthe FE detail view can render them alongside the parity Overview block;\nlist rows omit these to keep the table response compact.\n\n:param host: The PostgreSQL host the task connects to.\n:type host: str | None\n:param port: The PostgreSQL port the task connects to.\n:type port: int | None",
+        "description": "Represent a single pgBackRest backup task detail response.\n\nAdd the executor host and port resolved from the task's YAML config so the\nFE detail view can render them alongside the parity Overview block; list\nrows omit these to keep the table response compact.\n\n:param host: The PostgreSQL host the task connects to.\n:param port: The PostgreSQL port the task connects to.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -10256,6 +11001,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -10350,6 +11105,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -10377,20 +11142,41 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupTaskDetailResponse",
         "type": "object"
       },
       "app__sep__apps__backup_pg__models__BackupTaskResponse": {
-        "description": "Represent a pgBackRest backup task API response.\n\n:param id: The task identifier from the Tasks service, if assigned.\n:type id: int | None\n:param backend: The backend executing the task.\n:type backend: TaskBackendEnum\n:param backup_type: The ``backup_type`` discriminator stored on the task.\n:type backup_type: str\n:param data: The raw task ``data`` payload.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion.\n:type protected: bool\n:param alert_on_fail: Whether PMM alerts fire when the task fails.\n:type alert_on_fail: bool\n:param created_at: Creation timestamp.\n:type created_at: datetime | None\n:param updated_at: Last-modification timestamp.\n:type updated_at: datetime | None\n:param created_by: User that created the task.\n:type created_by: str | None\n:param last_updated_by: User that last modified the task record.\n:type last_updated_by: str | None",
+        "description": "Represent a pgBackRest backup task API response.\n\n:param backup_type: The ``backup_type`` discriminator stored on the task.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -10398,6 +11184,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -10470,6 +11266,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -10497,10 +11303,11 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupTaskResponse",
         "type": "object"
@@ -11057,9 +11864,31 @@
     },
     "/api/apps/alters/": {
       "get": {
-        "description": "List parent alters execute tasks.",
-        "operationId": "alters_alters_api_list_api_apps_alters__get",
+        "operationId": "alters__list_paginated_api_apps_alters__get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "service_type",
@@ -11098,11 +11927,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AltersTaskResponse"
-                  },
-                  "title": "Response Alters Alters Api List Api Apps Alters  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_AltersTaskResponse_"
                 }
               }
             },
@@ -11119,7 +11944,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Alters Api List",
+        "summary": "List",
         "tags": [
           "alters"
         ]
@@ -11754,25 +12579,8 @@
     },
     "/api/apps/backup_mongo/": {
       "get": {
-        "description": "List parent PBM backup config tasks.",
-        "operationId": "backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get",
+        "operationId": "backup_mongo__list_paginated_api_apps_backup_mongo__get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
           {
             "in": "query",
             "name": "offset",
@@ -11794,6 +12602,22 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
             }
           }
         ],
@@ -11819,7 +12643,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Backup Mongo Api List",
+        "summary": "List",
         "tags": [
           "backup_mongo"
         ]

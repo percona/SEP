@@ -23,13 +23,13 @@ task's payload is byte-identical regardless of the call origin. The impure,
 """
 
 from dataclasses import dataclass
-from pathlib import Path
 
 import yaml
 from fastapi.encoders import jsonable_encoder
 
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.core.utils.pydantic import extract_model_from_instance
+from app.sep.apps.framework.spec import build_run_python_task
 from app.sep.apps.mysql_backups.models import BackupType
 from app.sep.apps.mysql_backups.restore.models import (
     BaseRestoreConfigServer,
@@ -38,7 +38,7 @@ from app.sep.apps.mysql_backups.restore.models import (
     RestoreConfigServer,
     RestoreCreate,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import TaskOwner, TaskWrite
 
 _BACKUP_TYPE_TO_PAYLOAD = {
     BackupType.MYDUMPER: "mydumper_payload",
@@ -105,25 +105,14 @@ def build_restore_spec(form: RestoreCreate, resolved: RestoreResolved) -> TaskWr
     if form.backup_type == BackupType.XTRABACKUP:
         requirements += "\nfilelock"
 
-    payload_path = Path(__file__).parent / payload_name
-
-    meta = {
-        "config": yaml.dump(
+    return build_run_python_task(
+        name=form.task_name,
+        owner=TaskOwner.RESTORES,
+        target=form.hostname,
+        config=yaml.dump(
             jsonable_encoder(restore_config, by_alias=True, exclude_none=True)
         ),
-        "target": form.hostname,
-        "requirements": requirements,
-    }
-    if resolved.service_name is not None:
-        meta["_service_name"] = resolved.service_name
-
-    return TaskWrite(
-        name=form.task_name,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.RESTORES,
-        data={
-            "task": "run-python",
-            "meta": meta,
-            "payload": to_payload_reference(payload_path),
-        },
+        requirements=requirements,
+        payload=payload_uri(__file__, payload_name),
+        service_name=resolved.service_name,
     )

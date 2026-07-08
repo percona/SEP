@@ -22,6 +22,7 @@ import pytest
 from fastapi import HTTPException, status
 
 from app.core.requests.remote_api import RemoteAPI
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import (
     alters_executor_matches_service_host,
     alters_satellite_task_names,
@@ -32,22 +33,20 @@ from app.sep.apps.alters.deps import (
     cascade_create_alters_group,
     cascade_update_alters_group,
     extract_service_info,
-    get_alters_api_task_responses,
     get_alters_index_context,
     get_alters_task,
     get_alters_task_info,
     map_alters_legacy_form,
     parse_alters_task_args,
-    parse_single_arg,
     resolve_predecessor_specs,
 )
 from app.sep.apps.alters.models import AltersCreate
 from app.sep.apps.alters.schema import alters_schema
 from app.sep.apps.framework.schema import ChainedPredecessor
+from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
-    TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
@@ -469,12 +468,11 @@ def test_parse_alters_task_args_recursion_dsn_strips_h_p():
     assert out["dsn_table"] == "D=dbx,t=tbl"
 
 
-def test_parse_single_arg_recursion_dsn_only_host_port():
-    """dsn= value with only h=/P= keeps full string as dsn_table."""
-    fv = parse_alters_task_args({"args": "--execute"})
-    parse_single_arg("--recursion-method=dsn=h=1,P=2", fv)
-    assert fv["recursion_method"] == "dsn"
-    assert fv["dsn_table"] == "h=1,P=2"
+def test_parse_alters_task_args_recursion_dsn_only_host_port():
+    """Keep the whole dsn= value as dsn_table when it has only h=/P= parts."""
+    out = parse_alters_task_args({"args": "--recursion-method=dsn=h=1,P=2 --execute"})
+    assert out["recursion_method"] == "dsn"
+    assert out["dsn_table"] == "h=1,P=2"
 
 
 @pytest.mark.asyncio
@@ -764,89 +762,6 @@ async def test_cascade_update_pairs_predecessor_names_with_specs(mocker):
         alters_schema.predecessors = original_predecessors
 
 
-@pytest.mark.asyncio
-async def test_get_alters_api_task_responses_resolves_statuses_via_batch():
-    """List endpoint resolves parent statuses via the batch endpoint."""
-    tasks_api = AsyncMock(spec=RemoteAPI)
-    parent = TaskFactory.build(
-        name="parent-alter",
-        owner=TaskOwner.ALTERS,
-        data={"task": "run-command", "meta": {"target": "host1"}},
-    )
-    satellite = TaskFactory.build(
-        name="parent-alter-dry-run",
-        owner=TaskOwner.ALTERS,
-        data={
-            "task": "run-command",
-            "meta": {"target": "host1"},
-            "parent": "parent-alter",
-        },
-    )
-    tasks_api.get = AsyncMock(
-        return_value={
-            "items": [
-                parent.model_dump(mode="json"),
-                satellite.model_dump(mode="json"),
-            ],
-            "total": 2,
-            "offset": 0,
-            "limit": 50,
-        }
-    )
-    tasks_api.post = AsyncMock(
-        return_value={"parent-alter": TaskHistoryStatusEnum.SUCCESS.value}
-    )
-
-    results = await get_alters_api_task_responses(tasks_api)
-
-    assert len(results) == 1
-    assert results[0].name == "parent-alter"
-    assert results[0].status == TaskHistoryStatusEnum.SUCCESS
-    tasks_api.post.assert_awaited_once_with(
-        "/history/latest", json={"names": ["parent-alter"]}
-    )
-
-
-@pytest.mark.asyncio
-async def test_get_alters_api_task_responses_filters_by_status():
-    """Optional status filter applies after the batch status fetch."""
-    tasks_api = AsyncMock(spec=RemoteAPI)
-    parent_a = TaskFactory.build(
-        name="alter-a",
-        owner=TaskOwner.ALTERS,
-        data={"task": "run-command", "meta": {"target": "host1"}},
-    )
-    parent_b = TaskFactory.build(
-        name="alter-b",
-        owner=TaskOwner.ALTERS,
-        data={"task": "run-command", "meta": {"target": "host2"}},
-    )
-    tasks_api.get = AsyncMock(
-        return_value={
-            "items": [
-                parent_a.model_dump(mode="json"),
-                parent_b.model_dump(mode="json"),
-            ],
-            "total": 2,
-            "offset": 0,
-            "limit": 50,
-        }
-    )
-    tasks_api.post = AsyncMock(
-        return_value={
-            "alter-a": TaskHistoryStatusEnum.SUCCESS.value,
-            "alter-b": TaskHistoryStatusEnum.FAILED.value,
-        }
-    )
-
-    results = await get_alters_api_task_responses(
-        tasks_api,
-        status=TaskHistoryStatusEnum.SUCCESS,
-    )
-
-    assert [task.name for task in results] == ["alter-a"]
-
-
 def _make_alters_task(
     created_by: str | None = None, last_updated_by: str | None = None
 ) -> Task:
@@ -913,6 +828,20 @@ class TestBuildAltersApiTaskResponse:
 
         assert result.created_by == "uid-123"
         assert result.last_updated_by == "uid-456"
+
+    def test_service_type_and_anonymization_surface_populated(self):
+        """Assert the rebased response carries service_type and anonymization fields."""
+        mask = PIIEntity.CREDIT_CARD | PIIEntity.EMAIL_ADDRESS
+        task = _make_alters_task(created_by=None, last_updated_by=None)
+        task.anonymize_mask = mask
+
+        result = build_alters_api_task_response(task)
+
+        assert result.service_type == ServiceTypeEnum.MYSQL
+        assert result.anonymize_mask == mask
+        assert result.anonymized_entities == sorted(
+            entity.name for entity in PIIEntity.decode_selection(mask)
+        )
 
 
 _LEGACY_SCHEMA_ID = 10

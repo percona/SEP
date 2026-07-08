@@ -462,11 +462,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Alters Api List
-     * @description List parent alters execute tasks.
-     */
-    get: operations['alters_alters_api_list_api_apps_alters__get'];
+    /** List */
+    get: operations['alters__list_paginated_api_apps_alters__get'];
     put?: never;
     /**
      * Alters Api Create
@@ -698,11 +695,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Backup Mongo Api List
-     * @description List parent PBM backup config tasks.
-     */
-    get: operations['backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get'];
+    /** List */
+    get: operations['backup_mongo__list_paginated_api_apps_backup_mongo__get'];
     put?: never;
     /**
      * Backup Mongo Api Create
@@ -3355,30 +3349,24 @@ export interface components {
      * AltersTaskResponse
      * @description Represent an alters task API response for list and detail surfaces.
      *
-     *     The create/update routes return the
+     *     Add no fields of its own — the alters list/detail surface is exactly the
+     *     shared task-response surface. The create/update routes return the
      *     :data:`AltersTaskResponseCreate` / :data:`AltersTaskResponseUpdate` models
-     *     derived from this base; both add ``connectivity_warning`` per the framework's
-     *     derived create-response standard, so the always-null warning field stays off
-     *     list/detail rows.
-     *
-     *     :param name: The name of the alters task.
-     *     :param owner: The entity or user that owns the task.
-     *     :param service_type: The type of database service (always MySQL for alters).
-     *     :param status: The current execution status of the task.
-     *     :param id: The unique identifier for the alters task.
-     *     :param backend: The backend worker/engine executing the task.
-     *     :param data: The raw configuration and parameters used for the alter execution.
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :param created_at: The timestamp when the task was first created.
-     *     :param updated_at: The timestamp of the last modification to the task.
-     *     :param created_by: The user who initiated the task.
-     *     :param last_updated_by: The user who last modified the task record.
+     *     derived from this base, which add ``connectivity_warning`` per the
+     *     framework's derived create-response standard.
      */
     AltersTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -3406,6 +3394,13 @@ export interface components {
     AltersTaskResponseCreate: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
@@ -3435,6 +3430,13 @@ export interface components {
     AltersTaskResponseUpdate: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
@@ -4062,20 +4064,13 @@ export interface components {
      * @description Describe the full detail response for a single backup.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      *     :param templates: Templates captured in the backup.
-     *     :type templates: list[BackupDetailTemplate]
      *     :param rules: Rules captured in the backup.
-     *     :type rules: list[BackupDetailRule]
      *     :param contact_points: Contact points captured in the backup.
-     *     :type contact_points: list[BackupDetailContactPoint]
      *     :param folders: Folders captured in the backup.
-     *     :type folders: list[BackupDetailFolder]
      *     :param notification_policy_receiver: Top-level receiver from the captured
      *         notification policy, or ``None`` when no policy was captured.
-     *     :type notification_policy_receiver: str | None
      */
     BackupDetail: {
       /** Contact Points */
@@ -4101,9 +4096,7 @@ export interface components {
      * @description Represent a contact-point entry inside a backup snapshot.
      *
      *     :param name: The contact point name.
-     *     :type name: str
      *     :param type: The contact point type (e.g. ``"pagerduty"``).
-     *     :type type: str
      */
     BackupDetailContactPoint: {
       /** Name */
@@ -4116,7 +4109,6 @@ export interface components {
      * @description Represent a folder entry inside a backup snapshot.
      *
      *     :param title: The folder title.
-     *     :type title: str
      */
     BackupDetailFolder: {
       /** Title */
@@ -4127,7 +4119,6 @@ export interface components {
      * @description Represent a rule entry inside a backup snapshot.
      *
      *     :param title: The rule title.
-     *     :type title: str
      */
     BackupDetailRule: {
       /** Title */
@@ -4138,9 +4129,7 @@ export interface components {
      * @description Represent a template entry inside a backup snapshot.
      *
      *     :param name: The template name.
-     *     :type name: str
      *     :param summary: The template summary blurb.
-     *     :type summary: str
      */
     BackupDetailTemplate: {
       /** Name */
@@ -4219,6 +4208,13 @@ export interface components {
     BackupPgCreateResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
@@ -4244,6 +4240,7 @@ export interface components {
       port?: number | null;
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -4304,32 +4301,21 @@ export interface components {
      * BackupResponse
      * @description Represent a backup task API response.
      *
-     *     :param id: The unique identifier for the backup task.
-     *     :type id: int | None
-     *     :param backend: The backend executing the task.
-     *     :type backend: TaskBackendEnum
-     *     :param data: The raw configuration and parameters for the task.
-     *     :type data: dict[str, Any]
      *     :param hostname: The executor hostname target.
-     *     :type hostname: str | None
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
-     *     :param alert_on_fail: If True, notifications fire on task failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: When the task was created.
-     *     :type created_at: datetime | None
-     *     :param updated_at: When the task was last modified.
-     *     :type updated_at: datetime | None
-     *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
      */
     BackupResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       backup_type?: components['schemas']['BackupType-Output'] | null;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -4347,6 +4333,7 @@ export interface components {
       owner: components['schemas']['TaskOwner'];
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -4402,11 +4389,8 @@ export interface components {
      * @description Represent a compact backup row used by the list endpoint.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      *     :param metadata: Summary counts persisted alongside the backup snapshot.
-     *     :type metadata: dict[str, Any]
      */
     BackupSummary: {
       /**
@@ -5736,6 +5720,10 @@ export interface components {
         | components['schemas']['HostField']
         | components['schemas']['IntegerField']
         | components['schemas']['MultiChoiceField']
+        | components['schemas']['MultiHostField']
+        | components['schemas']['MultiSchemaField']
+        | components['schemas']['MultiServiceField']
+        | components['schemas']['MultiTableField']
         | components['schemas']['SchemaField']
         | components['schemas']['ScriptPreviewField']
         | components['schemas']['ServiceField']
@@ -5868,9 +5856,7 @@ export interface components {
      *     renders the id and timestamp, so the index payload omits the summary counts.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      */
     IndexBackupSummary: {
       /**
@@ -5886,9 +5872,7 @@ export interface components {
      * @description Describe the PagerDuty contact-point status on the index page.
      *
      *     :param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.
-     *     :type configured: bool
      *     :param uid: The contact point UID when configured, otherwise ``None``.
-     *     :type uid: str | None
      */
     IndexPagerDutyStatus: {
       /** Configured */
@@ -5906,13 +5890,9 @@ export interface components {
      *
      *     :param groups: Alert templates grouped by service type. Only service types
      *         with at least one template are included.
-     *     :type groups: list[IndexTemplateGroup]
      *     :param pmm_connected: ``True`` when PMM is configured and reachable.
-     *     :type pmm_connected: bool
      *     :param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.
-     *     :type pagerduty: IndexPagerDutyStatus | None
      *     :param recent_backups: The most recent alert backups, newest first.
-     *     :type recent_backups: list[IndexBackupSummary]
      */
     IndexResponse: {
       /** Groups */
@@ -5928,21 +5908,13 @@ export interface components {
      * @description Represent a single alert template row on the index page.
      *
      *     :param name: The display name of the alert template.
-     *     :type name: str
      *     :param service_type: The service category this template applies to.
-     *     :type service_type: str
      *     :param expression: The PromQL expression backing the alert.
-     *     :type expression: str
      *     :param default_threshold: The default numeric threshold for the UI.
-     *     :type default_threshold: float
      *     :param severity: The severity level (``"info"``, ``"warning"``, ``"critical"``).
-     *     :type severity: str
      *     :param description: A human-readable description of the alert.
-     *     :type description: str
      *     :param summary: A short summary template for notifications.
-     *     :type summary: str
      *     :param in_pmm: ``True`` when a template of this name is already present in PMM.
-     *     :type in_pmm: bool
      */
     IndexTemplate: {
       /** Default Threshold */
@@ -5967,11 +5939,8 @@ export interface components {
      * @description Group index templates by service type.
      *
      *     :param service_type: The service type identifier (e.g. ``"mysql"``).
-     *     :type service_type: str
      *     :param label: The human-readable service type label (e.g. ``"MySQL"``).
-     *     :type label: str
      *     :param templates: The templates belonging to this service type.
-     *     :type templates: list[IndexTemplate]
      */
     IndexTemplateGroup: {
       /** Label */
@@ -6180,10 +6149,189 @@ export interface components {
        */
       type: 'multi_choice';
     };
+    /**
+     * MultiHostField
+     * @description Represent a multi-value executor-target selector field.
+     *
+     *     The multi-value counterpart of :class:`HostField`: the renderer commits a
+     *     list of executor targets instead of a single one. Derived from a
+     *     ``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_host"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param allow_custom: When ``True``, the selector also accepts free-typed
+     *         values alongside the inventory options. ``None`` (the default) omits the
+     *         key from the wire so plugins that do not opt in stay byte-identical.
+     */
+    MultiHostField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_host';
+    };
+    /**
+     * MultiSchemaField
+     * @description Represent a multi-value inventory database-schema selector field.
+     *
+     *     The multi-value counterpart of :class:`SchemaField`: the renderer commits a
+     *     list of schemas instead of a single one. Derived from a
+     *     ``SchemaRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_schema"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param depends_on: The name of the field whose value drives the list of
+     *         available schemas.
+     *     :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+     *         the cascaded options. ``None`` (the default) omits the key from the wire
+     *         so plugins that do not opt in stay byte-identical.
+     */
+    MultiSchemaField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on: string;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_schema';
+    };
+    /**
+     * MultiServiceField
+     * @description Represent a multi-value inventory service selector field.
+     *
+     *     The multi-value counterpart of :class:`ServiceField`: the renderer commits a
+     *     list of services instead of a single one. Derived from a
+     *     ``ServiceRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_service"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param service_types: The list of service types the selector should offer
+     *         (for example, ``[ServiceTypeEnum.MYSQL]``).
+     *     :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+     *         the inventory options. ``None`` (the default) omits the key from the wire
+     *         so plugins that do not opt in stay byte-identical.
+     */
+    MultiServiceField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Service Types */
+      service_types: components['schemas']['ServiceTypeEnum'][];
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_service';
+    };
+    /**
+     * MultiTableField
+     * @description Represent a multi-value inventory table selector field.
+     *
+     *     The multi-value counterpart of :class:`TableField`: the renderer commits a
+     *     list of tables instead of a single one. Derived from a
+     *     ``TableRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_table"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param depends_on: The name of the field whose value drives the list of
+     *         available tables.
+     *     :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+     *         the cascaded options. ``None`` (the default) omits the key from the wire
+     *         so plugins that do not opt in stay byte-identical.
+     */
+    MultiTableField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on: string;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_table';
+    };
     /** MysqlBackupsCreateResponse */
     MysqlBackupsCreateResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       backup_type?: components['schemas']['BackupType-Output'] | null;
       connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
@@ -6204,6 +6352,7 @@ export interface components {
       owner: components['schemas']['TaskOwner'];
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -6269,6 +6418,10 @@ export interface components {
         | components['schemas']['HostField']
         | components['schemas']['IntegerField']
         | components['schemas']['MultiChoiceField']
+        | components['schemas']['MultiHostField']
+        | components['schemas']['MultiSchemaField']
+        | components['schemas']['MultiServiceField']
+        | components['schemas']['MultiTableField']
         | components['schemas']['SchemaField']
         | components['schemas']['ScriptPreviewField']
         | components['schemas']['ServiceField']
@@ -6331,7 +6484,6 @@ export interface components {
      *
      *     :param integration_key: The PagerDuty integration key. Must be non-empty
      *         after stripping whitespace.
-     *     :type integration_key: NonEmptyStr
      */
     PagerDutyRequest: {
       /** Integration Key */
@@ -6342,7 +6494,6 @@ export interface components {
      * @description Describe the response body for the PagerDuty save / delete endpoints.
      *
      *     :param status: ``"created"``, ``"updated"`` (save) or ``"deleted"`` (delete).
-     *     :type status: Literal["created", "updated", "deleted"]
      */
     PagerDutyResponse: {
       /**
@@ -6350,6 +6501,17 @@ export interface components {
        * @enum {string}
        */
       status: 'created' | 'updated' | 'deleted';
+    };
+    /** PaginatedResponse[AltersTaskResponse] */
+    PaginatedResponse_AltersTaskResponse_: {
+      /** Items */
+      items: components['schemas']['AltersTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[BackupResponse] */
     PaginatedResponse_BackupResponse_: {
@@ -6487,11 +6649,8 @@ export interface components {
      * @description Represent a per-template result row returned by the push endpoint.
      *
      *     :param name: The template name the result applies to.
-     *     :type name: str
      *     :param status: One of ``"success"``, ``"skipped"``, ``"error"``.
-     *     :type status: Literal["success", "skipped", "error"]
      *     :param message: A human-readable description of the outcome.
-     *     :type message: str
      */
     PushItemResult: {
       /** Message */
@@ -6510,7 +6669,6 @@ export interface components {
      *
      *     :param selected_templates: Names of templates to push to PMM. Must be a
      *         non-empty list of non-empty strings.
-     *     :type selected_templates: list[NonEmptyStr]
      */
     PushRequest: {
       /** Selected Templates */
@@ -6521,7 +6679,6 @@ export interface components {
      * @description Wrap the per-template results returned by the push endpoint.
      *
      *     :param results: One :class:`PushItemResult` per template in the request.
-     *     :type results: list[PushItemResult]
      */
     PushResponse: {
       /** Results */
@@ -6639,15 +6796,10 @@ export interface components {
      * @description Expose async report job state.
      *
      *     :param job_id: Celery task identifier.
-     *     :type job_id: str
      *     :param status: Lowercase Celery task state.
-     *     :type status: str
      *     :param pdf_ready: Whether the PDF result exists and is downloadable.
-     *     :type pdf_ready: bool
      *     :param result: Successful job result payload, if available.
-     *     :type result: dict[str, Any] | None
      *     :param error: Failed job error text, if available.
-     *     :type error: str | None
      */
     ReportJobResponse: {
       /** Error */
@@ -6709,7 +6861,6 @@ export interface components {
      * @description Define report snapshot body for PDF/upload jobs.
      *
      *     :param report: Generated report snapshot reused for PDF/upload work.
-     *     :type report: ReportData
      */
     ReportSnapshotWrite: {
       report: components['schemas']['ReportData'];
@@ -6886,7 +7037,6 @@ export interface components {
      *
      *     :param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`
      *         row to restore from. Must be a positive integer.
-     *     :type backup_id: int
      */
     RestoreRequest: {
       /** Backup Id */
@@ -6897,10 +7047,8 @@ export interface components {
      * @description Wrap the summary returned by the restore endpoint.
      *
      *     :param status: ``"success"`` on a complete restore.
-     *     :type status: Literal["success"]
      *     :param details: Per-section restore counts as returned by
      *         :func:`~app.sep.apps.alerts.restore.restore_from_backup`.
-     *     :type details: dict[str, Any]
      */
     RestoreResponse: {
       /** Details */
@@ -8486,9 +8634,17 @@ export interface components {
     app__sep__apps__backup_mongo__models__BackupTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -8510,6 +8666,7 @@ export interface components {
       owner: components['schemas']['TaskOwner'];
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8518,33 +8675,22 @@ export interface components {
      * BackupTaskResponse
      * @description Represent a backup task API response.
      *
-     *     :param id: The unique identifier for the backup task.
-     *     :type id: int | None
-     *     :param backend: The backend worker/engine executing the task.
-     *     :type backend: TaskBackendEnum
      *     :param backup_type: The PBM backup type stored on the task.
-     *     :type backup_type: str
-     *     :param data: The raw configuration and parameters for the backup execution.
-     *     :type data: dict[str, Any]
-     *     :param protected: Whether the task is protected from deletion or modification.
-     *     :type protected: bool
-     *     :param alert_on_fail: If True, notifications are sent upon task failure.
-     *     :type alert_on_fail: bool
-     *     :param created_at: The timestamp when the task was first created.
-     *     :type created_at: datetime | None
-     *     :param updated_at: The timestamp of the last modification to the task.
-     *     :type updated_at: datetime | None
-     *     :param created_by: The user who initiated the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: The user who last modified the task record.
-     *     :type last_updated_by: str | None
      */
     app__sep__apps__backup_mongo__models__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -8562,6 +8708,7 @@ export interface components {
       owner: components['schemas']['TaskOwner'];
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8593,21 +8740,27 @@ export interface components {
      * BackupTaskDetailResponse
      * @description Represent a single pgBackRest backup task detail response.
      *
-     *     Adds the executor host and port resolved from the task's YAML config so
-     *     the FE detail view can render them alongside the parity Overview block;
-     *     list rows omit these to keep the table response compact.
+     *     Add the executor host and port resolved from the task's YAML config so the
+     *     FE detail view can render them alongside the parity Overview block; list
+     *     rows omit these to keep the table response compact.
      *
      *     :param host: The PostgreSQL host the task connects to.
-     *     :type host: str | None
      *     :param port: The PostgreSQL port the task connects to.
-     *     :type port: int | None
      */
     app__sep__apps__backup_pg__models__BackupTaskDetailResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -8629,6 +8782,7 @@ export interface components {
       port?: number | null;
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -8637,33 +8791,22 @@ export interface components {
      * BackupTaskResponse
      * @description Represent a pgBackRest backup task API response.
      *
-     *     :param id: The task identifier from the Tasks service, if assigned.
-     *     :type id: int | None
-     *     :param backend: The backend executing the task.
-     *     :type backend: TaskBackendEnum
      *     :param backup_type: The ``backup_type`` discriminator stored on the task.
-     *     :type backup_type: str
-     *     :param data: The raw task ``data`` payload.
-     *     :type data: dict[str, Any]
-     *     :param protected: Whether the task is protected from deletion.
-     *     :type protected: bool
-     *     :param alert_on_fail: Whether PMM alerts fire when the task fails.
-     *     :type alert_on_fail: bool
-     *     :param created_at: Creation timestamp.
-     *     :type created_at: datetime | None
-     *     :param updated_at: Last-modification timestamp.
-     *     :type updated_at: datetime | None
-     *     :param created_by: User that created the task.
-     *     :type created_by: str | None
-     *     :param last_updated_by: User that last modified the task record.
-     *     :type last_updated_by: str | None
      */
     app__sep__apps__backup_pg__models__BackupTaskResponse: {
       /** Alert On Fail */
       alert_on_fail: boolean;
+      /** Anonymize Mask */
+      anonymize_mask?: number | null;
+      /**
+       * Anonymized Entities
+       * @description Return sorted PII entity names decoded from ``anonymize_mask``.
+       */
+      readonly anonymized_entities: string[];
       backend: components['schemas']['TaskBackendEnum'];
       /** Backup Type */
       backup_type: string;
+      connectivity_warning?: components['schemas']['ConnectivityWarning'] | null;
       /** Created At */
       created_at?: string | null;
       /** Created By */
@@ -8681,6 +8824,7 @@ export interface components {
       owner: components['schemas']['TaskOwner'];
       /** Protected */
       protected: boolean;
+      service_type?: components['schemas']['ServiceTypeEnum'] | null;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       /** Updated At */
       updated_at?: string | null;
@@ -9090,9 +9234,11 @@ export interface operations {
       };
     };
   };
-  alters_alters_api_list_api_apps_alters__get: {
+  alters__list_paginated_api_apps_alters__get: {
     parameters: {
       query?: {
+        offset?: number;
+        limit?: number;
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       };
@@ -9108,7 +9254,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AltersTaskResponse'][];
+          'application/json': components['schemas']['PaginatedResponse_AltersTaskResponse_'];
         };
       };
       /** @description Validation Error */
@@ -9567,12 +9713,12 @@ export interface operations {
       };
     };
   };
-  backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get: {
+  backup_mongo__list_paginated_api_apps_backup_mongo__get: {
     parameters: {
       query?: {
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
         offset?: number;
         limit?: number;
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       };
       header?: never;
       path?: never;

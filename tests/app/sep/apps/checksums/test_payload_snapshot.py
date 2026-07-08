@@ -17,7 +17,7 @@
 
 Capture the full ``TaskWrite`` envelope produced by both the model-first spec
 path (``build_checksums_spec`` + ``assemble_envelope``) and the legacy Jinja form
-path (``_assemble_checksum_payload``) across a matrix of representative inputs,
+path (``assemble_checksum_payload``) across a matrix of representative inputs,
 and compare each against a committed golden. A declarative rewrite that shifts
 both code paths together would slip past the form-vs-spec parity test in
 ``test_deps.py``; this golden is captured from a known-good baseline so any drift

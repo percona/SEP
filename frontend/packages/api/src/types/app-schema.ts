@@ -172,8 +172,22 @@ export interface ServiceField extends BaseField {
   allow_custom?: boolean;
 }
 
+export interface MultiServiceField extends BaseField {
+  type: 'multi_service';
+  service_types: string[];
+  /** Offer free-text (free-solo) entry alongside the inventory options. */
+  allow_custom?: boolean;
+}
+
 export interface SchemaField extends BaseField {
   type: 'schema';
+  depends_on: string;
+  /** Offer free-text (free-solo) entry alongside the cascaded options. */
+  allow_custom?: boolean;
+}
+
+export interface MultiSchemaField extends BaseField {
+  type: 'multi_schema';
   depends_on: string;
   /** Offer free-text (free-solo) entry alongside the cascaded options. */
   allow_custom?: boolean;
@@ -186,8 +200,19 @@ export interface TableField extends BaseField {
   allow_custom?: boolean;
 }
 
+export interface MultiTableField extends BaseField {
+  type: 'multi_table';
+  depends_on: string;
+  /** Offer free-text (free-solo) entry alongside the cascaded options. */
+  allow_custom?: boolean;
+}
+
 export interface HostField extends BaseField {
   type: 'host';
+}
+
+export interface MultiHostField extends BaseField {
+  type: 'multi_host';
 }
 
 // ── Read-only preview ───────────────────────────────────────────────────
@@ -223,9 +248,13 @@ export type AppField =
   | FileField
   | YamlField
   | ServiceField
+  | MultiServiceField
   | SchemaField
+  | MultiSchemaField
   | TableField
+  | MultiTableField
   | HostField
+  | MultiHostField
   | ScriptPreviewField;
 
 // ── One-of group ─────────────────────────────────────────────────────────

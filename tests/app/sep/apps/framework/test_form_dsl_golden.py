@@ -281,3 +281,62 @@ def test_disabled_choices_match_golden():
     """Assert the disabled-choices fixture wire format under ``snapshots/form_dsl``."""
     golden = su.SNAPSHOTS_DIR / "form_dsl" / "disabled_choices.json"
     su.assert_or_update(golden, _dump(_build_disabled_choices_schema()))
+
+
+class _MultiRefForm(AppFormModel):
+    """Exercise the four multi-value reference fields, with and without allow_custom."""
+
+    services: Annotated[
+        list[int],
+        ServiceRef(service_types=[ServiceTypeEnum.MYSQL], multiple=True),
+        Ui(label="Services", section="main"),
+    ] = Field(default_factory=list)
+    free_services: Annotated[
+        list[int | str],
+        ServiceRef(
+            service_types=[ServiceTypeEnum.MYSQL], multiple=True, allow_custom=True
+        ),
+        Ui(label="Free Services", section="main"),
+    ] = Field(default_factory=list)
+    schemas: Annotated[
+        list[int],
+        SchemaRef(multiple=True),
+        Ui(label="Schemas", section="main", depends_on="services"),
+    ] = Field(default_factory=list)
+    tables: Annotated[
+        list[int],
+        TableRef(multiple=True),
+        Ui(label="Tables", section="main", depends_on="schemas"),
+    ] = Field(default_factory=list)
+    hosts: Annotated[
+        list[str],
+        HostRef(multiple=True),
+        Ui(label="Hosts", section="main"),
+    ] = Field(default_factory=list)
+    free_hosts: Annotated[
+        list[int | str],
+        HostRef(multiple=True, allow_custom=True),
+        Ui(label="Free Hosts", section="main"),
+    ] = Field(default_factory=list)
+
+
+_MULTI_REF_LAYOUT = FormLayout(
+    sections=[SectionLayout(key="main", title="Main")],
+)
+
+
+def _build_multi_ref_schema():
+    """Assemble the multi-value reference fixture ``AppSchema``."""
+    return derive_app_schema(
+        _MultiRefForm,
+        _MULTI_REF_LAYOUT,
+        name="multi_ref",
+        display_name="Multi Ref",
+        list_view=ListView(columns=[Column(key="name", label="Name")]),
+    )
+
+
+def test_multi_ref_fixture_matches_golden():
+    """Assert the multi-value reference fixture wire format under ``snapshots/form_dsl``."""
+    golden = su.SNAPSHOTS_DIR / "form_dsl" / "multi_ref.json"
+    su.assert_or_update(golden, _dump(_build_multi_ref_schema()))

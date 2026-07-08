@@ -41,6 +41,10 @@ __all__ = [
     "IntegerField",
     "ListView",
     "MultiChoiceField",
+    "MultiHostField",
+    "MultiSchemaField",
+    "MultiServiceField",
+    "MultiTableField",
     "OneOfBranch",
     "OneOfGroup",
     "RelatedApp",
@@ -451,6 +455,26 @@ class HostField(BaseField):
     allow_custom: bool | None = None
 
 
+class MultiHostField(BaseField):
+    """Represent a multi-value executor-target selector field.
+
+    The multi-value counterpart of :class:`HostField`: the renderer commits a
+    list of executor targets instead of a single one. Derived from a
+    ``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+
+    :param field_type: The discriminator literal; always ``"multi_host"`` for
+        this class. Serialised as the JSON key ``"type"``.
+    :param allow_custom: When ``True``, the selector also accepts free-typed
+        values alongside the inventory options. ``None`` (the default) omits the
+        key from the wire so plugins that do not opt in stay byte-identical.
+    """
+
+    field_type: Literal["multi_host"] = Field(
+        "multi_host", alias="type", serialization_alias="type"
+    )
+    allow_custom: bool | None = None
+
+
 class SchemaField(BaseField):
     """Represent an inventory database-schema selector field.
 
@@ -483,6 +507,29 @@ class SchemaField(BaseField):
     allow_custom: bool | None = None
 
 
+class MultiSchemaField(BaseField):
+    """Represent a multi-value inventory database-schema selector field.
+
+    The multi-value counterpart of :class:`SchemaField`: the renderer commits a
+    list of schemas instead of a single one. Derived from a
+    ``SchemaRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+
+    :param field_type: The discriminator literal; always ``"multi_schema"`` for
+        this class. Serialised as the JSON key ``"type"``.
+    :param depends_on: The name of the field whose value drives the list of
+        available schemas.
+    :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+        the cascaded options. ``None`` (the default) omits the key from the wire
+        so plugins that do not opt in stay byte-identical.
+    """
+
+    field_type: Literal["multi_schema"] = Field(
+        "multi_schema", alias="type", serialization_alias="type"
+    )
+    depends_on: NonEmptyStr
+    allow_custom: bool | None = None
+
+
 class ServiceField(BaseField):
     """Represent an inventory service selector field.
 
@@ -505,6 +552,29 @@ class ServiceField(BaseField):
 
     field_type: Literal["service"] = Field(
         "service", alias="type", serialization_alias="type"
+    )
+    service_types: list[ServiceTypeEnum]
+    allow_custom: bool | None = None
+
+
+class MultiServiceField(BaseField):
+    """Represent a multi-value inventory service selector field.
+
+    The multi-value counterpart of :class:`ServiceField`: the renderer commits a
+    list of services instead of a single one. Derived from a
+    ``ServiceRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+
+    :param field_type: The discriminator literal; always ``"multi_service"`` for
+        this class. Serialised as the JSON key ``"type"``.
+    :param service_types: The list of service types the selector should offer
+        (for example, ``[ServiceTypeEnum.MYSQL]``).
+    :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+        the inventory options. ``None`` (the default) omits the key from the wire
+        so plugins that do not opt in stay byte-identical.
+    """
+
+    field_type: Literal["multi_service"] = Field(
+        "multi_service", alias="type", serialization_alias="type"
     )
     service_types: list[ServiceTypeEnum]
     allow_custom: bool | None = None
@@ -537,6 +607,29 @@ class TableField(BaseField):
 
     field_type: Literal["table"] = Field(
         "table", alias="type", serialization_alias="type"
+    )
+    depends_on: NonEmptyStr
+    allow_custom: bool | None = None
+
+
+class MultiTableField(BaseField):
+    """Represent a multi-value inventory table selector field.
+
+    The multi-value counterpart of :class:`TableField`: the renderer commits a
+    list of tables instead of a single one. Derived from a
+    ``TableRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+
+    :param field_type: The discriminator literal; always ``"multi_table"`` for
+        this class. Serialised as the JSON key ``"type"``.
+    :param depends_on: The name of the field whose value drives the list of
+        available tables.
+    :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+        the cascaded options. ``None`` (the default) omits the key from the wire
+        so plugins that do not opt in stay byte-identical.
+    """
+
+    field_type: Literal["multi_table"] = Field(
+        "multi_table", alias="type", serialization_alias="type"
     )
     depends_on: NonEmptyStr
     allow_custom: bool | None = None
@@ -586,6 +679,10 @@ LeafField = Annotated[
     | HostField
     | IntegerField
     | MultiChoiceField
+    | MultiHostField
+    | MultiSchemaField
+    | MultiServiceField
+    | MultiTableField
     | SchemaField
     | ScriptPreviewField
     | ServiceField

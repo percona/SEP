@@ -257,6 +257,26 @@
             "title": "Alert On Fail",
             "type": "boolean"
           },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
+          },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
           },
@@ -367,6 +387,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -394,10 +424,11 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupPgCreateResponse",
         "type": "object"
@@ -1575,6 +1606,18 @@
                   "$ref": "#/components/schemas/MultiChoiceField"
                 },
                 {
+                  "$ref": "#/components/schemas/MultiHostField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiSchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiTableField"
+                },
+                {
                   "$ref": "#/components/schemas/SchemaField"
                 },
                 {
@@ -1997,6 +2040,414 @@
         "title": "MultiChoiceField",
         "type": "object"
       },
+      "MultiHostField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value executor-target selector field.\n\nThe multi-value counterpart of :class:`HostField`: the renderer commits a\nlist of executor targets instead of a single one. Derived from a\n``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_host\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param allow_custom: When ``True``, the selector also accepts free-typed\n    values alongside the inventory options. ``None`` (the default) omits the\n    key from the wire so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_host",
+            "default": "multi_host",
+            "enum": [
+              "multi_host"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "title": "MultiHostField",
+        "type": "object"
+      },
+      "MultiSchemaField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory database-schema selector field.\n\nThe multi-value counterpart of :class:`SchemaField`: the renderer commits a\nlist of schemas instead of a single one. Derived from a\n``SchemaRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_schema\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: The name of the field whose value drives the list of\n    available schemas.\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the cascaded options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "minLength": 1,
+            "title": "Depends On",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_schema",
+            "default": "multi_schema",
+            "enum": [
+              "multi_schema"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "depends_on"
+        ],
+        "title": "MultiSchemaField",
+        "type": "object"
+      },
+      "MultiServiceField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory service selector field.\n\nThe multi-value counterpart of :class:`ServiceField`: the renderer commits a\nlist of services instead of a single one. Derived from a\n``ServiceRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_service\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param service_types: The list of service types the selector should offer\n    (for example, ``[ServiceTypeEnum.MYSQL]``).\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the inventory options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "service_types": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceTypeEnum"
+            },
+            "title": "Service Types",
+            "type": "array"
+          },
+          "type": {
+            "const": "multi_service",
+            "default": "multi_service",
+            "enum": [
+              "multi_service"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "service_types"
+        ],
+        "title": "MultiServiceField",
+        "type": "object"
+      },
+      "MultiTableField": {
+        "additionalProperties": false,
+        "description": "Represent a multi-value inventory table selector field.\n\nThe multi-value counterpart of :class:`TableField`: the renderer commits a\nlist of tables instead of a single one. Derived from a\n``TableRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.\n\n:param field_type: The discriminator literal; always ``\"multi_table\"`` for\n    this class. Serialised as the JSON key ``\"type\"``.\n:param depends_on: The name of the field whose value drives the list of\n    available tables.\n:param allow_custom: Opt-in flag for free-text (free-solo) entry alongside\n    the cascaded options. ``None`` (the default) omits the key from the wire\n    so plugins that do not opt in stay byte-identical.",
+        "properties": {
+          "allow_custom": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allow Custom"
+          },
+          "default": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "depends_on": {
+            "minLength": 1,
+            "title": "Depends On",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "forbidden": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forbidden"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_](?:[\\w.-]*\\w)?$",
+            "title": "Name",
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "requires": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FieldGate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires"
+          },
+          "type": {
+            "const": "multi_table",
+            "default": "multi_table",
+            "enum": [
+              "multi_table"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "depends_on"
+        ],
+        "title": "MultiTableField",
+        "type": "object"
+      },
       "OneOfBranch": {
         "additionalProperties": false,
         "description": "Represent one mutually-exclusive branch inside a :class:`OneOfGroup`.\n\n:param value: The discriminator value that selects this branch.\n:param label: The human-readable label for the segmented-control option.\n:param fields: The leaf fields revealed when this branch is active.",
@@ -2013,6 +2464,10 @@
                   "host": "#/components/schemas/HostField",
                   "integer": "#/components/schemas/IntegerField",
                   "multi_choice": "#/components/schemas/MultiChoiceField",
+                  "multi_host": "#/components/schemas/MultiHostField",
+                  "multi_schema": "#/components/schemas/MultiSchemaField",
+                  "multi_service": "#/components/schemas/MultiServiceField",
+                  "multi_table": "#/components/schemas/MultiTableField",
                   "schema": "#/components/schemas/SchemaField",
                   "script_preview": "#/components/schemas/ScriptPreviewField",
                   "service": "#/components/schemas/ServiceField",
@@ -2047,6 +2502,18 @@
                 },
                 {
                   "$ref": "#/components/schemas/MultiChoiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiHostField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiSchemaField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiServiceField"
+                },
+                {
+                  "$ref": "#/components/schemas/MultiTableField"
                 },
                 {
                   "$ref": "#/components/schemas/SchemaField"
@@ -3176,11 +3643,31 @@
         "type": "object"
       },
       "app__sep__apps__backup_pg__models__BackupTaskDetailResponse": {
-        "description": "Represent a single pgBackRest backup task detail response.\n\nAdds the executor host and port resolved from the task's YAML config so\nthe FE detail view can render them alongside the parity Overview block;\nlist rows omit these to keep the table response compact.\n\n:param host: The PostgreSQL host the task connects to.\n:type host: str | None\n:param port: The PostgreSQL port the task connects to.\n:type port: int | None",
+        "description": "Represent a single pgBackRest backup task detail response.\n\nAdd the executor host and port resolved from the task's YAML config so the\nFE detail view can render them alongside the parity Overview block; list\nrows omit these to keep the table response compact.\n\n:param host: The PostgreSQL host the task connects to.\n:param port: The PostgreSQL port the task connects to.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -3188,6 +3675,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -3282,6 +3779,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -3309,20 +3816,41 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupTaskDetailResponse",
         "type": "object"
       },
       "app__sep__apps__backup_pg__models__BackupTaskResponse": {
-        "description": "Represent a pgBackRest backup task API response.\n\n:param id: The task identifier from the Tasks service, if assigned.\n:type id: int | None\n:param backend: The backend executing the task.\n:type backend: TaskBackendEnum\n:param backup_type: The ``backup_type`` discriminator stored on the task.\n:type backup_type: str\n:param data: The raw task ``data`` payload.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion.\n:type protected: bool\n:param alert_on_fail: Whether PMM alerts fire when the task fails.\n:type alert_on_fail: bool\n:param created_at: Creation timestamp.\n:type created_at: datetime | None\n:param updated_at: Last-modification timestamp.\n:type updated_at: datetime | None\n:param created_by: User that created the task.\n:type created_by: str | None\n:param last_updated_by: User that last modified the task record.\n:type last_updated_by: str | None",
+        "description": "Represent a pgBackRest backup task API response.\n\n:param backup_type: The ``backup_type`` discriminator stored on the task.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
             "type": "boolean"
+          },
+          "anonymize_mask": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anonymize Mask"
+          },
+          "anonymized_entities": {
+            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true,
+            "title": "Anonymized Entities",
+            "type": "array"
           },
           "backend": {
             "$ref": "#/components/schemas/TaskBackendEnum"
@@ -3330,6 +3858,16 @@
           "backup_type": {
             "title": "Backup Type",
             "type": "string"
+          },
+          "connectivity_warning": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectivityWarning"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "anyOf": [
@@ -3402,6 +3940,16 @@
             "title": "Protected",
             "type": "boolean"
           },
+          "service_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "anyOf": [
               {
@@ -3429,10 +3977,11 @@
           "name",
           "owner",
           "backend",
-          "backup_type",
           "data",
           "protected",
-          "alert_on_fail"
+          "alert_on_fail",
+          "backup_type",
+          "anonymized_entities"
         ],
         "title": "BackupTaskResponse",
         "type": "object"

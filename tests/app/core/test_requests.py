@@ -23,8 +23,21 @@ from aioresponses import aioresponses
 from fastapi import HTTPException, status
 from pydantic import HttpUrl
 
+from app.core.exceptions import (
+    HTTPBadGatewayException,
+    HTTPBadRequestException,
+    HTTPConflictException,
+    HTTPGoneException,
+    HTTPInternalServerErrorException,
+    HTTPNotFoundException,
+    HTTPServiceUnavailableException,
+    HTTPUnprocessableEntityException,
+)
 from app.core.requests import RemoteAPI
-from app.core.requests.remote_api import BaseRemoteAPI
+from app.core.requests.remote_api import (
+    BaseRemoteAPI,
+    UPSTREAM_NON_JSON_HEADER,
+)
 
 
 @pytest.fixture
@@ -142,7 +155,12 @@ def test_prepare_path(endpoint: str, input_path: str, expected_path: str):
 
 @pytest.mark.asyncio
 async def test_request_error(remote_api):
-    """Test handling of errors with detailed error response."""
+    """Raise a bare HTTPException for a coded error so the X-Error-Code header survives.
+
+    A mapped status (409) still falls back to :class:`fastapi.HTTPException`
+    rather than :class:`HTTPConflictException` when the body carries an error
+    code, because only :class:`HTTPGoneException` can carry response headers.
+    """
     conflict_error_msg = "Task with the same name already exists."
     conflict_error_code = "DUP_ERROR"
     mock_response = AsyncMock()
@@ -169,6 +187,98 @@ async def test_request_error(remote_api):
         assert exc_info.value.status_code == status.HTTP_409_CONFLICT
         assert exc_info.value.detail == conflict_error_msg
         assert exc_info.value.headers == {"X-Error-Code": conflict_error_code}
+        assert type(exc_info.value) is HTTPException
+
+
+@pytest.mark.parametrize(
+    ("error_status", "exc_class"),
+    [
+        (status.HTTP_400_BAD_REQUEST, HTTPBadRequestException),
+        (status.HTTP_404_NOT_FOUND, HTTPNotFoundException),
+        (status.HTTP_409_CONFLICT, HTTPConflictException),
+        (status.HTTP_410_GONE, HTTPGoneException),
+        (status.HTTP_422_UNPROCESSABLE_CONTENT, HTTPUnprocessableEntityException),
+        (status.HTTP_500_INTERNAL_SERVER_ERROR, HTTPInternalServerErrorException),
+        (status.HTTP_502_BAD_GATEWAY, HTTPBadGatewayException),
+        (status.HTTP_503_SERVICE_UNAVAILABLE, HTTPServiceUnavailableException),
+    ],
+)
+@pytest.mark.asyncio
+async def test_request_maps_error_status_to_project_exception(
+    remote_api, error_status, exc_class
+):
+    """Raise the mapped project exception for each mapped upstream error status."""
+    detail_msg = "upstream detail"
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"detail": detail_msg}
+    mock_response.status = error_status
+    error = ClientResponseError(
+        request_info=None, history=None, status=error_status, message="err"
+    )
+    mock_response.raise_for_status = Mock(side_effect=error)
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    no_code_api = remote_api.model_copy(update={"error_code_key": None})
+
+    with patch.object(no_code_api, "_request", return_value=mock_context_manager):
+        with pytest.raises(exc_class) as exc_info:
+            await no_code_api.request("GET", "/mapped-error")
+        assert type(exc_info.value) is exc_class
+        assert exc_info.value.status_code == error_status
+        assert exc_info.value.detail == detail_msg
+
+
+@pytest.mark.asyncio
+async def test_request_410_with_error_code_preserves_headers_as_gone(remote_api):
+    """Map a 410 carrying an error code to HTTPGoneException with the header intact."""
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"detail": "gone", "code": "TASK_GONE"}
+    mock_response.status = status.HTTP_410_GONE
+    error = ClientResponseError(
+        request_info=None, history=None, status=status.HTTP_410_GONE, message="Gone"
+    )
+    mock_response.raise_for_status = Mock(side_effect=error)
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    with patch.object(remote_api, "_request", return_value=mock_context_manager):
+        with pytest.raises(HTTPGoneException) as exc_info:
+            await remote_api.request("GET", "/gone")
+        assert type(exc_info.value) is HTTPGoneException
+        assert exc_info.value.status_code == status.HTTP_410_GONE
+        assert exc_info.value.headers == {"X-Error-Code": "TASK_GONE"}
+
+
+@pytest.mark.asyncio
+async def test_request_unmapped_status_raises_bare_http_exception(remote_api):
+    """Raise a bare HTTPException for an error status with no mapped project class."""
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"detail": "slow down"}
+    mock_response.status = status.HTTP_429_TOO_MANY_REQUESTS
+    error = ClientResponseError(
+        request_info=None,
+        history=None,
+        status=status.HTTP_429_TOO_MANY_REQUESTS,
+        message="Too Many Requests",
+    )
+    mock_response.raise_for_status = Mock(side_effect=error)
+
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__.return_value = mock_response
+    mock_context_manager.__aexit__.return_value = None
+
+    no_code_api = remote_api.model_copy(update={"error_code_key": None})
+
+    with patch.object(no_code_api, "_request", return_value=mock_context_manager):
+        with pytest.raises(HTTPException) as exc_info:
+            await no_code_api.request("GET", "/rate-limited")
+        assert type(exc_info.value) is HTTPException
+        assert exc_info.value.status_code == status.HTTP_429_TOO_MANY_REQUESTS
 
 
 def test_base_remote_api_hash_stable():
@@ -400,6 +510,9 @@ async def test_request_content_type_error(remote_api):
             await remote_api.request("GET", "/bad-content-type")
         assert exc_info.value.status_code == status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
         assert exc_info.value.detail == "An unexpected error occurred on the server."
+        # A non-JSON body (e.g. an nginx proxy page) is marked so callers can
+        # tell it apart from an app-level JSON error at the same status code.
+        assert exc_info.value.headers == {UPSTREAM_NON_JSON_HEADER: "1"}
 
 
 @pytest.mark.asyncio
@@ -716,7 +829,7 @@ async def test_stream_chunks_does_not_apply_line_size_cap(remote_api, monkeypatc
 
 @pytest.mark.asyncio
 async def test_stream_chunks_raises_http_exception_on_error_status(remote_api):
-    """stream_chunks() raises HTTPException for 4xx/5xx without yielding anything."""
+    """Raise the mapped HTTPNotFoundException for a 404 stream without yielding anything."""
     mock_response = MagicMock()
     mock_response.status = status.HTTP_404_NOT_FOUND
     mock_response.json = AsyncMock(return_value={"detail": "missing"})
@@ -726,7 +839,28 @@ async def test_stream_chunks_raises_http_exception_on_error_status(remote_api):
 
     async with remote_api:
         with patch.object(remote_api, "_request", return_value=mock_ctx):
-            with pytest.raises(HTTPException) as exc_info:
+            with pytest.raises(HTTPNotFoundException) as exc_info:
                 [_ async for _ in remote_api.stream_chunks("/missing/")]
 
+    assert type(exc_info.value) is HTTPNotFoundException
     assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_stream_chunks_maps_410_to_gone_with_headers(remote_api):
+    """Map a 410 stream carrying an error code to HTTPGoneException, header intact."""
+    mock_response = MagicMock()
+    mock_response.status = status.HTTP_410_GONE
+    mock_response.json = AsyncMock(return_value={"detail": "gone", "code": "TASK_GONE"})
+    mock_ctx = AsyncMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    async with remote_api:
+        with patch.object(remote_api, "_request", return_value=mock_ctx):
+            with pytest.raises(HTTPGoneException) as exc_info:
+                [_ async for _ in remote_api.stream_chunks("/gone/")]
+
+    assert type(exc_info.value) is HTTPGoneException
+    assert exc_info.value.status_code == status.HTTP_410_GONE
+    assert exc_info.value.headers == {"X-Error-Code": "TASK_GONE"}

@@ -15,15 +15,15 @@
 
 """Define models for the Backups plugin."""
 
-from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import (
     Choices,
     FieldWidget,
@@ -33,7 +33,7 @@ from app.sep.apps.framework.form_dsl import (
     Ui,
 )
 from app.sep.apps.framework.rules import F
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import TaskHistoryStatusEnum
 
 
 class BackupType(EnumFieldMixin, StrEnum):
@@ -479,60 +479,22 @@ class BackupDerivedTaskSummary(BaseModel):
     status: TaskHistoryStatusEnum | None = None
 
 
-class BackupTaskBase(BaseModel):
-    """Define the common fields shared across backup task API responses.
+class BackupTaskBase(BaseTaskResponse):
+    """Carry the backup_mongo-specific fields shared across its responses.
 
-    :param name: The name of the backup task.
-    :type name: str
-    :param owner: The entity or user that owns the task.
-    :type owner: TaskOwner
     :param hostname: The target hostname for the task execution.
-    :type hostname: str | None
-    :param status: The current execution status of the task.
-    :type status: TaskHistoryStatusEnum | None
     """
 
-    name: str
-    owner: TaskOwner
     hostname: str | None = None
-    status: TaskHistoryStatusEnum | None = None
 
 
 class BackupTaskResponse(BackupTaskBase):
     """Represent a backup task API response.
 
-    :param id: The unique identifier for the backup task.
-    :type id: int | None
-    :param backend: The backend worker/engine executing the task.
-    :type backend: TaskBackendEnum
     :param backup_type: The PBM backup type stored on the task.
-    :type backup_type: str
-    :param data: The raw configuration and parameters for the backup execution.
-    :type data: dict[str, Any]
-    :param protected: Whether the task is protected from deletion or modification.
-    :type protected: bool
-    :param alert_on_fail: If True, notifications are sent upon task failure.
-    :type alert_on_fail: bool
-    :param created_at: The timestamp when the task was first created.
-    :type created_at: datetime | None
-    :param updated_at: The timestamp of the last modification to the task.
-    :type updated_at: datetime | None
-    :param created_by: The user who initiated the task.
-    :type created_by: str | None
-    :param last_updated_by: The user who last modified the task record.
-    :type last_updated_by: str | None
     """
 
-    id: int | None = None
-    backend: TaskBackendEnum
     backup_type: str
-    data: dict[str, Any]
-    protected: bool
-    alert_on_fail: bool
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-    created_by: str | None = None
-    last_updated_by: str | None = None
 
 
 class BackupTaskDetailResponse(BackupTaskResponse):

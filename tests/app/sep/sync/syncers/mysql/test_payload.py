@@ -21,8 +21,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-pytestmark = pytest.mark.syncmysql
-
 try:
     import pymysql
     from pymysql.cursors import DictCursor

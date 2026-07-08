@@ -415,12 +415,16 @@ class TestGetAppRegistry:
         """Repeated calls return the same cached instance."""
         assert get_app_registry() is get_app_registry()
 
-    def test_alters_binds_as_bare_base_app_with_nav_metadata(self) -> None:
-        """Resolve alters to a bare ``BaseApp`` carrying nav metadata from its definition."""
+    def test_alters_binds_as_task_execution_app_with_nav_metadata(self) -> None:
+        """Resolve alters to a derived ``TaskExecutionApp`` carrying nav metadata.
+
+        Only the list/schema is derived; the schema is the ``alters_schema``
+        passthrough and every mutation stays custom on the ``extra_routes`` router,
+        so the derived ``api_router`` is not the hand-written router itself.
+        """
         app = get_app_registry().get("alters")
         definition = importlib.import_module("app.sep.apps.alters").app
-        assert isinstance(app, BaseApp)
-        assert not isinstance(app, TaskExecutionApp)
+        assert isinstance(app, TaskExecutionApp)
         assert app.display_name == definition.display_name
         assert app.uri_path == definition.uri_path
         assert app.css_class == definition.css_class
@@ -429,7 +433,10 @@ class TestGetAppRegistry:
 
         api_routes = importlib.import_module("app.sep.apps.alters.api_routes")
         routes = importlib.import_module("app.sep.apps.alters.routes")
-        assert app.api_router is api_routes.router
+        schema = importlib.import_module("app.sep.apps.alters.schema")
+        assert app.app_schema is schema.alters_schema
+        assert api_routes.router in app.extra_routes
+        assert app.api_router is not api_routes.router
         assert app.jinja_router is routes.router
 
 
@@ -662,3 +669,23 @@ class TestResolveAppSettingsMetadata:
         """Reject metadata resolution for an unregistered app key."""
         with pytest.raises(ValueError, match="Unknown app key 'ghost'"):
             await resolve_app_settings_metadata(override_session, "ghost")
+
+
+TASK_EXECUTION_PLUGINS_WITH_CSS_CLASS = ["backup_pg", "checksums"]
+
+
+class TestTaskExecutionAppCssClass:
+    """Verify ``css_class`` resolves from the ``AppDefinition`` for plugins that previously relied on ``settings.yaml``."""
+
+    @pytest.mark.parametrize("plugin", TASK_EXECUTION_PLUGINS_WITH_CSS_CLASS)
+    def test_css_class_comes_from_definition(self, plugin: str) -> None:
+        """Assert the registry-bound ``css_class`` equals the definition's ``css_class``."""
+        definition = importlib.import_module(f"app.sep.apps.{plugin}.app").app
+        bound = get_app_registry().get(plugin)
+        assert bound.css_class == definition.css_class
+
+    @pytest.mark.parametrize("plugin", TASK_EXECUTION_PLUGINS_WITH_CSS_CLASS)
+    def test_definition_declares_css_class(self, plugin: str) -> None:
+        """Assert the definition itself sets a non-empty ``css_class``."""
+        definition = importlib.import_module(f"app.sep.apps.{plugin}.app").app
+        assert definition.css_class, f"{plugin} definition must declare css_class"

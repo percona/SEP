@@ -22,10 +22,9 @@ from typing import Annotated, Any
 
 import yaml
 from aiohttp import ClientResponseError
-from fastapi import Depends, Form, HTTPException, status
+from fastapi import Depends, Form
 
 from app.core.exceptions import HTTPNotFoundException
-from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import (
     BackupCreate,
@@ -41,7 +40,6 @@ from app.sep.apps.backup_mongo.spec import (
     build_backup_mongo_spec,
 )
 from app.sep.apps.framework import (
-    batch_get_latest_statuses,
     build_default_task_response,
     extract_latest_task_status,
     get_task_latest_status,
@@ -122,15 +120,11 @@ async def build_backup_task_payload(
             form.service_id,
             type=ServiceTypeEnum.MONGODB,
         )
-    except HTTPException as exc:
-        # ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not
-        # the project's ``HTTPNotFoundException``. PBM tasks run off
-        # ``form.hostname`` and the generated config; the service is only
-        # fetched to populate ``_service_name`` for PMM. Fall back to a
-        # node-only annotation if the service was deleted between form load
-        # and form submit, but re-raise any other error.
-        if exc.status_code != status.HTTP_404_NOT_FOUND:
-            raise
+    except HTTPNotFoundException:
+        # PBM tasks run off ``form.hostname`` and the generated config; the
+        # service is only fetched to populate ``_service_name`` for PMM, so a
+        # service deleted between form load and submit degrades to a node-only
+        # annotation.
         service = None
 
     resolved = BackupMongoResolved(
@@ -183,18 +177,9 @@ def build_backup_mongo_api_task_response(
         extras={
             "hostname": meta.get("target"),
             "backup_type": str(data.get("backup_type", "")),
+            "service_type": ServiceTypeEnum.MONGODB,
         },
     )
-
-
-def _backup_parent_list_params(pagination: Pagination) -> dict[str, Any]:
-    """Build upstream task-list query params for parent ``pbm_config`` rows."""
-    return {
-        "owner": TaskOwner.BACKUP_MONGO.value,
-        "parent_is_null": "true",
-        "backup_type": BackupType.PBM_CONFIG.value,
-        **pagination.model_dump(),
-    }
 
 
 def _gathered_task_status(
@@ -202,78 +187,6 @@ def _gathered_task_status(
 ) -> TaskHistoryStatusEnum | None:
     """Map a ``gather`` result to a status, treating failures as unknown."""
     return None if isinstance(result, BaseException) else result
-
-
-async def get_backup_mongo_api_task_responses(
-    tasks_api: TaskAPI,
-    *,
-    pagination: Pagination,
-    status: TaskHistoryStatusEnum | None = None,
-) -> PaginatedResponse[BackupTaskResponse]:
-    """Retrieve a page of backup task responses for the JSON API.
-
-    Uses one filtered upstream task list plus one batch latest-status lookup per
-    page. When ``status`` is set, walks parent-task pages with bounded ``limit``
-    and applies latest-status filtering in-memory before slicing.
-
-    :param tasks_api: The TaskAPI instance used to query backup tasks.
-    :type tasks_api: TaskAPI
-    :param pagination: Validated offset/limit window for this page.
-    :type pagination: Pagination
-    :param status: Optional latest-history status filter for the list.
-    :type status: TaskHistoryStatusEnum | None
-    :return: The paginated backup task responses matching the requested filters.
-    :rtype: PaginatedResponse[BackupTaskResponse]
-    """
-    if status is None:
-        response = await tasks_api.get(
-            "/",
-            params=_backup_parent_list_params(pagination),
-        )
-        parents = [Task.model_validate(item) for item in response["items"]]
-        status_map = await batch_get_latest_statuses(
-            tasks_api,
-            [task.name for task in parents],
-        )
-        items = [
-            build_backup_mongo_api_task_response(
-                task,
-                status=status_map.get(task.name),
-            )
-            for task in parents
-        ]
-        return PaginatedResponse.from_pagination(
-            items,
-            response["total"],
-            pagination,
-        )
-
-    parent_items = await fetch_all_dict_items(
-        lambda page_pagination: tasks_api.get(
-            "/",
-            params=_backup_parent_list_params(page_pagination),
-        )
-    )
-    parents = [Task.model_validate(item) for item in parent_items]
-    status_map = await batch_get_latest_statuses(
-        tasks_api,
-        [task.name for task in parents],
-    )
-    task_status_pairs = [
-        (task, task_status)
-        for task in parents
-        if (task_status := status_map.get(task.name)) == status
-    ]
-    page_pairs = pagination.slice(task_status_pairs)
-    items = [
-        build_backup_mongo_api_task_response(task, status=task_status)
-        for task, task_status in page_pairs
-    ]
-    return PaginatedResponse.from_pagination(
-        items,
-        len(task_status_pairs),
-        pagination,
-    )
 
 
 async def _fetch_latest_pbm_status(

@@ -299,6 +299,65 @@ describe('SchemaSelector', () => {
     });
   });
 
+  describe('multiple (multi-value)', () => {
+    it('resets the child to [] when the parent service changes', async () => {
+      mocked.get.mockResolvedValue({ data: [{ id: 1, name: 'a' }] });
+      const client = makeClient();
+      const setServiceRef: { current: ((s: ServiceOption) => void) | null } = { current: null };
+      function Probe() {
+        const methods = useForm<{ service: ServiceOption; schemas: unknown }>({
+          defaultValues: { service: { id: 1, name: 's1', type: 'mysql' }, schemas: [5, 6] },
+        });
+        setServiceRef.current = (s) => methods.setValue('service', s);
+        return (
+          <FormProvider {...methods}>
+            <SchemaSelector name="schemas" label="Schemas" dependsOn="service" multiple />
+            <output data-testid="schemas-value">{JSON.stringify(methods.watch('schemas'))}</output>
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      expect(screen.getByTestId('schemas-value').textContent).toBe('[5,6]');
+      await act(async () => {
+        setServiceRef.current?.({ id: 2, name: 's2', type: 'mysql' });
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('schemas-value').textContent).toBe('[]');
+      });
+    });
+
+    it('stays enabled for a custom (free-typed) parent', async () => {
+      const client = makeClient();
+      function Probe() {
+        const methods = useForm<{ service: unknown; schemas: unknown }>({
+          defaultValues: { service: 'custom-svc', schemas: [] },
+        });
+        return (
+          <FormProvider {...methods}>
+            <SchemaSelector
+              name="schemas"
+              label="Schemas"
+              dependsOn="service"
+              allowCustom
+              multiple
+            />
+          </FormProvider>
+        );
+      }
+      render(
+        <Wrapper client={client}>
+          <Probe />
+        </Wrapper>,
+      );
+      expect(screen.getByLabelText('Schemas')).not.toBeDisabled();
+      expect(mocked.get).not.toHaveBeenCalled();
+    });
+  });
+
   it('back-compat: without allowCustom a typed value is not committed', async () => {
     mocked.get.mockResolvedValue({ data: [{ id: 10, name: 'app_prod' }] });
     const client = makeClient();

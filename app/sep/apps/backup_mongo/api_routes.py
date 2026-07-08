@@ -13,12 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the JSON API router for the backup_mongo plugin.
+"""Define the custom JSON API routes for the backup_mongo plugin.
 
-Mounted at ``/api/apps/backup_mongo/`` via ``apps_router`` in
-``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
-level; the ``schema_endpoint`` helper also pins ``IsApiAuthenticated`` per
-route for safety.
+The declarative :class:`~app.sep.apps.framework.apps.TaskExecutionApp` in
+``app.py`` derives the ``GET /schema`` and paginated ``roots_only`` +
+``backup_type`` list routes; this router carries the per-app routes it keeps
+custom — the sibling-aggregating detail, the cascade create/delete, the execute
+route, and the mounted ``/restores`` sub-router — served as its ``extra_routes``.
+The framework's derived detail route is suppressed (``capabilities.detail=False``)
+so the custom ``GET /{task_name}`` here wins.
 """
 
 import logging
@@ -27,54 +30,34 @@ from fastapi import APIRouter
 from fastapi import status as http_status
 
 from app.core.exceptions import HTTPInternalServerErrorException
-from app.core.pagination import PaginatedResponse
-from app.core.pagination.deps import PaginationDep
 from app.sep.apps.backup_mongo.deps import (
     backup_create_from_write,
     backup_derived_task_names,
     BackupsTask,
     build_backup_mongo_api_detail_response,
     build_backup_task_payload,
-    get_backup_mongo_api_task_responses,
     get_backups_task,
     resolve_backup_parent_task,
 )
 from app.sep.apps.backup_mongo.models import (
     BackupTaskDetailResponse,
-    BackupTaskResponse,
     BackupTaskWrite,
 )
 from app.sep.apps.backup_mongo.restore.api_routes import (
     router as restore_api_router,
 )
 from app.sep.apps.backup_mongo.schema import backup_mongo_schema
-from app.sep.apps.framework.api import derive_execute_route, schema_endpoint
+from app.sep.apps.framework.api import derive_execute_route
 from app.sep.apps.framework.cascade import cascade_create_tasks, cascade_delete_tasks
 from app.sep.deps import (
     InventoryAPI,
     TaskAPI,
 )
-from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-schema_endpoint(router=router, plugin_schema=backup_mongo_schema)
 router.include_router(restore_api_router, prefix="/restores")
-
-
-@router.get("/")
-async def backup_mongo_api_list(
-    tasks_api: TaskAPI,
-    pagination: PaginationDep,
-    status: TaskHistoryStatusEnum | None = None,
-) -> PaginatedResponse[BackupTaskResponse]:
-    """List parent PBM backup config tasks."""
-    return await get_backup_mongo_api_task_responses(
-        tasks_api,
-        pagination=pagination,
-        status=status,
-    )
 
 
 @router.get("/{task_name}")

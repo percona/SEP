@@ -16,9 +16,9 @@
 """Define routes for the alters plugin."""
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import FutureDatetime
 
@@ -28,6 +28,7 @@ from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import (
     alters_executor_matches_service_host,
+    AltersIndexContext,
     AltersLegacyForm,
     AltersTask,
     build_alters_task,
@@ -37,15 +38,15 @@ from app.sep.apps.alters.deps import (
     cascade_update_alters_group,
     DeletableAltersParent,
     extract_service_info,
-    get_alters_index_context,
     map_alters_legacy_form,
     parse_alters_task_args,
     UnprotectedAltersTask,
 )
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.config import sep_settings
-from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
+from app.sep.connectivity import maybe_check_connectivity
 from app.sep.deps import (
+    CheckConnectivityFlag,
     DefaultContext,
     ExecutorHostsCtx,
     get_chainable_tasks,
@@ -67,7 +68,7 @@ templates = sep_settings.TEMPLATES
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def alters_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_alters_index_context)],
+    context: AltersIndexContext,
 ) -> HTMLResponse:
     """Homepage of alters plugin."""
     return templates.TemplateResponse(
@@ -115,7 +116,7 @@ async def alters_create(
     task_api: TaskAPI,
     inventory_api: InventoryAPI,
     *,
-    check_connectivity: Annotated[bool, Depends(get_check_connectivity_flag)],
+    check_connectivity: CheckConnectivityFlag,
 ) -> RedirectResponse:
     """Create the alters task group (parent, dry-run, and pre-checks tasks)."""
     logger.debug("Create alters tasks: %s", form.task_name)

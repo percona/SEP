@@ -91,6 +91,12 @@ def test_service_name_is_threaded_to_every_leg():
         payloads.force_resync_task,
     ):
         assert task.data["meta"]["_service_name"] == "mongo-svc"
+        assert list(task.data["meta"].keys()) == [
+            "config",
+            "target",
+            "requirements",
+            "_service_name",
+        ]
 
 
 def test_no_service_name_when_unresolved():
@@ -99,3 +105,8 @@ def test_no_service_name_when_unresolved():
 
     assert "_service_name" not in payloads.config_task.data["meta"]
     assert "_service_name" not in payloads.restore_task.data["meta"]
+    assert list(payloads.config_task.data["meta"].keys()) == [
+        "config",
+        "target",
+        "requirements",
+    ]

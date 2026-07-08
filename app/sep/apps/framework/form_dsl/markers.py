@@ -194,11 +194,15 @@ class ServiceRef:
         resolves. A model declares at most one ``check_connectivity`` service;
         when none is marked the sole ``ServiceRef`` is the primary and no probe
         runs. Defaults to ``False``.
+    :param multiple: When ``True``, the field is a multi-value selector backed by
+        a ``list[...]`` / ``set[...]`` annotation and derives a
+        ``MultiServiceField``. Defaults to ``False`` (single-value).
     """
 
     service_types: tuple[ServiceTypeEnum, ...]
     allow_custom: bool = False
     check_connectivity: bool = False
+    multiple: bool = False
 
     def __post_init__(self) -> None:
         """Normalise ``service_types`` to a tuple so the marker stays hashable."""
@@ -213,9 +217,13 @@ class SchemaRef:
 
     :param allow_custom: When ``True``, the field also accepts a free-typed
         value and emits ``allow_custom`` on the wire. Defaults to ``False``.
+    :param multiple: When ``True``, the field is a multi-value selector backed by
+        a ``list[...]`` / ``set[...]`` annotation and derives a
+        ``MultiSchemaField``. Defaults to ``False`` (single-value).
     """
 
     allow_custom: bool = False
+    multiple: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,9 +234,13 @@ class TableRef:
 
     :param allow_custom: When ``True``, the field also accepts a free-typed
         value and emits ``allow_custom`` on the wire. Defaults to ``False``.
+    :param multiple: When ``True``, the field is a multi-value selector backed by
+        a ``list[...]`` / ``set[...]`` annotation and derives a
+        ``MultiTableField``. Defaults to ``False`` (single-value).
     """
 
     allow_custom: bool = False
+    multiple: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,9 +249,13 @@ class HostRef:
 
     :param allow_custom: When ``True``, the field also accepts a free-typed
         value and emits ``allow_custom`` on the wire. Defaults to ``False``.
+    :param multiple: When ``True``, the field is a multi-value selector backed by
+        a ``list[...]`` / ``set[...]`` annotation and derives a
+        ``MultiHostField``. Defaults to ``False`` (single-value).
     """
 
     allow_custom: bool = False
+    multiple: bool = False
 
 
 @dataclass(frozen=True, slots=True)

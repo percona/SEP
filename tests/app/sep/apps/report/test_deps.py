@@ -15,13 +15,12 @@
 
 """Define tests for the app.sep.apps.report.deps module."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.core.exceptions import HTTPServiceUnavailableException
 from app.sep.apps.report.deps import (
-    get_pmm_api,
     get_report_index_context,
     require_pmm_api,
 )
@@ -35,57 +34,6 @@ EXPECTED_SECTIONS = [
     ("uptime", "Service Uptime"),
     ("inventory", "Included Services"),
 ]
-
-
-class TestGetPmmApi:
-    """Test the ``get_pmm_api`` dependency."""
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_endpoint_not_configured(self):
-        """Assert ``None`` is returned when PMM endpoint is not set."""
-        with patch("app.sep.apps.report.deps.settings") as mock_settings:
-            mock_settings.PMM.endpoint = None
-            mock_settings.PMM.api_key = None
-            result = await get_pmm_api()
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_api_key_not_configured(self):
-        """Assert ``None`` is returned when PMM API key is not set."""
-        with patch("app.sep.apps.report.deps.settings") as mock_settings:
-            mock_settings.PMM.endpoint = "https://pmm.example.com"
-            mock_settings.PMM.api_key = None
-            result = await get_pmm_api()
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_returns_none_when_endpoint_empty(self):
-        """Assert ``None`` is returned when PMM endpoint is an empty string."""
-        with patch("app.sep.apps.report.deps.settings") as mock_settings:
-            mock_settings.PMM.endpoint = ""
-            mock_settings.PMM.api_key = "secret-key"
-            result = await get_pmm_api()
-        assert result is None
-
-    @pytest.mark.asyncio
-    async def test_returns_client_when_configured(self):
-        """Assert a ``PMMRemoteAPI`` is returned when PMM is configured."""
-        mock_client = AsyncMock(spec=PMMRemoteAPI)
-        with (
-            patch("app.sep.apps.report.deps.settings") as mock_settings,
-        ):
-            mock_settings.PMM.endpoint = "https://pmm.example.com"
-            mock_settings.PMM.api_key = "secret-key"
-            mock_settings.PMM.verify_ssl = True
-            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
-            result = await get_pmm_api()
-        assert result is mock_client
-        mock_settings.get_remote_api.assert_awaited_once_with(
-            PMMRemoteAPI,
-            endpoint="https://pmm.example.com",
-            api_key="secret-key",
-            verify_ssl=True,
-        )
 
 
 class TestRequirePmmApi:

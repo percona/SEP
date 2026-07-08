@@ -23,6 +23,7 @@ from fastapi import Depends, Form, Request
 
 from app.core.exceptions import HTTPConflictException
 from app.inventory.constants import DEFAULT_POSTGRESQL_PORT
+from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.models import (
     BackupPgForm,
     BackupTaskDetailResponse,
@@ -31,11 +32,12 @@ from app.sep.apps.backup_pg.models import (
 )
 from app.sep.apps.backup_pg.spec import build_backup_pg_spec
 from app.sep.apps.framework import build_default_task_response, make_task_dep
-from app.sep.apps.framework.spec import assemble_envelope, resolve_refs
-from app.sep.connectivity import (
-    CONNECTIVITY_META_PORT_KEY,
-    get_check_connectivity_flag,
+from app.sep.apps.framework.spec import (
+    assemble_envelope,
+    parse_server_list_config,
+    resolve_refs,
 )
+from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -87,8 +89,6 @@ BackupsTask = Annotated[Task, Depends(get_backups_task)]
 get_unprotected_backups_task = protected_task_guard(get_backups_task)
 
 UnprotectedBackupsTask = Annotated[Task, Depends(get_unprotected_backups_task)]
-
-CheckConnectivityFlag = Annotated[bool, Depends(get_check_connectivity_flag)]
 
 
 async def check_create_has_no_conflicted_running_tasks(
@@ -182,7 +182,11 @@ def build_backup_pg_api_task_response(
         BackupTaskResponse,
         task,
         status,
-        extras={"hostname": meta.get("target"), "backup_type": backup_type},
+        extras={
+            "hostname": meta.get("target"),
+            "backup_type": backup_type,
+            "service_type": ServiceTypeEnum.POSTGRESQL,
+        },
     )
 
 
@@ -283,46 +287,24 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
 
     Extracts configuration from an existing backup task to populate the edit form.
 
+    Delegates the shared ``SERVER_LIST`` parsing to
+    :func:`~app.sep.apps.framework.spec.parse_server_list_config`, layering on the
+    postgres-specific ``port`` fallback (YAML port, then the connectivity-meta
+    port, then the default).
+
     :param task: The task data retrieved from the Tasks API.
-    :type task: dict[str, Any]
     :return: A dictionary containing parsed backup configuration.
-    :rtype: dict[str, Any]
     """
-    data = task["data"]
-    meta = data["meta"]
+    meta = task["data"]["meta"]
     task_config = yaml.safe_load(meta["config"])
     server_config = task_config["SERVER_LIST"][0]
     all_servers_config = task_config.get("ALL_SERVERS", {})
 
-    result = {
-        "name": task["name"],
-        "hostname": meta["target"],
-        "backup_type": server_config["BACKUP_TYPE"],
-        "service_id": None,
-        "host": server_config["HOST"],
+    extra_fields = {
         "port": server_config.get("PORT")
         or meta.get(CONNECTIVITY_META_PORT_KEY)
         or DEFAULT_POSTGRESQL_PORT,
     }
-
-    upload_providers = {
-        provider.upper()
-        for provider in server_config.get("UPLOAD", [])
-        if isinstance(provider, str)
-    }
-    if "S3" in upload_providers:
-        result["s3_bucket"] = all_servers_config.get("S3_BUCKET")
-        result["s3_storage_class"] = all_servers_config.get("S3_STORAGE_CLASS")
-        result["skip_s3_safety_check"] = all_servers_config.get(
-            "SKIP_S3_SAFETY_CHECK", False
-        )
-    if "GSUTIL" in upload_providers:
-        result["gs_bucket"] = all_servers_config.get("GS_BUCKET")
-    if "RSYNC" in upload_providers:
-        result["rsync_path"] = all_servers_config.get("RSYNC_PATH")
-
-    for key, value in all_servers_config.items():
-        if key.lower() not in result:
-            result[key.lower()] = value
-
-    return result
+    return parse_server_list_config(
+        task, server_config, all_servers_config, extra_fields
+    )

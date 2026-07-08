@@ -19,8 +19,6 @@ import copy
 import json
 import logging
 import shlex
-from functools import partial
-from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends
@@ -33,7 +31,7 @@ from app.core.exceptions import (
 )
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils.fields import EmptyStrToNone
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.models import (
     AltersCreate,
@@ -43,7 +41,6 @@ from app.sep.apps.alters.schema import alters_schema
 from app.sep.apps.alters.spec import build_alters_spec
 from app.sep.apps.framework import (
     build_default_task_response,
-    build_task_list_responses,
     ConnectivityWarning,
     make_task_dep,
 )
@@ -55,6 +52,7 @@ from app.sep.apps.framework.cascade import (
     CascadeFailure,
     CascadeResult,
 )
+from app.sep.apps.framework.form_dsl import make_arg_parser
 from app.sep.apps.framework.schema import ChainedPredecessor
 from app.sep.apps.framework.spec import resolve_refs
 from app.sep.deps import (
@@ -302,7 +300,6 @@ def alters_executor_matches_service_host(
     return executor_address == service_host
 
 
-_PRE_CHECKS_SCRIPT_PATH = Path(__file__).resolve().parent / "pre_checks.py"
 _PARENT_ONLY_META_KEYS = ("command", "args", "_command_line")
 
 
@@ -353,150 +350,87 @@ async def build_pre_checks_task_payload(
     pre_checks_task.data["meta"]["requirements"] = (
         "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
     )
-    pre_checks_task.data["payload"] = to_payload_reference(_PRE_CHECKS_SCRIPT_PATH)
+    pre_checks_task.data["payload"] = payload_uri(__file__, "pre_checks.py")
     return pre_checks_task
 
 
-def parse_single_arg(arg: str, form_values: dict[str, Any]) -> None:
-    """Parse a single argument and update form values.
+_ALTERS_DEFAULTS = {
+    "alter": "",
+    "recursion_method": "processlist",
+    "dsn_table": "",
+    "pause_file": "",
+    "new_table_name": "",
+    "print_arg": False,
+    "progress": "",
+    "no_swap_tables": False,
+    "no_drop_old_table": False,
+    "no_drop_new_table": False,
+    "no_drop_triggers": False,
+    "tries": "",
+    "set_vars": "",
+    "critical_load": "",
+    "max_load": "",
+    "chunk_time": "",
+    "max_lag": "",
+    "max_flow_ctl": "",
+    "extra_args": "",
+}
 
-    :param arg: The argument string to parse.
-    :type arg: str
-    :param form_values: The form values dictionary to update.
-    :type form_values: dict[str, Any]
+_ALTERS_ARG_MAPPINGS = {
+    "--alter=": "alter",
+    "--pause-file=": "pause_file",
+    "--new-table-name=": "new_table_name",
+    "--tries=": "tries",
+    "--set-vars=": "set_vars",
+    "--critical-load=": "critical_load",
+    "--max-load=": "max_load",
+    "--chunk-time=": "chunk_time",
+    "--max-lag=": "max_lag",
+    "--max-flow-ctl=": "max_flow_ctl",
+    "--progress=": "progress",
+}
+
+_ALTERS_FLAG_MAPPINGS = {
+    "--print": "print_arg",
+    "--no-swap-tables": "no_swap_tables",
+    "--no-drop-old-table": "no_drop_old_table",
+    "--no-drop-new-table": "no_drop_new_table",
+    "--no-drop-triggers": "no_drop_triggers",
+}
+
+
+def _alters_recursion_handler(arg: str, form_values: dict[str, Any]) -> bool:
+    """Split ``--recursion-method=dsn=…`` into ``recursion_method`` and ``dsn_table``.
+
+    :param arg: The CLI token to inspect.
+    :param form_values: The in-progress form-value dict, updated in place.
+    :return: ``True`` when ``arg`` is the ``--recursion-method=`` token (handled),
+        ``False`` otherwise.
     """
-    if arg.startswith("--recursion-method="):
-        recursion_method = arg.split("=", 1)[1]
-        if recursion_method.startswith("dsn="):
-            form_values["recursion_method"] = "dsn"
-            dsn_value = recursion_method.split("=", 1)[1]
-            dsn_parts = [
-                part
-                for part in dsn_value.split(",")
-                if not part.startswith(("h=", "P="))
-            ]
-            form_values["dsn_table"] = ",".join(dsn_parts) if dsn_parts else dsn_value
-        else:
-            form_values["recursion_method"] = recursion_method
-        return
-
-    arg_mappings = {
-        "--alter=": "alter",
-        "--pause-file=": "pause_file",
-        "--new-table-name=": "new_table_name",
-        "--tries=": "tries",
-        "--set-vars=": "set_vars",
-        "--critical-load=": "critical_load",
-        "--max-load=": "max_load",
-        "--chunk-time=": "chunk_time",
-        "--max-lag=": "max_lag",
-        "--max-flow-ctl=": "max_flow_ctl",
-        "--progress=": "progress",
-    }
-
-    for arg_pattern, field_name in arg_mappings.items():
-        if arg.startswith(arg_pattern):
-            form_values[field_name] = arg.split("=", 1)[1]
-            return
-
-    flag_mappings = {
-        "--print": "print_arg",
-        "--no-swap-tables": "no_swap_tables",
-        "--no-drop-old-table": "no_drop_old_table",
-        "--no-drop-new-table": "no_drop_new_table",
-        "--no-drop-triggers": "no_drop_triggers",
-    }
-
-    for flag, field_name in flag_mappings.items():
-        if arg == flag:
-            form_values[field_name] = True
-            return
+    if not arg.startswith("--recursion-method="):
+        return False
+    recursion_method = arg.split("=", 1)[1]
+    if recursion_method.startswith("dsn="):
+        form_values["recursion_method"] = "dsn"
+        dsn_value = recursion_method.split("=", 1)[1]
+        dsn_parts = [
+            part for part in dsn_value.split(",") if not part.startswith(("h=", "P="))
+        ]
+        form_values["dsn_table"] = ",".join(dsn_parts) if dsn_parts else dsn_value
+    else:
+        form_values["recursion_method"] = recursion_method
+    return True
 
 
-def parse_alters_task_args(meta: dict[str, Any]) -> dict[str, Any]:
-    """Parse existing task arguments back into form field values.
-
-    Extracts form field values from the task configuration arguments for editing.
-
-    :param meta: The task meta containing the args string.
-    :type meta: dict[str, Any]
-    :return: A dictionary containing form field values.
-    :rtype: dict[str, Any]
-    """
-    form_values = {
-        "alter": "",
-        "recursion_method": "processlist",
-        "dsn_table": "",
-        "pause_file": "",
-        "new_table_name": "",
-        "print_arg": False,
-        "progress": "",
-        "no_swap_tables": False,
-        "no_drop_old_table": False,
-        "no_drop_new_table": False,
-        "no_drop_triggers": False,
-        "tries": "",
-        "set_vars": "",
-        "critical_load": "",
-        "max_load": "",
-        "chunk_time": "",
-        "max_lag": "",
-        "max_flow_ctl": "",
-        "extra_args": "",
-    }
-
-    args_string = meta.get("args", "")
-    if not args_string:
-        return form_values
-
-    args = shlex.split(args_string)
-
-    known_args_patterns = {
-        "--alter=",
-        "--recursion-method=",
-        "--progress=",
-        "--pause-file=",
-        "--new-table-name=",
-        "--tries=",
-        "--set-vars=",
-        "--critical-load=",
-        "--max-load=",
-        "--chunk-time=",
-        "--max-lag=",
-        "--max-flow-ctl=",
-        "--print",
-        "--no-swap-tables",
-        "--no-drop-old-table",
-        "--no-drop-new-table",
-        "--no-drop-triggers",
-        "--execute",
-        "--dry-run",
-    }
-
-    extra_args_list = []
-
-    for arg in args:
-        if not arg.startswith("--") and "=" in arg:
-            continue
-
-        is_known = False
-        if arg in known_args_patterns:
-            is_known = True
-        else:
-            for pattern in known_args_patterns:
-                if pattern.endswith("=") and arg.startswith(pattern):
-                    is_known = True
-                    break
-
-        if is_known:
-            parse_single_arg(arg, form_values)
-        elif arg not in ["--execute", "--dry-run"]:
-            extra_args_list.append(arg)
-
-    if extra_args_list:
-        form_values["extra_args"] = shlex.join(extra_args_list)
-
-    return form_values
+parse_alters_task_args = make_arg_parser(
+    defaults=_ALTERS_DEFAULTS,
+    arg_mappings=_ALTERS_ARG_MAPPINGS,
+    flag_mappings=_ALTERS_FLAG_MAPPINGS,
+    recursion_handler=_alters_recursion_handler,
+    drop_shaped_positionals=True,
+    collect_extra_args=True,
+    reserved_flags=frozenset({"--execute", "--dry-run"}),
+)
 
 
 def alters_derived_task_names(parent_name: str) -> list[str]:
@@ -753,17 +687,6 @@ async def cascade_delete_alters_group(
     )
 
 
-def is_alters_parent_task(task: Task) -> bool:
-    """Return whether ``task`` is a parent execute task (not a satellite).
-
-    :param task: The task retrieved from the Tasks API.
-    :type task: Task
-    :return: ``True`` when the task has no ``data.parent`` link.
-    :rtype: bool
-    """
-    return not task.data.get("parent")
-
-
 async def resolve_alters_parent_task(task_name: str, tasks_api: TaskAPI) -> Task:
     """Resolve a parent task, following satellite ``data.parent`` links.
 
@@ -946,40 +869,26 @@ def build_alters_api_task_response(
     )
 
 
-async def get_alters_api_task_responses(
-    tasks_api: TaskAPI,
-    service_type: ServiceTypeEnum | None = None,
+def build_alters_api_list_response(
+    task: Task,
+    *,
     status: TaskHistoryStatusEnum | None = None,
-    username_mapping: dict[str, str] | None = None,
-) -> list[AltersTaskResponse]:
-    """Retrieve parent alters task responses for the JSON API.
+    context: dict[str, str] | None = None,
+) -> AltersTaskResponse:
+    """Build an alters list-row response for the derived list route.
 
-    Satellite tasks (dry-run and pre-checks siblings) are excluded from the
-    list — only parent execute tasks are returned.
+    Adapts the framework's ``(task, *, status, context)`` list-builder contract to
+    :func:`build_alters_api_task_response`, threading the once-awaited username map
+    bound as ``context`` into its ``username_mapping`` argument so the derived list
+    rows carry the same command line, service type, and resolved usernames as the
+    detail surface.
 
-    :param tasks_api: The TaskAPI instance used to query alters tasks.
-    :type tasks_api: TaskAPI
-    :param service_type: Optional service type filter for the alters task list.
-    :type service_type: ServiceTypeEnum | None
-    :param status: Optional latest-history status filter for the alters task list.
-    :type status: TaskHistoryStatusEnum | None
-    :param username_mapping: Optional mapping of user IDs to usernames.
-    :type username_mapping: dict[str, str] | None
-    :return: The alters task responses matching the requested filters.
-    :rtype: list[AltersTaskResponse]
+    :param task: The parent alters task retrieved from the Tasks API.
+    :param status: The latest known execution status for the task.
+    :param context: The username map bound by ``response_context_provider``.
+    :return: A validated alters task API response for the list surface.
     """
-    if service_type is not None and service_type != ServiceTypeEnum.MYSQL:
-        return []
-
-    return await build_task_list_responses(
-        tasks_api,
-        owner=TaskOwner.ALTERS.value,
-        response_builder=partial(
-            build_alters_api_task_response, username_mapping=username_mapping
-        ),
-        status_filter=status,
-        task_filter=is_alters_parent_task,
-    )
+    return build_alters_api_task_response(task, status, username_mapping=context)
 
 
 async def get_alters_index_context(
@@ -1014,3 +923,6 @@ async def get_alters_index_context(
         TaskOwner.ALTERS,
         alert_on_fail_default=True,
     )
+
+
+AltersIndexContext = Annotated[dict[str, Any], Depends(get_alters_index_context)]

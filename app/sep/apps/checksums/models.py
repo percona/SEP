@@ -24,6 +24,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.form_dsl import (
     ArgFormat,
     Choices,
+    DSN_TABLE_DEFAULT,
     ServiceRef,
     TaskFormModel,
     Ui,
@@ -163,7 +164,7 @@ class ChecksumsForm(TaskFormModel):
         Ui(
             label="DSN Table",
             section="Recursion",
-            default="D=percona,t=dsns",
+            default=DSN_TABLE_DEFAULT,
             description="Only used when recursion method is 'dsn'",
         ),
     ] = ""

@@ -24,6 +24,7 @@ from app.sep.apps.backup_pg.models import (
     BackupTaskResponse,
     PgBackRestBackupType,
 )
+from app.sep.apps.framework import BaseTaskResponse
 from app.tasks.models import TaskBackendEnum, TaskOwner
 
 DEFAULT_PG_PORT = 5432
@@ -205,8 +206,13 @@ def test_backup_task_response_roundtrips_owner_and_backup_type() -> None:
 
     dumped = response.model_dump(mode="json")
 
+    assert isinstance(response, BaseTaskResponse)
     assert dumped["owner"] == TaskOwner.BACKUP_PG.value
     assert dumped["backup_type"] == "P"
+    assert dumped["service_type"] is None
+    assert "anonymize_mask" in dumped
+    assert "anonymized_entities" in dumped
+    assert "connectivity_warning" in dumped
 
 
 def test_backup_task_detail_response_inherits_response_fields() -> None:
