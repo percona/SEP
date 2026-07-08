@@ -39,7 +39,6 @@ def _anonymizer_operators() -> dict[str, "OperatorConfig"]:
     startup, even when no text is ever anonymized.
 
     :return: The operator configuration mapping used by the anonymizer engine.
-    :rtype: dict[str, OperatorConfig]
     """
     from presidio_anonymizer import OperatorConfig
 
