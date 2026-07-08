@@ -155,22 +155,17 @@ class TestListAppsForNavigation:
     @pytest.mark.parametrize(
         ("app_key", "expected_route"),
         [
-            ("tasks", "/tasks"),
-            ("alerts", "/alerts/templates"),
-            ("backup_mongo", "/backups/mongodb"),
-            ("backup_pg", "/backups/postgresql"),
-            ("report", "/reports"),
+            ("tasks", "/apps/tasks"),
+            ("alerts", "/apps/alerts/templates"),
+            ("backup_mongo", "/apps/backups/mongodb"),
+            ("backup_pg", "/apps/backups/postgresql"),
+            ("report", "/apps/reports"),
         ],
     )
-    async def test_declared_react_routes_are_emitted_verbatim(
+    async def test_declared_react_routes_are_normalized_under_apps_namespace(
         self, api_user_client: TestClient, app_key: str, expected_route: str
     ) -> None:
-        """Emit a plugin-declared ``react_route`` as its canonical route unchanged.
-
-        A declared route is already an absolute ``URIPath`` the app chose as its
-        canonical path; ``backup_pg`` keeps ``/backups/postgresql`` rather than
-        being forced under the ``/apps`` namespace.
-        """
+        """Emit declared routes after normalizing them under ``/apps``."""
         response = api_user_client.get("/api/apps/")
         entry = next(e for e in response.json() if e["app_key"] == app_key)
         assert entry["react_route"] == expected_route
