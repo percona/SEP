@@ -143,7 +143,7 @@ export interface paths {
     put?: never;
     /**
      * Spa Session Login
-     * @description Auto-login the SPA from an ambient Grafana session cookie.
+     * @description Authenticate the SPA from an ambient Grafana session cookie.
      *
      *     Read the ambient Grafana session cookie off the request, validate it against
      *     Grafana, set the ``HttpOnly`` refresh cookie scoped to ``/api/oauth``, and
@@ -152,11 +152,8 @@ export interface paths {
      *
      *     :param request: The incoming request, carrying the ambient Grafana session
      *         cookie.
-     *     :type request: Request
      *     :param response: The HTTP response on which to set the refresh cookie.
-     *     :type response: Response
      *     :return: The slim OAuth token response for the SPA.
-     *     :rtype: SPAOAuthTokenResponse
      *     :raises HTTPUnauthorizedException: If there is no valid ambient session.
      */
     post: operations['oauth_spa_session_login_api_oauth_session_post'];
