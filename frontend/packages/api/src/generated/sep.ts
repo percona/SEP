@@ -462,11 +462,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Alters Api List
-     * @description List parent alters execute tasks.
-     */
-    get: operations['alters_alters_api_list_api_apps_alters__get'];
+    /** List */
+    get: operations['alters__list_paginated_api_apps_alters__get'];
     put?: never;
     /**
      * Alters Api Create
@@ -698,11 +695,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Backup Mongo Api List
-     * @description List parent PBM backup config tasks.
-     */
-    get: operations['backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get'];
+    /** List */
+    get: operations['backup_mongo__list_paginated_api_apps_backup_mongo__get'];
     put?: never;
     /**
      * Backup Mongo Api Create
@@ -2201,8 +2195,10 @@ export interface paths {
      *
      *     Local classes are read from their config singletons; remote classes
      *     (``remote_classes``) are fetched server-side from their owning sub-app
-     *     and appended in declaration order. A failed remote fetch fails the whole
-     *     request with ``502`` -- the LIST never silently drops a remote group.
+     *     and appended in declaration order; app-owned classes follow remote
+     *     groups with per-group app metadata. A failed remote fetch fails the
+     *     whole request with ``502`` -- the LIST never silently drops a remote
+     *     group.
      *
      *     :param session: The sub-app's database session.
      *     :param remote_api: The client for remote settings classes (``None`` when
@@ -2229,11 +2225,11 @@ export interface paths {
      * Export Settings
      * @description Return the merged effective configuration as a YAML attachment.
      *
-     *     Aggregates the three SEP-wired settings classes locally and fans out to
-     *     ``GET /admin/settings/`` on the Tasks API for ``TasksSettings``. Values
-     *     use the same dump path as the settings LIST endpoints. On upstream failure,
-     *     re-raise as :class:`~app.core.exceptions.HTTPBadGatewayException` — no
-     *     partial export.
+     *     Aggregates the SEP-wired core settings classes and app-owned settings
+     *     classes locally and fans out to ``GET /admin/settings/`` on the Tasks API
+     *     for ``TasksSettings``. Values use the same dump path as the settings LIST
+     *     endpoints. On upstream failure, re-raise as
+     *     :class:`~app.core.exceptions.HTTPBadGatewayException` — no partial export.
      *
      *     When ``keys`` is omitted the full merged export is returned exactly as
      *     before. When provided, each entry is a fully-qualified selector
@@ -2242,8 +2238,8 @@ export interface paths {
      *     upstream call; the Tasks fan-out is skipped entirely unless a selector
      *     targets ``TasksSettings``, and Tasks keys are validated against the fetched
      *     block. Output blocks always follow the canonical declaration order
-     *     (``SEP_ADMIN_SETTINGS_CLASSES`` then ``TasksSettings``), independent of
-     *     selector order.
+     *     (``SEP_ADMIN_SETTINGS_CLASSES``, then app-owned classes, then
+     *     ``TasksSettings``), independent of selector order.
      *
      *     :param session: The active database session for SEP override queries.
      *     :type session: AsyncSession
@@ -4068,20 +4064,13 @@ export interface components {
      * @description Describe the full detail response for a single backup.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      *     :param templates: Templates captured in the backup.
-     *     :type templates: list[BackupDetailTemplate]
      *     :param rules: Rules captured in the backup.
-     *     :type rules: list[BackupDetailRule]
      *     :param contact_points: Contact points captured in the backup.
-     *     :type contact_points: list[BackupDetailContactPoint]
      *     :param folders: Folders captured in the backup.
-     *     :type folders: list[BackupDetailFolder]
      *     :param notification_policy_receiver: Top-level receiver from the captured
      *         notification policy, or ``None`` when no policy was captured.
-     *     :type notification_policy_receiver: str | None
      */
     BackupDetail: {
       /** Contact Points */
@@ -4107,9 +4096,7 @@ export interface components {
      * @description Represent a contact-point entry inside a backup snapshot.
      *
      *     :param name: The contact point name.
-     *     :type name: str
      *     :param type: The contact point type (e.g. ``"pagerduty"``).
-     *     :type type: str
      */
     BackupDetailContactPoint: {
       /** Name */
@@ -4122,7 +4109,6 @@ export interface components {
      * @description Represent a folder entry inside a backup snapshot.
      *
      *     :param title: The folder title.
-     *     :type title: str
      */
     BackupDetailFolder: {
       /** Title */
@@ -4133,7 +4119,6 @@ export interface components {
      * @description Represent a rule entry inside a backup snapshot.
      *
      *     :param title: The rule title.
-     *     :type title: str
      */
     BackupDetailRule: {
       /** Title */
@@ -4144,9 +4129,7 @@ export interface components {
      * @description Represent a template entry inside a backup snapshot.
      *
      *     :param name: The template name.
-     *     :type name: str
      *     :param summary: The template summary blurb.
-     *     :type summary: str
      */
     BackupDetailTemplate: {
       /** Name */
@@ -4406,11 +4389,8 @@ export interface components {
      * @description Represent a compact backup row used by the list endpoint.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      *     :param metadata: Summary counts persisted alongside the backup snapshot.
-     *     :type metadata: dict[str, Any]
      */
     BackupSummary: {
       /**
@@ -5876,9 +5856,7 @@ export interface components {
      *     renders the id and timestamp, so the index payload omits the summary counts.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      */
     IndexBackupSummary: {
       /**
@@ -5894,9 +5872,7 @@ export interface components {
      * @description Describe the PagerDuty contact-point status on the index page.
      *
      *     :param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.
-     *     :type configured: bool
      *     :param uid: The contact point UID when configured, otherwise ``None``.
-     *     :type uid: str | None
      */
     IndexPagerDutyStatus: {
       /** Configured */
@@ -5914,13 +5890,9 @@ export interface components {
      *
      *     :param groups: Alert templates grouped by service type. Only service types
      *         with at least one template are included.
-     *     :type groups: list[IndexTemplateGroup]
      *     :param pmm_connected: ``True`` when PMM is configured and reachable.
-     *     :type pmm_connected: bool
      *     :param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.
-     *     :type pagerduty: IndexPagerDutyStatus | None
      *     :param recent_backups: The most recent alert backups, newest first.
-     *     :type recent_backups: list[IndexBackupSummary]
      */
     IndexResponse: {
       /** Groups */
@@ -5936,21 +5908,13 @@ export interface components {
      * @description Represent a single alert template row on the index page.
      *
      *     :param name: The display name of the alert template.
-     *     :type name: str
      *     :param service_type: The service category this template applies to.
-     *     :type service_type: str
      *     :param expression: The PromQL expression backing the alert.
-     *     :type expression: str
      *     :param default_threshold: The default numeric threshold for the UI.
-     *     :type default_threshold: float
      *     :param severity: The severity level (``"info"``, ``"warning"``, ``"critical"``).
-     *     :type severity: str
      *     :param description: A human-readable description of the alert.
-     *     :type description: str
      *     :param summary: A short summary template for notifications.
-     *     :type summary: str
      *     :param in_pmm: ``True`` when a template of this name is already present in PMM.
-     *     :type in_pmm: bool
      */
     IndexTemplate: {
       /** Default Threshold */
@@ -5975,11 +5939,8 @@ export interface components {
      * @description Group index templates by service type.
      *
      *     :param service_type: The service type identifier (e.g. ``"mysql"``).
-     *     :type service_type: str
      *     :param label: The human-readable service type label (e.g. ``"MySQL"``).
-     *     :type label: str
      *     :param templates: The templates belonging to this service type.
-     *     :type templates: list[IndexTemplate]
      */
     IndexTemplateGroup: {
       /** Label */
@@ -6523,7 +6484,6 @@ export interface components {
      *
      *     :param integration_key: The PagerDuty integration key. Must be non-empty
      *         after stripping whitespace.
-     *     :type integration_key: NonEmptyStr
      */
     PagerDutyRequest: {
       /** Integration Key */
@@ -6534,7 +6494,6 @@ export interface components {
      * @description Describe the response body for the PagerDuty save / delete endpoints.
      *
      *     :param status: ``"created"``, ``"updated"`` (save) or ``"deleted"`` (delete).
-     *     :type status: Literal["created", "updated", "deleted"]
      */
     PagerDutyResponse: {
       /**
@@ -6542,6 +6501,17 @@ export interface components {
        * @enum {string}
        */
       status: 'created' | 'updated' | 'deleted';
+    };
+    /** PaginatedResponse[AltersTaskResponse] */
+    PaginatedResponse_AltersTaskResponse_: {
+      /** Items */
+      items: components['schemas']['AltersTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[BackupResponse] */
     PaginatedResponse_BackupResponse_: {
@@ -6679,11 +6649,8 @@ export interface components {
      * @description Represent a per-template result row returned by the push endpoint.
      *
      *     :param name: The template name the result applies to.
-     *     :type name: str
      *     :param status: One of ``"success"``, ``"skipped"``, ``"error"``.
-     *     :type status: Literal["success", "skipped", "error"]
      *     :param message: A human-readable description of the outcome.
-     *     :type message: str
      */
     PushItemResult: {
       /** Message */
@@ -6702,7 +6669,6 @@ export interface components {
      *
      *     :param selected_templates: Names of templates to push to PMM. Must be a
      *         non-empty list of non-empty strings.
-     *     :type selected_templates: list[NonEmptyStr]
      */
     PushRequest: {
       /** Selected Templates */
@@ -6713,7 +6679,6 @@ export interface components {
      * @description Wrap the per-template results returned by the push endpoint.
      *
      *     :param results: One :class:`PushItemResult` per template in the request.
-     *     :type results: list[PushItemResult]
      */
     PushResponse: {
       /** Results */
@@ -6831,15 +6796,10 @@ export interface components {
      * @description Expose async report job state.
      *
      *     :param job_id: Celery task identifier.
-     *     :type job_id: str
      *     :param status: Lowercase Celery task state.
-     *     :type status: str
      *     :param pdf_ready: Whether the PDF result exists and is downloadable.
-     *     :type pdf_ready: bool
      *     :param result: Successful job result payload, if available.
-     *     :type result: dict[str, Any] | None
      *     :param error: Failed job error text, if available.
-     *     :type error: str | None
      */
     ReportJobResponse: {
       /** Error */
@@ -6901,7 +6861,6 @@ export interface components {
      * @description Define report snapshot body for PDF/upload jobs.
      *
      *     :param report: Generated report snapshot reused for PDF/upload work.
-     *     :type report: ReportData
      */
     ReportSnapshotWrite: {
       report: components['schemas']['ReportData'];
@@ -7078,7 +7037,6 @@ export interface components {
      *
      *     :param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`
      *         row to restore from. Must be a positive integer.
-     *     :type backup_id: int
      */
     RestoreRequest: {
       /** Backup Id */
@@ -7089,10 +7047,8 @@ export interface components {
      * @description Wrap the summary returned by the restore endpoint.
      *
      *     :param status: ``"success"`` on a complete restore.
-     *     :type status: Literal["success"]
      *     :param details: Per-section restore counts as returned by
      *         :func:`~app.sep.apps.alerts.restore.restore_from_backup`.
-     *     :type details: dict[str, Any]
      */
     RestoreResponse: {
       /** Details */
@@ -7737,8 +7693,33 @@ export interface components {
      *     :param settings: The fields declared on the settings class, with their
      *         current values and metadata.
      *     :type settings: list[SettingResponse]
+     *     :param is_app_owned: Whether this group belongs to a SEP app under
+     *         ``app/sep/apps/`` rather than core SEP wiring.
+     *     :type is_app_owned: bool
+     *     :param app_id: The owning app's registry key when ``is_app_owned`` is
+     *         ``True``; ``None`` for core groups.
+     *     :type app_id: str | None
+     *     :param app_display_name: The owning app's human-facing label when
+     *         ``is_app_owned`` is ``True``; ``None`` for core groups.
+     *     :type app_display_name: str | None
+     *     :param app_enabled: Whether the owning app is currently enabled when
+     *         ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
+     *         apps remain listed so the frontend can hide them without a second
+     *         lookup.
+     *     :type app_enabled: bool | None
      */
     SettingClassGroup: {
+      /** App Display Name */
+      app_display_name?: string | null;
+      /** App Enabled */
+      app_enabled?: boolean | null;
+      /** App Id */
+      app_id?: string | null;
+      /**
+       * Is App Owned
+       * @default false
+       */
+      is_app_owned: boolean;
       setting_class: components['schemas']['SettingClassEnum'];
       /** Settings */
       settings: components['schemas']['SettingResponse'][];
@@ -9253,9 +9234,11 @@ export interface operations {
       };
     };
   };
-  alters_alters_api_list_api_apps_alters__get: {
+  alters__list_paginated_api_apps_alters__get: {
     parameters: {
       query?: {
+        offset?: number;
+        limit?: number;
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       };
@@ -9271,7 +9254,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AltersTaskResponse'][];
+          'application/json': components['schemas']['PaginatedResponse_AltersTaskResponse_'];
         };
       };
       /** @description Validation Error */
@@ -9730,12 +9713,12 @@ export interface operations {
       };
     };
   };
-  backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get: {
+  backup_mongo__list_paginated_api_apps_backup_mongo__get: {
     parameters: {
       query?: {
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
         offset?: number;
         limit?: number;
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       };
       header?: never;
       path?: never;

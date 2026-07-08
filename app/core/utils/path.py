@@ -18,11 +18,13 @@
 import logging
 from os import PathLike
 from pathlib import Path
+from typing import TypeAlias
 
 from app import BASE_DIR
 
 logger = logging.getLogger(__name__)
 
+PathInput: TypeAlias = str | PathLike[str]
 _PLUGIN_APP_ALIASES = (
     ("/app/sep/plugins/", "/app/sep/apps/"),
     ("/app/sep/apps/", "/app/sep/plugins/"),
@@ -33,7 +35,7 @@ class PayloadReferenceError(ValueError):
     """Define exception raised when a task payload ``file://`` reference cannot be resolved."""
 
 
-def resolve_relative_path(path: str | bytes | PathLike) -> Path:
+def resolve_relative_path(path: PathInput) -> Path:
     """Resolve relative paths with BASE_DIR.
 
     :param path: The relative path to resolve.
@@ -46,6 +48,20 @@ def resolve_relative_path(path: str | bytes | PathLike) -> Path:
         return BASE_DIR / path
     except TypeError as exc:
         raise ValueError(f"Unable to resolve path: {path}") from exc
+
+
+def payload_uri(anchor_file: PathInput, name: PathInput) -> str:
+    """Build a ``file://`` payload reference anchored next to *anchor_file*.
+
+    Combine the directory of *anchor_file* with *name* and delegate to
+    :func:`to_payload_reference` for ``BASE_DIR``-relative ``file://``
+    construction.
+
+    :param anchor_file: The caller's ``__file__`` token.
+    :param name: Sibling file or directory name to resolve.
+    :return: A ``file://`` reference relative to ``BASE_DIR``.
+    """
+    return to_payload_reference(Path(anchor_file).parent / name)
 
 
 def to_payload_reference(path: Path) -> str:

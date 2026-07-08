@@ -647,8 +647,46 @@
         "type": "string"
       },
       "SettingClassGroup": {
-        "description": "One settings-class group in the LIST response.\n\n:param setting_class: The settings class this group represents.\n:type setting_class: SettingClassEnum\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:type settings: list[SettingResponse]",
+        "description": "One settings-class group in the LIST response.\n\n:param setting_class: The settings class this group represents.\n:type setting_class: SettingClassEnum\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:type settings: list[SettingResponse]\n:param is_app_owned: Whether this group belongs to a SEP app under\n    ``app/sep/apps/`` rather than core SEP wiring.\n:type is_app_owned: bool\n:param app_id: The owning app's registry key when ``is_app_owned`` is\n    ``True``; ``None`` for core groups.\n:type app_id: str | None\n:param app_display_name: The owning app's human-facing label when\n    ``is_app_owned`` is ``True``; ``None`` for core groups.\n:type app_display_name: str | None\n:param app_enabled: Whether the owning app is currently enabled when\n    ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled\n    apps remain listed so the frontend can hide them without a second\n    lookup.\n:type app_enabled: bool | None",
         "properties": {
+          "app_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Display Name"
+          },
+          "app_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Enabled"
+          },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Id"
+          },
+          "is_app_owned": {
+            "default": false,
+            "title": "Is App Owned",
+            "type": "boolean"
+          },
           "setting_class": {
             "$ref": "#/components/schemas/SettingClassEnum"
           },
@@ -1737,7 +1775,7 @@
     },
     "/admin/settings/": {
       "get": {
-        "description": "List every exposed settings class with current values and metadata.\n\nLocal classes are read from their config singletons; remote classes\n(``remote_classes``) are fetched server-side from their owning sub-app\nand appended in declaration order. A failed remote fetch fails the whole\nrequest with ``502`` -- the LIST never silently drops a remote group.\n\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: Grouped responses, one group per configured settings class.",
+        "description": "List every exposed settings class with current values and metadata.\n\nLocal classes are read from their config singletons; remote classes\n(``remote_classes``) are fetched server-side from their owning sub-app\nand appended in declaration order; app-owned classes follow remote\ngroups with per-group app metadata. A failed remote fetch fails the\nwhole request with ``502`` -- the LIST never silently drops a remote\ngroup.\n\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: Grouped responses, one group per configured settings class.",
         "operationId": "settings_list_settings_admin_settings__get",
         "responses": {
           "200": {

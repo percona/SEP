@@ -305,7 +305,7 @@ export interface components {
        * Email
        * @default
        */
-      email: string | '';
+      email: string;
       /**
        * Firstname
        * @default

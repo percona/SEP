@@ -71,6 +71,14 @@ A new or modified state machine must name, for each non-terminal state, the serv
 
 `app/sep/apps/<name>/` with `routes.py`, `deps.py`, optional `models.py`. Registration in `settings.yaml` under `SEP.APPS`. Flag apps that put dep aliases in `routes.py`/`models.py` or scatter helpers into ad-hoc module names.
 
+The standard module roles under each app package are:
+
+- **`models.py`** — DB table models (`BaseSQLModel` / `BaseUUIDSQLModel` subclasses with `table=True`), domain Pydantic models, and API-DTO request/response models. This is the single Pydantic/SQLModel home for the app.
+- **`schema.py`** (singular) — `AppSchema` / form-DSL definitions consumed by the framework to render and validate the app's configuration form. Only present in apps that use the `TaskExecutionApp` form-DSL scaffold.
+- **`spec.py`** — task-envelope builders (`build_*_spec` functions) that assemble the execution payload for a task. Only present in spec-driven apps.
+
+No `schemas.py` (plural) files exist under `app/sep/apps/`. Pydantic request/response models belong in `models.py`.
+
 - **Form-DSL markers** (`Forbidden`, `Required`, `pattern`) are display-only — they drive `GET /schema` rendering and client UI but do NOT validate JSON API request bodies. A constraint that must reject invalid API input needs a real Pydantic validator (`@model_validator(mode="after")` / `AfterValidator`) in addition.
 - **Create wires; it doesn't run.** A create / cascade-create handler must not fire task execution (`.delay()`, a chained `POST /execute/...`). Creating a task is configuration; running it is a separate sanctioned trigger (`POST /execute/{name}` or a registered schedule).
 - **Route registration order**: register literal path segments before parametrized ones — FastAPI matches in registration order, so a `/{param}` registered first swallows every literal sibling path.

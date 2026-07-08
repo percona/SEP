@@ -33,7 +33,6 @@ from app.sep.apps.alters.deps import (
     cascade_create_alters_group,
     cascade_update_alters_group,
     extract_service_info,
-    get_alters_api_task_responses,
     get_alters_index_context,
     get_alters_task,
     get_alters_task_info,
@@ -48,7 +47,6 @@ from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
-    TaskHistoryStatusEnum,
     TaskOwner,
     TaskWrite,
 )
@@ -762,89 +760,6 @@ async def test_cascade_update_pairs_predecessor_names_with_specs(mocker):
         assert tasks_api.put.await_count == len(captured_specs)
     finally:
         alters_schema.predecessors = original_predecessors
-
-
-@pytest.mark.asyncio
-async def test_get_alters_api_task_responses_resolves_statuses_via_batch():
-    """List endpoint resolves parent statuses via the batch endpoint."""
-    tasks_api = AsyncMock(spec=RemoteAPI)
-    parent = TaskFactory.build(
-        name="parent-alter",
-        owner=TaskOwner.ALTERS,
-        data={"task": "run-command", "meta": {"target": "host1"}},
-    )
-    satellite = TaskFactory.build(
-        name="parent-alter-dry-run",
-        owner=TaskOwner.ALTERS,
-        data={
-            "task": "run-command",
-            "meta": {"target": "host1"},
-            "parent": "parent-alter",
-        },
-    )
-    tasks_api.get = AsyncMock(
-        return_value={
-            "items": [
-                parent.model_dump(mode="json"),
-                satellite.model_dump(mode="json"),
-            ],
-            "total": 2,
-            "offset": 0,
-            "limit": 50,
-        }
-    )
-    tasks_api.post = AsyncMock(
-        return_value={"parent-alter": TaskHistoryStatusEnum.SUCCESS.value}
-    )
-
-    results = await get_alters_api_task_responses(tasks_api)
-
-    assert len(results) == 1
-    assert results[0].name == "parent-alter"
-    assert results[0].status == TaskHistoryStatusEnum.SUCCESS
-    tasks_api.post.assert_awaited_once_with(
-        "/history/latest", json={"names": ["parent-alter"]}
-    )
-
-
-@pytest.mark.asyncio
-async def test_get_alters_api_task_responses_filters_by_status():
-    """Optional status filter applies after the batch status fetch."""
-    tasks_api = AsyncMock(spec=RemoteAPI)
-    parent_a = TaskFactory.build(
-        name="alter-a",
-        owner=TaskOwner.ALTERS,
-        data={"task": "run-command", "meta": {"target": "host1"}},
-    )
-    parent_b = TaskFactory.build(
-        name="alter-b",
-        owner=TaskOwner.ALTERS,
-        data={"task": "run-command", "meta": {"target": "host2"}},
-    )
-    tasks_api.get = AsyncMock(
-        return_value={
-            "items": [
-                parent_a.model_dump(mode="json"),
-                parent_b.model_dump(mode="json"),
-            ],
-            "total": 2,
-            "offset": 0,
-            "limit": 50,
-        }
-    )
-    tasks_api.post = AsyncMock(
-        return_value={
-            "alter-a": TaskHistoryStatusEnum.SUCCESS.value,
-            "alter-b": TaskHistoryStatusEnum.FAILED.value,
-        }
-    )
-
-    results = await get_alters_api_task_responses(
-        tasks_api,
-        status=TaskHistoryStatusEnum.SUCCESS,
-    )
-
-    assert [task.name for task in results] == ["alter-a"]
 
 
 def _make_alters_task(

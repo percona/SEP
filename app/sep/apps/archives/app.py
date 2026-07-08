@@ -33,7 +33,11 @@ from app.sep.apps.archives.models import ArchivesCreate
 from app.sep.apps.archives.routes import router as jinja_router
 from app.sep.apps.archives.spec import build_archives_spec
 from app.sep.apps.archives.views import archives_views
-from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
+from app.sep.apps.framework.apps import (
+    AppCapabilities,
+    ListFilterConfig,
+    TaskExecutionApp,
+)
 from app.tasks.models import TaskOwner
 
 app = TaskExecutionApp(
@@ -50,6 +54,6 @@ app = TaskExecutionApp(
     alert_detail_builder=ALERT_DETAIL_BUILDER,
     capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.MYSQL,
-    list_status_filter=True,
+    list_filter=ListFilterConfig(status=True),
     jinja_router=jinja_router,
 )

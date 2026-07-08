@@ -119,6 +119,26 @@ def detail_route_path(app_def: TaskExecutionApp) -> str:
     return f"/{{{app_def.detail_path_param}}}"
 
 
+def extra_route_paths(app_def: TaskExecutionApp) -> set[tuple[str, str]]:
+    """Return the ``(path, method)`` pairs the app keeps custom via ``extra_routes``.
+
+    A hybrid app disables a capability yet still serves that verb from a
+    hand-written route mounted through ``extra_routes`` (for example a cascade
+    create or a satellite-resolving detail). The route-absence assertions use this
+    to tell a legitimately-custom route from a leaked derived one.
+
+    :param app_def: The app definition whose ``extra_routes`` are introspected.
+    :return: Every ``(route.path, method)`` pair contributed by ``extra_routes``.
+    """
+    return {
+        (route.path, method)
+        for extra in app_def.extra_routes
+        for route in extra.routes
+        if isinstance(route, APIRoute)
+        for method in route.methods
+    }
+
+
 def mount_app(app_def: TaskExecutionApp) -> FastAPI:
     """Mount the app's derived router under the production-shape router tree.
 
@@ -375,9 +395,11 @@ class DerivedRouterContractTests:
         assert mock_task_api.last_create_payload["data"][RESERVED_FORM_KEY] == expected
 
     def test_create_route_absent(self) -> None:
-        """Assert no ``POST /`` route exists when create is disabled."""
+        """Assert no derived ``POST /`` route exists when create is disabled."""
         if self.app_def.capabilities.create:
             pytest.skip("create capability enabled")
+        if ("/", "POST") in extra_route_paths(self.app_def):
+            pytest.skip("create route kept custom in extra_routes")
 
         assert ("/", "POST") not in routes_of(self.app_def)
 
@@ -486,17 +508,20 @@ class DerivedRouterContractTests:
         self, contract_client: TestClient, mock_task_api: Any
     ) -> None:
         """Assert ``GET /?status=`` returns only rows whose latest status matches."""
-        if not self.app_def.list_status_filter:
+        if not self.app_def.list_filter.status:
             pytest.skip("status filter not declared")
+        extra = self.app_def.list_filter.extra_params or None
         mock_task_api.seed_task(
             "contract-status-success",
             owner=self.app_def.owner,
             statuses=(TaskHistoryStatusEnum.SUCCESS,),
+            data_extra=extra,
         )
         mock_task_api.seed_task(
             "contract-status-failed",
             owner=self.app_def.owner,
             statuses=(TaskHistoryStatusEnum.FAILED,),
+            data_extra=extra,
         )
         base = app_base_url(self.app_def)
 
@@ -513,7 +538,7 @@ class DerivedRouterContractTests:
         self, contract_client: TestClient
     ) -> None:
         """Assert a mismatched ``?service_type=`` empties the list; a match lists rows."""
-        if not self.app_def.list_service_type_filter:
+        if not self.app_def.list_filter.service_type:
             pytest.skip("service_type filter not declared")
         other = next(
             kind for kind in ServiceTypeEnum if kind != self.app_def.service_type
@@ -528,6 +553,43 @@ class DerivedRouterContractTests:
         assert mismatch.status_code == status.HTTP_200_OK
         assert _list_rows(mismatch.json()) == []
         assert any(row["name"] == SEEDED_TASK_NAME for row in _list_rows(match.json()))
+
+    def test_list_roots_only(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert a ``roots_only`` list hides derived children (``data.parent`` set)."""
+        if not self.app_def.list_filter.roots_only:
+            pytest.skip("roots_only not declared")
+        mock_task_api.seed_task(
+            "contract-derived-child",
+            owner=self.app_def.owner,
+            parent=SEEDED_TASK_NAME,
+            data_extra=self.app_def.list_filter.extra_params or None,
+        )
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        names = {row["name"] for row in _list_rows(response.json())}
+        assert SEEDED_TASK_NAME in names
+        assert "contract-derived-child" not in names
+
+    def test_list_extra_params(
+        self, contract_client: TestClient, mock_task_api: Any
+    ) -> None:
+        """Assert a fixed ``extra_params`` upstream filter drops non-matching rows."""
+        if not self.app_def.list_filter.extra_params:
+            pytest.skip("no extra_params declared")
+        mock_task_api.seed_task("contract-extra-mismatch", owner=self.app_def.owner)
+        base = app_base_url(self.app_def)
+
+        response = contract_client.get(f"{base}/")
+
+        assert response.status_code == status.HTTP_200_OK
+        names = {row["name"] for row in _list_rows(response.json())}
+        assert SEEDED_TASK_NAME in names
+        assert "contract-extra-mismatch" not in names
 
     def test_list_injects_extras_and_resolves_username(
         self, contract_client: TestClient
@@ -659,9 +721,11 @@ class DerivedRouterContractTests:
         assert response.status_code == status.HTTP_201_CREATED
 
     def test_execute_route_absent(self) -> None:
-        """Assert no execute route exists when execute is disabled."""
+        """Assert no derived execute route exists when execute is disabled."""
         if self.app_def.capabilities.execute:
             pytest.skip("execute capability enabled")
+        if ("/{task_name}/execute", "POST") in extra_route_paths(self.app_def):
+            pytest.skip("execute route kept custom in extra_routes")
 
         assert ("/{task_name}/execute", "POST") not in routes_of(self.app_def)
 
@@ -699,9 +763,11 @@ class DerivedRouterContractTests:
         assert (detail_route_path(self.app_def), "PUT") in routes_of(self.app_def)
 
     def test_update_route_absent(self) -> None:
-        """Assert no ``PUT /{detail}`` route exists when update is disabled."""
+        """Assert no derived ``PUT /{detail}`` route exists when update is disabled."""
         if self.app_def.capabilities.update:
             pytest.skip("update capability enabled")
+        if (detail_route_path(self.app_def), "PUT") in extra_route_paths(self.app_def):
+            pytest.skip("update route kept custom in extra_routes")
 
         assert (detail_route_path(self.app_def), "PUT") not in routes_of(self.app_def)
 
@@ -843,9 +909,13 @@ class DerivedRouterContractTests:
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_delete_route_absent(self) -> None:
-        """Assert no ``DELETE /{detail}`` route exists when delete is disabled."""
+        """Assert no derived ``DELETE /{detail}`` route exists when delete is disabled."""
         if self.app_def.capabilities.delete:
             pytest.skip("delete capability enabled")
+        if (detail_route_path(self.app_def), "DELETE") in extra_route_paths(
+            self.app_def
+        ):
+            pytest.skip("delete route kept custom in extra_routes")
 
         assert (detail_route_path(self.app_def), "DELETE") not in routes_of(
             self.app_def

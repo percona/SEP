@@ -21,7 +21,7 @@ from typing import Any, TYPE_CHECKING
 
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.checksums.deps import parse_checksums_task_args
-from app.sep.apps.framework.form_backfill_inventory import meta_service_hints
+from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 
 if TYPE_CHECKING:
@@ -84,9 +84,6 @@ def reconstruct_checksums_form(
     :param ctx: Shared backfill context carrying the inventory lookup table.
     :return: A create-model-shaped dict, or ``None`` when reconstruction fails.
     """
-    if ctx.service_lookup is None:
-        return None
-
     meta = task.data.get("meta")
     if not isinstance(meta, dict):
         return None
@@ -97,13 +94,7 @@ def reconstruct_checksums_form(
     if not isinstance(hostname, str) or not hostname.strip():
         return None
 
-    host, port, service_name = meta_service_hints(meta)
-    service_id = ctx.service_lookup.resolve(
-        service_type=ServiceTypeEnum.MYSQL,
-        host=host,
-        port=port,
-        service_name=service_name,
-    )
+    service_id = resolve_service_from_meta(ctx, meta, ServiceTypeEnum.MYSQL)
     if service_id is None:
         return None
 

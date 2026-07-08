@@ -4366,25 +4366,8 @@
   "paths": {
     "/api/apps/backup_mongo/": {
       "get": {
-        "description": "List parent PBM backup config tasks.",
-        "operationId": "backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get",
+        "operationId": "backup_mongo__list_paginated_api_apps_backup_mongo__get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
           {
             "in": "query",
             "name": "offset",
@@ -4406,6 +4389,22 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
             }
           }
         ],
@@ -4431,7 +4430,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Backup Mongo Api List",
+        "summary": "List",
         "tags": [
           "backup_mongo"
         ]

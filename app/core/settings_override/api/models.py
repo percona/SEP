@@ -16,6 +16,7 @@
 """Pydantic request/response models for the settings REST API."""
 
 __all__ = [
+    "SettingClassAppMetadata",
     "SettingClassGroup",
     "SettingResponse",
     "SettingsListResponse",
@@ -97,6 +98,25 @@ class SettingsPatch(RootModel[dict[str, JsonValue]]):
     root: dict[str, JsonValue] = Field(min_length=1)
 
 
+class SettingClassAppMetadata(BaseModel):
+    """App-ownership metadata attached to a :class:`SettingClassGroup`.
+
+    :param is_app_owned: Always ``True`` for app-owned groups.
+    :type is_app_owned: bool
+    :param app_id: The owning app's registry key.
+    :type app_id: str
+    :param app_display_name: The owning app's human-facing label.
+    :type app_display_name: str
+    :param app_enabled: Whether the owning app is currently enabled.
+    :type app_enabled: bool
+    """
+
+    is_app_owned: bool = True
+    app_id: str
+    app_display_name: str
+    app_enabled: bool
+
+
 class SettingClassGroup(BaseModel):
     """One settings-class group in the LIST response.
 
@@ -105,10 +125,28 @@ class SettingClassGroup(BaseModel):
     :param settings: The fields declared on the settings class, with their
         current values and metadata.
     :type settings: list[SettingResponse]
+    :param is_app_owned: Whether this group belongs to a SEP app under
+        ``app/sep/apps/`` rather than core SEP wiring.
+    :type is_app_owned: bool
+    :param app_id: The owning app's registry key when ``is_app_owned`` is
+        ``True``; ``None`` for core groups.
+    :type app_id: str | None
+    :param app_display_name: The owning app's human-facing label when
+        ``is_app_owned`` is ``True``; ``None`` for core groups.
+    :type app_display_name: str | None
+    :param app_enabled: Whether the owning app is currently enabled when
+        ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled
+        apps remain listed so the frontend can hide them without a second
+        lookup.
+    :type app_enabled: bool | None
     """
 
     setting_class: SettingClassEnum
     settings: list[SettingResponse]
+    is_app_owned: bool = False
+    app_id: str | None = None
+    app_display_name: str | None = None
+    app_enabled: bool | None = None
 
 
 class SettingsListResponse(BaseModel):

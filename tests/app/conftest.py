@@ -42,6 +42,7 @@ from app.core.auth.base import BaseAuthProvider
 from app.core.auth.config import get_active_auth_provider
 from app.core.auth.models import OAuthToken
 from app.core.auth.providers.casdoor.models import CasdoorUser
+from app.core.auth.providers.grafana.provider import GrafanaAuthProvider
 from app.core.config import settings
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.requests import RemoteAPI
@@ -241,6 +242,87 @@ def casdoor_mock(
         new=mocker.AsyncMock(return_value=True),
     )
     return get_active_auth_provider()
+
+
+@pytest.fixture
+def grafana_service_account_token() -> str:
+    """Provide a fake Grafana service-account token."""
+    return "test-service-account-token"
+
+
+@pytest.fixture
+def grafana_user_record(valid_username: str, faker: Faker) -> dict[str, Any]:
+    """Provide a mock Grafana ``/api/user`` record."""
+    return {
+        "id": faker.random_int(min=1),
+        "login": valid_username,
+        "email": faker.email(),
+        "isGrafanaAdmin": False,
+    }
+
+
+@pytest.fixture
+def grafana_user_orgs() -> list[dict[str, Any]]:
+    """Provide a mock Grafana ``/api/user/orgs`` payload."""
+    return [{"orgId": 1, "name": "Main Org.", "role": "Viewer"}]
+
+
+@pytest.fixture
+def grafana_org_users(valid_username: str, faker: Faker) -> list[dict[str, Any]]:
+    """Provide a mock Grafana ``/api/org/users`` payload."""
+    return [
+        {
+            "userId": faker.random_int(min=1),
+            "login": valid_username,
+            "email": faker.email(),
+            "role": "Viewer",
+        }
+    ]
+
+
+@pytest.fixture
+def grafana_provider(grafana_service_account_token: str) -> GrafanaAuthProvider:
+    """Provide a ``GrafanaAuthProvider`` built with test config."""
+    return GrafanaAuthProvider(
+        endpoint="https://grafana.example.com",
+        service_account_token=grafana_service_account_token,
+    )
+
+
+@pytest.fixture
+def grafana_mock(
+    grafana_provider: GrafanaAuthProvider,
+    grafana_user_record: dict[str, Any],
+    grafana_user_orgs: list[dict[str, Any]],
+    grafana_org_users: list[dict[str, Any]],
+    mocker: MockerFixture,
+) -> GrafanaAuthProvider:
+    """Mock GrafanaSDK methods and pin Grafana as the active auth provider."""
+    mocker.patch(
+        "app.core.auth.config.get_active_auth_provider",
+        return_value=grafana_provider,
+    )
+    mocker.patch(
+        "app.core.auth.providers.grafana.sdk.GrafanaSDK.login",
+        new=mocker.AsyncMock(return_value="grafana-session"),
+    )
+    mocker.patch(
+        "app.core.auth.providers.grafana.sdk.GrafanaSDK.get_current_user",
+        new=mocker.AsyncMock(return_value=grafana_user_record),
+    )
+    mocker.patch(
+        "app.core.auth.providers.grafana.sdk.GrafanaSDK.get_current_user_orgs",
+        new=mocker.AsyncMock(return_value=grafana_user_orgs),
+    )
+    mocker.patch(
+        "app.core.auth.providers.grafana.sdk.GrafanaSDK.get_org_users",
+        new=mocker.AsyncMock(return_value=grafana_org_users),
+    )
+    mocker.patch(
+        "app.core.auth.providers.grafana.sdk.GrafanaSDK.lookup_user",
+        new=mocker.AsyncMock(return_value=grafana_user_record),
+    )
+    return grafana_provider
 
 
 @pytest.fixture

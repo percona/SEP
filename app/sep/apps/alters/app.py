@@ -13,33 +13,57 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Wire the Alters (Schema Change) plugin as a registry ``BaseApp``.
+"""Wire the Alters (Schema Change) plugin as a declarative ``TaskExecutionApp``.
 
-alters keeps a hand-written JSON ``api_router``: its list shows only the parent
-execute tasks (the ``-dry-run`` / ``-pre-checks`` satellites share ``owner=alters``
-and are filtered out), and its detail resolves a satellite name back to its parent
-— neither expressible through the framework's always-on derived read routes — so it
-is exported as a plain :class:`BaseApp` rather than a ``TaskExecutionApp``. The
-schema is still derived model-first from
-:class:`~app.sep.apps.alters.models.AltersCreate` and served by the
-``api_router``'s ``GET /schema``; the cascade create/update/delete routes compose
-the app-local ``cascade_*_alters_group`` helpers. The descriptive metadata
-(``display_name`` / ``uri_path`` / ``css_class`` / ``group`` / ``nav_order``) is
-carried here because ``settings.yaml`` no longer does; ``display_name`` is
-``"Schema Change"``, the navigation label, distinct from the schema's ``"Alters"``.
-The Jinja UI router is threaded explicitly as ``jinja_router``.
+Only the ``GET /schema`` and paginated list routes are derived: the list sets
+``list_filter=ListFilterConfig(roots_only=True)`` so the server-side
+``parent_is_null=true`` filter hides the ``-dry-run`` / ``-pre-checks`` satellites
+that share ``owner=alters``, and its rows are built by
+:func:`~app.sep.apps.alters.deps.build_alters_api_list_response`. Every mutation is
+kept per-app: all :class:`~app.sep.apps.framework.apps.AppCapabilities` are off and
+the satellite-resolving detail, cascade create/update/delete, and execute routes
+ride the ``extra_routes`` router. ``capabilities.detail=False`` suppresses the
+greedy derived detail so the custom ``GET /{task_name}`` wins. The schema is the
+model-first :data:`~app.sep.apps.alters.schema.alters_schema` passed through
+verbatim, so its ``display_name`` stays ``"Alters"`` — distinct from the navigation
+label ``"Schema Change"`` carried here. The Jinja UI router is threaded explicitly.
 """
 
-from app.sep.apps.alters.api_routes import router as api_router
+from app.core.pagination.deps import make_pagination_dep
+from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.alters.api_routes import router as alters_custom_router
+from app.sep.apps.alters.deps import build_alters_api_list_response, get_alters_task
+from app.sep.apps.alters.models import AltersTaskResponse
 from app.sep.apps.alters.routes import router as jinja_router
-from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.alters.schema import alters_schema
+from app.sep.apps.framework.apps import (
+    AppCapabilities,
+    ListFilterConfig,
+    TaskExecutionApp,
+)
+from app.sep.deps import get_username_mapping
+from app.tasks.models import TaskOwner
 
-app = BaseApp(
+ALTERS_MAX_PAGINATION_LIMIT = 50
+
+app = TaskExecutionApp(
     name="alters",
     display_name="Schema Change",
     uri_path="/alters",
     css_class="alters",
     nav_order=6,
-    api_router=api_router,
+    owner=TaskOwner.ALTERS,
+    schema=alters_schema,
+    response_model=AltersTaskResponse,
+    response_builder=build_alters_api_list_response,
+    response_context_provider=get_username_mapping,
+    get_task=get_alters_task,
+    pagination=make_pagination_dep(max_limit=ALTERS_MAX_PAGINATION_LIMIT),
+    service_type=ServiceTypeEnum.MYSQL,
+    list_filter=ListFilterConfig(status=True, service_type=True, roots_only=True),
+    capabilities=AppCapabilities(
+        create=False, detail=False, execute=False, update=False, delete=False
+    ),
+    extra_routes=(alters_custom_router,),
     jinja_router=jinja_router,
 )

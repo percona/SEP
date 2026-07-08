@@ -113,9 +113,19 @@ def _bound_app_def(request: pytest.FixtureRequest) -> TaskExecutionApp:
 
 @pytest.fixture
 def mock_task_api(request: pytest.FixtureRequest) -> MockTaskAPI:
-    """Return a Tasks-API mock seeded with one task owned by the bound definition."""
+    """Return a Tasks-API mock seeded with one task owned by the bound definition.
+
+    The seeded task carries the definition's ``list_filter.extra_params`` as
+    ``data`` fields (and no ``parent``), so it satisfies the app's own derived
+    list filter — a ``roots_only`` / ``extra_params`` app still lists it.
+    """
+    app_def = _bound_app_def(request)
     api = MockTaskAPI()
-    api.seed_task(SEEDED_TASK_NAME, owner=_bound_app_def(request).owner)
+    api.seed_task(
+        SEEDED_TASK_NAME,
+        owner=app_def.owner,
+        data_extra=app_def.list_filter.extra_params or None,
+    )
     return api
 
 

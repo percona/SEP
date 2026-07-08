@@ -15,9 +15,16 @@
 
 """Build a settings REST API router parameterised by sub-app wiring."""
 
-__all__ = ["build_settings_router", "collect_class_setting_responses"]
+__all__ = [
+    "AppOwnedClassEntry",
+    "ClassEntry",
+    "RemoteClassEntry",
+    "build_settings_router",
+    "collect_class_setting_responses",
+]
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, params, Request, status
@@ -34,6 +41,7 @@ from app.core.exceptions import (
 )
 from app.core.requests.remote_api import RemoteAPI
 from app.core.settings_override.api.models import (
+    SettingClassAppMetadata,
     SettingClassGroup,
     SettingResponse,
     SettingsListResponse,
@@ -70,12 +78,37 @@ from app.core.settings_override.registry import (
 
 ClassEntry = tuple[SettingClassEnum, type[BaseYamlSettings], OverridableSettingsProxy]
 
+
+@dataclass(frozen=True, slots=True)
+class AppOwnedClassEntry:
+    """One app-owned settings class exposed on the SEP settings router.
+
+    :param setting_class: The settings class identifier.
+    :type setting_class: SettingClassEnum
+    :param settings_cls: The Pydantic settings model class.
+    :type settings_cls: type[BaseYamlSettings]
+    :param proxy: The live override proxy for the class.
+    :type proxy: OverridableSettingsProxy
+    :param app_key: The owning app's registry key.
+    :type app_key: str
+    """
+
+    setting_class: SettingClassEnum
+    settings_cls: type[BaseYamlSettings]
+    proxy: OverridableSettingsProxy
+    app_key: str
+
+
 #: One ``(SettingClassEnum, remote_base_path)`` pair per settings class whose
 #: storage lives in another sub-app and must be proxied server-side rather than
 #: read from a local config singleton. ``remote_base_path`` is the path the
 #: remote sub-app mounts its settings router at (e.g. ``"/admin/settings"``),
 #: relative to the injected ``RemoteAPI`` client's base URL.
 RemoteClassEntry = tuple[SettingClassEnum, str]
+
+#: Async callback resolving app identity and enabled state for one ``app_key``.
+#: Injected by the SEP wiring so this factory stays free of ``app.sep`` imports.
+ResolveAppMetadata = Callable[[AsyncSession, str], Awaitable[SettingClassAppMetadata]]
 
 
 async def _no_remote_api() -> None:
@@ -630,7 +663,131 @@ async def _fire_inline_rebind_callbacks(
     )
 
 
-def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + local/remote dispatch
+def _validate_app_owned_wiring(
+    app_owned: list[AppOwnedClassEntry],
+    resolve_app_metadata: ResolveAppMetadata | None,
+) -> None:
+    """Reject app-owned wiring that omits the metadata resolver.
+
+    :param app_owned: The app-owned settings classes to expose.
+    :param resolve_app_metadata: The callback that resolves app metadata.
+    :raises ValueError: If ``app_owned`` is non-empty but ``resolve_app_metadata``
+        is ``None``.
+    """
+    if app_owned and resolve_app_metadata is None:
+        raise ValueError(
+            "resolve_app_metadata is required when app_owned_classes is non-empty.",
+        )
+
+
+def _merge_app_owned_into_lookup(
+    class_lookup: dict[
+        SettingClassEnum, tuple[type[BaseYamlSettings], OverridableSettingsProxy]
+    ],
+    remote_lookup: dict[SettingClassEnum, str],
+    app_owned: list[AppOwnedClassEntry],
+) -> None:
+    """Register app-owned classes in the local lookup, rejecting duplicates.
+
+    :param class_lookup: The core class lookup map to extend in place.
+    :param remote_lookup: The remote class lookup map used for conflict checks.
+    :param app_owned: The app-owned settings classes to merge.
+    :raises ValueError: If a setting class is wired more than once.
+    """
+    for entry in app_owned:
+        if entry.setting_class in class_lookup:
+            raise ValueError(
+                f"Settings class {entry.setting_class.value!r} is wired as both"
+                " a core class and an app-owned class.",
+            )
+        if entry.setting_class in remote_lookup:
+            raise ValueError(
+                f"Settings class {entry.setting_class.value!r} is wired as both"
+                " a remote class and an app-owned class.",
+            )
+        class_lookup[entry.setting_class] = (entry.settings_cls, entry.proxy)
+
+
+async def _collect_app_owned_list_groups(
+    session: AsyncSession,
+    app_owned: list[AppOwnedClassEntry],
+    resolve_app_metadata: ResolveAppMetadata,
+) -> list[SettingClassGroup]:
+    """Build LIST groups for app-owned settings classes with app metadata.
+
+    :param session: The sub-app's database session.
+    :param app_owned: The app-owned settings classes to list.
+    :param resolve_app_metadata: The callback that resolves app metadata.
+    :return: One :class:`SettingClassGroup` per app-owned class.
+    """
+    groups = []
+    for entry in app_owned:
+        settings_list = await collect_class_setting_responses(
+            session=session,
+            setting_class=entry.setting_class,
+            settings_cls=entry.settings_cls,
+            proxy=entry.proxy,
+        )
+        metadata = await resolve_app_metadata(session, entry.app_key)
+        groups.append(
+            SettingClassGroup(
+                setting_class=entry.setting_class,
+                settings=settings_list,
+                is_app_owned=metadata.is_app_owned,
+                app_id=metadata.app_id,
+                app_display_name=metadata.app_display_name,
+                app_enabled=metadata.app_enabled,
+            )
+        )
+    return groups
+
+
+async def _collect_settings_list_groups(
+    session: AsyncSession,
+    remote_api: RemoteAPI | None,
+    classes: list[ClassEntry],
+    remote_lookup: dict[SettingClassEnum, str],
+    app_owned: list[AppOwnedClassEntry],
+    resolve_app_metadata: ResolveAppMetadata | None,
+) -> list[SettingClassGroup]:
+    """Collect every settings-class group for the LIST endpoint.
+
+    :param session: The sub-app's database session.
+    :param remote_api: The client for remote settings classes, or ``None``.
+    :param classes: The core settings classes exposed locally.
+    :param remote_lookup: Remote classes keyed by enum member.
+    :param app_owned: App-owned settings classes appended after remote groups.
+    :param resolve_app_metadata: The callback that resolves app metadata.
+    :return: Groups in core, remote, then app-owned declaration order.
+    """
+    groups = []
+    for setting_class, settings_cls, proxy in classes:
+        settings_list = await collect_class_setting_responses(
+            session=session,
+            setting_class=setting_class,
+            settings_cls=settings_cls,
+            proxy=proxy,
+        )
+        groups.append(
+            SettingClassGroup(setting_class=setting_class, settings=settings_list)
+        )
+    for setting_class, base_path in remote_lookup.items():
+        groups.append(await _remote_list_group(remote_api, setting_class, base_path))
+    if app_owned:
+        if resolve_app_metadata is None:
+            msg = "resolve_app_metadata is required when app_owned classes are listed."
+            raise RuntimeError(msg)
+        groups.extend(
+            await _collect_app_owned_list_groups(
+                session,
+                app_owned,
+                resolve_app_metadata,
+            )
+        )
+    return groups
+
+
+def build_settings_router(
     *,
     classes: list[ClassEntry],
     session_dep: Any,
@@ -638,6 +795,8 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
     mutation_deps: list[params.Depends] | None = None,
     remote_classes: list[RemoteClassEntry] | None = None,
     remote_api_dep: Any = None,
+    app_owned_classes: list[AppOwnedClassEntry] | None = None,
+    resolve_app_metadata: ResolveAppMetadata | None = None,
 ) -> APIRouter:
     """Build an :class:`APIRouter` exposing the settings CRUD endpoints.
 
@@ -652,7 +811,7 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
     JSON mutations carry no form body.
 
     :param classes: One ``(SettingClassEnum, settings_cls, proxy)`` triple per
-        settings class to expose on this router.
+        core settings class to expose on this router.
     :param session_dep: An ``Annotated[AsyncSession, Depends(...)]`` type alias
         for the sub-app's session dependency (e.g. ``app.sep.deps.SessionDep``
         or ``app.tasks.deps.SessionDep``). Used as the parameter annotation on
@@ -678,12 +837,25 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
         which forwards the caller's Bearer token). Required when ``remote_classes``
         is non-empty; ignored otherwise. Used as the parameter annotation on each
         handler so FastAPI resolves the client per-request.
+    :param app_owned_classes: Optional app-owned settings classes declared by
+        SEP plugins. Appended after core and remote groups on LIST; merged into
+        the local class lookup so GET / PATCH / DELETE work unchanged.
+    :param resolve_app_metadata: Async callback that resolves app identity and
+        enabled state for one ``app_key``. Required when ``app_owned_classes``
+        is non-empty; ignored otherwise. Injected by the SEP wiring so this
+        factory stays free of ``app.sep`` imports.
     :return: A configured :class:`APIRouter` ready to mount under a sub-app's
         ``/settings`` prefix.
+    :raises ValueError: If ``remote_classes`` is non-empty without
+        ``remote_api_dep``, or ``app_owned_classes`` is non-empty without
+        ``resolve_app_metadata``, or a setting class is wired more than once.
     """
     router = APIRouter(dependencies=[admin_dep])
+    app_owned = list(app_owned_classes or [])
+    _validate_app_owned_wiring(app_owned, resolve_app_metadata)
     class_lookup = {member: (cls, proxy) for member, cls, proxy in classes}
     remote_lookup, remote_dep = _remote_wiring(remote_classes, remote_api_dep)
+    _merge_app_owned_into_lookup(class_lookup, remote_lookup, app_owned)
 
     def _resolve(
         setting_class: SettingClassEnum,
@@ -712,29 +884,24 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
 
         Local classes are read from their config singletons; remote classes
         (``remote_classes``) are fetched server-side from their owning sub-app
-        and appended in declaration order. A failed remote fetch fails the whole
-        request with ``502`` -- the LIST never silently drops a remote group.
+        and appended in declaration order; app-owned classes follow remote
+        groups with per-group app metadata. A failed remote fetch fails the
+        whole request with ``502`` -- the LIST never silently drops a remote
+        group.
 
         :param session: The sub-app's database session.
         :param remote_api: The client for remote settings classes (``None`` when
             the router wires none).
         :return: Grouped responses, one group per configured settings class.
         """
-        groups = []
-        for setting_class, settings_cls, proxy in classes:
-            settings_list = await collect_class_setting_responses(
-                session=session,
-                setting_class=setting_class,
-                settings_cls=settings_cls,
-                proxy=proxy,
-            )
-            groups.append(
-                SettingClassGroup(setting_class=setting_class, settings=settings_list)
-            )
-        for setting_class, base_path in remote_lookup.items():
-            groups.append(
-                await _remote_list_group(remote_api, setting_class, base_path)
-            )
+        groups = await _collect_settings_list_groups(
+            session=session,
+            remote_api=remote_api,
+            classes=classes,
+            remote_lookup=remote_lookup,
+            app_owned=app_owned,
+            resolve_app_metadata=resolve_app_metadata,
+        )
         return SettingsListResponse(groups=groups)
 
     @router.get("/{setting_class}/{key}")

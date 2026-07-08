@@ -19,7 +19,6 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 import yaml
-from fastapi import HTTPException, status
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
@@ -136,15 +135,14 @@ async def test_resolve_service_name_returns_none_on_stale_service_id(
     mock_remote_api,
     restore_create: RestoreCreate,
 ):
-    """_resolve_service_name returns None when the inventory lookup 404s.
+    """Return None when the inventory lookup 404s so a stale service_id degrades.
 
-    ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not the
-    project's ``HTTPNotFoundException``; the mock mirrors production behavior
-    so the swallow path is exercised end-to-end.
+    ``RemoteAPI.get`` raises the project's ``HTTPNotFoundException`` on 404, which
+    the narrowed handler swallows to fall back to a node-only PMM annotation.
     """
     mocker.patch(
         "app.sep.apps.backup_mongo.restore.deps.get_created_entity",
-        side_effect=HTTPException(status_code=status.HTTP_404_NOT_FOUND),
+        side_effect=HTTPNotFoundException(),
     )
 
     assert await _resolve_service_name(restore_create, mock_remote_api) is None

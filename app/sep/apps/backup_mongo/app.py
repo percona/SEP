@@ -13,31 +13,60 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Wire the MongoDB Backups plugin as a registry ``BaseApp``.
+"""Wire the MongoDB Backups plugin as a declarative ``TaskExecutionApp``.
 
-backup_mongo keeps a hand-written JSON ``api_router``: its list shows only the parent
-``pbm_config`` tasks, and its detail aggregates the derived sibling statuses plus the
-latest PBM-status tail — neither expressible through the framework's always-on derived
-read routes — so it is exported as a plain :class:`BaseApp` rather than a
-``TaskExecutionApp``. The schema is still derived model-first from
-:class:`~app.sep.apps.backup_mongo.models.BackupForm` and served by the
-``api_router``'s ``GET /schema``; the cascade create/delete routes compose the frozen
-``cascade_*`` helpers. The descriptive metadata (``display_name`` / ``uri_path`` /
-``css_class`` / ``group`` / ``nav_order``) is carried here because ``settings.yaml`` no
-longer does. The Jinja UI router is threaded explicitly as ``jinja_router``.
+Only the ``GET /schema`` and paginated list routes are derived: the list sets
+``list_filter=ListFilterConfig(roots_only=True, extra_params={"backup_type":
+"pbm_config"})`` so the server-side ``parent_is_null=true`` + ``backup_type``
+filters keep only the parent ``pbm_config`` tasks and preserve an accurate
+paginated ``total``; its rows are built by
+:func:`~app.sep.apps.backup_mongo.deps.build_backup_mongo_api_task_response`. Every
+mutation is kept per-app: all :class:`~app.sep.apps.framework.apps.AppCapabilities`
+are off and the sibling-aggregating detail (with its PBM-status tail), the cascade
+create, delete, and execute routes — plus the ``/restores`` sub-router — ride the
+``extra_routes`` router. ``capabilities.detail=False`` suppresses the greedy derived
+detail so the custom ``GET /{task_name}`` wins. The schema is the model-first
+:data:`~app.sep.apps.backup_mongo.schema.backup_mongo_schema` passed through
+verbatim. The Jinja UI router is threaded explicitly.
 """
 
-from app.sep.apps.backup_mongo.api_routes import router as api_router
+from app.core.pagination.deps import pagination_dep
+from app.sep.apps.backup_mongo.api_routes import router as backup_mongo_custom_router
+from app.sep.apps.backup_mongo.deps import (
+    build_backup_mongo_api_task_response,
+    get_backups_task,
+)
+from app.sep.apps.backup_mongo.models import BackupTaskResponse, BackupType
 from app.sep.apps.backup_mongo.routes import router as jinja_router
-from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.backup_mongo.schema import backup_mongo_schema
+from app.sep.apps.framework.apps import (
+    AppCapabilities,
+    ListFilterConfig,
+    TaskExecutionApp,
+)
+from app.tasks.models import TaskOwner
 
-app = BaseApp(
+app = TaskExecutionApp(
     name="backup_mongo",
     display_name="MongoDB Backups",
     uri_path="/backup_mongo",
     css_class="backup_mongo",
     group="backups",
     nav_order=9,
-    api_router=api_router,
+    owner=TaskOwner.BACKUP_MONGO,
+    schema=backup_mongo_schema,
+    response_model=BackupTaskResponse,
+    response_builder=build_backup_mongo_api_task_response,
+    get_task=get_backups_task,
+    pagination=pagination_dep,
+    list_filter=ListFilterConfig(
+        status=True,
+        roots_only=True,
+        extra_params={"backup_type": BackupType.PBM_CONFIG.value},
+    ),
+    capabilities=AppCapabilities(
+        create=False, detail=False, execute=False, update=False, delete=False
+    ),
+    extra_routes=(backup_mongo_custom_router,),
     jinja_router=jinja_router,
 )

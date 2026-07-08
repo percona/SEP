@@ -23,7 +23,8 @@ from typing import Any, TYPE_CHECKING
 import yaml
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework.form_backfill_inventory import meta_service_hints
+from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
+from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
@@ -156,18 +157,17 @@ def _resolve_source_service_id(
     """Resolve the source MySQL ``service_id`` from config ``ALL`` and task meta."""
     config_source_host = _case_get(all_section, "source_host")
     config_source_port = _case_get(all_section, "source_port")
-    host, port, service_name = meta_service_hints(
-        meta,
-        host=config_source_host if isinstance(config_source_host, str) else None,
-        port=config_source_port if isinstance(config_source_port, int) else None,
-    )
+    explicit_host = config_source_host if isinstance(config_source_host, str) else None
+    explicit_port = config_source_port if isinstance(config_source_port, int) else None
+    resolve_meta = meta
     if isinstance(config_source_host, str) and config_source_host.strip():
-        service_name = None
-    return ctx.service_lookup.resolve(
-        service_type=ServiceTypeEnum.MYSQL,
-        host=host,
-        port=port,
-        service_name=service_name,
+        resolve_meta = {**meta, "_service_name": None}
+    return resolve_service_from_meta(
+        ctx,
+        resolve_meta,
+        ServiceTypeEnum.MYSQL,
+        host=explicit_host,
+        port=explicit_port,
     )
 
 
@@ -267,16 +267,8 @@ def reconstruct_archives_form(
     :param ctx: Shared backfill context carrying the inventory lookup table.
     :return: A create-model-shaped dict, or ``None`` when reconstruction fails.
     """
-    if ctx.service_lookup is None:
-        return None
-
-    data = task.data
-    meta = data.get("meta")
-    if (
-        data.get("task") != "run-python"
-        or not isinstance(meta, dict)
-        or "config" not in meta
-    ):
+    meta = require_run_python_meta(task)
+    if meta is None:
         return None
 
     config_raw = meta["config"]
