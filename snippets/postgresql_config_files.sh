@@ -197,7 +197,7 @@ if [[ -z $CONFIG_FILE ]]; then
     exit 1
 fi
 
-if [[ ! -r "$CONFIG_FILE" ]] && ! sudo -n -u postgres test -r "$CONFIG_FILE" 2> /dev/null; then
+if [[ ! -r $CONFIG_FILE ]] && ! sudo -n -u postgres test -r "$CONFIG_FILE" 2> /dev/null; then
     echo "Error: cannot read postgresql.conf at '$CONFIG_FILE' (check permissions or run with sudo)." >&2
     exit 1
 fi
@@ -209,7 +209,7 @@ elif [[ -n $DATA_DIR ]] && ([[ -r "$DATA_DIR/postgresql.auto.conf" ]] || sudo -n
     AUTO_CONFIG_FILE="$DATA_DIR/postgresql.auto.conf"
 else
     candidate="$(dirname "$CONFIG_FILE")/postgresql.auto.conf"
-    if [[ -r "$candidate" ]] || sudo -n -u postgres test -r "$candidate" 2> /dev/null; then
+    if [[ -r $candidate ]] || sudo -n -u postgres test -r "$candidate" 2> /dev/null; then
         AUTO_CONFIG_FILE="$candidate"
     fi
 fi
@@ -427,13 +427,13 @@ copy_into_stage() {
     fi
 }
 
-if [[ ! -r "$CONFIG_FILE" ]]; then
+if [[ ! -r $CONFIG_FILE ]]; then
     copy_into_stage "$CONFIG_FILE" sudo
 else
     copy_into_stage "$CONFIG_FILE"
 fi
 if [[ -n $AUTO_CONFIG_FILE ]]; then
-    if [[ -r "$AUTO_CONFIG_FILE" ]]; then
+    if [[ -r $AUTO_CONFIG_FILE ]]; then
         copy_into_stage "$AUTO_CONFIG_FILE"
     else
         copy_into_stage "$AUTO_CONFIG_FILE" sudo
@@ -451,7 +451,7 @@ for extra in "${EXTRA_FILES[@]+"${EXTRA_FILES[@]}"}"; do
         continue
     fi
     COPIED[$abs]=1
-    if [[ -r "$extra" ]]; then
+    if [[ -r $extra ]]; then
         copy_into_stage "$extra"
     elif sudo -n -u postgres test -r "$extra" 2> /dev/null; then
         copy_into_stage "$extra" sudo
@@ -475,6 +475,10 @@ done
 } > "$STAGE_DIR/MANIFEST.txt"
 
 if [[ $USE_SUDO_TAR -eq 1 ]]; then
+    # sudo only elevates reading the root/postgres-owned staged files; the redirect
+    # deliberately runs as the invoking user so the archive is user-owned like the
+    # else branch (`sudo tee` would leave it root-owned and possibly unreadable).
+    # shellcheck disable=SC2024
     sudo -n tar -czf - -C "$TMPDIR_STAGE" "$STAGE_DIRNAME" > "$OUTPUT_ARG"
 else
     tar -czf "$OUTPUT_ARG" -C "$TMPDIR_STAGE" "$STAGE_DIRNAME"
