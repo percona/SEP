@@ -1251,6 +1251,7 @@
             "title": "Nav Order"
           },
           "react_route": {
+            "pattern": "^\\/[^\\s]*$",
             "title": "React Route",
             "type": "string"
           },

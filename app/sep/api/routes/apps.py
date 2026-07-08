@@ -26,6 +26,7 @@ the admin listing at ``/api/admin/apps/``.
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.core.utils.fields import URIPath
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.apps.nav_icons import NavIcon
 from app.sep.crud import AppStateManager
@@ -62,7 +63,7 @@ class AppKeyResponse(BaseModel):
     custom_ui: bool
     group: str | None
     nav_order: int | None
-    react_route: str
+    react_route: URIPath
     nav_icon: NavIcon | None
 
 
