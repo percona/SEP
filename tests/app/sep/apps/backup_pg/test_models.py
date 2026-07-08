@@ -132,11 +132,19 @@ def test_backup_pg_form_coerces_blank_optionals_to_none() -> None:
         pgbackrest_bin="",
         pgbackrest_backup_type="",
         pgbackrest_retention_full="",
+        pgbackrest_config_file="",
+        pgbackrest_datadir="",
+        pgbackrest_incremental_cycle="",
+        logging_dir="",
     )
 
     assert body.pgbackrest_bin is None
     assert body.pgbackrest_backup_type is None
     assert body.pgbackrest_retention_full is None
+    assert body.pgbackrest_config_file is None
+    assert body.pgbackrest_datadir is None
+    assert body.pgbackrest_incremental_cycle is None
+    assert body.logging_dir is None
 
 
 def test_backup_pg_form_strips_stanza_whitespace() -> None:

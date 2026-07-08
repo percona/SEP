@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from app.core.utils.fields import TCP_PORT_MAX, TCP_PORT_MIN
 from app.sep.apps.archives.constants import SwapDropEnum
 from app.sep.apps.archives.models import (
     ArchivesCreate,
@@ -208,3 +209,28 @@ class TestArchivesCreateDefaults:
         form = ArchivesCreate.model_validate(_valid())
         assert form.limit is None
         assert form.sleep is None
+
+
+def _dest_port_schema_field() -> Any:
+    """Return the derived ``dest_port`` field from the manual destination-host branch."""
+    sections = derive_form_sections(ArchivesCreate, archives_views.layout)
+    host = next(
+        field
+        for section in sections
+        for field in section.fields
+        if field.name == "host"
+    )
+    manual = next(branch for branch in host.branches if branch.value == "manual")
+    return next(field for field in manual.fields if field.name == "host.dest_port")
+
+
+def test_dest_port_derived_schema_bounds_preserved() -> None:
+    """Keep the derived ``dest_port`` bounds at 1-65535 after the shared-constant swap.
+
+    The bounds sit at the field's outer ``Annotated`` level via the shared
+    ``TCP_PORT_MIN`` / ``TCP_PORT_MAX`` constants; substituting a ``TcpPort | None``
+    union would hide them from the form-DSL derivation and silently drop the range.
+    """
+    field = _dest_port_schema_field()
+    assert field.ge == TCP_PORT_MIN
+    assert field.le == TCP_PORT_MAX
