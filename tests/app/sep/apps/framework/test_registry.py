@@ -567,7 +567,7 @@ def _parent_plugin(*, enabled: bool = True) -> App:
 
 
 class TestChildApps:
-    """Tests for ``child_apps`` structural registration in ``build_app_registry``."""
+    """Cover ``child_apps`` structural registration in ``build_app_registry``."""
 
     def test_child_is_registered_right_after_parent(
         self, mocker: MockerFixture
