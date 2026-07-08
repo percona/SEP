@@ -23,7 +23,7 @@ from app.sep.apps.backup_mongo.deps import build_backup_task_payload
 from app.sep.apps.backup_mongo.models import BackupCreate
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.models import TaskOwner, TaskWrite
+from app.tasks.models import TaskWrite
 
 
 @pytest.mark.asyncio
@@ -42,7 +42,7 @@ async def test_build_backup_task_payload_includes_service_name(
     task_payload = await build_backup_task_payload(backup_create, mock_remote_api)
 
     assert isinstance(task_payload, TaskWrite)
-    assert task_payload.owner == TaskOwner.BACKUP_MONGO
+    assert task_payload.owner == "BACKUP_MONGO"
     assert task_payload.data["meta"]["_service_name"] == mongo_service.name
 
     get_created_entity.assert_awaited_once_with(

@@ -25,14 +25,14 @@ from app.sep.apps.<< name >>.models import << class_prefix >>Form
 from app.sep.apps.<< name >>.spec import build_<< name >>_spec
 from app.sep.apps.<< name >>.views import << name >>_views
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
-from app.tasks.models import TaskOwner
+from app.tasks.models import ANY_OWNER
 
 app = TaskExecutionApp(
     name="<< name >>",
     display_name="<< display_name >>",
     uri_path="/<< name >>",
     description="TODO: describe what the << display_name >> task does.",
-    owner=TaskOwner.ANY,
+    owner=ANY_OWNER,
     create_model=<< class_prefix >>Form,
     views=<< name >>_views,
     task_spec_builder=build_<< name >>_spec,

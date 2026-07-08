@@ -357,7 +357,8 @@
             "type": "string"
           },
           "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
+            "title": "Owner",
+            "type": "string"
           },
           "protected": {
             "title": "Protected",
@@ -3263,22 +3264,6 @@
           "stale"
         ],
         "title": "TaskHistoryStatusEnum",
-        "type": "string"
-      },
-      "TaskOwner": {
-        "description": "Control the choice of task owners.\n\n:cvar ANY: Value for tasks without owner restrictions.\n:vartype ANY: str\n:cvar ALTERS: Value for schema change tasks.\n:vartype ALTERS: str\n:cvar ARCHIVER: Value for data archiver tasks.\n:vartype ARCHIVER: str\n:cvar BACKUPS: Value for backup tasks.\n:vartype BACKUPS: str\n:cvar RESTORES: Value for restore tasks.\n:vartype RESTORES: str\n:cvar CHECKSUMS: Value for checksum tasks.\n:vartype CHECKSUMS: str",
-        "enum": [
-          "ANY",
-          "ALTERS",
-          "ARCHIVER",
-          "BACKUPS",
-          "RESTORES",
-          "CHECKSUMS",
-          "BACKUP_MONGO",
-          "RESTORE_MONGO",
-          "BACKUP_PG"
-        ],
-        "title": "TaskOwner",
         "type": "string"
       },
       "TextAreaField": {

@@ -41,7 +41,6 @@ from app.sep.main import sep_app
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
-    TaskOwner,
 )
 from tests.app.factories import GeneratedTaskFactory, TaskFactory
 
@@ -81,7 +80,7 @@ def _mock_archives_task_payload(generated_task):
 @pytest.fixture
 def created_task():
     """Return a fake created Task instance."""
-    return TaskFactory.build(owner=TaskOwner.ARCHIVER)
+    return TaskFactory.build(owner="ARCHIVER")
 
 
 @pytest.fixture
@@ -178,7 +177,7 @@ def test_archives_create_full_form_dependency_chain_without_payload_override(
     assert mock_task_api_dep.post.await_args.args[0] == "/"
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
     assert posted["name"] == "arch_full_chain"
-    assert posted["owner"] == TaskOwner.ARCHIVER.value
+    assert posted["owner"] == "ARCHIVER"
     assert posted["data"]["meta"]["_service_name"] == created_service.name
 
 
@@ -415,7 +414,7 @@ def test_archives_create_skips_connectivity_check_when_opted_out(
     fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.ARCHIVER,
+        owner="ARCHIVER",
         data={
             "task": "fake-task",
             "meta": {

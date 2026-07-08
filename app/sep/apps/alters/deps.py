@@ -37,6 +37,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.models import (
     AltersCreate,
     AltersTaskResponse,
+    OWNER,
 )
 from app.sep.apps.alters.schema import alters_schema
 from app.sep.apps.alters.spec import build_alters_spec
@@ -68,7 +69,6 @@ from app.sep.deps import (
 from app.tasks.models import (
     Task,
     TaskHistoryStatusEnum,
-    TaskOwner,
     TaskWrite,
 )
 
@@ -212,7 +212,7 @@ async def build_alters_task(
     return build_alters_spec(service, schema_name, table_name, body)
 
 
-get_alters_task = make_task_dep(TaskOwner.ALTERS)
+get_alters_task = make_task_dep(OWNER)
 
 AltersTask = Annotated[Task, Depends(get_alters_task)]
 
@@ -932,7 +932,8 @@ async def get_alters_index_context(
         get_alters_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.ALTERS,
+        OWNER,
+        service_type=ServiceTypeEnum.MYSQL,
         alert_on_fail_default=True,
     )
 

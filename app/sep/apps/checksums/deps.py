@@ -24,7 +24,7 @@ from fastapi import Depends, Form
 
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm
+from app.sep.apps.checksums.models import ChecksumsCreate, ChecksumsForm, OWNER
 from app.sep.apps.checksums.spec import build_checksums_arg_prefix
 from app.sep.apps.framework import make_task_dep
 from app.sep.apps.framework.form_dsl import make_arg_parser
@@ -49,7 +49,6 @@ from app.tasks.models import (
     Task,
     TaskBackendEnum,
     TaskHistoryStatusEnum,
-    TaskOwner,
     TaskWrite,
 )
 
@@ -236,7 +235,7 @@ def assemble_checksum_payload(
     ) + build_command_args(form)
 
     return TaskWrite(
-        owner=TaskOwner.CHECKSUMS,
+        owner=OWNER,
         backend=TaskBackendEnum.PROXY,
         data={
             "task": "run-command",
@@ -310,7 +309,7 @@ async def build_checksums_task_payload(
 ChecksumsGeneratedTask = Annotated[TaskWrite, Depends(build_checksums_task_payload)]
 
 
-get_checksums_task = make_task_dep(TaskOwner.CHECKSUMS)
+get_checksums_task = make_task_dep(OWNER)
 
 ChecksumsTask = Annotated[Task, Depends(get_checksums_task)]
 
@@ -338,7 +337,7 @@ async def get_checksums_task_names_by_status(
     return {
         history["task"]["name"]
         for history in histories
-        if history.get("task", {}).get("owner") == TaskOwner.CHECKSUMS.value
+        if history.get("task", {}).get("owner") == OWNER
     }
 
 
@@ -453,7 +452,8 @@ async def get_checksums_index_context(
         get_checksums_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.CHECKSUMS,
+        OWNER,
+        service_type=ServiceTypeEnum.MYSQL,
         alert_on_fail_default=True,
     )
 

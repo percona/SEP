@@ -37,7 +37,7 @@ from app.sep.apps.mysql_backups.restore.form_backfill import (
 )
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate
 from app.sep.connectivity import CONNECTIVITY_META_HOST_KEY, CONNECTIVITY_META_PORT_KEY
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner
+from app.tasks.models import Task, TaskBackendEnum
 
 
 def _service(
@@ -131,7 +131,7 @@ def _legacy_restore_task(
             "payload": "file://app/sep/apps/mysql_backups/restore/xtrabackup_payload",
         },
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.RESTORES,
+        owner="RESTORES",
         alert_on_fail=alert_on_fail,
     )
 

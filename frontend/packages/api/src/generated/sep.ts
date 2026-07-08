@@ -3382,7 +3382,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -3420,7 +3421,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -3458,7 +3460,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -4244,7 +4247,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
@@ -4341,7 +4345,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -4590,7 +4595,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -6368,7 +6374,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -7112,7 +7119,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
@@ -7166,7 +7174,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       status?: components['schemas']['TaskHistoryStatusEnum'] | null;
@@ -7289,7 +7298,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
@@ -8372,69 +8382,28 @@ export interface components {
       name: string;
     };
     /**
-     * TaskOwner
-     * @description Control the choice of task owners.
-     *
-     *     :cvar ANY: Value for tasks without owner restrictions.
-     *     :vartype ANY: str
-     *     :cvar ALTERS: Value for schema change tasks.
-     *     :vartype ALTERS: str
-     *     :cvar ARCHIVER: Value for data archiver tasks.
-     *     :vartype ARCHIVER: str
-     *     :cvar BACKUPS: Value for backup tasks.
-     *     :vartype BACKUPS: str
-     *     :cvar RESTORES: Value for restore tasks.
-     *     :vartype RESTORES: str
-     *     :cvar CHECKSUMS: Value for checksum tasks.
-     *     :vartype CHECKSUMS: str
-     * @enum {string}
-     */
-    TaskOwner:
-      | 'ANY'
-      | 'ALTERS'
-      | 'ARCHIVER'
-      | 'BACKUPS'
-      | 'RESTORES'
-      | 'CHECKSUMS'
-      | 'BACKUP_MONGO'
-      | 'RESTORE_MONGO'
-      | 'BACKUP_PG';
-    /**
      * TaskResponse
      * @description Represent a task API response.
      *
      *     :param name: The name of the task.
-     *     :type name: str
      *     :param data: The task data stored in JSON format.
-     *     :type data: dict
      *     :param backend: The backend used for task execution. Defaults to Nomad.
-     *     :type backend: TaskBackendEnum
-     *     :param owner: The owner of the task. Defaults to TaskOwner.ANY.
-     *     :type owner: TaskOwner
+     *     :param owner: The owner of the task. Defaults to ``"ANY"``.
      *     :param is_template: Whether the task is a template. Defaults to False.
-     *     :type is_template: bool
      *     :param protected: Whether the task is protected from deletion. Defaults to False.
-     *     :type protected: bool
      *     :param alert_on_fail: Whether to trigger an alert on task failure and
      *         auto-resolve it on subsequent success. Defaults to False.
-     *     :type alert_on_fail: bool
      *     :param alert_detail_builder: The ``"module:function"`` path of a plugin
      *         callable that enriches this task's failure alert, or None.
-     *     :type alert_detail_builder: str | None
      *     :param deleted_at: The deletion timestamp, if applicable.
-     *     :type deleted_at: UTCDatetime | None
      *     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
      *         logs and files generated by the task. Defaults to 0 (no anonymization).
-     *     :type anonymize_mask: int | None
      *     :param created_by: The user ID of the user who created the task.
-     *     :type created_by: str | None
      *     :param last_updated_by: The user ID of the user who last modified the task.
-     *     :type last_updated_by: str | None
      *     :param anonymized_entities: Sorted list of PII entity names derived from
      *         ``anonymize_mask`` (or from the owner's configured defaults when the
      *         mask is ``None``). Each name is the raw ``PIIEntity`` member name
      *         (e.g. ``"EMAIL_ADDRESS"``). Read-only; computed on serialisation.
-     *     :type anonymized_entities: list[str]
      */
     TaskResponse: {
       /** Alert Detail Builder */
@@ -8688,7 +8657,8 @@ export interface components {
       latest_pbm_status?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -8732,7 +8702,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -8806,7 +8777,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Port */
       port?: number | null;
       /** Protected */
@@ -8852,7 +8824,8 @@ export interface components {
       last_updated_by?: string | null;
       /** Name */
       name: string;
-      owner: components['schemas']['TaskOwner'];
+      /** Owner */
+      owner: string;
       /** Protected */
       protected: boolean;
       service_type?: components['schemas']['ServiceTypeEnum'] | null;
@@ -12080,7 +12053,7 @@ export interface operations {
   task_manager_tasks_api_detail_api_apps_tasks__task_name__get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {
@@ -12768,7 +12741,7 @@ export interface operations {
   tasks_list_task_execution_events_execution_events__task_history_id__get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {
@@ -12801,7 +12774,7 @@ export interface operations {
   tasks_list_task_history_files_files__task_history_id__get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {
@@ -12836,7 +12809,7 @@ export interface operations {
   tasks_download_task_history_file_files__task_history_id__download_get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {
@@ -12869,7 +12842,7 @@ export interface operations {
   tasks_task_logs_event_stream_stream_logs__task_history_id__get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {
@@ -12902,7 +12875,7 @@ export interface operations {
   tasks_task_execution_events_stream_stream_logs__task_history_id__execution_events_get: {
     parameters: {
       query?: {
-        owner?: components['schemas']['TaskOwner'] | null;
+        owner?: string | null;
       };
       header?: never;
       path: {

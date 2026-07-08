@@ -52,7 +52,7 @@ from app.sep.apps.framework.schema import Capabilities, Column, ListView
 from app.sep.apps.framework.spec import ResolvedEntities, RunCommandSpec
 from app.sep.apps.framework.task_status import batch_get_latest_statuses
 from app.sep.deps import TaskAPI
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import Task, TaskHistoryStatusEnum
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedSchemaFactory,
@@ -66,7 +66,7 @@ from tests.app.factories import (
     TaskHistoryResponseFactory,
 )
 
-SYNTH_OWNER = TaskOwner.ARCHIVER
+SYNTH_OWNER = "ARCHIVER"
 SYNTH_PREFIX = "/synthetic-app"
 SYNTH_SERVICE_HOST = "db-host"
 SYNTH_SERVICE_PORT = 3306
@@ -105,7 +105,7 @@ class MockTaskAPI:
         self,
         name: str,
         *,
-        owner: TaskOwner,
+        owner: str,
         statuses: Sequence[TaskHistoryStatusEnum] = (),
         created_by: str = SYNTH_CREATED_BY,
         protected: bool = False,
@@ -135,7 +135,7 @@ class MockTaskAPI:
             data |= data_extra
         task = TaskFactory.build(
             name=name,
-            owner=owner.value,
+            owner=owner,
             data=data,
             created_by=created_by,
             protected=protected,
@@ -146,7 +146,7 @@ class MockTaskAPI:
             for status in statuses
         ]
 
-    def seed_running(self, name: str, *, owner: TaskOwner) -> None:
+    def seed_running(self, name: str, *, owner: str) -> None:
         """Store a task with a RUNNING history so the conflict guard fires.
 
         :param name: The task name to seed.
@@ -593,7 +593,7 @@ async def synth_reject_running_task(tasks_api: TaskAPI) -> None:
     :param tasks_api: The Tasks API client used to look up the owner's tasks.
     :raises HTTPConflictException: When any owned task's latest status is RUNNING.
     """
-    listing = await tasks_api.get("/", params={"owner": SYNTH_OWNER.value})
+    listing = await tasks_api.get("/", params={"owner": SYNTH_OWNER})
     names = [item["name"] for item in listing["items"]]
     statuses = await batch_get_latest_statuses(tasks_api, names)
     if any(

@@ -41,7 +41,6 @@ from app.sep.main import sep_app
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
-    TaskOwner,
 )
 from tests.app.factories import GeneratedTaskFactory, TaskFactory
 
@@ -73,7 +72,7 @@ def backup_create():
 def created_task():
     """Return a fake created Task instance."""
     return TaskFactory.build(
-        owner=TaskOwner.BACKUPS,
+        owner="BACKUPS",
         data={
             "meta": {
                 "target": "localhost",
@@ -115,7 +114,7 @@ def test_backups_create(test_client, mock_task_api_dep, backup_create):
     fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUPS,
+        owner="BACKUPS",
         data={"task": "fake-task", "meta": {}, "payload": ""},
     )
 
@@ -170,7 +169,7 @@ def test_backups_create_no_upload(
     assert mock_task_api_dep.post.await_args.args[0] == "/"
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
     assert posted["name"] == no_upload.task_name
-    assert posted["owner"] == TaskOwner.BACKUPS.value
+    assert posted["owner"] == "BACKUPS"
 
 
 def test_backups_create_full_form_dependency_chain_without_payload_override(
@@ -198,7 +197,7 @@ def test_backups_create_full_form_dependency_chain_without_payload_override(
     assert mock_task_api_dep.post.await_args.args[0] == "/"
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
     assert posted["name"] == backup_create.task_name
-    assert posted["owner"] == TaskOwner.BACKUPS.value
+    assert posted["owner"] == "BACKUPS"
     assert posted["data"]["meta"]["_service_name"] == created_service.name
 
 
@@ -214,7 +213,7 @@ def test_backups_create_triggers_connectivity_check(
     fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUPS,
+        owner="BACKUPS",
         data={
             "task": "fake-task",
             "meta": {
@@ -271,7 +270,7 @@ def test_backups_create_skips_connectivity_check_when_opted_out(
     fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUPS,
+        owner="BACKUPS",
         data={
             "task": "fake-task",
             "meta": {
@@ -346,7 +345,7 @@ def test_backups_detail(
 def test_backups_detail_renders_backup_configuration(
     test_client, mock_task_api_dep, mock_inventory_api_dep, created_task
 ):
-    """Render the SEP-1495 detail_view: executor target + YAML config on the detail page.
+    """Render the detail_view: executor target + YAML config on the detail page.
 
     The always-rendered "Task information" card shows the list columns; the
     detail_view must surface the config that is *not* a column — the executor

@@ -38,7 +38,7 @@ from app.sep.apps.backup_mongo.restore.deps import (
 from app.sep.apps.backup_mongo.restore.models import RestoreCreate, RestoreTaskWrite
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskBackendEnum, TaskWrite
 from tests.app.factories import TaskFactory
 
 EXPECTED_PHYSICAL_RESTORE_TUPLE_LEN = 4
@@ -55,7 +55,7 @@ DISPATCH_FUNCTIONS: list[DispatchFn] = [
 def _restore_parent_task(*, config: str) -> Task:
     task = TaskFactory.build(
         name="restore-parent",
-        owner=TaskOwner.RESTORE_MONGO,
+        owner="RESTORE_MONGO",
         backend=TaskBackendEnum.PROXY,
     )
     return task.model_copy(
