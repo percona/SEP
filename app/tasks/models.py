@@ -324,7 +324,7 @@ class TaskBase(SQLModel):
     :param name: The name of the task.
     :param data: The task data stored in JSON format.
     :param backend: The backend used for task execution. Defaults to Nomad.
-    :param owner: The owner of the task. Defaults to ``ANY_OWNER``.
+    :param owner: The owner of the task. Defaults to ``"ANY"``.
     :param is_template: Whether the task is a template. Defaults to False.
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :param anonymize_mask: The bitmask representing PII entities to be anonymized in
@@ -382,7 +382,7 @@ class Task(TaskBase, BaseSQLModel, table=True):
     :param name: The name of the task.
     :param data: The task data stored in JSON format.
     :param backend: The backend used for task execution. Defaults to Nomad.
-    :param owner: The owner of the task. Defaults to ``ANY_OWNER``.
+    :param owner: The owner of the task. Defaults to ``"ANY"``.
     :param is_template: Whether the task is a template. Defaults to False.
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :param alert_on_fail: Whether to trigger an alert on task failure and
@@ -440,7 +440,7 @@ class TaskResponse(TaskBase, BaseSQLModel):
     :param name: The name of the task.
     :param data: The task data stored in JSON format.
     :param backend: The backend used for task execution. Defaults to Nomad.
-    :param owner: The owner of the task. Defaults to ``ANY_OWNER``.
+    :param owner: The owner of the task. Defaults to ``"ANY"``.
     :param is_template: Whether the task is a template. Defaults to False.
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :param alert_on_fail: Whether to trigger an alert on task failure and
@@ -480,7 +480,7 @@ class TaskWrite(TaskBase):
     :param name: The name of the task.
     :param data: The task data stored in JSON format.
     :param backend: The backend used for task execution. Defaults to Nomad.
-    :param owner: The owner of the task. Defaults to ``ANY_OWNER``.
+    :param owner: The owner of the task. Defaults to ``"ANY"``.
     :param is_template: Whether the task is a template. Defaults to False.
     :param protected: Whether the task is protected from deletion. Defaults to False.
     :param alert_on_fail: Whether to trigger an alert on task failure and

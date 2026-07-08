@@ -1000,9 +1000,10 @@ async def get_tasks_context(
 ) -> dict[str, Any]:
     """Assemble the template context for task-dependent plugins.
 
-    This function retrieves the ``service_type`` inventory services, tasks, and
-    their histories from the Inventory and Tasks APIs. It organizes tasks based on
-    their status and integrates them into the provided context.
+    This function retrieves inventory services (scoped by ``service_type``),
+    tasks (filtered by ``owner``), and their histories from the Inventory and
+    Tasks APIs. It organizes tasks based on their status and integrates them
+    into the provided context.
 
     :param inventory_api: The API client used to interact with the inventory service.
     :param tasks_api: The API client used to interact with the tasks service.
