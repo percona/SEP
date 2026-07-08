@@ -797,3 +797,6 @@ async def get_restores_index_context(
         context,
         TaskOwner.RESTORE_MONGO,
     )
+
+
+RestoresIndexContext = Annotated[dict[str, Any], Depends(get_restores_index_context)]

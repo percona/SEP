@@ -16,10 +16,10 @@
 """Define routes for the archivers plugin."""
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 import yaml
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
@@ -28,14 +28,15 @@ from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.archives.deps import (
     ArchivesGeneratedTask,
+    ArchivesIndexContext,
     ArchivesTask,
-    get_archives_index_context,
 )
 from app.sep.apps.archives.models import PurgeConfigItem
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.config import sep_settings
-from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
+from app.sep.connectivity import maybe_check_connectivity
 from app.sep.deps import (
+    CheckConnectivityFlag,
     DefaultContext,
     ExecutorHostsCtx,
     get_chainable_tasks,
@@ -55,7 +56,7 @@ templates = sep_settings.TEMPLATES
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def archives_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_archives_index_context)],
+    context: ArchivesIndexContext,
 ) -> HTMLResponse:
     """Homepage of archives plugin."""
     return templates.TemplateResponse(
@@ -73,7 +74,7 @@ async def archives_create(
     task: ArchivesGeneratedTask,
     task_api: TaskAPI,
     *,
-    check_connectivity: Annotated[bool, Depends(get_check_connectivity_flag)],
+    check_connectivity: CheckConnectivityFlag,
 ) -> RedirectResponse:
     """Create new archives task."""
     logger.debug("Create archives task: %s", task)
