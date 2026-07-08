@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from traceback import format_exception
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -645,19 +646,25 @@ async def request_validation_exception_handler(
 
 
 def _safe_next_path(next_path: str) -> str:
-    """Validate a ``next`` redirect target, collapsing unsafe values to ``/``.
+    r"""Validate a ``next`` redirect target, collapsing unsafe values to ``/``.
 
     Validate ``next_path`` as a same-origin ``URIPath`` so the password login and
-    the ambient auto-login reject open-redirect targets identically.
+    the ambient auto-login reject open-redirect targets identically. ``URIPath``
+    alone still admits scheme-relative (``//host``) and backslash (``/\host``)
+    targets that a browser follows off-origin, so also reject any value that a
+    browser would resolve to a foreign host.
 
     :param next_path: The raw ``next`` query value.
     :return: The validated relative path, or ``/`` when ``next_path`` is not a
         safe same-origin path.
     """
     try:
-        return run_pydantic_type_validator(URIPath, next_path)
+        validated = run_pydantic_type_validator(URIPath, next_path)
     except ValidationError:
         return "/"
+    if validated.startswith(("//", "/\\")) or urlsplit(validated).netloc:
+        return "/"
+    return validated
 
 
 @sep_app.get(

@@ -37,6 +37,7 @@ from app.sep.config import App, sep_settings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.exceptions import LoginRedirectException
 from app.sep.main import (
+    _safe_next_path,
     get_tasks_index_context,
     sep_app,
     sep_lifespan,
@@ -109,6 +110,29 @@ def dummy_access_token() -> str:
     sep_app.dependency_overrides = {}
 
 
+class TestSafeNextPath:
+    """Define test suite for the ``_safe_next_path`` open-redirect guard."""
+
+    @pytest.mark.parametrize(
+        ("next_path", "expected"),
+        [
+            ("/", "/"),
+            ("/apps/inventory", "/apps/inventory"),
+            ("/settings?tab=1", "/settings?tab=1"),
+            ("http://evil.com/x", "/"),
+            ("https://evil.com/x", "/"),
+            ("//evil.com", "/"),
+            ("//evil.com/path", "/"),
+            ("/\\evil.com", "/"),
+            ("relative/path", "/"),
+            ("", "/"),
+        ],
+    )
+    def test_collapses_unsafe_targets(self, next_path, expected):
+        """Pass through same-origin paths; collapse scheme/protocol-relative targets to ``/``."""
+        assert _safe_next_path(next_path) == expected
+
+
 class TestLogin:
     """Define test suite for GET and POST login routes."""
 
@@ -155,6 +179,8 @@ class TestLogin:
             ("/", "/"),
             ("/fake-page", "/fake-page"),
             ("http://127.0.0.1/fake-page", "/"),
+            ("//evil.com", "/"),
+            ("/\\evil.com", "/"),
         ],
     )
     def test_post_login_success(
