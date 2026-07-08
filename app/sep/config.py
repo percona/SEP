@@ -129,7 +129,7 @@ class App(BaseCaseInsensitiveModel):
     sidebar: bool = True
     group: str | None = None
     nav_order: int | None = None
-    react_route: str | None = None
+    react_route: URIPath | None = None
     nav_icon: NavIcon | None = None
     enabled: bool = True
     api_router_path: StrImportableAttribute | None = None

@@ -20,6 +20,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.utils.fields import URIPath
 from app.sep.apps.framework.schema import AppSchema
 from app.sep.apps.nav_icons import NavIcon
 
@@ -69,7 +70,7 @@ class BaseApp(BaseModel):
     sidebar: bool = True
     group: str | None = None
     nav_order: int | None = None
-    react_route: str | None = None
+    react_route: URIPath | None = None
     nav_icon: NavIcon | None = None
     enabled: bool = True
     custom_ui: bool = False
