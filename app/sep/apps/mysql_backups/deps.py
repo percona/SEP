@@ -22,10 +22,10 @@ import yaml
 from fastapi import Depends, Form
 
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.backup_edit_form import parse_server_list_config
 from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import (
     assemble_envelope,
-    parse_server_list_config,
     resolve_refs,
 )
 from app.sep.apps.mysql_backups.models import (
@@ -82,7 +82,7 @@ def parse_backup_task_data(task: dict[str, Any]) -> dict[str, Any]:
     Extracts configuration from an existing backup task to populate the edit form.
 
     Delegates the shared ``SERVER_LIST`` parsing to
-    :func:`~app.sep.apps.framework.spec.parse_server_list_config`, layering on the
+    :func:`~app.sep.apps.backup_edit_form.parse_server_list_config`, layering on the
     mysql-specific alias, encryption recipient, and the mydumper / xtrabackup /
     binlog / upload-quiet keys.
 
