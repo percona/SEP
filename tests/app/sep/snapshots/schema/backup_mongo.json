@@ -238,7 +238,7 @@
       "collapsible": false,
       "fields": [
         {
-          "description": "YAML mapping of mongod addresses to backup priority",
+          "description": "YAML mapping of mongod addresses to backup priority (highest wins). One entry per line, e.g.:\n\"host1:27018\": 2\n\"host2:27018\": 1",
           "label": "Node Priority (YAML)",
           "name": "backup_priority",
           "required": false,
@@ -338,6 +338,12 @@
         "sortable": false
       },
       {
+        "format": "relative",
+        "key": "last_executed_at",
+        "label": "Last Executed",
+        "sortable": false
+      },
+      {
         "key": "created_by",
         "label": "Created By",
         "sortable": false
@@ -346,5 +352,12 @@
     "default_sort": "name",
     "overview_hidden_fields": []
   },
-  "name": "backup_mongo"
+  "name": "backup_mongo",
+  "related_apps": [
+    {
+      "app_key": "backup_mongo/restore",
+      "label": "Restore",
+      "route_segment": "restores"
+    }
+  ]
 }

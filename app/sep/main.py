@@ -400,7 +400,9 @@ for app in get_app_registry():
     if app.jinja_router is None:
         continue
     plugin_deps = (
-        [] if app.key in PROTECTED_APP_KEYS else [Depends(require_app_enabled(app.key))]
+        []
+        if app.state_key in PROTECTED_APP_KEYS
+        else [Depends(require_app_enabled(app.state_key))]
     )
     sep_app.include_router(
         app.jinja_router, prefix=app.uri_path, dependencies=plugin_deps

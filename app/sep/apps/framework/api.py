@@ -59,7 +59,7 @@ from app.sep.apps.framework.script_source import (
     ScriptExecutionResponse,
     ScriptSource,
 )
-from app.sep.apps.framework.task_status import get_task_latest_status
+from app.sep.apps.framework.task_status import get_task_latest_history
 from app.sep.deps import HasNoConflictedRunningTasks, IsApiAuthenticated, TaskAPI
 from app.tasks.models import (
     Task,
@@ -708,7 +708,7 @@ def _register_update_route(
         """
         updated = await tasks_api.put(f"/{task.name}", json=task_write.model_dump())
         updated_task = Task.model_validate(updated)
-        task_status = await get_task_latest_status(tasks_api, updated_task.name)
+        latest = await get_task_latest_history(tasks_api, updated_task.name)
         warning = (
             await maybe_record_connectivity_warning(
                 tasks_api,
@@ -720,12 +720,18 @@ def _register_update_route(
         )
         if create_response_builder is not None:
             builder = await _bind_context(create_response_builder, context_provider)
-            result = builder(updated_task, status=task_status)
+            result = builder(
+                updated_task,
+                status=latest.status,
+                last_executed_at=latest.finished_at,
+            )
             if warning is not None:
                 return result.model_copy(update={"connectivity_warning": warning})
             return result
         builder = await _bind_context(base_builder, context_provider)
-        base = builder(updated_task, status=task_status)
+        base = builder(
+            updated_task, status=latest.status, last_executed_at=latest.finished_at
+        )
         if warning is not None:
             return update_model(
                 **{**base.model_dump(), "connectivity_warning": warning}
@@ -1079,6 +1085,7 @@ def derive_crud_routes(
     list_status_filter: bool = False,
     list_service_type: ServiceTypeEnum | None = None,
     list_extra_params: dict[str, str] | None = None,
+    derive_list: bool = True,
     derive_detail: bool = True,
     context_provider: Callable[[], Awaitable[Any]] | None = None,
     create_extra_deps: Sequence[params.Depends] = (),
@@ -1173,6 +1180,10 @@ def derive_crud_routes(
         example ``{"parent_is_null": "true"}``) applied server-side on every list
         request, so they filter without perturbing the paginated ``total``.
         Defaults to ``None`` (no extra params).
+    :param derive_list: When ``True`` (default), register the owner-filtered
+        derived ``GET /`` list route. Set ``False`` to suppress it so a custom
+        collection-root list route (mounted last via ``extra_routes``) wins the
+        path.
     :param derive_detail: When ``True`` (default), register the greedy derived
         ``GET /{detail_path_param}`` detail route. Set ``False`` to suppress it so
         a custom detail route (mounted last via ``extra_routes``) wins the path.
@@ -1247,17 +1258,18 @@ def derive_crud_routes(
 
     detail_path = f"/{{{detail_path_param}}}"
 
-    _register_list_route(
-        router,
-        task_owner=task_owner,
-        response_builder=response_builder,
-        list_detail_model=list_detail_model,
-        pagination_dep=pagination_dep,
-        list_status_filter=list_status_filter,
-        list_service_type=list_service_type,
-        list_extra_params=list_extra_params,
-        context_provider=context_provider,
-    )
+    if derive_list:
+        _register_list_route(
+            router,
+            task_owner=task_owner,
+            response_builder=response_builder,
+            list_detail_model=list_detail_model,
+            pagination_dep=pagination_dep,
+            list_status_filter=list_status_filter,
+            list_service_type=list_service_type,
+            list_extra_params=list_extra_params,
+            context_provider=context_provider,
+        )
 
     if derive_detail:
 
@@ -1265,14 +1277,15 @@ def derive_crud_routes(
             tasks_api: TaskAPI, task: Annotated[Task, Depends(get_task)]
         ) -> BaseModel:
             try:
-                task_status = await get_task_latest_status(tasks_api, task.name)
+                latest = await get_task_latest_history(tasks_api, task.name)
+                status, last_executed_at = latest.status, latest.finished_at
             except ValueError:
                 raise
             except Exception:
                 logger.exception("Failed to fetch history for task %s", task.name)
-                task_status = None
+                status, last_executed_at = None, None
             builder = await _bind_context(detail_builder, context_provider)
-            return builder(task, status=task_status)
+            return builder(task, status=status, last_executed_at=last_executed_at)
 
         router.add_api_route(
             detail_path,

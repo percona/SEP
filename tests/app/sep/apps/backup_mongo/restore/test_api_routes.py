@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for restore JSON API routes under /api/apps/backup_mongo/restores/."""
+"""Tests for restore JSON API routes under /api/apps/backup_mongo/restore/."""
 
 from typing import Any
 from unittest.mock import AsyncMock, call
@@ -30,7 +30,7 @@ from app.sep.inventory import CreatedService
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import TaskFactory
 
-API_BASE = "/api/apps/backup_mongo/restores"
+API_BASE = "/api/apps/backup_mongo/restore"
 EXPECTED_LOGICAL_RESTORE_POSTS = 3
 EXPECTED_PHYSICAL_RESTORE_POSTS = 4
 DEFAULT_PAGE_LIMIT = 50
@@ -123,7 +123,7 @@ def mock_task_api_get_by_path(tasks_by_path: dict[str, Any]) -> AsyncMock:
 
 
 class TestRestoreMongoAppSchemaEndpoint:
-    """Tests for GET /api/apps/backup_mongo/restores/schema."""
+    """Tests for GET /api/apps/backup_mongo/restore/schema."""
 
     def test_schema_returns_200(self, test_client):
         """Ensure the schema endpoint returns HTTP 200 with JSON content."""
@@ -140,7 +140,7 @@ class TestRestoreMongoAppSchemaEndpoint:
 
 
 class TestRestoreMongoApiList:
-    """Tests for GET /api/apps/backup_mongo/restores/."""
+    """Tests for GET /api/apps/backup_mongo/restore/."""
 
     def test_list_returns_parent_tasks_only(
         self, test_client, mock_task_api_dep
@@ -169,7 +169,14 @@ class TestRestoreMongoApiList:
             raise AssertionError(f"Unexpected list params: {params!r}")
 
         mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
-        mock_task_api_dep.post = AsyncMock(return_value={"parent-restore": "success"})
+        mock_task_api_dep.post = AsyncMock(
+            return_value={
+                "parent-restore": {
+                    "status": "success",
+                    "finished_at": "2026-05-01T12:00:00",
+                }
+            }
+        )
 
         response = test_client.get(f"{API_BASE}/")
 
@@ -181,8 +188,10 @@ class TestRestoreMongoApiList:
         assert len(body["items"]) == TWO_PARENT_FIXTURE_TOTAL
         assert body["items"][0]["name"] == "parent-restore"
         assert body["items"][0]["status"] == "success"
+        assert body["items"][0]["last_executed_at"] == "2026-05-01T12:00:00"
         assert body["items"][1]["name"] == "legacy-self-parent-restore"
         assert body["items"][1]["status"] is None
+        assert body["items"][1]["last_executed_at"] is None
         assert mock_task_api_dep.get.await_count == EXPECTED_RESTORE_PARENT_LIST_GETS
         mock_task_api_dep.post.assert_awaited_once_with(
             "/history/latest",
@@ -214,7 +223,9 @@ class TestRestoreMongoApiList:
 
         mock_task_api_dep.get = AsyncMock(side_effect=_mock_get)
         mock_task_api_dep.post = AsyncMock(
-            return_value={"parent-restore-b": "running"},
+            return_value={
+                "parent-restore-b": {"status": "running", "finished_at": None}
+            },
         )
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
@@ -285,7 +296,7 @@ class TestRestoreMongoApiList:
 
 
 class TestRestoreMongoApiCreate:
-    """Tests for POST /api/apps/backup_mongo/restores/."""
+    """Tests for POST /api/apps/backup_mongo/restore/."""
 
     def test_create_logical_posts_three_tasks(
         self,
@@ -435,7 +446,7 @@ class TestRestoreMongoApiCreate:
 
 
 class TestRestoreMongoApiDetail:
-    """Tests for GET /api/apps/backup_mongo/restores/{task_name}."""
+    """Tests for GET /api/apps/backup_mongo/restore/{task_name}."""
 
     def test_detail_includes_child_tasks(self, test_client, mock_task_api_dep) -> None:
         """Detail aggregates child task statuses."""
@@ -507,7 +518,7 @@ class TestRestoreMongoApiDetail:
 
 
 class TestRestoreMongoApiDelete:
-    """Tests for DELETE /api/apps/backup_mongo/restores/{task_name}."""
+    """Tests for DELETE /api/apps/backup_mongo/restore/{task_name}."""
 
     def test_delete_removes_parent_and_all_children(
         self, test_client, mock_task_api_dep
@@ -547,7 +558,7 @@ class TestRestoreMongoApiDelete:
 
 
 class TestRestoreMongoApiUpdate:
-    """Tests for PUT /api/apps/backup_mongo/restores/{task_name}."""
+    """Tests for PUT /api/apps/backup_mongo/restore/{task_name}."""
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_update_puts_config_payload_to_parent_and_refreshes_children(
@@ -661,7 +672,7 @@ def build_restore_execute_response(
 
 
 class TestRestoreMongoApiExecute:
-    """Tests for POST /api/apps/backup_mongo/restores/{task_name}/execute."""
+    """Tests for POST /api/apps/backup_mongo/restore/{task_name}/execute."""
 
     @pytest.mark.usefixtures("_mock_check_for_conflicted_running_tasks")
     def test_execute_returns_201_with_task_name_and_id(

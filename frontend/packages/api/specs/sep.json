@@ -693,6 +693,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -838,6 +850,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -982,6 +1006,18 @@
               }
             ],
             "title": "Id"
+          },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
           },
           "last_updated_by": {
             "anyOf": [
@@ -2593,6 +2629,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -2908,6 +2956,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -3112,6 +3172,7 @@
           "backup_priority": {
             "anyOf": [
               {
+                "minLength": 1,
                 "type": "string"
               },
               {
@@ -3269,7 +3330,7 @@
         "type": "string"
       },
       "BaseTaskResponse": {
-        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity and ownership, the resolved execution status, the stored\nconfiguration, and the audit/anonymization metadata. A standard app whose\nresponse has no app-specific fields uses this model directly; an app with\nextras subclasses it. The model is parametrized by the task ``owner``, which\ndrives the ``anonymized_entities`` default-entity lookup.\n\n:param name: The task name.\n:param owner: The entity or user that owns the task.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution. Tasks\n    created through the JSON schema-driven path also carry a reserved additive\n    ``_form`` key holding the verbatim, validated create-form body for\n    prefilling an edit form; it is absent for tasks created through a legacy\n    form, so consumers must treat it as optional.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (Casdoor\n    username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (Casdoor username when resolvable, otherwise the stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
+        "description": "Represent the universal task-response surface for standard task apps.\n\nCarry the fields shared by every standard ``TaskExecutionApp`` response:\nthe task identity and ownership, the resolved execution status, the stored\nconfiguration, and the audit/anonymization metadata. A standard app whose\nresponse has no app-specific fields uses this model directly; an app with\nextras subclasses it. The model is parametrized by the task ``owner``, which\ndrives the ``anonymized_entities`` default-entity lookup.\n\n:param name: The task name.\n:param owner: The entity or user that owns the task.\n:param service_type: The database service type, stamped by the builder;\n    ``None`` for an app without a fixed service type.\n:param status: The latest known execution status; ``None`` until the task\n    runs.\n:param last_executed_at: The most recent time the task finished executing\n    (``max`` ``finished_at`` across its history). Reported even while a\n    re-run is in progress (showing the prior completion); ``None`` until the\n    task has finished at least once.\n:param id: The task's unique identifier.\n:param backend: The backend worker/engine executing the task.\n:param data: The raw configuration and parameters used for execution. Tasks\n    created through the JSON schema-driven path also carry a reserved additive\n    ``_form`` key holding the verbatim, validated create-form body for\n    prefilling an edit form; it is absent for tasks created through a legacy\n    form, so consumers must treat it as optional.\n:param protected: Whether the task is protected from deletion or modification.\n:param alert_on_fail: Whether a notification is sent on task failure.\n:param anonymize_mask: Bitmask of PII entities to anonymize; ``None`` falls\n    back to the owner's configured defaults.\n:param created_at: The timestamp when the task was first created.\n:param updated_at: The timestamp of the last modification to the task.\n:param created_by: Display name for the user who initiated the task (Casdoor\n    username when resolvable, otherwise the stored user id).\n:param last_updated_by: Display name for the user who last modified the task\n    record (Casdoor username when resolvable, otherwise the stored user id).\n:param connectivity_warning: A warning surfaced when the post-creation\n    database connectivity check fails. ``None`` when the check passes, is\n    opted out, or the task meta lacks the connectivity keys.\n:param anonymized_entities: Sorted PII entity names derived from\n    ``anonymize_mask`` (or from the owner's configured defaults when the mask\n    is ``None``). Read-only; computed on serialisation.",
         "properties": {
           "alert_on_fail": {
             "title": "Alert On Fail",
@@ -3345,6 +3406,18 @@
               }
             ],
             "title": "Id"
+          },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
           },
           "last_updated_by": {
             "anyOf": [
@@ -6351,6 +6424,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -7901,6 +7986,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -8025,6 +8122,18 @@
               }
             ],
             "title": "Id"
+          },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
           },
           "last_updated_by": {
             "anyOf": [
@@ -8334,6 +8443,18 @@
               }
             ],
             "title": "Id"
+          },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
           },
           "last_updated_by": {
             "anyOf": [
@@ -10708,6 +10829,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -10879,6 +11012,18 @@
               }
             ],
             "title": "Id"
+          },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
           },
           "last_updated_by": {
             "anyOf": [
@@ -11077,6 +11222,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -11249,6 +11406,18 @@
             ],
             "title": "Id"
           },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
           "last_updated_by": {
             "anyOf": [
               {
@@ -11349,7 +11518,7 @@
   "paths": {
     "/api/admin/apps/": {
       "get": {
-        "description": "List every configured app with its current enabled state.\n\nReturns one entry per ``SEP.APPS`` entry, in declaration order. Apps with\nno row default to ``ENABLED`` (``enabled=True``, ``toggleable=True``);\nprotected apps (``inventory``) are forced to ``ENABLED`` and reported with\n``toggleable=False``. The list is non-paginated: app cardinality is bounded\n(<20).\n\n:param session: The database session.\n:type session: SessionDep\n:return: The per-app info list.\n:rtype: list[AppInfoResponse]",
+        "description": "List every configured app with its current enabled state.\n\nReturns one entry per registered app, in declaration order (each parent is\nimmediately followed by its child apps). Apps with no row default to\n``ENABLED`` (``enabled=True``, ``toggleable=True``); protected apps\n(``inventory``) are forced to ``ENABLED`` and reported with\n``toggleable=False``. A child app (``parent_key`` set) is not independently\ntoggleable either (``toggleable=False``) and derives its lifecycle from the\nparent via :attr:`~app.sep.apps.framework.base.BaseApp.state_key`. The list is\nnon-paginated: app cardinality is bounded (<20).\n\n:param session: The database session.\n:return: The per-app info list.",
         "operationId": "admin_list_apps_api_admin_apps__get",
         "responses": {
           "200": {
@@ -11471,7 +11640,7 @@
     },
     "/api/apps/": {
       "get": {
-        "description": "Return per-app state for the current user's navigation.\n\nProtected apps are always reported ``enabled=True``. Non-protected apps\nreflect their DB state (a missing row -> ``enabled=True``: a configured\nplugin is active until explicitly disabled).\n\n:param session: The database session.\n:type session: SessionDep\n:return: The per-app navigation list.\n:rtype: list[AppKeyResponse]",
+        "description": "Return per-app state for the current user's navigation.\n\nProtected apps are always reported ``enabled=True``. Every other app reflects\nthe DB state of the row governing it (a missing row -> ``enabled=True``: a\nconfigured plugin is active until explicitly disabled). A child app owns no\nrow, so it resolves through its parent via\n:attr:`~app.sep.apps.framework.base.BaseApp.state_key`.\n\n:param session: The database session.\n:return: The per-app navigation list.",
         "operationId": "apps_list_apps_for_navigation_api_apps__get",
         "responses": {
           "200": {
@@ -12694,10 +12863,10 @@
         ]
       }
     },
-    "/api/apps/backup_mongo/restores/": {
+    "/api/apps/backup_mongo/restore/": {
       "get": {
         "description": "List parent PBM restore config tasks.",
-        "operationId": "backup_mongo_restore_mongo_api_list_api_apps_backup_mongo_restores__get",
+        "operationId": "backup_mongo_restore_restore_mongo_api_list_api_apps_backup_mongo_restore__get",
         "parameters": [
           {
             "in": "query",
@@ -12763,12 +12932,12 @@
         },
         "summary": "Restore Mongo Api List",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       },
       "post": {
         "description": "Create a restore task group from a JSON payload request body.\n\nPOSTs the parent config task, restore leg, pbm-list helper, and optional\nforce-resync child for physical restores. Rolls back on any failure.",
-        "operationId": "backup_mongo_restore_mongo_api_create_api_apps_backup_mongo_restores__post",
+        "operationId": "backup_mongo_restore_restore_mongo_api_create_api_apps_backup_mongo_restore__post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -12803,14 +12972,14 @@
         },
         "summary": "Restore Mongo Api Create",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       }
     },
-    "/api/apps/backup_mongo/restores/schema": {
+    "/api/apps/backup_mongo/restore/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "backup_mongo_get_schema_api_apps_backup_mongo_restores_schema_get",
+        "operationId": "backup_mongo_restore_get_schema_api_apps_backup_mongo_restore_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -12825,14 +12994,14 @@
         },
         "summary": "Get Schema",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       }
     },
-    "/api/apps/backup_mongo/restores/{task_name}": {
+    "/api/apps/backup_mongo/restore/{task_name}": {
       "delete": {
         "description": "Delete a restore task group.",
-        "operationId": "backup_mongo_restore_mongo_api_delete_api_apps_backup_mongo_restores__task_name__delete",
+        "operationId": "backup_mongo_restore_restore_mongo_api_delete_api_apps_backup_mongo_restore__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -12861,12 +13030,12 @@
         },
         "summary": "Restore Mongo Api Delete",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       },
       "get": {
         "description": "Retrieve a single parent restore task with child task status.",
-        "operationId": "backup_mongo_restore_mongo_api_detail_api_apps_backup_mongo_restores__task_name__get",
+        "operationId": "backup_mongo_restore_restore_mongo_api_detail_api_apps_backup_mongo_restore__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -12902,12 +13071,12 @@
         },
         "summary": "Restore Mongo Api Detail",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       },
       "put": {
         "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place.",
-        "operationId": "backup_mongo_restore_mongo_api_update_api_apps_backup_mongo_restores__task_name__put",
+        "operationId": "backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -12953,14 +13122,14 @@
         },
         "summary": "Restore Mongo Api Update",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       }
     },
-    "/api/apps/backup_mongo/restores/{task_name}/execute": {
+    "/api/apps/backup_mongo/restore/{task_name}/execute": {
       "post": {
-        "description": "Execute a restore task.",
-        "operationId": "backup_mongo_restore_mongo_api_execute_api_apps_backup_mongo_restores__task_name__execute_post",
+        "description": "Resolve, dispatch, and wrap a standard task execution.",
+        "operationId": "backup_mongo_restore_backup_mongo_restores_api_execute_api_apps_backup_mongo_restore__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -13004,9 +13173,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Restore Mongo Api Execute",
+        "summary": "Backup Mongo Restores Api Execute",
         "tags": [
-          "backup_mongo"
+          "backup_mongo/restore"
         ]
       }
     },

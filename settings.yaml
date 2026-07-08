@@ -62,7 +62,6 @@ default:
       - MODULE_NAME: alters
       - MODULE_NAME: archives
       - MODULE_NAME: mysql_backups
-      - MODULE_NAME: mysql_backups.restore
       - MODULE_NAME: checksums
       - MODULE_NAME: backup_mongo
       - MODULE_NAME: backup_pg

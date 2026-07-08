@@ -1066,6 +1066,35 @@
         "title": "TaskHistory",
         "type": "object"
       },
+      "TaskHistoryLatestStatus": {
+        "description": "Represent the latest-history projection for a single task.\n\n:param status: The latest known execution status, taken from the newest\n    history row; ``None`` only when the task has no history rows at all.\n:param finished_at: The most recent ``finished_at`` across all of the task's\n    history rows (a ``max``), so a task with an in-progress re-run still\n    reports its prior completion; ``None`` when no run has ever finished.",
+        "properties": {
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "TaskHistoryLatestStatus",
+        "type": "object"
+      },
       "TaskHistoryLatestStatusRequest": {
         "description": "Define request body for batch latest-history status lookup.\n\n:param names: Task names to resolve latest non-null history statuses for.\n:type names: list[str]",
         "properties": {
@@ -2216,8 +2245,8 @@
     },
     "/history/latest": {
       "post": {
-        "description": "Return the latest known execution status for each requested task name.",
-        "operationId": "tasks_latest_task_history_status_history_latest_post",
+        "description": "Return the latest-history projection (status + finished_at) per task name.",
+        "operationId": "tasks_latest_task_history_history_latest_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2236,14 +2265,14 @@
                   "additionalProperties": {
                     "anyOf": [
                       {
-                        "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                        "$ref": "#/components/schemas/TaskHistoryLatestStatus"
                       },
                       {
                         "type": "null"
                       }
                     ]
                   },
-                  "title": "Response Tasks Latest Task History Status History Latest Post",
+                  "title": "Response Tasks Latest Task History History Latest Post",
                   "type": "object"
                 }
               }
@@ -2266,7 +2295,7 @@
             "OAuth2PasswordBearer": []
           }
         ],
-        "summary": "Latest Task History Status",
+        "summary": "Latest Task History",
         "tags": [
           "tasks"
         ]

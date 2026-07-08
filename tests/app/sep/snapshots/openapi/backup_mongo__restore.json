@@ -251,337 +251,6 @@
         "title": "AppSchema",
         "type": "object"
       },
-      "BackupPgCreateResponse": {
-        "properties": {
-          "alert_on_fail": {
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "anonymize_mask": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anonymize Mask"
-          },
-          "anonymized_entities": {
-            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
-            "items": {
-              "type": "string"
-            },
-            "readOnly": true,
-            "title": "Anonymized Entities",
-            "type": "array"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum"
-          },
-          "backup_type": {
-            "title": "Backup Type",
-            "type": "string"
-          },
-          "connectivity_warning": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConnectivityWarning"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "data": {
-            "title": "Data",
-            "type": "object"
-          },
-          "host": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Host"
-          },
-          "hostname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hostname"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "last_executed_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Executed At"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Updated By"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
-          },
-          "port": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port"
-          },
-          "protected": {
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "owner",
-          "backend",
-          "data",
-          "protected",
-          "alert_on_fail",
-          "backup_type",
-          "anonymized_entities"
-        ],
-        "title": "BackupPgCreateResponse",
-        "type": "object"
-      },
-      "BackupPgForm": {
-        "additionalProperties": false,
-        "description": "Define the model-first create/update body and schema source for backup_pg.\n\nThe single source of the JSON request body (the field types and defaults the\nserver validates) *and* the derived ``GET /schema`` form (driven by the\n:class:`Ui` / reference / :class:`Choices` markers). Field set, types, and\nmodel defaults match the JSON create contract; the form-display defaults that\ndiffer from the model default (the pgBackRest tool paths, the default backup\ntype) are carried on ``Ui(default=...)`` so the runtime payload stays\nunchanged while the schema renders those form defaults.\n\nField declaration order is load-bearing: it drives the derived form's\nsection and field order. ``backup_type`` is not a form field — the spec\nbuilder injects :attr:`BackupType.PGBACKREST`. The ``task_name`` / ``hostname``\nTask-section fields and the ``alert_on_fail`` capability control are inherited\nfrom :class:`TaskFormModel` (``alert_on_fail`` is ``Hidden``, off-schema).\n``extra=\"forbid\"`` rejects unknown fields (for example a stale FE submitting\n``host`` / ``port``, which the payload pins itself).",
-        "properties": {
-          "alert_on_fail": {
-            "default": false,
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "backup_dir": {
-            "minLength": 1,
-            "title": "Backup Dir",
-            "type": "string"
-          },
-          "hostname": {
-            "minLength": 1,
-            "title": "Hostname",
-            "type": "string"
-          },
-          "logging_dir": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Logging Dir"
-          },
-          "pgbackrest_backup_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PgBackRestBackupType"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "pgbackrest_bin": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Bin"
-          },
-          "pgbackrest_config_file": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Config File"
-          },
-          "pgbackrest_datadir": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Datadir"
-          },
-          "pgbackrest_incremental_cycle": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Incremental Cycle"
-          },
-          "pgbackrest_retention_archive": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Retention Archive"
-          },
-          "pgbackrest_retention_full": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pgbackrest Retention Full"
-          },
-          "service_id": {
-            "title": "Service Id",
-            "type": "integer"
-          },
-          "stanza": {
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
-            "title": "Stanza",
-            "type": "string"
-          },
-          "task_name": {
-            "minLength": 1,
-            "title": "Task Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "task_name",
-          "hostname",
-          "service_id",
-          "stanza",
-          "backup_dir"
-        ],
-        "title": "BackupPgForm",
-        "type": "object"
-      },
       "BoolField": {
         "additionalProperties": false,
         "description": "Represent a boolean toggle field.\n\n:param field_type: The discriminator literal; always ``\"bool\"`` for this\n    class. Serialised as the JSON key ``\"type\"``.\n:type field_type: Literal[\"bool\"]",
@@ -986,41 +655,6 @@
         ],
         "title": "ColumnFormat",
         "type": "string"
-      },
-      "ConnectivityWarning": {
-        "description": "Represent a connectivity-check failure on a JSON API task-creation response.\n\n:param target: The Nomad node the task targets.\n:param service_type: The lowercase database service type (e.g. ``mysql``).\n:param message: A human-readable description of the failure.\n:param task_history_id: The run-script task-history id whose log explains\n    the failure, or ``None`` when no task was created (e.g. the Tasks API\n    was unreachable). Optional for backward compatibility with existing\n    plugin consumers.",
-        "properties": {
-          "message": {
-            "title": "Message",
-            "type": "string"
-          },
-          "service_type": {
-            "title": "Service Type",
-            "type": "string"
-          },
-          "target": {
-            "title": "Target",
-            "type": "string"
-          },
-          "task_history_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task History Id"
-          }
-        },
-        "required": [
-          "target",
-          "service_type",
-          "message"
-        ],
-        "title": "ConnectivityWarning",
-        "type": "object"
       },
       "DateTimeField": {
         "additionalProperties": false,
@@ -2645,14 +2279,36 @@
         "title": "OneOfGroup",
         "type": "object"
       },
-      "PgBackRestBackupType": {
-        "description": "PgBackRest backup types.",
-        "enum": [
-          "incr",
-          "diff"
+      "PaginatedResponse_RestoreTaskResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RestoreTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
         ],
-        "title": "PgBackRestBackupType",
-        "type": "string"
+        "title": "PaginatedResponse[RestoreTaskResponse]",
+        "type": "object"
       },
       "RelatedApp": {
         "additionalProperties": false,
@@ -2681,6 +2337,452 @@
           "route_segment"
         ],
         "title": "RelatedApp",
+        "type": "object"
+      },
+      "RestoreDerivedTaskSummary": {
+        "description": "Represent one child task in a restore task group detail response.\n\n:param name: The name of the child task.\n:type name: str\n:param status: The latest execution status of the child task.\n:type status: TaskHistoryStatusEnum | None",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RestoreDerivedTaskSummary",
+        "type": "object"
+      },
+      "RestoreTaskDetailResponse": {
+        "description": "Represent a restore task detail API response.\n\n:param derived_tasks: Latest status for each restore child task.\n:type derived_tasks: list[RestoreDerivedTaskSummary]",
+        "properties": {
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "backup_source": {
+            "title": "Backup Source",
+            "type": "string"
+          },
+          "backup_type": {
+            "title": "Backup Type",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "derived_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/RestoreDerivedTaskSummary"
+            },
+            "title": "Derived Tasks",
+            "type": "array"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated By"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/TaskOwner"
+          },
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backup_type",
+          "backup_source",
+          "backend",
+          "data",
+          "protected",
+          "alert_on_fail"
+        ],
+        "title": "RestoreTaskDetailResponse",
+        "type": "object"
+      },
+      "RestoreTaskResponse": {
+        "description": "Represent a restore task API response.\n\n:param id: The unique identifier for the restore task.\n:type id: int | None\n:param backend: The backend worker/engine executing the task.\n:type backend: TaskBackendEnum\n:param data: The raw configuration and parameters for the restore execution.\n:type data: dict[str, Any]\n:param protected: Whether the task is protected from deletion or modification.\n:type protected: bool\n:param alert_on_fail: If True, notifications are sent upon task failure.\n:type alert_on_fail: bool\n:param created_at: The timestamp when the task was first created.\n:type created_at: datetime | None\n:param updated_at: The timestamp of the last modification to the task.\n:type updated_at: datetime | None\n:param created_by: The user who initiated the task.\n:type created_by: str | None\n:param last_updated_by: The user who last modified the task record.\n:type last_updated_by: str | None",
+        "properties": {
+          "alert_on_fail": {
+            "title": "Alert On Fail",
+            "type": "boolean"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/TaskBackendEnum"
+          },
+          "backup_source": {
+            "title": "Backup Source",
+            "type": "string"
+          },
+          "backup_type": {
+            "title": "Backup Type",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "last_executed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Executed At"
+          },
+          "last_updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Updated By"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/TaskOwner"
+          },
+          "protected": {
+            "title": "Protected",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "name",
+          "owner",
+          "backup_type",
+          "backup_source",
+          "backend",
+          "data",
+          "protected",
+          "alert_on_fail"
+        ],
+        "title": "RestoreTaskResponse",
+        "type": "object"
+      },
+      "RestoreTaskWrite": {
+        "description": "Represent a JSON request body for creating a restore task group.\n\nMirrors :class:`RestoreCreate` field-for-field with JSON-native types (notably\n``service_id: int | None``). Routes convert via\n:func:`~app.sep.apps.backup_mongo.restore.deps.restore_create_from_write`\nbefore building task payloads. See :class:`RestoreCreate` for why both models\nremain.\n\nPOST always creates a parent config task plus restore, pbm-list, and optional\nforce-resync children.\n\n:param task_name: The name of the task to be created.\n:type task_name: NonEmptyStr\n:param hostname: The target hostname for the task execution.\n:type hostname: NonEmptyStr\n:param service_id: Optional Inventory ID of the MongoDB service.\n:type service_id: int | None\n:param backup_type: Type of backup to restore from (logical or physical).\n:type backup_type: BackupType\n:param backup_source: Backup name or timestamp to restore from.\n:type backup_source: NonEmptyStr\n:param restore_batch_size: Number of documents to buffer.\n:type restore_batch_size: int | None\n:param restore_num_insertion_workers: Insertion workers per collection.\n:type restore_num_insertion_workers: int | None\n:param restore_num_parallel_collections: Parallel collections for logical restore.\n:type restore_num_parallel_collections: int | None\n:param restore_num_download_workers: Download workers for physical restore.\n:type restore_num_download_workers: int | None\n:param restore_max_download_buffer_mb: Max S3 download buffer in MB.\n:type restore_max_download_buffer_mb: int | None\n:param restore_download_chunk_mb: S3 download chunk size in MB.\n:type restore_download_chunk_mb: int | None\n:param restore_mongod_location: Custom path to mongod binaries.\n:type restore_mongod_location: str | None\n:param restore_mongod_location_map: Per-node mongod paths as YAML.\n:type restore_mongod_location_map: str | None\n:param credentials_path: Path to MongoDB URI credentials on the Nomad node.\n:type credentials_path: str | None",
+        "properties": {
+          "backup_source": {
+            "minLength": 1,
+            "title": "Backup Source",
+            "type": "string"
+          },
+          "backup_type": {
+            "$ref": "#/components/schemas/app__sep__apps__backup_mongo__models__BackupType"
+          },
+          "credentials_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credentials Path"
+          },
+          "hostname": {
+            "minLength": 1,
+            "title": "Hostname",
+            "type": "string"
+          },
+          "restore_batch_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Batch Size"
+          },
+          "restore_download_chunk_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Download Chunk Mb"
+          },
+          "restore_max_download_buffer_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Max Download Buffer Mb"
+          },
+          "restore_mongod_location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Mongod Location"
+          },
+          "restore_mongod_location_map": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Mongod Location Map"
+          },
+          "restore_num_download_workers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Num Download Workers"
+          },
+          "restore_num_insertion_workers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Num Insertion Workers"
+          },
+          "restore_num_parallel_collections": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Restore Num Parallel Collections"
+          },
+          "service_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Id"
+          },
+          "task_name": {
+            "minLength": 1,
+            "title": "Task Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_name",
+          "hostname",
+          "backup_type",
+          "backup_source"
+        ],
+        "title": "RestoreTaskWrite",
         "type": "object"
       },
       "SchemaField": {
@@ -3623,412 +3725,42 @@
         "title": "YamlField",
         "type": "object"
       },
-      "app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/app__sep__apps__backup_pg__models__BackupTaskResponse"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "limit": {
-            "title": "Limit",
-            "type": "integer"
-          },
-          "offset": {
-            "title": "Offset",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "offset",
-          "limit"
+      "app__sep__apps__backup_mongo__models__BackupType": {
+        "description": "Backup types.",
+        "enum": [
+          "pbm_logical",
+          "pbm_physical",
+          "pbm_snapshot",
+          "pbm_config",
+          "pbm_status"
         ],
-        "title": "PaginatedResponse[BackupTaskResponse]",
-        "type": "object"
-      },
-      "app__sep__apps__backup_pg__models__BackupTaskDetailResponse": {
-        "description": "Represent a single pgBackRest backup task detail response.\n\nAdd the executor host and port resolved from the task's YAML config so the\nFE detail view can render them alongside the parity Overview block; list\nrows omit these to keep the table response compact.\n\n:param host: The PostgreSQL host the task connects to.\n:param port: The PostgreSQL port the task connects to.",
-        "properties": {
-          "alert_on_fail": {
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "anonymize_mask": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anonymize Mask"
-          },
-          "anonymized_entities": {
-            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
-            "items": {
-              "type": "string"
-            },
-            "readOnly": true,
-            "title": "Anonymized Entities",
-            "type": "array"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum"
-          },
-          "backup_type": {
-            "title": "Backup Type",
-            "type": "string"
-          },
-          "connectivity_warning": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConnectivityWarning"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "data": {
-            "title": "Data",
-            "type": "object"
-          },
-          "host": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Host"
-          },
-          "hostname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hostname"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "last_executed_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Executed At"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Updated By"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
-          },
-          "port": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port"
-          },
-          "protected": {
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "owner",
-          "backend",
-          "data",
-          "protected",
-          "alert_on_fail",
-          "backup_type",
-          "anonymized_entities"
-        ],
-        "title": "BackupTaskDetailResponse",
-        "type": "object"
-      },
-      "app__sep__apps__backup_pg__models__BackupTaskResponse": {
-        "description": "Represent a pgBackRest backup task API response.\n\n:param backup_type: The ``backup_type`` discriminator stored on the task.",
-        "properties": {
-          "alert_on_fail": {
-            "title": "Alert On Fail",
-            "type": "boolean"
-          },
-          "anonymize_mask": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anonymize Mask"
-          },
-          "anonymized_entities": {
-            "description": "Return sorted PII entity names decoded from ``anonymize_mask``.",
-            "items": {
-              "type": "string"
-            },
-            "readOnly": true,
-            "title": "Anonymized Entities",
-            "type": "array"
-          },
-          "backend": {
-            "$ref": "#/components/schemas/TaskBackendEnum"
-          },
-          "backup_type": {
-            "title": "Backup Type",
-            "type": "string"
-          },
-          "connectivity_warning": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConnectivityWarning"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
-          },
-          "data": {
-            "title": "Data",
-            "type": "object"
-          },
-          "hostname": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Hostname"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Id"
-          },
-          "last_executed_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Executed At"
-          },
-          "last_updated_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Updated By"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "owner": {
-            "$ref": "#/components/schemas/TaskOwner"
-          },
-          "protected": {
-            "title": "Protected",
-            "type": "boolean"
-          },
-          "service_type": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ServiceTypeEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Updated At"
-          }
-        },
-        "required": [
-          "name",
-          "owner",
-          "backend",
-          "data",
-          "protected",
-          "alert_on_fail",
-          "backup_type",
-          "anonymized_entities"
-        ],
-        "title": "BackupTaskResponse",
-        "type": "object"
+        "title": "BackupType",
+        "type": "string"
       }
     }
   },
   "paths": {
-    "/api/apps/backup_pg/": {
+    "/api/apps/backup_mongo/restore/": {
       "get": {
-        "operationId": "backup_pg__list_paginated_api_apps_backup_pg__get",
+        "description": "List parent PBM restore config tasks.",
+        "operationId": "backup_mongo_restore_restore_mongo_api_list_api_apps_backup_mongo_restore__get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
           {
             "in": "query",
             "name": "offset",
@@ -4051,22 +3783,6 @@
               "title": "Limit",
               "type": "integer"
             }
-          },
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
           }
         ],
         "responses": {
@@ -4074,7 +3790,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__core__pagination__models__PaginatedResponse_BackupTaskResponse___2"
+                  "$ref": "#/components/schemas/PaginatedResponse_RestoreTaskResponse_"
                 }
               }
             },
@@ -4091,30 +3807,19 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List",
+        "summary": "Restore Mongo Api List",
         "tags": [
-          "backup_pg"
+          "backup_mongo/restore"
         ]
       },
       "post": {
-        "operationId": "backup_pg__create_api_apps_backup_pg__post",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "check_connectivity",
-            "required": false,
-            "schema": {
-              "default": true,
-              "title": "Check Connectivity",
-              "type": "boolean"
-            }
-          }
-        ],
+        "description": "Create a restore task group from a JSON payload request body.\n\nPOSTs the parent config task, restore leg, pbm-list helper, and optional\nforce-resync child for physical restores. Rolls back on any failure.",
+        "operationId": "backup_mongo_restore_restore_mongo_api_create_api_apps_backup_mongo_restore__post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BackupPgForm"
+                "$ref": "#/components/schemas/RestoreTaskWrite"
               }
             }
           },
@@ -4125,7 +3830,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BackupPgCreateResponse"
+                  "$ref": "#/components/schemas/RestoreTaskDetailResponse"
                 }
               }
             },
@@ -4142,16 +3847,16 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Create",
+        "summary": "Restore Mongo Api Create",
         "tags": [
-          "backup_pg"
+          "backup_mongo/restore"
         ]
       }
     },
-    "/api/apps/backup_pg/schema": {
+    "/api/apps/backup_mongo/restore/schema": {
       "get": {
         "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
-        "operationId": "backup_pg_get_schema_api_apps_backup_pg_schema_get",
+        "operationId": "backup_mongo_restore_get_schema_api_apps_backup_mongo_restore_schema_get",
         "responses": {
           "200": {
             "content": {
@@ -4166,13 +3871,14 @@
         },
         "summary": "Get Schema",
         "tags": [
-          "backup_pg"
+          "backup_mongo/restore"
         ]
       }
     },
-    "/api/apps/backup_pg/{task_name}": {
+    "/api/apps/backup_mongo/restore/{task_name}": {
       "delete": {
-        "operationId": "backup_pg__delete_api_apps_backup_pg__task_name__delete",
+        "description": "Delete a restore task group.",
+        "operationId": "backup_mongo_restore_restore_mongo_api_delete_api_apps_backup_mongo_restore__task_name__delete",
         "parameters": [
           {
             "in": "path",
@@ -4199,13 +3905,14 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Delete",
+        "summary": "Restore Mongo Api Delete",
         "tags": [
-          "backup_pg"
+          "backup_mongo/restore"
         ]
       },
       "get": {
-        "operationId": "backup_pg__detail_api_apps_backup_pg__task_name__get",
+        "description": "Retrieve a single parent restore task with child task status.",
+        "operationId": "backup_mongo_restore_restore_mongo_api_detail_api_apps_backup_mongo_restore__task_name__get",
         "parameters": [
           {
             "in": "path",
@@ -4222,7 +3929,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__sep__apps__backup_pg__models__BackupTaskDetailResponse"
+                  "$ref": "#/components/schemas/RestoreTaskDetailResponse"
                 }
               }
             },
@@ -4239,13 +3946,14 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Detail",
+        "summary": "Restore Mongo Api Detail",
         "tags": [
-          "backup_pg"
+          "backup_mongo/restore"
         ]
       },
       "put": {
-        "operationId": "backup_pg__update_api_apps_backup_pg__task_name__put",
+        "description": "Update a restore task from a JSON payload request body.\n\nPUTs the parent config payload to the config task name and refreshes each\nchild leg (restore, pbm-list, optional force-resync) in place.",
+        "operationId": "backup_mongo_restore_restore_mongo_api_update_api_apps_backup_mongo_restore__task_name__put",
         "parameters": [
           {
             "in": "path",
@@ -4255,23 +3963,13 @@
               "title": "Task Name",
               "type": "string"
             }
-          },
-          {
-            "in": "query",
-            "name": "check_connectivity",
-            "required": false,
-            "schema": {
-              "default": true,
-              "title": "Check Connectivity",
-              "type": "boolean"
-            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BackupPgForm"
+                "$ref": "#/components/schemas/RestoreTaskWrite"
               }
             }
           },
@@ -4282,7 +3980,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BackupPgCreateResponse"
+                  "$ref": "#/components/schemas/RestoreTaskResponse"
                 }
               }
             },
@@ -4299,16 +3997,16 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update",
+        "summary": "Restore Mongo Api Update",
         "tags": [
-          "backup_pg"
+          "backup_mongo/restore"
         ]
       }
     },
-    "/api/apps/backup_pg/{task_name}/execute": {
+    "/api/apps/backup_mongo/restore/{task_name}/execute": {
       "post": {
         "description": "Resolve, dispatch, and wrap a standard task execution.",
-        "operationId": "backup_pg_backup_pg_api_execute_api_apps_backup_pg__task_name__execute_post",
+        "operationId": "backup_mongo_restore_backup_mongo_restores_api_execute_api_apps_backup_mongo_restore__task_name__execute_post",
         "parameters": [
           {
             "in": "path",
@@ -4352,9 +4050,9 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Backup Pg Api Execute",
+        "summary": "Backup Mongo Restores Api Execute",
         "tags": [
-          "backup_pg"
+          "backup_mongo/restore"
         ]
       }
     }

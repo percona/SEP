@@ -48,13 +48,9 @@ from app.sep.deps import (
 )
 from app.tasks.models import TaskHistoryStatusEnum
 
-from .restore.routes import router as restore_router
-
 logger = logging.getLogger(__name__)
 router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
-
-router.include_router(restore_router, prefix="/restores", tags=["restores"])
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
