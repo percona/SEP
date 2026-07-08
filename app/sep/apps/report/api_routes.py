@@ -50,7 +50,7 @@ from app.sep.apps.report.celery import (
 )
 from app.sep.apps.report.deps import RequiredPMMAPIDep
 from app.sep.apps.report.job_service import filter_report_sections
-from app.sep.apps.report.schemas import ReportJobResponse, ReportSnapshotWrite
+from app.sep.apps.report.models import ReportJobResponse, ReportSnapshotWrite
 from app.sep.apps.report.service import generate_report
 from app.sep.config import sep_settings
 

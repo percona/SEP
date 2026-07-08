@@ -56,15 +56,14 @@ from app.sep.apps.alerts.deps import (
     RequiredAlertFolderDep,
     RequiredPMMAPIDep,
 )
-from app.sep.apps.alerts.models import DEFAULT_FOR_DURATION, to_pmm_template_yaml
-from app.sep.apps.alerts.restore import delete_conflicting_rules, restore_from_backup
-from app.sep.apps.alerts.schemas import (
+from app.sep.apps.alerts.models import (
     BackupDetail,
     BackupDetailContactPoint,
     BackupDetailFolder,
     BackupDetailRule,
     BackupDetailTemplate,
     BackupSummary,
+    DEFAULT_FOR_DURATION,
     IndexBackupSummary,
     IndexPagerDutyStatus,
     IndexResponse,
@@ -77,7 +76,9 @@ from app.sep.apps.alerts.schemas import (
     PushResponse,
     RestoreRequest,
     RestoreResponse,
+    to_pmm_template_yaml,
 )
+from app.sep.apps.alerts.restore import delete_conflicting_rules, restore_from_backup
 from app.sep.deps import SessionDep
 
 logger = logging.getLogger(__name__)
