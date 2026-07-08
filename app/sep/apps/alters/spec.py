@@ -26,7 +26,8 @@ resolved upstream and passed in; this builder performs no I/O.
 import shlex
 
 from app.inventory.constants import DEFAULT_MYSQL_PORT
-from app.sep.apps.alters.models import AltersCreate, DEFAULT_ALTERS_DSN_TABLE
+from app.sep.apps.alters.models import AltersCreate
+from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 from app.sep.connectivity import (
     CONNECTIVITY_META_HOST_KEY,
     CONNECTIVITY_META_PORT_KEY,
@@ -41,7 +42,7 @@ def _build_dsn_with_service(
 ) -> str:
     """Build a DSN string with service information (host and port) if needed.
 
-    :param dsn_base: The base DSN string (e.g., "D=schema,t=table" or "D=percona,t=dsns").
+    :param dsn_base: The base DSN string (e.g., ``D=schema,t=table`` or ``D=percona,t=dsns``).
     :param service_address: The service node address.
     :param service_port: The service port, if available.
     :return: The constructed DSN string with service information if not already present.
@@ -87,7 +88,7 @@ def build_alters_spec(
 
     effective_recursion_method = body.recursion_method
     if body.recursion_method == "dsn":
-        dsn_table_base = (body.dsn_table or "").strip() or DEFAULT_ALTERS_DSN_TABLE
+        dsn_table_base = (body.dsn_table or "").strip() or DSN_TABLE_DEFAULT
         dsn_table = _build_dsn_with_service(
             dsn_table_base, service.node.address, service.port
         )

@@ -22,7 +22,8 @@ from typing import Any, TYPE_CHECKING
 import yaml
 
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework.form_backfill_inventory import meta_service_hints
+from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
+from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 from app.sep.apps.mysql_backups.deps import parse_backup_task_data
 from app.sep.apps.mysql_backups.models import BackupCreate, UploadProvider
 
@@ -92,20 +93,12 @@ def reconstruct_mysql_backups_form(
     :param ctx: Shared backfill context carrying the inventory lookup table.
     :return: A create-model-shaped dict, or ``None`` when reconstruction fails.
     """
-    if ctx.service_lookup is None:
-        return None
-
-    data = task.data
-    meta = data.get("meta")
-    if (
-        data.get("task") != "run-python"
-        or not isinstance(meta, dict)
-        or "config" not in meta
-    ):
+    meta = require_run_python_meta(task)
+    if meta is None:
         return None
 
     try:
-        parsed = parse_backup_task_data({"name": task.name, "data": data})
+        parsed = parse_backup_task_data({"name": task.name, "data": task.data})
     except (KeyError, TypeError, yaml.YAMLError):
         return None
 
@@ -119,16 +112,12 @@ def reconstruct_mysql_backups_form(
     ):
         return None
 
-    host, port, service_name = meta_service_hints(
+    service_id = resolve_service_from_meta(
+        ctx,
         meta,
+        ServiceTypeEnum.MYSQL,
         host=parsed.get("host"),
         port=parsed.get("port"),
-    )
-    service_id = ctx.service_lookup.resolve(
-        service_type=ServiceTypeEnum.MYSQL,
-        host=host,
-        port=port,
-        service_name=service_name,
     )
     if service_id is None:
         return None

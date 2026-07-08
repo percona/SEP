@@ -14,7 +14,7 @@ Bandit (ruff `S` rules) catches generic findings automatically — flag those on
 - **Missing CSRF validation** on a new state-changing endpoint (POST / PUT / DELETE / PATCH). Need `validate_csrf` in the dependency chain — decorator-level `dependencies=[IsCsrfValidated]`, router-level, or shared parent router. Trace the full chain.
 - **Disabled SSL verification** — `verify=False` on `requests.*` / `httpx.*` / `aiohttp.*`.
 - **Unsafe deserialization of untrusted data** — any `loads()` from a library that allows arbitrary code execution during deserialization, on inputs sourced outside this service. Prefer JSON.
-- **Unvalidated file paths** — `open(user_input)`, `Path(user_input).read_text()`, `shutil.copy(user_input, ...)` without normalisation against an allowed root.
+- **Unvalidated file paths** — `open(user_input)`, `Path(user_input).read_text()`, `shutil.copy(user_input, ...)` without normalisation against an allowed root. Also flag bespoke path/reference resolvers (custom `file://`-style schemes, bare `resolve_relative_path()` calls, hand-joins to `BASE_DIR`) that skip a `resolved.is_relative_to(BASE_DIR)` containment check — `resolve_relative_path()` does NOT itself contain, so any caller adding user input must add the check. The obvious `open()` pattern is not the only vector.
 
 ## Should flag (Important)
 
@@ -24,6 +24,9 @@ Bandit (ruff `S` rules) catches generic findings automatically — flag those on
 - **Logging sensitive data** — passwords, tokens, JWTs, OAuth secrets, full request bodies on auth endpoints, PII. Flag `logger.info(f"... {token} ...")` / `logger.debug(request.json())` on auth or user-facing endpoints.
 - **Missing input validation on new form fields** — every new form field needs a Pydantic model with appropriate constraints (`NonEmptyStr`, `StringConstraints(max_length=...)`, a custom field type like `StrHttpUrl`). Raw `str` with no constraint on user-controllable input is a flag.
 - **Debug/development code left in** — `breakpoint()`, `pdb.set_trace()`, hardcoded `DEBUG = True`. Ruff `T20` catches `print`.
+- **Fail-open default on an access/reachability gate** — a missing state row (`Manager.first(...) is None`, `dict.get(key, <truthy>)`) resolving to *enabled / granted* rather than *denied / disabled*. The absent case must fail closed; also confirm any UI/sidebar projection of the same state shares the gate's restrictive default. Cosmetic / non-security toggles are exempt.
+- **Localized security guard without a sibling sweep** — when a PR *adds* a guard (`validate_csrf`, `IsApiAuthenticated`, a SQL-parameterization fix) to one instance of a repeatable pattern (per-app `app/sep/apps/*/api_routes.py`, per-handler validators, per-query builders), the local fix usually signals a systemic gap. Grep siblings for the same guard's absence and surface it. Carve-outs: middleware additions (single integration point), per-field model validators.
+- **No rate-limiting consideration on new endpoints** — flag its absence on auth, password-reset, API-key, or other abuse-prone endpoints.
 
 ## Context-dependent
 

@@ -13,12 +13,14 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the JSON API router for the Alters plugin.
+"""Define the custom JSON API routes for the Alters plugin.
 
-Mounted at ``/api/apps/alters/`` via ``apps_router`` in
-``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
-level; the ``schema_endpoint`` helper also pins ``IsApiAuthenticated`` per
-route for safety.
+The declarative :class:`~app.sep.apps.framework.apps.TaskExecutionApp` in
+``app.py`` derives the ``GET /schema`` and paginated ``roots_only`` list routes;
+this router carries the per-app routes it keeps custom — the satellite-resolving
+detail, the cascade create/update/delete, and the execute route — mounted as its
+``extra_routes``. The framework's derived detail route is suppressed
+(``capabilities.detail=False``) so the custom ``GET /{task_name}`` here wins.
 """
 
 import logging
@@ -28,7 +30,6 @@ from fastapi import APIRouter, Query
 from fastapi import status as http_status
 
 from app.core.exceptions import HTTPInternalServerErrorException
-from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.deps import (
     AltersTask,
     build_alters_api_task_response,
@@ -40,7 +41,6 @@ from app.sep.apps.alters.deps import (
     DeletableAltersParent,
     EditableAltersParent,
     ensure_alters_group_update_preserves_names,
-    get_alters_api_task_responses,
     get_alters_task,
     resolve_alters_parent_task,
 )
@@ -50,40 +50,21 @@ from app.sep.apps.alters.models import (
     AltersTaskResponseCreate,
     AltersTaskResponseUpdate,
 )
-from app.sep.apps.alters.schema import alters_schema
 from app.sep.apps.framework import (
     get_task_latest_status,
     maybe_record_connectivity_warning,
 )
-from app.sep.apps.framework.api import derive_execute_route, schema_endpoint
+from app.sep.apps.framework.api import derive_execute_route
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.deps import (
     get_username_mapping,
     InventoryAPI,
     TaskAPI,
 )
-from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-schema_endpoint(router=router, plugin_schema=alters_schema)
-
-
-@router.get("/")
-async def alters_api_list(
-    tasks_api: TaskAPI,
-    service_type: ServiceTypeEnum | None = None,
-    status: TaskHistoryStatusEnum | None = None,
-) -> list[AltersTaskResponse]:
-    """List parent alters execute tasks."""
-    username_mapping = await get_username_mapping()
-    return await get_alters_api_task_responses(
-        tasks_api,
-        service_type=service_type,
-        status=status,
-        username_mapping=username_mapping,
-    )
 
 
 @router.get("/{task_name}")

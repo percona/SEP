@@ -462,11 +462,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Alters Api List
-     * @description List parent alters execute tasks.
-     */
-    get: operations['alters_alters_api_list_api_apps_alters__get'];
+    /** List */
+    get: operations['alters__list_paginated_api_apps_alters__get'];
     put?: never;
     /**
      * Alters Api Create
@@ -698,11 +695,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Backup Mongo Api List
-     * @description List parent PBM backup config tasks.
-     */
-    get: operations['backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get'];
+    /** List */
+    get: operations['backup_mongo__list_paginated_api_apps_backup_mongo__get'];
     put?: never;
     /**
      * Backup Mongo Api Create
@@ -4068,20 +4062,13 @@ export interface components {
      * @description Describe the full detail response for a single backup.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      *     :param templates: Templates captured in the backup.
-     *     :type templates: list[BackupDetailTemplate]
      *     :param rules: Rules captured in the backup.
-     *     :type rules: list[BackupDetailRule]
      *     :param contact_points: Contact points captured in the backup.
-     *     :type contact_points: list[BackupDetailContactPoint]
      *     :param folders: Folders captured in the backup.
-     *     :type folders: list[BackupDetailFolder]
      *     :param notification_policy_receiver: Top-level receiver from the captured
      *         notification policy, or ``None`` when no policy was captured.
-     *     :type notification_policy_receiver: str | None
      */
     BackupDetail: {
       /** Contact Points */
@@ -4107,9 +4094,7 @@ export interface components {
      * @description Represent a contact-point entry inside a backup snapshot.
      *
      *     :param name: The contact point name.
-     *     :type name: str
      *     :param type: The contact point type (e.g. ``"pagerduty"``).
-     *     :type type: str
      */
     BackupDetailContactPoint: {
       /** Name */
@@ -4122,7 +4107,6 @@ export interface components {
      * @description Represent a folder entry inside a backup snapshot.
      *
      *     :param title: The folder title.
-     *     :type title: str
      */
     BackupDetailFolder: {
       /** Title */
@@ -4133,7 +4117,6 @@ export interface components {
      * @description Represent a rule entry inside a backup snapshot.
      *
      *     :param title: The rule title.
-     *     :type title: str
      */
     BackupDetailRule: {
       /** Title */
@@ -4144,9 +4127,7 @@ export interface components {
      * @description Represent a template entry inside a backup snapshot.
      *
      *     :param name: The template name.
-     *     :type name: str
      *     :param summary: The template summary blurb.
-     *     :type summary: str
      */
     BackupDetailTemplate: {
       /** Name */
@@ -4406,11 +4387,8 @@ export interface components {
      * @description Represent a compact backup row used by the list endpoint.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      *     :param metadata: Summary counts persisted alongside the backup snapshot.
-     *     :type metadata: dict[str, Any]
      */
     BackupSummary: {
       /**
@@ -5740,6 +5718,10 @@ export interface components {
         | components['schemas']['HostField']
         | components['schemas']['IntegerField']
         | components['schemas']['MultiChoiceField']
+        | components['schemas']['MultiHostField']
+        | components['schemas']['MultiSchemaField']
+        | components['schemas']['MultiServiceField']
+        | components['schemas']['MultiTableField']
         | components['schemas']['SchemaField']
         | components['schemas']['ScriptPreviewField']
         | components['schemas']['ServiceField']
@@ -5872,9 +5854,7 @@ export interface components {
      *     renders the id and timestamp, so the index payload omits the summary counts.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      */
     IndexBackupSummary: {
       /**
@@ -5890,9 +5870,7 @@ export interface components {
      * @description Describe the PagerDuty contact-point status on the index page.
      *
      *     :param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.
-     *     :type configured: bool
      *     :param uid: The contact point UID when configured, otherwise ``None``.
-     *     :type uid: str | None
      */
     IndexPagerDutyStatus: {
       /** Configured */
@@ -5910,13 +5888,9 @@ export interface components {
      *
      *     :param groups: Alert templates grouped by service type. Only service types
      *         with at least one template are included.
-     *     :type groups: list[IndexTemplateGroup]
      *     :param pmm_connected: ``True`` when PMM is configured and reachable.
-     *     :type pmm_connected: bool
      *     :param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.
-     *     :type pagerduty: IndexPagerDutyStatus | None
      *     :param recent_backups: The most recent alert backups, newest first.
-     *     :type recent_backups: list[IndexBackupSummary]
      */
     IndexResponse: {
       /** Groups */
@@ -5932,21 +5906,13 @@ export interface components {
      * @description Represent a single alert template row on the index page.
      *
      *     :param name: The display name of the alert template.
-     *     :type name: str
      *     :param service_type: The service category this template applies to.
-     *     :type service_type: str
      *     :param expression: The PromQL expression backing the alert.
-     *     :type expression: str
      *     :param default_threshold: The default numeric threshold for the UI.
-     *     :type default_threshold: float
      *     :param severity: The severity level (``"info"``, ``"warning"``, ``"critical"``).
-     *     :type severity: str
      *     :param description: A human-readable description of the alert.
-     *     :type description: str
      *     :param summary: A short summary template for notifications.
-     *     :type summary: str
      *     :param in_pmm: ``True`` when a template of this name is already present in PMM.
-     *     :type in_pmm: bool
      */
     IndexTemplate: {
       /** Default Threshold */
@@ -5971,11 +5937,8 @@ export interface components {
      * @description Group index templates by service type.
      *
      *     :param service_type: The service type identifier (e.g. ``"mysql"``).
-     *     :type service_type: str
      *     :param label: The human-readable service type label (e.g. ``"MySQL"``).
-     *     :type label: str
      *     :param templates: The templates belonging to this service type.
-     *     :type templates: list[IndexTemplate]
      */
     IndexTemplateGroup: {
       /** Label */
@@ -6184,6 +6147,178 @@ export interface components {
        */
       type: 'multi_choice';
     };
+    /**
+     * MultiHostField
+     * @description Represent a multi-value executor-target selector field.
+     *
+     *     The multi-value counterpart of :class:`HostField`: the renderer commits a
+     *     list of executor targets instead of a single one. Derived from a
+     *     ``HostRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_host"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param allow_custom: When ``True``, the selector also accepts free-typed
+     *         values alongside the inventory options. ``None`` (the default) omits the
+     *         key from the wire so plugins that do not opt in stay byte-identical.
+     */
+    MultiHostField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_host';
+    };
+    /**
+     * MultiSchemaField
+     * @description Represent a multi-value inventory database-schema selector field.
+     *
+     *     The multi-value counterpart of :class:`SchemaField`: the renderer commits a
+     *     list of schemas instead of a single one. Derived from a
+     *     ``SchemaRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_schema"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param depends_on: The name of the field whose value drives the list of
+     *         available schemas.
+     *     :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+     *         the cascaded options. ``None`` (the default) omits the key from the wire
+     *         so plugins that do not opt in stay byte-identical.
+     */
+    MultiSchemaField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on: string;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_schema';
+    };
+    /**
+     * MultiServiceField
+     * @description Represent a multi-value inventory service selector field.
+     *
+     *     The multi-value counterpart of :class:`ServiceField`: the renderer commits a
+     *     list of services instead of a single one. Derived from a
+     *     ``ServiceRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_service"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param service_types: The list of service types the selector should offer
+     *         (for example, ``[ServiceTypeEnum.MYSQL]``).
+     *     :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+     *         the inventory options. ``None`` (the default) omits the key from the wire
+     *         so plugins that do not opt in stay byte-identical.
+     */
+    MultiServiceField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /** Service Types */
+      service_types: components['schemas']['ServiceTypeEnum'][];
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_service';
+    };
+    /**
+     * MultiTableField
+     * @description Represent a multi-value inventory table selector field.
+     *
+     *     The multi-value counterpart of :class:`TableField`: the renderer commits a
+     *     list of tables instead of a single one. Derived from a
+     *     ``TableRef(multiple=True)`` marker on a ``list[...]`` / ``set[...]`` field.
+     *
+     *     :param field_type: The discriminator literal; always ``"multi_table"`` for
+     *         this class. Serialised as the JSON key ``"type"``.
+     *     :param depends_on: The name of the field whose value drives the list of
+     *         available tables.
+     *     :param allow_custom: Opt-in flag for free-text (free-solo) entry alongside
+     *         the cascaded options. ``None`` (the default) omits the key from the wire
+     *         so plugins that do not opt in stay byte-identical.
+     */
+    MultiTableField: {
+      /** Allow Custom */
+      allow_custom?: boolean | null;
+      /** Default */
+      default?: unknown | null;
+      /** Depends On */
+      depends_on: string;
+      /** Description */
+      description?: string | null;
+      /** Forbidden */
+      forbidden?: components['schemas']['FieldGate'][] | null;
+      /** Label */
+      label: string;
+      /** Name */
+      name: string;
+      /**
+       * Required
+       * @default false
+       */
+      required: boolean;
+      /** Requires */
+      requires?: components['schemas']['FieldGate'][] | null;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'multi_table';
+    };
     /** MysqlBackupsCreateResponse */
     MysqlBackupsCreateResponse: {
       /** Alert On Fail */
@@ -6281,6 +6416,10 @@ export interface components {
         | components['schemas']['HostField']
         | components['schemas']['IntegerField']
         | components['schemas']['MultiChoiceField']
+        | components['schemas']['MultiHostField']
+        | components['schemas']['MultiSchemaField']
+        | components['schemas']['MultiServiceField']
+        | components['schemas']['MultiTableField']
         | components['schemas']['SchemaField']
         | components['schemas']['ScriptPreviewField']
         | components['schemas']['ServiceField']
@@ -6343,7 +6482,6 @@ export interface components {
      *
      *     :param integration_key: The PagerDuty integration key. Must be non-empty
      *         after stripping whitespace.
-     *     :type integration_key: NonEmptyStr
      */
     PagerDutyRequest: {
       /** Integration Key */
@@ -6354,7 +6492,6 @@ export interface components {
      * @description Describe the response body for the PagerDuty save / delete endpoints.
      *
      *     :param status: ``"created"``, ``"updated"`` (save) or ``"deleted"`` (delete).
-     *     :type status: Literal["created", "updated", "deleted"]
      */
     PagerDutyResponse: {
       /**
@@ -6362,6 +6499,17 @@ export interface components {
        * @enum {string}
        */
       status: 'created' | 'updated' | 'deleted';
+    };
+    /** PaginatedResponse[AltersTaskResponse] */
+    PaginatedResponse_AltersTaskResponse_: {
+      /** Items */
+      items: components['schemas']['AltersTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
     };
     /** PaginatedResponse[BackupResponse] */
     PaginatedResponse_BackupResponse_: {
@@ -6499,11 +6647,8 @@ export interface components {
      * @description Represent a per-template result row returned by the push endpoint.
      *
      *     :param name: The template name the result applies to.
-     *     :type name: str
      *     :param status: One of ``"success"``, ``"skipped"``, ``"error"``.
-     *     :type status: Literal["success", "skipped", "error"]
      *     :param message: A human-readable description of the outcome.
-     *     :type message: str
      */
     PushItemResult: {
       /** Message */
@@ -6522,7 +6667,6 @@ export interface components {
      *
      *     :param selected_templates: Names of templates to push to PMM. Must be a
      *         non-empty list of non-empty strings.
-     *     :type selected_templates: list[NonEmptyStr]
      */
     PushRequest: {
       /** Selected Templates */
@@ -6533,7 +6677,6 @@ export interface components {
      * @description Wrap the per-template results returned by the push endpoint.
      *
      *     :param results: One :class:`PushItemResult` per template in the request.
-     *     :type results: list[PushItemResult]
      */
     PushResponse: {
       /** Results */
@@ -6651,15 +6794,10 @@ export interface components {
      * @description Expose async report job state.
      *
      *     :param job_id: Celery task identifier.
-     *     :type job_id: str
      *     :param status: Lowercase Celery task state.
-     *     :type status: str
      *     :param pdf_ready: Whether the PDF result exists and is downloadable.
-     *     :type pdf_ready: bool
      *     :param result: Successful job result payload, if available.
-     *     :type result: dict[str, Any] | None
      *     :param error: Failed job error text, if available.
-     *     :type error: str | None
      */
     ReportJobResponse: {
       /** Error */
@@ -6721,7 +6859,6 @@ export interface components {
      * @description Define report snapshot body for PDF/upload jobs.
      *
      *     :param report: Generated report snapshot reused for PDF/upload work.
-     *     :type report: ReportData
      */
     ReportSnapshotWrite: {
       report: components['schemas']['ReportData'];
@@ -6898,7 +7035,6 @@ export interface components {
      *
      *     :param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`
      *         row to restore from. Must be a positive integer.
-     *     :type backup_id: int
      */
     RestoreRequest: {
       /** Backup Id */
@@ -6909,10 +7045,8 @@ export interface components {
      * @description Wrap the summary returned by the restore endpoint.
      *
      *     :param status: ``"success"`` on a complete restore.
-     *     :type status: Literal["success"]
      *     :param details: Per-section restore counts as returned by
      *         :func:`~app.sep.apps.alerts.restore.restore_from_backup`.
-     *     :type details: dict[str, Any]
      */
     RestoreResponse: {
       /** Details */
@@ -9073,9 +9207,11 @@ export interface operations {
       };
     };
   };
-  alters_alters_api_list_api_apps_alters__get: {
+  alters__list_paginated_api_apps_alters__get: {
     parameters: {
       query?: {
+        offset?: number;
+        limit?: number;
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       };
@@ -9091,7 +9227,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AltersTaskResponse'][];
+          'application/json': components['schemas']['PaginatedResponse_AltersTaskResponse_'];
         };
       };
       /** @description Validation Error */
@@ -9550,12 +9686,12 @@ export interface operations {
       };
     };
   };
-  backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get: {
+  backup_mongo__list_paginated_api_apps_backup_mongo__get: {
     parameters: {
       query?: {
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
         offset?: number;
         limit?: number;
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       };
       header?: never;
       path?: never;

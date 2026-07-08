@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 from app.api.deps import RefreshTokenCookie
 from app.core.auth.exceptions import HTTPUnauthorizedException
+from app.core.auth.providers.grafana.models import GrafanaUser
 from app.core.auth.utils import get_user_model
 from app.main import app
 from app.sep.config import sep_settings
@@ -452,3 +453,33 @@ def test_session_refresh_defaults_match_plan():
     """Assert SESSION_REFRESH defaults produce the expected cookie attributes."""
     assert sep_settings.SESSION_REFRESH.COOKIE_NAME == "refreshToken"
     assert sep_settings.SESSION_REFRESH.PATH == "/api/oauth"
+
+
+def test_grafana_spa_login_then_refresh(
+    test_client, grafana_mock, grafana_user_record, mocker
+):
+    """Assert the SPA can log in with Grafana active and then refresh its session.
+
+    Drives the real ``GrafanaUser`` through the routes (Grafana HTTP mocked) so a
+    non-empty refresh cookie is set at login and reused at refresh -- the flow an
+    empty Grafana refresh token would break on every SPA reload.
+    """
+    mocker.patch("app.api.routes.oauth.User", GrafanaUser)
+
+    login = test_client.post(
+        "/api/oauth/login",
+        json={"username": grafana_user_record["login"], "password": "secret"},
+    )
+
+    assert login.status_code == status.HTTP_200_OK
+    assert login.json()["access_token"]
+    login_cookies = _set_cookies_matching(
+        login.headers.get_list("set-cookie"), "refreshToken"
+    )
+    assert len(login_cookies) == 1
+    assert "refreshToken=;" not in login_cookies[0]
+
+    refreshed = test_client.post("/api/oauth/refresh")
+
+    assert refreshed.status_code == status.HTTP_200_OK
+    assert refreshed.json()["access_token"]

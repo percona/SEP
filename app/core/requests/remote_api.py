@@ -15,7 +15,7 @@
 
 """Manage remote API interactions."""
 
-__all__ = ["BaseRemoteAPI", "RemoteAPI"]
+__all__ = ["UPSTREAM_NON_JSON_HEADER", "BaseRemoteAPI", "RemoteAPI"]
 
 import asyncio
 import logging
@@ -68,29 +68,49 @@ _MAX_STREAM_LINE_BYTES = 16 * 1024 * 1024
 _SENSITIVE_HEADERS = frozenset(
     {"authorization", "x-api-key", "cookie", "proxy-authorization"}
 )
-_REDACTED_HEADER_VALUE = "****"
+# Request body fields whose values carry credentials and must never reach the
+# logs. Compared case-insensitively against JSON/form body keys.
+_SENSITIVE_BODY_FIELDS = frozenset({"password", "secret", "token"})
+_REDACTED_VALUE = "****"
+
+# Stamped on the raised ``HTTPException`` when an error response has a non-JSON
+# body (e.g. an nginx HTML 502), letting callers tell a proxy/gateway failure
+# apart from an app-level JSON error at the same status code.
+UPSTREAM_NON_JSON_HEADER = "X-Upstream-Non-JSON"
 
 
 def _sanitize_request_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Return a shallow copy of request kwargs with credential headers redacted.
+    """Return a shallow copy of request kwargs with credentials redacted.
 
     The auth context injects an ``Authorization`` header into ``kwargs`` before
-    the request is logged; this scrubs that and any other credential-bearing
-    header so secrets never reach the debug log.
+    the request is logged, and some endpoints post credentials in the request
+    body (a password-login payload, for example); this scrubs both
+    credential-bearing headers and known-sensitive body fields so secrets never
+    reach the debug log. Only the returned copy is masked -- the outgoing
+    request keeps the real values.
 
     :param kwargs: The request keyword arguments about to be logged.
     :type kwargs: dict[str, Any]
-    :return: A copy safe to log, with sensitive header values masked.
+    :return: A copy safe to log, with sensitive header and body values masked.
     :rtype: dict[str, Any]
     """
+    safe = {**kwargs}
     headers = kwargs.get("headers")
-    if not headers:
-        return {**kwargs}
-    safe_headers = {
-        key: (_REDACTED_HEADER_VALUE if key.lower() in _SENSITIVE_HEADERS else value)
-        for key, value in headers.items()
-    }
-    return {**kwargs, "headers": safe_headers}
+    if headers:
+        safe["headers"] = {
+            key: (_REDACTED_VALUE if key.lower() in _SENSITIVE_HEADERS else value)
+            for key, value in headers.items()
+        }
+    for body_key in ("json", "data"):
+        body = kwargs.get(body_key)
+        if isinstance(body, dict):
+            safe[body_key] = {
+                key: (
+                    _REDACTED_VALUE if key.lower() in _SENSITIVE_BODY_FIELDS else value
+                )
+                for key, value in body.items()
+            }
+    return safe
 
 
 def _raise_stream_line_too_big(size: int, path: str) -> NoReturn:
@@ -738,7 +758,9 @@ class RemoteAPI(BaseRemoteAPI):
                     response_content,
                 )
                 raise HTTPException(
-                    err.status, detail="An unexpected error occurred on the server."
+                    err.status,
+                    detail="An unexpected error occurred on the server.",
+                    headers={UPSTREAM_NON_JSON_HEADER: "1"},
                 ) from None
             except ClientResponseError as err:
                 error_detail = response_data.get(

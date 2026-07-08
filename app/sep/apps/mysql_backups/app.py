@@ -32,7 +32,11 @@ sub-router here.
 """
 
 from app.core.pagination.deps import make_pagination_dep
-from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
+from app.sep.apps.framework.apps import (
+    AppCapabilities,
+    ListFilterConfig,
+    TaskExecutionApp,
+)
 from app.sep.apps.framework.schema import RelatedApp
 from app.sep.apps.mysql_backups.deps import build_mysql_backups_api_task_response
 from app.sep.apps.mysql_backups.models import (
@@ -61,8 +65,8 @@ app = TaskExecutionApp(
     task_spec_builder=build_backup_spec,
     response_builder=build_mysql_backups_api_task_response,
     pagination=make_pagination_dep(max_limit=MYSQL_BACKUPS_MAX_PAGINATION_LIMIT),
-    capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),
-    list_status_filter=True,
+    capabilities=AppCapabilities(update=True, delete=True),
+    list_filter=ListFilterConfig(status=True),
     related_apps=(
         RelatedApp(
             app_key="mysql_backups/restore",

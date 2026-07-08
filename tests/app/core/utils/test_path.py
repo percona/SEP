@@ -18,6 +18,7 @@
 import pytest
 
 from app.core.utils.path import (
+    payload_uri,
     PayloadReferenceError,
     resolve_payload_reference,
     to_payload_reference,
@@ -125,3 +126,28 @@ class TestResolvePayloadReference:
         monkeypatch.setattr("app.core.utils.path.BASE_DIR", base)
         outside = _write(tmp_path / "elsewhere" / "payload_script")
         assert resolve_payload_reference(f"file://{outside}") == outside
+
+
+class TestPayloadUri:
+    """Test the payload_uri convenience helper."""
+
+    def test_returns_same_as_manual_path_construction(self, base_dir):
+        """Assert payload_uri produces the same reference as the hand-rolled pattern."""
+        anchor = str(base_dir / _PLUGIN_REL)
+        expected = to_payload_reference(
+            base_dir / _PLUGIN_REL / ".." / "binlog_payload"
+        )
+        assert payload_uri(anchor, "binlog_payload") == expected
+
+    def test_builds_reference_relative_to_base_dir(self, base_dir):
+        """Assert the returned string is a file:// reference relative to BASE_DIR."""
+        anchor = str(base_dir / "app" / "sep" / "plugins" / "mysql_backups" / "spec.py")
+        result = payload_uri(anchor, "binlog_payload")
+        assert result == f"file://{_PLUGIN_REL}"
+
+    def test_round_trips_through_resolver(self, base_dir):
+        """Assert a payload_uri reference resolves back to the on-disk file."""
+        payload_file = _write(base_dir / _PLUGIN_REL)
+        anchor = str(base_dir / "app" / "sep" / "plugins" / "mysql_backups" / "spec.py")
+        reference = payload_uri(anchor, "binlog_payload")
+        assert resolve_payload_reference(reference) == payload_file

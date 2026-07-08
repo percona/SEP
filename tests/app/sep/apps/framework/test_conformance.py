@@ -307,13 +307,36 @@ def test_capability_route_consistency_clean_app():
     assert check_capability_route_consistency(_build_app()) == []
 
 
-def test_capability_route_consistency_flags_forbidden_route():
-    """Assert an extra route contradicting a disabled flag is reported."""
+def test_capability_route_consistency_allows_custom_extra_route():
+    """Assert a custom ``extra_routes`` route for a disabled flag is exempt.
+
+    A hybrid app keeps a verb custom (capability off, route mounted via
+    ``extra_routes``); that explicit escape hatch is not a violation — only a
+    leaked *derived* route would be.
+    """
     app = _build_app(
         capabilities=AppCapabilities(create=False, execute=False),
         extra_routes=(_post_root_router(),),
     )
-    assert any("create" in w for w in check_capability_route_consistency(app))
+    assert check_capability_route_consistency(app) == []
+
+
+def test_capability_route_consistency_flags_leak_alongside_custom():
+    """Assert a leaked derived route is caught even beside a custom handler.
+
+    A disabled verb with a legitimate custom ``extra_routes`` handler is exempt,
+    but a derived route that leaks onto the same ``(method, path)`` must still be
+    reported. The detector compares route counts, so the extra ``POST /``
+    occurrence in ``api_router`` beyond the ``extra_routes`` count surfaces
+    rather than being masked by set membership.
+    """
+    app = _build_app(
+        capabilities=AppCapabilities(create=False, execute=False),
+        extra_routes=(_post_root_router(),),
+    )
+    app.api_router.routes.extend(_post_root_router().routes)
+    violations = check_capability_route_consistency(app)
+    assert any("create" in v and "POST" in v for v in violations)
 
 
 def test_capability_route_consistency_execute_ignores_custom_detail_path_param():

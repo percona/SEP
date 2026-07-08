@@ -27,13 +27,12 @@ executor ``target``, ``_service_name``, and the connectivity meta around this
 spec; ``extra_meta`` carries the source node name as ``_pmm_node_name``.
 """
 
-from pathlib import Path
 from typing import Any
 
 import yaml
 
 from app.core.exceptions import HTTPUnprocessableEntityException
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.inventory.constants import DEFAULT_MYSQL_PORT
 from app.sep.apps.archives.models import (
     ArchivesCreate,
@@ -189,12 +188,11 @@ def build_archives_spec(
         all=PurgeConfigAll(source_host=service.node.address, source_port=source_port),
         purge_list=[PurgeConfigItem.model_validate(purge_item)],
     )
-    payload_path = Path(__file__).parent / "payload"
     return RunPythonSpec(
         config=yaml.dump(
             purge_config.model_dump(mode="json", by_alias=True, exclude_none=True)
         ),
         requirements=_REQUIREMENTS,
-        payload=to_payload_reference(payload_path),
+        payload=payload_uri(__file__, "payload"),
         extra_meta={"_pmm_node_name": service.node.name},
     )

@@ -18,7 +18,7 @@
 :func:`build_checksums_arg_prefix` builds the entity-derived argument prefix (DSN
 construction and ``--recursion-method=dsn=…`` expansion) shared by the model-first
 JSON path (:func:`build_checksums_spec` fed to the framework's three-phase create)
-and the legacy Jinja form path (``deps._assemble_checksum_payload``); the
+and the legacy Jinja form path (``deps.assemble_checksum_payload``); the
 declarative value/flag args come from the framework's
 :func:`~app.sep.apps.framework.spec.build_command_args` driven by the form's
 ``ArgFormat`` markers, so a checksum task's Nomad payload is byte-identical
@@ -31,14 +31,13 @@ import shlex
 from collections.abc import Iterable
 
 from app.sep.apps.checksums.models import ChecksumsForm
+from app.sep.apps.framework.form_dsl import DSN_TABLE_DEFAULT
 from app.sep.apps.framework.spec import (
     build_command_args,
     ResolvedEntities,
     RunCommandSpec,
 )
 from app.sep.inventory import CreatedService
-
-DEFAULT_RECURSION_DSN_TABLE = "D=percona,t=dsns"
 
 
 def build_checksums_arg_prefix(
@@ -75,7 +74,7 @@ def build_checksums_arg_prefix(
     effective_recursion_method = recursion_method
     if recursion_method == "dsn":
         stripped_dsn = dsn.rstrip(",")
-        dsn_table_part = (dsn_table or "").strip() or DEFAULT_RECURSION_DSN_TABLE
+        dsn_table_part = (dsn_table or "").strip() or DSN_TABLE_DEFAULT
         effective_recursion_method = f"dsn={stripped_dsn},{dsn_table_part}"
 
     prefix = [dsn]

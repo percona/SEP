@@ -22,20 +22,20 @@ Jinja form path, so a backup task's Nomad payload is byte-identical regardless o
 call origin. PBM tasks run off ``form.hostname`` and the generated config; the
 inventory service is resolved only to stamp ``_service_name`` for PMM, so this builder
 takes the resolved name rather than reaching the inventory API itself. The envelope is
-assembled directly (not through the framework's ``assemble_envelope``) because a PBM
-backup task carries no connectivity meta, omits ``_service_name`` when the service was
-deleted, and keeps ``backup_type`` at ``data`` top level — the substitution token the
-cascade's ``DerivedTask`` payloads rewrite.
+assembled through the framework's connectivity-optional ``build_run_python_task``
+builder (not ``assemble_envelope``) because a PBM backup task carries no connectivity
+meta, omits ``_service_name`` when the service was deleted, and keeps ``backup_type`` at
+``data`` top level — the substitution token the cascade's ``DerivedTask`` payloads
+rewrite.
 """
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import yaml
 
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.sep.apps.backup_mongo.models import (
     BackupConfig,
     BackupConfigBackup,
@@ -44,7 +44,8 @@ from app.sep.apps.backup_mongo.models import (
     BackupCreate,
     CompressionAlgorithm,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.sep.apps.framework.spec import build_run_python_task
+from app.tasks.models import TaskOwner, TaskWrite
 
 logger = logging.getLogger(__name__)
 
@@ -193,29 +194,19 @@ def build_backup_mongo_spec(
     )
 
     requirements = _BASE_REQUIREMENTS
-    payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
-    meta = {
-        "config": yaml.dump(
+    return build_run_python_task(
+        name=form.task_name,
+        owner=TaskOwner.BACKUP_MONGO,
+        target=form.hostname,
+        config=yaml.dump(
             backup_config.model_dump(by_alias=True, exclude_none=True, mode="json"),
             default_flow_style=False,
             allow_unicode=True,
         ),
-        "target": form.hostname,
-        "requirements": requirements,
-    }
-    if resolved.service_name is not None:
-        meta["_service_name"] = resolved.service_name
-
-    return TaskWrite(
-        name=form.task_name,
-        backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUP_MONGO,
-        data={
-            "task": "run-python",
-            "meta": meta,
-            "payload": to_payload_reference(payload_path),
-            "backup_type": form.backup_type,
-        },
+        requirements=requirements,
+        payload=payload_uri(__file__, f"{form.backup_type}_payload"),
+        service_name=resolved.service_name,
+        extra_data={"backup_type": form.backup_type},
         alert_on_fail=form.alert_on_fail,
     )

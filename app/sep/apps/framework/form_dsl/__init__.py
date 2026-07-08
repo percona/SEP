@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Expose the model-first form DSL: markers, ``AppFormModel``, and derivation."""
+"""Expose the model-first form DSL: markers, ``AppFormModel``, derivation, and the Percona-Toolkit reverse-parser helpers."""
 
 from app.sep.apps.framework.form_dsl.conformance import check_form_conformance
 from app.sep.apps.framework.form_dsl.derivation import (
@@ -41,8 +41,13 @@ from app.sep.apps.framework.form_dsl.markers import (
     Ui,
 )
 from app.sep.apps.framework.form_dsl.model import AppFormModel, TaskFormModel
+from app.sep.apps.framework.form_dsl.pt_toolkit import (
+    DSN_TABLE_DEFAULT,
+    make_arg_parser,
+)
 
 __all__ = [
+    "DSN_TABLE_DEFAULT",
     "AppFormModel",
     "ArgFormat",
     "Choices",
@@ -66,4 +71,5 @@ __all__ = [
     "derive_form_sections",
     "find_ref_marker",
     "iter_service_refs",
+    "make_arg_parser",
 ]
