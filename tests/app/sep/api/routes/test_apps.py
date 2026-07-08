@@ -101,6 +101,8 @@ class TestListAppsForNavigation:
             "custom_ui",
             "group",
             "nav_order",
+            "react_route",
+            "nav_icon",
         }
 
     async def test_additive_fields_carry_registry_values(
@@ -126,6 +128,48 @@ class TestListAppsForNavigation:
             definition = registry.get(app_key)
             assert entry["group"] == definition.group
             assert entry["nav_order"] == definition.nav_order
+
+    async def test_react_route_and_nav_icon_carry_registry_values(
+        self, api_user_client: TestClient
+    ) -> None:
+        """Carry ``react_route`` (concrete default) and ``nav_icon`` per entry."""
+        response = api_user_client.get("/api/apps/")
+        entries = {e["app_key"]: e for e in response.json()}
+        registry = get_app_registry()
+
+        for app_key, entry in entries.items():
+            definition = registry.get(app_key)
+            assert entry["react_route"] == (
+                definition.react_route or f"/apps/{app_key}"
+            )
+            assert entry["nav_icon"] == definition.nav_icon
+
+    async def test_default_react_route_emitted_concrete(
+        self, api_user_client: TestClient
+    ) -> None:
+        """An app without a ``react_route`` override resolves to ``/apps/<key>``."""
+        response = api_user_client.get("/api/apps/")
+        checksums = next(e for e in response.json() if e["app_key"] == "checksums")
+        assert checksums["react_route"] == "/apps/checksums"
+
+    @pytest.mark.parametrize(
+        ("app_key", "expected_route"),
+        [
+            ("tasks", "/tasks"),
+            ("alerts", "/alerts/templates"),
+            ("alters", "/schema-change/alters"),
+            ("backup_mongo", "/backups/mongodb"),
+            ("backup_pg", "/backups/postgresql"),
+            ("report", "/reports"),
+        ],
+    )
+    async def test_declared_react_routes_are_emitted(
+        self, api_user_client: TestClient, app_key: str, expected_route: str
+    ) -> None:
+        """Apps whose sidebar route deviates from ``/apps/<key>`` declare it."""
+        response = api_user_client.get("/api/apps/")
+        entry = next(e for e in response.json() if e["app_key"] == app_key)
+        assert entry["react_route"] == expected_route
 
     async def test_inventory_reported_enabled(
         self, api_user_client: TestClient

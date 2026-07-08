@@ -57,6 +57,7 @@ from app.sep.apps.framework.apps import (
     ListFilterConfig,
     TaskExecutionApp,
 )
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.deps import HasNoConflictedRunningTasks
 from app.tasks.models import TaskOwner
 
@@ -67,6 +68,8 @@ app = TaskExecutionApp(
     css_class="backup_pg",
     group="backups",
     nav_order=10,
+    react_route="/backups/postgresql",
+    nav_icon=NavIcon.POSTGRESQL,
     description=(
         "Configure pgBackRest-based PostgreSQL backups and run incremental "
         "or differential backup tasks against a Percona-managed Postgres host."

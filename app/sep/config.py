@@ -68,6 +68,7 @@ from app.core.utils.fields import (
     UniqueList,
     URIPath,
 )
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.middleware import messages
 from app.sep.utils.jinja import DEFAULT_FILTERS, syntax_highlight_css
 
@@ -103,6 +104,11 @@ class App(BaseCaseInsensitiveModel):
         ``GROUP``); ``None`` renders it as a top-level sidebar entry.
     :param nav_order: The plugin's sort position within the sidebar (read from
         YAML as ``NAV_ORDER``); ``None`` sorts last.
+    :param react_route: The canonical React route (read from YAML as
+        ``REACT_ROUTE``); ``None`` resolves to ``/apps/<key>`` in the listing.
+    :param nav_icon: The sidebar icon key (read from YAML as ``NAV_ICON``),
+        validated against the :class:`~app.sep.apps.nav_icons.NavIcon` vocabulary;
+        an unknown value fails settings validation at load.
     :param enabled: Whether the plugin ships enabled. Read only at first-startup
         seed time to set the initial :class:`app.sep.models.AppState` row;
         defaults to ``True`` so every plugin already in ``settings.yaml`` keeps
@@ -129,6 +135,8 @@ class App(BaseCaseInsensitiveModel):
     sidebar: bool = True
     group: str | None = None
     nav_order: int | None = None
+    react_route: str | None = None
+    nav_icon: NavIcon | None = None
     enabled: bool = True
     api_router_path: StrImportableAttribute | None = None
 

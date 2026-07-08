@@ -27,6 +27,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.sep.apps.framework.registry import get_app_registry
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.crud import AppStateManager
 from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
 from app.sep.models import AppLifecycleEnum
@@ -53,6 +54,10 @@ class AppKeyResponse(BaseModel):
         renders as a top-level sidebar entry.
     :param nav_order: The app's sort position within the sidebar; ``None`` when
         unset.
+    :param react_route: The canonical React route the shell mounts and links to;
+        always concrete (defaulting to ``/apps/<app_key>``).
+    :param nav_icon: The sidebar icon key; ``None`` falls back to the shell's
+        default app icon.
     """
 
     app_key: str
@@ -63,6 +68,8 @@ class AppKeyResponse(BaseModel):
     custom_ui: bool
     group: str | None
     nav_order: int | None
+    react_route: str
+    nav_icon: NavIcon | None
 
 
 @router.get("/")
@@ -91,6 +98,8 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
             custom_ui=app.custom_ui,
             group=app.group,
             nav_order=app.nav_order,
+            react_route=app.react_route or f"/apps/{app.key}",
+            nav_icon=app.nav_icon,
         )
         for app in get_app_registry()
     ]

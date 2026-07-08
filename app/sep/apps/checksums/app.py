@@ -39,6 +39,7 @@ from app.sep.apps.framework.apps import (
     ListFilterConfig,
     TaskExecutionApp,
 )
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.deps import get_username_mapping, HasNoConflictedRunningTasks
 from app.tasks.models import TaskOwner
 
@@ -48,6 +49,7 @@ app = TaskExecutionApp(
     uri_path="/checksums",
     css_class="checksums",
     nav_order=7,
+    nav_icon=NavIcon.CHECK_CIRCLE,
     description="Run pt-table-checksum to verify MySQL replication consistency.",
     owner=TaskOwner.CHECKSUMS,
     create_model=ChecksumsForm,

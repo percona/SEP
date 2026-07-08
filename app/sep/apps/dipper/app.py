@@ -27,6 +27,7 @@ Jinja UI is threaded as ``jinja_router``.
 from app.sep.apps.dipper.api_routes import router as api_router
 from app.sep.apps.dipper.routes import router as jinja_router
 from app.sep.apps.framework.base import BaseApp
+from app.sep.apps.nav_icons import NavIcon
 
 app = BaseApp(
     name="dipper",
@@ -35,6 +36,8 @@ app = BaseApp(
     css_class="dipper",
     group="diagnostics",
     nav_order=12,
+    react_route="/dipper",
+    nav_icon=NavIcon.SCIENCE,
     api_router=api_router,
     jinja_router=jinja_router,
 )

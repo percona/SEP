@@ -32,6 +32,7 @@ dedicated owner enum member — ``ANY`` is the honest "no owner restriction" val
 """
 
 from app.sep.apps.framework.apps import TaskExecutionApp
+from app.sep.apps.nav_icons import NavIcon
 from app.sep.apps.snippets.extra_routes import (
     approval_router,
     artifact_router,
@@ -63,6 +64,8 @@ app = TaskExecutionApp(
     uri_path="/snippets",
     css_class="snippets",
     nav_order=2,
+    react_route="/snippets",
+    nav_icon=NavIcon.CODE,
     description="Browse, approve, and execute operational snippets.",
     owner=TaskOwner.ANY,
     script_source=snippet_source,
