@@ -29,7 +29,11 @@ rather than the framework's auto-resolve three-phase path; the model-first
 """
 
 from app.core.pagination.deps import make_pagination_dep
-from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
+from app.sep.apps.framework.apps import (
+    AppCapabilities,
+    ListFilterConfig,
+    TaskExecutionApp,
+)
 from app.sep.apps.mysql_backups.restore.deps import (
     build_restore_api_task_response,
     build_restore_payload,
@@ -58,6 +62,6 @@ app = TaskExecutionApp(
     response_builder=build_restore_api_task_response,
     pagination=make_pagination_dep(max_limit=RESTORES_MAX_PAGINATION_LIMIT),
     capabilities=AppCapabilities(update=True, delete=True),
-    list_status_filter=True,
+    list_filter=ListFilterConfig(status=True),
     jinja_router=jinja_router,
 )

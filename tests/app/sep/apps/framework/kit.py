@@ -36,7 +36,7 @@ from pydantic import BaseModel
 from app.core.exceptions import HTTPConflictException, HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import ConnectivityWarning
-from app.sep.apps.framework.apps import TaskExecutionApp, Views
+from app.sep.apps.framework.apps import ListFilterConfig, TaskExecutionApp, Views
 from app.sep.apps.framework.deps import make_task_dep
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
@@ -107,6 +107,8 @@ class MockTaskAPI:
         statuses: Sequence[TaskHistoryStatusEnum] = (),
         created_by: str = SYNTH_CREATED_BY,
         protected: bool = False,
+        parent: str | None = None,
+        data_extra: dict[str, Any] | None = None,
     ) -> None:
         """Store a task owned by ``owner`` with a newest-first ``statuses`` history.
 
@@ -117,11 +119,22 @@ class MockTaskAPI:
             response builder's context-driven username remap is exercisable.
         :param protected: Whether to mark the task protected, so a plugin's
             protected-task update guard is exercisable.
+        :param parent: The parent task name stamped on ``data["parent"]``, so a
+            derived-child row is excluded by a ``roots_only`` list. Defaults to
+            ``None`` (a root task).
+        :param data_extra: Extra ``data`` fields merged in (for example
+            ``{"backup_type": "pbm_config"}``), so a server-side ``extra_params``
+            filter is exercisable. Defaults to ``None``.
         """
+        data = {"task": "noop", "meta": {}}
+        if parent is not None:
+            data["parent"] = parent
+        if data_extra:
+            data |= data_extra
         task = TaskFactory.build(
             name=name,
             owner=owner.value,
-            data={"task": "noop", "meta": {}},
+            data=data,
             created_by=created_by,
             protected=protected,
         )
@@ -188,11 +201,10 @@ class MockTaskAPI:
         del self._tasks[name]
 
     def _list(self, params: dict[str, Any]) -> dict[str, Any]:
-        owner = params.get("owner")
         tasks = [
             task
             for task in self._tasks.values()
-            if owner is None or task["owner"] == owner
+            if self._matches_list_params(task, params)
         ]
         total = len(tasks)
         offset, limit = params.get("offset"), params.get("limit")
@@ -204,6 +216,32 @@ class MockTaskAPI:
             "offset": offset or 0,
             "limit": limit if limit is not None else total,
         }
+
+    @staticmethod
+    def _matches_list_params(task: dict[str, Any], params: dict[str, Any]) -> bool:
+        """Apply the server-side owner / ``parent_is_null`` / data-field filters.
+
+        Mirrors the Tasks API's upstream list query so a ``roots_only`` or
+        ``extra_params`` derived list is exercised end-to-end: ``owner`` matches
+        the task owner, ``parent_is_null`` gates on ``data["parent"]``, and any
+        remaining non-pagination key matches a ``data`` field by string value.
+        """
+        owner = params.get("owner")
+        if owner is not None and task["owner"] != owner:
+            return False
+        data = task["data"]
+        parent_is_null = params.get("parent_is_null")
+        if parent_is_null is not None:
+            want_root = parent_is_null in ("true", True)
+            if want_root == bool(data.get("parent")):
+                return False
+        reserved = {"owner", "offset", "limit", "parent_is_null"}
+        for key, value in params.items():
+            if key in reserved:
+                continue
+            if str(data.get(key, "")) != str(value):
+                return False
+        return True
 
     def _history_response(
         self, name: str, status: TaskHistoryStatusEnum | str | None
@@ -570,8 +608,7 @@ def synth_app_kwargs() -> dict[str, Any]:
         "execute_response_model": SynthExecuteResponse,
         "capabilities_provider": synth_capabilities_provider,
         "service_type": ServiceTypeEnum.MYSQL,
-        "list_status_filter": True,
-        "list_service_type_filter": True,
+        "list_filter": ListFilterConfig(status=True, service_type=True),
         "response_builder": synth_response_builder,
         "response_context_provider": synth_context_provider,
         "create_extra_deps": (synth_create_guard,),

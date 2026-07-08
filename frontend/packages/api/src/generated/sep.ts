@@ -462,11 +462,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Alters Api List
-     * @description List parent alters execute tasks.
-     */
-    get: operations['alters_alters_api_list_api_apps_alters__get'];
+    /** List */
+    get: operations['alters__list_paginated_api_apps_alters__get'];
     put?: never;
     /**
      * Alters Api Create
@@ -698,11 +695,8 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /**
-     * Backup Mongo Api List
-     * @description List parent PBM backup config tasks.
-     */
-    get: operations['backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get'];
+    /** List */
+    get: operations['backup_mongo__list_paginated_api_apps_backup_mongo__get'];
     put?: never;
     /**
      * Backup Mongo Api Create
@@ -6543,6 +6537,17 @@ export interface components {
        */
       status: 'created' | 'updated' | 'deleted';
     };
+    /** PaginatedResponse[AltersTaskResponse] */
+    PaginatedResponse_AltersTaskResponse_: {
+      /** Items */
+      items: components['schemas']['AltersTaskResponse'][];
+      /** Limit */
+      limit: number;
+      /** Offset */
+      offset: number;
+      /** Total */
+      total: number;
+    };
     /** PaginatedResponse[BackupResponse] */
     PaginatedResponse_BackupResponse_: {
       /** Items */
@@ -9253,9 +9258,11 @@ export interface operations {
       };
     };
   };
-  alters_alters_api_list_api_apps_alters__get: {
+  alters__list_paginated_api_apps_alters__get: {
     parameters: {
       query?: {
+        offset?: number;
+        limit?: number;
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
         status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       };
@@ -9271,7 +9278,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          'application/json': components['schemas']['AltersTaskResponse'][];
+          'application/json': components['schemas']['PaginatedResponse_AltersTaskResponse_'];
         };
       };
       /** @description Validation Error */
@@ -9730,12 +9737,12 @@ export interface operations {
       };
     };
   };
-  backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get: {
+  backup_mongo__list_paginated_api_apps_backup_mongo__get: {
     parameters: {
       query?: {
-        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
         offset?: number;
         limit?: number;
+        status?: components['schemas']['TaskHistoryStatusEnum'] | null;
       };
       header?: never;
       path?: never;

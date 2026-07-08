@@ -18,7 +18,7 @@
 The registry discovers the exported ``app`` and mounts its derived router, which
 serves the schema, list, detail, create, update, execute, and delete surfaces.
 Set ``group`` / ``nav_order`` to place the app in the sidebar, or
-``service_type`` plus ``list_*_filter`` to expose list filters.
+``service_type`` plus ``list_filter=ListFilterConfig(...)`` to expose list filters.
 """
 
 from app.sep.apps.<< name >>.models import << class_prefix >>Form
