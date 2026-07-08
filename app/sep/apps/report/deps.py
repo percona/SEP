@@ -22,32 +22,20 @@ from fastapi import Depends
 
 from app.core.exceptions import HTTPServiceUnavailableException
 from app.sep.apps.report.models import REPORT_SECTION_LABELS
-from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import sep_settings
+
+# ``get_pmm_api`` / ``PMMAPIDep`` / ``require_pmm_api`` / ``RequiredPMMAPIDep`` live
+# in ``app.sep.deps`` alongside the sibling Inventory / Tasks client deps; they are
+# re-exported here for existing importers (routes, tests).
 from app.sep.deps import (
     DefaultContext,
     get_pmm_api,  # noqa: F401 -- re-exported for existing importers
     PMMAPIDep,
+    require_pmm_api,  # noqa: F401 -- re-exported for existing importers
+    RequiredPMMAPIDep,  # noqa: F401 -- re-exported for existing importers
 )
 
 logger = logging.getLogger(__name__)
-
-
-async def require_pmm_api(pmm_api: PMMAPIDep) -> PMMRemoteAPI:
-    """Return the PMM API client or raise if PMM is not configured.
-
-    :param pmm_api: The PMM API client dependency.
-    :type pmm_api: PMMRemoteAPI | None
-    :return: The PMM API client.
-    :rtype: PMMRemoteAPI
-    :raises HTTPServiceUnavailableException: If PMM is not configured.
-    """
-    if pmm_api is None:
-        raise HTTPServiceUnavailableException(detail="PMM is not configured")
-    return pmm_api
-
-
-RequiredPMMAPIDep = Annotated[PMMRemoteAPI, Depends(require_pmm_api)]
 
 
 async def require_upload_configured() -> None:

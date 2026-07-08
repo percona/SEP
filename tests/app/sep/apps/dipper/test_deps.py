@@ -20,8 +20,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import app.sep.deps as sep_deps
 from app.core.exceptions import HTTPBadRequestException
 from app.inventory.models import ServiceTypeEnum
+from app.sep.apps.dipper import deps as dipper_deps
 from app.sep.apps.dipper.constants import CollectorTypeEnum
 from app.sep.apps.dipper.deps import (
     build_dipper_meta_from_args,
@@ -247,3 +249,19 @@ class TestFetchPmmNodeServiceNames:
         nodes, services = await fetch_pmm_node_service_names(client)
         assert nodes == ["node-a", "node-b"]
         assert services == ["svc-1"]
+
+
+class TestPmmDepReExports:
+    """Assert the dipper PMM deps are re-exports of the ``app.sep.deps`` originals."""
+
+    @pytest.mark.parametrize("name", ["get_pmm_api", "PMMAPIDep"])
+    def test_symbol_is_same_object_as_sep_deps(self, name):
+        """Assert each re-exported symbol is identical to its ``app.sep.deps`` original.
+
+        Identity is load-bearing: ``dependency_overrides`` and ``mocker.patch`` bind by
+        object identity, so a local re-definition would silently break production overrides
+        while leaving the suite green.
+
+        :param name: The re-exported symbol name to compare.
+        """
+        assert getattr(dipper_deps, name) is getattr(sep_deps, name)

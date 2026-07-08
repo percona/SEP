@@ -21,6 +21,8 @@ import pytest
 from fastapi.exceptions import HTTPException
 from polyfactory.factories.pydantic_factory import ModelFactory
 
+import app.sep.deps as sep_deps
+from app.sep.apps.alerts import deps as alerts_deps
 from app.sep.apps.alerts.deps import (
     ensure_pagerduty_notification_route,
     get_alerts_index_context,
@@ -349,3 +351,22 @@ class TestGetOrCreateAlertFolder:
             result = await get_or_create_alert_folder(mock_api)
 
         assert result is None
+
+
+class TestPmmDepReExports:
+    """Assert the alerts PMM deps are re-exports of the ``app.sep.deps`` originals."""
+
+    @pytest.mark.parametrize(
+        "name",
+        ["get_pmm_api", "require_pmm_api", "PMMAPIDep", "RequiredPMMAPIDep"],
+    )
+    def test_symbol_is_same_object_as_sep_deps(self, name):
+        """Assert each re-exported symbol is identical to its ``app.sep.deps`` original.
+
+        Identity is load-bearing: ``dependency_overrides`` and ``mocker.patch`` bind by
+        object identity, so a local re-definition would silently break production overrides
+        while leaving the suite green.
+
+        :param name: The re-exported symbol name to compare.
+        """
+        assert getattr(alerts_deps, name) is getattr(sep_deps, name)
