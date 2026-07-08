@@ -16,23 +16,36 @@
 """Tests for the ``AppRegistry`` and its builders in ``registry.py``."""
 
 import importlib
+from collections.abc import AsyncIterator
 from types import SimpleNamespace
 
 import pytest
+import pytest_asyncio
 from fastapi import APIRouter
 from pytest_mock import MockerFixture
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import StaticPool
+from sqlmodel import SQLModel
 
+from app.core.alerts.config import alert_settings, AlertSettings
+from app.core.db.utils import get_async_session_maker_from_engine
+from app.core.settings_override.api.routes import AppOwnedClassEntry
+from app.core.settings_override.models import SettingClassEnum
+from app.core.utils import json_serializer
 from app.sep.apps.atw.schema import atw_schema
 from app.sep.apps.framework.apps import TaskExecutionApp
 from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.registry import (
     AppRegistry,
     build_app_registry,
+    collect_app_owned_settings_classes,
     get_app_registry,
+    resolve_app_settings_metadata,
 )
 from app.sep.apps.inventory.schema import inventory_schema
 from app.sep.apps.tasks.schema import TASKS_PLUGIN_SCHEMA
 from app.sep.config import App, sep_settings
+from app.sep.models import AppLifecycleEnum, AppState
 
 
 @pytest.fixture(autouse=True)
@@ -402,12 +415,16 @@ class TestGetAppRegistry:
         """Repeated calls return the same cached instance."""
         assert get_app_registry() is get_app_registry()
 
-    def test_alters_binds_as_bare_base_app_with_nav_metadata(self) -> None:
-        """Resolve alters to a bare ``BaseApp`` carrying nav metadata from its definition."""
+    def test_alters_binds_as_task_execution_app_with_nav_metadata(self) -> None:
+        """Resolve alters to a derived ``TaskExecutionApp`` carrying nav metadata.
+
+        Only the list/schema is derived; the schema is the ``alters_schema``
+        passthrough and every mutation stays custom on the ``extra_routes`` router,
+        so the derived ``api_router`` is not the hand-written router itself.
+        """
         app = get_app_registry().get("alters")
         definition = importlib.import_module("app.sep.apps.alters").app
-        assert isinstance(app, BaseApp)
-        assert not isinstance(app, TaskExecutionApp)
+        assert isinstance(app, TaskExecutionApp)
         assert app.display_name == definition.display_name
         assert app.uri_path == definition.uri_path
         assert app.css_class == definition.css_class
@@ -416,7 +433,10 @@ class TestGetAppRegistry:
 
         api_routes = importlib.import_module("app.sep.apps.alters.api_routes")
         routes = importlib.import_module("app.sep.apps.alters.routes")
-        assert app.api_router is api_routes.router
+        schema = importlib.import_module("app.sep.apps.alters.schema")
+        assert app.app_schema is schema.alters_schema
+        assert api_routes.router in app.extra_routes
+        assert app.api_router is not api_routes.router
         assert app.jinja_router is routes.router
 
 
@@ -501,3 +521,171 @@ class TestAtwDefinition:
         assert app.custom_ui is True
         assert app.group == definition.group
         assert app.nav_order == definition.nav_order
+
+
+@pytest_asyncio.fixture(name="override_session")
+async def override_session_fixture() -> AsyncIterator[AsyncSession]:
+    """Provide an in-memory SQLite SEP session for app-state lookups."""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        json_serializer=json_serializer,
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    async_session_maker = get_async_session_maker_from_engine(engine)
+    async with async_session_maker() as session:
+        yield session
+
+
+class TestCollectAppOwnedSettingsClasses:
+    """Tests for ``collect_app_owned_settings_classes``."""
+
+    def test_collects_alerts_declaration(self) -> None:
+        """Return the alerts app's ``AlertSettings`` entry."""
+        entries = collect_app_owned_settings_classes([App(module_name="alerts")])
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry.setting_class == SettingClassEnum.ALERT_SETTINGS
+        assert entry.app_key == "alerts"
+        assert entry.settings_cls is AlertSettings
+        assert entry.proxy is alert_settings
+
+    def test_skips_plugins_without_declaration(self) -> None:
+        """Ignore activation entries that export no ``APP_OWNED_SETTINGS_CLASSES``."""
+        entries = collect_app_owned_settings_classes([App(module_name="checksums")])
+        assert entries == []
+
+    def test_rejects_duplicate_setting_class(self) -> None:
+        """Fail when the same settings class is declared twice."""
+        with pytest.raises(ValueError, match="more than one app-owned"):
+            collect_app_owned_settings_classes(
+                [App(module_name="alerts"), App(module_name="alerts")],
+            )
+
+    def test_rejects_unknown_app_key(self, mocker: MockerFixture) -> None:
+        """Fail when an entry references an app key absent from the registry."""
+        fake_entry = AppOwnedClassEntry(
+            setting_class=SettingClassEnum.ALERT_SETTINGS,
+            settings_cls=AlertSettings,
+            proxy=alert_settings,
+            app_key="ghost",
+        )
+        fake_module = mocker.MagicMock()
+        fake_module.APP_OWNED_SETTINGS_CLASSES = [fake_entry]
+        real_checksums = importlib.import_module("app.sep.apps.checksums")
+        import_calls = {"count": 0}
+
+        def import_side_effect(name: str):
+            if name == "app.sep.apps.checksums":
+                import_calls["count"] += 1
+                if import_calls["count"] == 1:
+                    return real_checksums
+                return fake_module
+            return importlib.import_module(name)
+
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module",
+            side_effect=import_side_effect,
+        )
+        with pytest.raises(ValueError, match="unknown app key 'ghost'"):
+            collect_app_owned_settings_classes([App(module_name="checksums")])
+
+    def test_rejects_non_list_declaration(self, mocker: MockerFixture) -> None:
+        """Fail when ``APP_OWNED_SETTINGS_CLASSES`` is not a list."""
+        fake_module = mocker.MagicMock()
+        fake_module.APP_OWNED_SETTINGS_CLASSES = "not-a-list"
+        real_checksums = importlib.import_module("app.sep.apps.checksums")
+        import_calls = {"count": 0}
+
+        def import_side_effect(name: str):
+            if name == "app.sep.apps.checksums":
+                import_calls["count"] += 1
+                if import_calls["count"] == 1:
+                    return real_checksums
+                return fake_module
+            return importlib.import_module(name)
+
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module",
+            side_effect=import_side_effect,
+        )
+        with pytest.raises(TypeError, match="must be a list"):
+            collect_app_owned_settings_classes([App(module_name="checksums")])
+
+    def test_rejects_non_entry_list_items(self, mocker: MockerFixture) -> None:
+        """Fail when list items are not ``AppOwnedClassEntry`` instances."""
+        fake_module = mocker.MagicMock()
+        fake_module.APP_OWNED_SETTINGS_CLASSES = ["not-an-entry"]
+        real_checksums = importlib.import_module("app.sep.apps.checksums")
+        import_calls = {"count": 0}
+
+        def import_side_effect(name: str):
+            if name == "app.sep.apps.checksums":
+                import_calls["count"] += 1
+                if import_calls["count"] == 1:
+                    return real_checksums
+                return fake_module
+            return importlib.import_module(name)
+
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module",
+            side_effect=import_side_effect,
+        )
+        with pytest.raises(TypeError, match="AppOwnedClassEntry"):
+            collect_app_owned_settings_classes([App(module_name="checksums")])
+
+
+@pytest.mark.asyncio
+class TestResolveAppSettingsMetadata:
+    """Tests for ``resolve_app_settings_metadata``."""
+
+    async def test_returns_alerts_identity(
+        self, override_session: AsyncSession
+    ) -> None:
+        """Resolve display name and enabled state for the alerts app."""
+        metadata = await resolve_app_settings_metadata(override_session, "alerts")
+        assert metadata.is_app_owned is True
+        assert metadata.app_id == "alerts"
+        assert metadata.app_display_name == "Alert Templates"
+        assert metadata.app_enabled is True
+
+    async def test_reports_disabled_app(
+        self,
+        override_session: AsyncSession,
+    ) -> None:
+        """Report ``app_enabled=False`` when the owning app is disabled in the DB."""
+        override_session.add(
+            AppState(app_key="alerts", lifecycle_state=AppLifecycleEnum.DISABLED),
+        )
+        await override_session.commit()
+
+        metadata = await resolve_app_settings_metadata(override_session, "alerts")
+        assert metadata.app_id == "alerts"
+        assert metadata.app_enabled is False
+
+    async def test_unknown_app_key_raises(self, override_session: AsyncSession) -> None:
+        """Reject metadata resolution for an unregistered app key."""
+        with pytest.raises(ValueError, match="Unknown app key 'ghost'"):
+            await resolve_app_settings_metadata(override_session, "ghost")
+
+
+TASK_EXECUTION_PLUGINS_WITH_CSS_CLASS = ["backup_pg", "checksums"]
+
+
+class TestTaskExecutionAppCssClass:
+    """Verify ``css_class`` resolves from the ``AppDefinition`` for plugins that previously relied on ``settings.yaml``."""
+
+    @pytest.mark.parametrize("plugin", TASK_EXECUTION_PLUGINS_WITH_CSS_CLASS)
+    def test_css_class_comes_from_definition(self, plugin: str) -> None:
+        """Assert the registry-bound ``css_class`` equals the definition's ``css_class``."""
+        definition = importlib.import_module(f"app.sep.apps.{plugin}.app").app
+        bound = get_app_registry().get(plugin)
+        assert bound.css_class == definition.css_class
+
+    @pytest.mark.parametrize("plugin", TASK_EXECUTION_PLUGINS_WITH_CSS_CLASS)
+    def test_definition_declares_css_class(self, plugin: str) -> None:
+        """Assert the definition itself sets a non-empty ``css_class``."""
+        definition = importlib.import_module(f"app.sep.apps.{plugin}.app").app
+        assert definition.css_class, f"{plugin} definition must declare css_class"

@@ -20,8 +20,6 @@ import json
 import logging
 import shlex
 from datetime import datetime
-from functools import partial
-from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends
@@ -34,7 +32,7 @@ from app.core.exceptions import (
 )
 from app.core.requests.remote_api import RemoteAPI
 from app.core.utils.fields import EmptyStrToNone
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.alters.models import (
     AltersCreate,
@@ -44,7 +42,6 @@ from app.sep.apps.alters.schema import alters_schema
 from app.sep.apps.alters.spec import build_alters_spec
 from app.sep.apps.framework import (
     build_default_task_response,
-    build_task_list_responses,
     ConnectivityWarning,
     make_task_dep,
 )
@@ -304,7 +301,6 @@ def alters_executor_matches_service_host(
     return executor_address == service_host
 
 
-_PRE_CHECKS_SCRIPT_PATH = Path(__file__).resolve().parent / "pre_checks.py"
 _PARENT_ONLY_META_KEYS = ("command", "args", "_command_line")
 
 
@@ -355,7 +351,7 @@ async def build_pre_checks_task_payload(
     pre_checks_task.data["meta"]["requirements"] = (
         "packaging\nPyYAML\nPyMySQL[rsa,ed25519]"
     )
-    pre_checks_task.data["payload"] = to_payload_reference(_PRE_CHECKS_SCRIPT_PATH)
+    pre_checks_task.data["payload"] = payload_uri(__file__, "pre_checks.py")
     return pre_checks_task
 
 
@@ -692,17 +688,6 @@ async def cascade_delete_alters_group(
     )
 
 
-def is_alters_parent_task(task: Task) -> bool:
-    """Return whether ``task`` is a parent execute task (not a satellite).
-
-    :param task: The task retrieved from the Tasks API.
-    :type task: Task
-    :return: ``True`` when the task has no ``data.parent`` link.
-    :rtype: bool
-    """
-    return not task.data.get("parent")
-
-
 async def resolve_alters_parent_task(task_name: str, tasks_api: TaskAPI) -> Task:
     """Resolve a parent task, following satellite ``data.parent`` links.
 
@@ -889,39 +874,32 @@ def build_alters_api_task_response(
     )
 
 
-async def get_alters_api_task_responses(
-    tasks_api: TaskAPI,
-    service_type: ServiceTypeEnum | None = None,
+def build_alters_api_list_response(
+    task: Task,
+    *,
     status: TaskHistoryStatusEnum | None = None,
-    username_mapping: dict[str, str] | None = None,
-) -> list[AltersTaskResponse]:
-    """Retrieve parent alters task responses for the JSON API.
+    last_executed_at: datetime | None = None,
+    context: dict[str, str] | None = None,
+) -> AltersTaskResponse:
+    """Build an alters list-row response for the derived list route.
 
-    Satellite tasks (dry-run and pre-checks siblings) are excluded from the
-    list — only parent execute tasks are returned.
+    Adapts the framework's ``(task, *, status, last_executed_at, context)``
+    list-builder contract to :func:`build_alters_api_task_response`, threading the
+    once-awaited username map bound as ``context`` into its ``username_mapping``
+    argument so the derived list rows carry the same command line, service type, and
+    resolved usernames as the detail surface.
 
-    :param tasks_api: The TaskAPI instance used to query alters tasks.
-    :type tasks_api: TaskAPI
-    :param service_type: Optional service type filter for the alters task list.
-    :type service_type: ServiceTypeEnum | None
-    :param status: Optional latest-history status filter for the alters task list.
-    :type status: TaskHistoryStatusEnum | None
-    :param username_mapping: Optional mapping of user IDs to usernames.
-    :type username_mapping: dict[str, str] | None
-    :return: The alters task responses matching the requested filters.
-    :rtype: list[AltersTaskResponse]
+    :param task: The parent alters task retrieved from the Tasks API.
+    :param status: The latest known execution status for the task.
+    :param last_executed_at: The task's most recent finish time, if any.
+    :param context: The username map bound by ``response_context_provider``.
+    :return: A validated alters task API response for the list surface.
     """
-    if service_type is not None and service_type != ServiceTypeEnum.MYSQL:
-        return []
-
-    return await build_task_list_responses(
-        tasks_api,
-        owner=TaskOwner.ALTERS.value,
-        response_builder=partial(
-            build_alters_api_task_response, username_mapping=username_mapping
-        ),
-        status_filter=status,
-        task_filter=is_alters_parent_task,
+    return build_alters_api_task_response(
+        task,
+        status,
+        last_executed_at=last_executed_at,
+        username_mapping=context,
     )
 
 
@@ -957,3 +935,6 @@ async def get_alters_index_context(
         TaskOwner.ALTERS,
         alert_on_fail_default=True,
     )
+
+
+AltersIndexContext = Annotated[dict[str, Any], Depends(get_alters_index_context)]

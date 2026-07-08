@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Depends, Form, HTTPException, status
+from fastapi import Depends, Form
 
 from app.core.exceptions import (
     HTTPInternalServerErrorException,
@@ -101,14 +101,7 @@ async def _resolve_service_name(
             form.service_id,
             type=ServiceTypeEnum.MONGODB,
         )
-    except HTTPException as exc:
-        # ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404, not
-        # the project's ``HTTPNotFoundException``. Mongo restores can target a
-        # hostname directly, so a stale ``service_id`` (service deleted
-        # between form load and submit) should not block task creation — fall
-        # back to a node-only PMM annotation on a 404; re-raise other errors.
-        if exc.status_code != status.HTTP_404_NOT_FOUND:
-            raise
+    except HTTPNotFoundException:
         return None
     return service.name
 
@@ -816,3 +809,6 @@ async def get_restores_index_context(
         context,
         TaskOwner.RESTORE_MONGO,
     )
+
+
+RestoresIndexContext = Annotated[dict[str, Any], Depends(get_restores_index_context)]

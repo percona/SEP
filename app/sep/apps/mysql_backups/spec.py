@@ -23,12 +23,10 @@ payload is byte-identical regardless of the call origin. The framework's
 connectivity meta keys around this spec.
 """
 
-from pathlib import Path
-
 import yaml
 from fastapi.encoders import jsonable_encoder
 
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.sep.apps.framework.spec import ResolvedEntities, RunPythonSpec
 from app.sep.apps.mysql_backups.models import (
     BackupConfig,
@@ -107,12 +105,10 @@ def build_backup_spec(form: BackupCreate, resolved: ResolvedEntities) -> RunPyth
         payload_name = "binlog_payload"
     else:
         raise ValueError(f"Invalid Backup Type {form.backup_type}")
-    payload_path = Path(__file__).parent / payload_name
-
     return RunPythonSpec(
         config=yaml.dump(
             jsonable_encoder(backup_config, by_alias=True, exclude_none=True)
         ),
         requirements=requirements,
-        payload=to_payload_reference(payload_path),
+        payload=payload_uri(__file__, payload_name),
     )

@@ -17,7 +17,7 @@
 
 Mounted at ``/api/apps/alert_troubleshooting/`` via ``apps_router`` in
 ``app/sep/api/router.py``. Authentication is enforced at the ``api_router``
-level and redeclared per route for safety. Route layout:
+mount level (``IsApiAuthenticated``). Route layout:
 
 * ``GET /schema``                          — static plugin schema
 * ``GET /``                                — list alerts grouped by service type
@@ -42,14 +42,14 @@ from app.sep.apps.alert_troubleshooting.schema import (
 )
 from app.sep.apps.framework.api import schema_endpoint
 from app.sep.apps.snippets.models import build_snippet_response
-from app.sep.deps import IsApiAuthenticated, SessionDep
+from app.sep.deps import SessionDep
 from app.sep.models import AlertServiceType
 
 router = APIRouter()
 schema_endpoint(router=router, plugin_schema=ALERT_TROUBLESHOOTING_PLUGIN_SCHEMA)
 
 
-@router.get("/", dependencies=[IsApiAuthenticated])
+@router.get("/")
 async def alert_troubleshooting_api_list(
     session: SessionDep,
 ) -> list[AlertGroup]:
@@ -80,7 +80,7 @@ async def alert_troubleshooting_api_list(
     return result
 
 
-@router.get("/{service_type}/{alert_name}", dependencies=[IsApiAuthenticated])
+@router.get("/{service_type}/{alert_name}")
 async def alert_troubleshooting_api_detail(
     service_type: AlertServiceType,
     alert_name: Annotated[str, Path(min_length=1, max_length=200)],

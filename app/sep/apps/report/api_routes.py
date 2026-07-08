@@ -50,10 +50,9 @@ from app.sep.apps.report.celery import (
 )
 from app.sep.apps.report.deps import RequiredPMMAPIDep
 from app.sep.apps.report.job_service import filter_report_sections
-from app.sep.apps.report.schemas import ReportJobResponse, ReportSnapshotWrite
+from app.sep.apps.report.models import ReportJobResponse, ReportSnapshotWrite
 from app.sep.apps.report.service import generate_report
 from app.sep.config import sep_settings
-from app.sep.deps import IsApiAuthenticated
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -91,7 +90,7 @@ def _job_response(job_id: str, *, pdf: bool = False) -> ReportJobResponse:
     return response
 
 
-@router.get("/config", dependencies=[IsApiAuthenticated])
+@router.get("/config")
 async def report_config() -> JSONResponse:
     """Return upload configuration status.
 
@@ -105,7 +104,7 @@ async def report_config() -> JSONResponse:
     )
 
 
-@router.get("/generate/json", dependencies=[IsApiAuthenticated])
+@router.get("/generate/json")
 async def report_generate_json_api(
     pmm_api: RequiredPMMAPIDep,
     since: Annotated[str, Query()] = "now-7d",
@@ -143,7 +142,7 @@ async def report_generate_json_api(
     return JSONResponse(content=report.model_dump(mode="json"))
 
 
-@router.post("/pdf-jobs", dependencies=[IsApiAuthenticated])
+@router.post("/pdf-jobs")
 async def report_start_pdf_job_api(
     body: Annotated[ReportSnapshotWrite, Body()],
 ) -> ReportJobResponse:
@@ -158,7 +157,7 @@ async def report_start_pdf_job_api(
     return _job_response(result.id, pdf=True)
 
 
-@router.get("/pdf-jobs/{job_id}", dependencies=[IsApiAuthenticated])
+@router.get("/pdf-jobs/{job_id}")
 async def report_pdf_job_api(job_id: str) -> ReportJobResponse:
     """Return PDF job status.
 
@@ -170,7 +169,7 @@ async def report_pdf_job_api(job_id: str) -> ReportJobResponse:
     return _job_response(job_id, pdf=True)
 
 
-@router.get("/pdf-jobs/{job_id}/pdf", dependencies=[IsApiAuthenticated])
+@router.get("/pdf-jobs/{job_id}/pdf")
 async def report_download_pdf_api(job_id: str) -> Response:
     """Download a ready PDF result for a report job.
 
@@ -202,7 +201,7 @@ async def report_download_pdf_api(job_id: str) -> Response:
     )
 
 
-@router.post("/upload-jobs", dependencies=[IsApiAuthenticated])
+@router.post("/upload-jobs")
 async def report_start_upload_job_api(
     body: Annotated[ReportSnapshotWrite, Body()],
 ) -> ReportJobResponse:
@@ -220,7 +219,7 @@ async def report_start_upload_job_api(
     return _job_response(result.id)
 
 
-@router.get("/upload-jobs/{job_id}", dependencies=[IsApiAuthenticated])
+@router.get("/upload-jobs/{job_id}")
 async def report_upload_job_api(job_id: str) -> ReportJobResponse:
     """Return ServiceNow upload job status.
 

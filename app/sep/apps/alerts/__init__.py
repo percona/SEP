@@ -14,6 +14,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 from app.sep.apps.alerts.app import app
+from app.sep.apps.alerts.app_owned_settings import APP_OWNED_SETTINGS_CLASSES
 from app.sep.apps.alerts.routes import router
 
-__all__ = ["app", "router"]
+__all__ = ["APP_OWNED_SETTINGS_CLASSES", "app", "router"]

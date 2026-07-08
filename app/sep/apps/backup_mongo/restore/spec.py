@@ -25,11 +25,9 @@ connectivity meta; each child carries ``data["parent"]``), so the helpers here t
 inventory or API client.
 """
 
-from pathlib import Path
-
 import yaml
 
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.sep.apps.backup_mongo.restore.models import (
     PbmForceResyncPayloadModel,
     PbmListPayloadModel,
@@ -61,7 +59,7 @@ def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
         target=leg.target,
         config=leg.config_yaml,
         requirements=leg.requirements,
-        payload=to_payload_reference(Path(__file__).parent / leg.payload_name),
+        payload=payload_uri(__file__, leg.payload_name),
         service_name=leg.service_name,
         extra_data=None if leg.parent is None else {"parent": leg.parent},
     )

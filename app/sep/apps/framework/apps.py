@@ -34,7 +34,8 @@ from pathlib import Path
 from typing import Annotated, Any, Self
 
 from fastapi import APIRouter, Body, Depends, Form, params
-from pydantic import BaseModel, model_validator, PrivateAttr, SkipValidation
+from fastapi.routing import APIRoute
+from pydantic import BaseModel, Field, model_validator, PrivateAttr, SkipValidation
 
 from app.core.pagination import PaginationDependency
 from app.inventory.models import ServiceTypeEnum
@@ -82,6 +83,7 @@ from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
 __all__ = [
     "AppCapabilities",
     "Cascade",
+    "ListFilterConfig",
     "StaticMount",
     "TaskExecutionApp",
     "Views",
@@ -100,6 +102,11 @@ class AppCapabilities(BaseModel):
 
     :param create: Whether to derive the ``POST /`` create route. Defaults to
         ``True``.
+    :param detail: Whether to derive the greedy ``GET /{task_name}`` detail
+        route. Set ``False`` to suppress it so a custom detail route in
+        ``extra_routes`` (for example one doing satellite-to-parent resolution or
+        async sibling aggregation) wins the path instead of being shadowed.
+        Defaults to ``True``.
     :param execute: Whether to derive the ``POST /{task_name}/execute`` route.
         Defaults to ``True``.
     :param update: Whether to derive a ``PUT /{task_name}`` route. Derives a
@@ -111,9 +118,38 @@ class AppCapabilities(BaseModel):
     """
 
     create: bool = True
+    detail: bool = True
     execute: bool = True
     update: bool = False
     delete: bool = False
+
+
+class ListFilterConfig(BaseModel):
+    """Collapse the derived list route's filter knobs into one config object.
+
+    Carries the ``status`` / ``service_type`` query-parameter toggles plus the
+    server-side ``roots_only`` and ``extra_params`` upstream filters. The
+    server-side filters keep the paginated ``total`` accurate (the Tasks API
+    applies them upstream, so no client-side row dropping corrupts the count):
+
+    :param status: Whether the list route exposes a ``status`` query parameter
+        wired to the pipeline's latest-status filter. Defaults to ``False``.
+    :param service_type: Whether the list route exposes a ``service_type`` query
+        parameter that short-circuits to an empty result when it differs from the
+        app's fixed ``service_type``. Requires ``service_type`` on the app.
+        Defaults to ``False``.
+    :param roots_only: Whether to send ``parent_is_null=true`` upstream so derived
+        sibling tasks are hidden and only parent (root) tasks are listed. Defaults
+        to ``False``.
+    :param extra_params: Fixed upstream task-list query parameters merged into
+        every list request (an app's own ``{"some_field": "some_value"}``
+        discriminator, applied server-side). Defaults to an empty mapping.
+    """
+
+    status: bool = False
+    service_type: bool = False
+    roots_only: bool = False
+    extra_params: dict[str, str] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,15 +298,12 @@ class TaskExecutionApp(BaseApp):
         ``GET /capabilities`` response model. Defaults to ``None`` (no
         capabilities route).
     :param service_type: The app's fixed service type, against which
-        ``list_service_type_filter`` short-circuits a mismatched query. Required
-        when ``list_service_type_filter`` is set. Defaults to ``None``.
-    :param list_status_filter: Whether the derived list route exposes a ``status``
-        query parameter wired to the pipeline's status filter. Defaults to
-        ``False``.
-    :param list_service_type_filter: Whether the derived list route exposes a
-        ``service_type`` query parameter that short-circuits to an empty result
-        when it differs from ``service_type``. Requires ``service_type``. Defaults
-        to ``False``.
+        ``list_filter.service_type`` short-circuits a mismatched query. Required
+        when ``list_filter.service_type`` is set. Defaults to ``None``.
+    :param list_filter: The derived list route's filter configuration — the
+        ``status`` / ``service_type`` query-parameter toggles plus the server-side
+        ``roots_only`` and ``extra_params`` upstream filters. Defaults to an
+        all-off :class:`ListFilterConfig`.
     :param response_builder: A sync list/detail builder override injecting the
         per-plugin response extras; replaces the framework default builder. When
         ``None`` (default) the framework builds a default list/detail builder
@@ -344,8 +377,7 @@ class TaskExecutionApp(BaseApp):
     execute_response_model: type[BaseModel] | None = None
     capabilities_provider: Callable[..., BaseModel] | None = None
     service_type: ServiceTypeEnum | None = None
-    list_status_filter: bool = False
-    list_service_type_filter: bool = False
+    list_filter: ListFilterConfig = Field(default_factory=ListFilterConfig)
     response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_builder: SkipValidation[TaskResponseBuilder | None] = None
     detail_response_model: type[BaseModel] | None = None
@@ -405,6 +437,7 @@ class TaskExecutionApp(BaseApp):
         self._validate_create_path()
         self._validate_connectivity_refs()
         self._validate_route_knobs()
+        self._validate_detail_suppress()
         self._validate_response_knobs()
         self._validate_view_columns()
         self._validate_arg_formats()
@@ -691,13 +724,64 @@ class TaskExecutionApp(BaseApp):
     def _validate_response_knobs(self) -> None:
         """Validate the list-filter knob is self-consistent.
 
-        :raises ValueError: When ``list_service_type_filter`` is set without a
+        :raises ValueError: When ``list_filter.service_type`` is set without a
             ``service_type`` to filter against.
         """
-        if self.list_service_type_filter and self.service_type is None:
+        if self.list_filter.service_type and self.service_type is None:
             raise ValueError(
-                "TaskExecutionApp: list_service_type_filter needs a service_type to "
+                "TaskExecutionApp: list_filter.service_type needs a service_type to "
                 "filter against; set service_type or drop the filter"
+            )
+
+    def _extra_routes_have_detail(self) -> bool:
+        """Return whether ``extra_routes`` register a ``GET`` on the detail path.
+
+        :return: ``True`` when a custom ``GET /{detail_path_param}`` route is
+            present across the ``extra_routes`` routers.
+        """
+        detail_path = f"/{{{self.detail_path_param}}}"
+        return any(
+            isinstance(route, APIRoute)
+            and route.path == detail_path
+            and "GET" in route.methods
+            for extra in self.extra_routes
+            for route in extra.routes
+        )
+
+    def _validate_detail_suppress(self) -> None:
+        """Reject an inconsistent ``capabilities.detail`` suppress configuration.
+
+        The suppress toggle and a custom detail route are mutually implied: the
+        derived ``GET /{detail_path_param}`` is greedy, so a custom detail route
+        only wins the path when the derived one is suppressed, and suppressing it
+        without a replacement leaves the app with no detail route at all. The
+        detail-builder overrides are dead config once the derived detail is off.
+
+        :raises ValueError: When ``capabilities.detail`` and a custom detail route
+            in ``extra_routes`` disagree, or when a detail-builder override is set
+            while ``capabilities.detail`` is ``False``.
+        """
+        has_custom_detail = self._extra_routes_have_detail()
+        if self.capabilities.detail and has_custom_detail:
+            raise ValueError(
+                "TaskExecutionApp: a custom GET detail route in extra_routes is "
+                "shadowed by the greedy derived detail; set capabilities.detail="
+                "False to suppress the derived one"
+            )
+        if not self.capabilities.detail and not has_custom_detail:
+            raise ValueError(
+                "TaskExecutionApp: capabilities.detail=False suppresses the derived "
+                "detail route but no custom GET /{detail_path_param} is registered "
+                "in extra_routes; add one or re-enable capabilities.detail"
+            )
+        if not self.capabilities.detail and (
+            self.detail_response_builder is not None
+            or self.detail_response_model is not None
+        ):
+            raise ValueError(
+                "TaskExecutionApp: detail_response_builder / detail_response_model "
+                "are dead config when capabilities.detail=False; drop them or "
+                "re-enable capabilities.detail"
             )
 
     def _validate_view_columns(self) -> None:
@@ -756,6 +840,20 @@ class TaskExecutionApp(BaseApp):
         task_by_name = Depends(self._task_getter)
         return Annotated[Task, task_by_name]
 
+    def _resolve_list_extra_params(self) -> dict[str, str]:
+        """Return the fixed upstream task-list filters the derived list applies.
+
+        Merge the ``roots_only`` server-side ``parent_is_null=true`` filter with
+        the app's ``list_filter.extra_params``. These are sent to the Tasks API,
+        so the paginated ``total`` stays accurate (no client-side row dropping).
+
+        :return: The merged upstream query parameters for the derived list route.
+        """
+        params = dict(self.list_filter.extra_params)
+        if self.list_filter.roots_only:
+            params["parent_is_null"] = "true"
+        return params
+
     def build_router(self) -> APIRouter:
         """Compose the derived router from the route-derivation helpers.
 
@@ -801,10 +899,12 @@ class TaskExecutionApp(BaseApp):
             connectivity_check=self.connectivity_check,
             detail_path_param=self.detail_path_param,
             pagination_dep=self.pagination,
-            list_status_filter=self.list_status_filter,
+            list_status_filter=self.list_filter.status,
             list_service_type=(
-                self.service_type if self.list_service_type_filter else None
+                self.service_type if self.list_filter.service_type else None
             ),
+            list_extra_params=self._resolve_list_extra_params(),
+            derive_detail=self.capabilities.detail,
             context_provider=self.response_context_provider,
             create_extra_deps=self.create_extra_deps,
             update_enabled=self.capabilities.update,

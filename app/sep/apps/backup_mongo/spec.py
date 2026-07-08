@@ -31,12 +31,11 @@ rewrite.
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import yaml
 
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.sep.apps.backup_mongo.models import (
     BackupConfig,
     BackupConfigBackup,
@@ -195,7 +194,6 @@ def build_backup_mongo_spec(
     )
 
     requirements = _BASE_REQUIREMENTS
-    payload_path = Path(__file__).parent / f"{form.backup_type}_payload"
 
     return build_run_python_task(
         name=form.task_name,
@@ -207,7 +205,7 @@ def build_backup_mongo_spec(
             allow_unicode=True,
         ),
         requirements=requirements,
-        payload=to_payload_reference(payload_path),
+        payload=payload_uri(__file__, f"{form.backup_type}_payload"),
         service_name=resolved.service_name,
         extra_data={"backup_type": form.backup_type},
         alert_on_fail=form.alert_on_fail,

@@ -456,3 +456,6 @@ async def get_checksums_index_context(
         TaskOwner.CHECKSUMS,
         alert_on_fail_default=True,
     )
+
+
+ChecksumsIndexContext = Annotated[dict[str, Any], Depends(get_checksums_index_context)]

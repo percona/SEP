@@ -305,7 +305,7 @@ class TestBackupMongoApiList:
                 "parent_is_null": "true",
                 "backup_type": BackupType.PBM_CONFIG.value,
                 "offset": 0,
-                "limit": MAX_PAGINATION_LIMIT,
+                "limit": DEFAULT_PAGE_LIMIT,
             },
         )
 

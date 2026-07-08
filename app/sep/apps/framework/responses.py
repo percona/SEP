@@ -226,11 +226,26 @@ def derive_create_response_model(
     )
 
 
-def _owner_list_params(owner: str, pagination: Pagination | None) -> dict[str, Any]:
-    """Build the upstream task-list GET params for ``owner`` and a page window."""
+def _owner_list_params(
+    owner: str,
+    pagination: Pagination | None,
+    extra_params: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build the upstream task-list GET params for ``owner`` and a page window.
+
+    :param owner: The task owner to list tasks for.
+    :param pagination: The page window merged in as ``offset`` / ``limit``, or
+        ``None`` for an unpaginated request.
+    :param extra_params: Fixed server-side filters (for example
+        ``{"parent_is_null": "true"}``) the Tasks API applies before returning the
+        page.
+    :return: The merged upstream task-list query parameters.
+    """
     params = {"owner": owner}
     if pagination is not None:
         params |= pagination.model_dump()
+    if extra_params:
+        params |= extra_params
     return params
 
 
@@ -243,6 +258,7 @@ async def build_task_list_responses(
     pagination: None = None,
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
+    extra_params: dict[str, str] | None = None,
     context_provider: Callable[[], Awaitable[Any]] | None = None,
 ) -> list[R]: ...
 
@@ -256,6 +272,7 @@ async def build_task_list_responses(
     pagination: Pagination,
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
+    extra_params: dict[str, str] | None = None,
     context_provider: Callable[[], Awaitable[Any]] | None = None,
 ) -> PaginatedResponse[R]: ...
 
@@ -268,6 +285,7 @@ async def build_task_list_responses(
     pagination: Pagination | None = None,
     status_filter: TaskHistoryStatusEnum | None = None,
     task_filter: Callable[[Task], bool] | None = None,
+    extra_params: dict[str, str] | None = None,
     context_provider: Callable[[], Awaitable[Any]] | None = None,
 ) -> list[R] | PaginatedResponse[R]:
     """Assemble JSON-API task responses for an owner through one shared pipeline.
@@ -289,23 +307,21 @@ async def build_task_list_responses(
     unchanged as ``builder(task, status=...)``.
 
     :param tasks_api: The Tasks API client used for the list and status lookups.
-    :type tasks_api: TaskAPI
     :param owner: The task owner to list tasks for.
-    :type owner: str
     :param response_builder: Builder invoked as ``builder(task, status=...)``.
-    :type response_builder: TaskResponseBuilder[R]
     :param pagination: Page window; when omitted a plain ``list`` is returned.
-    :type pagination: Pagination | None
     :param status_filter: Keep only tasks whose latest status matches this.
-    :type status_filter: TaskHistoryStatusEnum | None
     :param task_filter: Predicate applied before status enrichment.
-    :type task_filter: Callable[[Task], bool] | None
+    :param extra_params: Fixed upstream task-list query parameters merged into the
+        request as server-side filters, so they do not perturb the paginated
+        ``total`` the way a client-side ``task_filter`` does.
     :param context_provider: Zero-arg async provider whose once-awaited result is
         bound into every per-row build as a ``context`` keyword argument.
     :return: The built responses, paginated when ``pagination`` is supplied.
-    :rtype: list[R] | PaginatedResponse[R]
     """
-    response = await tasks_api.get("/", params=_owner_list_params(owner, pagination))
+    response = await tasks_api.get(
+        "/", params=_owner_list_params(owner, pagination, extra_params)
+    )
     tasks = [Task.model_validate(item) for item in response["items"]]
     if task_filter is not None:
         tasks = [task for task in tasks if task_filter(task)]

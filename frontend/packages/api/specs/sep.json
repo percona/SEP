@@ -2333,7 +2333,7 @@
         "type": "object"
       },
       "BackupDetail": {
-        "description": "Describe the full detail response for a single backup.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime\n:param templates: Templates captured in the backup.\n:type templates: list[BackupDetailTemplate]\n:param rules: Rules captured in the backup.\n:type rules: list[BackupDetailRule]\n:param contact_points: Contact points captured in the backup.\n:type contact_points: list[BackupDetailContactPoint]\n:param folders: Folders captured in the backup.\n:type folders: list[BackupDetailFolder]\n:param notification_policy_receiver: Top-level receiver from the captured\n    notification policy, or ``None`` when no policy was captured.\n:type notification_policy_receiver: str | None",
+        "description": "Describe the full detail response for a single backup.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.\n:param templates: Templates captured in the backup.\n:param rules: Rules captured in the backup.\n:param contact_points: Contact points captured in the backup.\n:param folders: Folders captured in the backup.\n:param notification_policy_receiver: Top-level receiver from the captured\n    notification policy, or ``None`` when no policy was captured.",
         "properties": {
           "contact_points": {
             "items": {
@@ -2397,7 +2397,7 @@
         "type": "object"
       },
       "BackupDetailContactPoint": {
-        "description": "Represent a contact-point entry inside a backup snapshot.\n\n:param name: The contact point name.\n:type name: str\n:param type: The contact point type (e.g. ``\"pagerduty\"``).\n:type type: str",
+        "description": "Represent a contact-point entry inside a backup snapshot.\n\n:param name: The contact point name.\n:param type: The contact point type (e.g. ``\"pagerduty\"``).",
         "properties": {
           "name": {
             "title": "Name",
@@ -2416,7 +2416,7 @@
         "type": "object"
       },
       "BackupDetailFolder": {
-        "description": "Represent a folder entry inside a backup snapshot.\n\n:param title: The folder title.\n:type title: str",
+        "description": "Represent a folder entry inside a backup snapshot.\n\n:param title: The folder title.",
         "properties": {
           "title": {
             "title": "Title",
@@ -2430,7 +2430,7 @@
         "type": "object"
       },
       "BackupDetailRule": {
-        "description": "Represent a rule entry inside a backup snapshot.\n\n:param title: The rule title.\n:type title: str",
+        "description": "Represent a rule entry inside a backup snapshot.\n\n:param title: The rule title.",
         "properties": {
           "title": {
             "title": "Title",
@@ -2444,7 +2444,7 @@
         "type": "object"
       },
       "BackupDetailTemplate": {
-        "description": "Represent a template entry inside a backup snapshot.\n\n:param name: The template name.\n:type name: str\n:param summary: The template summary blurb.\n:type summary: str",
+        "description": "Represent a template entry inside a backup snapshot.\n\n:param name: The template name.\n:param summary: The template summary blurb.",
         "properties": {
           "name": {
             "title": "Name",
@@ -3094,7 +3094,7 @@
         "type": "string"
       },
       "BackupSummary": {
-        "description": "Represent a compact backup row used by the list endpoint.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime\n:param metadata: Summary counts persisted alongside the backup snapshot.\n:type metadata: dict[str, Any]",
+        "description": "Represent a compact backup row used by the list endpoint.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.\n:param metadata: Summary counts persisted alongside the backup snapshot.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -5385,7 +5385,7 @@
         "type": "object"
       },
       "IndexBackupSummary": {
-        "description": "Represent a compact backup row for the index \"recent backups\" widget.\n\nLeaner than :class:`BackupSummary` (no ``metadata``): the list page only\nrenders the id and timestamp, so the index payload omits the summary counts.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime",
+        "description": "Represent a compact backup row for the index \"recent backups\" widget.\n\nLeaner than :class:`BackupSummary` (no ``metadata``): the list page only\nrenders the id and timestamp, so the index payload omits the summary counts.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -5405,7 +5405,7 @@
         "type": "object"
       },
       "IndexPagerDutyStatus": {
-        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:type configured: bool\n:param uid: The contact point UID when configured, otherwise ``None``.\n:type uid: str | None",
+        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:param uid: The contact point UID when configured, otherwise ``None``.",
         "properties": {
           "configured": {
             "title": "Configured",
@@ -5430,7 +5430,7 @@
         "type": "object"
       },
       "IndexResponse": {
-        "description": "Describe the response body for ``GET /api/apps/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:type groups: list[IndexTemplateGroup]\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:type pmm_connected: bool\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:type pagerduty: IndexPagerDutyStatus | None\n:param recent_backups: The most recent alert backups, newest first.\n:type recent_backups: list[IndexBackupSummary]",
+        "description": "Describe the response body for ``GET /api/apps/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:param recent_backups: The most recent alert backups, newest first.",
         "properties": {
           "groups": {
             "items": {
@@ -5471,7 +5471,7 @@
         "type": "object"
       },
       "IndexTemplate": {
-        "description": "Represent a single alert template row on the index page.\n\n:param name: The display name of the alert template.\n:type name: str\n:param service_type: The service category this template applies to.\n:type service_type: str\n:param expression: The PromQL expression backing the alert.\n:type expression: str\n:param default_threshold: The default numeric threshold for the UI.\n:type default_threshold: float\n:param severity: The severity level (``\"info\"``, ``\"warning\"``, ``\"critical\"``).\n:type severity: str\n:param description: A human-readable description of the alert.\n:type description: str\n:param summary: A short summary template for notifications.\n:type summary: str\n:param in_pmm: ``True`` when a template of this name is already present in PMM.\n:type in_pmm: bool",
+        "description": "Represent a single alert template row on the index page.\n\n:param name: The display name of the alert template.\n:param service_type: The service category this template applies to.\n:param expression: The PromQL expression backing the alert.\n:param default_threshold: The default numeric threshold for the UI.\n:param severity: The severity level (``\"info\"``, ``\"warning\"``, ``\"critical\"``).\n:param description: A human-readable description of the alert.\n:param summary: A short summary template for notifications.\n:param in_pmm: ``True`` when a template of this name is already present in PMM.",
         "properties": {
           "default_threshold": {
             "title": "Default Threshold",
@@ -5520,7 +5520,7 @@
         "type": "object"
       },
       "IndexTemplateGroup": {
-        "description": "Group index templates by service type.\n\n:param service_type: The service type identifier (e.g. ``\"mysql\"``).\n:type service_type: str\n:param label: The human-readable service type label (e.g. ``\"MySQL\"``).\n:type label: str\n:param templates: The templates belonging to this service type.\n:type templates: list[IndexTemplate]",
+        "description": "Group index templates by service type.\n\n:param service_type: The service type identifier (e.g. ``\"mysql\"``).\n:param label: The human-readable service type label (e.g. ``\"MySQL\"``).\n:param templates: The templates belonging to this service type.",
         "properties": {
           "label": {
             "title": "Label",
@@ -6766,7 +6766,7 @@
         "type": "object"
       },
       "PagerDutyRequest": {
-        "description": "Describe the request body for ``POST /api/apps/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.\n:type integration_key: NonEmptyStr",
+        "description": "Describe the request body for ``POST /api/apps/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.",
         "properties": {
           "integration_key": {
             "minLength": 1,
@@ -6781,7 +6781,7 @@
         "type": "object"
       },
       "PagerDutyResponse": {
-        "description": "Describe the response body for the PagerDuty save / delete endpoints.\n\n:param status: ``\"created\"``, ``\"updated\"`` (save) or ``\"deleted\"`` (delete).\n:type status: Literal[\"created\", \"updated\", \"deleted\"]",
+        "description": "Describe the response body for the PagerDuty save / delete endpoints.\n\n:param status: ``\"created\"``, ``\"updated\"`` (save) or ``\"deleted\"`` (delete).",
         "properties": {
           "status": {
             "enum": [
@@ -6797,6 +6797,37 @@
           "status"
         ],
         "title": "PagerDutyResponse",
+        "type": "object"
+      },
+      "PaginatedResponse_AltersTaskResponse_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AltersTaskResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "PaginatedResponse[AltersTaskResponse]",
         "type": "object"
       },
       "PaginatedResponse_BackupResponse_": {
@@ -7091,7 +7122,7 @@
         "type": "object"
       },
       "PushItemResult": {
-        "description": "Represent a per-template result row returned by the push endpoint.\n\n:param name: The template name the result applies to.\n:type name: str\n:param status: One of ``\"success\"``, ``\"skipped\"``, ``\"error\"``.\n:type status: Literal[\"success\", \"skipped\", \"error\"]\n:param message: A human-readable description of the outcome.\n:type message: str",
+        "description": "Represent a per-template result row returned by the push endpoint.\n\n:param name: The template name the result applies to.\n:param status: One of ``\"success\"``, ``\"skipped\"``, ``\"error\"``.\n:param message: A human-readable description of the outcome.",
         "properties": {
           "message": {
             "title": "Message",
@@ -7120,7 +7151,7 @@
         "type": "object"
       },
       "PushRequest": {
-        "description": "Describe the request body for ``POST /api/apps/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.\n:type selected_templates: list[NonEmptyStr]",
+        "description": "Describe the request body for ``POST /api/apps/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.",
         "properties": {
           "selected_templates": {
             "items": {
@@ -7139,7 +7170,7 @@
         "type": "object"
       },
       "PushResponse": {
-        "description": "Wrap the per-template results returned by the push endpoint.\n\n:param results: One :class:`PushItemResult` per template in the request.\n:type results: list[PushItemResult]",
+        "description": "Wrap the per-template results returned by the push endpoint.\n\n:param results: One :class:`PushItemResult` per template in the request.",
         "properties": {
           "results": {
             "items": {
@@ -7254,7 +7285,7 @@
         "type": "object"
       },
       "ReportJobResponse": {
-        "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:type job_id: str\n:param status: Lowercase Celery task state.\n:type status: str\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:type pdf_ready: bool\n:param result: Successful job result payload, if available.\n:type result: dict[str, Any] | None\n:param error: Failed job error text, if available.\n:type error: str | None",
+        "description": "Expose async report job state.\n\n:param job_id: Celery task identifier.\n:param status: Lowercase Celery task state.\n:param pdf_ready: Whether the PDF result exists and is downloadable.\n:param result: Successful job result payload, if available.\n:param error: Failed job error text, if available.",
         "properties": {
           "error": {
             "anyOf": [
@@ -7331,7 +7362,7 @@
         "type": "object"
       },
       "ReportSnapshotWrite": {
-        "description": "Define report snapshot body for PDF/upload jobs.\n\n:param report: Generated report snapshot reused for PDF/upload work.\n:type report: ReportData",
+        "description": "Define report snapshot body for PDF/upload jobs.\n\n:param report: Generated report snapshot reused for PDF/upload work.",
         "properties": {
           "report": {
             "$ref": "#/components/schemas/ReportData"
@@ -7843,7 +7874,7 @@
         "type": "object"
       },
       "RestoreRequest": {
-        "description": "Describe the request body for ``POST /api/apps/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.\n:type backup_id: int",
+        "description": "Describe the request body for ``POST /api/apps/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.",
         "properties": {
           "backup_id": {
             "exclusiveMinimum": 0.0,
@@ -7858,7 +7889,7 @@
         "type": "object"
       },
       "RestoreResponse": {
-        "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:type status: Literal[\"success\"]\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.\n:type details: dict[str, Any]",
+        "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.",
         "properties": {
           "details": {
             "title": "Details",
@@ -9120,8 +9151,46 @@
         "type": "string"
       },
       "SettingClassGroup": {
-        "description": "One settings-class group in the LIST response.\n\n:param setting_class: The settings class this group represents.\n:type setting_class: SettingClassEnum\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:type settings: list[SettingResponse]",
+        "description": "One settings-class group in the LIST response.\n\n:param setting_class: The settings class this group represents.\n:type setting_class: SettingClassEnum\n:param settings: The fields declared on the settings class, with their\n    current values and metadata.\n:type settings: list[SettingResponse]\n:param is_app_owned: Whether this group belongs to a SEP app under\n    ``app/sep/apps/`` rather than core SEP wiring.\n:type is_app_owned: bool\n:param app_id: The owning app's registry key when ``is_app_owned`` is\n    ``True``; ``None`` for core groups.\n:type app_id: str | None\n:param app_display_name: The owning app's human-facing label when\n    ``is_app_owned`` is ``True``; ``None`` for core groups.\n:type app_display_name: str | None\n:param app_enabled: Whether the owning app is currently enabled when\n    ``is_app_owned`` is ``True``; ``None`` for core groups. Disabled\n    apps remain listed so the frontend can hide them without a second\n    lookup.\n:type app_enabled: bool | None",
         "properties": {
+          "app_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Display Name"
+          },
+          "app_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Enabled"
+          },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Id"
+          },
+          "is_app_owned": {
+            "default": false,
+            "title": "Is App Owned",
+            "type": "boolean"
+          },
           "setting_class": {
             "$ref": "#/components/schemas/SettingClassEnum"
           },
@@ -11939,9 +12008,31 @@
     },
     "/api/apps/alters/": {
       "get": {
-        "description": "List parent alters execute tasks.",
-        "operationId": "alters_alters_api_list_api_apps_alters__get",
+        "operationId": "alters__list_paginated_api_apps_alters__get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
           {
             "in": "query",
             "name": "service_type",
@@ -11980,11 +12071,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AltersTaskResponse"
-                  },
-                  "title": "Response Alters Alters Api List Api Apps Alters  Get",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PaginatedResponse_AltersTaskResponse_"
                 }
               }
             },
@@ -12001,7 +12088,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Alters Api List",
+        "summary": "List",
         "tags": [
           "alters"
         ]
@@ -12636,25 +12723,8 @@
     },
     "/api/apps/backup_mongo/": {
       "get": {
-        "description": "List parent PBM backup config tasks.",
-        "operationId": "backup_mongo_backup_mongo_api_list_api_apps_backup_mongo__get",
+        "operationId": "backup_mongo__list_paginated_api_apps_backup_mongo__get",
         "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Status"
-            }
-          },
           {
             "in": "query",
             "name": "offset",
@@ -12676,6 +12746,22 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TaskHistoryStatusEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
             }
           }
         ],
@@ -12701,7 +12787,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Backup Mongo Api List",
+        "summary": "List",
         "tags": [
           "backup_mongo"
         ]
@@ -16095,7 +16181,7 @@
     },
     "/api/sep/admin/settings/": {
       "get": {
-        "description": "List every exposed settings class with current values and metadata.\n\nLocal classes are read from their config singletons; remote classes\n(``remote_classes``) are fetched server-side from their owning sub-app\nand appended in declaration order. A failed remote fetch fails the whole\nrequest with ``502`` -- the LIST never silently drops a remote group.\n\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: Grouped responses, one group per configured settings class.",
+        "description": "List every exposed settings class with current values and metadata.\n\nLocal classes are read from their config singletons; remote classes\n(``remote_classes``) are fetched server-side from their owning sub-app\nand appended in declaration order; app-owned classes follow remote\ngroups with per-group app metadata. A failed remote fetch fails the\nwhole request with ``502`` -- the LIST never silently drops a remote\ngroup.\n\n:param session: The sub-app's database session.\n:param remote_api: The client for remote settings classes (``None`` when\n    the router wires none).\n:return: Grouped responses, one group per configured settings class.",
         "operationId": "sep_list_settings_api_sep_admin_settings__get",
         "responses": {
           "200": {
@@ -16117,7 +16203,7 @@
     },
     "/api/sep/admin/settings/export": {
       "get": {
-        "description": "Return the merged effective configuration as a YAML attachment.\n\nAggregates the three SEP-wired settings classes locally and fans out to\n``GET /admin/settings/`` on the Tasks API for ``TasksSettings``. Values\nuse the same dump path as the settings LIST endpoints. On upstream failure,\nre-raise as :class:`~app.core.exceptions.HTTPBadGatewayException` — no\npartial export.\n\nWhen ``keys`` is omitted the full merged export is returned exactly as\nbefore. When provided, each entry is a fully-qualified selector\n(``Class.KEY`` or a bare ``Class``); the response is narrowed to only the\nrequested classes/keys. Class names and SEP keys are validated with no\nupstream call; the Tasks fan-out is skipped entirely unless a selector\ntargets ``TasksSettings``, and Tasks keys are validated against the fetched\nblock. Output blocks always follow the canonical declaration order\n(``SEP_ADMIN_SETTINGS_CLASSES`` then ``TasksSettings``), independent of\nselector order.\n\n:param session: The active database session for SEP override queries.\n:type session: AsyncSession\n:param tasks_api: The Tasks API client used to fetch ``TasksSettings``.\n:type tasks_api: TaskAPI\n:param keys: Optional, repeatable selectors restricting the export to a\n    subset of classes/keys. ``None`` (omitted) means the full export.\n:type keys: list[str] | None\n:return: YAML bytes with ``Content-Disposition`` set for download.\n:rtype: Response\n:raises HTTPBadRequestException: If a selector is blank, malformed, names an\n    unwired class, or names a key that does not exist on its class.\n:raises HTTPBadGatewayException: If the Tasks settings LIST call fails\n    with an ``HTTPException`` (e.g. an upstream non-2xx response), an\n    ``OSError`` (e.g. a connection failure), an unexpected payload shape,\n    or a missing ``TasksSettings`` group.",
+        "description": "Return the merged effective configuration as a YAML attachment.\n\nAggregates the SEP-wired core settings classes and app-owned settings\nclasses locally and fans out to ``GET /admin/settings/`` on the Tasks API\nfor ``TasksSettings``. Values use the same dump path as the settings LIST\nendpoints. On upstream failure, re-raise as\n:class:`~app.core.exceptions.HTTPBadGatewayException` — no partial export.\n\nWhen ``keys`` is omitted the full merged export is returned exactly as\nbefore. When provided, each entry is a fully-qualified selector\n(``Class.KEY`` or a bare ``Class``); the response is narrowed to only the\nrequested classes/keys. Class names and SEP keys are validated with no\nupstream call; the Tasks fan-out is skipped entirely unless a selector\ntargets ``TasksSettings``, and Tasks keys are validated against the fetched\nblock. Output blocks always follow the canonical declaration order\n(``SEP_ADMIN_SETTINGS_CLASSES``, then app-owned classes, then\n``TasksSettings``), independent of selector order.\n\n:param session: The active database session for SEP override queries.\n:type session: AsyncSession\n:param tasks_api: The Tasks API client used to fetch ``TasksSettings``.\n:type tasks_api: TaskAPI\n:param keys: Optional, repeatable selectors restricting the export to a\n    subset of classes/keys. ``None`` (omitted) means the full export.\n:type keys: list[str] | None\n:return: YAML bytes with ``Content-Disposition`` set for download.\n:rtype: Response\n:raises HTTPBadRequestException: If a selector is blank, malformed, names an\n    unwired class, or names a key that does not exist on its class.\n:raises HTTPBadGatewayException: If the Tasks settings LIST call fails\n    with an ``HTTPException`` (e.g. an upstream non-2xx response), an\n    ``OSError`` (e.g. a connection failure), an unexpected payload shape,\n    or a missing ``TasksSettings`` group.",
         "operationId": "sep_export_settings_api_sep_admin_settings_export_get",
         "parameters": [
           {

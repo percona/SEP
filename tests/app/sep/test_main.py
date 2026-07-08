@@ -736,9 +736,9 @@ class TestAppStateGuards:
     def test_ui_mount_loop_guards_non_protected_plugins(self) -> None:
         """Every non-protected UI plugin route carries the app-state guard."""
         guarded_prefixes = {
-            p.uri_path
-            for p in sep_settings.APPS
-            if p.module_name.split(".")[-1] not in PROTECTED_APP_KEYS
+            app.uri_path
+            for app in get_app_registry()
+            if app.key not in PROTECTED_APP_KEYS and app.jinja_router is not None
         }
         seen = set()
         for route in sep_app.routes:
@@ -752,11 +752,9 @@ class TestAppStateGuards:
 
     def test_inventory_ui_routes_are_not_guarded(self) -> None:
         """The protected ``inventory`` plugin's UI routes carry no app-state guard."""
-        inventory_prefix = next(
-            p.uri_path
-            for p in sep_settings.APPS
-            if p.module_name.split(".")[-1] == "inventory"
-        )
+        inventory_app = get_app_registry().get("inventory")
+        assert inventory_app is not None
+        inventory_prefix = inventory_app.uri_path
         for route in sep_app.routes:
             path = getattr(route, "path", "")
             if path == inventory_prefix or path.startswith(f"{inventory_prefix}/"):

@@ -16,9 +16,9 @@
 """Define routes for the checksums plugin."""
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
@@ -27,15 +27,16 @@ from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.checksums.deps import (
     ChecksumsGeneratedTask,
+    ChecksumsIndexContext,
     ChecksumsTask,
     extract_service_info,
-    get_checksums_index_context,
     parse_checksums_task_args,
 )
 from app.sep.apps.framework.deprecation import DeprecatedJinja2Route
 from app.sep.config import sep_settings
-from app.sep.connectivity import get_check_connectivity_flag, maybe_check_connectivity
+from app.sep.connectivity import maybe_check_connectivity
 from app.sep.deps import (
+    CheckConnectivityFlag,
     DefaultContext,
     ExecutorHostsCtx,
     get_chainable_tasks,
@@ -55,7 +56,7 @@ templates = sep_settings.TEMPLATES
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)
 async def checksums_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_checksums_index_context)],
+    context: ChecksumsIndexContext,
 ) -> HTMLResponse:
     """Homepage of checksums plugin."""
     context["csrf_token"] = request.state.csrf_token
@@ -74,7 +75,7 @@ async def checksums_create(
     task: ChecksumsGeneratedTask,
     task_api: TaskAPI,
     *,
-    check_connectivity: Annotated[bool, Depends(get_check_connectivity_flag)],
+    check_connectivity: CheckConnectivityFlag,
 ) -> RedirectResponse:
     """Create an checksum task."""
     logger.debug("Create checksums task: %s", task)

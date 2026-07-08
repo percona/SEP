@@ -38,10 +38,7 @@ from app.sep.apps.framework.spec import (
     parse_server_list_config,
     resolve_refs,
 )
-from app.sep.connectivity import (
-    CONNECTIVITY_META_PORT_KEY,
-    get_check_connectivity_flag,
-)
+from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
 from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
@@ -93,8 +90,6 @@ BackupsTask = Annotated[Task, Depends(get_backups_task)]
 get_unprotected_backups_task = protected_task_guard(get_backups_task)
 
 UnprotectedBackupsTask = Annotated[Task, Depends(get_unprotected_backups_task)]
-
-CheckConnectivityFlag = Annotated[bool, Depends(get_check_connectivity_flag)]
 
 
 async def check_create_has_no_conflicted_running_tasks(

@@ -22,7 +22,7 @@ end-to-end. The create test issues a real form POST and never overrides the
 body resolution it exists to cover is genuinely executed.
 """
 
-from typing import Annotated, get_args
+from typing import Annotated, Any, get_args
 from unittest.mock import AsyncMock
 
 import pytest
@@ -41,7 +41,12 @@ from app.sep.apps.framework import (
     TaskExecuteWrite,
     TaskExecutionResponse,
 )
-from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp, Views
+from app.sep.apps.framework.apps import (
+    AppCapabilities,
+    ListFilterConfig,
+    TaskExecutionApp,
+    Views,
+)
 from app.sep.apps.framework.form_dsl import (
     AppFormModel,
     ArgFormat,
@@ -201,6 +206,17 @@ def _extra_router() -> APIRouter:
     return router
 
 
+def _custom_detail_router() -> APIRouter:
+    """Return an extra router exposing a custom ``GET /{task_name}`` detail route."""
+    router = APIRouter()
+
+    @router.get("/{task_name}", dependencies=[IsApiAuthenticated])
+    async def _detail(task_name: str) -> dict[str, str]:
+        return {"custom_detail": task_name}
+
+    return router
+
+
 _PASSTHROUGH_SCHEMA = AppSchema(
     name="synthetic-app",
     display_name="Synthetic App",
@@ -302,6 +318,14 @@ def _client(
     return build_contract_client(
         app_def, user=user, tasks_api=tasks_api, inventory_api=inventory_api
     )
+
+
+def _list_upstream_params(tasks_api: AsyncMock) -> dict[str, Any]:
+    """Return the ``params`` of the upstream ``GET /`` list call recorded on the mock."""
+    for recorded in tasks_api.get.call_args_list:
+        if recorded.args and recorded.args[0] == "/":
+            return recorded.kwargs.get("params", {})
+    return {}
 
 
 class TestRouterComposition:
@@ -662,21 +686,26 @@ class TestExtraRoutePrecedence:
     def test_extra_route_does_not_shadow_derived_detail(
         self, regular_user: CasdoorUser
     ) -> None:
-        """Assert a colliding extra route loses to the first-registered derived one."""
+        """Assert a fixed extra ``GET`` loses to the greedy derived detail route.
+
+        A custom ``GET /{task_name}`` is rejected at construction (see the
+        detail-suppress validator), so the precedence is demonstrated with a fixed
+        ``GET /ping`` extra route that the greedy detail still captures.
+        """
         colliding = APIRouter()
 
-        @colliding.get("/{task_name}", dependencies=[IsApiAuthenticated])
-        async def _shadow(task_name: str) -> dict[str, str]:
-            return {"shadowed": task_name}
+        @colliding.get("/ping", dependencies=[IsApiAuthenticated])
+        async def _shadow() -> dict[str, str]:
+            return {"shadowed": "ping"}
 
-        tasks_api = _make_tasks_api(detail_task=_task_dict("t-1"))
+        tasks_api = _make_tasks_api(detail_task=_task_dict("ping"))
         client = _client(_synth_app(extra_routes=(colliding,)), tasks_api, regular_user)
 
-        response = client.get(f"{_BASE}/t-1")
+        response = client.get(f"{_BASE}/ping")
 
         assert response.status_code == status.HTTP_200_OK
         assert "shadowed" not in response.json()
-        assert response.json()["name"] == "t-1"
+        assert response.json()["name"] == "ping"
 
 
 class TestDefinitionValidation:
@@ -772,8 +801,27 @@ class TestDefinitionValidation:
                 create_form_encoded=True,
             )
 
+    def test_detail_suppressed_without_custom_detail_raises(self) -> None:
+        """Assert ``capabilities.detail=False`` needs a custom detail extra route."""
+        with pytest.raises(ValueError, match="capabilities.detail"):
+            _synth_app(capabilities=AppCapabilities(detail=False))
+
+    def test_detail_enabled_with_custom_detail_route_raises(self) -> None:
+        """Assert a custom ``GET /{task_name}`` with derived detail on is rejected."""
+        with pytest.raises(ValueError, match="shadowed by the greedy derived detail"):
+            _synth_app(extra_routes=(_custom_detail_router(),))
+
+    def test_detail_suppressed_with_detail_model_raises(self) -> None:
+        """Assert a detail-builder override is dead config when detail is suppressed."""
+        with pytest.raises(ValueError, match="dead config"):
+            _synth_app(
+                capabilities=AppCapabilities(detail=False),
+                extra_routes=(_custom_detail_router(),),
+                detail_response_model=_SynthResponse,
+            )
+
     def test_service_type_filter_without_service_type_raises(self) -> None:
-        """Assert ``list_service_type_filter`` without a ``service_type`` is rejected."""
+        """Assert ``list_filter.service_type`` without a ``service_type`` is rejected."""
         with pytest.raises(ValueError, match="service_type"):
             _synth_app(service_type=None)
 
@@ -1068,7 +1116,7 @@ class TestResponseAndFilterKnobs:
     def test_status_filter_exposes_status_query_param(
         self, regular_user: CasdoorUser
     ) -> None:
-        """Assert ``list_status_filter`` adds a ``status`` query param to the route."""
+        """Assert ``list_filter.status`` adds a ``status`` query param to the route."""
         names = _list_query_param_names(_synth_app(), regular_user)
 
         assert "status" in names
@@ -1076,7 +1124,7 @@ class TestResponseAndFilterKnobs:
     def test_service_type_filter_exposes_service_type_query_param(
         self, regular_user: CasdoorUser
     ) -> None:
-        """Assert ``list_service_type_filter`` adds a ``service_type`` query param."""
+        """Assert ``list_filter.service_type`` adds a ``service_type`` query param."""
         names = _list_query_param_names(_synth_app(), regular_user)
 
         assert "service_type" in names
@@ -1085,12 +1133,52 @@ class TestResponseAndFilterKnobs:
         self, regular_user: CasdoorUser
     ) -> None:
         """Assert an app with both filters off exposes neither filter query param."""
-        app_def = _synth_app(list_status_filter=False, list_service_type_filter=False)
+        app_def = _synth_app(list_filter=ListFilterConfig())
 
         names = _list_query_param_names(app_def, regular_user)
 
         assert "status" not in names
         assert "service_type" not in names
+
+    def test_roots_only_sends_parent_is_null_upstream(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert ``roots_only`` threads ``parent_is_null=true`` to the upstream list."""
+        app_def = _synth_app(list_filter=ListFilterConfig(roots_only=True))
+        tasks_api = _make_tasks_api(list_items=[])
+        client = _client(app_def, tasks_api, regular_user)
+
+        client.get(f"{_BASE}/")
+
+        assert _list_upstream_params(tasks_api).get("parent_is_null") == "true"
+
+    def test_extra_params_sent_upstream(self, regular_user: CasdoorUser) -> None:
+        """Assert ``extra_params`` are threaded verbatim to the upstream list."""
+        app_def = _synth_app(
+            list_filter=ListFilterConfig(extra_params={"backup_type": "pbm_config"})
+        )
+        tasks_api = _make_tasks_api(list_items=[])
+        client = _client(app_def, tasks_api, regular_user)
+
+        client.get(f"{_BASE}/")
+
+        assert _list_upstream_params(tasks_api).get("backup_type") == "pbm_config"
+
+    def test_detail_suppressed_uses_custom_extra_route(
+        self, regular_user: CasdoorUser
+    ) -> None:
+        """Assert a suppressed derived detail lets the custom extra route serve ``GET``."""
+        app_def = _synth_app(
+            capabilities=AppCapabilities(detail=False),
+            extra_routes=(_custom_detail_router(),),
+        )
+        tasks_api = _make_tasks_api(detail_task=_task_dict("t-1"))
+        client = _client(app_def, tasks_api, regular_user)
+
+        response = client.get(f"{_BASE}/t-1")
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json() == {"custom_detail": "t-1"}
 
     def test_response_builder_override_drives_list_model(self) -> None:
         """Assert a ``response_builder`` override supplies the list response model."""

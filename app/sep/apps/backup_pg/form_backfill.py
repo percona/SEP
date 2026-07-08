@@ -24,7 +24,8 @@ import yaml
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_pg.deps import parse_backup_task_data
 from app.sep.apps.backup_pg.models import BackupPgForm
-from app.sep.apps.framework.form_backfill_inventory import meta_service_hints
+from app.sep.apps.framework.form_backfill_guards import require_run_python_meta
+from app.sep.apps.framework.form_backfill_inventory import resolve_service_from_meta
 
 if TYPE_CHECKING:
     from app.sep.apps.framework.form_backfill import FormBackfillContext
@@ -70,16 +71,8 @@ def reconstruct_backup_pg_form(
     :param ctx: Shared backfill context carrying the inventory lookup table.
     :return: A create-model-shaped dict, or ``None`` when reconstruction fails.
     """
-    if ctx.service_lookup is None:
-        return None
-
-    data = task.data
-    meta = data.get("meta")
-    if (
-        data.get("task") != "run-python"
-        or not isinstance(meta, dict)
-        or "config" not in meta
-    ):
+    meta = require_run_python_meta(task)
+    if meta is None:
         return None
 
     stanza = _extract_stanza_from_meta(meta)
@@ -87,21 +80,17 @@ def reconstruct_backup_pg_form(
         return None
 
     try:
-        parsed = parse_backup_task_data({"name": task.name, "data": data})
+        parsed = parse_backup_task_data({"name": task.name, "data": task.data})
     except (KeyError, TypeError, yaml.YAMLError):
         return None
 
     hostname = parsed.get("hostname")
-    host, port, service_name = meta_service_hints(
+    service_id = resolve_service_from_meta(
+        ctx,
         meta,
+        ServiceTypeEnum.POSTGRESQL,
         host=parsed.get("host"),
         port=parsed.get("port"),
-    )
-    service_id = ctx.service_lookup.resolve(
-        service_type=ServiceTypeEnum.POSTGRESQL,
-        host=host,
-        port=port,
-        service_name=service_name,
     )
     if not isinstance(hostname, str) or not hostname.strip() or service_id is None:
         return None

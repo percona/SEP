@@ -25,12 +25,10 @@ serialise the pgBackRest YAML config and injects :attr:`BackupType.PGBACKREST`
 ``target``, ``_service_name``, and the connectivity meta keys around this spec.
 """
 
-from pathlib import Path
-
 import yaml
 from fastapi.encoders import jsonable_encoder
 
-from app.core.utils.path import to_payload_reference
+from app.core.utils.path import payload_uri
 from app.sep.apps.backup_pg.models import (
     BackupConfig,
     BackupConfigAll,
@@ -79,12 +77,10 @@ def build_backup_pg_spec(
         server_list=[BackupConfigServer.model_validate(server_config)],
     )
 
-    payload_path = Path(__file__).parent / "payload"
-
     return RunPythonSpec(
         config=yaml.dump(
             jsonable_encoder(backup_config, by_alias=True, exclude_none=True)
         ),
         requirements=_REQUIREMENTS,
-        payload=to_payload_reference(payload_path),
+        payload=payload_uri(__file__, "payload"),
     )

@@ -52,7 +52,11 @@ from app.sep.apps.backup_pg.models import (
 from app.sep.apps.backup_pg.routes import router as jinja_router
 from app.sep.apps.backup_pg.spec import build_backup_pg_spec
 from app.sep.apps.backup_pg.views import backup_pg_views
-from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp
+from app.sep.apps.framework.apps import (
+    AppCapabilities,
+    ListFilterConfig,
+    TaskExecutionApp,
+)
 from app.sep.deps import HasNoConflictedRunningTasks
 from app.tasks.models import TaskOwner
 
@@ -60,6 +64,7 @@ app = TaskExecutionApp(
     name="backup_pg",
     display_name="PostgreSQL Backups",
     uri_path="/backup_pg",
+    css_class="backup_pg",
     group="backups",
     nav_order=10,
     description=(
@@ -71,11 +76,10 @@ app = TaskExecutionApp(
     response_model=BackupTaskResponse,
     views=backup_pg_views,
     task_spec_builder=build_backup_pg_spec,
-    capabilities=AppCapabilities(create=True, execute=True, update=True, delete=True),
+    capabilities=AppCapabilities(update=True, delete=True),
     service_type=ServiceTypeEnum.POSTGRESQL,
     pagination=make_pagination_dep(),
-    list_status_filter=True,
-    list_service_type_filter=False,
+    list_filter=ListFilterConfig(status=True),
     response_builder=build_backup_pg_api_task_response,
     detail_response_builder=build_backup_pg_api_detail_response,
     detail_response_model=BackupTaskDetailResponse,

@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Pydantic models for PMM health report data."""
+"""Define Pydantic models for PMM health report data and API request/response models."""
 
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -391,3 +391,31 @@ class ReportData(BaseModel):
     storage: StorageSection = Field(default_factory=StorageSection)
     uptime: UptimeSection = Field(default_factory=UptimeSection)
     inventory: InventorySection = Field(default_factory=InventorySection)
+
+
+class ReportSnapshotWrite(BaseModel):
+    """Define report snapshot body for PDF/upload jobs.
+
+    :param report: Generated report snapshot reused for PDF/upload work.
+    """
+
+    report: ReportData
+
+
+class ReportJobResponse(BaseModel):
+    """Expose async report job state.
+
+    :param job_id: Celery task identifier.
+    :param status: Lowercase Celery task state.
+    :param pdf_ready: Whether the PDF result exists and is downloadable.
+    :param result: Successful job result payload, if available.
+    :param error: Failed job error text, if available.
+    """
+
+    job_id: str
+    status: str
+    pdf_ready: bool = False
+    result: dict[str, Any] | None = Field(
+        default=None, json_schema_extra={"additionalProperties": True}
+    )
+    error: str | None = None

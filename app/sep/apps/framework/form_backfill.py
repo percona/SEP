@@ -295,7 +295,7 @@ def _backfill_single_task(
     entry: _BackfillApp,
     ctx: FormBackfillContext,
 ) -> _TaskBackfillOutcome:
-    """Run the reconstruct → validate → stamp pipeline for one task.
+    """Skip ineligible tasks, then run the reconstruct → validate → stamp pipeline.
 
     :param task: The legacy task row to backfill.
     :param entry: The in-scope app definition and reconstructor.
@@ -311,6 +311,29 @@ def _backfill_single_task(
         )
         return _TaskBackfillOutcome("skipped_existing")
 
+    if ctx.service_lookup is None:
+        ctx.log.info(
+            "[%s] %s: no inventory service lookup; skipping",
+            entry.app_name,
+            task.name,
+        )
+        return _TaskBackfillOutcome("skipped_unreconstructable")
+
+    return _reconstruct_validate_stamp(task, entry, ctx)
+
+
+def _reconstruct_validate_stamp(
+    task: Task,
+    entry: _BackfillApp,
+    ctx: FormBackfillContext,
+) -> _TaskBackfillOutcome:
+    """Reconstruct, validate, and stamp ``data['_form']`` for an eligible task.
+
+    :param task: The legacy task row to backfill.
+    :param entry: The in-scope app definition and reconstructor.
+    :param ctx: Shared backfill context.
+    :return: The outcome label and optional stamped ``data`` dict to persist.
+    """
     try:
         raw_form = entry.reconstructor(task, ctx)
     except Exception:
