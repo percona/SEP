@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from traceback import format_exception
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -33,6 +34,7 @@ from starlette.staticfiles import StaticFiles
 from app import __summary__, __version__
 from app.api.main import api_router as top_level_api_router
 from app.core.alerts.config import alert_settings, AlertSettings
+from app.core.auth import config as auth_config
 from app.core.auth.exceptions import BaseAuthProviderException
 from app.core.auth.utils import get_user_model
 from app.core.celery.utils import init_periodic_tasks_db
@@ -70,6 +72,7 @@ from app.sep.deps import (
     IsNotAuthenticated,
     PROTECTED_APP_KEYS,
     require_app_enabled,
+    resolve_ambient_session_token,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
@@ -88,15 +91,34 @@ JSON_API_PATH_PREFIXES: tuple[str, ...] = (
 )
 
 
+def warn_if_ambient_sso_inert() -> None:
+    """Emit a warning when ambient SSO is enabled but the active provider can't honor it.
+
+    Catch the static (env/YAML) misconfiguration at startup; the admin-UI
+    applicability toggle covers the live case. Advisory only -- the runtime
+    resolver no-ops regardless.
+    """
+    if (
+        sep_settings.AMBIENT_SESSION_SSO_ENABLED
+        and not auth_config.get_active_auth_provider().supports_ambient_session
+    ):
+        logger.warning(
+            "AMBIENT_SESSION_SSO_ENABLED is on but the active auth provider does "
+            "not support ambient sessions; ambient auto-login will not occur."
+        )
+
+
 async def sep_startup() -> None:
     """Define actions to perform on SEP startup.
 
-    Initialize the SEP periodic task database and trigger the initial
-    synchronization of snippets if configured to do so.
+    Initialize the SEP periodic task database, trigger the initial snippets
+    synchronization if configured, and warn when ambient SSO is enabled under a
+    provider that cannot honor it.
     """
     await init_sep_db()
     if snippets_settings.SYNC_ON_STARTUP:
         sync_snippets.delay()
+    warn_if_ambient_sso_inert()
 
 
 def _make_remote_api_rebinder(
@@ -378,7 +400,9 @@ for app in get_app_registry():
     if app.jinja_router is None:
         continue
     plugin_deps = (
-        [] if app.key in PROTECTED_APP_KEYS else [Depends(require_app_enabled(app.key))]
+        []
+        if app.state_key in PROTECTED_APP_KEYS
+        else [Depends(require_app_enabled(app.state_key))]
     )
     sep_app.include_router(
         app.jinja_router, prefix=app.uri_path, dependencies=plugin_deps
@@ -623,11 +647,61 @@ async def request_validation_exception_handler(
     )
 
 
-@sep_app.get("/login", dependencies=[IsNotAuthenticated], include_in_schema=False)
+def _safe_next_path(next_path: str) -> str:
+    r"""Validate a ``next`` redirect target, collapsing unsafe values to ``/``.
+
+    Validate ``next_path`` as a same-origin ``URIPath`` so the password login and
+    the ambient auto-login reject open-redirect targets identically. ``URIPath``
+    alone still admits scheme-relative (``//host``) and backslash (``/\host``)
+    targets that a browser follows off-origin, so also reject any value that a
+    browser would resolve to a foreign host.
+
+    :param next_path: The raw ``next`` query value.
+    :return: The validated relative path, or ``/`` when ``next_path`` is not a
+        safe same-origin path.
+    """
+    try:
+        validated = run_pydantic_type_validator(URIPath, next_path)
+    except ValidationError:
+        return "/"
+    if validated.startswith(("//", "/\\")) or urlsplit(validated).netloc:
+        return "/"
+    return validated
+
+
+@sep_app.get(
+    "/login",
+    dependencies=[IsNotAuthenticated],
+    include_in_schema=False,
+    response_model=None,
+)
 async def login_form(
     request: Request, next_path: Annotated[str, Query(alias="next")] = "/"
-) -> HTMLResponse:
-    """Display login form."""
+) -> HTMLResponse | RedirectResponse:
+    """Serve the login form, or auto-login from an ambient Grafana session.
+
+    Attempt ambient Grafana SSO before rendering: on a valid ambient session,
+    redirect to the sanitized ``next`` target with the SEP session cookie set;
+    otherwise render the login form unchanged.
+
+    :param request: The incoming request, carrying any ambient Grafana session
+        cookie.
+    :param next_path: The post-login redirect target (the ``next`` query param).
+    :return: A redirect carrying the session cookie on ambient auto-login, else
+        the rendered login form.
+    """
+    oauth_token = await resolve_ambient_session_token(request)
+    if oauth_token is not None:
+        response = RedirectResponse(
+            _safe_next_path(next_path), status_code=status.HTTP_303_SEE_OTHER
+        )
+        response.set_cookie(
+            **sep_settings.SESSION.model_dump(by_alias=True),
+            value=crypto_timestamp_serializer.dumps(oauth_token.access_token),
+            httponly=True,
+        )
+        response.delete_cookie(CSRF_COOKIE_NAME)
+        return response
     return templates.TemplateResponse(
         request=request,
         name="login.html.j2",
@@ -657,11 +731,9 @@ async def login(
         await User.invalidate_tokens_for_user(
             form_data.username, exclude_tokens=[oauth_token.access_token]
         )
-    try:
-        next_path = run_pydantic_type_validator(URIPath, next_path)
-    except ValidationError:
-        next_path = "/"
-    response = RedirectResponse(next_path, status_code=status.HTTP_303_SEE_OTHER)
+    response = RedirectResponse(
+        _safe_next_path(next_path), status_code=status.HTTP_303_SEE_OTHER
+    )
     response.set_cookie(
         **sep_settings.SESSION.model_dump(by_alias=True),
         value=crypto_timestamp_serializer.dumps(oauth_token.access_token),

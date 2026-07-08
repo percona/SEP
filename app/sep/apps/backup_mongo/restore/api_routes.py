@@ -13,12 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the JSON API router for the backup_mongo restores plugin.
+"""Define the custom JSON API routes for the backup_mongo restore app.
 
-Mounted at ``/api/apps/backup_mongo/restores/`` via
-``include_router`` on the backup_mongo ``api_routes`` router. Authentication is
-enforced at the ``api_router`` level; ``schema_endpoint`` pins
-``IsApiAuthenticated`` per route for safety.
+The declarative :class:`~app.sep.apps.framework.apps.TaskExecutionApp` in
+``app.py`` derives the ``GET /schema`` and ``POST /{task_name}/execute`` routes;
+this router carries the routes the restore task group keeps custom — the union
+list, the sibling-aggregating detail, and the cascade create / update / delete —
+served as the app's ``extra_routes``. The derived list and detail are suppressed
+(``capabilities.list=False`` / ``capabilities.detail=False``) so these custom
+routes win their paths. Authentication is inherited from the ``/api`` router.
 """
 
 import logging
@@ -36,7 +39,6 @@ from app.sep.apps.backup_mongo.restore.deps import (
     get_restore_mongo_api_task_responses,
     get_restores_task,
     RestoreParentTask,
-    RestoresTask,
     RestoreTaskGroupFromBody,
     RestoreUpdateFormFromBody,
     UnprotectedRestoreParentTask,
@@ -46,9 +48,7 @@ from app.sep.apps.backup_mongo.restore.models import (
     RestoreTaskDetailResponse,
     RestoreTaskResponse,
 )
-from app.sep.apps.backup_mongo.restore.schema import restore_mongo_schema
-from app.sep.apps.framework import get_task_latest_status
-from app.sep.apps.framework.api import derive_execute_route, schema_endpoint
+from app.sep.apps.framework import get_task_latest_history
 from app.sep.deps import (
     HasNoConflictedRunningTasks,
     InventoryAPI,
@@ -59,7 +59,6 @@ from app.tasks.models import TaskHistoryStatusEnum
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-schema_endpoint(router=router, plugin_schema=restore_mongo_schema)
 
 
 @router.get("/")
@@ -135,16 +134,10 @@ async def restore_mongo_api_update(
         form,
         inventory_api,
     )
-    task_status = await get_task_latest_status(tasks_api, updated_task.name)
-    return build_restore_mongo_api_task_response(updated_task, status=task_status)
-
-
-derive_execute_route(
-    router,
-    name="restore_mongo_api_execute",
-    description="Execute a restore task.",
-    task_dep=RestoresTask,
-)
+    latest = await get_task_latest_history(tasks_api, updated_task.name)
+    return build_restore_mongo_api_task_response(
+        updated_task, status=latest.status, last_executed_at=latest.finished_at
+    )
 
 
 @router.delete("/{task_name}", status_code=http_status.HTTP_204_NO_CONTENT)

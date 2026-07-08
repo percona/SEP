@@ -13,11 +13,18 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the app.core.fields module."""
+"""Define tests for the app.core.utils.fields module."""
 
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
-from app.core.utils.fields import URL
+from app.core.utils.fields import (
+    bounded_int_from_empty_str_factory,
+    TCP_PORT_MAX,
+    TCP_PORT_MIN,
+    TcpPort,
+    URL,
+)
 from app.core.utils.imports import (
     validate_attribute_is_importable,
     validate_module_is_importable,
@@ -67,3 +74,56 @@ def test_get_pydantic_json_schema():
     result = URL.__get_pydantic_json_schema__(mock_core_schema, mock_handler)
 
     assert result == expected_schema
+
+
+class TestTcpPort:
+    """Cover the ``TcpPort`` constrained TCP-port field type."""
+
+    @pytest.mark.parametrize("port", [TCP_PORT_MIN, 443, TCP_PORT_MAX])
+    def test_accepts_ports_in_range(self, port: int) -> None:
+        """Accept ports within the inclusive 1-65535 range."""
+        assert TypeAdapter(TcpPort).validate_python(port) == port
+
+    @pytest.mark.parametrize("port", [0, TCP_PORT_MAX + 1, -1])
+    def test_rejects_ports_out_of_range(self, port: int) -> None:
+        """Reject ports outside the 1-65535 range."""
+        with pytest.raises(ValidationError):
+            TypeAdapter(TcpPort).validate_python(port)
+
+
+class TestBoundedIntFromEmptyStrFactory:
+    """Cover the bounded optional-int-from-empty-string field factory."""
+
+    def test_blank_coerces_to_none(self) -> None:
+        """Coerce an empty string to ``None``."""
+        adapter = TypeAdapter(bounded_int_from_empty_str_factory(0, 3))
+        assert adapter.validate_python("") is None
+
+    def test_numeric_string_coerces_to_int(self) -> None:
+        """Coerce a numeric form string to the equivalent int."""
+        adapter = TypeAdapter(bounded_int_from_empty_str_factory(0, 3))
+        level = 2
+        assert adapter.validate_python(str(level)) == level
+
+    @pytest.mark.parametrize("value", [0, 3])
+    def test_boundary_values_accepted(self, value: int) -> None:
+        """Accept the inclusive ends of the bounded range."""
+        adapter = TypeAdapter(bounded_int_from_empty_str_factory(0, 3))
+        assert adapter.validate_python(value) == value
+
+    @pytest.mark.parametrize("value", [4, -1, "abc"])
+    def test_out_of_range_or_garbage_rejected(self, value: int | str) -> None:
+        """Reject values outside the range or non-numeric input."""
+        adapter = TypeAdapter(bounded_int_from_empty_str_factory(0, 3))
+        with pytest.raises(ValidationError):
+            adapter.validate_python(value)
+
+    def test_lower_bound_only_factory(self) -> None:
+        """Coerce blanks and enforce only the lower bound when no upper bound is set."""
+        adapter = TypeAdapter(bounded_int_from_empty_str_factory(0))
+        large = 1_000_000
+        assert adapter.validate_python("") is None
+        assert adapter.validate_python(0) == 0
+        assert adapter.validate_python(large) == large
+        with pytest.raises(ValidationError):
+            adapter.validate_python(-1)

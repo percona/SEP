@@ -37,9 +37,11 @@ from pydantic import BaseModel
 
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.framework.apps import AppCapabilities, TaskExecutionApp, Views
+from app.sep.apps.framework.base import BaseApp
 from app.sep.apps.framework.conformance import (
     CAPABILITY_RENDERED_CONTROLS,
     check_capability_route_consistency,
+    check_child_app_registration,
     check_form_conformance,
     check_no_duplicate_capability_control,
     check_route_collisions,
@@ -144,6 +146,17 @@ def _post_root_router() -> APIRouter:
 
     @router.post("/")
     async def _create() -> dict:
+        return {}
+
+    return router
+
+
+def _get_root_router() -> APIRouter:
+    """Return an extra router that supplies a custom ``GET /`` list route."""
+    router = APIRouter()
+
+    @router.get("/")
+    async def _list() -> dict:
         return {}
 
     return router
@@ -354,6 +367,81 @@ def test_capability_route_consistency_execute_ignores_custom_detail_path_param()
         execute_response_model=_ExecuteResponse,
     )
     assert check_capability_route_consistency(app) == []
+
+
+def test_capability_route_consistency_allows_list_suppress():
+    """Assert a ``list=False`` app with a custom ``GET /`` reports no violation."""
+    app = _build_app(
+        capabilities=AppCapabilities(execute=False, list=False),
+        extra_routes=(_get_root_router(),),
+    )
+    assert check_capability_route_consistency(app) == []
+
+
+def test_capability_route_consistency_flags_list_leak_alongside_custom():
+    """Assert a leaked derived ``GET /`` is caught even beside a custom list route."""
+    app = _build_app(
+        capabilities=AppCapabilities(execute=False, list=False),
+        extra_routes=(_get_root_router(),),
+    )
+    app.api_router.routes.extend(_get_root_router().routes)
+    violations = check_capability_route_consistency(app)
+    assert any("list" in v and "GET" in v for v in violations)
+
+
+# --- check_child_app_registration ---------------------------------------------
+
+
+def _child(key: str, *, parent_key: str) -> BaseApp:
+    """Build a minimal parent-bound child ``BaseApp`` for conformance tests."""
+    return BaseApp(
+        key=key,
+        name=key.replace("/", "_"),
+        display_name=key,
+        uri_path=f"/{key}",
+        parent_key=parent_key,
+    )
+
+
+def _parent(key: str, *children: BaseApp) -> BaseApp:
+    """Build a minimal parent ``BaseApp`` carrying ``children`` as ``child_apps``."""
+    return BaseApp(
+        key=key,
+        name=key,
+        display_name=key,
+        uri_path=f"/{key}",
+        child_apps=children,
+    )
+
+
+def test_child_registration_clean_binding():
+    """Assert a registered parent/child pair reports no violation."""
+    child = _child("backups/restore", parent_key="backups")
+    parent = _parent("backups", child)
+    assert check_child_app_registration([parent, child]) == []
+
+
+def test_child_registration_flags_unregistered_child():
+    """Assert a ``child_apps`` entry absent from the registry is flagged."""
+    child = _child("backups/restore", parent_key="backups")
+    parent = _parent("backups", child)
+    violations = check_child_app_registration([parent])
+    assert any("backups/restore" in v for v in violations)
+
+
+def test_child_registration_flags_parent_key_mismatch():
+    """Assert a child whose ``parent_key`` does not name its declaring parent is flagged."""
+    child = _child("backups/restore", parent_key="wrong_parent")
+    parent = _parent("backups", child)
+    violations = check_child_app_registration([parent, child])
+    assert violations
+
+
+def test_child_registration_flags_orphan_parent_key():
+    """Assert an app whose ``parent_key`` resolves to no registered parent is flagged."""
+    orphan = _child("ghost/restore", parent_key="ghost")
+    violations = check_child_app_registration([orphan])
+    assert any("ghost" in v for v in violations)
 
 
 # --- check_view_fields_reference_real_fields ----------------------------------
@@ -569,6 +657,11 @@ def test_registry_migrated_app_structural_checks(registry_app):
 def test_registry_has_no_route_collisions():
     """Assert no two registry routes share a ``(path, method)`` signature."""
     assert check_route_collisions(_REGISTRY) == []
+
+
+def test_registry_child_app_registration():
+    """Assert every parent/child binding in the live registry is consistent."""
+    assert check_child_app_registration(_REGISTRY) == []
 
 
 def test_registry_openapi_builds():

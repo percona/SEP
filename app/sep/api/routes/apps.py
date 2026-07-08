@@ -87,21 +87,21 @@ def build_navigation_react_route(app_key: str, react_route: URIPath | None) -> U
 async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
     """Return per-app state for the current user's navigation.
 
-    Protected apps are always reported ``enabled=True``. Non-protected apps
-    reflect their DB state (a missing row -> ``enabled=True``: a configured
-    plugin is active until explicitly disabled).
+    Protected apps are always reported ``enabled=True``. Every other app reflects
+    the DB state of the row governing it (a missing row -> ``enabled=True``: a
+    configured plugin is active until explicitly disabled). A child app owns no
+    row, so it resolves through its parent via
+    :attr:`~app.sep.apps.framework.base.BaseApp.state_key`.
 
     :param session: The database session.
-    :type session: SessionDep
     :return: The per-app navigation list.
-    :rtype: list[AppKeyResponse]
     """
     states = await AppStateManager.all_lifecycle_states(session)
     return [
         AppKeyResponse(
             app_key=app.key,
-            enabled=app.key in PROTECTED_APP_KEYS
-            or states.get(app.key, AppLifecycleEnum.ENABLED)
+            enabled=app.state_key in PROTECTED_APP_KEYS
+            or states.get(app.state_key, AppLifecycleEnum.ENABLED)
             == AppLifecycleEnum.ENABLED,
             sidebar=app.sidebar,
             uri_path=app.uri_path,

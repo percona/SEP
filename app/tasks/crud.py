@@ -42,6 +42,7 @@ from app.tasks.models import (
     Task,
     TaskBackendEnum,
     TaskHistory,
+    TaskHistoryLatestStatus,
     TaskHistoryLog,
     TaskHistoryLogState,
     TaskHistoryStatusEnum,
@@ -586,20 +587,21 @@ class TaskHistoryManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         names: Sequence[str],
-    ) -> dict[str, TaskHistoryStatusEnum | None]:
-        """Return the latest known history status for each task name.
+    ) -> dict[str, TaskHistoryLatestStatus | None]:
+        """Return the latest known history projection for each task name.
 
         Status resolution matches SEP list helpers: histories are considered in
-        ``created_at`` descending order and the first non-null status wins.
+        ``created_at`` descending order and the newest non-null status wins.
+        ``finished_at`` is resolved independently as the ``max`` across all of a
+        task's history rows, so an in-progress re-run (whose newest row has a
+        null ``finished_at``) still reports the prior completion time.
 
-        :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
+        :param session: The asynchronous session used for query execution.
         :param names: Task names to resolve. Duplicates are ignored; order is
             preserved in the returned mapping.
-        :type names: Sequence[str]
-        :return: A mapping of task name to latest status, or ``None`` when no
-            history exists or every history row has a null status.
-        :rtype: dict[str, TaskHistoryStatusEnum | None]
+        :return: A mapping of task name to its latest-history projection (newest
+            status plus the ``max`` ``finished_at``), or ``None`` when no history
+            exists or every history row has a null status.
         """
         unique_names = list(dict.fromkeys(names))
         if not unique_names:
@@ -609,6 +611,9 @@ class TaskHistoryManager(BaseSQLModelManager):
             select(
                 col(Task.name).label("task_name"),
                 col(TaskHistory.status).label("status"),
+                func.max(col(TaskHistory.finished_at))
+                .over(partition_by=col(Task.name))
+                .label("last_finished_at"),
                 func.row_number()
                 .over(
                     partition_by=col(Task.name),
@@ -630,14 +635,19 @@ class TaskHistoryManager(BaseSQLModelManager):
         query = select(
             latest_status_subquery.c.task_name,
             latest_status_subquery.c.status,
+            latest_status_subquery.c.last_finished_at,
         ).where(
             latest_status_subquery.c.row_number == 1,
         )
         result = await cls._exec(session, query)
-        rows = result.all()
-        statuses_by_name = dict(rows)
+        latest_by_name = {
+            row.task_name: TaskHistoryLatestStatus(
+                status=row.status, finished_at=row.last_finished_at
+            )
+            for row in result.all()
+        }
 
-        return {name: statuses_by_name.get(name) for name in unique_names}
+        return {name: latest_by_name.get(name) for name in unique_names}
 
 
 class TaskHistoryLogManager(BaseSQLModelManager):

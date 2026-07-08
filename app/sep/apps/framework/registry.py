@@ -171,6 +171,29 @@ def _bind_definition(definition: BaseApp, plugin: App, auto_key: str) -> BaseApp
     return definition.model_copy(update=overrides)
 
 
+def _bind_child_apps(parent: BaseApp) -> list[BaseApp]:
+    """Return a parent's ``child_apps`` stamped for registration.
+
+    Each child inherits the parent's activation state (``enabled``) so it is
+    mounted and snapshotted exactly when the parent is. A child owns no
+    ``settings.yaml`` entry, so it carries its own scoped ``key`` and must name
+    the parent via ``parent_key``.
+
+    :param parent: The bound parent app whose children are being registered.
+    :return: The parent's children, each with ``enabled`` stamped from the parent.
+    :raises ValueError: When a child's ``parent_key`` does not name the parent.
+    """
+    children = []
+    for child in parent.child_apps:
+        if child.parent_key != parent.key:
+            raise ValueError(
+                f"App '{parent.key}': child '{child.key}' declares parent_key "
+                f"'{child.parent_key}', expected '{parent.key}'"
+            )
+        children.append(child.model_copy(update={"enabled": parent.enabled}))
+    return children
+
+
 def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
     """Build an :class:`AppRegistry` from an activation list.
 
@@ -187,7 +210,9 @@ def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
         auto_key = _derive_app_key(plugin.module_name)
         definition = getattr(import_module(plugin.module_name), "app", None)
         if isinstance(definition, BaseApp):
-            apps.append(_bind_definition(definition, plugin, auto_key))
+            bound = _bind_definition(definition, plugin, auto_key)
+            apps.append(bound)
+            apps.extend(_bind_child_apps(bound))
         else:
             apps.append(_synthesize_legacy_app(plugin, auto_key))
     return AppRegistry(apps)

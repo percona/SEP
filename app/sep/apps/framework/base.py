@@ -58,6 +58,15 @@ class BaseApp(BaseModel):
     :param jinja_router: The plugin's Jinja ``APIRouter``.
     :param app_schema: The plugin's schema definition, aliased ``schema`` for
         authoring; ``None`` for legacy-wrapped apps.
+    :param parent_key: The key of the parent app that structurally owns this one,
+        or ``None`` for a top-level app. A child is registered by its parent's
+        ``child_apps`` (never a ``settings.yaml`` entry) and owns no ``AppState``
+        row: its runtime enabled/lifecycle state derives from the parent's (see
+        :attr:`state_key`), and it cannot be toggled independently.
+    :param child_apps: Pre-built child apps this app structurally owns. The
+        registry appends each right after this app and stamps its ``enabled`` from
+        this app's, so a child is mounted and snapshotted exactly when its parent
+        is. Each child must set ``parent_key`` to this app's key.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)
@@ -77,6 +86,8 @@ class BaseApp(BaseModel):
     api_router: APIRouter | None = None
     jinja_router: APIRouter | None = None
     app_schema: AppSchema | None = Field(default=None, alias="schema")
+    parent_key: str | None = None
+    child_apps: tuple["BaseApp", ...] = ()
 
     @model_validator(mode="before")
     @classmethod
@@ -92,3 +103,15 @@ class BaseApp(BaseModel):
         if not isinstance(name, str):
             return data
         return {**data, "display_name": name}
+
+    @property
+    def state_key(self) -> str:
+        """Return the app key whose ``AppState`` row governs this app's runtime state.
+
+        A child app owns no ``AppState`` row: its enabled/lifecycle state is the
+        parent's, so every state lookup resolves through ``parent_key``. A
+        top-level app resolves to its own ``key``.
+
+        :return: ``parent_key`` for a child app, otherwise ``key``.
+        """
+        return self.parent_key or self.key

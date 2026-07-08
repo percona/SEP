@@ -232,7 +232,12 @@ class TestAltersApiList:
             }
         )
         mock_task_api_dep.post = AsyncMock(
-            return_value={DEFAULT_PARENT_NAME: TaskHistoryStatusEnum.SUCCESS.value}
+            return_value={
+                DEFAULT_PARENT_NAME: {
+                    "status": TaskHistoryStatusEnum.SUCCESS.value,
+                    "finished_at": "2026-07-07T09:00:00",
+                }
+            }
         )
 
         response = test_client.get(f"{API_BASE}/")
@@ -245,10 +250,14 @@ class TestAltersApiList:
         assert row["name"] == DEFAULT_PARENT_NAME
         assert row["service_type"] == ServiceTypeEnum.MYSQL.value
         assert row["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        assert row["last_executed_at"] == "2026-07-07T09:00:00"
         assert "anonymize_mask" in row
         assert isinstance(row["anonymized_entities"], list)
         assert "connectivity_warning" in row
         assert row["connectivity_warning"] is None
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest", json={"names": [DEFAULT_PARENT_NAME]}
+        )
         list_call = next(
             call
             for call in mock_task_api_dep.get.await_args_list

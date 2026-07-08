@@ -109,6 +109,11 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 // handle it cleanly.
 const isRefreshRequest = (url: string | undefined) => !!url && url.includes('/oauth/refresh');
 const isLoginRequest = (url: string | undefined) => !!url && url.includes('/oauth/login');
+// Ambient auto-login is a bootstrap recovery call like refresh: its 401 must
+// surface to the caller (the AuthProvider bootstrap) instead of triggering the
+// retry loop or a hard `_onUnauthorized` redirect that would fight the
+// React-side fallback.
+const isSessionRequest = (url: string | undefined) => !!url && url.includes('/oauth/session');
 
 // Internal marker so retried requests don't loop through the refresh path
 // again on a second 401.
@@ -193,7 +198,8 @@ apiClient.interceptors.response.use(
         config &&
         !config._retried &&
         !isRefreshRequest(url) &&
-        !isLoginRequest(url)
+        !isLoginRequest(url) &&
+        !isSessionRequest(url)
       ) {
         const newToken = await refreshAccessToken();
         if (newToken) {
@@ -208,7 +214,11 @@ apiClient.interceptors.response.use(
         }
         // Refresh failed — treat as unauthorized.
         _onUnauthorized();
-      } else if ((status === 401 || status === 303) && !isRefreshRequest(url)) {
+      } else if (
+        (status === 401 || status === 303) &&
+        !isRefreshRequest(url) &&
+        !isSessionRequest(url)
+      ) {
         // Retried request still 401, or non-retriable 401 (e.g. login itself).
         _onUnauthorized();
       }

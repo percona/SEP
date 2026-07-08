@@ -228,8 +228,8 @@ def test_suite_detects_missing_conflict_guard(regular_user: CasdoorUser) -> None
 
 
 @pytest.mark.asyncio
-async def test_mock_task_api_latest_status_per_name() -> None:
-    """Assert ``/history/latest`` returns the latest non-null status, null if absent."""
+async def test_mock_task_api_latest_per_name() -> None:
+    """Assert ``/history/latest`` returns the projection, null if absent."""
     api = MockTaskAPI()
     api.seed_task(
         "t-resolved",
@@ -239,14 +239,13 @@ async def test_mock_task_api_latest_status_per_name() -> None:
     api.seed_task("t-no-history", owner=SYNTH_OWNER, statuses=[])
 
     result = await api.post(
-        "/history/latest", json={"names": ["t-resolved", "t-no-history", "t-unknown"]}
+        "/history/latest",
+        json={"names": ["t-resolved", "t-no-history", "t-unknown"]},
     )
 
-    assert result == {
-        "t-resolved": TaskHistoryStatusEnum.SUCCESS.value,
-        "t-no-history": None,
-        "t-unknown": None,
-    }
+    assert result["t-resolved"]["status"] == TaskHistoryStatusEnum.SUCCESS.value
+    assert result["t-no-history"] is None
+    assert result["t-unknown"] is None
 
 
 @pytest.mark.asyncio
@@ -259,7 +258,8 @@ async def test_batch_get_latest_statuses_through_mock() -> None:
 
     result = await batch_get_latest_statuses(api, ["t-running", "t-unknown"])
 
-    assert result == {"t-running": TaskHistoryStatusEnum.RUNNING, "t-unknown": None}
+    assert result["t-running"].status == TaskHistoryStatusEnum.RUNNING
+    assert result["t-unknown"] is None
 
 
 @pytest.mark.asyncio
@@ -273,7 +273,9 @@ async def test_batch_get_latest_statuses_chunks_over_the_limit() -> None:
     result = await batch_get_latest_statuses(api, names)
 
     assert len(result) == len(names)
-    assert set(result.values()) == {TaskHistoryStatusEnum.SUCCESS}
+    assert {value.status for value in result.values()} == {
+        TaskHistoryStatusEnum.SUCCESS
+    }
 
 
 def test_synth_ui_default_distinct_from_model_default(

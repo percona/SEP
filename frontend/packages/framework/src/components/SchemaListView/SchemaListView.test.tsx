@@ -103,6 +103,39 @@ describe('SchemaListView — renderListColumn override', () => {
   });
 });
 
+describe('SchemaListView — null cell rendering', () => {
+  it('renders an empty cell (no placeholder) for a null relative-format value', () => {
+    // A never-executed task has a null `last_executed_at`; SEP-1401 requires
+    // that cell be empty, not the em-dash placeholder.
+    const relativeListView: ListView = {
+      columns: [
+        { key: 'name', label: 'Name' },
+        { key: 'last_executed_at', label: 'Last Executed', format: 'relative' },
+      ],
+    };
+    render(
+      <SchemaListView
+        listView={relativeListView}
+        data={[{ id: 1, name: 'never-run', last_executed_at: null }]}
+      />,
+    );
+    expect(screen.getByText('never-run')).toBeInTheDocument();
+    // no em-dash placeholder for the empty timestamp
+    expect(screen.queryByText('—')).toBeNull();
+  });
+
+  it('still renders the em-dash placeholder for a null non-time value', () => {
+    const chipListView: ListView = {
+      columns: [
+        { key: 'name', label: 'Name' },
+        { key: 'flavor', label: 'Flavor', format: 'chip' },
+      ],
+    };
+    render(<SchemaListView listView={chipListView} data={[{ id: 1, name: 'x', flavor: null }]} />);
+    expect(screen.getByText('—')).toBeInTheDocument();
+  });
+});
+
 const NOW = new Date('2026-06-18T12:00:00Z');
 
 function makePeriodic(overrides: Partial<PeriodicTaskResponse> = {}): PeriodicTaskResponse {
