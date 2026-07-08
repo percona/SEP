@@ -554,6 +554,26 @@ class TestGetPmmApi:
             ssl_cafile="/etc/ssl/ca.pem",
         )
 
+    @pytest.mark.asyncio
+    async def test_returns_client_when_configured_verify_ssl_false(self):
+        """Assert ``verify_ssl=False`` is threaded through to ``get_remote_api``."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        with patch("app.sep.deps.settings") as mock_settings:
+            mock_settings.PMM.endpoint = "https://pmm.example.com"
+            mock_settings.PMM.api_key = "secret-key"
+            mock_settings.PMM.verify_ssl = False
+            mock_settings.SSL_CAFILE = "/etc/ssl/ca.pem"
+            mock_settings.get_remote_api = AsyncMock(return_value=mock_client)
+            result = await get_pmm_api()
+        assert result is mock_client
+        mock_settings.get_remote_api.assert_awaited_once_with(
+            PMMRemoteAPI,
+            endpoint="https://pmm.example.com",
+            api_key="secret-key",
+            verify_ssl=False,
+            ssl_cafile="/etc/ssl/ca.pem",
+        )
+
 
 class TestRequirePmmApi:
     """Test the ``require_pmm_api`` dependency."""
@@ -568,8 +588,9 @@ class TestRequirePmmApi:
     @pytest.mark.asyncio
     async def test_raises_service_unavailable_when_none(self):
         """Assert ``HTTPServiceUnavailableException`` is raised when PMM is ``None``."""
-        with pytest.raises(HTTPServiceUnavailableException):
+        with pytest.raises(HTTPServiceUnavailableException) as exc:
             await require_pmm_api(None)
+        assert exc.value.detail == "PMM is not configured"
 
 
 class TestGetExecutorHosts:
