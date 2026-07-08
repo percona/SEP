@@ -209,10 +209,10 @@ type BackupApiState = { tasks: BackupTaskRow[] };
 type RestoreApiState = { tasks: RestoreTaskRow[] };
 type AppApiState = { backup: BackupApiState; restore: RestoreApiState };
 
-/** Task name segment from ``/api/apps/backup_mongo/{task_name}`` (not list/schema/restores). */
+/** Task name segment from ``/api/apps/backup_mongo/{task_name}`` (not list/schema/restore). */
 function backupTaskNameFromPath(pathname: string): string | null {
   const prefix = '/api/apps/backup_mongo/';
-  if (!pathname.startsWith(prefix) || pathname.includes('/restores')) {
+  if (!pathname.startsWith(prefix) || pathname.includes('/restore')) {
     return null;
   }
   const segment = pathname.slice(prefix.length);
@@ -222,9 +222,9 @@ function backupTaskNameFromPath(pathname: string): string | null {
   return decodeURIComponent(segment);
 }
 
-/** Task name segment from ``/api/apps/backup_mongo/restores/{task_name}``. */
+/** Task name segment from ``/api/apps/backup_mongo/restore/{task_name}``. */
 function restoreTaskNameFromPath(pathname: string): string | null {
-  const prefix = '/api/apps/backup_mongo/restores/';
+  const prefix = '/api/apps/backup_mongo/restore/';
   if (!pathname.startsWith(prefix)) {
     return null;
   }
@@ -276,7 +276,7 @@ async function mockBackupMongoApis(page: Page, apiState: AppApiState): Promise<v
       });
     }
 
-    if (pathname === '/api/apps/backup_mongo/restores/schema') {
+    if (pathname === '/api/apps/backup_mongo/restore/schema') {
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -336,8 +336,8 @@ async function mockBackupMongoApis(page: Page, apiState: AppApiState): Promise<v
 
     if (
       req.method() === 'POST' &&
-      (pathname === '/api/apps/backup_mongo/restores/' ||
-        pathname === '/api/apps/backup_mongo/restores')
+      (pathname === '/api/apps/backup_mongo/restore/' ||
+        pathname === '/api/apps/backup_mongo/restore')
     ) {
       const body = req.postDataJSON() as {
         task_name?: string;
@@ -393,8 +393,8 @@ async function mockBackupMongoApis(page: Page, apiState: AppApiState): Promise<v
 
     if (
       req.method() === 'GET' &&
-      (pathname === '/api/apps/backup_mongo/restores/' ||
-        pathname === '/api/apps/backup_mongo/restores')
+      (pathname === '/api/apps/backup_mongo/restore/' ||
+        pathname === '/api/apps/backup_mongo/restore')
     ) {
       return route.fulfill({
         status: 200,
@@ -567,7 +567,7 @@ test.describe('MongoDB backup_mongo app smoke', () => {
     await expect(page.getByText(MOCK_RESTORE_TASK_NAME)).toHaveCount(0);
     await expect
       .poll(() => deleteRequests, { timeout: 5_000 })
-      .toContain(`/api/apps/backup_mongo/restores/${MOCK_RESTORE_TASK_NAME}`);
+      .toContain(`/api/apps/backup_mongo/restore/${MOCK_RESTORE_TASK_NAME}`);
     expect(apiState.restore.tasks.some((task) => task.name === MOCK_RESTORE_TASK_NAME)).toBe(false);
   });
 });
