@@ -21,7 +21,7 @@ import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { server } from '../../../../tests/msw-server';
-import { makeWrapper, sepListResponse, tasksListResponse } from './fixtures';
+import { appsListResponse, makeWrapper, sepListResponse, tasksListResponse } from './fixtures';
 
 const authState = vi.hoisted(() => ({ isAdmin: true }));
 vi.mock('../../../contexts/auth', () => ({
@@ -38,7 +38,7 @@ const originalRevokeObjectURL = URL.revokeObjectURL;
 
 /** SEP aggregates its local classes and the proxied TasksSettings into one list. */
 const combinedListResponse = {
-  groups: [...sepListResponse.groups, ...tasksListResponse.groups],
+  groups: [...sepListResponse.groups, ...tasksListResponse.groups, ...appsListResponse.groups],
 };
 
 function renderPage() {
@@ -183,4 +183,78 @@ describe('SettingsPage', () => {
     expect(within(row).getByTestId('setting-value-API_SECRET')).toHaveTextContent('**********');
     expect(within(row).getByLabelText('API_SECRET')).toHaveValue('');
   });
+
+  it('renders enabled app-owned groups under the App settings region, labeled by app', async () => {
+    renderPage();
+    const region = await screen.findByTestId('app-settings-region');
+    expect(within(region).getByText('App settings')).toBeInTheDocument();
+
+    // The enabled app's group renders inside the region, tagged with its app.
+    const alertsGroup = within(region).getByTestId('settings-group-AlertsSettings');
+    expect(alertsGroup).toBeInTheDocument();
+    expect(within(region).getByTestId('settings-group-app-label-AlertsSettings')).toHaveTextContent(
+      'Alerts',
+    );
+  });
+
+  it('keeps core groups in the core region, out of the App settings region', async () => {
+    renderPage();
+    await screen.findByTestId('app-settings-region');
+
+    const region = screen.getByTestId('app-settings-region');
+    // Core groups are not tagged and not nested under the App settings region.
+    expect(screen.getByTestId('settings-group-SEPSettings')).toBeInTheDocument();
+    expect(within(region).queryByTestId('settings-group-SEPSettings')).not.toBeInTheDocument();
+    expect(within(region).queryByTestId('settings-group-TasksSettings')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings-group-app-label-SEPSettings')).not.toBeInTheDocument();
+  });
+
+  it('hides app-owned groups whose owning app is disabled', async () => {
+    renderPage();
+    await screen.findByTestId('settings-group-SEPSettings');
+    // The disabled app's group and its rows never render.
+    expect(screen.queryByTestId('settings-group-InventorySettings')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('setting-row-INVENTORY_SCAN_INTERVAL')).not.toBeInTheDocument();
+  });
+
+  it('keeps disabled apps out of the Class filter dropdown', async () => {
+    renderPage();
+    await screen.findByTestId('settings-group-SEPSettings');
+
+    await userEvent.click(screen.getByLabelText('Filter by class'));
+    const listbox = await screen.findByRole('listbox');
+    // Enabled app's class is selectable; disabled app's class never appears.
+    expect(within(listbox).getByRole('option', { name: 'AlertsSettings' })).toBeInTheDocument();
+    expect(
+      within(listbox).queryByRole('option', { name: 'InventorySettings' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('omits the App settings region when no enabled app-owned groups remain', async () => {
+    server.use(
+      http.get(SEP_URL, () =>
+        HttpResponse.json({
+          groups: [...sepListResponse.groups, appsListResponse.groups[1]],
+        }),
+      ),
+    );
+    renderPage();
+    await screen.findByTestId('settings-group-SEPSettings');
+    expect(screen.queryByTestId('app-settings-region')).not.toBeInTheDocument();
+    expect(screen.queryByText('App settings')).not.toBeInTheDocument();
+  });
+
+  it('searches across both core and app-owned regions', async () => {
+    renderPage();
+    await screen.findByTestId('app-settings-region');
+
+    await userEvent.type(screen.getByLabelText('Search settings'), 'ALERTS_RETENTION');
+
+    // App-owned match survives under its region; core rows filter out.
+    await waitFor(() =>
+      expect(screen.queryByTestId('setting-row-SYNC_REFRESH_TIME')).not.toBeInTheDocument(),
+    );
+    const region = screen.getByTestId('app-settings-region');
+    expect(within(region).getByTestId('setting-row-ALERTS_RETENTION_DAYS')).toBeInTheDocument();
+  }, 15_000);
 });
