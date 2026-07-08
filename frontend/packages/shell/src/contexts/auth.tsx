@@ -137,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setOnUnauthorized(() => {
       clearAuth();
       if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
+        window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
       }
     });
     return () => {
