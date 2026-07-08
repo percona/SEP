@@ -18,12 +18,14 @@
 import pytest
 from pydantic import ValidationError
 
+from app.sep.apps.framework.form_dsl.derivation import derive_form_sections
 from app.sep.apps.mysql_backups.models import (
     BackupConfigAll,
     BackupCreate,
     BackupType,
     UploadProvider,
 )
+from app.sep.apps.mysql_backups.views import mysql_backups_views
 
 
 def _base_payload(backup_type: BackupType, **overrides) -> dict:
@@ -408,3 +410,21 @@ class TestMydumperVerbose:
 
         dumped = cfg.model_dump(by_alias=True, mode="json")
         assert dumped["MYDUMPER_VERBOSE"] == self.WARNINGS_LEVEL
+
+    def test_derived_schema_bounds_preserved(self):
+        """Keep the derived ``mydumper_verbose`` form bounds at 0-3 after the factory swap.
+
+        The bounded factory result is the first arg of an outer ``Annotated``; this
+        guards that Pydantic's metadata flattening keeps ``Ge``/``Le`` visible to the
+        form-DSL derivation, so a wrong substitution cannot silently drop the bounds.
+        """
+        sections = derive_form_sections(BackupCreate, mysql_backups_views.layout)
+        field = next(
+            f
+            for section in sections
+            for f in section.fields
+            if getattr(f, "name", None) == "mydumper_verbose"
+        )
+        expected_min, expected_max = 0, 3
+        assert field.ge == expected_min
+        assert field.le == expected_max

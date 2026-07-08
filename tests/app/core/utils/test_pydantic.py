@@ -248,7 +248,10 @@ class TestBlankStrValuesToNone:
         )
         assert result == {"a": None, "b": "x", "c": 0, "d": None, "e": False}
 
-    def test_passes_through_non_mapping(self):
-        """Return a non-mapping input unchanged."""
+    def test_passes_through_scalar(self):
+        """Return a scalar input unchanged."""
         assert blank_str_values_to_none("scalar") == "scalar"
+
+    def test_passes_through_list(self):
+        """Return a list input unchanged, including empty strings inside it."""
         assert blank_str_values_to_none([1, ""]) == [1, ""]
