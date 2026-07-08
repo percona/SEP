@@ -193,10 +193,12 @@ def _ruff_fix(paths: list[Path]) -> None:
     subprocess.run(  # noqa: S603
         [ruff, "check", "--fix", "--quiet", *py_files],
         check=False,
+        cwd=_REPO_ROOT,
     )
     subprocess.run(  # noqa: S603
         [ruff, "format", "--quiet", *py_files],
         check=False,
+        cwd=_REPO_ROOT,
     )
 
 
