@@ -4068,20 +4068,13 @@ export interface components {
      * @description Describe the full detail response for a single backup.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      *     :param templates: Templates captured in the backup.
-     *     :type templates: list[BackupDetailTemplate]
      *     :param rules: Rules captured in the backup.
-     *     :type rules: list[BackupDetailRule]
      *     :param contact_points: Contact points captured in the backup.
-     *     :type contact_points: list[BackupDetailContactPoint]
      *     :param folders: Folders captured in the backup.
-     *     :type folders: list[BackupDetailFolder]
      *     :param notification_policy_receiver: Top-level receiver from the captured
      *         notification policy, or ``None`` when no policy was captured.
-     *     :type notification_policy_receiver: str | None
      */
     BackupDetail: {
       /** Contact Points */
@@ -4107,9 +4100,7 @@ export interface components {
      * @description Represent a contact-point entry inside a backup snapshot.
      *
      *     :param name: The contact point name.
-     *     :type name: str
      *     :param type: The contact point type (e.g. ``"pagerduty"``).
-     *     :type type: str
      */
     BackupDetailContactPoint: {
       /** Name */
@@ -4122,7 +4113,6 @@ export interface components {
      * @description Represent a folder entry inside a backup snapshot.
      *
      *     :param title: The folder title.
-     *     :type title: str
      */
     BackupDetailFolder: {
       /** Title */
@@ -4133,7 +4123,6 @@ export interface components {
      * @description Represent a rule entry inside a backup snapshot.
      *
      *     :param title: The rule title.
-     *     :type title: str
      */
     BackupDetailRule: {
       /** Title */
@@ -4144,9 +4133,7 @@ export interface components {
      * @description Represent a template entry inside a backup snapshot.
      *
      *     :param name: The template name.
-     *     :type name: str
      *     :param summary: The template summary blurb.
-     *     :type summary: str
      */
     BackupDetailTemplate: {
       /** Name */
@@ -4406,11 +4393,8 @@ export interface components {
      * @description Represent a compact backup row used by the list endpoint.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      *     :param metadata: Summary counts persisted alongside the backup snapshot.
-     *     :type metadata: dict[str, Any]
      */
     BackupSummary: {
       /**
@@ -5876,9 +5860,7 @@ export interface components {
      *     renders the id and timestamp, so the index payload omits the summary counts.
      *
      *     :param id: Primary key of the backup row.
-     *     :type id: int
      *     :param created_at: UTC timestamp the backup was written.
-     *     :type created_at: datetime
      */
     IndexBackupSummary: {
       /**
@@ -5894,9 +5876,7 @@ export interface components {
      * @description Describe the PagerDuty contact-point status on the index page.
      *
      *     :param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.
-     *     :type configured: bool
      *     :param uid: The contact point UID when configured, otherwise ``None``.
-     *     :type uid: str | None
      */
     IndexPagerDutyStatus: {
       /** Configured */
@@ -5914,13 +5894,9 @@ export interface components {
      *
      *     :param groups: Alert templates grouped by service type. Only service types
      *         with at least one template are included.
-     *     :type groups: list[IndexTemplateGroup]
      *     :param pmm_connected: ``True`` when PMM is configured and reachable.
-     *     :type pmm_connected: bool
      *     :param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.
-     *     :type pagerduty: IndexPagerDutyStatus | None
      *     :param recent_backups: The most recent alert backups, newest first.
-     *     :type recent_backups: list[IndexBackupSummary]
      */
     IndexResponse: {
       /** Groups */
@@ -5936,21 +5912,13 @@ export interface components {
      * @description Represent a single alert template row on the index page.
      *
      *     :param name: The display name of the alert template.
-     *     :type name: str
      *     :param service_type: The service category this template applies to.
-     *     :type service_type: str
      *     :param expression: The PromQL expression backing the alert.
-     *     :type expression: str
      *     :param default_threshold: The default numeric threshold for the UI.
-     *     :type default_threshold: float
      *     :param severity: The severity level (``"info"``, ``"warning"``, ``"critical"``).
-     *     :type severity: str
      *     :param description: A human-readable description of the alert.
-     *     :type description: str
      *     :param summary: A short summary template for notifications.
-     *     :type summary: str
      *     :param in_pmm: ``True`` when a template of this name is already present in PMM.
-     *     :type in_pmm: bool
      */
     IndexTemplate: {
       /** Default Threshold */
@@ -5975,11 +5943,8 @@ export interface components {
      * @description Group index templates by service type.
      *
      *     :param service_type: The service type identifier (e.g. ``"mysql"``).
-     *     :type service_type: str
      *     :param label: The human-readable service type label (e.g. ``"MySQL"``).
-     *     :type label: str
      *     :param templates: The templates belonging to this service type.
-     *     :type templates: list[IndexTemplate]
      */
     IndexTemplateGroup: {
       /** Label */
@@ -6523,7 +6488,6 @@ export interface components {
      *
      *     :param integration_key: The PagerDuty integration key. Must be non-empty
      *         after stripping whitespace.
-     *     :type integration_key: NonEmptyStr
      */
     PagerDutyRequest: {
       /** Integration Key */
@@ -6534,7 +6498,6 @@ export interface components {
      * @description Describe the response body for the PagerDuty save / delete endpoints.
      *
      *     :param status: ``"created"``, ``"updated"`` (save) or ``"deleted"`` (delete).
-     *     :type status: Literal["created", "updated", "deleted"]
      */
     PagerDutyResponse: {
       /**
@@ -6679,11 +6642,8 @@ export interface components {
      * @description Represent a per-template result row returned by the push endpoint.
      *
      *     :param name: The template name the result applies to.
-     *     :type name: str
      *     :param status: One of ``"success"``, ``"skipped"``, ``"error"``.
-     *     :type status: Literal["success", "skipped", "error"]
      *     :param message: A human-readable description of the outcome.
-     *     :type message: str
      */
     PushItemResult: {
       /** Message */
@@ -6702,7 +6662,6 @@ export interface components {
      *
      *     :param selected_templates: Names of templates to push to PMM. Must be a
      *         non-empty list of non-empty strings.
-     *     :type selected_templates: list[NonEmptyStr]
      */
     PushRequest: {
       /** Selected Templates */
@@ -6713,7 +6672,6 @@ export interface components {
      * @description Wrap the per-template results returned by the push endpoint.
      *
      *     :param results: One :class:`PushItemResult` per template in the request.
-     *     :type results: list[PushItemResult]
      */
     PushResponse: {
       /** Results */
@@ -6831,15 +6789,10 @@ export interface components {
      * @description Expose async report job state.
      *
      *     :param job_id: Celery task identifier.
-     *     :type job_id: str
      *     :param status: Lowercase Celery task state.
-     *     :type status: str
      *     :param pdf_ready: Whether the PDF result exists and is downloadable.
-     *     :type pdf_ready: bool
      *     :param result: Successful job result payload, if available.
-     *     :type result: dict[str, Any] | None
      *     :param error: Failed job error text, if available.
-     *     :type error: str | None
      */
     ReportJobResponse: {
       /** Error */
@@ -6901,7 +6854,6 @@ export interface components {
      * @description Define report snapshot body for PDF/upload jobs.
      *
      *     :param report: Generated report snapshot reused for PDF/upload work.
-     *     :type report: ReportData
      */
     ReportSnapshotWrite: {
       report: components['schemas']['ReportData'];
@@ -7078,7 +7030,6 @@ export interface components {
      *
      *     :param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`
      *         row to restore from. Must be a positive integer.
-     *     :type backup_id: int
      */
     RestoreRequest: {
       /** Backup Id */
@@ -7089,10 +7040,8 @@ export interface components {
      * @description Wrap the summary returned by the restore endpoint.
      *
      *     :param status: ``"success"`` on a complete restore.
-     *     :type status: Literal["success"]
      *     :param details: Per-section restore counts as returned by
      *         :func:`~app.sep.apps.alerts.restore.restore_from_backup`.
-     *     :type details: dict[str, Any]
      */
     RestoreResponse: {
       /** Details */

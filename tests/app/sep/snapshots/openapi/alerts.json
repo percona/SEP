@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "BackupDetail": {
-        "description": "Describe the full detail response for a single backup.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime\n:param templates: Templates captured in the backup.\n:type templates: list[BackupDetailTemplate]\n:param rules: Rules captured in the backup.\n:type rules: list[BackupDetailRule]\n:param contact_points: Contact points captured in the backup.\n:type contact_points: list[BackupDetailContactPoint]\n:param folders: Folders captured in the backup.\n:type folders: list[BackupDetailFolder]\n:param notification_policy_receiver: Top-level receiver from the captured\n    notification policy, or ``None`` when no policy was captured.\n:type notification_policy_receiver: str | None",
+        "description": "Describe the full detail response for a single backup.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.\n:param templates: Templates captured in the backup.\n:param rules: Rules captured in the backup.\n:param contact_points: Contact points captured in the backup.\n:param folders: Folders captured in the backup.\n:param notification_policy_receiver: Top-level receiver from the captured\n    notification policy, or ``None`` when no policy was captured.",
         "properties": {
           "contact_points": {
             "items": {
@@ -66,7 +66,7 @@
         "type": "object"
       },
       "BackupDetailContactPoint": {
-        "description": "Represent a contact-point entry inside a backup snapshot.\n\n:param name: The contact point name.\n:type name: str\n:param type: The contact point type (e.g. ``\"pagerduty\"``).\n:type type: str",
+        "description": "Represent a contact-point entry inside a backup snapshot.\n\n:param name: The contact point name.\n:param type: The contact point type (e.g. ``\"pagerduty\"``).",
         "properties": {
           "name": {
             "title": "Name",
@@ -85,7 +85,7 @@
         "type": "object"
       },
       "BackupDetailFolder": {
-        "description": "Represent a folder entry inside a backup snapshot.\n\n:param title: The folder title.\n:type title: str",
+        "description": "Represent a folder entry inside a backup snapshot.\n\n:param title: The folder title.",
         "properties": {
           "title": {
             "title": "Title",
@@ -99,7 +99,7 @@
         "type": "object"
       },
       "BackupDetailRule": {
-        "description": "Represent a rule entry inside a backup snapshot.\n\n:param title: The rule title.\n:type title: str",
+        "description": "Represent a rule entry inside a backup snapshot.\n\n:param title: The rule title.",
         "properties": {
           "title": {
             "title": "Title",
@@ -113,7 +113,7 @@
         "type": "object"
       },
       "BackupDetailTemplate": {
-        "description": "Represent a template entry inside a backup snapshot.\n\n:param name: The template name.\n:type name: str\n:param summary: The template summary blurb.\n:type summary: str",
+        "description": "Represent a template entry inside a backup snapshot.\n\n:param name: The template name.\n:param summary: The template summary blurb.",
         "properties": {
           "name": {
             "title": "Name",
@@ -132,7 +132,7 @@
         "type": "object"
       },
       "BackupSummary": {
-        "description": "Represent a compact backup row used by the list endpoint.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime\n:param metadata: Summary counts persisted alongside the backup snapshot.\n:type metadata: dict[str, Any]",
+        "description": "Represent a compact backup row used by the list endpoint.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.\n:param metadata: Summary counts persisted alongside the backup snapshot.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -170,7 +170,7 @@
         "type": "object"
       },
       "IndexBackupSummary": {
-        "description": "Represent a compact backup row for the index \"recent backups\" widget.\n\nLeaner than :class:`BackupSummary` (no ``metadata``): the list page only\nrenders the id and timestamp, so the index payload omits the summary counts.\n\n:param id: Primary key of the backup row.\n:type id: int\n:param created_at: UTC timestamp the backup was written.\n:type created_at: datetime",
+        "description": "Represent a compact backup row for the index \"recent backups\" widget.\n\nLeaner than :class:`BackupSummary` (no ``metadata``): the list page only\nrenders the id and timestamp, so the index payload omits the summary counts.\n\n:param id: Primary key of the backup row.\n:param created_at: UTC timestamp the backup was written.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -190,7 +190,7 @@
         "type": "object"
       },
       "IndexPagerDutyStatus": {
-        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:type configured: bool\n:param uid: The contact point UID when configured, otherwise ``None``.\n:type uid: str | None",
+        "description": "Describe the PagerDuty contact-point status on the index page.\n\n:param configured: ``True`` when a SEP PagerDuty contact point exists in PMM.\n:param uid: The contact point UID when configured, otherwise ``None``.",
         "properties": {
           "configured": {
             "title": "Configured",
@@ -215,7 +215,7 @@
         "type": "object"
       },
       "IndexResponse": {
-        "description": "Describe the response body for ``GET /api/apps/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:type groups: list[IndexTemplateGroup]\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:type pmm_connected: bool\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:type pagerduty: IndexPagerDutyStatus | None\n:param recent_backups: The most recent alert backups, newest first.\n:type recent_backups: list[IndexBackupSummary]",
+        "description": "Describe the response body for ``GET /api/apps/alerts/``.\n\nAggregate everything the React list page needs in a single call: the alert\ntemplates grouped by service type, whether PMM is reachable, the PagerDuty\ncontact-point status, and the most recent backups.\n\n:param groups: Alert templates grouped by service type. Only service types\n    with at least one template are included.\n:param pmm_connected: ``True`` when PMM is configured and reachable.\n:param pagerduty: The PagerDuty status, or ``None`` when PMM is unreachable.\n:param recent_backups: The most recent alert backups, newest first.",
         "properties": {
           "groups": {
             "items": {
@@ -256,7 +256,7 @@
         "type": "object"
       },
       "IndexTemplate": {
-        "description": "Represent a single alert template row on the index page.\n\n:param name: The display name of the alert template.\n:type name: str\n:param service_type: The service category this template applies to.\n:type service_type: str\n:param expression: The PromQL expression backing the alert.\n:type expression: str\n:param default_threshold: The default numeric threshold for the UI.\n:type default_threshold: float\n:param severity: The severity level (``\"info\"``, ``\"warning\"``, ``\"critical\"``).\n:type severity: str\n:param description: A human-readable description of the alert.\n:type description: str\n:param summary: A short summary template for notifications.\n:type summary: str\n:param in_pmm: ``True`` when a template of this name is already present in PMM.\n:type in_pmm: bool",
+        "description": "Represent a single alert template row on the index page.\n\n:param name: The display name of the alert template.\n:param service_type: The service category this template applies to.\n:param expression: The PromQL expression backing the alert.\n:param default_threshold: The default numeric threshold for the UI.\n:param severity: The severity level (``\"info\"``, ``\"warning\"``, ``\"critical\"``).\n:param description: A human-readable description of the alert.\n:param summary: A short summary template for notifications.\n:param in_pmm: ``True`` when a template of this name is already present in PMM.",
         "properties": {
           "default_threshold": {
             "title": "Default Threshold",
@@ -305,7 +305,7 @@
         "type": "object"
       },
       "IndexTemplateGroup": {
-        "description": "Group index templates by service type.\n\n:param service_type: The service type identifier (e.g. ``\"mysql\"``).\n:type service_type: str\n:param label: The human-readable service type label (e.g. ``\"MySQL\"``).\n:type label: str\n:param templates: The templates belonging to this service type.\n:type templates: list[IndexTemplate]",
+        "description": "Group index templates by service type.\n\n:param service_type: The service type identifier (e.g. ``\"mysql\"``).\n:param label: The human-readable service type label (e.g. ``\"MySQL\"``).\n:param templates: The templates belonging to this service type.",
         "properties": {
           "label": {
             "title": "Label",
@@ -332,7 +332,7 @@
         "type": "object"
       },
       "PagerDutyRequest": {
-        "description": "Describe the request body for ``POST /api/apps/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.\n:type integration_key: NonEmptyStr",
+        "description": "Describe the request body for ``POST /api/apps/alerts/pagerduty``.\n\n:param integration_key: The PagerDuty integration key. Must be non-empty\n    after stripping whitespace.",
         "properties": {
           "integration_key": {
             "minLength": 1,
@@ -347,7 +347,7 @@
         "type": "object"
       },
       "PagerDutyResponse": {
-        "description": "Describe the response body for the PagerDuty save / delete endpoints.\n\n:param status: ``\"created\"``, ``\"updated\"`` (save) or ``\"deleted\"`` (delete).\n:type status: Literal[\"created\", \"updated\", \"deleted\"]",
+        "description": "Describe the response body for the PagerDuty save / delete endpoints.\n\n:param status: ``\"created\"``, ``\"updated\"`` (save) or ``\"deleted\"`` (delete).",
         "properties": {
           "status": {
             "enum": [
@@ -397,7 +397,7 @@
         "type": "object"
       },
       "PushItemResult": {
-        "description": "Represent a per-template result row returned by the push endpoint.\n\n:param name: The template name the result applies to.\n:type name: str\n:param status: One of ``\"success\"``, ``\"skipped\"``, ``\"error\"``.\n:type status: Literal[\"success\", \"skipped\", \"error\"]\n:param message: A human-readable description of the outcome.\n:type message: str",
+        "description": "Represent a per-template result row returned by the push endpoint.\n\n:param name: The template name the result applies to.\n:param status: One of ``\"success\"``, ``\"skipped\"``, ``\"error\"``.\n:param message: A human-readable description of the outcome.",
         "properties": {
           "message": {
             "title": "Message",
@@ -426,7 +426,7 @@
         "type": "object"
       },
       "PushRequest": {
-        "description": "Describe the request body for ``POST /api/apps/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.\n:type selected_templates: list[NonEmptyStr]",
+        "description": "Describe the request body for ``POST /api/apps/alerts/push``.\n\n:param selected_templates: Names of templates to push to PMM. Must be a\n    non-empty list of non-empty strings.",
         "properties": {
           "selected_templates": {
             "items": {
@@ -445,7 +445,7 @@
         "type": "object"
       },
       "PushResponse": {
-        "description": "Wrap the per-template results returned by the push endpoint.\n\n:param results: One :class:`PushItemResult` per template in the request.\n:type results: list[PushItemResult]",
+        "description": "Wrap the per-template results returned by the push endpoint.\n\n:param results: One :class:`PushItemResult` per template in the request.",
         "properties": {
           "results": {
             "items": {
@@ -462,7 +462,7 @@
         "type": "object"
       },
       "RestoreRequest": {
-        "description": "Describe the request body for ``POST /api/apps/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.\n:type backup_id: int",
+        "description": "Describe the request body for ``POST /api/apps/alerts/restore``.\n\n:param backup_id: Primary key of the :class:`~app.sep.apps.alerts.models.AlertBackup`\n    row to restore from. Must be a positive integer.",
         "properties": {
           "backup_id": {
             "exclusiveMinimum": 0.0,
@@ -477,7 +477,7 @@
         "type": "object"
       },
       "RestoreResponse": {
-        "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:type status: Literal[\"success\"]\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.\n:type details: dict[str, Any]",
+        "description": "Wrap the summary returned by the restore endpoint.\n\n:param status: ``\"success\"`` on a complete restore.\n:param details: Per-section restore counts as returned by\n    :func:`~app.sep.apps.alerts.restore.restore_from_backup`.",
         "properties": {
           "details": {
             "title": "Details",
