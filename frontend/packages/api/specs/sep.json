@@ -1200,7 +1200,7 @@
         "type": "object"
       },
       "AppKeyResponse": {
-        "description": "Represent a minimal per-app entry for the navigation shell.\n\n:param app_key: The plugin module key.\n:type app_key: str\n:param enabled: Whether the app is currently enabled.\n:type enabled: bool\n:param sidebar: Whether the plugin appears in the sidebar.\n:type sidebar: bool\n:param uri_path: The plugin's mount URI path.\n:type uri_path: str\n:param display_name: The human-facing label for the app.\n:type display_name: str\n:param custom_ui: Whether the app ships a bespoke React UI.\n:type custom_ui: bool\n:param group: The nav group key this app nests under; ``None`` when the app\n    renders as a top-level sidebar entry.\n:param nav_order: The app's sort position within the sidebar; ``None`` when\n    unset.",
+        "description": "Represent a minimal per-app entry for the navigation shell.\n\n:param app_key: The plugin module key.\n:param enabled: Whether the app is currently enabled.\n:param sidebar: Whether the plugin appears in the sidebar.\n:param uri_path: The plugin's mount URI path.\n:param display_name: The human-facing label for the app.\n:param custom_ui: Whether the app ships a bespoke React UI.\n:param group: The nav group key this app nests under; ``None`` when the app\n    renders as a top-level sidebar entry.\n:param nav_order: The app's sort position within the sidebar; ``None`` when\n    unset.\n:param react_route: The canonical React route the shell mounts and links to;\n    always concrete (defaulting to ``/apps/<app_key>``).\n:param nav_icon: The sidebar icon key; ``None`` falls back to the shell's\n    default app icon.",
         "properties": {
           "app_key": {
             "title": "App Key",
@@ -1229,6 +1229,16 @@
             ],
             "title": "Group"
           },
+          "nav_icon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NavIcon"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "nav_order": {
             "anyOf": [
               {
@@ -1239,6 +1249,10 @@
               }
             ],
             "title": "Nav Order"
+          },
+          "react_route": {
+            "title": "React Route",
+            "type": "string"
           },
           "sidebar": {
             "title": "Sidebar",
@@ -1257,7 +1271,9 @@
           "display_name",
           "custom_ui",
           "group",
-          "nav_order"
+          "nav_order",
+          "react_route",
+          "nav_icon"
         ],
         "title": "AppKeyResponse",
         "type": "object"
@@ -6417,6 +6433,26 @@
         ],
         "title": "MysqlBackupsCreateResponse",
         "type": "object"
+      },
+      "NavIcon": {
+        "description": "Enumerate the sidebar icon keys the React shell bundles.",
+        "enum": [
+          "assignment",
+          "code",
+          "support-agent",
+          "description",
+          "troubleshoot",
+          "table-chart",
+          "check-circle",
+          "mysql",
+          "mongo",
+          "postgresql",
+          "archive",
+          "science",
+          "bar-chart"
+        ],
+        "title": "NavIcon",
+        "type": "string"
       },
       "Node": {
         "description": "Represent a node in the inventory.\n\n:param address: The network address of the node.\n:type address: NonEmptyStr\n:param name: The name of the node.\n:type name: NonEmptyStr\n:param external_id: An external identifier for the node. Must be unique for source,\n    as defined by composite index ix_node_external_id_source.\n:type external_id: NonEmptyStr | None\n:param source: The source from which the node information is derived. Must be unique\n    for external_id, as defined by composite index ix_node_external_id_source.\n:type source: SourceEnum | None\n:param type: The type of the node (e.g., remote, generic).\n:type type: NonEmptyStr\n:param services: A list of services associated with the node.\n:type services: list[Service]",
