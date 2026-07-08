@@ -28,6 +28,7 @@ from sqlmodel import SQLModel
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.db.utils import get_async_session_maker_from_engine
 from app.core.utils import json_serializer
+from app.sep.api.routes.apps import build_navigation_react_route
 from app.sep.apps.framework.registry import get_app_registry
 from app.sep.config import sep_settings
 from app.sep.deps import (
@@ -139,8 +140,8 @@ class TestListAppsForNavigation:
 
         for app_key, entry in entries.items():
             definition = registry.get(app_key)
-            assert entry["react_route"] == (
-                definition.react_route or f"/apps/{app_key}"
+            assert entry["react_route"] == build_navigation_react_route(
+                app_key, definition.react_route
             )
             assert entry["nav_icon"] == definition.nav_icon
 
@@ -155,18 +156,17 @@ class TestListAppsForNavigation:
     @pytest.mark.parametrize(
         ("app_key", "expected_route"),
         [
-            ("tasks", "/tasks"),
-            ("alerts", "/alerts/templates"),
-            ("alters", "/schema-change/alters"),
-            ("backup_mongo", "/backups/mongodb"),
-            ("backup_pg", "/backups/postgresql"),
-            ("report", "/reports"),
+            ("tasks", "/apps/tasks"),
+            ("alerts", "/apps/alerts/templates"),
+            ("backup_mongo", "/apps/backups/mongodb"),
+            ("backup_pg", "/apps/backups/postgresql"),
+            ("report", "/apps/reports"),
         ],
     )
-    async def test_declared_react_routes_are_emitted(
+    async def test_declared_react_routes_are_normalized_under_apps_namespace(
         self, api_user_client: TestClient, app_key: str, expected_route: str
     ) -> None:
-        """Emit the declared route for an app that deviates from ``/apps/<key>``."""
+        """Emit declared routes after normalizing them under ``/apps``."""
         response = api_user_client.get("/api/apps/")
         entry = next(e for e in response.json() if e["app_key"] == app_key)
         assert entry["react_route"] == expected_route

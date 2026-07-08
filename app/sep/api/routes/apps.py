@@ -34,6 +34,7 @@ from app.sep.deps import PROTECTED_APP_KEYS, SessionDep
 from app.sep.models import AppLifecycleEnum
 
 router = APIRouter(tags=["apps"])
+APPS_ROUTE_PREFIX = "/apps"
 
 
 class AppKeyResponse(BaseModel):
@@ -67,6 +68,21 @@ class AppKeyResponse(BaseModel):
     nav_icon: NavIcon | None
 
 
+def build_navigation_react_route(app_key: str, react_route: URIPath | None) -> URIPath:
+    """Return the canonical navigation route for an app entry.
+
+    :param app_key: The plugin module key.
+    :param react_route: The optional plugin-declared route override.
+    :return: A concrete route under the ``/apps`` namespace.
+    """
+    route_suffix = react_route or f"/{app_key}"
+    if route_suffix == APPS_ROUTE_PREFIX or route_suffix.startswith(
+        f"{APPS_ROUTE_PREFIX}/"
+    ):
+        return route_suffix
+    return f"{APPS_ROUTE_PREFIX}{route_suffix}"
+
+
 @router.get("/")
 async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
     """Return per-app state for the current user's navigation.
@@ -93,7 +109,7 @@ async def list_apps_for_navigation(session: SessionDep) -> list[AppKeyResponse]:
             custom_ui=app.custom_ui,
             group=app.group,
             nav_order=app.nav_order,
-            react_route=app.react_route or f"/apps/{app.key}",
+            react_route=build_navigation_react_route(app.key, app.react_route),
             nav_icon=app.nav_icon,
         )
         for app in get_app_registry()

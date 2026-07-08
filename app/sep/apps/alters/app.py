@@ -53,7 +53,6 @@ app = TaskExecutionApp(
     uri_path="/alters",
     css_class="alters",
     nav_order=6,
-    react_route="/schema-change/alters",
     nav_icon=NavIcon.TABLE_CHART,
     owner=TaskOwner.ALTERS,
     schema=alters_schema,
