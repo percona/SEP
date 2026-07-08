@@ -20,7 +20,8 @@ from typing import Any, cast, NoReturn, NotRequired, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from itsdangerous import BadData, URLSafeTimedSerializer
-from pydantic import model_validator, ValidationInfo
+from pydantic import ConfigDict, model_validator, ValidationInfo
+from pydantic.alias_generators import to_camel
 from typing_extensions import TypedDict
 
 from app.core.auth.models import BaseTokenPayload, BaseUser, OAuthToken
@@ -107,6 +108,7 @@ class GrafanaUser(BaseUser):
     so the identity stays stable across username changes.
     """
 
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
     id: UUID
 
     @model_validator(mode="before")

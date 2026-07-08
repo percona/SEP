@@ -80,6 +80,20 @@ class TestGrafanaUserIdentity:
         assert other.id != first.id
 
 
+class TestGrafanaUserSerialization:
+    """Test the JSON serialization contract the React SPA depends on."""
+
+    def test_serializes_with_camelcase_aliases(self):
+        """Verify ``by_alias`` dumps camelCase keys the SPA reads (e.g. ``isAdmin``)."""
+        user = GrafanaUserFactory.build(is_admin=True)
+
+        dumped = user.model_dump(by_alias=True)
+
+        for alias in ("isAdmin", "firstName", "lastName", "createdTime", "updatedTime"):
+            assert alias in dumped
+        assert dumped["isAdmin"] is True
+
+
 class TestGrafanaUserFromJwt:
     """Test signature verification in ``from_jwt``."""
 
