@@ -71,16 +71,15 @@ class AppKeyResponse(BaseModel):
 def build_navigation_react_route(app_key: str, react_route: URIPath | None) -> URIPath:
     """Return the canonical navigation route for an app entry.
 
+    A plugin-declared ``react_route`` is already an absolute ``URIPath`` the app
+    chose as its canonical path, so it is honored verbatim; only an app that
+    declares none falls back to the ``/apps/<app_key>`` default.
+
     :param app_key: The plugin module key.
     :param react_route: The optional plugin-declared route override.
-    :return: A concrete route under the ``/apps`` namespace.
+    :return: The declared route verbatim, else the ``/apps/<app_key>`` default.
     """
-    route_suffix = react_route or f"/{app_key}"
-    if route_suffix == APPS_ROUTE_PREFIX or route_suffix.startswith(
-        f"{APPS_ROUTE_PREFIX}/"
-    ):
-        return route_suffix
-    return f"{APPS_ROUTE_PREFIX}{route_suffix}"
+    return react_route if react_route is not None else f"{APPS_ROUTE_PREFIX}/{app_key}"
 
 
 @router.get("/")
