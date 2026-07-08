@@ -20,10 +20,11 @@
  *
  * ``GET /api/apps/`` supplies per-app state, labels, and placement
  * (``display_name``, ``enabled``, ``sidebar``, ``group``, ``nav_order``).
- * ``buildNavigationItems()`` derives the sidebar tree from that data (including
- * each leaf's ``to`` and icon); this module holds only what the API does not
- * carry — group labels/icons, the icon-key → component map, the static
- * (non-app) entries, and the custom-app React route patterns.
+ * ``buildNavigationItems()`` derives the sidebar tree from that data (each
+ * leaf's icon, and its ``to`` for schema-driven apps); this module holds only
+ * what the API does not carry — group labels/icons, the icon-key → component
+ * map, the static (non-app) entries, and the custom-app React route patterns
+ * (which also supply custom apps' sidebar ``to``).
  */
 
 import type { EnabledApp } from '@sep/api';
@@ -162,11 +163,21 @@ function byOrderThenKey(
   return a.key.localeCompare(b.key);
 }
 
+/**
+ * Build a leaf nav item for one app.
+ *
+ * ``to`` prefers the frontend route registry when the app has an entry there —
+ * i.e. a custom-UI app, whose bespoke component is mounted at that registered
+ * path — so its link always matches what actually mounts (a backend
+ * ``react_route`` override can never strand a custom app on the 404 resolver).
+ * Schema-driven apps have no registry entry, so their link falls through to the
+ * backend ``react_route`` that ``SchemaDrivenAppResolver`` mounts them at.
+ */
 function leafNavItem(app: EnabledApp): NavItem {
   return {
     title: app.display_name,
     icon: (app.nav_icon ? ICON_BY_KEY[app.nav_icon] : undefined) ?? DEFAULT_APP_ICON,
-    to: app.react_route,
+    to: getAppRouteMeta(app.app_key)?.reactRoute ?? app.react_route,
     appKey: app.app_key,
   };
 }

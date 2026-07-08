@@ -195,16 +195,28 @@ describe('buildNavigationItems', () => {
     expect(items.find((item) => item.title === 'Inventory')?.appKey).toBeUndefined();
   });
 
-  it('derives leaf `to` from the payload react_route, not the static map', () => {
+  it('derives a schema app leaf `to` from the payload react_route', () => {
+    const items = buildNavigationItems([
+      mockApp({
+        app_key: 'checksums',
+        nav_order: 7,
+        display_name: 'Checksums',
+        react_route: '/apps/checksums-relocated',
+      }),
+    ]);
+    expect(findLeaf(items, 'checksums')?.to).toBe('/apps/checksums-relocated');
+  });
+
+  it('keeps a custom app leaf `to` on its registered route, ignoring a divergent payload', () => {
     const items = buildNavigationItems([
       mockApp({
         app_key: 'snippets',
         nav_order: 2,
         display_name: 'Snippets',
-        react_route: '/snippets/relocated',
+        react_route: '/snippets/relocated-by-mistake',
       }),
     ]);
-    expect(findLeaf(items, 'snippets')?.to).toBe('/snippets/relocated');
+    expect(findLeaf(items, 'snippets')?.to).toBe('/snippets');
   });
 
   it('renders an app present only in the payload with no static-map entry', () => {
