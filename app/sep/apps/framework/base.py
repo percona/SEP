@@ -38,17 +38,11 @@ class BaseApp(BaseModel):
 
     :param key: The scoped app key. Left unset, the registry stamps the
         module-path-derived key; set explicitly, the author's value wins.
-    :type key: str
     :param name: The app's internal name.
-    :type name: str
     :param display_name: The human-facing label; defaults to ``name`` when absent.
-    :type display_name: str
     :param uri_path: The Jinja mount prefix and sidebar link target.
-    :type uri_path: str
     :param css_class: The sidebar CSS class.
-    :type css_class: str
     :param sidebar: Whether the app appears in the sidebar.
-    :type sidebar: bool
     :param group: The nav group key this app nests under; ``None`` renders it
         as a top-level sidebar entry.
     :param nav_order: The app's sort position within the sidebar; ``None`` sorts
@@ -58,13 +52,9 @@ class BaseApp(BaseModel):
     :param nav_icon: The sidebar icon key; ``None`` falls back to the frontend's
         default app icon.
     :param enabled: The seed-time enabled default; stamped by the registry.
-    :type enabled: bool
     :param custom_ui: Whether the app ships a bespoke React UI.
-    :type custom_ui: bool
     :param api_router: The plugin's JSON ``APIRouter``, when it exposes one.
-    :type api_router: APIRouter | None
     :param jinja_router: The plugin's Jinja ``APIRouter``.
-    :type jinja_router: APIRouter | None
     :param app_schema: The plugin's schema definition, aliased ``schema`` for
         authoring; ``None`` for legacy-wrapped apps.
     """

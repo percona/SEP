@@ -118,8 +118,9 @@ const DEFAULT_APP_ICON: NavIcon = ExtensionIcon;
 /**
  * Sidebar icon per backend ``nav_icon`` key; falls back to ``DEFAULT_APP_ICON``.
  *
- * The keys mirror the backend ``app.sep.apps.nav_icons.NavIcon`` StrEnum — the
- * two are one cross-language contract, guarded by ``appNavConfig.test.ts``.
+ * Mirrors the backend ``app.sep.apps.nav_icons.NavIcon`` StrEnum, kept in sync
+ * by hand. ``appNavConfig.test.ts`` asserts this map covers the full vocabulary,
+ * so a key omitted here fails a test rather than silently defaulting the icon.
  */
 export const ICON_BY_KEY: Record<string, NavIcon> = {
   assignment: AssignmentIcon,

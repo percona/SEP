@@ -188,12 +188,12 @@ class TestPluginNavIcon:
     """``App.NAV_ICON`` is validated against the closed ``NavIcon`` vocabulary."""
 
     def test_valid_nav_icon_is_accepted(self) -> None:
-        """A known icon key validates and round-trips as its string value."""
+        """Accept a known icon key and round-trip it as its string value."""
         plugin = App(module_name="backup_pg", nav_icon="postgresql")
         assert plugin.nav_icon == "postgresql"
 
     def test_invalid_nav_icon_is_rejected(self) -> None:
-        """An unknown icon key fails settings validation at load."""
+        """Reject an unknown icon key at settings-load validation."""
         with pytest.raises(ValidationError, match="NAV_ICON"):
             App(module_name="backup_pg", nav_icon="not-a-real-icon")
 

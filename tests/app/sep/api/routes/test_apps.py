@@ -147,7 +147,7 @@ class TestListAppsForNavigation:
     async def test_default_react_route_emitted_concrete(
         self, api_user_client: TestClient
     ) -> None:
-        """An app without a ``react_route`` override resolves to ``/apps/<key>``."""
+        """Emit ``/apps/<key>`` for an app with no ``react_route`` override."""
         response = api_user_client.get("/api/apps/")
         checksums = next(e for e in response.json() if e["app_key"] == "checksums")
         assert checksums["react_route"] == "/apps/checksums"
@@ -166,7 +166,7 @@ class TestListAppsForNavigation:
     async def test_declared_react_routes_are_emitted(
         self, api_user_client: TestClient, app_key: str, expected_route: str
     ) -> None:
-        """Apps whose sidebar route deviates from ``/apps/<key>`` declare it."""
+        """Emit the declared route for an app that deviates from ``/apps/<key>``."""
         response = api_user_client.get("/api/apps/")
         entry = next(e for e in response.json() if e["app_key"] == app_key)
         assert entry["react_route"] == expected_route

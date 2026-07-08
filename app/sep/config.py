@@ -87,19 +87,15 @@ class App(BaseCaseInsensitiveModel):
     :param name: The name of the plugin. Optional: a MODULE_NAME-only entry
         omits it and the :class:`app.sep.apps.framework.registry.AppRegistry`
         derives descriptive metadata from the module basename instead.
-    :type name: str | None
     :param module_name: The name of the module associated with the plugin. This field is
         automatically prefixed with ``app.sep.apps.`` during validation.
     :param uri_path: The URI path where the plugin is accessible. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
-    :type uri_path: HttpUrl | URIPath
     :param css_class: The CSS class associated with the plugin. Defaults to an empty
         string, but is automatically set to a slugified version of the plugin name if
         not provided.
-    :type css_class: str
     :param sidebar: Whether to add this plugin to the sidebar. Defaults to True.
-    :type sidebar: bool
     :param group: The nav group key this plugin nests under (read from YAML as
         ``GROUP``); ``None`` renders it as a top-level sidebar entry.
     :param nav_order: The plugin's sort position within the sidebar (read from
@@ -113,7 +109,6 @@ class App(BaseCaseInsensitiveModel):
         seed time to set the initial :class:`app.sep.models.AppState` row;
         defaults to ``True`` so every plugin already in ``settings.yaml`` keeps
         shipping enabled. Set ``ENABLED: false`` to seed a plugin disabled.
-    :type enabled: bool
     :param api_router_path: Optional dot-separated import path to the plugin's
         JSON ``APIRouter`` instance (e.g. ``"app.sep.apps.checksums.api_routes.router"``).
         When set, the router is mounted under ``/api/apps/{key}`` by the
@@ -125,7 +120,6 @@ class App(BaseCaseInsensitiveModel):
           imported.
         * **Explicit ``null``** — opt the plugin out of the JSON API mount,
           even if a conventional module exists.
-    :type api_router_path: StrImportableAttribute | None
     """
 
     name: str | None = None

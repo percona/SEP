@@ -39,17 +39,11 @@ class AppKeyResponse(BaseModel):
     """Represent a minimal per-app entry for the navigation shell.
 
     :param app_key: The plugin module key.
-    :type app_key: str
     :param enabled: Whether the app is currently enabled.
-    :type enabled: bool
     :param sidebar: Whether the plugin appears in the sidebar.
-    :type sidebar: bool
     :param uri_path: The plugin's mount URI path.
-    :type uri_path: str
     :param display_name: The human-facing label for the app.
-    :type display_name: str
     :param custom_ui: Whether the app ships a bespoke React UI.
-    :type custom_ui: bool
     :param group: The nav group key this app nests under; ``None`` when the app
         renders as a top-level sidebar entry.
     :param nav_order: The app's sort position within the sidebar; ``None`` when
