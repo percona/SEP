@@ -27,7 +27,7 @@ import logging
 from typing import Annotated, Any
 
 import yaml
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import FutureDatetime
 
@@ -36,9 +36,9 @@ from app.core.pagination import fetch_all_dict_items
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.apps.backup_mongo.restore.deps import (
-    get_restores_index_context,
     parse_restore_task_data,
     RestoreGeneratedTask,
+    RestoresIndexContext,
     RestoresTask,
     RestoreTasks,
 )
@@ -167,7 +167,7 @@ async def _fetch_task_history(
 )
 async def restores_index(
     request: Request,
-    context: Annotated[dict[str, Any], Depends(get_restores_index_context)],
+    context: RestoresIndexContext,
 ) -> HTMLResponse:
     """Homepage of restores plugin."""
     return templates.TemplateResponse(

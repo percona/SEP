@@ -30,13 +30,13 @@ from app.sep.apps.backup_pg.deps import (
     BackupGeneratedTask,
     BackupsIndexContext,
     BackupsTask,
-    CheckConnectivityFlag,
     parse_backup_task_data,
 )
 from app.sep.apps.backup_pg.models import BackupType
 from app.sep.config import sep_settings
 from app.sep.connectivity import maybe_check_connectivity
 from app.sep.deps import (
+    CheckConnectivityFlag,
     DefaultContext,
     ExecutorHostsCtx,
     get_chainable_tasks,

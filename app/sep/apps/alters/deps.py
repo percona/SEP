@@ -923,3 +923,6 @@ async def get_alters_index_context(
         TaskOwner.ALTERS,
         alert_on_fail_default=True,
     )
+
+
+AltersIndexContext = Annotated[dict[str, Any], Depends(get_alters_index_context)]

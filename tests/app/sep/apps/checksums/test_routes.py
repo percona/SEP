@@ -23,6 +23,7 @@ from fastapi import status
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.checksums.deps import (
     build_checksums_task_payload,
+    get_checksums_index_context,
     get_checksums_task,
 )
 from app.sep.apps.checksums.models import ChecksumsCreate
@@ -239,3 +240,22 @@ def test_checksums_detail_uses_own_delete_route(
     assert response.status_code == status.HTTP_200_OK
     assert f"/checksums/{created_checksums_task.name}/delete" in response.text
     assert f"/tasks/{created_checksums_task.name}/delete" not in response.text
+
+
+@pytest.fixture
+def _mock_get_checksums_index_context_dep():
+    """Mock the get_checksums_index_context dependency with a stub context."""
+    sep_app.dependency_overrides[get_checksums_index_context] = lambda: {
+        "user": "default_user",
+    }
+    yield
+    sep_app.dependency_overrides = {}
+
+
+@pytest.mark.usefixtures("_mock_get_checksums_index_context_dep")
+def test_checksums_index(test_client):
+    """GET /checksums/ renders the index via the relocated ChecksumsIndexContext alias."""
+    response = test_client.get("/checksums/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"] == "text/html; charset=utf-8"

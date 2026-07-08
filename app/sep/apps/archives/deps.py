@@ -295,3 +295,6 @@ async def get_archives_index_context(
         TaskOwner.ARCHIVER,
         alert_on_fail_default=True,
     )
+
+
+ArchivesIndexContext = Annotated[dict[str, Any], Depends(get_archives_index_context)]

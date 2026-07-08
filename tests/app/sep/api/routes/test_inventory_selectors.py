@@ -21,6 +21,7 @@ from fastapi import HTTPException
 from starlette import status
 from starlette.testclient import TestClient
 
+from app.core.exceptions import HTTPNotFoundException, HTTPServiceUnavailableException
 from app.core.pagination import MAX_PAGINATION_LIMIT
 
 
@@ -67,8 +68,8 @@ class TestSepServiceSchemasEndpoint:
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
         """Return empty list when inventory responds with 404."""
-        mock_inventory_api_dep.get.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
+        mock_inventory_api_dep.get.side_effect = HTTPNotFoundException(
+            detail="Not Found"
         )
         response = test_client.get("/api/sep/services/9999/schemas")
         assert response.status_code == status.HTTP_200_OK
@@ -78,8 +79,7 @@ class TestSepServiceSchemasEndpoint:
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
         """Propagate auth and server errors instead of masking as empty list."""
-        mock_inventory_api_dep.get.side_effect = HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        mock_inventory_api_dep.get.side_effect = HTTPServiceUnavailableException(
             detail="Inventory unavailable",
         )
         response = test_client.get("/api/sep/services/10/schemas")
@@ -141,8 +141,8 @@ class TestSepSchemaTablesEndpoint:
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
     ) -> None:
         """Return empty list when inventory responds with 404."""
-        mock_inventory_api_dep.get.side_effect = HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Not Found"
+        mock_inventory_api_dep.get.side_effect = HTTPNotFoundException(
+            detail="Not Found"
         )
         response = test_client.get("/api/sep/schemas/9999/tables")
         assert response.status_code == status.HTTP_200_OK

@@ -18,11 +18,14 @@
 from typing import Any
 from unittest.mock import AsyncMock
 
+import pytest
 import yaml
 from fastapi import status
 
+from app.sep.apps.backup_mongo.restore.deps import get_restores_index_context
 from app.sep.apps.backup_mongo.restore.models import RestoreCreate
 from app.sep.inventory import CreatedService
+from app.sep.main import sep_app
 from app.tasks.models import TaskBackendEnum, TaskOwner
 from tests.app.factories import TaskFactory
 
@@ -123,3 +126,22 @@ def test_pbm_restores_detail_tolerates_missing_backup_type(
     response = test_client.get("/backup_mongo/restores/mongo-restore-task")
 
     assert response.status_code == status.HTTP_200_OK
+
+
+@pytest.fixture
+def _mock_get_restores_index_context_dep():
+    """Mock the get_restores_index_context dependency with a stub context."""
+    sep_app.dependency_overrides[get_restores_index_context] = lambda: {
+        "user": "default_user",
+    }
+    yield
+    sep_app.dependency_overrides = {}
+
+
+@pytest.mark.usefixtures("_mock_get_restores_index_context_dep")
+def test_pbm_restores_index(test_client):
+    """GET /backup_mongo/restores/ renders the index via the relocated RestoresIndexContext alias."""
+    response = test_client.get("/backup_mongo/restores/")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.headers["content-type"] == "text/html; charset=utf-8"
