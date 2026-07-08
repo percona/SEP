@@ -699,9 +699,10 @@ def build_settings_router(  # noqa: C901 - route factory defining 4 endpoints + 
         handler so FastAPI resolves the client per-request.
     :param applicability: Optional predicate deciding whether each field applies
         under current runtime state (e.g. the active auth provider). It drives
-        ``SettingResponse.is_applicable`` for the LIST and DETAIL responses;
-        ``None`` (the default) marks every field applicable, so callers that omit
-        it behave exactly as before. Display-only -- it never blocks PATCH/DELETE.
+        ``SettingResponse.is_applicable`` on every response the router returns
+        (LIST, DETAIL, and PATCH); ``None`` (the default) marks every field
+        applicable, so callers that omit it behave exactly as before. Display-only
+        -- it never blocks PATCH/DELETE.
     :return: A configured :class:`APIRouter` ready to mount under a sub-app's
         ``/settings`` prefix.
     """
