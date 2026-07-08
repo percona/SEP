@@ -35,7 +35,7 @@ def parse_server_list_config(
 ) -> dict[str, Any]:
     """Rebuild a backup edit-form dict from a parsed ``SERVER_LIST`` config.
 
-    The reverse of the create path: where :func:`assemble_envelope` writes the
+    The reverse of the create path: where :func:`~app.sep.apps.framework.spec.assemble_envelope` writes the
     ``SERVER_LIST`` / ``ALL_SERVERS`` envelope, this reads the first server entry
     and the shared ``ALL_SERVERS`` block back into the flat dict a backup app's
     Jinja edit form is populated from. It owns the parts identical across the
