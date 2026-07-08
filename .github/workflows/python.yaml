@@ -78,7 +78,7 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: poetry
       - name: Install test dependencies
-        run: poetry sync --no-root --with syncmysql
+        run: poetry sync --no-root
       - name: Run tests
         run: make test PYTEST_MARKERS='not postgres' COV=${{ matrix.python == '3.11.9' && '1' || '0' }}
       - name: Generate coverage comment data
@@ -121,7 +121,7 @@ jobs:
           python-version: "3.11.9"
           cache: poetry
       - name: Install test dependencies
-        run: poetry sync --no-root --with syncmysql,postgresql
+        run: poetry sync --no-root --with postgresql
       - name: Run PostgreSQL tests
         run: make test PYTEST_MARKERS='postgres' PYTEST_WORKERS=0 COV=0
 
