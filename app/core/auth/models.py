@@ -19,12 +19,11 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from datetime import datetime
 from functools import cached_property
-from typing import Any, Literal, Self
+from typing import Any, Self
 
 from pydantic import (
     BaseModel,
     computed_field,
-    EmailStr,
     Field,
     FutureDatetime,
     PastDatetime,
@@ -116,32 +115,24 @@ class BaseTokenPayload(BaseModel, ABC):
 
 
 class BaseUser(BaseModel, ABC):
-    """Base abstract class for a user.
+    """Represent the abstract base for a user.
 
     :param id: The unique identifier of the user.
-    :type id: UUID4
     :param username: The username of the user. Must be at least 1 character long.
-    :type username: NonEmptyStr
     :param email: The email address of the user.
-    :type email: EmailStr | Literal[""]
     :param first_name: The first name of the user.
-    :type first_name: str
     :param last_name: The last name of the user.
-    :type last_name: str
     :param is_admin: Whether the user has administrative privileges. Defaults
         to False.
-    :type is_admin: bool
     :param created_time: The datetime when the user was created. Defaults to
         current datetime.
-    :type created_time: datetime | None
     :param updated_time: The datetime when the user was last updated. Defaults
         to current datetime.
-    :type updated_time: datetime | None
     """
 
     id: UUID4
     username: NonEmptyStr
-    email: EmailStr | Literal[""] = ""
+    email: str = ""
     first_name: str = ""
     last_name: str = ""
     is_admin: bool = False
