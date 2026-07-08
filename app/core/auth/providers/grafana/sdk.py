@@ -16,7 +16,7 @@
 """Provide the GrafanaSDK for interacting with Grafana services."""
 
 from datetime import timedelta
-from typing import Any, ClassVar
+from typing import Any
 
 from aiohttp import ClientConnectionError
 from async_lru import _LRUCacheWrapper, alru_cache
@@ -57,8 +57,6 @@ class GrafanaSDK(RemoteAPI):
     header: the human-login flow authenticates via Grafana's session cookie,
     while the programmatic calls inject the service-account bearer per request.
 
-    :cvar SESSION_COOKIE_NAME: The ``grafana_session`` cookie Grafana sets on a
-        successful password login.
     :param endpoint: The base URL for the Grafana API endpoint.
     :param verify_ssl: Whether to verify SSL certificates. Defaults to True.
     :param service_account_token: The Grafana service-account token used as a
@@ -69,15 +67,17 @@ class GrafanaSDK(RemoteAPI):
         (the SPA's ``HttpOnly`` refresh cookie). Defaults to 7 days.
     :param error_detail_key: The key Grafana uses for error details. Defaults to
         "message".
+    :param session_cookie_name: The name of the cookie Grafana sets on a
+        successful password login. Defaults to ``grafana_session``.
     """
 
     model_config = ConfigDict(ignored_types=(_LRUCacheWrapper,))
-    SESSION_COOKIE_NAME: ClassVar[str] = "grafana_session"
     logger_name: str = __name__
     service_account_token: SecretStr
     access_token_max_age: TimedeltaSeconds = timedelta(hours=1)
     refresh_token_max_age: TimedeltaSeconds = timedelta(days=7)
     error_detail_key: NonEmptyStr = "message"
+    session_cookie_name: NonEmptyStr = "grafana_session"
 
     async def request(
         self,
@@ -128,7 +128,7 @@ class GrafanaSDK(RemoteAPI):
                     raise GrafanaException(
                         detail=f"Grafana login failed (HTTP {response.status})."
                     )
-                session_cookie = response.cookies.get(self.SESSION_COOKIE_NAME)
+                session_cookie = response.cookies.get(self.session_cookie_name)
                 if session_cookie is None:
                     raise GrafanaException(
                         detail="Grafana did not establish a session."
@@ -146,7 +146,7 @@ class GrafanaSDK(RemoteAPI):
         :param session: The ``grafana_session`` cookie value from :meth:`login`.
         :return: The Grafana ``/api/user`` record for the session's user.
         """
-        with self.extra_headers({"Cookie": f"{self.SESSION_COOKIE_NAME}={session}"}):
+        with self.extra_headers({"Cookie": f"{self.session_cookie_name}={session}"}):
             return await self.get("/api/user")
 
     async def get_current_user_orgs(self, session: str) -> list[dict[str, Any]]:
@@ -155,7 +155,7 @@ class GrafanaSDK(RemoteAPI):
         :param session: The ``grafana_session`` cookie value from :meth:`login`.
         :return: The Grafana ``/api/user/orgs`` records for the session's user.
         """
-        with self.extra_headers({"Cookie": f"{self.SESSION_COOKIE_NAME}={session}"}):
+        with self.extra_headers({"Cookie": f"{self.session_cookie_name}={session}"}):
             return await self.get("/api/user/orgs")
 
     @alru_cache(ttl=300)

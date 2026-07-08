@@ -16,11 +16,12 @@
 """Define the Grafana user and token-payload models."""
 
 from collections.abc import Sequence
-from typing import Any, cast, NoReturn, Self
+from typing import Any, cast, NoReturn, NotRequired, Self
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from itsdangerous import BadData, URLSafeTimedSerializer
 from pydantic import model_validator, ValidationInfo
+from typing_extensions import TypedDict
 
 from app.core.auth.models import BaseTokenPayload, BaseUser, OAuthToken
 from app.core.auth.providers.grafana.sdk import GrafanaException, GrafanaSDK
@@ -37,6 +38,32 @@ _ACCESS = "access"
 _REFRESH = "refresh"
 
 _ADMIN_ROLE = "Admin"
+
+
+class _GrafanaUserRecord(TypedDict):
+    """A Grafana ``/api/user`` or user-lookup record.
+
+    ``email`` and ``isGrafanaAdmin`` are ``NotRequired`` because Grafana omits
+    them for some users; the reader accesses both via ``.get()``.
+    """
+
+    id: int
+    login: str
+    email: NotRequired[str]
+    isGrafanaAdmin: NotRequired[bool]
+
+
+class _GrafanaOrgUserRecord(TypedDict):
+    """A Grafana ``/api/org/users`` record.
+
+    ``email`` and ``role`` are ``NotRequired`` because Grafana may omit them;
+    the reader accesses both via ``.get()``.
+    """
+
+    userId: int
+    login: str
+    email: NotRequired[str]
+    role: NotRequired[str]
 
 
 def _active_grafana_sdk() -> GrafanaSDK:
@@ -155,7 +182,7 @@ class GrafanaUser(BaseUser):
 
     @classmethod
     def _from_grafana_record(
-        cls, record: dict[str, Any], orgs: list[dict[str, Any]]
+        cls, record: _GrafanaUserRecord, orgs: list[dict[str, Any]]
     ) -> Self:
         """Build a user from a Grafana ``/api/user`` or user-lookup record.
 
@@ -179,7 +206,7 @@ class GrafanaUser(BaseUser):
         )
 
     @classmethod
-    def _from_org_user_record(cls, record: dict[str, Any]) -> Self:
+    def _from_org_user_record(cls, record: _GrafanaOrgUserRecord) -> Self:
         """Build a user from a Grafana ``/api/org/users`` record.
 
         The org-users listing carries ``userId`` and a single ``role`` per row,
@@ -233,7 +260,7 @@ class GrafanaUser(BaseUser):
         if not (username and password):
             raise GrafanaException(detail="Grafana requires a username and password.")
         session = await grafana.login(username, password)
-        record = await grafana.get_current_user(session)
+        record = cast(_GrafanaUserRecord, await grafana.get_current_user(session))
         orgs = await grafana.get_current_user_orgs(session)
         user = GrafanaUser._from_grafana_record(record, orgs)
         return GrafanaUser._oauth_token_for(user, grafana)
@@ -270,7 +297,9 @@ class GrafanaUser(BaseUser):
         :param username: The login or email to look up.
         :return: The mapped ``GrafanaUser``.
         """
-        record = await _active_grafana_sdk().lookup_user(username)
+        record = cast(
+            _GrafanaUserRecord, await _active_grafana_sdk().lookup_user(username)
+        )
         return cls._from_grafana_record(record, [])
 
     @classmethod
@@ -282,7 +311,9 @@ class GrafanaUser(BaseUser):
 
         :return: The mapped ``GrafanaUser`` instances.
         """
-        records = await _active_grafana_sdk().get_org_users()
+        records = cast(
+            list[_GrafanaOrgUserRecord], await _active_grafana_sdk().get_org_users()
+        )
         return [cls._from_org_user_record(record) for record in records]
 
     @classmethod
