@@ -597,3 +597,6 @@ def get_dipper_execution_meta(
         script_source,
         execution_args,
     )
+
+
+ExecutionMetaDep = Annotated[SnippetExecutionMeta, Depends(get_dipper_execution_meta)]
