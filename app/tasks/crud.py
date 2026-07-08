@@ -230,6 +230,9 @@ class TaskManager(BaseSQLModelManager):
             )
         # TODO(yan): Implement proper locking mechanism for deletion
         # SEP-393
+        # Route-level tests in test_routes.py pin these 409 guards at the HTTP
+        # boundary so the delete endpoint cannot regress to a 500 for the
+        # detected running or pending case.
         if await TaskHistoryManager.list_by_task_name(
             session=session, task_name=name, status=TaskHistoryStatusEnum.RUNNING
         ):
