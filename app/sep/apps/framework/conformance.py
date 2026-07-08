@@ -48,6 +48,7 @@ if TYPE_CHECKING:
 __all__ = [
     "CAPABILITY_RENDERED_CONTROLS",
     "check_capability_route_consistency",
+    "check_child_app_registration",
     "check_form_conformance",
     "check_no_duplicate_capability_control",
     "check_route_collisions",
@@ -123,7 +124,7 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
     """Return violations where derived routes disagree with the capability flags.
 
     Assert each verb toggle on ``app.capabilities`` matches the presence of its
-    *derived* route: ``create`` ↔ ``POST /``, ``execute`` ↔
+    *derived* route: ``list`` ↔ ``GET /``, ``create`` ↔ ``POST /``, ``execute`` ↔
     ``POST /{task_name}/execute``, ``update`` ↔ ``PUT /{param}``, ``delete`` ↔
     ``DELETE /{param}`` (``param`` is ``app.detail_path_param``). The execute route
     always uses the literal ``task_name`` path parameter, independent of
@@ -147,6 +148,7 @@ def check_capability_route_consistency(app: "TaskExecutionApp") -> list[str]:
         return []
     detail = f"/{{{app.detail_path_param}}}"
     expected = {
+        "list": ("GET", "/"),
         "create": ("POST", "/"),
         "execute": ("POST", "/{task_name}/execute"),
         "update": ("PUT", detail),
@@ -302,6 +304,45 @@ def check_route_collisions(registry: Iterable["BaseApp"]) -> list[str]:
         for (path, method), count in sorted(counts.items())
         if count > 1
     ]
+
+
+def check_child_app_registration(registry: Iterable["BaseApp"]) -> list[str]:
+    """Return violations where a parent/child app binding is inconsistent.
+
+    Assert the structural invariants of the ``child_apps`` mechanism: every app a
+    parent declares in ``child_apps`` is itself registered (so it mounts and
+    snapshots), names that parent via ``parent_key``, and carries a key scoped
+    under the parent's namespace; and every app carrying a ``parent_key`` resolves
+    to a registered parent. That a child owns no ``AppState`` row is a seed-time
+    invariant checked against the DB, not by this pure detector.
+
+    :param registry: The apps to check (the ``AppRegistry`` is one such iterable).
+    :return: One message per binding inconsistency; empty when all resolve.
+    """
+    apps = list(registry)
+    by_key = {app.key: app for app in apps}
+    violations = []
+    for app in apps:
+        for child in app.child_apps:
+            if child.parent_key != app.key:
+                violations.append(
+                    f"child app {child.key!r} of parent {app.key!r} declares "
+                    f"parent_key {child.parent_key!r}"
+                )
+            if child.key not in by_key:
+                violations.append(
+                    f"child app {child.key!r} of parent {app.key!r} is not registered"
+                )
+            elif not child.key.startswith(f"{app.key}/"):
+                violations.append(
+                    f"child app {child.key!r} is not scoped under parent {app.key!r}"
+                )
+        if app.parent_key is not None and app.parent_key not in by_key:
+            violations.append(
+                f"app {app.key!r} has parent_key {app.parent_key!r} but no such "
+                "parent is registered"
+            )
+    return violations
 
 
 def check_routes_documented(openapi: Mapping[str, Any]) -> list[str]:
