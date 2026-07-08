@@ -23,6 +23,7 @@ execute-route factory.
 import functools
 import inspect
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated
 from unittest.mock import AsyncMock
 
@@ -1118,6 +1119,7 @@ class _SyntheticTaskResponse(BaseModel):
     name: str
     display_label: str = Field(alias="displayLabel")
     status: TaskHistoryStatusEnum | None = None
+    last_executed_at: datetime | None = None
 
 
 class _SyntheticCreateResponse(BaseModel):
@@ -1134,11 +1136,17 @@ class _SyntheticCreate(BaseModel):
 
 
 def _build_synthetic_response(
-    task: Task, status: TaskHistoryStatusEnum | None = None
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+    *,
+    last_executed_at: datetime | None = None,
 ) -> _SyntheticTaskResponse:
     """Build the synthetic list/detail response for ``task``."""
     return _SyntheticTaskResponse(
-        name=task.name, display_label=task.name.upper(), status=status
+        name=task.name,
+        display_label=task.name.upper(),
+        status=status,
+        last_executed_at=last_executed_at,
     )
 
 
@@ -1216,7 +1224,14 @@ async def _fake_tasks_post(
         if batch_error is not None:
             raise batch_error
         names = (json or {}).get("names", [])
-        return {name: latest_statuses.get(name) for name in names}
+        return {
+            name: (
+                {"status": status, "finished_at": None}
+                if (status := latest_statuses.get(name)) is not None
+                else None
+            )
+            for name in names
+        }
     if create_error is not None:
         raise create_error
     return created_task if created_task is not None else {}
@@ -2131,7 +2146,10 @@ class _SyntheticDetailResponse(BaseModel):
 
 
 def _build_synthetic_detail_response(
-    task: Task, status: TaskHistoryStatusEnum | None = None
+    task: Task,
+    status: TaskHistoryStatusEnum | None = None,
+    *,
+    last_executed_at: datetime | None = None,
 ) -> _SyntheticDetailResponse:
     """Build the distinct synthetic detail response for ``task``."""
     return _SyntheticDetailResponse(name=task.name)
@@ -2154,6 +2172,7 @@ def _build_context_response(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
     context: dict[str, str] | None = None,
 ) -> _ContextResponse:
     """Resolve ``created_by`` from the bound ``context`` map, falling back to the id."""

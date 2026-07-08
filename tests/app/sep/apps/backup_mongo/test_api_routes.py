@@ -167,7 +167,7 @@ class TestBackupMongoApiList:
             return_value={"items": [parent], "total": 1, "offset": 0, "limit": 50}
         )
         mock_task_api_dep.post = AsyncMock(
-            return_value={"parent-backup": "success"},
+            return_value={"parent-backup": {"status": "success", "finished_at": None}},
         )
 
         response = test_client.get(f"{API_BASE}/")
@@ -212,7 +212,9 @@ class TestBackupMongoApiList:
                 "limit": 1,
             }
         )
-        mock_task_api_dep.post = AsyncMock(return_value={"parent-backup-b": "running"})
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"parent-backup-b": {"status": "running", "finished_at": None}}
+        )
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
 
@@ -266,6 +268,45 @@ class TestBackupMongoApiList:
         mock_task_api_dep.post.assert_awaited_once_with(
             "/history/latest",
             json={"names": ["parent-backup-a", "parent-backup-b"]},
+        )
+
+    def test_list_with_status_filter_uses_bounded_limit(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """When ``status`` is set, fetch parents with bounded limit (not 0)."""
+        parent_a = build_backup_task("parent-backup-a")
+        parent_b = build_backup_task("parent-backup-b")
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [parent_a, parent_b],
+                "total": TWO_PARENT_FIXTURE_TOTAL,
+                "offset": 0,
+                "limit": MAX_PAGINATION_LIMIT,
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={
+                "parent-backup-a": {"status": "success", "finished_at": None},
+                "parent-backup-b": {"status": "running", "finished_at": None},
+            },
+        )
+
+        response = test_client.get(f"{API_BASE}/?status=success")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["name"] == "parent-backup-a"
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/",
+            params={
+                "owner": TaskOwner.BACKUP_MONGO.value,
+                "parent_is_null": "true",
+                "backup_type": BackupType.PBM_CONFIG.value,
+                "offset": 0,
+                "limit": DEFAULT_PAGE_LIMIT,
+            },
         )
 
     @pytest.mark.parametrize(

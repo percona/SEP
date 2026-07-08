@@ -29,6 +29,7 @@ same ``api_router`` seam with no registry change.
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Self
 
@@ -1023,6 +1024,7 @@ class TaskExecutionApp(BaseApp):
             task: Task,
             *,
             status: TaskHistoryStatusEnum | None = None,
+            last_executed_at: datetime | None = None,
             context: dict[str, str] | None = None,
         ) -> response_model:
             mapping = context or {}
@@ -1030,6 +1032,7 @@ class TaskExecutionApp(BaseApp):
                 response_model,
                 task,
                 status,
+                last_executed_at=last_executed_at,
                 extras={
                     "created_by": mapping.get(task.created_by, task.created_by),
                     "last_updated_by": mapping.get(

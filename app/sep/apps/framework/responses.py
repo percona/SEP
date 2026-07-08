@@ -53,6 +53,10 @@ class BaseTaskResponse(BaseModel):
         ``None`` for an app without a fixed service type.
     :param status: The latest known execution status; ``None`` until the task
         runs.
+    :param last_executed_at: The most recent time the task finished executing
+        (``max`` ``finished_at`` across its history). Reported even while a
+        re-run is in progress (showing the prior completion); ``None`` until the
+        task has finished at least once.
     :param id: The task's unique identifier.
     :param backend: The backend worker/engine executing the task.
     :param data: The raw configuration and parameters used for execution. Tasks
@@ -82,6 +86,7 @@ class BaseTaskResponse(BaseModel):
     owner: TaskOwner
     service_type: ServiceTypeEnum | None = None
     status: TaskHistoryStatusEnum | None = None
+    last_executed_at: datetime | None = None
     id: int | None = None
     backend: TaskBackendEnum
     data: dict[str, Any]
@@ -134,18 +139,25 @@ class TaskResponseBuilder(Protocol[R]):
     """Build a JSON-API response model from a task and its latest status.
 
     This is the minimum builder contract. The pipeline invokes the builder as
-    ``response_builder(task, status=...)``, so every per-plugin builder whose
-    ``status`` is positional-or-keyword or keyword-only is a structural subtype.
-    When a context provider is configured the pipeline additionally binds its
-    once-awaited result as a ``context`` keyword (via :func:`functools.partial`),
-    so a context-aware builder declares an extra keyword-only ``context`` (or
+    ``response_builder(task, status=..., last_executed_at=...)``, so every
+    per-plugin builder whose ``status`` and ``last_executed_at`` are
+    positional-or-keyword or keyword-only is a structural subtype. When a context
+    provider is configured the pipeline additionally binds its once-awaited
+    result as a ``context`` keyword (via :func:`functools.partial`), so a
+    context-aware builder declares an extra keyword-only ``context`` (or
     ``**kwargs``). That keyword is intentionally left out of this protocol so a
     contextless builder stays a valid subtype; the route-derivation layer rejects
     a builder paired with a context provider that cannot accept ``context``.
     """
 
-    def __call__(self, task: Task, *, status: TaskHistoryStatusEnum | None = None) -> R:
-        """Build the response model for ``task`` and its latest ``status``."""
+    def __call__(
+        self,
+        task: Task,
+        *,
+        status: TaskHistoryStatusEnum | None = None,
+        last_executed_at: datetime | None = None,
+    ) -> R:
+        """Build the response model for ``task``, its ``status`` and last run."""
 
 
 def build_default_task_response(
@@ -153,29 +165,29 @@ def build_default_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
     *,
+    last_executed_at: datetime | None = None,
     extras: Mapping[str, Any] | None = None,
 ) -> R:
-    """Build ``response_model`` from a task dump plus status and optional extras.
+    """Build ``response_model`` from a task dump plus run info and optional extras.
 
     ``extras`` is merged over the dumped payload with ``dict.update`` semantics,
     so it can both add new fields (``service_type``, ``hostname``,
     ``backup_type``, ``connectivity_warning``) and override dumped ones (the
     ``created_by`` / ``last_updated_by`` username remap, or a mutated ``data``
-    carrying ``_command_line``).
+    carrying ``_command_line``). ``status`` and ``last_executed_at`` are injected
+    before ``extras`` so an app could still override them if ever needed.
 
     :param response_model: The response model class to construct.
-    :type response_model: type[R]
     :param task: The task to dump into the response payload.
-    :type task: Task
     :param status: The latest known execution status for the task.
-    :type status: TaskHistoryStatusEnum | None
+    :param last_executed_at: The most recent time the task finished executing
+        (``max`` ``finished_at``); ``None`` until it has finished once.
     :param extras: Fields merged over the dumped payload (add or override).
-    :type extras: Mapping[str, Any] | None
     :return: A validated response model instance.
-    :rtype: R
     """
     payload = task.model_dump()
     payload["status"] = status
+    payload["last_executed_at"] = last_executed_at
     if extras:
         payload.update(extras)
     return response_model(**payload)
@@ -319,11 +331,16 @@ async def build_task_list_responses(
         context = await context_provider()
         builder = functools.partial(response_builder, context=context)
 
-    statuses = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
+    latest = await batch_get_latest_statuses(tasks_api, [task.name for task in tasks])
     items = [
-        builder(task, status=statuses.get(task.name))
+        builder(
+            task,
+            status=(entry := latest.get(task.name)) and entry.status,
+            last_executed_at=entry.finished_at if entry else None,
+        )
         for task in tasks
-        if status_filter is None or statuses.get(task.name) == status_filter
+        if status_filter is None
+        or ((row := latest.get(task.name)) and row.status) == status_filter
     ]
 
     if pagination is None:
