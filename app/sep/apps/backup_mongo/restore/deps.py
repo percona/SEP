@@ -17,6 +17,7 @@
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
@@ -28,7 +29,7 @@ from app.core.exceptions import (
 )
 from app.core.pagination import fetch_all_dict_items, PaginatedResponse, Pagination
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_mongo.deps import _gathered_task_status
+from app.sep.apps.backup_mongo.deps import _gathered_latest_history
 from app.sep.apps.backup_mongo.models import BackupType
 from app.sep.apps.backup_mongo.restore.models import (
     OWNER,
@@ -46,7 +47,7 @@ from app.sep.apps.backup_mongo.restore.spec import (
 from app.sep.apps.framework import (
     batch_get_latest_statuses,
     extract_latest_task_status,
-    get_task_latest_status,
+    get_task_latest_history,
     make_task_dep,
 )
 from app.sep.apps.framework.cascade import (
@@ -467,6 +468,7 @@ def build_restore_mongo_api_task_response(
     task: Task,
     *,
     status: TaskHistoryStatusEnum | None = None,
+    last_executed_at: datetime | None = None,
 ) -> RestoreTaskResponse:
     """Build a restore task response object for the JSON API.
 
@@ -474,6 +476,8 @@ def build_restore_mongo_api_task_response(
     :type task: Task
     :param status: The latest known execution status for the task.
     :type status: TaskHistoryStatusEnum | None
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :return: A validated restore task API response object.
     :rtype: RestoreTaskResponse
     """
@@ -484,6 +488,7 @@ def build_restore_mongo_api_task_response(
         **task.model_dump(),
         hostname=meta.get("target"),
         status=status,
+        last_executed_at=last_executed_at,
         backup_type=str(backup_type) if backup_type is not None else "",
         backup_source=str(config.get("backupSource", "")),
     )
@@ -522,7 +527,8 @@ async def get_restore_mongo_api_task_responses(
         items = [
             build_restore_mongo_api_task_response(
                 task,
-                status=status_map.get(task.name),
+                status=(latest := status_map.get(task.name)) and latest.status,
+                last_executed_at=latest.finished_at if latest else None,
             )
             for task in page_parents
         ]
@@ -532,19 +538,21 @@ async def get_restore_mongo_api_task_responses(
         tasks_api,
         [task.name for task in parents],
     )
-    task_status_pairs = [
-        (task, task_status)
+    task_latest_pairs = [
+        (task, latest)
         for task in parents
-        if (task_status := status_map.get(task.name)) == status
+        if (latest := status_map.get(task.name)) is not None and latest.status == status
     ]
-    page_pairs = pagination.slice(task_status_pairs)
+    page_pairs = pagination.slice(task_latest_pairs)
     items = [
-        build_restore_mongo_api_task_response(task, status=task_status)
-        for task, task_status in page_pairs
+        build_restore_mongo_api_task_response(
+            task, status=latest.status, last_executed_at=latest.finished_at
+        )
+        for task, latest in page_pairs
     ]
     return PaginatedResponse.from_pagination(
         items,
-        len(task_status_pairs),
+        len(task_latest_pairs),
         pagination,
     )
 
@@ -581,11 +589,11 @@ async def build_restore_mongo_api_detail_response(
     backup_type = _backup_type_from_parent(task)
     child_names = restore_child_task_names(task.name, backup_type)
     gather_results = await asyncio.gather(
-        get_task_latest_status(tasks_api, task.name),
+        get_task_latest_history(tasks_api, task.name),
         *(_fetch_restore_child_detail(name, tasks_api) for name in child_names),
         return_exceptions=True,
     )
-    parent_status = _gathered_task_status(gather_results[0])
+    parent_latest = _gathered_latest_history(gather_results[0])
     child_results = gather_results[1:]
     derived_tasks = []
 
@@ -600,7 +608,11 @@ async def build_restore_mongo_api_detail_response(
             )
         )
 
-    base = build_restore_mongo_api_task_response(task, status=parent_status)
+    base = build_restore_mongo_api_task_response(
+        task,
+        status=parent_latest.status if parent_latest else None,
+        last_executed_at=parent_latest.finished_at if parent_latest else None,
+    )
     return RestoreTaskDetailResponse(
         **base.model_dump(),
         derived_tasks=derived_tasks,

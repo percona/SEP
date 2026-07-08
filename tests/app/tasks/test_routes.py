@@ -18,7 +18,7 @@
 import base64
 import gzip
 import json as json_lib
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -180,39 +180,49 @@ async def test_update_task_not_found(test_client):
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 
-@pytest.mark.asyncio
-async def test_latest_task_history_status_batch(test_client, session):
-    """Assert POST /history/latest returns latest status keyed by task name."""
+async def _seed_running_over_success(session, name: str, finished):
+    """Seed ``name`` with an earlier SUCCESS run then a newer in-progress RUNNING.
+
+    :param session: The asynchronous session used to persist the rows.
+    :param name: The task name to create history for.
+    :param finished: The completion time of the SUCCESS run.
+    :return: The created task.
+    """
     task = await TaskManager.create(
         session,
-        TaskWrite.model_validate(TaskFactory.build(name="route-latest-status")),
+        TaskWrite.model_validate(TaskFactory.build(name=name)),
     )
-    await TaskHistoryManager.save(
-        session,
-        TaskHistory(
-            task_id=task.id,
-            status=TaskHistoryStatusEnum.SUCCESS,
-            execution_request={
-                "task": task.name,
-                "target": "localhost",
-                "meta": {},
-                "tracking": {"allocation_id": None, "evaluation_id": None},
-            },
-        ),
-    )
-    await TaskHistoryManager.save(
-        session,
-        TaskHistory(
-            task_id=task.id,
-            status=TaskHistoryStatusEnum.RUNNING,
-            execution_request={
-                "task": task.name,
-                "target": "localhost",
-                "meta": {},
-                "tracking": {"allocation_id": None, "evaluation_id": None},
-            },
-        ),
-    )
+    for task_status, finished_at in (
+        (TaskHistoryStatusEnum.SUCCESS, finished),
+        (TaskHistoryStatusEnum.RUNNING, None),
+    ):
+        await TaskHistoryManager.save(
+            session,
+            TaskHistory(
+                task_id=task.id,
+                status=task_status,
+                finished_at=finished_at,
+                execution_request={
+                    "task": task.name,
+                    "target": "localhost",
+                    "meta": {},
+                    "tracking": {"allocation_id": None, "evaluation_id": None},
+                },
+            ),
+        )
+    return task
+
+
+@pytest.mark.asyncio
+async def test_latest_task_history_batch(test_client, session):
+    """Assert POST /history/latest returns the latest projection per name.
+
+    The newest row is an in-progress RUNNING run (no finish time), while an
+    earlier SUCCESS run has one — so the projection reports RUNNING status but
+    the prior (max) finish time.
+    """
+    finished = utc_now() - timedelta(hours=1)
+    task = await _seed_running_over_success(session, "route-latest-full", finished)
 
     response = test_client.post(
         "/history/latest",
@@ -220,10 +230,15 @@ async def test_latest_task_history_status_batch(test_client, session):
     )
 
     assert response.status_code == status.HTTP_200_OK
-    assert response.json() == {
-        task.name: TaskHistoryStatusEnum.RUNNING.value,
-        "route-latest-missing": None,
-    }
+    body = response.json()
+    assert body["route-latest-missing"] is None
+    assert body[task.name]["status"] == TaskHistoryStatusEnum.RUNNING.value
+    # The newest (RUNNING) row has no finish time; a non-null value proves the
+    # projection reports the prior run's max(finished_at), not the newest row.
+    assert body[task.name]["finished_at"] is not None
+    assert datetime.fromisoformat(body[task.name]["finished_at"]).replace(
+        tzinfo=None
+    ) == finished.replace(tzinfo=None)
 
 
 @pytest.mark.asyncio

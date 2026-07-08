@@ -18,7 +18,8 @@
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+import yaml
+from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field
 
 from app.core.models import BaseCaseInsensitiveModel
 from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
@@ -90,6 +91,56 @@ class LogOutput(StrEnum):
     STDOUT = "stdout"
     FILE = "file"
     SYSLOG = "syslog"
+
+
+def parse_backup_priority(priority_str: str) -> dict[str, float]:
+    """Parse the Node Priority YAML into a node -> priority mapping.
+
+    Shared by the request-model validator (create-time) and the spec builder so the
+    parse rules cannot drift and a present priority is never silently dropped.
+
+    :param priority_str: Raw YAML from the Node Priority field.
+    :return: Mapping of node address to numeric priority.
+    :raises ValueError: On invalid YAML, a non-mapping result, an empty mapping,
+        or a non-numeric priority value.
+    """
+    try:
+        parsed = yaml.safe_load(priority_str)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Node priority is not valid YAML: {exc}") from exc
+    if not isinstance(parsed, dict):
+        # Raise ValueError, not TypeError, so Pydantic surfaces a 422 instead of a 500.
+        raise ValueError(  # noqa: TRY004
+            "Node priority must be a YAML mapping of node address to priority number"
+        )
+    if not parsed:
+        # A present-but-empty mapping would be dropped as falsy in the spec builder;
+        # reject it so a present field always takes effect.
+        raise ValueError("Node priority mapping is empty; provide at least one node")
+    result = {}
+    for node, value in parsed.items():
+        # Reject booleans explicitly — they would otherwise coerce to 1.0 / 0.0.
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise ValueError(  # noqa: TRY004
+                f"Priority for {node!r} must be a number, got {value!r}"
+            )
+        result[str(node)] = float(value)
+    return result
+
+
+def _validate_priority_yaml(value: str) -> str:
+    """Validate the Node Priority YAML, returning the raw string unchanged.
+
+    :param value: The raw Node Priority YAML string.
+    :return: The same string, once it is confirmed to be a valid priority mapping.
+    :raises ValueError: If the YAML is not a valid node -> number mapping.
+    """
+    parse_backup_priority(value)
+    return value
+
+
+# A non-empty Node Priority YAML string, validated as a node -> number mapping.
+BackupPriorityYaml = Annotated[NonEmptyStr, AfterValidator(_validate_priority_yaml)]
 
 
 class BackupConfigPITR(BaseCaseInsensitiveModel):
@@ -288,7 +339,7 @@ class BackupCreate(BaseCaseInsensitiveModel):
     storage_s3_endpoint_url: NonEmptyStr | EmptyStrToNone = None
     storage_filesystem_path: NonEmptyStr | EmptyStrToNone = None
     # Backup options
-    backup_priority: NonEmptyStr | EmptyStrToNone = None
+    backup_priority: BackupPriorityYaml | EmptyStrToNone = None
     backup_compression: CompressionAlgorithm | EmptyStrToNone = None
     backup_compression_level: int | EmptyStrToNone = None
     backup_timeouts_starting_status: int | EmptyStrToNone = None
@@ -367,7 +418,12 @@ class BackupForm(TaskFormModel):
             label="Node Priority (YAML)",
             section="BackupOptions",
             widget=FieldWidget.TEXTAREA,
-            description="YAML mapping of mongod addresses to backup priority",
+            description=(
+                "YAML mapping of mongod addresses to backup priority (highest wins). "
+                "One entry per line, e.g.:\n"
+                '"host1:27018": 2\n'
+                '"host2:27018": 1'
+            ),
         ),
     ] = None
     backup_compression: Annotated[
@@ -456,7 +512,7 @@ class BackupTaskWrite(BaseModel):
     storage_s3_prefix: str | None = None
     storage_s3_endpoint_url: str | None = None
     storage_filesystem_path: str | None = None
-    backup_priority: str | None = None
+    backup_priority: BackupPriorityYaml | EmptyStrToNone = None
     backup_compression: CompressionAlgorithm | None = None
     backup_compression_level: int | None = None
     backup_timeouts_starting_status: int | None = None

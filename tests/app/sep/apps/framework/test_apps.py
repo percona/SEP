@@ -292,7 +292,15 @@ def _make_tasks_api(
     async def _post(path: str, json: dict | None = None) -> dict:
         if path == "/history/latest":
             names = (json or {}).get("names", [])
-            return {name: (latest_statuses or {}).get(name) for name in names}
+            statuses = latest_statuses or {}
+            return {
+                name: (
+                    {"status": status, "finished_at": None}
+                    if (status := statuses.get(name)) is not None
+                    else None
+                )
+                for name in names
+            }
         return created_task if created_task is not None else {}
 
     api.get.side_effect = _get

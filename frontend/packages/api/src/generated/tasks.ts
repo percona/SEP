@@ -256,10 +256,10 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Latest Task History Status
-     * @description Return the latest known execution status for each requested task name.
+     * Latest Task History
+     * @description Return the latest-history projection (status + finished_at) per task name.
      */
-    post: operations['tasks_latest_task_history_status_history_latest_post'];
+    post: operations['tasks_latest_task_history_history_latest_post'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1362,6 +1362,21 @@ export interface components {
       updated_at?: string | null;
     };
     /**
+     * TaskHistoryLatestStatus
+     * @description Represent the latest-history projection for a single task.
+     *
+     *     :param status: The latest known execution status, taken from the newest
+     *         history row; ``None`` only when the task has no history rows at all.
+     *     :param finished_at: The most recent ``finished_at`` across all of the task's
+     *         history rows (a ``max``), so a task with an in-progress re-run still
+     *         reports its prior completion; ``None`` when no run has ever finished.
+     */
+    TaskHistoryLatestStatus: {
+      /** Finished At */
+      finished_at?: string | null;
+      status?: components['schemas']['TaskHistoryStatusEnum'] | null;
+    };
+    /**
      * TaskHistoryLatestStatusRequest
      * @description Define request body for batch latest-history status lookup.
      *
@@ -2024,7 +2039,7 @@ export interface operations {
       };
     };
   };
-  tasks_latest_task_history_status_history_latest_post: {
+  tasks_latest_task_history_history_latest_post: {
     parameters: {
       query?: never;
       header?: never;
@@ -2044,7 +2059,7 @@ export interface operations {
         };
         content: {
           'application/json': {
-            [key: string]: components['schemas']['TaskHistoryStatusEnum'] | null;
+            [key: string]: components['schemas']['TaskHistoryLatestStatus'] | null;
           };
         };
       };

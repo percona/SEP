@@ -695,6 +695,8 @@ class RestoreTaskBase(BaseModel):
     :param status: The current execution status of the task.
     :param backup_type: The PBM backup type for this restore.
     :param backup_source: The backup name or timestamp to restore from.
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     """
 
     name: str
@@ -703,6 +705,7 @@ class RestoreTaskBase(BaseModel):
     status: TaskHistoryStatusEnum | None = None
     backup_type: str
     backup_source: str
+    last_executed_at: datetime | None = None
 
 
 class RestoreTaskResponse(RestoreTaskBase):

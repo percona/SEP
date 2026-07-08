@@ -24,7 +24,7 @@ from fastapi import HTTPException, status
 from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import MAX_PAGINATION_LIMIT
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.backup_mongo.models import BackupType
+from app.sep.apps.backup_mongo.models import BackupType, OWNER
 from app.sep.inventory import CreatedService
 from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
@@ -167,7 +167,7 @@ class TestBackupMongoApiList:
             return_value={"items": [parent], "total": 1, "offset": 0, "limit": 50}
         )
         mock_task_api_dep.post = AsyncMock(
-            return_value={"parent-backup": "success"},
+            return_value={"parent-backup": {"status": "success", "finished_at": None}},
         )
 
         response = test_client.get(f"{API_BASE}/")
@@ -212,7 +212,9 @@ class TestBackupMongoApiList:
                 "limit": 1,
             }
         )
-        mock_task_api_dep.post = AsyncMock(return_value={"parent-backup-b": "running"})
+        mock_task_api_dep.post = AsyncMock(
+            return_value={"parent-backup-b": {"status": "running", "finished_at": None}}
+        )
 
         response = test_client.get(f"{API_BASE}/?offset=1&limit=1")
 
@@ -266,6 +268,45 @@ class TestBackupMongoApiList:
         mock_task_api_dep.post.assert_awaited_once_with(
             "/history/latest",
             json={"names": ["parent-backup-a", "parent-backup-b"]},
+        )
+
+    def test_list_with_status_filter_uses_bounded_limit(
+        self, test_client, mock_task_api_dep
+    ) -> None:
+        """When ``status`` is set, fetch parents with bounded limit (not 0)."""
+        parent_a = build_backup_task("parent-backup-a")
+        parent_b = build_backup_task("parent-backup-b")
+        mock_task_api_dep.get = AsyncMock(
+            return_value={
+                "items": [parent_a, parent_b],
+                "total": TWO_PARENT_FIXTURE_TOTAL,
+                "offset": 0,
+                "limit": MAX_PAGINATION_LIMIT,
+            }
+        )
+        mock_task_api_dep.post = AsyncMock(
+            return_value={
+                "parent-backup-a": {"status": "success", "finished_at": None},
+                "parent-backup-b": {"status": "running", "finished_at": None},
+            },
+        )
+
+        response = test_client.get(f"{API_BASE}/?status=success")
+
+        assert response.status_code == status.HTTP_200_OK
+        body = response.json()
+        assert body["total"] == 1
+        assert len(body["items"]) == 1
+        assert body["items"][0]["name"] == "parent-backup-a"
+        mock_task_api_dep.get.assert_awaited_once_with(
+            "/",
+            params={
+                "owner": OWNER,
+                "parent_is_null": "true",
+                "backup_type": BackupType.PBM_CONFIG.value,
+                "offset": 0,
+                "limit": DEFAULT_PAGE_LIMIT,
+            },
         )
 
     @pytest.mark.parametrize(
@@ -399,6 +440,17 @@ class TestBackupMongoApiCreate:
             call("/mongo-backup-task-logical"),
             call("/mongo-backup-task"),
         ]
+
+    def test_create_rejects_malformed_priority_yaml(self, test_client) -> None:
+        """Reject malformed Node Priority YAML with 422 before touching the APIs."""
+        response = test_client.post(
+            f"{API_BASE}/",
+            json=build_backup_write_body(
+                backup_priority='"h1:27018": 2 "h2:27018": 2',
+            ),
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
 
 class TestBackupMongoApiDetail:

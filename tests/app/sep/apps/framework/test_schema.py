@@ -756,6 +756,7 @@ class TestDefaultColumns:
             "name",
             "status",
             "created_at",
+            "last_executed_at",
             "created_by",
         ]
 
@@ -772,6 +773,7 @@ class TestDefaultColumns:
             "hostname",
             "backup_type",
             "created_at",
+            "last_executed_at",
             "created_by",
         ]
 
@@ -783,6 +785,8 @@ class TestDefaultColumns:
         assert by_key["name"].sortable is True
         assert by_key["status"].format == ColumnFormat.STATUS
         assert by_key["created_at"].format == ColumnFormat.RELATIVE
+        assert by_key["last_executed_at"].label == "Last Executed"
+        assert by_key["last_executed_at"].format == ColumnFormat.RELATIVE
         assert by_key["created_by"].format is None
 
     def test_returns_independent_instances_each_call(self):

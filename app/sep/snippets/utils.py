@@ -34,6 +34,7 @@ _ONE_HOUR = 60 * 60
 
 _MIME_TYPE_TO_HIGHLIGHTER_LANGUAGE: Final[dict[str, str]] = {
     "text/x-shellscript": "bash",
+    "text/x-sh": "bash",
     "application/x-sh": "bash",
     "application/x-shellscript": "bash",
     "text/x-python": "python",

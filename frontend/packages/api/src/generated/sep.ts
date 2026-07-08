@@ -3376,6 +3376,8 @@ export interface components {
       data: Record<string, never>;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -3413,6 +3415,8 @@ export interface components {
       data: Record<string, never>;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -3450,6 +3454,8 @@ export interface components {
       data: Record<string, never>;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -4235,6 +4241,8 @@ export interface components {
       hostname?: string | null;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -4331,6 +4339,8 @@ export interface components {
       hostname?: string | null;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -4531,6 +4541,10 @@ export interface components {
      *         ``None`` for an app without a fixed service type.
      *     :param status: The latest known execution status; ``None`` until the task
      *         runs.
+     *     :param last_executed_at: The most recent time the task finished executing
+     *         (``max`` ``finished_at`` across its history). Reported even while a
+     *         re-run is in progress (showing the prior completion); ``None`` until the
+     *         task has finished at least once.
      *     :param id: The task's unique identifier.
      *     :param backend: The backend worker/engine executing the task.
      *     :param data: The raw configuration and parameters used for execution. Tasks
@@ -4575,6 +4589,8 @@ export interface components {
       data: Record<string, never>;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -6352,6 +6368,8 @@ export interface components {
       hostname?: string | null;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -7095,6 +7113,8 @@ export interface components {
       hostname?: string | null;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -7148,6 +7168,8 @@ export interface components {
       hostname?: string | null;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -7270,6 +7292,8 @@ export interface components {
       hostname?: string | null;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -8627,6 +8651,8 @@ export interface components {
       hostname?: string | null;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Latest Pbm Status */
@@ -8672,6 +8698,8 @@ export interface components {
       hostname?: string | null;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -8745,6 +8773,8 @@ export interface components {
       hostname?: string | null;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */
@@ -8790,6 +8820,8 @@ export interface components {
       hostname?: string | null;
       /** Id */
       id?: number | null;
+      /** Last Executed At */
+      last_executed_at?: string | null;
       /** Last Updated By */
       last_updated_by?: string | null;
       /** Name */

@@ -1152,6 +1152,20 @@ class TaskHistoryLatestStatusRequest(BaseModel):
     )
 
 
+class TaskHistoryLatestStatus(BaseModel):
+    """Represent the latest-history projection for a single task.
+
+    :param status: The latest known execution status, taken from the newest
+        history row; ``None`` only when the task has no history rows at all.
+    :param finished_at: The most recent ``finished_at`` across all of the task's
+        history rows (a ``max``), so a task with an in-progress re-run still
+        reports its prior completion; ``None`` when no run has ever finished.
+    """
+
+    status: TaskHistoryStatusEnum | None = None
+    finished_at: datetime | None = None
+
+
 class TransformPayloadRequest(BaseModel):
     """Define the request body for the /transform/ API route.
 
