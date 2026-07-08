@@ -501,3 +501,23 @@ class TestAtwDefinition:
         assert app.custom_ui is True
         assert app.group == definition.group
         assert app.nav_order == definition.nav_order
+
+
+TASK_EXECUTION_PLUGINS_WITH_CSS_CLASS = ["backup_pg", "checksums"]
+
+
+class TestTaskExecutionAppCssClass:
+    """Verify ``css_class`` resolves from the ``AppDefinition`` for plugins that previously relied on ``settings.yaml``."""
+
+    @pytest.mark.parametrize("plugin", TASK_EXECUTION_PLUGINS_WITH_CSS_CLASS)
+    def test_css_class_comes_from_definition(self, plugin: str) -> None:
+        """Assert the registry-bound ``css_class`` equals the definition's ``css_class``."""
+        definition = importlib.import_module(f"app.sep.apps.{plugin}.app").app
+        bound = get_app_registry().get(plugin)
+        assert bound.css_class == definition.css_class
+
+    @pytest.mark.parametrize("plugin", TASK_EXECUTION_PLUGINS_WITH_CSS_CLASS)
+    def test_definition_declares_css_class(self, plugin: str) -> None:
+        """Assert the definition itself sets a non-empty ``css_class``."""
+        definition = importlib.import_module(f"app.sep.apps.{plugin}.app").app
+        assert definition.css_class, f"{plugin} definition must declare css_class"
