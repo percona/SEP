@@ -37,6 +37,22 @@ class TestGenerateHealthReportCooperativeCancel:
         return report
 
     @pytest.mark.asyncio
+    async def test_skips_generation_when_pmm_not_configured(self, mocker):
+        """Assert the PMM is not configured (``get_pmm_api`` -> ``None``) skips report generation."""
+        mocker.patch(
+            "app.sep.apps.report.deps.get_pmm_api",
+            new=AsyncMock(return_value=None),
+        )
+        generate = mocker.patch(
+            "app.sep.apps.report.service.generate_report",
+            new=AsyncMock(return_value=self._mock_report()),
+        )
+
+        await report_celery._generate_health_report(upload=True)
+
+        generate.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_stops_before_generation_on_cancel(self, mocker):
         """A cancel before generation skips report generation entirely."""
         mocker.patch(

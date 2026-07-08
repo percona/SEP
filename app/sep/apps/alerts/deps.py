@@ -22,10 +22,7 @@ from typing import Annotated, Any, TypeAlias
 from fastapi import Depends
 from fastapi.exceptions import HTTPException
 
-from app.core.exceptions import (
-    HTTPBadGatewayException,
-    HTTPServiceUnavailableException,
-)
+from app.core.exceptions import HTTPBadGatewayException
 from app.core.pagination import make_pagination_dep, Pagination
 from app.sep.apps.alerts.config import alerts_settings
 from app.sep.apps.alerts.crud import AlertBackupManager
@@ -33,13 +30,15 @@ from app.sep.apps.alerts.loader import get_alert_templates
 from app.sep.apps.alerts.models import AlertBackup, AlertTemplate, ServiceType
 from app.sep.clients.pmm import ContactPoint, Folder, PMMRemoteAPI
 
-# ``get_pmm_api`` / ``PMMAPIDep`` now live in ``app.sep.deps`` alongside the
-# sibling Inventory / Tasks client deps; ``get_pmm_api`` is re-exported here for
-# existing importers (report, celery, tests).
+# ``get_pmm_api`` / ``PMMAPIDep`` / ``require_pmm_api`` / ``RequiredPMMAPIDep`` now
+# live in ``app.sep.deps`` alongside the sibling Inventory / Tasks client deps;
+# they are re-exported here for existing importers (routes, celery, tests).
 from app.sep.deps import (
     DefaultContext,
     get_pmm_api,  # noqa: F401 -- re-exported for existing importers
     PMMAPIDep,
+    require_pmm_api,  # noqa: F401 -- re-exported for existing importers
+    RequiredPMMAPIDep,  # noqa: F401 -- re-exported for existing importers
     SessionDep,
 )
 
@@ -75,22 +74,6 @@ def find_pagerduty_contact_point(
 AlertTemplatesDep = Annotated[
     Mapping[ServiceType, tuple[AlertTemplate, ...]], Depends(get_alert_templates)
 ]
-
-
-async def require_pmm_api(pmm_api: PMMAPIDep) -> PMMRemoteAPI:
-    """Return the PMM API client or raise if PMM is not configured.
-
-    :param pmm_api: The PMM API client dependency, or ``None`` if PMM is not
-        configured.
-    :return: The PMM API client.
-    :raises HTTPServiceUnavailableException: If PMM is not configured.
-    """
-    if pmm_api is None:
-        raise HTTPServiceUnavailableException(detail="PMM is not configured")
-    return pmm_api
-
-
-RequiredPMMAPIDep = Annotated[PMMRemoteAPI, Depends(require_pmm_api)]
 
 
 async def get_pmm_present_names(pmm_api: PMMAPIDep) -> set[str] | None:
