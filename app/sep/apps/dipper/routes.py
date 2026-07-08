@@ -24,9 +24,8 @@ while the React UI reaches full feature parity.
 """
 
 import logging
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.sep.apps.dipper.constants import (
@@ -35,7 +34,7 @@ from app.sep.apps.dipper.constants import (
 )
 from app.sep.apps.dipper.deps import (
     DipperScriptWithMetaDep,
-    get_dipper_execution_meta,
+    ExecutionMetaDep,
     get_dipper_script_filename,
     get_pmm_form_defaults,
     has_pmm_script,
@@ -56,15 +55,12 @@ from app.sep.deps import (
 )
 from app.sep.inventory import CreatedService
 from app.sep.middleware import messages
-from app.sep.snippets.models.snippet import SnippetExecutionMeta
 from app.sep.utils.jinja import syntax_highlight
 from app.tasks.models import TaskHistoryStatusEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter(route_class=DeprecatedJinja2Route)
 templates = sep_settings.TEMPLATES
-
-ExecutionMetaDep = Annotated[SnippetExecutionMeta, Depends(get_dipper_execution_meta)]
 
 
 @router.get("/", dependencies=[IsAuthenticated], response_class=HTMLResponse)

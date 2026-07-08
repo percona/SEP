@@ -55,6 +55,7 @@ from app.sep.connectivity import (
     annotate_tasks_with_connectivity,
     CONNECTIVITY_META_SERVICE_TYPE_KEY,
     CONNECTIVITY_TARGET_KEY,
+    get_check_connectivity_flag,
 )
 from app.sep.crud import AppStateManager
 from app.sep.db import get_async_session_maker
@@ -583,6 +584,8 @@ async def get_default_context(
 
 
 DefaultContext = Annotated[dict[str, Any], Depends(get_default_context)]
+
+CheckConnectivityFlag = Annotated[bool, Depends(get_check_connectivity_flag)]
 
 
 async def get_inventory_client(request: Request) -> RemoteAPI:
