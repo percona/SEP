@@ -25,6 +25,7 @@ from fastapi import HTTPException, Query
 from fastapi.responses import Response
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.auth import config as auth_config
 from app.core.config import BaseYamlSettings, Settings, settings
 from app.core.exceptions import HTTPBadGatewayException, HTTPBadRequestException
 from app.core.settings_override.api import (
@@ -34,6 +35,7 @@ from app.core.settings_override.api import (
 from app.core.settings_override.api.routes import ClassEntry
 from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
+from app.core.settings_override.registry import FieldMetadata
 from app.core.utils.date_time import utc_now
 from app.sep.api.openapi import UPSTREAM_TASKS_502_RESPONSE
 from app.sep.apps.alerts.config import alerts_settings, AlertsSettings
@@ -59,6 +61,25 @@ SEP_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
     (SettingClassEnum.SETTINGS, Settings, settings),
 ]
 
+
+def _sep_setting_applicable(cls: SettingClassEnum, field: FieldMetadata) -> bool:
+    """Determine whether a SEP setting applies under the active runtime state.
+
+    ``AMBIENT_SESSION_SSO_ENABLED`` applies only under an ambient-capable auth
+    provider (Grafana); every other field is unconditionally applicable.
+
+    :param cls: The settings class the field belongs to.
+    :param field: The introspected field metadata.
+    :return: Whether the field applies under the active auth provider.
+    """
+    if (
+        cls == SettingClassEnum.SEP_SETTINGS
+        and field.key == "AMBIENT_SESSION_SSO_ENABLED"
+    ):
+        return auth_config.get_active_auth_provider().supports_ambient_session
+    return True
+
+
 SEP_APP_OWNED_SETTINGS_CLASSES = collect_app_owned_settings_classes()
 
 router = build_settings_router(
@@ -68,6 +89,7 @@ router = build_settings_router(
     mutation_deps=[RequireBearerForUnsafeMethods],
     remote_classes=[(SettingClassEnum.TASKS_SETTINGS, "/admin/settings")],
     remote_api_dep=TaskAPI,
+    applicability=_sep_setting_applicable,
     app_owned_classes=SEP_APP_OWNED_SETTINGS_CLASSES,
     resolve_app_metadata=resolve_app_settings_metadata,
 )

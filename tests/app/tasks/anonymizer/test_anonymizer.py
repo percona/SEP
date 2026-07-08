@@ -48,7 +48,7 @@ def mock_anonymizer(mocker) -> Mock:
 class TestPresidioEngineManagerInit:
     """Test PresidioEngineManager lazy initialization."""
 
-    @patch("app.tasks.anonymizer.anonymize.NlpEngineProvider")
+    @patch("presidio_analyzer.nlp_engine.NlpEngineProvider")
     def test_nlp_engine_lazy_init(self, mock_provider_cls):
         """Assert first nlp_engine access creates the engine and second returns cached."""
         mock_engine = Mock()
@@ -64,8 +64,8 @@ class TestPresidioEngineManagerInit:
         mock_provider_cls.assert_called_once()
         mock_provider_cls.return_value.create_engine.assert_called_once()
 
-    @patch("app.tasks.anonymizer.anonymize.AnalyzerEngine")
-    @patch("app.tasks.anonymizer.anonymize.NlpEngineProvider")
+    @patch("presidio_analyzer.AnalyzerEngine")
+    @patch("presidio_analyzer.nlp_engine.NlpEngineProvider")
     def test_analyzer_lazy_init(self, mock_provider_cls, mock_analyzer_cls):
         """Assert first analyzer access creates the engine and second returns cached."""
         mock_nlp = Mock()
@@ -83,7 +83,7 @@ class TestPresidioEngineManagerInit:
         mock_analyzer_cls.assert_called_once()
         assert mock_analyzer_cls.call_args.kwargs["nlp_engine"] is mock_nlp
 
-    @patch("app.tasks.anonymizer.anonymize.AnonymizerEngine")
+    @patch("presidio_anonymizer.AnonymizerEngine")
     def test_anonymizer_lazy_init(self, mock_anonymizer_cls):
         """Assert first anonymizer access creates the engine and second returns cached."""
         mock_anon_engine = Mock()

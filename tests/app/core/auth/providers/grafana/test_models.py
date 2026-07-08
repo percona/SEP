@@ -19,6 +19,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 import pytest
+from fastapi import HTTPException, status
 from itsdangerous import URLSafeTimedSerializer
 from pydantic import ValidationError
 
@@ -78,6 +79,58 @@ class TestGrafanaUserIdentity:
 
         assert first.id == again.id
         assert other.id != first.id
+
+
+class TestGrafanaAmbientSession:
+    """Test the ambient-session grant (``oauth_token_from_session``)."""
+
+    @pytest.mark.asyncio
+    async def test_valid_session_mints_pair_without_login(
+        self, grafana_mock, grafana_user_record
+    ):
+        """Verify a valid ambient session mints a pair, reusing the cookie (no login)."""
+        oauth = await GrafanaUser.oauth_token_from_session("ambient-session")
+
+        assert isinstance(oauth, OAuthToken)
+        assert oauth.access_token
+        assert oauth.refresh_token
+        user = await GrafanaUser.from_jwt(oauth.access_token)
+        assert user.username == grafana_user_record["login"]
+        grafana_mock.get_current_user.assert_awaited_once_with("ambient-session")
+        grafana_mock.get_current_user_orgs.assert_awaited_once_with("ambient-session")
+        grafana_mock.login.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_admin_survives(self, grafana_mock, grafana_user_record):
+        """Verify an admin ambient session decodes to an admin access assertion."""
+        grafana_mock.get_current_user.return_value = {
+            **grafana_user_record,
+            "isGrafanaAdmin": True,
+        }
+
+        oauth = await GrafanaUser.oauth_token_from_session("ambient-session")
+
+        user = await GrafanaUser.from_jwt(oauth.access_token)
+        assert user.is_admin is True
+
+    @pytest.mark.asyncio
+    async def test_rejected_session_returns_none(self, grafana_mock):
+        """Verify a Grafana 401 (rejected session) returns ``None`` for a silent fallback."""
+        grafana_mock.get_current_user.side_effect = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
+
+        assert await GrafanaUser.oauth_token_from_session("stale") is None
+
+    @pytest.mark.asyncio
+    async def test_non_401_error_propagates(self, grafana_mock):
+        """Verify a non-401 upstream error propagates instead of masking as no-session."""
+        grafana_mock.get_current_user.side_effect = HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY
+        )
+
+        with pytest.raises(HTTPException):
+            await GrafanaUser.oauth_token_from_session("s")
 
 
 class TestGrafanaUserSerialization:

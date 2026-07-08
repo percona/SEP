@@ -269,7 +269,7 @@ class SessionOptions(BaseModel):
 def _reject_removed_syncer_pmm(data: Any) -> Any:
     """Reject a removed per-syncer ``pmm`` override key.
 
-    The per-syncer ``pmm:`` override was removed in SEP-1477; PMM synchronizers now
+    The per-syncer ``pmm:`` override was removed; PMM synchronizers now
     read the top-level ``PMM`` section directly. A leftover ``pmm`` key (any case) is
     rejected with a ``ValueError`` -- which pydantic wraps into a ``ValidationError``
     -- so upgraded deployments fail fast at startup instead of silently honoring dead
@@ -516,66 +516,53 @@ class SEPSettings(BaseYamlAppSettings):
 
     :cvar SETTINGS_PREFIXES: The prefixes for SEP-related settings in the configuration
         file. Set to ["SEP"].
-    :vartype SETTINGS_PREFIXES: ClassVar[list[str]]
     :param UVICORN_PORT: The port number used by the Uvicorn server. Defaults to 8000.
-    :type UVICORN_PORT: int
     :param SESSION: Session configuration options for the legacy ``authToken``
         cookie used by the Jinja UI.
-    :type SESSION: SessionOptions
     :param SESSION_REFRESH: Session configuration options for the SPA
         ``refreshToken`` cookie. The cookie is ``HttpOnly`` and scoped to
         ``/api/oauth`` by default. When overriding ``PATH`` via YAML or env
         vars, the value must start with ``/``.
-    :type SESSION_REFRESH: SessionOptions
     :param TEMPLATES_DIR: The directory containing template files. Defaults to
         ``Path("templates")``.
-    :type TEMPLATES_DIR: RelativeDirectoryPathField
     :param STATIC_DIR: The directory containing static files. Defaults to
         ``Path("static")``.
-    :type STATIC_DIR: RelativeDirectoryPathField
     :param ALERT_DEFINITIONS_DIR: Path to the directory containing YAML alert
         definition files. When ``None``, the bundled ``alert_definitions/`` directory
         inside the alerts plugin is used.
-    :type ALERT_DEFINITIONS_DIR: RelativeDirectoryPathField | None
     :param INVENTORY_ENDPOINT: The endpoint URL for the Inventory API.
-    :type INVENTORY_ENDPOINT: CredentialHttpUrl
     :param TASKS_ENDPOINT: The endpoint URL for the Tasks API.
-    :type TASKS_ENDPOINT: CredentialHttpUrl
     :param APPS: A list of apps used by SEP. Defaults to an empty list with
         duplicates removed.
     :param PROXY_HEADERS: Whether to use proxy headers (like ``X-Forwarded-For``).
         Defaults to ``False``.
-    :type PROXY_HEADERS: bool
     :param DATABASE: The database configuration options.
         Defaults to an SQLite database with the name 'sep.db'.
-    :type DATABASE: DatabaseOptions
     :param SYNCERS: A list of synchronizers used by SEP. Defaults to an empty list with
         duplicates removed.
-    :type SYNCERS: UniqueList[SyncOptions]
     :param SYNCER_EXTRA_KWARGS: Additional keyword arguments for synchronizers. Defaults
         to an empty mapping.
-    :type SYNCER_EXTRA_KWARGS: SyncerExtraKwargs
     :param SYNC_REFRESH_TIME: The time interval (in seconds) for browser refresh during
         synchronization. Defaults to 5 seconds.
-    :type SYNC_REFRESH_TIME: int
     :param HEALTH_REPORT: Configuration for the Health & Security Report plugin.
         Upload is disabled by default.
-    :type HEALTH_REPORT: HealthReportSettings
     :param APP_DRAIN: Operator-tunable settings for the cooperative app-drain
         reconciler (reconcile cadence and stale running-task TTL).
     :param FOOTER_TEMPLATE: Template string for the sidebar footer text, supporting
         ``$summary`` and ``$version`` placeholders. Defaults to ``"$summary $version"``.
-    :type FOOTER_TEMPLATE: Template
     :param ARTIFACT_DOWNLOAD_TTL: Maximum age (in seconds) of signed artifact download
         tokens. Defaults to 600.
-    :type ARTIFACT_DOWNLOAD_TTL: PositiveInt
     :param CONNECTIVITY_CHECK_DEFAULT: Initial state of the "Check connectivity"
         checkbox on task creation forms. When ``True``, the checkbox is pre-checked;
         when ``False`` (default), it is unchecked. Because unchecked HTML
         checkboxes submit no field, the route parameter defaults to ``False`` —
         automated clients that omit ``check_connectivity`` will skip the check
         regardless of this setting.
-    :type CONNECTIVITY_CHECK_DEFAULT: bool
+    :param AMBIENT_SESSION_SSO_ENABLED: Whether to sign an unauthenticated caller
+        in automatically from an existing PMM/Grafana session cookie (ambient
+        SSO), skipping SEP's login form. Defaults to ``False`` (opt-in). Takes
+        effect only under the Grafana auth provider and requires SEP and Grafana
+        to be same-site so the browser sends the session cookie to SEP.
     """
 
     SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
@@ -606,6 +593,16 @@ class SEPSettings(BaseYamlAppSettings):
     APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
+    AMBIENT_SESSION_SSO_ENABLED: bool = hot_field(
+        default=False,
+        description=(
+            "Enable ambient Grafana-session SSO: sign an unauthenticated caller "
+            "in automatically from an existing PMM/Grafana session cookie, "
+            "skipping SEP's login form. Off by default; effective only under the "
+            "Grafana auth provider and only when SEP and Grafana are same-site so "
+            "the browser sends the session cookie to SEP."
+        ),
+    )
     FOOTER_TEMPLATE: Template = hot_field(
         Template("$summary $version"),
         materializer=materialize_template,
@@ -739,7 +736,7 @@ class SEPSettings(BaseYamlAppSettings):
     def reject_removed_sep_pmm(cls, data: Any) -> Any:
         """Reject a removed ``SEP.PMM`` section.
 
-        ``SEP.PMM`` was removed in SEP-1477; PMM connection/auth config now lives
+        ``SEP.PMM`` was removed; PMM connection/auth config now lives
         only under the top-level ``PMM`` section, and the alerts fields it used to
         carry moved to the alerts-owned ``SEP.ALERTS`` section. A leftover ``PMM``
         key under ``SEP`` (any case, including the ``SEP__PMM__*`` env-var path) is

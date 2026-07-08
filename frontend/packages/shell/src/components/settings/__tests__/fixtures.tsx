@@ -35,6 +35,7 @@ export function makeSetting(overrides: Partial<SettingResponse> = {}): SettingRe
     is_complex: false,
     has_override: false,
     is_advanced: false,
+    is_applicable: true,
     ...overrides,
   };
 }
