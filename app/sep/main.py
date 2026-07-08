@@ -71,7 +71,7 @@ from app.sep.deps import (
     IsNotAuthenticated,
     PROTECTED_APP_KEYS,
     require_app_enabled,
-    resolve_ambient_grafana_token,
+    resolve_ambient_session_token,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.middleware import CSRFMiddleware, messages
@@ -681,7 +681,7 @@ async def login_form(
     :return: A redirect carrying the session cookie on ambient auto-login, else
         the rendered login form.
     """
-    oauth_token = await resolve_ambient_grafana_token(request)
+    oauth_token = await resolve_ambient_session_token(request)
     if oauth_token is not None:
         response = RedirectResponse(
             _safe_next_path(next_path), status_code=status.HTTP_303_SEE_OTHER

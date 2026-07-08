@@ -75,7 +75,7 @@ from app.sep.deps import (
     require_app_enabled,
     require_bearer_for_unsafe_methods,
     require_pmm_api,
-    resolve_ambient_grafana_token,
+    resolve_ambient_session_token,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
@@ -124,8 +124,8 @@ def _make_request(method: str = "GET", authorization: str | None = None) -> Requ
     return req
 
 
-class TestResolveAmbientGrafanaToken:
-    """Test ``resolve_ambient_grafana_token`` gating and silent-fallback behavior."""
+class TestResolveAmbientSessionToken:
+    """Test ``resolve_ambient_session_token`` gating and silent-fallback behavior."""
 
     @staticmethod
     def _request(cookies: dict[str, str] | None = None) -> Request:
@@ -142,21 +142,21 @@ class TestResolveAmbientGrafanaToken:
     async def test_none_when_toggle_disabled(self, grafana_mock) -> None:
         """Assert the helper no-ops when the toggle is off, even under Grafana."""
         request = self._request({"grafana_session": "s"})
-        assert await resolve_ambient_grafana_token(request) is None
+        assert await resolve_ambient_session_token(request) is None
 
     @pytest.mark.asyncio
     async def test_none_when_provider_not_grafana(self, mocker) -> None:
         """Assert a non-Grafana active provider yields ``None`` (AC #7)."""
         mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
         request = self._request({"grafana_session": "s"})
-        assert await resolve_ambient_grafana_token(request) is None
+        assert await resolve_ambient_session_token(request) is None
 
     @pytest.mark.asyncio
     async def test_none_when_cookie_absent(self, grafana_mock, mocker) -> None:
         """Assert an absent session cookie yields ``None``."""
         mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
         request = self._request()
-        assert await resolve_ambient_grafana_token(request) is None
+        assert await resolve_ambient_session_token(request) is None
 
     @pytest.mark.asyncio
     async def test_returns_token_on_happy_path(
@@ -166,7 +166,7 @@ class TestResolveAmbientGrafanaToken:
         mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
         request = self._request({"grafana_session": "ambient"})
 
-        token = await resolve_ambient_grafana_token(request)
+        token = await resolve_ambient_session_token(request)
 
         assert isinstance(token, OAuthToken)
         assert token.access_token
@@ -183,7 +183,7 @@ class TestResolveAmbientGrafanaToken:
         warning = mocker.patch("app.sep.deps.logger.warning")
         request = self._request({"grafana_session": "s"})
 
-        assert await resolve_ambient_grafana_token(request) is None
+        assert await resolve_ambient_session_token(request) is None
         warning.assert_called_once()
 
 

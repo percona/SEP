@@ -27,7 +27,7 @@ from app.core.auth.exceptions import HTTPUnauthorizedException, InactiveUserExce
 from app.core.auth.models import OAuthToken, SPAOAuthTokenResponse
 from app.core.auth.utils import get_user_model
 from app.sep.config import sep_settings
-from app.sep.deps import resolve_ambient_grafana_token
+from app.sep.deps import resolve_ambient_session_token
 
 logger = logging.getLogger(__name__)
 
@@ -168,7 +168,7 @@ async def spa_session_login(
     :return: The slim OAuth token response for the SPA.
     :raises HTTPUnauthorizedException: If there is no valid ambient session.
     """
-    oauth_token = await resolve_ambient_grafana_token(request)
+    oauth_token = await resolve_ambient_session_token(request)
     if oauth_token is None:
         raise HTTPUnauthorizedException("No valid ambient session.")
     _set_refresh_cookie(response, oauth_token.refresh_token)

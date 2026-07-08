@@ -35,8 +35,6 @@ from app.core.alerts.config import alert_settings
 from app.core.auth import config as auth_config
 from app.core.auth.exceptions import HTTPForbiddenException, HTTPUnauthorizedException
 from app.core.auth.models import OAuthToken
-from app.core.auth.providers.grafana.models import GrafanaUser
-from app.core.auth.providers.grafana.sdk import GrafanaSDK
 from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.exceptions import (
@@ -341,32 +339,28 @@ async def redirect_if_user_is_authenticated(request: Request) -> None:
 IsNotAuthenticated = Depends(redirect_if_user_is_authenticated)
 
 
-async def resolve_ambient_grafana_token(request: Request) -> OAuthToken | None:
-    """Resolve an ambient Grafana session on the request into a SEP token pair.
+async def resolve_ambient_session_token(request: Request) -> OAuthToken | None:
+    """Resolve an ambient provider session on the request into a SEP token pair.
 
-    A no-op (``None``) unless ambient SSO is enabled, the active auth provider is
-    Grafana, and a session cookie is present. Operational or upstream failures
-    are logged and swallowed so auto-login degrades silently to the login form; a
-    rejected session (Grafana 401) likewise resolves to ``None`` in the model.
+    A no-op (``None``) unless ambient SSO is enabled and the active auth provider
+    supports ambient sessions. Operational or upstream failures are logged and
+    swallowed so auto-login degrades silently to the login form; a rejected
+    session (upstream 401) likewise resolves to ``None`` in the provider.
 
-    :param request: The incoming request, whose Grafana session cookie (named per
-        the active provider's ``session_cookie_name``) carries the ambient
-        session.
+    :param request: The incoming request, whose provider session cookie carries
+        the ambient session.
     :return: A minted ``OAuthToken`` on a valid ambient session, else ``None``.
     """
     if not sep_settings.AMBIENT_SESSION_SSO_ENABLED:
         return None
     provider = auth_config.get_active_auth_provider()
-    if not provider.supports_ambient_session or not isinstance(provider, GrafanaSDK):
-        return None
-    session = request.cookies.get(provider.session_cookie_name)
-    if not session:
+    if not provider.supports_ambient_session:
         return None
     try:
-        return await GrafanaUser.oauth_token_from_session(session)
+        return await provider.resolve_ambient_session(request.cookies)
     except HTTPException:
         logger.warning(
-            "Ambient Grafana auto-login failed (upstream/operational); "
+            "Ambient auto-login failed (upstream/operational); "
             "falling back to the login form.",
             exc_info=True,
         )

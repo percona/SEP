@@ -72,3 +72,33 @@ class TestGrafanaAuthProviderBundle:
             pass
         enter.assert_awaited_once()
         exit_.assert_awaited_once()
+
+
+class TestResolveAmbientSession:
+    """Test the provider's ambient-session seam (``resolve_ambient_session``)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_session_cookie_absent(self, mocker):
+        """Verify a missing session cookie yields ``None`` without an upstream call."""
+        provider = _provider()
+        mint = mocker.patch.object(
+            GrafanaUser, "oauth_token_from_session", mocker.AsyncMock()
+        )
+        assert await provider.resolve_ambient_session({"unrelated": "x"}) is None
+        mint.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_mints_token_from_session_cookie(self, mocker):
+        """Verify the provider delegates its session cookie to the user model."""
+        provider = _provider()
+        token = mocker.Mock()
+        mint = mocker.patch.object(
+            GrafanaUser,
+            "oauth_token_from_session",
+            mocker.AsyncMock(return_value=token),
+        )
+        result = await provider.resolve_ambient_session(
+            {provider.session_cookie_name: "ambient"}
+        )
+        assert result is token
+        mint.assert_awaited_once_with("ambient")
