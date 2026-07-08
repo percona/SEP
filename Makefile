@@ -4,6 +4,13 @@ SHELL=env bash
 
 PYTHON?=python3
 RELEASE_VER?=HEAD
+# Pin Poetry and pre-install the required plugin via pip. Without the plugin
+# pre-installed, `poetry install` runs an auto-resolve to add it, which racks
+# the bootstrap-fresh transitive deps (e.g. virtualenv) against the project's
+# solver.min-release-age=7 and fails ("virtualenv 21.3.3 doesn't match any
+# versions"). Pre-installing means Poetry sees the plugin in its env and skips
+# the resolve entirely.
+POETRY_VERSION?=2.4.0
 ifdef VIRTUAL_ENV
     VENV=${VIRTUAL_ENV}
 else
@@ -16,11 +23,34 @@ ifdef POETRY
 	VENV=${VIRTUAL_ENV}
 	VENV_BIN="${VENV}/bin"
 else
-	START_PKGS=pip wheel poetry
+	START_PKGS=pip wheel poetry==${POETRY_VERSION} poetry-plugin-export
 	POETRY="${VENV_BIN}/poetry"
 endif
 PIP?="${VENV_BIN}/pip"
 APPS=tasks inventory sep
+PYTEST_WORKERS?=auto
+# COV=0 drops --cov=app (and the fail_under coverage gate) so a local run skips
+# the coverage instrumentation tax; CI and coverage-main keep the default COV=1.
+COV?=1
+PYTEST_PATHS?=tests/
+PYTEST_MARKERS?=
+# Pin the hash seed so model-schema/dict ordering is deterministic across xdist
+# workers — an unpinned seed intermittently flakes a 422 in derived one-of routes.
+PYTHONHASHSEED?=0
+
+# WeasyPrint loads native libs (libgobject-2.0, libpango, libcairo) at import
+# time. Homebrew installs them under /opt/homebrew/lib (Apple Silicon) or
+# /usr/local/lib (Intel) — neither is on dyld's default search path. macOS SIP
+# also strips DYLD_* from any env inherited by /usr/bin/make, so the export
+# must happen inside each recipe shell. No-op on Linux/CI/Docker. (SEP-1125)
+DARWIN_DYLD = if [ "$$(uname -s)" = "Darwin" ]; then \
+		for d in /opt/homebrew/lib /usr/local/lib; do \
+			if [ -d "$$d" ]; then \
+				export DYLD_FALLBACK_LIBRARY_PATH="$$d:$${DYLD_FALLBACK_LIBRARY_PATH}"; \
+				break; \
+			fi; \
+		done; \
+	fi;
 
 venv: pyproject.toml poetry.lock
 	@[ ! -z "${VIRTUAL_ENV}" ] || [ -d "venv" ] || "${PYTHON}" -m venv "${VENV}"
@@ -55,6 +85,12 @@ ruff: venv
 	@"${VENV_BIN}"/ruff check .
 	@"${VENV_BIN}"/ruff format --check .
 
+# Opt-in, local-only static type checking (Astral ty). Deliberately NOT part of `lint`,
+# pre-commit, or CI: a non-zero exit from the existing type-error backlog is expected and
+# must not gate any automated check.
+typecheck: venv
+	@"${VENV_BIN}"/ty check app
+
 djlint: venv
 	@"${VENV_BIN}"/djlint .
 	@"${VENV_BIN}"/djlint . --check
@@ -63,8 +99,23 @@ lint: ruff djlint
 
 audit: bandit pip-audit
 
+# python.org macOS builds ship without etc/openssl/cert.pem until you run
+# "Install Certificates.command"; urllib then fails for hooks that fetch remotes.
 run-pre-commit: venv
-	@"${VENV_BIN}"/pre-commit run --all-files
+	@SSL_CERT_FILE=$$("${VENV_BIN}"/python -c 'import certifi; print(certifi.where())') \
+		"${VENV_BIN}"/pre-commit run --all-files
+
+# Local development only; production startup uses container/entrypoint paths.
+dev-backend: venv
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python -m app.main $(if $(START_CELERY),--start-celery,)
+
+# Local development only; production frontend startup stays outside Make.
+dev-frontend:
+	@cd frontend && pnpm dev
+
+# One-time legacy data['_form'] backfill for framework-migrated task apps.
+backfill-legacy-forms: venv
+	@"${VENV_BIN}"/python -m app.sep.apps.framework.form_backfill $(BACKFILL_ARGS)
 
 pip-audit: venv
 	@"${POETRY}" run pip-audit --verbose --progress-spinner=off \
@@ -129,7 +180,16 @@ checkmigrations: migrate
 	@echo "All migration checks passed."
 
 test: venv
-	@"${VENV_BIN}"/pytest -v -r a -n auto --cov=app tests/
+	@$(DARWIN_DYLD) PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -v -r a -n ${PYTEST_WORKERS} $(if $(filter 1,$(COV)),--cov=app,) $(if ${PYTEST_MARKERS},-m "${PYTEST_MARKERS}",) ${PYTEST_PATHS}
+
+# Regenerate every derived API/form contract from the live app in one pass:
+# the route GET /schema + OpenAPI snapshot goldens, the synthetic form-DSL
+# goldens, the frontend OpenAPI spec, and the generated TS client. Run after
+# changing an app form model, review the diff, then commit.
+regen-specs: venv
+	@$(DARWIN_DYLD) SEP_UPDATE_SNAPSHOTS=1 PYTHONHASHSEED=${PYTHONHASHSEED} "${VENV_BIN}"/pytest -q -p no:cacheprovider tests/app/sep/test_schema_snapshot.py tests/app/sep/test_openapi_snapshot.py tests/app/sep/apps/framework/test_form_dsl_golden.py
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/dump_openapi.py
+	@cd frontend && pnpm --filter @sep/api codegen && pnpm --filter @sep/api exec oxfmt --write src/generated
 
 changelog-add:
 ifndef TICKET
@@ -149,6 +209,24 @@ changelog-check:
 changelog-list:
 	@$(PYTHON) scripts/changelog.py list
 
+startapp:
+ifndef NAME
+	$(error NAME is required. Usage: make startapp NAME=myapp [TYPE=task|script|base])
+endif
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python app/sep/apps/framework/scaffold.py --name "$(NAME)" --type "$(or $(TYPE),task)"
+
+startapp-check:
+	@$(DARWIN_DYLD) "${VENV_BIN}"/python scripts/startapp_check.py
+
+SIGN_FLAG := $(if $(SIGN_VIA_API),--sign-via-github-api,)
+PUSH_IMAGE_DOCKER ?= true
+
+release-prep:
+ifndef VERSION
+	$(error VERSION is required. Usage: make release-prep VERSION=X.Y.Z)
+endif
+	@$(PYTHON) scripts/release.py prep --version "$(VERSION)" $(SIGN_FLAG)
+
 release-rc:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
@@ -156,28 +234,39 @@ endif
 ifndef RC
 	$(error RC is required. Usage: make release-rc VERSION=X.Y.Z RC=N)
 endif
-	@$(PYTHON) scripts/release.py rc --version "$(VERSION)" --rc "$(RC)"
+	@$(PYTHON) scripts/release.py rc --version "$(VERSION)" --rc "$(RC)" $(SIGN_FLAG)
 
 release-stable:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release-stable VERSION=X.Y.Z)
 endif
-	@$(PYTHON) scripts/release.py stable --version "$(VERSION)"
+	@$(PYTHON) scripts/release.py stable --version "$(VERSION)" $(SIGN_FLAG)
 
 trigger-jenkins:
 ifndef TAG
-	$(error TAG is required. Usage: make trigger-jenkins TAG=vX.Y.Z)
+	$(error TAG is required. Usage: make trigger-jenkins TAG=vX.Y.Z [PUSH_IMAGE_DOCKER=false] [WEBHOOK_URL_ENV=... WEBHOOK_AUTH_ENV=...])
 endif
 	@set -euo pipefail; \
+	tag='$(value TAG)'; \
 	if [ -n "$${JENKINS_URL:-}" ] && [ -n "$${JENKINS_USER:-}" ] && [ -n "$${JENKINS_API_TOKEN:-}" ]; then \
-		echo "==> Triggering Jenkins release build for $(TAG)..."; \
-		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/Release/buildWithParameters" \
+		case "$${tag}" in \
+			v*) jenkins_job="Release" ;; \
+			*) jenkins_job="Build" ;; \
+		esac; \
+		echo "==> Triggering Jenkins $${jenkins_job} build for $${tag}..."; \
+		if curl -sSf -k -X POST "$${JENKINS_URL}/job/SEP/job/$${jenkins_job}/buildWithParameters" \
 			-u "$${JENKINS_USER}:$${JENKINS_API_TOKEN}" \
-			--data-urlencode "releaseTag=$(TAG)" \
+			--data-urlencode "releaseTag=$${tag}" \
 			--data-urlencode "notifySlack=true" \
 			--data-urlencode "pushImage=true" \
-			--data-urlencode "pushImageDocker=true" 2>&1; then \
+			--data-urlencode "pushImageDocker=$(PUSH_IMAGE_DOCKER)" 2>&1; then \
 			echo "    Jenkins build triggered successfully."; \
+			if [ -n "$(WEBHOOK_URL_ENV)" ] && [ -n "$(WEBHOOK_AUTH_ENV)" ]; then \
+				$(PYTHON) scripts/post_jira_webhook.py \
+					--url-env "$(WEBHOOK_URL_ENV)" \
+					--auth-env "$(WEBHOOK_AUTH_ENV)" \
+					--version-tag "$${tag}" || true; \
+			fi; \
 		else \
 			echo "    Warning: Failed to trigger Jenkins build. Trigger it manually."; \
 		fi; \
@@ -185,4 +274,4 @@ endif
 		echo "Note: JENKINS_URL/JENKINS_USER/JENKINS_API_TOKEN not all set, skipping Jenkins trigger."; \
 	fi
 
-.PHONY: venv build pack builder image format ruff djlint lint audit run-pre-commit pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list
+.PHONY: venv build pack builder image format ruff typecheck djlint lint audit run-pre-commit dev-backend dev-frontend backfill-legacy-forms pip-audit bandit makemigrations makemigrations-plugin migrate checkmigrations test regen-specs release-prep release-rc release-stable trigger-jenkins changelog-add changelog-check changelog-list startapp startapp-check
