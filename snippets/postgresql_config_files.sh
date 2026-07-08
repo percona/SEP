@@ -197,7 +197,7 @@ if [[ -z $CONFIG_FILE ]]; then
     exit 1
 fi
 
-if [[ ! -r "$CONFIG_FILE" ]] && ! sudo -u postgres test -r "$CONFIG_FILE"; then
+if [[ ! -r "$CONFIG_FILE" ]] && ! sudo -n -u postgres test -r "$CONFIG_FILE" 2> /dev/null; then
     echo "Error: cannot read postgresql.conf at '$CONFIG_FILE' (check permissions or run with sudo)." >&2
     exit 1
 fi
@@ -205,11 +205,11 @@ fi
 AUTO_CONFIG_FILE=""
 if [[ -n $AUTO_CONFIG_FILE_ARG ]]; then
     AUTO_CONFIG_FILE="$AUTO_CONFIG_FILE_ARG"
-elif [[ -n $DATA_DIR ]] && sudo -u postgres test -r "$DATA_DIR/postgresql.auto.conf"; then
+elif [[ -n $DATA_DIR ]] && ([[ -r "$DATA_DIR/postgresql.auto.conf" ]] || sudo -n -u postgres test -r "$DATA_DIR/postgresql.auto.conf" 2> /dev/null); then
     AUTO_CONFIG_FILE="$DATA_DIR/postgresql.auto.conf"
 else
     candidate="$(dirname "$CONFIG_FILE")/postgresql.auto.conf"
-    if sudo -u postgres test -r "$candidate"; then
+    if [[ -r "$candidate" ]] || sudo -n -u postgres test -r "$candidate" 2> /dev/null; then
         AUTO_CONFIG_FILE="$candidate"
     fi
 fi
@@ -254,41 +254,79 @@ walk_includes() {
     base_dir=$(dirname "$abs")
 
     local line raw_value resolved
-    while IFS= read -r line; do
-        line="${line%%#*}"
-        line="${line## }"
-        # PostgreSQL accepts both `include = 'file'` and `include 'file'` (the
-        # `=` is optional for include directives). Check the longer keywords
-        # first so the plain `include` branch does not shadow include_dir or
-        # include_if_exists.
-        if [[ $line =~ ^[[:space:]]*include_if_exists[[:space:]]*=?[[:space:]]*(.+)$ ]]; then
-            raw_value="${BASH_REMATCH[1]}"
-            resolved=$(resolve_path "$base_dir" "$raw_value")
-            if [[ -f $resolved ]]; then
-                EXTRA_FILES+=("$resolved")
-                walk_includes "$resolved"
+    if [[ -r $abs ]]; then
+        while IFS= read -r line; do
+            line="${line%%#*}"
+            line="${line## }"
+            # PostgreSQL accepts both `include = 'file'` and `include 'file'` (the
+            # `=` is optional for include directives). Check the longer keywords
+            # first so the plain `include` branch does not shadow include_dir or
+            # include_if_exists.
+            if [[ $line =~ ^[[:space:]]*include_if_exists[[:space:]]*=?[[:space:]]*(.+)$ ]]; then
+                raw_value="${BASH_REMATCH[1]}"
+                resolved=$(resolve_path "$base_dir" "$raw_value")
+                if [[ -f $resolved ]]; then
+                    EXTRA_FILES+=("$resolved")
+                    walk_includes "$resolved"
+                fi
+            elif [[ $line =~ ^[[:space:]]*include_dir[[:space:]]*=?[[:space:]]*(.+)$ ]]; then
+                raw_value="${BASH_REMATCH[1]}"
+                resolved=$(resolve_path "$base_dir" "$raw_value")
+                if [[ -d $resolved ]]; then
+                    shopt -s nullglob
+                    local incf
+                    for incf in "$resolved"/*.conf; do
+                        EXTRA_FILES+=("$incf")
+                        walk_includes "$incf"
+                    done
+                    shopt -u nullglob
+                fi
+            elif [[ $line =~ ^[[:space:]]*include[[:space:]]*=?[[:space:]]*(.+)$ ]]; then
+                raw_value="${BASH_REMATCH[1]}"
+                resolved=$(resolve_path "$base_dir" "$raw_value")
+                if [[ -f $resolved ]]; then
+                    EXTRA_FILES+=("$resolved")
+                    walk_includes "$resolved"
+                fi
             fi
-        elif [[ $line =~ ^[[:space:]]*include_dir[[:space:]]*=?[[:space:]]*(.+)$ ]]; then
-            raw_value="${BASH_REMATCH[1]}"
-            resolved=$(resolve_path "$base_dir" "$raw_value")
-            if [[ -d $resolved ]]; then
-                shopt -s nullglob
-                local incf
-                for incf in "$resolved"/*.conf; do
-                    EXTRA_FILES+=("$incf")
-                    walk_includes "$incf"
-                done
-                shopt -u nullglob
+        done < "$abs"
+    elif sudo -n -u postgres test -r "$abs" 2> /dev/null; then
+        while IFS= read -r line; do
+            line="${line%%#*}"
+            line="${line## }"
+            # PostgreSQL accepts both `include = 'file'` and `include 'file'` (the
+            # `=` is optional for include directives). Check the longer keywords
+            # first so the plain `include` branch does not shadow include_dir or
+            # include_if_exists.
+            if [[ $line =~ ^[[:space:]]*include_if_exists[[:space:]]*=?[[:space:]]*(.+)$ ]]; then
+                raw_value="${BASH_REMATCH[1]}"
+                resolved=$(resolve_path "$base_dir" "$raw_value")
+                if [[ -f $resolved ]]; then
+                    EXTRA_FILES+=("$resolved")
+                    walk_includes "$resolved"
+                fi
+            elif [[ $line =~ ^[[:space:]]*include_dir[[:space:]]*=?[[:space:]]*(.+)$ ]]; then
+                raw_value="${BASH_REMATCH[1]}"
+                resolved=$(resolve_path "$base_dir" "$raw_value")
+                if [[ -d $resolved ]]; then
+                    shopt -s nullglob
+                    local incf
+                    for incf in "$resolved"/*.conf; do
+                        EXTRA_FILES+=("$incf")
+                        walk_includes "$incf"
+                    done
+                    shopt -u nullglob
+                fi
+            elif [[ $line =~ ^[[:space:]]*include[[:space:]]*=?[[:space:]]*(.+)$ ]]; then
+                raw_value="${BASH_REMATCH[1]}"
+                resolved=$(resolve_path "$base_dir" "$raw_value")
+                if [[ -f $resolved ]]; then
+                    EXTRA_FILES+=("$resolved")
+                    walk_includes "$resolved"
+                fi
             fi
-        elif [[ $line =~ ^[[:space:]]*include[[:space:]]*=?[[:space:]]*(.+)$ ]]; then
-            raw_value="${BASH_REMATCH[1]}"
-            resolved=$(resolve_path "$base_dir" "$raw_value")
-            if [[ -f $resolved ]]; then
-                EXTRA_FILES+=("$resolved")
-                walk_includes "$resolved"
-            fi
-        fi
-    done < "$abs"
+        done < <(sudo -n -u postgres cat "$abs" 2> /dev/null || true)
+    fi
 }
 
 walk_includes "$CONFIG_FILE"
@@ -337,13 +375,15 @@ STAGE_DIRNAME="${STAGE_DIRNAME%.tgz}"
 STAGE_DIRNAME="${STAGE_DIRNAME%.tar}"
 STAGE_DIR="$TMPDIR_STAGE/$STAGE_DIRNAME"
 mkdir -p "$STAGE_DIR"
+USE_SUDO_TAR=0
 
 copy_into_stage() {
     local src="$1"
     local elevated="${2:-}"
     local src_abs
     if [[ -n $elevated ]]; then
-        src_abs=$(sudo readlink -f "$src" 2> /dev/null || echo "$src")
+        src_abs=$(sudo -n readlink -f "$src" 2> /dev/null || readlink -f "$src" 2> /dev/null || echo "$src")
+        USE_SUDO_TAR=1
     else
         src_abs=$(readlink -f "$src" 2> /dev/null || echo "$src")
     fi
@@ -361,7 +401,7 @@ copy_into_stage() {
     mkdir -p "$(dirname "$dst")"
     if [[ $MASK -eq 1 ]]; then
         if [[ -n $elevated ]]; then
-            sudo cat "$src_abs" | awk -v pat="$SENSITIVE_PATTERN" '
+            sudo -n cat "$src_abs" | awk -v pat="$SENSITIVE_PATTERN" '
             {
                 line = $0
                 if (match(line, /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/)) {
@@ -381,21 +421,29 @@ copy_into_stage() {
             mask_file "$src_abs" "$dst"
         fi
     elif [[ -n $elevated ]]; then
-        sudo cp "$src_abs" "$dst"
+        sudo -n cp "$src_abs" "$dst"
     else
         cp "$src_abs" "$dst"
     fi
 }
 
-copy_into_stage "$CONFIG_FILE"
+if [[ ! -r "$CONFIG_FILE" ]]; then
+    copy_into_stage "$CONFIG_FILE" sudo
+else
+    copy_into_stage "$CONFIG_FILE"
+fi
 if [[ -n $AUTO_CONFIG_FILE ]]; then
-    copy_into_stage "$AUTO_CONFIG_FILE" sudo
+    if [[ -r "$AUTO_CONFIG_FILE" ]]; then
+        copy_into_stage "$AUTO_CONFIG_FILE"
+    else
+        copy_into_stage "$AUTO_CONFIG_FILE" sudo
+    fi
 fi
 
 declare -A COPIED=()
 COPIED["$(readlink -f "$CONFIG_FILE")"]=1
 if [[ -n $AUTO_CONFIG_FILE ]]; then
-    COPIED["$(sudo readlink -f "$AUTO_CONFIG_FILE")"]=1
+    COPIED["$(sudo -n readlink -f "$AUTO_CONFIG_FILE" 2> /dev/null || readlink -f "$AUTO_CONFIG_FILE" 2> /dev/null || echo "$AUTO_CONFIG_FILE")"]=1
 fi
 for extra in "${EXTRA_FILES[@]+"${EXTRA_FILES[@]}"}"; do
     abs=$(readlink -f "$extra" 2> /dev/null || echo "$extra")
@@ -403,7 +451,11 @@ for extra in "${EXTRA_FILES[@]+"${EXTRA_FILES[@]}"}"; do
         continue
     fi
     COPIED[$abs]=1
-    copy_into_stage "$extra"
+    if [[ -r "$extra" ]]; then
+        copy_into_stage "$extra"
+    elif sudo -n -u postgres test -r "$extra" 2> /dev/null; then
+        copy_into_stage "$extra" sudo
+    fi
 done
 
 # A small manifest helps the support engineer see where each file came from
@@ -422,7 +474,11 @@ done
     done | sort
 } > "$STAGE_DIR/MANIFEST.txt"
 
-sudo tar -czf - -C "$TMPDIR_STAGE" "$STAGE_DIRNAME" > "$OUTPUT_ARG"
+if [[ $USE_SUDO_TAR -eq 1 ]]; then
+    sudo -n tar -czf - -C "$TMPDIR_STAGE" "$STAGE_DIRNAME" > "$OUTPUT_ARG"
+else
+    tar -czf "$OUTPUT_ARG" -C "$TMPDIR_STAGE" "$STAGE_DIRNAME"
+fi
 
 echo "Archive written to: $OUTPUT_ARG" >&2
 echo "Files included:     ${#COPIED[@]}" >&2
