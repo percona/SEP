@@ -34,7 +34,7 @@ import argparse
 import keyword
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 from dataclasses import dataclass
 from enum import StrEnum
@@ -190,12 +190,12 @@ def _ruff_fix(paths: list[Path]) -> None:
     ruff = shutil.which("ruff")
     if ruff is None:
         return
-    subprocess.run(  # noqa: S603
+    subprocess.run(  # noqa: S603 # nosec B603
         [ruff, "check", "--fix", "--quiet", *py_files],
         check=False,
         cwd=_REPO_ROOT,
     )
-    subprocess.run(  # noqa: S603
+    subprocess.run(  # noqa: S603 # nosec B603
         [ruff, "format", "--quiet", *py_files],
         check=False,
         cwd=_REPO_ROOT,
@@ -306,10 +306,10 @@ def write_settings_entry(name: str) -> bool:
 def _holds_plugin(path: Path) -> bool:
     """Return whether ``path`` holds a real plugin.
 
-    A path holds a plugin when it exists and, if it is a directory, contains at
-    least one entry other than ``__pycache__/``.  An absent path, an empty
-    directory, or a directory whose only child is ``__pycache__/`` is not a
-    plugin.
+    A path holds a plugin when it is a file, a broken symlink (one that does not
+    resolve yet still occupies the path), or a directory containing at least one
+    entry other than ``__pycache__/``.  A truly absent path, an empty directory,
+    or a directory whose only child is ``__pycache__/`` is not a plugin.
 
     :param path: The filesystem path to check.
     :return: ``True`` when ``path`` holds a real plugin.
