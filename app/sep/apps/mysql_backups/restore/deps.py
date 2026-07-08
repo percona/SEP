@@ -18,8 +18,9 @@
 from typing import Annotated, Any
 
 import yaml
-from fastapi import Body, Depends, Form, HTTPException, status
+from fastapi import Body, Depends, Form
 
+from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import build_default_task_response
 from app.sep.apps.framework.spec import stamp_form_input
@@ -98,11 +99,7 @@ async def resolve_restore_entities(
                 form.service_id,
                 type=ServiceTypeEnum.MYSQL,
             )
-        except HTTPException as exc:
-            # ``RemoteAPI.get`` raises a bare ``fastapi.HTTPException`` on 404,
-            # not the project's ``HTTPNotFoundException``.
-            if exc.status_code != status.HTTP_404_NOT_FOUND:
-                raise
+        except HTTPNotFoundException:
             return RestoreResolved()
         return RestoreResolved(service_name=service.name)
 

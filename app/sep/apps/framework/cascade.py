@@ -22,7 +22,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
-from fastapi import HTTPException, status
+from app.core.exceptions import HTTPNotFoundException
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -356,11 +356,8 @@ async def _delete_one(
     try:
         await tasks_api.delete(f"/{task_name}")
         result.successes.append(task_name)
-    except HTTPException as exc:
-        if exc.status_code == status.HTTP_404_NOT_FOUND:
-            result.successes.append(task_name)
-        else:
-            result.failures.append(CascadeFailure(task_name, exc))
+    except HTTPNotFoundException:
+        result.successes.append(task_name)
     except Exception as exc:  # noqa: BLE001
         result.failures.append(CascadeFailure(task_name, exc))
 

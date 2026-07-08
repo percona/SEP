@@ -15,9 +15,9 @@
 
 """Shared Pydantic models and helpers for SEP JSON API routes."""
 
-from fastapi import HTTPException, status
 from pydantic import BaseModel
 
+from app.core.exceptions import HTTPNotFoundException
 from app.core.pagination import fetch_all_dict_items, PaginatedDictPage, Pagination
 from app.sep.deps import InventoryAPI
 
@@ -63,10 +63,8 @@ async def proxy_inventory_selector(
             )
 
         items = await fetch_all_dict_items(fetch_page)
-    except HTTPException as exc:
-        if exc.status_code == status.HTTP_404_NOT_FOUND:
-            return []
-        raise
+    except HTTPNotFoundException:
+        return []
     return [
         InventorySelectorOption(id=item["id"], name=item["name"])
         for item in items
