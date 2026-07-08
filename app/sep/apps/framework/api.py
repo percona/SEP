@@ -593,9 +593,7 @@ def _register_create_route(
             builder = await _bind_context(create_response_builder, context_provider)
             result = builder(task)
             if warning is not None:
-                return result.model_copy(
-                    update={"connectivity_warning": warning}
-                )
+                return result.model_copy(update={"connectivity_warning": warning})
             return result
         builder = await _bind_context(base_builder, context_provider)
         base = builder(task, status=None)
@@ -724,9 +722,7 @@ def _register_update_route(
             builder = await _bind_context(create_response_builder, context_provider)
             result = builder(updated_task, status=task_status)
             if warning is not None:
-                return result.model_copy(
-                    update={"connectivity_warning": warning}
-                )
+                return result.model_copy(update={"connectivity_warning": warning})
             return result
         builder = await _bind_context(base_builder, context_provider)
         base = builder(updated_task, status=task_status)
