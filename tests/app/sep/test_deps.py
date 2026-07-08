@@ -72,6 +72,7 @@ from app.sep.deps import (
     reject_if_protected,
     require_app_enabled,
     require_bearer_for_unsafe_methods,
+    require_pmm_api,
 )
 from app.sep.exceptions import LoginRedirectException
 from app.sep.inventory import CreatedNode, CreatedSchema
@@ -552,6 +553,23 @@ class TestGetPmmApi:
             verify_ssl=True,
             ssl_cafile="/etc/ssl/ca.pem",
         )
+
+
+class TestRequirePmmApi:
+    """Test the ``require_pmm_api`` dependency."""
+
+    @pytest.mark.asyncio
+    async def test_returns_client_when_available(self):
+        """Assert the PMM API client is returned when it is not ``None``."""
+        mock_client = AsyncMock(spec=PMMRemoteAPI)
+        result = await require_pmm_api(mock_client)
+        assert result is mock_client
+
+    @pytest.mark.asyncio
+    async def test_raises_service_unavailable_when_none(self):
+        """Assert ``HTTPServiceUnavailableException`` is raised when PMM is ``None``."""
+        with pytest.raises(HTTPServiceUnavailableException):
+            await require_pmm_api(None)
 
 
 class TestGetExecutorHosts:
