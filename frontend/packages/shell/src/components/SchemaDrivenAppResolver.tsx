@@ -30,6 +30,12 @@ interface ResolvedApp {
   reactRoute: string;
 }
 
+/** Strip trailing slashes while preserving the leading ``/`` (``/apps/x/`` → ``/apps/x``). */
+function stripTrailingSlash(path: string): string {
+  const stripped = path.replace(/\/+$/, '');
+  return stripped.length > 0 ? stripped : '/';
+}
+
 /**
  * Resolve which schema-driven app owns ``pathname`` from the ``/api/apps`` list.
  *
@@ -37,16 +43,19 @@ interface ResolvedApp {
  * it reaches ``AppDisabledGuard``'s splash instead of a 404. Custom-UI apps
  * (their bespoke static routes already outrank this resolver's ``*``) and nested
  * sub-app keys are excluded; among the rest, the app whose ``react_route`` is the
- * longest full-segment prefix of ``pathname`` wins.
+ * longest full-segment prefix of ``pathname`` wins. Both sides are compared with
+ * trailing slashes stripped, since ``URIPath`` permits a configured route like
+ * ``/apps/x/`` that would otherwise fail to match a slashless deep link.
  */
 export function resolveSchemaApp(pathname: string, apps: EnabledApp[]): ResolvedApp | null {
+  const normalizedPath = stripTrailingSlash(pathname);
   let best: ResolvedApp | null = null;
   for (const app of apps) {
     if (isCustomApp(app.app_key) || app.app_key.includes('/')) {
       continue;
     }
-    const reactRoute = app.react_route;
-    const matches = pathname === reactRoute || pathname.startsWith(`${reactRoute}/`);
+    const reactRoute = stripTrailingSlash(app.react_route);
+    const matches = normalizedPath === reactRoute || normalizedPath.startsWith(`${reactRoute}/`);
     if (matches && (best === null || reactRoute.length > best.reactRoute.length)) {
       best = { appKey: app.app_key, reactRoute };
     }

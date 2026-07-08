@@ -144,6 +144,14 @@ describe('resolveSchemaApp', () => {
     const app = mockApp({ app_key: 'back', react_route: '/back' });
     expect(resolveSchemaApp('/backups/postgresql', [app])).toBeNull();
   });
+
+  it('matches a slashless deep link against a react_route with a trailing slash', () => {
+    const app = mockApp({ app_key: 'checksums', react_route: '/apps/checksums/' });
+    expect(resolveSchemaApp('/apps/checksums', [app])).toEqual({
+      appKey: 'checksums',
+      reactRoute: '/apps/checksums',
+    });
+  });
 });
 
 describe('matchDefaultAppsPath', () => {
