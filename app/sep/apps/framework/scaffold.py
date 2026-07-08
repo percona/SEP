@@ -315,7 +315,7 @@ def _holds_plugin(path: Path) -> bool:
     :return: ``True`` when ``path`` holds a real plugin.
     """
     if not path.exists():
-        return False
+        return path.is_symlink()
     if not path.is_dir():
         return True
     return any(child.name != "__pycache__" for child in path.iterdir())
