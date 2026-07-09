@@ -438,8 +438,8 @@ def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None
 class _OverlayLeafOwner(BaseModel):
     """Define a submodel whose overlay promotes one bare leaf; a sibling stays unmarked.
 
-    Mirrors the SEP-1511 ``NomadExecutor`` case: the overlay lives on the class
-    that *owns* the resolved leaf, not on the top-level settings class.
+    Mirrors the ``NomadExecutor`` use case: the overlay lives on the class that
+    *owns* the resolved leaf, not on the top-level settings class.
     """
 
     INHERITED_MARKERS: ClassVar[dict[str, dict[str, object]]] = {
