@@ -333,7 +333,6 @@ export interface AppCapabilities {
   chaining?: boolean;
   alert_on_fail?: boolean;
   scheduling?: boolean;
-  topology?: boolean;
   stats?: boolean;
   pii_anonymization?: boolean;
 }

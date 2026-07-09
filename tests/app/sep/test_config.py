@@ -63,15 +63,6 @@ class TestSessionRefreshDefault:
         assert settings.SESSION.PATH is None
 
 
-class TestFeatureFlags:
-    """Define tests for SEP feature flags."""
-
-    def test_inventory_topology_defaults_off(self):
-        """Assert inventory topology is disabled by default."""
-        settings = SEPSettings()
-        assert settings.INVENTORY_TOPOLOGY_ENABLED is False
-
-
 class TestAmbientSessionSSO:
     """Test the ambient Grafana SSO feature toggle."""
 

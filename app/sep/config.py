@@ -559,9 +559,6 @@ class SEPSettings(BaseYamlAppSettings):
         automated clients that omit ``check_connectivity`` will skip the check
         regardless of this setting.
     :type CONNECTIVITY_CHECK_DEFAULT: bool
-    :param INVENTORY_TOPOLOGY_ENABLED: Whether to expose the experimental
-        inventory topology UI and API endpoints. Defaults to ``False``.
-    :type INVENTORY_TOPOLOGY_ENABLED: bool
     :param AMBIENT_SESSION_SSO_ENABLED: Whether to sign an unauthenticated caller
         in automatically from an existing PMM/Grafana session cookie (ambient
         SSO), skipping SEP's login form. Defaults to ``False`` (opt-in). Takes
@@ -597,7 +594,6 @@ class SEPSettings(BaseYamlAppSettings):
     APP_DRAIN: AppDrainSettings = nested_overridable_field(AppDrainSettings())
     ARTIFACT_DOWNLOAD_TTL: PositiveInt = hot_field(600, advanced=True)
     CONNECTIVITY_CHECK_DEFAULT: bool = hot_field(default=True)
-    INVENTORY_TOPOLOGY_ENABLED: bool = hot_field(default=False)
     AMBIENT_SESSION_SSO_ENABLED: bool = hot_field(
         default=False,
         description=(

@@ -127,7 +127,6 @@ class TestSchemaEndpoint:
             "alert_on_fail": True,
             "scheduling": True,
             "stats": False,
-            "topology": False,
             "pii_anonymization": False,
         }
 

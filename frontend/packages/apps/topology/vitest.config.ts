@@ -15,21 +15,17 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-/**
- * @sep/inventory — Inventory app entry point.
- *
- * Exports:
- * - InventoryApp: inventory-specific nested routes and drill-down UI.
- */
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vitest/config';
 
-export { InventoryApp } from './InventoryApp';
-export type { InventoryAppProps } from './InventoryApp';
-export { InventoryBreadcrumbs, renderInventoryDetailChildren } from './InventoryAppNavigation';
-export {
-  inventoryMountPrefix,
-  parseFlatInventoryRoute,
-  parseNestedInventoryPath,
-  parseInventoryRoute,
-  pathThroughPairIndex,
-  pathToNestedInventoryParent,
-} from './inventoryNestedPaths';
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    dedupe: ['react', 'react-dom', 'react-router', 'react-router-dom', '@tanstack/react-query'],
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/vitest-setup.ts'],
+  },
+});

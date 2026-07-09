@@ -1149,9 +1149,6 @@ class Capabilities(SchemaBaseModel):
     :param scheduling: Whether the plugin supports scheduling tasks on a
         periodic interval. Defaults to ``False``.
     :type scheduling: bool
-    :param topology: Whether the plugin exposes its topology view. Defaults to
-        ``False``.
-    :type topology: bool
     :param stats: Whether the plugin supports rendering the aggregated
         execution statistics card on its detail page. Defaults to
         ``False``.
@@ -1168,7 +1165,6 @@ class Capabilities(SchemaBaseModel):
     chaining: bool = False
     alert_on_fail: bool = False
     scheduling: bool = False
-    topology: bool = False
     stats: bool = False
     pii_anonymization: bool = False
 

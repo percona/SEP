@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Background,
   Controls,
@@ -40,7 +40,7 @@ import { ClusterGroup } from './ClusterGroup';
 import { MySQLNode } from './MySQLNode';
 import { UnknownSourceNode } from './UnknownSourceNode';
 import { applyDagreLayout } from './layout';
-import { useCollectTopology, useTopologyResult, useTopologyStream } from './hooks';
+import { useCollectTopology, useTopologyResult } from './hooks';
 import type { TopologyEdge, TopologyGraph, TopologyNode } from './types';
 
 const NODE_TYPES = {
@@ -51,42 +51,15 @@ const NODE_TYPES = {
 
 /**
  * Persist the dispatched task ids in `sessionStorage` so navigating
- * away from Topology (tab switch, leaving the Inventory plugin, etc.)
- * does not clear the view: on remount we re-issue
- * `useTopologyResult` with the same ids and the TanStack Query cache
- * (gcTime=30 min) returns the graph instantly.
+ * away from Topology (tab switch, leaving the app, etc.) does not clear
+ * the view: on remount we re-issue `useTopologyResult` with the same ids
+ * and the TanStack Query cache (gcTime=30 min) returns the graph
+ * instantly.
  *
  * Per-tab storage is intentional — different operators in different
  * browser tabs each get their own collection without interfering.
  */
-const TOPOLOGY_TASK_IDS_STORAGE_KEY = 'sep.inventory.topology.taskIds';
-const TOPOLOGY_AUTO_COLLECT_STORAGE_KEY = 'sep.inventory.topology.autoCollectFired';
-
-function readPersistedAutoCollectHandled(): boolean {
-  if (typeof sessionStorage === 'undefined') {
-    return false;
-  }
-  try {
-    return sessionStorage.getItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-function persistAutoCollectHandled(handled: boolean): void {
-  if (typeof sessionStorage === 'undefined') {
-    return;
-  }
-  try {
-    if (handled) {
-      sessionStorage.setItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY, 'true');
-    } else {
-      sessionStorage.removeItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY);
-    }
-  } catch {
-    // sessionStorage can throw under quota or privacy-mode limits.
-  }
-}
+const TOPOLOGY_TASK_IDS_STORAGE_KEY = 'sep.topology.taskIds';
 
 function readPersistedTaskIds(): number[] | null {
   if (typeof sessionStorage === 'undefined') {
@@ -115,7 +88,6 @@ function persistTaskIds(ids: number[] | null): void {
   try {
     if (ids === null || ids.length === 0) {
       sessionStorage.removeItem(TOPOLOGY_TASK_IDS_STORAGE_KEY);
-      sessionStorage.removeItem(TOPOLOGY_AUTO_COLLECT_STORAGE_KEY);
     } else {
       sessionStorage.setItem(TOPOLOGY_TASK_IDS_STORAGE_KEY, JSON.stringify(ids));
     }
@@ -237,77 +209,33 @@ function TopologyCanvas({ graph }: { graph: TopologyGraph | null }) {
 }
 
 /**
- * Inventory Topology view — dispatches a live MySQL topology collection
- * and renders the resulting React Flow graph. Caches the latest graph in
- * TanStack Query (long staleTime, manual refresh) so navigating away and
- * back is instant.
+ * Topology view — dispatches a live MySQL topology collection on explicit
+ * user action and renders the resulting React Flow graph. Caches the latest
+ * graph in TanStack Query (long staleTime, manual refresh) so navigating
+ * away and back is instant.
  */
-export function InventoryTopology() {
+export function TopologyView() {
   const [taskIds, setTaskIdsState] = useState<number[] | null>(readPersistedTaskIds);
-  const [autoCollectHandled, setAutoCollectHandledState] = useState<boolean>(
-    readPersistedAutoCollectHandled,
-  );
-  const setAutoCollectHandled = useCallback((handled: boolean) => {
-    setAutoCollectHandledState(handled);
-    persistAutoCollectHandled(handled);
+  const setTaskIds = useCallback((ids: number[] | null) => {
+    setTaskIdsState(ids);
+    persistTaskIds(ids);
   }, []);
-  const setTaskIds = useCallback(
-    (ids: number[] | null) => {
-      setTaskIdsState(ids);
-      persistTaskIds(ids);
-      if (ids === null || ids.length === 0) {
-        setAutoCollectHandled(false);
-      }
-    },
-    [setAutoCollectHandled],
-  );
   const collect = useCollectTopology();
   const result = useTopologyResult(taskIds);
-  const stream = useTopologyStream(taskIds, { enabled: !!taskIds });
-
-  const markAutoCollectHandled = useCallback(() => {
-    setAutoCollectHandled(true);
-  }, []);
 
   const handleRefresh = useCallback(async () => {
-    markAutoCollectHandled();
     try {
       const response = await collect.mutateAsync(undefined);
       setTaskIds(response.task_history_ids);
     } catch {
-      setAutoCollectHandled(false);
+      // Failure surfaced via `collect.error`; nothing else to do here.
     }
-  }, [collect, markAutoCollectHandled, setAutoCollectHandled, setTaskIds]);
-
-  useEffect(() => {
-    if (taskIds !== null) {
-      markAutoCollectHandled();
-    }
-  }, [taskIds, markAutoCollectHandled]);
-
-  // First-visit auto-collect: when a fresh Topology page has nothing
-  // persisted, kick off a collection automatically so the user sees a
-  // loading spinner rather than the empty "Click Collect" placeholder.
-  // Idempotent across remounts and re-renders because the "already
-  // handled" state is persisted for the browser session.
-  useEffect(() => {
-    if (taskIds === null && !collect.isPending && !collect.error && !autoCollectHandled) {
-      void handleRefresh();
-    }
-  }, [taskIds, collect.isPending, collect.error, autoCollectHandled, handleRefresh]);
+  }, [collect, setTaskIds]);
 
   const isCollecting = collect.isPending || result.data?.status === 'running';
   const graph = result.data?.graph ?? null;
   const summary = graph?.summary;
   const failedTaskCount = result.data?.failed_task_ids?.length ?? 0;
-
-  // The graph is rendered from `useTopologyResult` polling, not from
-  // the SSE stream. When polling has already delivered a successful
-  // graph, surfacing a "stream connection lost" alert next to the
-  // working graph is a UX bug (the stream is just a progress nicety,
-  // its failure isn't user-actionable).
-  const pollingDeliveredData = result.data?.status === 'ok' && (graph?.nodes.length ?? 0) > 0;
-  const showStreamError = !!stream.error && !stream.isStreaming && !pollingDeliveredData;
 
   return (
     <Stack spacing={2} sx={{ mt: 2 }}>
@@ -326,13 +254,6 @@ export function InventoryTopology() {
               ) : null}
               {summary.error_count > 0 ? (
                 <Chip size="small" color="error" label={`${summary.error_count} unreachable`} />
-              ) : null}
-              {stream.isStreaming ? (
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  label={`streaming · ${stream.hostsCompleted}/${summary.host_count}`}
-                />
               ) : null}
             </>
           ) : null}
@@ -354,24 +275,6 @@ export function InventoryTopology() {
       {failedTaskCount > 0 && graph ? (
         <Alert severity="warning">
           {failedTaskCount} topology shard(s) failed; graph may be incomplete.
-        </Alert>
-      ) : null}
-      {showStreamError ? (
-        <Alert
-          severity="warning"
-          data-testid="topology-stream-error"
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              onClick={stream.dismissError}
-              data-testid="topology-stream-error-dismiss"
-            >
-              Dismiss
-            </Button>
-          }
-        >
-          {stream.error!.message}
         </Alert>
       ) : null}
 

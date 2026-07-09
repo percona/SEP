@@ -3310,7 +3310,7 @@
     },
     "/api/apps/inventory/schema": {
       "get": {
-        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
+        "description": "Return the inventory plugin schema.",
         "operationId": "inventory_get_schema_api_apps_inventory_schema_get",
         "responses": {
           "200": {

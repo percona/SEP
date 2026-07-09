@@ -59,6 +59,7 @@ export const ROUTES = {
   backupsPostgresql: '/backups/postgresql',
   archive: '/apps/archives',
   dipper: '/dipper',
+  topology: '/topology',
   reports: '/reports',
   settings: '/settings',
 } as const;

@@ -3993,6 +3993,76 @@
         "title": "ChoiceField",
         "type": "object"
       },
+      "ClusterNode": {
+        "description": "A synthetic cluster-group node in the topology graph.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ClusterNodeData"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "cluster",
+            "enum": [
+              "cluster"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "data"
+        ],
+        "title": "ClusterNode",
+        "type": "object"
+      },
+      "ClusterNodeData": {
+        "description": "React-Flow ``data`` payload for a synthetic PXC cluster node.",
+        "properties": {
+          "cluster_name": {
+            "title": "Cluster Name",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "required": [
+          "cluster_name"
+        ],
+        "title": "ClusterNodeData",
+        "type": "object"
+      },
       "CollectorTypeEnum": {
         "description": "Define enum for Dipper collector types.",
         "enum": [
@@ -4609,6 +4679,43 @@
           "mountpoint"
         ],
         "title": "DiskUsageEntry",
+        "type": "object"
+      },
+      "DualPrimaryEdge": {
+        "description": "A dual-primary (mutually replicating) edge.",
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "type": {
+            "const": "dual_primary",
+            "enum": [
+              "dual_primary"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "target",
+          "type"
+        ],
+        "title": "DualPrimaryEdge",
         "type": "object"
       },
       "ExecutionEvent": {
@@ -6332,6 +6439,395 @@
         "title": "MultiTableField",
         "type": "object"
       },
+      "MySQLClusterInfo": {
+        "description": "Percona XtraDB Cluster (wsrep) metadata for a host.",
+        "properties": {
+          "cluster_name": {
+            "title": "Cluster Name",
+            "type": "string"
+          },
+          "cluster_size": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Size"
+          },
+          "cluster_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Status"
+          },
+          "local_state_comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local State Comment"
+          }
+        },
+        "required": [
+          "cluster_name"
+        ],
+        "title": "MySQLClusterInfo",
+        "type": "object"
+      },
+      "MySQLNode": {
+        "description": "A MySQL server node in the topology graph.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MySQLNodeData"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "mysql",
+            "enum": [
+              "mysql"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "data"
+        ],
+        "title": "MySQLNode",
+        "type": "object"
+      },
+      "MySQLNodeData": {
+        "description": "React-Flow ``data`` payload for a MySQL node.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "cluster": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MySQLClusterInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "gtid_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gtid Mode"
+          },
+          "host_entry": {
+            "title": "Host Entry",
+            "type": "string"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "replication": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MySQLReplicationInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "server": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MySQLServerInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host_entry",
+          "status"
+        ],
+        "title": "MySQLNodeData",
+        "type": "object"
+      },
+      "MySQLReplicationInfo": {
+        "description": "Replication source/state for a replica host (``source_uuid`` stripped).",
+        "properties": {
+          "auto_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Position"
+          },
+          "io_running": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Io Running"
+          },
+          "repl_filter": {
+            "anyOf": [
+              {
+                "enum": [
+                  "yes",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repl Filter"
+          },
+          "repl_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok",
+                  "err"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repl Status"
+          },
+          "seconds_behind": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Behind"
+          },
+          "source_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Host"
+          },
+          "source_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Port"
+          },
+          "source_server_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Server Id"
+          },
+          "sql_running": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql Running"
+          }
+        },
+        "title": "MySQLReplicationInfo",
+        "type": "object"
+      },
+      "MySQLServerInfo": {
+        "description": "MySQL server identity/mode collected per host.",
+        "properties": {
+          "hostname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hostname"
+          },
+          "log_bin": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ON",
+                  "OFF"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Bin"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "read_only": {
+            "anyOf": [
+              {
+                "enum": [
+                  "RW",
+                  "RO",
+                  "SR"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Only"
+          },
+          "server_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Hash"
+          },
+          "server_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Id"
+          },
+          "server_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Uuid"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "title": "MySQLServerInfo",
+        "type": "object"
+      },
       "MysqlBackupsCreateResponse": {
         "properties": {
           "alert_on_fail": {
@@ -7247,6 +7743,137 @@
         ],
         "title": "ReloadClassification",
         "type": "string"
+      },
+      "ReplicationEdge": {
+        "description": "A primary -> replica replication edge.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplicationEdgeData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "type": {
+            "const": "replication",
+            "enum": [
+              "replication"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "target",
+          "type"
+        ],
+        "title": "ReplicationEdge",
+        "type": "object"
+      },
+      "ReplicationEdgeData": {
+        "description": "React-Flow ``data`` payload for a replication edge.",
+        "properties": {
+          "auto_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Position"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter"
+          },
+          "gtid_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gtid Mode"
+          },
+          "io_running": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Io Running"
+          },
+          "seconds_behind": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds Behind"
+          },
+          "sql_running": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql Running"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ok",
+                  "err"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "title": "ReplicationEdgeData",
+        "type": "object"
       },
       "ReportData": {
         "description": "Complete report payload ready for rendering.\n\n:param full: When ``True``, all check results and full backup history are included.\n:type full: bool\n:param refresh: When ``True``, advisor checks were refreshed before data collection.\n:type refresh: bool\n:param metadata: Report title, generation timestamp, and period labels.\n:type metadata: ReportMetadata\n:param monitored: Summary counts of monitored nodes and services.\n:type monitored: MonitoredSummary\n:param advisors: Advisor check results grouped by family.\n:type advisors: AdvisorSection\n:param alerts: Alert annotation history and aggregations.\n:type alerts: AlertSection\n:param backups: Backup status entries and aggregations.\n:type backups: BackupSection\n:param storage: Disk usage entries per node mountpoint.\n:type storage: StorageSection\n:param uptime: Service uptime entries for the report period.\n:type uptime: UptimeSection\n:param inventory: Monitored service inventory with connectivity status.\n:type inventory: InventorySection",
@@ -10450,6 +11077,283 @@
           "label"
         ],
         "title": "TextAreaField",
+        "type": "object"
+      },
+      "TopologyCollectResponse": {
+        "description": "Represent the response body for ``POST /collect``.\n\n``task_history_ids`` lists the dispatched ``run-python`` tasks the\nfrontend then polls (``/result``) to assemble the topology graph.\n``targets`` echoes the executor hosts the work was sharded across so\nthe UI can surface where the collection ran.\n\n:param task_history_ids: Created task history ids, one per shard.\n:type task_history_ids: list[int]\n:param targets: Executor hosts selected for topology collection.\n:type targets: list[str]\n:param host_count: Number of MySQL hosts included in the collection.\n:type host_count: int\n:param shard_count: Number of dispatched topology shards.\n:type shard_count: int",
+        "properties": {
+          "host_count": {
+            "title": "Host Count",
+            "type": "integer"
+          },
+          "shard_count": {
+            "title": "Shard Count",
+            "type": "integer"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "task_history_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Task History Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "task_history_ids",
+          "targets",
+          "host_count",
+          "shard_count"
+        ],
+        "title": "TopologyCollectResponse",
+        "type": "object"
+      },
+      "TopologyCollectWrite": {
+        "description": "Describe the request body for ``POST /collect``.\n\n:param shards: Number of executor hosts to dispatch in parallel. Hosts\n    are split round-robin across the chosen executors. Capped at\n    :data:`MAX_TOPOLOGY_SHARDS`.\n:type shards: int\n:param executor_host: Optional explicit executor. Must be used with\n    ``shards=1`` because it selects a single-shard run.\n:type executor_host: str | None\n:param connect_timeout: Per-host MySQL TCP connect timeout (seconds).\n:type connect_timeout: int\n:param read_timeout: Per-host MySQL read/write timeout (seconds).\n:type read_timeout: int",
+        "properties": {
+          "connect_timeout": {
+            "default": 5,
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Connect Timeout",
+            "type": "integer"
+          },
+          "executor_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executor Host"
+          },
+          "read_timeout": {
+            "default": 10,
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Read Timeout",
+            "type": "integer"
+          },
+          "shards": {
+            "default": 1,
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Shards",
+            "type": "integer"
+          }
+        },
+        "title": "TopologyCollectWrite",
+        "type": "object"
+      },
+      "TopologyGraph": {
+        "description": "The merged React-Flow ``{nodes, edges, summary}`` graph.",
+        "properties": {
+          "edges": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "dual_primary": "#/components/schemas/DualPrimaryEdge",
+                  "replication": "#/components/schemas/ReplicationEdge"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ReplicationEdge"
+                },
+                {
+                  "$ref": "#/components/schemas/DualPrimaryEdge"
+                }
+              ]
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "nodes": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "cluster": "#/components/schemas/ClusterNode",
+                  "mysql": "#/components/schemas/MySQLNode",
+                  "unknown_source": "#/components/schemas/UnknownSourceNode"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/MySQLNode"
+                },
+                {
+                  "$ref": "#/components/schemas/ClusterNode"
+                },
+                {
+                  "$ref": "#/components/schemas/UnknownSourceNode"
+                }
+              ]
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TopologyGraphSummary"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "title": "TopologyGraph",
+        "type": "object"
+      },
+      "TopologyGraphSummary": {
+        "description": "Aggregate counts for the topology graph.",
+        "properties": {
+          "cluster_count": {
+            "title": "Cluster Count",
+            "type": "integer"
+          },
+          "edge_count": {
+            "title": "Edge Count",
+            "type": "integer"
+          },
+          "error_count": {
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "host_count": {
+            "title": "Host Count",
+            "type": "integer"
+          },
+          "ok_count": {
+            "title": "Ok Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "host_count",
+          "ok_count",
+          "error_count",
+          "cluster_count",
+          "edge_count"
+        ],
+        "title": "TopologyGraphSummary",
+        "type": "object"
+      },
+      "TopologyResultResponse": {
+        "description": "Represent the response body for ``GET /result``.\n\n``status`` is ``running`` while any of the underlying tasks is\nstill pending, ``ok`` once every task has finished, and ``failed``\nwhen at least one task failed and produced no usable output.\n``graph`` is the merged React-Flow graph; ``pending_task_ids``\nlists the still-running tasks for the UI's progress chip, and\n``failed_task_ids`` lets the UI warn when only some shards failed.\n\n:param status: Aggregate topology collection status.\n:type status: Literal[\"running\", \"ok\", \"failed\"]\n:param graph: Merged React-Flow graph when collection output is ready.\n:type graph: TopologyGraph | None\n:param pending_task_ids: Task ids still pending or running.\n:type pending_task_ids: list[int]\n:param failed_task_ids: Terminal task ids that did not finish successfully.\n:type failed_task_ids: list[int]",
+        "properties": {
+          "failed_task_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Failed Task Ids",
+            "type": "array"
+          },
+          "graph": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TopologyGraph"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_task_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Pending Task Ids",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "ok",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "TopologyResultResponse",
+        "type": "object"
+      },
+      "UnknownSourceNode": {
+        "description": "A synthetic node for a replication source absent from inventory.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UnknownSourceNodeData"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "unknown_source",
+            "enum": [
+              "unknown_source"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "data"
+        ],
+        "title": "UnknownSourceNode",
+        "type": "object"
+      },
+      "UnknownSourceNodeData": {
+        "description": "React-Flow ``data`` payload for a replication source not in inventory.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "UnknownSourceNodeData",
         "type": "object"
       },
       "UploadProvider": {
@@ -14276,7 +15180,7 @@
     },
     "/api/apps/inventory/schema": {
       "get": {
-        "description": "Return the plugin schema captured at registration time.\n\n:return: The plugin schema instance.",
+        "description": "Return the inventory plugin schema.",
         "operationId": "inventory_get_schema_api_apps_inventory_schema_get",
         "responses": {
           "200": {
@@ -16158,6 +17062,93 @@
         "summary": "Tasks Api Detail",
         "tags": [
           "Task Manager"
+        ]
+      }
+    },
+    "/api/apps/topology/collect": {
+      "post": {
+        "description": "Dispatch one or more topology collector tasks. Returns the task ids.\n\nHosts are pulled from the inventory MySQL service list; no inventory\npersistence side effects occur. With ``shards > 1`` the host list is\nsplit round-robin across the first N executor hosts so geographically\nsplit inventories run in parallel.",
+        "operationId": "topology_topology_collect_api_apps_topology_collect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopologyCollectWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopologyCollectResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Topology Collect",
+        "tags": [
+          "topology"
+        ]
+      }
+    },
+    "/api/apps/topology/result": {
+      "get": {
+        "description": "Return the merged graph for the supplied task history ids.\n\nStatus mirrors the underlying tasks: ``running`` while any are pending\nor running, ``failed`` when any task failed and produced no usable\noutput, ``ok`` once every task is finished. The React client caches\nthe response via TanStack Query (long ``staleTime``) and stops\npolling once status flips to ``ok``, so the server doesn't bother\nwith HTTP cache validation here.",
+        "operationId": "topology_topology_result_api_apps_topology_result_get",
+        "parameters": [
+          {
+            "description": "Comma-separated task history ids",
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "description": "Comma-separated task history ids",
+              "title": "Ids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopologyResultResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Topology Result",
+        "tags": [
+          "topology"
         ]
       }
     },

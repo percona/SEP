@@ -7,18 +7,12 @@
  * (at your option) any later version.
  */
 
-export { InventoryTopology } from './InventoryTopology';
-export {
-  useCollectTopology,
-  useTopologyResult,
-  useTopologyStream,
-  TOPOLOGY_RESULT_QUERY_KEY,
-} from './hooks';
+export { TopologyView, TopologyView as TopologyApp } from './TopologyView';
+export { useCollectTopology, useTopologyResult, TOPOLOGY_RESULT_QUERY_KEY } from './hooks';
 export type {
   TopologyGraph,
   TopologyNode,
   TopologyEdge,
   TopologyCollectResponse,
   TopologyResultResponse,
-  TopologyStreamEvent,
 } from './types';

@@ -473,42 +473,38 @@ SEP:
       DEFAULT_EXECUTOR_HOST: "ip-10-0-1-5.region.compute.internal"  # Nomad node name from /api/tasks/hosts/ that can reach RDS
 ```
 
-#### Inventory MySQL Topology
+#### MySQL Topology
 
-The Inventory plugin has an experimental **Topology** tab next to **Browse**
-that is hidden by default. Enable it only on deployments ready to test live
-topology collection:
+Topology is a standalone, experimental **Topology** app that is shipped disabled
+by default. Enable it like any other plugin by activating its module in
+`SEP.APPS`:
 
 ```yaml
 SEP:
-  INVENTORY_TOPOLOGY_ENABLED: true
+  APPS:
+    - MODULE_NAME: topology
+      ENABLED: true
 ```
 
-Or set the equivalent environment variable:
-
-```bash
-SEP__INVENTORY_TOPOLOGY_ENABLED=true
-```
-
-When enabled, the tab draws an interactive React Flow graph of every MySQL
+When enabled, the app draws an interactive React Flow graph of every MySQL
 service the inventory knows about: replication chains (primary → replica with
-GTID/IO/SQL state), dual-primary pairs, and Percona XtraDB Cluster groups.
+GTID/IO/SQL state), dual-primary pairs, and Percona XtraDB Cluster groups. It
+sources the MySQL host list from the Inventory service at request time.
 Topology data is collected **live, on demand** - there is no persisted snapshot
 in the database - by dispatching
 sharded `run-python` tasks (capped at 8 shards) to executor hosts via the
 Tasks API. Each shard runs the
-[`topology.py`](app/sep/plugins/inventory/payloads/topology.py) payload, which
-fans out per-host queries with a `ThreadPoolExecutor` and streams NDJSON
-events back; the API merges them and pushes progressive updates to the UI over
-Server-Sent Events. Results are cached client-side with TanStack Query, so
-re-opening the tab is free until the user clicks
-**Refresh**.
+[`topology.py`](app/sep/apps/topology/payloads/topology.py) payload, which
+fans out per-host queries with a `ThreadPoolExecutor` and emits NDJSON events
+to stdout. The API polls the dispatched tasks (`GET /result`), merges their
+stdout into the graph, and the client polls that endpoint until every shard is
+finished. Results are cached client-side with TanStack Query, so re-opening the
+app is free until the user clicks **Refresh**.
 
 Topology runtime limits live in
-[`api_routes.py`](app/sep/plugins/inventory/api_routes.py) as module constants:
-maximum shards is 8, SSE heartbeat is 15 seconds, and task-status polling is
-every 0.5 seconds. Changing those values currently requires a code deploy; move
-them into `inventory_settings` first if they need per-deployment tuning.
+[`api_routes.py`](app/sep/apps/topology/api_routes.py) as module constants:
+maximum shards is 8. Changing that value currently requires a code deploy; move
+it into `inventory_settings` first if it needs per-deployment tuning.
 
 The payload reuses the same credential rules as `MySQLSyncer` -
 `~/.my.cnf` and `~/.mylogin.cnf` on the executor, with per-host login paths

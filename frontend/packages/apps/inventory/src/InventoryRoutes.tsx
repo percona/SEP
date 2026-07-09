@@ -24,7 +24,6 @@ import type { AppSchema } from '@sep/api';
 import { AppDetailPage, AppListPage } from '@sep/framework';
 import { renderInventoryDetailChildren } from './InventoryAppNavigation';
 import { inventoryMountPrefix, pathToNestedInventoryParent } from './inventoryNestedPaths';
-import { InventoryTopology } from './topology';
 import { SyncControl } from './SyncControl';
 import { InventoryScheduleSummary } from './InventoryScheduleSummary';
 import { InventorySchedulePage } from './InventorySchedulePage';
@@ -111,11 +110,9 @@ function nestedParentPath(pathname: string): string | null {
 export function InventoryRoutes({
   schema,
   mockEntityItems,
-  topologyEnabled,
 }: {
   schema: AppSchema;
   mockEntityItems?: Record<string, Record<string, unknown>[]>;
-  topologyEnabled: boolean;
 }) {
   const schedulingEnabled = !!schema.capabilities?.scheduling;
   const detailProps = {
@@ -132,10 +129,6 @@ export function InventoryRoutes({
   return (
     <Routes>
       <Route index element={<Navigate to="nodes" replace />} />
-      <Route
-        path="topology"
-        element={topologyEnabled ? <InventoryTopology /> : <Navigate to="../nodes" replace />}
-      />
       <Route
         path="nodes"
         element={

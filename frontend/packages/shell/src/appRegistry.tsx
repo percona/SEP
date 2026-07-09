@@ -68,6 +68,7 @@ const BackupMongoApp = lazy(() =>
   import('@sep/backup-mongo').then((m) => ({ default: m.BackupMongoApp })),
 );
 const ReportApp = lazy(() => import('@sep/report').then((m) => ({ default: m.ReportApp })));
+const TopologyApp = lazy(() => import('@sep/topology').then((m) => ({ default: m.TopologyApp })));
 
 function SnippetsApp() {
   const { isAdmin } = useAuth();
@@ -98,6 +99,7 @@ export const CUSTOM_APP_REGISTRY: Record<string, CustomAppRegistryEntry> = {
   alters: customEntry('alters', AltersApp),
   backup_mongo: customEntry('backup_mongo', BackupMongoApp),
   report: customEntry('report', ReportApp),
+  topology: customEntry('topology', TopologyApp),
 };
 
 export const LEGACY_ROUTE_ALIASES: LegacyRouteAlias[] = [

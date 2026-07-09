@@ -38,7 +38,6 @@ default:
     PROXY_HEADERS: False
     ARTIFACT_DOWNLOAD_TTL: 600
     CONNECTIVITY_CHECK_DEFAULT: False
-    INVENTORY_TOPOLOGY_ENABLED: False
     TEMPLATES_DIR: templates
     STATIC_DIR: static
     ALERT_DEFINITIONS_DIR: null
@@ -67,6 +66,7 @@ default:
       - MODULE_NAME: backup_mongo
       - MODULE_NAME: backup_pg
       - MODULE_NAME: dipper
+      - MODULE_NAME: topology
       - MODULE_NAME: alerts
       - MODULE_NAME: alert_troubleshooting
       - MODULE_NAME: report

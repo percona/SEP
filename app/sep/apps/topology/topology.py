@@ -23,7 +23,7 @@ MySQL host. This module:
 * derives PXC cluster groups and unknown-source nodes for replication
   sources we never queried.
 
-Pure functions only; the dispatch/SSE layer lives in ``api_routes.py``.
+Pure functions only; the dispatch layer lives in ``api_routes.py``.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ NODE_TYPE_UNKNOWN = "unknown_source"
 EDGE_TYPE_REPLICATION = "replication"
 EDGE_TYPE_DUAL_PRIMARY = "dual_primary"
 
-TOPOLOGY_JOB_PREFIX = "inventory-topology"
+TOPOLOGY_JOB_PREFIX = "topology"
 TOPOLOGY_PAYLOAD_REQUIREMENTS = "PyMySQL[rsa,ed25519]\nmyloginpath"
 
 
@@ -483,7 +483,7 @@ def build_topology_graph(
     :type host_records: Mapping[str, dict[str, Any]]
     :return: Graph dict with ``nodes`` (mysql + cluster + unknown_source) and
         ``edges`` (replication + dual_primary). The shape matches what the
-        ``InventoryTopology`` React component expects.
+        ``TopologyView`` React component expects.
     :rtype: dict[str, Any]
     """
     nodes, cluster_members, hash_to_node, addr_to_node = _build_mysql_nodes(

@@ -35,6 +35,7 @@
     "@sep/shared": "workspace:*",
     "@sep/snippets": "workspace:*",
     "@sep/tasks": "workspace:*",
+    "@sep/topology": "workspace:*",
     "@tanstack/react-query": "^5.100.7",
     "axios": "^1.15.2",
     "date-fns": "^4.1.0",

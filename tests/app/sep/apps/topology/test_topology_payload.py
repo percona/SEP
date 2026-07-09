@@ -101,7 +101,7 @@ def _load_payload_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "pymysql.cursors", fake_cursors)
 
     repo_root = Path(__file__).resolve().parents[5]
-    payload_path = repo_root / "app/sep/plugins/inventory/payloads/topology.py"
+    payload_path = repo_root / "app/sep/apps/topology/payloads/topology.py"
     spec = importlib.util.spec_from_file_location(
         "inventory_topology_payload_test", payload_path
     )

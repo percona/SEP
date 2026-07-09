@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from app.sep.apps.inventory.topology import (
+from app.sep.apps.topology.topology import (
     build_graph_from_stdouts,
     build_topology_graph,
     build_topology_meta,
@@ -270,4 +270,4 @@ class TestBuildTopologyMeta:
         config = json.loads(meta["config"])
         assert config["hosts"] == ["h1:3306", "h2:3306"]
         assert "PyMySQL" in meta["requirements"]
-        assert meta["_job_id_prefix"] == "inventory-topology"
+        assert meta["_job_id_prefix"] == "topology"

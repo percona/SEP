@@ -17,16 +17,15 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, Self
+from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
 from app.core.celery.models import CrontabSchedule, IntervalSchedule
 from app.core.utils.fields import EmptyStrToNone, UTCDatetime
 from app.sep.utils.forms import parse_crontab_form_fields, parse_interval_form_fields
 
 INVENTORY_SYNC_TASK_NAME = "inventory-sync"
-MAX_TOPOLOGY_SHARDS = 8
 
 
 class PluginTaskResponse(BaseModel):
@@ -123,82 +122,3 @@ class InventorySyncScheduleCreateForm(BaseModel):
         if self.syncer:
             payload["execute_request"] = {"meta": {"syncer": self.syncer}}
         return payload
-
-
-class TopologyCollectWrite(BaseModel):
-    """Describe the request body for ``POST /topology/collect``.
-
-    :param shards: Number of executor hosts to dispatch in parallel. Hosts
-        are split round-robin across the chosen executors. Capped at
-        :data:`MAX_TOPOLOGY_SHARDS`.
-    :type shards: int
-    :param executor_host: Optional explicit executor. Must be used with
-        ``shards=1`` because it selects a single-shard run.
-    :type executor_host: str | None
-    :param connect_timeout: Per-host MySQL TCP connect timeout (seconds).
-    :type connect_timeout: int
-    :param read_timeout: Per-host MySQL read/write timeout (seconds).
-    :type read_timeout: int
-    """
-
-    shards: int = Field(default=1, ge=1, le=MAX_TOPOLOGY_SHARDS)
-    executor_host: str | None = None
-    connect_timeout: int = Field(default=5, ge=1, le=60)
-    read_timeout: int = Field(default=10, ge=1, le=120)
-
-    @model_validator(mode="after")
-    def _reject_executor_with_multiple_shards(self) -> Self:
-        if self.executor_host and self.shards != 1:
-            raise ValueError("executor_host requires shards=1")
-        return self
-
-
-class TopologyCollectResponse(BaseModel):
-    """Represent the response body for ``POST /topology/collect``.
-
-    ``task_history_ids`` lists the dispatched ``run-python`` tasks the
-    frontend then polls (``/result``) and tails (``/stream``) to
-    assemble the topology graph. ``targets`` echoes the executor hosts
-    the work was sharded across so the UI can surface where the
-    collection ran.
-
-    :param task_history_ids: Created task history ids, one per shard.
-    :type task_history_ids: list[int]
-    :param targets: Executor hosts selected for topology collection.
-    :type targets: list[str]
-    :param host_count: Number of MySQL hosts included in the collection.
-    :type host_count: int
-    :param shard_count: Number of dispatched topology shards.
-    :type shard_count: int
-    """
-
-    task_history_ids: list[int]
-    targets: list[str]
-    host_count: int
-    shard_count: int
-
-
-class TopologyResultResponse(BaseModel):
-    """Represent the response body for ``GET /topology/result``.
-
-    ``status`` is ``running`` while any of the underlying tasks is
-    still pending, ``ok`` once every task has finished, and ``failed``
-    when at least one task failed and produced no usable output.
-    ``graph`` is the merged React-Flow graph; ``pending_task_ids``
-    lists the still-running tasks for the UI's progress chip, and
-    ``failed_task_ids`` lets the UI warn when only some shards failed.
-
-    :param status: Aggregate topology collection status.
-    :type status: Literal["running", "ok", "failed"]
-    :param graph: Merged React-Flow graph when collection output is ready.
-    :type graph: dict[str, Any] | None
-    :param pending_task_ids: Task ids still pending or running.
-    :type pending_task_ids: list[int]
-    :param failed_task_ids: Terminal task ids that did not finish successfully.
-    :type failed_task_ids: list[int]
-    """
-
-    status: Literal["running", "ok", "failed"]
-    graph: dict[str, Any] | None = None
-    pending_task_ids: list[int] = Field(default_factory=list)
-    failed_task_ids: list[int] = Field(default_factory=list)

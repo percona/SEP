@@ -41,6 +41,7 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import ScienceIcon from '@mui/icons-material/Science';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ExtensionIcon from '@mui/icons-material/Extension';
 import { MySqlIcon, MongoIcon, PostgreSqlIcon } from '@percona/percona-ui';
 import { ROUTES } from '@sep/shared';
@@ -94,6 +95,7 @@ export const APP_ROUTE_BY_KEY: Record<string, AppRouteMeta> = {
   backup_pg: defineAppRoute('backup_pg', ROUTES.backupsPostgresql, ROUTES.backupsPostgresql),
   archives: defineAppRoute('archives', ROUTES.archive),
   dipper: defineAppRoute('dipper', ROUTES.dipper, ROUTES.dipper),
+  topology: defineAppRoute('topology', ROUTES.topology, ROUTES.topology),
   report: defineAppRoute('report', ROUTES.reports, ROUTES.reports),
 };
 
@@ -125,6 +127,7 @@ const APP_NAV_ICONS: Record<string, NavIcon> = {
   backup_pg: PostgreSqlIcon,
   archives: ArchiveIcon,
   dipper: ScienceIcon,
+  topology: AccountTreeIcon,
   report: BarChartIcon,
 };
 

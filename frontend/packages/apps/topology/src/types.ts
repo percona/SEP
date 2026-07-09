@@ -17,8 +17,8 @@
 
 /**
  * Backend topology shapes shared between the API hooks, layout helpers,
- * and the React Flow node/edge components. Mirrors `app/sep/plugins/
- * inventory/topology.py::build_topology_graph` — keep keys in sync.
+ * and the React Flow node/edge components. Mirrors `app/sep/apps/topology/
+ * topology.py::build_topology_graph` — keep keys in sync.
  */
 
 export type MySQLNodeStatus = 'ok' | 'error';
@@ -138,33 +138,3 @@ export interface TopologyResultResponse {
   pending_task_ids?: number[];
   failed_task_ids?: number[];
 }
-
-/** Stream event payloads (SSE) */
-
-export type TopologyStreamEvent =
-  | { event: 'ready'; data: { task_history_ids: number[]; shard_count: number } }
-  | { event: 'task_status'; data: { task_history_id: number; status: string } }
-  | {
-      event: 'host_done';
-      data: {
-        task_history_id: number;
-        event: 'host_done';
-        host: string;
-        data: Record<string, unknown>;
-      };
-    }
-  | {
-      event: 'host_error';
-      data: {
-        task_history_id: number;
-        event: 'host_error';
-        host: string;
-        error: string;
-      };
-    }
-  | {
-      event: 'task_error';
-      data: { task_history_id: number; status_code: number; detail: string };
-    }
-  | { event: 'task_done'; data: { task_history_id: number } }
-  | { event: 'complete'; data: { task_history_ids: number[] } };

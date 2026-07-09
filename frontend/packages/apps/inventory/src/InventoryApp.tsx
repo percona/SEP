@@ -15,16 +15,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppSchema, type AppSchema } from '@sep/api';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
-import Tab from '@mui/material/Tab';
-import Tabs from '@mui/material/Tabs';
 import Typography from '@mui/material/Typography';
 import { InventoryBreadcrumbs } from './InventoryAppNavigation';
-import { inventoryMountPrefix } from './inventoryNestedPaths';
 import { InventoryRoutes } from './InventoryRoutes';
 
 export interface InventoryAppProps {
@@ -60,48 +55,11 @@ export function InventoryApp({ mockSchema, mockEntityItems }: InventoryAppProps)
   if (!schema) {
     return null;
   }
-  const topologyEnabled = schema.capabilities?.topology === true;
 
   return (
     <>
-      <InventoryViewTabs topologyEnabled={topologyEnabled} />
       <InventoryBreadcrumbs schema={schema} />
-      <InventoryRoutes
-        schema={schema}
-        mockEntityItems={mockEntityItems}
-        topologyEnabled={topologyEnabled}
-      />
+      <InventoryRoutes schema={schema} mockEntityItems={mockEntityItems} />
     </>
-  );
-}
-
-function InventoryViewTabs({ topologyEnabled }: { topologyEnabled: boolean }) {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const prefix = useMemo(() => inventoryMountPrefix(location.pathname), [location.pathname]);
-  const value = useMemo(() => {
-    if (!prefix) {
-      return 'browse';
-    }
-    return topologyEnabled && location.pathname.startsWith(`${prefix}/topology`)
-      ? 'topology'
-      : 'browse';
-  }, [location.pathname, prefix, topologyEnabled]);
-
-  if (!prefix) {
-    return null;
-  }
-
-  return (
-    <Tabs
-      value={value}
-      onChange={(_, next) => {
-        navigate(next === 'topology' ? `${prefix}/topology` : `${prefix}/nodes`);
-      }}
-      sx={{ mb: 1 }}
-    >
-      <Tab value="browse" label="Browse" />
-      {topologyEnabled ? <Tab value="topology" label="Topology" /> : null}
-    </Tabs>
   );
 }
