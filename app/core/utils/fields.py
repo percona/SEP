@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Annotated, Any, Self, TypeVar
 from urllib.parse import urlparse, urlunparse
 
-from annotated_types import Ge, Le
+from annotated_types import Interval
 from pydantic import (
     AfterValidator,
     AnyUrl,
@@ -442,9 +442,10 @@ TcpPort = Annotated[int, Field(ge=TCP_PORT_MIN, le=TCP_PORT_MAX)]
 def bounded_int_from_empty_str_factory(ge: int, le: int | None = None) -> Any:
     """Build a bounded optional-int field type that coerces ``""`` to ``None``.
 
-    The ``Ge`` / ``Le`` bounds sit at the returned type's outer ``Annotated`` level so
-    that Pydantic applies them only to real integers (not the coerced ``None``) and the
-    form-DSL's outer-metadata bounds scan can still read them. A plain
+    The bounds sit at the returned type's outer ``Annotated`` level, carried by a single
+    ``Interval`` container, so that Pydantic applies them only to real integers (not the
+    coerced ``None``) and the form-DSL bounds scan reads them (it flattens
+    ``GroupedMetadata`` containers such as ``Interval``). A plain
     ``int | EmptyStrToNone`` union cannot express this, hence a dedicated factory.
 
     :param ge: The inclusive lower bound applied to non-empty integer input.
@@ -452,9 +453,7 @@ def bounded_int_from_empty_str_factory(ge: int, le: int | None = None) -> Any:
     :return: An ``Annotated`` optional-int type carrying the bounds and blank coercion.
     """
     coerce_blank = BeforeValidator(lambda value: None if value == "" else value)
-    if le is None:
-        return Annotated[int | None, Ge(ge), coerce_blank]
-    return Annotated[int | None, Ge(ge), Le(le), coerce_blank]
+    return Annotated[int | None, Interval(ge=ge, le=le), coerce_blank]
 
 
 RelativeFilePathField = Annotated[
