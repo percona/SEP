@@ -32,7 +32,7 @@ from app.sep.apps.backup_pg.deps import (
 )
 from app.sep.apps.backup_pg.models import BackupPgForm, BackupType
 from app.sep.main import sep_app
-from app.tasks.models import Task, TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskBackendEnum, TaskWrite
 from tests.app.factories import MOCK_CREATED_SERVICE_ID, TaskFactory
 from tests.app.sep.apps.framework.kit import MockInventoryAPI
 
@@ -79,7 +79,7 @@ def backup_create() -> BackupPgForm:
 def created_task() -> Task:
     """Return a fake created backup_pg Task instance."""
     return TaskFactory.build(
-        owner=TaskOwner.BACKUP_PG,
+        owner="BACKUP_PG",
         data={
             "meta": {
                 "target": "localhost",
@@ -113,7 +113,7 @@ def mock_build_backup_task_payload_dep() -> TaskWrite:
     fake_task_write = TaskWrite(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUP_PG,
+        owner="BACKUP_PG",
         data={"task": "fake-task", "meta": {}, "payload": ""},
     )
     sep_app.dependency_overrides[build_backup_task_payload] = lambda: fake_task_write

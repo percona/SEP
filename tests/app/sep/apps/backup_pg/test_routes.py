@@ -34,7 +34,6 @@ from app.sep.main import sep_app
 from app.tasks.models import (
     TaskBackendEnum,
     TaskHistoryStatusEnum,
-    TaskOwner,
 )
 from tests.app.factories import CreatedServiceFactory, GeneratedTaskFactory
 
@@ -101,7 +100,7 @@ def test_pg_backups_create_full_form_dependency_chain_without_payload_override(
     assert mock_task_api_dep.post.await_args.args[0] == "/"
     posted = mock_task_api_dep.post.await_args.kwargs["json"]
     assert posted["name"] == backup_create.task_name
-    assert posted["owner"] == TaskOwner.BACKUP_PG.value
+    assert posted["owner"] == "BACKUP_PG"
     assert posted["data"]["meta"]["_service_name"] == pg_service.name
 
 
@@ -114,7 +113,7 @@ def test_pg_backups_create_skips_connectivity_check_when_opted_out(
     fake_task_write = GeneratedTaskFactory.build(
         name="fake_task",
         backend=TaskBackendEnum.PROXY,
-        owner=TaskOwner.BACKUP_PG,
+        owner="BACKUP_PG",
         data={
             "task": "fake-task",
             "meta": {

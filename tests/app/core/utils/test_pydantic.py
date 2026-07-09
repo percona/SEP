@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 from pydantic.fields import FieldInfo
 
 from app.core.utils.pydantic import (
+    blank_str_values_to_none,
     CustomFieldMetadata,
     extract_model_from_instance,
     field_with_metadata,
@@ -235,3 +236,22 @@ class TestLocToDotSep:
         """Raise TypeError for non-str/int elements in the location tuple."""
         with pytest.raises(TypeError, match="Unexpected type"):
             loc_to_dot_sep(("field", 3.14))
+
+
+class TestBlankStrValuesToNone:
+    """Test the blank_str_values_to_none mapping coercion helper."""
+
+    def test_coerces_only_empty_strings(self):
+        """Coerce empty-string values to None and leave other values untouched."""
+        result = blank_str_values_to_none(
+            {"a": "", "b": "x", "c": 0, "d": None, "e": False}
+        )
+        assert result == {"a": None, "b": "x", "c": 0, "d": None, "e": False}
+
+    def test_passes_through_scalar(self):
+        """Return a scalar input unchanged."""
+        assert blank_str_values_to_none("scalar") == "scalar"
+
+    def test_passes_through_list(self):
+        """Return a list input unchanged, including empty strings inside it."""
+        assert blank_str_values_to_none([1, ""]) == [1, ""]

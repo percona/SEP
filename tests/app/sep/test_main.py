@@ -36,7 +36,14 @@ from app.sep.apps.framework.registry import get_app_registry
 from app.sep.config import App, sep_settings
 from app.sep.deps import get_access_token_from_cookie, get_session, PROTECTED_APP_KEYS
 from app.sep.exceptions import LoginRedirectException
-from app.sep.main import get_tasks_index_context, sep_app, sep_lifespan, templates
+from app.sep.main import (
+    _safe_next_path,
+    get_tasks_index_context,
+    sep_app,
+    sep_lifespan,
+    templates,
+    warn_if_ambient_sso_inert,
+)
 from app.sep.main import lifespan as sep_module_lifespan
 from app.sep.models import AppLifecycleEnum, AppState
 from tests.app.factories import OAuthTokenFactory
@@ -103,6 +110,29 @@ def dummy_access_token() -> str:
     sep_app.dependency_overrides = {}
 
 
+class TestSafeNextPath:
+    """Define test suite for the ``_safe_next_path`` open-redirect guard."""
+
+    @pytest.mark.parametrize(
+        ("next_path", "expected"),
+        [
+            ("/", "/"),
+            ("/apps/inventory", "/apps/inventory"),
+            ("/settings?tab=1", "/settings?tab=1"),
+            ("http://evil.com/x", "/"),
+            ("https://evil.com/x", "/"),
+            ("//evil.com", "/"),
+            ("//evil.com/path", "/"),
+            ("/\\evil.com", "/"),
+            ("relative/path", "/"),
+            ("", "/"),
+        ],
+    )
+    def test_collapses_unsafe_targets(self, next_path, expected):
+        """Pass through same-origin paths; collapse scheme/protocol-relative targets to ``/``."""
+        assert _safe_next_path(next_path) == expected
+
+
 class TestLogin:
     """Define test suite for GET and POST login routes."""
 
@@ -149,6 +179,8 @@ class TestLogin:
             ("/", "/"),
             ("/fake-page", "/fake-page"),
             ("http://127.0.0.1/fake-page", "/"),
+            ("//evil.com", "/"),
+            ("/\\evil.com", "/"),
         ],
     )
     def test_post_login_success(
@@ -211,6 +243,113 @@ class TestLogin:
 
         assert response.status_code == status.HTTP_303_SEE_OTHER
         assert response.headers["location"] == "/"
+
+    def test_get_login_auto_logs_in_from_ambient_session(
+        self, mocker, test_client, grafana_mock
+    ):
+        """Authenticate on GET /login from a valid ambient Grafana session, skipping the form."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        dumps_patch = mocker.patch(
+            "app.sep.main.crypto_timestamp_serializer.dumps",
+            return_value="serialized_ambient_token",
+        )
+
+        response = test_client.get(
+            "/login?next=/fake-page",
+            cookies={"grafana_session": "ambient"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/fake-page"
+        cookie_header = response.headers.get("set-cookie", "")
+        assert sep_settings.SESSION.COOKIE_NAME in cookie_header
+        assert "serialized_ambient_token" in cookie_header
+        assert dumps_patch.called
+
+    def test_get_login_auto_login_sanitizes_external_next(
+        self, mocker, test_client, grafana_mock
+    ):
+        """Collapse an external ``next`` to ``/`` during ambient auto-login (open-redirect guard)."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        mocker.patch(
+            "app.sep.main.crypto_timestamp_serializer.dumps", return_value="tok"
+        )
+
+        response = test_client.get(
+            "/login?next=http://127.0.0.1/evil",
+            cookies={"grafana_session": "ambient"},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == status.HTTP_303_SEE_OTHER
+        assert response.headers["location"] == "/"
+
+    def test_get_login_falls_back_to_form_on_rejected_session(
+        self, mocker, test_client, grafana_mock
+    ):
+        """Render the login form silently when Grafana rejects the ambient session."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        grafana_mock.get_current_user.side_effect = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED
+        )
+        template_patch = mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            return_value=HTMLResponse("<html>form</html>"),
+        )
+
+        response = test_client.get(
+            "/login", cookies={"grafana_session": "stale"}, follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        template_patch.assert_called_once()
+
+    def test_get_login_renders_form_when_toggle_off(
+        self, mocker, test_client, grafana_mock
+    ):
+        """Render the form on GET /login when ambient SSO is disabled, despite a cookie."""
+        template_patch = mocker.patch(
+            "app.sep.main.templates.TemplateResponse",
+            return_value=HTMLResponse("<html>form</html>"),
+        )
+
+        response = test_client.get(
+            "/login", cookies={"grafana_session": "ambient"}, follow_redirects=False
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        template_patch.assert_called_once()
+
+
+class TestAmbientSsoStartupWarning:
+    """Test the startup warning for an inert ambient-SSO toggle."""
+
+    def test_warns_when_enabled_under_non_ambient_provider(self, mocker):
+        """Emit a warning when the toggle is on but the active provider can't honor it."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        warning = mocker.patch("app.sep.main.logger.warning")
+
+        warn_if_ambient_sso_inert()
+
+        warning.assert_called_once()
+
+    def test_no_warning_when_provider_supports_ambient(self, mocker, grafana_mock):
+        """Skip the warning when the active provider supports ambient sessions."""
+        mocker.patch.object(sep_settings, "AMBIENT_SESSION_SSO_ENABLED", new=True)
+        warning = mocker.patch("app.sep.main.logger.warning")
+
+        warn_if_ambient_sso_inert()
+
+        warning.assert_not_called()
+
+    def test_no_warning_when_toggle_off(self, mocker):
+        """Skip the warning when ambient SSO is disabled (default)."""
+        warning = mocker.patch("app.sep.main.logger.warning")
+
+        warn_if_ambient_sso_inert()
+
+        warning.assert_not_called()
 
 
 class TestLogout:
@@ -718,6 +857,21 @@ class TestAppStateGuards:
 
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         assert plugin_key in response.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_child_ui_route_503s_when_parent_disabled(
+        self, guarded_client: TestClient, session
+    ) -> None:
+        """Return 503 from a child app's UI route when its parent is disabled (gate uses parent_key)."""
+        session.add(
+            AppState(app_key="backup_mongo", lifecycle_state=AppLifecycleEnum.DISABLED)
+        )
+        await session.commit()
+
+        response = guarded_client.get("/backup_mongo/restores/")
+
+        assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+        assert "backup_mongo" in response.json()["detail"]
 
     @pytest.mark.asyncio
     async def test_inventory_ui_route_never_503s(

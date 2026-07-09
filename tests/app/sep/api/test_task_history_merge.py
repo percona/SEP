@@ -30,7 +30,7 @@ from app.sep.api.task_history_merge import (
     fetch_merged_task_history,
     merge_task_history_pages,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 from tests.app.factories import TaskFactory
 
 TWO_MERGED_HISTORY_ROWS = 2
@@ -194,7 +194,7 @@ class TestFetchMergedTaskHistory:
             task = TaskFactory.build(
                 id=item_id,
                 name=task_name,
-                owner=TaskOwner.BACKUP_MONGO,
+                owner="BACKUP_MONGO",
                 backend=TaskBackendEnum.PROXY,
             )
             task_payload = task.model_dump(mode="json")

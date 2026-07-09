@@ -402,13 +402,17 @@ class TestGetAppRegistry:
     """Tests for the lazy cached accessor over ``sep_settings.APPS``."""
 
     def test_returns_registry_over_configured_plugins(self) -> None:
-        """The accessor builds a registry covering every configured plugin."""
+        """Cover every configured plugin in the registry, each followed by its children."""
         registry = get_app_registry()
         assert isinstance(registry, AppRegistry)
-        expected = [
-            p.module_name.removeprefix("app.sep.apps.").replace(".", "/")
-            for p in sep_settings.APPS
-        ]
+        expected = []
+        for p in sep_settings.APPS:
+            expected.append(
+                p.module_name.removeprefix("app.sep.apps.").replace(".", "/")
+            )
+            definition = getattr(importlib.import_module(p.module_name), "app", None)
+            if isinstance(definition, BaseApp):
+                expected.extend(child.key for child in definition.child_apps)
         assert registry.keys() == expected
 
     def test_result_is_cached(self) -> None:
@@ -689,3 +693,76 @@ class TestTaskExecutionAppCssClass:
         """Assert the definition itself sets a non-empty ``css_class``."""
         definition = importlib.import_module(f"app.sep.apps.{plugin}.app").app
         assert definition.css_class, f"{plugin} definition must declare css_class"
+
+
+def _child_app(key: str, *, parent_key: str) -> BaseApp:
+    """Build a minimal parent-bound child ``BaseApp`` for registry tests."""
+    return BaseApp(
+        key=key,
+        name=key.replace("/", "_"),
+        display_name=key,
+        uri_path=f"/{key}",
+        parent_key=parent_key,
+    )
+
+
+def _parent_app(*children: BaseApp) -> BaseApp:
+    """Build a minimal parent ``BaseApp`` carrying ``children`` as ``child_apps``."""
+    return BaseApp(
+        key="parent_app",
+        name="parent_app",
+        display_name="Parent App",
+        uri_path="/parent_app",
+        child_apps=children,
+    )
+
+
+def _parent_plugin(*, enabled: bool = True) -> App:
+    """Build an activation entry for the synthetic parent module.
+
+    Bypass ``App``'s on-disk module-existence validation via ``model_construct``
+    — ``import_module`` is mocked to yield the synthetic parent definition, so
+    the module need not exist on disk.
+    """
+    return App.model_construct(name="Parent", module_name="parent_app", enabled=enabled)
+
+
+class TestChildApps:
+    """Cover ``child_apps`` structural registration in ``build_app_registry``."""
+
+    def test_child_is_registered_right_after_parent(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Register a parent's ``child_apps`` entry immediately after the parent."""
+        child = _child_app("parent_app/restore", parent_key="parent_app")
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module",
+            return_value=SimpleNamespace(app=_parent_app(child)),
+        )
+        registry = build_app_registry([_parent_plugin()])
+
+        assert registry.keys() == ["parent_app", "parent_app/restore"]
+
+    def test_child_has_no_settings_entry_yet_resolves(
+        self, mocker: MockerFixture
+    ) -> None:
+        """Resolve the child by its scoped key though no ``App`` entry declares it."""
+        child = _child_app("parent_app/restore", parent_key="parent_app")
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module",
+            return_value=SimpleNamespace(app=_parent_app(child)),
+        )
+        registry = build_app_registry([_parent_plugin()])
+
+        assert registry.get("parent_app/restore").parent_key == "parent_app"
+
+    def test_child_enabled_is_stamped_from_parent(self, mocker: MockerFixture) -> None:
+        """Derive the child's ``enabled`` from the bound parent."""
+        child = _child_app("parent_app/restore", parent_key="parent_app")
+        mocker.patch(
+            "app.sep.apps.framework.registry.import_module",
+            return_value=SimpleNamespace(app=_parent_app(child)),
+        )
+        registry = build_app_registry([_parent_plugin(enabled=False)])
+
+        assert registry.get("parent_app/restore").enabled is False

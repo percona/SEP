@@ -47,7 +47,6 @@ from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.models import (
     Task,
     TaskBackendEnum,
-    TaskOwner,
     TaskWrite,
 )
 from tests.app.factories import (
@@ -72,7 +71,7 @@ def created_alters(created_service, created_schema, created_table) -> AltersCrea
 @pytest.fixture
 def created_task() -> Task:
     """Return a fake created task."""
-    created_task = TaskFactory.build(owner=TaskOwner.ALTERS)
+    created_task = TaskFactory.build(owner="ALTERS")
     mock_data = {
         "task": "run-command",
         "meta": {
@@ -102,7 +101,7 @@ async def test_build_alters_task(
     )
     generated_task = await build_alters_task(created_alters, mock_remote_api)
     assert isinstance(generated_task, TaskWrite)
-    assert generated_task.owner == TaskOwner.ALTERS
+    assert generated_task.owner == "ALTERS"
 
     command = generated_task.data["meta"]["command"]
     assert command == "pt-online-schema-change"
@@ -493,7 +492,8 @@ async def test_get_alters_index_context(mocker):
         get_alters_task_info,
         hosts,
         ctx,
-        TaskOwner.ALTERS,
+        "ALTERS",
+        service_type=ServiceTypeEnum.MYSQL,
         alert_on_fail_default=True,
     )
 
@@ -505,7 +505,7 @@ def _cascade_parent_task(name: str = "t1") -> TaskWrite:
     """Return a minimal parent execute TaskWrite for cascade tests."""
     return TaskWrite(
         name=name,
-        owner=TaskOwner.ALTERS,
+        owner="ALTERS",
         backend=TaskBackendEnum.PROXY,
         target="host1",
         data={
@@ -523,7 +523,7 @@ def _cascade_pre_checks_template() -> TaskWrite:
     """Return a minimal pre-checks TaskWrite template for cascade tests."""
     return TaskWrite(
         name="ignored",
-        owner=TaskOwner.ALTERS,
+        owner="ALTERS",
         backend=TaskBackendEnum.PROXY,
         target="host1",
         data={
@@ -767,7 +767,7 @@ def _make_alters_task(
 ) -> Task:
     return TaskFactory.build(
         name="test-alter",
-        owner=TaskOwner.ALTERS,
+        owner="ALTERS",
         backend=TaskBackendEnum.PROXY,
         is_template=False,
         protected=False,

@@ -26,7 +26,7 @@ from app.sep.apps.backup_mongo.spec import (
     BackupMongoResolved,
     build_backup_mongo_spec,
 )
-from app.tasks.models import TaskBackendEnum, TaskOwner, TaskWrite
+from app.tasks.models import TaskBackendEnum, TaskWrite
 
 PARALLEL_COLLECTIONS = 4
 
@@ -59,7 +59,7 @@ def test_build_spec_envelope_keeps_run_python_shape(backup_create: BackupCreate)
     task = build_backup_mongo_spec(backup_create, BackupMongoResolved())
 
     assert isinstance(task, TaskWrite)
-    assert task.owner == TaskOwner.BACKUP_MONGO
+    assert task.owner == "BACKUP_MONGO"
     assert task.backend == TaskBackendEnum.PROXY
     assert task.name == backup_create.task_name
     assert task.data["task"] == "run-python"
@@ -141,3 +141,12 @@ def test_build_spec_includes_backup_block_when_options_set():
 
     assert config["backup"]["compression"] == "zstd"
     assert config["backup"]["numParallelCollections"] == PARALLEL_COLLECTIONS
+
+
+def test_build_spec_forwards_parsed_priority():
+    """Forward a valid Node Priority mapping to the PBM config as node -> float."""
+    form = _s3_form(backup_priority='"h1:27018": 2\n"h2:27018": 1')
+
+    config = _config(build_backup_mongo_spec(form, BackupMongoResolved()))
+
+    assert config["backup"]["priority"] == {"h1:27018": 2.0, "h2:27018": 1.0}

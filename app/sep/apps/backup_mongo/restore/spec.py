@@ -29,6 +29,7 @@ import yaml
 
 from app.core.utils.path import payload_uri
 from app.sep.apps.backup_mongo.restore.models import (
+    OWNER,
     PbmForceResyncPayloadModel,
     PbmListPayloadModel,
     restore_leg_payload_models_from_form,
@@ -40,7 +41,7 @@ from app.sep.apps.backup_mongo.restore.models import (
     RestoreTaskLegModel,
 )
 from app.sep.apps.framework.spec import build_run_python_task
-from app.tasks.models import TaskOwner, TaskWrite
+from app.tasks.models import TaskWrite
 
 RESTORE_CONFIG_PAYLOAD_MARKER = "pbm_restore_config_payload"
 _BASE_REQUIREMENTS = "packaging\nPyYAML"
@@ -55,7 +56,7 @@ def _task_write_from_leg(leg: RestoreTaskLegModel) -> TaskWrite:
     """
     return build_run_python_task(
         name=leg.name,
-        owner=TaskOwner.RESTORE_MONGO,
+        owner=OWNER,
         target=leg.target,
         config=leg.config_yaml,
         requirements=leg.requirements,

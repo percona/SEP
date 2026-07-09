@@ -30,7 +30,7 @@ from app.sep.apps.mysql_backups.restore.deps import (
 from app.sep.apps.mysql_backups.restore.models import RestoreCreate
 from app.sep.inventory import CreatedService
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.models import TaskOwner, TaskWrite
+from app.tasks.models import TaskWrite
 
 
 @pytest.mark.asyncio
@@ -61,7 +61,7 @@ async def test_build_restore_task_payload_includes_service_name_when_service_id_
     task_payload = await build_restore_task_payload(form, mock_remote_api)
 
     assert isinstance(task_payload, TaskWrite)
-    assert task_payload.owner == TaskOwner.RESTORES
+    assert task_payload.owner == "RESTORES"
     assert task_payload.data["meta"]["_service_name"] == created_service.name
 
 

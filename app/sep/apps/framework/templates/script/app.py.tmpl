@@ -22,13 +22,13 @@ delegation, and ``GET /snippet/history``. It declares no model-first CRUD.
 
 from app.sep.apps.<< name >>.source import << name >>_source
 from app.sep.apps.framework.apps import TaskExecutionApp
-from app.tasks.models import TaskOwner
+from app.tasks.models import ANY_OWNER
 
 app = TaskExecutionApp(
     name="<< name >>",
     display_name="<< display_name >>",
     uri_path="/<< name >>",
     description="TODO: describe what the << display_name >> scripts do.",
-    owner=TaskOwner.ANY,
+    owner=ANY_OWNER,
     script_source=<< name >>_source,
 )

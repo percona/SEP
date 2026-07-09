@@ -27,7 +27,7 @@ from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework.schema import EXECUTION_HOST_LABEL
 from app.sep.connectivity import clear_connectivity_caches
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 from tests.app.factories import TaskFactory
 
 API_BASE = "/api/apps/alters"
@@ -50,7 +50,7 @@ def build_alters_task(
     meta_overrides = data_overrides.pop("meta", {})
     task = TaskFactory.build(
         name=name,
-        owner=TaskOwner.ALTERS,
+        owner="ALTERS",
         backend=TaskBackendEnum.PROXY,
         protected=protected,
         **overrides,
@@ -232,7 +232,12 @@ class TestAltersApiList:
             }
         )
         mock_task_api_dep.post = AsyncMock(
-            return_value={DEFAULT_PARENT_NAME: TaskHistoryStatusEnum.SUCCESS.value}
+            return_value={
+                DEFAULT_PARENT_NAME: {
+                    "status": TaskHistoryStatusEnum.SUCCESS.value,
+                    "finished_at": "2026-07-07T09:00:00",
+                }
+            }
         )
 
         response = test_client.get(f"{API_BASE}/")
@@ -245,17 +250,21 @@ class TestAltersApiList:
         assert row["name"] == DEFAULT_PARENT_NAME
         assert row["service_type"] == ServiceTypeEnum.MYSQL.value
         assert row["status"] == TaskHistoryStatusEnum.SUCCESS.value
+        assert row["last_executed_at"] == "2026-07-07T09:00:00"
         assert "anonymize_mask" in row
         assert isinstance(row["anonymized_entities"], list)
         assert "connectivity_warning" in row
         assert row["connectivity_warning"] is None
+        mock_task_api_dep.post.assert_awaited_once_with(
+            "/history/latest", json={"names": [DEFAULT_PARENT_NAME]}
+        )
         list_call = next(
             call
             for call in mock_task_api_dep.get.await_args_list
             if call.args[0] == "/"
         )
         assert list_call.kwargs["params"]["parent_is_null"] == "true"
-        assert list_call.kwargs["params"]["owner"] == TaskOwner.ALTERS.value
+        assert list_call.kwargs["params"]["owner"] == "ALTERS"
 
 
 class TestAltersApiDetail:
@@ -336,7 +345,7 @@ class TestAltersApiCreate:
         assert "connectivity_warning" in create_body
         assert mock_task_api_dep.post.await_count == EXPECTED_CASCADE_CREATE_POSTS
         first_post = mock_task_api_dep.post.await_args_list[0].kwargs["json"]
-        assert first_post["owner"] == TaskOwner.ALTERS.value
+        assert first_post["owner"] == "ALTERS"
         assert "--execute" in first_post["data"]["meta"]["args"]
         dry_run_post = mock_task_api_dep.post.await_args_list[1].kwargs["json"]
         assert dry_run_post["name"] == f"{DEFAULT_TASK_NAME}-dry-run"

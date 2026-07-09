@@ -29,6 +29,7 @@ same ``api_router`` seam with no registry change.
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Self
 
@@ -77,7 +78,7 @@ from app.sep.apps.framework.spec import (
     validate_arg_formats,
 )
 from app.sep.deps import InventoryAPI
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 __all__ = [
     "AppCapabilities",
@@ -106,6 +107,10 @@ class AppCapabilities(BaseModel):
         ``extra_routes`` (for example one doing satellite-to-parent resolution or
         async sibling aggregation) wins the path instead of being shadowed.
         Defaults to ``True``.
+    :param list: Whether to derive the ``GET /`` list route. Set ``False`` to
+        suppress it so a custom collection-root ``GET /`` in ``extra_routes`` (for
+        example a two-query union list the paginated derived route cannot express)
+        wins the path instead of being shadowed. Defaults to ``True``.
     :param execute: Whether to derive the ``POST /{task_name}/execute`` route.
         Defaults to ``True``.
     :param update: Whether to derive a ``PUT /{task_name}`` route. Derives a
@@ -118,6 +123,7 @@ class AppCapabilities(BaseModel):
 
     create: bool = True
     detail: bool = True
+    list: bool = True
     execute: bool = True
     update: bool = False
     delete: bool = False
@@ -354,7 +360,7 @@ class TaskExecutionApp(BaseApp):
         an empty tuple.
     """
 
-    owner: TaskOwner
+    owner: str
     create_model: type[AppFormModel] | None = None
     response_model: type[BaseModel] = BaseTaskResponse
     views: SkipValidation[Views] = Views()
@@ -437,6 +443,7 @@ class TaskExecutionApp(BaseApp):
         self._validate_connectivity_refs()
         self._validate_route_knobs()
         self._validate_detail_suppress()
+        self._validate_list_suppress()
         self._validate_response_knobs()
         self._validate_view_columns()
         self._validate_arg_formats()
@@ -747,6 +754,44 @@ class TaskExecutionApp(BaseApp):
             for route in extra.routes
         )
 
+    def _extra_routes_have_list(self) -> bool:
+        """Return whether ``extra_routes`` register a ``GET`` on the collection root.
+
+        :return: ``True`` when a custom ``GET /`` route is present across the
+            ``extra_routes`` routers.
+        """
+        return any(
+            isinstance(route, APIRoute) and route.path == "/" and "GET" in route.methods
+            for extra in self.extra_routes
+            for route in extra.routes
+        )
+
+    def _validate_list_suppress(self) -> None:
+        """Reject an inconsistent ``capabilities.list`` suppress configuration.
+
+        The suppress toggle and a custom list route are mutually implied: the
+        derived ``GET /`` is always registered while ``capabilities.list`` is on,
+        so a custom collection-root list route only wins the path when the derived
+        one is suppressed, and suppressing it without a replacement leaves the app
+        with no list route at all.
+
+        :raises ValueError: When ``capabilities.list`` and a custom collection-root
+            ``GET /`` route in ``extra_routes`` disagree.
+        """
+        has_custom_list = self._extra_routes_have_list()
+        if self.capabilities.list and has_custom_list:
+            raise ValueError(
+                "TaskExecutionApp: a custom GET / list route in extra_routes is "
+                "shadowed by the derived list; set capabilities.list=False to "
+                "suppress the derived one"
+            )
+        if not self.capabilities.list and not has_custom_list:
+            raise ValueError(
+                "TaskExecutionApp: capabilities.list=False suppresses the derived "
+                "list route but no custom GET / is registered in extra_routes; add "
+                "one or re-enable capabilities.list"
+            )
+
     def _validate_detail_suppress(self) -> None:
         """Reject an inconsistent ``capabilities.detail`` suppress configuration.
 
@@ -903,6 +948,7 @@ class TaskExecutionApp(BaseApp):
                 self.service_type if self.list_filter.service_type else None
             ),
             list_extra_params=self._resolve_list_extra_params(),
+            derive_list=self.capabilities.list,
             derive_detail=self.capabilities.detail,
             context_provider=self.response_context_provider,
             create_extra_deps=self.create_extra_deps,
@@ -978,6 +1024,7 @@ class TaskExecutionApp(BaseApp):
             task: Task,
             *,
             status: TaskHistoryStatusEnum | None = None,
+            last_executed_at: datetime | None = None,
             context: dict[str, str] | None = None,
         ) -> response_model:
             mapping = context or {}
@@ -985,6 +1032,7 @@ class TaskExecutionApp(BaseApp):
                 response_model,
                 task,
                 status,
+                last_executed_at=last_executed_at,
                 extras={
                     "created_by": mapping.get(task.created_by, task.created_by),
                     "last_updated_by": mapping.get(

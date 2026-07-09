@@ -13,12 +13,13 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Wire the MySQL Restores subpackage as a declarative ``TaskExecutionApp``.
+"""Wire the MySQL Restores subpackage as a parent-bound ``TaskExecutionApp``.
 
-The registry discovers the exported ``app`` under the scoped key
-``mysql_backups/restore`` (derived from the module path), mounting its derived
-JSON router at ``/api/apps/mysql_backups/restore/`` while the existing Jinja
-UI keeps serving at ``/mysql_backups/restores/`` via the threaded
+The registry discovers this app through ``mysql_backups``'s ``child_apps`` rather
+than a ``settings.yaml`` entry, so it is mounted and toggled exactly with its
+parent under the explicit scoped key ``mysql_backups/restore``, serving its
+derived JSON router at ``/api/apps/mysql_backups/restore/`` while the existing
+Jinja UI keeps serving at ``/mysql_backups/restores/`` via the threaded
 ``jinja_router``. Because a restore legitimately has no destination service for
 XtraBackup / Binlog and tolerates a 404 fallback, the create payload is built by
 the ``payload_builder`` escape hatch
@@ -38,14 +39,18 @@ from app.sep.apps.mysql_backups.restore.deps import (
     build_restore_api_task_response,
     build_restore_payload,
 )
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
+from app.sep.apps.mysql_backups.restore.models import (
+    OWNER,
+    RestoreCreate,
+    RestoresResponse,
+)
 from app.sep.apps.mysql_backups.restore.routes import router as jinja_router
 from app.sep.apps.mysql_backups.restore.views import restore_views
-from app.tasks.models import TaskOwner
 
 RESTORES_MAX_PAGINATION_LIMIT = 50
 
 app = TaskExecutionApp(
+    key="mysql_backups/restore",
     name="mysql_backups_restores",
     display_name="MySQL Restores",
     uri_path="/mysql_backups/restores",
@@ -53,8 +58,9 @@ app = TaskExecutionApp(
     group="backups",
     nav_order=8,
     sidebar=False,
+    parent_key="mysql_backups",
     description="Restore MySQL hosts from XtraBackup, Mydumper, and Binlog backups.",
-    owner=TaskOwner.RESTORES,
+    owner=OWNER,
     create_model=RestoreCreate,
     response_model=RestoresResponse,
     views=restore_views,

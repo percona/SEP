@@ -31,7 +31,6 @@ from app.sep.apps.backup_pg.spec import build_backup_pg_spec
 from app.sep.apps.framework.spec import ResolvedEntities
 from app.sep.connectivity import CONNECTIVITY_META_PORT_KEY
 from app.sep.inventory import CreatedService
-from app.tasks.models import TaskOwner
 from tests.app.factories import (
     CreatedNodeFactory,
     CreatedServiceFactory,
@@ -104,7 +103,7 @@ def test_build_backup_pg_spec_uses_stanza_as_alias():
 @pytest.mark.asyncio
 async def test_get_unprotected_backups_task_returns_unprotected_task():
     """Return an unprotected task unchanged."""
-    task = TaskFactory.build(owner=TaskOwner.BACKUP_PG, protected=False)
+    task = TaskFactory.build(owner="BACKUP_PG", protected=False)
 
     assert await get_unprotected_backups_task(task) is task
 
@@ -112,7 +111,7 @@ async def test_get_unprotected_backups_task_returns_unprotected_task():
 @pytest.mark.asyncio
 async def test_get_unprotected_backups_task_rejects_protected_task():
     """Reject a protected task with a 409."""
-    task = TaskFactory.build(owner=TaskOwner.BACKUP_PG, protected=True)
+    task = TaskFactory.build(owner="BACKUP_PG", protected=True)
 
     with pytest.raises(HTTPConflictException):
         await get_unprotected_backups_task(task)

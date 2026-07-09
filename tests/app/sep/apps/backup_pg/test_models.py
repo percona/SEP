@@ -25,7 +25,7 @@ from app.sep.apps.backup_pg.models import (
     PgBackRestBackupType,
 )
 from app.sep.apps.framework import BaseTaskResponse
-from app.tasks.models import TaskBackendEnum, TaskOwner
+from app.tasks.models import TaskBackendEnum
 
 DEFAULT_PG_PORT = 5432
 SAMPLE_BACKUP_DIR = "/var/lib/pgbackrest"
@@ -132,11 +132,19 @@ def test_backup_pg_form_coerces_blank_optionals_to_none() -> None:
         pgbackrest_bin="",
         pgbackrest_backup_type="",
         pgbackrest_retention_full="",
+        pgbackrest_config_file="",
+        pgbackrest_datadir="",
+        pgbackrest_incremental_cycle="",
+        logging_dir="",
     )
 
     assert body.pgbackrest_bin is None
     assert body.pgbackrest_backup_type is None
     assert body.pgbackrest_retention_full is None
+    assert body.pgbackrest_config_file is None
+    assert body.pgbackrest_datadir is None
+    assert body.pgbackrest_incremental_cycle is None
+    assert body.logging_dir is None
 
 
 def test_backup_pg_form_strips_stanza_whitespace() -> None:
@@ -195,7 +203,7 @@ def test_backup_task_response_roundtrips_owner_and_backup_type() -> None:
     """BackupTaskResponse serializes owner and backup_type cleanly."""
     response = BackupTaskResponse(
         name="pg-task",
-        owner=TaskOwner.BACKUP_PG,
+        owner="BACKUP_PG",
         hostname="pg-host",
         backend=TaskBackendEnum.PROXY,
         backup_type="P",
@@ -207,7 +215,7 @@ def test_backup_task_response_roundtrips_owner_and_backup_type() -> None:
     dumped = response.model_dump(mode="json")
 
     assert isinstance(response, BaseTaskResponse)
-    assert dumped["owner"] == TaskOwner.BACKUP_PG.value
+    assert dumped["owner"] == "BACKUP_PG"
     assert dumped["backup_type"] == "P"
     assert dumped["service_type"] is None
     assert "anonymize_mask" in dumped
@@ -219,7 +227,7 @@ def test_backup_task_detail_response_inherits_response_fields() -> None:
     """Carry host/port on the detail response beyond the list response."""
     detail = BackupTaskDetailResponse(
         name="pg-task",
-        owner=TaskOwner.BACKUP_PG,
+        owner="BACKUP_PG",
         backend=TaskBackendEnum.PROXY,
         backup_type="P",
         data={},

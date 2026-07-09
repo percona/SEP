@@ -18,17 +18,20 @@
 from enum import auto, IntEnum, StrEnum
 from typing import Annotated, Any, ClassVar, Literal, Self
 
-from annotated_types import Ge, Le
 from pydantic import (
     BaseModel,
-    BeforeValidator,
     Field,
     field_validator,
     model_validator,
 )
 
 from app.core.models import BaseCaseInsensitiveModel
-from app.core.utils.fields import EmptyStrToNone, EnumFieldMixin, NonEmptyStr
+from app.core.utils.fields import (
+    bounded_int_from_empty_str_factory,
+    EmptyStrToNone,
+    EnumFieldMixin,
+    NonEmptyStr,
+)
 from app.inventory.models import ServiceTypeEnum
 from app.sep.apps.framework import BaseTaskResponse
 from app.sep.apps.framework.form_dsl import (
@@ -48,6 +51,8 @@ from app.sep.apps.framework.rules import (
     not_,
     truthy,
 )
+
+OWNER = "BACKUPS"
 
 
 class SwapDropEnum(IntEnum):
@@ -134,18 +139,6 @@ _MODE_BOOL_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     "B": (),
 }
-
-
-def _empty_str_to_none(value: Any) -> Any:
-    """Coerce an empty-string form value to ``None`` (the ``EmptyStrToNone`` idiom).
-
-    Used on ``mydumper_verbose``, whose ``Ge``/``Le`` bounds must sit at the field's
-    outer ``Annotated`` level so the derived schema can read them; an
-    ``int | EmptyStrToNone`` union would make Pydantic apply those bounds to the
-    coerced ``None``, so a plain ``int | None`` plus this before-validator carries
-    the empty-string handling instead.
-    """
-    return None if value == "" else value
 
 
 class DirEncryptConfig(BaseModel):
@@ -328,10 +321,7 @@ class BackupCreate(TaskFormModel):
         str | EmptyStrToNone, _MYDUMPER_ONLY, Ui(label="Extra args", section="Mydumper")
     ] = None
     mydumper_verbose: Annotated[
-        int | None,
-        Ge(0),
-        Le(3),
-        BeforeValidator(_empty_str_to_none),
+        bounded_int_from_empty_str_factory(0, 3),
         _MYDUMPER_ONLY,
         Ui(label="Verbose level", section="Mydumper"),
     ] = None

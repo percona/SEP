@@ -287,6 +287,39 @@ def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
     assert response.key_path == ["GROUP", "TOKEN"]
 
 
+def test_settings_response_applicable_defaults_true() -> None:
+    """Mark a field response applicable when no applicability predicate is given."""
+    proxy = OverridableSettingsProxy(
+        _FixtureSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    meta = next(m for m in iter_class_fields(_FixtureSettings) if m.key == "HOT_BOOL")
+    response = _settings_response_from_field(
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        settings_cls=_FixtureSettings,
+        proxy=proxy,
+        field_meta=meta,
+        has_override=False,
+    )
+    assert response.is_applicable is True
+
+
+def test_settings_response_honors_applicability_predicate() -> None:
+    """Mark the field response not applicable when the predicate returns ``False``."""
+    proxy = OverridableSettingsProxy(
+        _FixtureSettings, setting_class=SettingClassEnum.SEP_SETTINGS
+    )
+    meta = next(m for m in iter_class_fields(_FixtureSettings) if m.key == "HOT_BOOL")
+    response = _settings_response_from_field(
+        setting_class=SettingClassEnum.SEP_SETTINGS,
+        settings_cls=_FixtureSettings,
+        proxy=proxy,
+        field_meta=meta,
+        has_override=False,
+        applicability=lambda _cls, field: field.key != "HOT_BOOL",
+    )
+    assert response.is_applicable is False
+
+
 class _DeepLeafModel(BaseModel):
     """Innermost submodel, two levels under a nested-overridable parent."""
 

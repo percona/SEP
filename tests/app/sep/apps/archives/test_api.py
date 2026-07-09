@@ -31,7 +31,6 @@ from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.sep.apps.archives import app as archives_app
 from app.sep.apps.archives.models import ArchivesCreate
 from app.sep.apps.framework.spec import RESERVED_FORM_KEY
-from app.tasks.models import TaskOwner
 from tests.app.factories import MOCK_DESTINATION_TABLE_ID
 from tests.app.sep.apps.framework.contract_suite import (
     app_base_url,
@@ -69,7 +68,7 @@ def _create_body(**overrides: Any) -> dict[str, Any]:
 def client(regular_user: CasdoorUser) -> Any:
     """Return an authenticated contract client with a seeded archive task."""
     tasks_api = MockTaskAPI()
-    tasks_api.seed_task(_SEEDED, owner=TaskOwner.ARCHIVER)
+    tasks_api.seed_task(_SEEDED, owner="ARCHIVER")
     return build_contract_client(
         archives_app,
         user=regular_user,

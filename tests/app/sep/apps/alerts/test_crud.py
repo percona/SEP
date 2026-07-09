@@ -17,6 +17,7 @@
 
 import pytest
 
+from app.core.utils.date_time import utc_now
 from app.sep.apps.alerts.crud import AlertBackupManager
 from app.sep.apps.alerts.models import AlertBackup
 
@@ -56,3 +57,20 @@ class TestAlertBackupManager:
         assert len(results) == _EXPECTED_BACKUP_COUNT
         assert results[0].data["order"] == "second"
         assert results[1].data["order"] == "first"
+
+    @pytest.mark.asyncio
+    async def test_list_breaks_created_at_ties_by_id_desc(self, session) -> None:
+        """Assert ``created_at`` ties fall back to ``id`` descending order."""
+        tie = utc_now()
+        first = AlertBackup(
+            data={"order": "first"}, metadata_={"count": 1}, created_at=tie
+        )
+        second = AlertBackup(
+            data={"order": "second"}, metadata_={"count": 2}, created_at=tie
+        )
+        await AlertBackupManager.save(session, first)
+        await AlertBackupManager.save(session, second)
+
+        results = await AlertBackupManager.list(session)
+        assert results[0].created_at == results[1].created_at
+        assert [backup.data["order"] for backup in results] == ["second", "first"]

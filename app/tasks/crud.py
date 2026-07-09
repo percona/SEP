@@ -42,11 +42,11 @@ from app.tasks.models import (
     Task,
     TaskBackendEnum,
     TaskHistory,
+    TaskHistoryLatestStatus,
     TaskHistoryLog,
     TaskHistoryLogState,
     TaskHistoryStatusEnum,
     TaskLogType,
-    TaskOwner,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,21 +99,17 @@ class TaskManager(BaseSQLModelManager):
     async def list_active(
         cls,
         session: AsyncSession,
-        owner: TaskOwner | None = None,
+        owner: str | None = None,
         target: str | None = None,
     ) -> list[Task]:
         """List all active (non-deleted) tasks.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
         :param owner: The owner of the tasks. If provided, only tasks for this owner
             will be listed.
-        :type owner: TaskOwner | None
         :param target: The execution target hostname. If provided, only tasks whose
             ``data["meta"]["target"]`` matches will be listed.
-        :type target: str | None
         :return: A list of active tasks.
-        :rtype: list[Task]
         """
         where = [col(Task.deleted_at).is_(None)]
         kwargs = {}
@@ -127,7 +123,7 @@ class TaskManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         pagination: Pagination,
-        owner: TaskOwner | None = None,
+        owner: str | None = None,
         target: str | None = None,
         parent_is_null: bool | None = None,
         backup_type: str | None = None,
@@ -136,27 +132,19 @@ class TaskManager(BaseSQLModelManager):
         """Return a paginated response of active (non-deleted) tasks.
 
         :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
         :param owner: The owner of the tasks. If provided, only tasks for this owner
             will be listed.
-        :type owner: TaskOwner | None
         :param target: The execution target hostname. If provided, only tasks whose
             ``data["meta"]["target"]`` matches will be listed.
-        :type target: str | None
         :param parent_is_null: When ``True``, only tasks with a null ``data["parent"]``
             key; when ``False``, only tasks with a non-null parent. When ``None``,
             do not filter on parent.
-        :type parent_is_null: bool | None
         :param backup_type: When provided, only tasks whose ``data["backup_type"]``
             matches this string.
-        :type backup_type: str | None
         :param self_parent: When ``True``, only tasks whose ``data["parent"]`` equals
             ``Task.name`` are returned.
-        :type self_parent: bool | None
         :param pagination: Validated offset/limit window for this page.
-        :type pagination: Pagination
         :return: A paginated response containing active tasks and metadata.
-        :rtype: PaginatedResponse[Task]
         """
         where = [col(Task.deleted_at).is_(None)]
         kwargs = {}
@@ -586,20 +574,21 @@ class TaskHistoryManager(BaseSQLModelManager):
         cls,
         session: AsyncSession,
         names: Sequence[str],
-    ) -> dict[str, TaskHistoryStatusEnum | None]:
-        """Return the latest known history status for each task name.
+    ) -> dict[str, TaskHistoryLatestStatus | None]:
+        """Return the latest known history projection for each task name.
 
         Status resolution matches SEP list helpers: histories are considered in
-        ``created_at`` descending order and the first non-null status wins.
+        ``created_at`` descending order and the newest non-null status wins.
+        ``finished_at`` is resolved independently as the ``max`` across all of a
+        task's history rows, so an in-progress re-run (whose newest row has a
+        null ``finished_at``) still reports the prior completion time.
 
-        :param session: The SQLAlchemy asynchronous session to use for query execution.
-        :type session: AsyncSession
+        :param session: The asynchronous session used for query execution.
         :param names: Task names to resolve. Duplicates are ignored; order is
             preserved in the returned mapping.
-        :type names: Sequence[str]
-        :return: A mapping of task name to latest status, or ``None`` when no
-            history exists or every history row has a null status.
-        :rtype: dict[str, TaskHistoryStatusEnum | None]
+        :return: A mapping of task name to its latest-history projection (newest
+            status plus the ``max`` ``finished_at``), or ``None`` when no history
+            exists or every history row has a null status.
         """
         unique_names = list(dict.fromkeys(names))
         if not unique_names:
@@ -609,6 +598,9 @@ class TaskHistoryManager(BaseSQLModelManager):
             select(
                 col(Task.name).label("task_name"),
                 col(TaskHistory.status).label("status"),
+                func.max(col(TaskHistory.finished_at))
+                .over(partition_by=col(Task.name))
+                .label("last_finished_at"),
                 func.row_number()
                 .over(
                     partition_by=col(Task.name),
@@ -630,14 +622,19 @@ class TaskHistoryManager(BaseSQLModelManager):
         query = select(
             latest_status_subquery.c.task_name,
             latest_status_subquery.c.status,
+            latest_status_subquery.c.last_finished_at,
         ).where(
             latest_status_subquery.c.row_number == 1,
         )
         result = await cls._exec(session, query)
-        rows = result.all()
-        statuses_by_name = dict(rows)
+        latest_by_name = {
+            row.task_name: TaskHistoryLatestStatus(
+                status=row.status, finished_at=row.last_finished_at
+            )
+            for row in result.all()
+        }
 
-        return {name: statuses_by_name.get(name) for name in unique_names}
+        return {name: latest_by_name.get(name) for name in unique_names}
 
 
 class TaskHistoryLogManager(BaseSQLModelManager):

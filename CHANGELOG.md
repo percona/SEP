@@ -14,6 +14,26 @@ via `make changelog-add TICKET=SEP-XXX SECTION=<section> MSG="..."` where
 See `changelog.d/README.md` for the full workflow.
 -->
 
+## [v0.13.1] - 2026-07-08
+
+### Changed
+
+- SEP-1474: Periodically purge aged task-execution logs (taskhistory_log) to bound SEP database growth
+- SEP-1486: Bound per-execution task log growth: a rolling per-stream byte cap drops the oldest captured-log chunks so a long-running execution's logs no longer grow without limit; capped streams keep a bounded recent tail.
+
+### Configuration Changes
+
+- SEP-1474: Add tasks settings LOG_RETENTION_DAYS (runtime-overridable, default 90, max 365), LOG_PURGE_BATCH_SIZE (default 10000), and LOG_PURGE_INTERVAL (default daily)
+- SEP-1486: Add LOG_STREAM_CAP_BYTES and LOG_STREAM_EVICTION_MAX_ROWS (tasks) to bound retained captured-log bytes per (task_history, source, stream) and per-flush eviction work.
+
+### Fixed
+
+- SEP-1297: PostgreSQL Backup stanza field: expose required pgBackRest stanza on the create form so backups run with the correct --stanza value instead of the node IP
+- SEP-1490: Task logs are no longer duplicated or lost when the Nomad log fetch cursor moves between worker processes (the raw fetch frontier is now persisted per allocation).
+- SEP-1490: The settings export endpoint no longer returns a 500 error when a URL-typed setting (such as the base URL) has a value; URL settings now serialize to their string form.
+- SEP-1492: Backup tasks created before the v0.13.0 plugin rename no longer fail with a Python SyntaxError after upgrade; orphaned payload references are healed by a data migration and resolved via a relocation-stable relative reference.
+- SEP-1544: Fixed PostgreSQL Config File Collector snippet failing to collect postgresql.auto.conf due to permission errors when the file is postgres-owned mode 0600.
+
 ## [v0.13.0] - 2026-06-09
 
 ### Added
@@ -310,7 +330,8 @@ See `changelog.d/README.md` for the full workflow.
 - SEP-701: Update `aiohttp` to 3.13.3
 - SEP-728: Update `python-multipart` to 0.0.22
 
-[Unreleased]: https://github.com/percona/SEP/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/percona/SEP/compare/v0.13.1...HEAD
+[v0.13.1]: https://github.com/percona/SEP/compare/v0.13.0...v0.13.1
 [v0.13.0]: https://github.com/percona/SEP/compare/v0.12.1...v0.13.0
 [v0.12.1]: https://github.com/percona/SEP/compare/v0.12.0...v0.12.1
 [v0.12.0]: https://github.com/percona/SEP/compare/v0.11.0...v0.12.0

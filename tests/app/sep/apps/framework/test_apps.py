@@ -217,6 +217,17 @@ def _custom_detail_router() -> APIRouter:
     return router
 
 
+def _custom_list_router() -> APIRouter:
+    """Return an extra router exposing a custom ``GET /`` collection-root route."""
+    router = APIRouter()
+
+    @router.get("/", dependencies=[IsApiAuthenticated])
+    async def _list() -> dict[str, str]:
+        return {"custom_list": "ok"}
+
+    return router
+
+
 _PASSTHROUGH_SCHEMA = AppSchema(
     name="synthetic-app",
     display_name="Synthetic App",
@@ -234,7 +245,7 @@ def _synth_app(**overrides: object) -> TaskExecutionApp:
 def _task_dict(name: str, *, meta: dict | None = None) -> dict:
     """Return a created-task payload owned by the synthetic owner."""
     return TaskFactory.build(
-        name=name, owner=_OWNER.value, data={"meta": meta or {}}
+        name=name, owner=_OWNER, data={"meta": meta or {}}
     ).model_dump(mode="json")
 
 
@@ -281,7 +292,15 @@ def _make_tasks_api(
     async def _post(path: str, json: dict | None = None) -> dict:
         if path == "/history/latest":
             names = (json or {}).get("names", [])
-            return {name: (latest_statuses or {}).get(name) for name in names}
+            statuses = latest_statuses or {}
+            return {
+                name: (
+                    {"status": status, "finished_at": None}
+                    if (status := statuses.get(name)) is not None
+                    else None
+                )
+                for name in names
+            }
         return created_task if created_task is not None else {}
 
     api.get.side_effect = _get
@@ -365,6 +384,23 @@ class TestRouterComposition:
 
         assert ("/{task_name}", "PUT") not in routes
         assert ("/{task_name}", "DELETE") not in routes
+
+    def test_list_suppress_keeps_only_the_custom_list_route(self) -> None:
+        """Assert ``list=False`` derives no list route, leaving the custom one to win."""
+        app_def = _synth_app(
+            capabilities=AppCapabilities(list=False),
+            extra_routes=(_custom_list_router(),),
+        )
+        get_root = [
+            route
+            for route in app_def.api_router.routes
+            if isinstance(route, APIRoute)
+            and route.path == "/"
+            and "GET" in route.methods
+        ]
+
+        assert len(get_root) == 1
+        assert get_root[0].endpoint.__name__ == "_list"
 
     def test_delete_route_when_capability_and_handler(self) -> None:
         """Assert ``delete=True`` with a handler derives a ``DELETE`` route at 204."""
@@ -768,6 +804,25 @@ class TestDefinitionValidation:
         """Derive ``connectivity_check`` from a ``check_connectivity`` service."""
         assert _synth_app(connectivity_check=True).connectivity_check is True
 
+    def test_list_suppress_without_custom_list_raises(self) -> None:
+        """Assert ``list=False`` with no custom ``GET /`` in extra_routes is rejected."""
+        with pytest.raises(ValueError, match="capabilities.list"):
+            _synth_app(capabilities=AppCapabilities(list=False))
+
+    def test_custom_list_route_with_list_enabled_raises(self) -> None:
+        """Assert a custom ``GET /`` while ``list`` stays enabled is rejected as shadowed."""
+        with pytest.raises(ValueError, match="capabilities.list"):
+            _synth_app(extra_routes=(_custom_list_router(),))
+
+    def test_list_suppress_with_custom_list_constructs(self) -> None:
+        """Assert ``list=False`` plus a custom ``GET /`` constructs and mounts the custom list."""
+        app_def = _synth_app(
+            capabilities=AppCapabilities(list=False),
+            extra_routes=(_custom_list_router(),),
+        )
+
+        assert ("/", "GET") in _routes(app_def)
+
     def test_create_disabled_with_create_response_model_raises(self) -> None:
         """Assert a create-disabled app with create_response_model is rejected."""
         with pytest.raises(ValueError, match="create_response_model"):
@@ -977,7 +1032,7 @@ def _raw_task_dict() -> dict:
     """Return a created-task payload with distinct creator and updater user-ids."""
     return TaskFactory.build(
         name="t-1",
-        owner=_OWNER.value,
+        owner=_OWNER,
         created_by="uid-a",
         last_updated_by="uid-b",
         data={"meta": {}},

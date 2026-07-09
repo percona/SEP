@@ -44,7 +44,6 @@ from app.tasks.models import (
     TaskHistoryResponse,
     TaskHistoryStatusEnum,
     TaskLogType,
-    TaskOwner,
     TaskResponse,
     TaskStats,
     TransformPayloadRequest,
@@ -120,25 +119,6 @@ class TestTaskHistoryStatusEnum:
     def test_is_finished_false(self, status: TaskHistoryStatusEnum) -> None:
         """Assert is_finished returns False for non-terminal statuses."""
         assert status.is_finished() is False
-
-
-class TestTaskOwner:
-    """Test TaskOwner enum values."""
-
-    def test_all_values_exist(self) -> None:
-        """Assert all nine owner values exist."""
-        expected = {
-            "ANY",
-            "ALTERS",
-            "ARCHIVER",
-            "BACKUPS",
-            "RESTORES",
-            "CHECKSUMS",
-            "BACKUP_MONGO",
-            "RESTORE_MONGO",
-            "BACKUP_PG",
-        }
-        assert {o.name for o in TaskOwner} == expected
 
 
 class TestTaskLogType:
@@ -264,7 +244,7 @@ class TestTask:
         """Assert anonymized_entities falls back to anonymizer_settings defaults."""
         default_entities = {PIIEntity.EMAIL_ADDRESS, PIIEntity.PHONE_NUMBER}
         mock_defaults = defaultdict(lambda: default_entities)
-        task = TaskFactory.build(anonymize_mask=None, owner=TaskOwner.BACKUPS)
+        task = TaskFactory.build(anonymize_mask=None, owner="BACKUPS")
         with patch("app.tasks.models.anonymizer_settings") as mock_settings:
             mock_settings.DEFAULT_ENTITIES = mock_defaults
             result = task.anonymized_entities
@@ -304,7 +284,7 @@ class TestTaskResponseAnonymizedEntities:
         mock_defaults = defaultdict(lambda: default_entities)
         fields = {
             **self.BASE_FIELDS,
-            "owner": TaskOwner.CHECKSUMS,
+            "owner": "CHECKSUMS",
             "anonymize_mask": None,
         }
         with patch("app.tasks.models.anonymizer_settings") as mock_settings:
@@ -686,7 +666,7 @@ class TestTaskHistory:
         return TaskFactory.build(
             id=1,
             name="test-task",
-            owner=TaskOwner.ARCHIVER,
+            owner="ARCHIVER",
             alert_detail_builder=ALERT_DETAIL_BUILDER,
             anonymize_mask=None,
             data={"task": "run-python", "meta": meta},

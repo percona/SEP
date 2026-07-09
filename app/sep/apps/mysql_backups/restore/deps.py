@@ -15,6 +15,7 @@
 
 """Define dependencies for the Restores plugin."""
 
+from datetime import datetime
 from typing import Annotated, Any
 
 import yaml
@@ -22,10 +23,14 @@ from fastapi import Body, Depends, Form
 
 from app.core.exceptions import HTTPNotFoundException
 from app.inventory.models import ServiceTypeEnum
-from app.sep.apps.framework import build_default_task_response
+from app.sep.apps.framework import build_default_task_response, make_task_dep
 from app.sep.apps.framework.spec import stamp_form_input
 from app.sep.apps.mysql_backups.models import BackupType
-from app.sep.apps.mysql_backups.restore.models import RestoreCreate, RestoresResponse
+from app.sep.apps.mysql_backups.restore.models import (
+    OWNER,
+    RestoreCreate,
+    RestoresResponse,
+)
 from app.sep.apps.mysql_backups.restore.spec import (
     build_restore_spec,
     RestoreResolved,
@@ -34,13 +39,12 @@ from app.sep.deps import (
     DefaultContext,
     ExecutorHostsCtx,
     get_created_entity,
-    get_task_by_name,
     get_tasks_context,
     InventoryAPI,
     TaskAPI,
 )
 from app.sep.models import SyncInventoryEntityTypeEnum
-from app.tasks.models import Task, TaskHistoryStatusEnum, TaskOwner, TaskWrite
+from app.tasks.models import Task, TaskHistoryStatusEnum, TaskWrite
 
 UNKNOWN_SERVICE_SENTINEL = "-1"
 
@@ -178,11 +182,15 @@ def _extract_restore_config(task: Task) -> tuple[BackupType | None, Any, Any]:
 def build_restore_api_task_response(
     task: Task,
     status: TaskHistoryStatusEnum | None = None,
+    *,
+    last_executed_at: datetime | None = None,
 ) -> RestoresResponse:
     """Build a ``RestoresResponse`` for the JSON API list/detail routes.
 
     :param task: The restore task retrieved from the Tasks API.
     :param status: The latest known execution status for the task.
+    :param last_executed_at: The task's most recent finish time (``max``
+        ``finished_at``), or ``None`` until it has finished once.
     :return: A validated restore task API response object.
     """
     backup_type, host, port = _extract_restore_config(task)
@@ -191,6 +199,7 @@ def build_restore_api_task_response(
         RestoresResponse,
         task,
         status,
+        last_executed_at=last_executed_at,
         extras={
             "backup_type": backup_type,
             "host": host,
@@ -237,26 +246,7 @@ def parse_restore_task_data(task: dict[str, Any]) -> dict[str, Any]:
 RestoreGeneratedTask = Annotated[TaskWrite, Depends(build_restore_task_payload)]
 
 
-async def get_restores_task(
-    task_name: str,
-    tasks_api: TaskAPI,
-) -> Task:
-    """Fetch and validate a task for the Restores plugin.
-
-    This function retrieves a task by its name from the Tasks API and validates
-    that it is owned by the Restores plugin. If the task does not exist or is not
-    owned by Restores, it raises a 404 HTTP exception.
-
-    :param task_name: The name of the task to retrieve.
-    :type task_name: str
-    :param tasks_api: The TaskAPI instance used to make requests to the task service.
-    :type tasks_api: TaskAPI
-    :return: The retrieved task.
-    :rtype: Task
-    :raises HTTPNotFoundException: If the task is not found or is not owned by Restores.
-    """
-    return await get_task_by_name(tasks_api, task_name, TaskOwner.RESTORES)
-
+get_restores_task = make_task_dep(OWNER)
 
 RestoresTask = Annotated[Task, Depends(get_restores_task)]
 
@@ -315,7 +305,8 @@ async def get_restores_index_context(
         get_restores_task_info,
         executor_hosts_ctx,
         context,
-        TaskOwner.RESTORES,
+        OWNER,
+        service_type=ServiceTypeEnum.MYSQL,
     )
 
 

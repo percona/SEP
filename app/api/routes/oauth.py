@@ -18,7 +18,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, ValidationError
 
@@ -27,6 +27,7 @@ from app.core.auth.exceptions import HTTPUnauthorizedException, InactiveUserExce
 from app.core.auth.models import OAuthToken, SPAOAuthTokenResponse
 from app.core.auth.utils import get_user_model
 from app.sep.config import sep_settings
+from app.sep.deps import resolve_ambient_session_token
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,34 @@ async def spa_login(
     if not user.is_active:
         raise InactiveUserException
 
+    _set_refresh_cookie(response, oauth_token.refresh_token)
+    return SPAOAuthTokenResponse(
+        access_token=oauth_token.access_token,
+        expires_in=oauth_token.expires_in,
+    )
+
+
+@router.post("/session")
+async def spa_session_login(
+    request: Request,
+    response: Response,
+) -> SPAOAuthTokenResponse:
+    """Authenticate the SPA from an ambient Grafana session cookie.
+
+    Read the ambient Grafana session cookie off the request, validate it against
+    Grafana, set the ``HttpOnly`` refresh cookie scoped to ``/api/oauth``, and
+    return the slim access assertion in JSON. A ``401`` (no valid ambient
+    session) tells the SPA to show its login screen.
+
+    :param request: The incoming request, carrying the ambient Grafana session
+        cookie.
+    :param response: The HTTP response on which to set the refresh cookie.
+    :return: The slim OAuth token response for the SPA.
+    :raises HTTPUnauthorizedException: If there is no valid ambient session.
+    """
+    oauth_token = await resolve_ambient_session_token(request)
+    if oauth_token is None:
+        raise HTTPUnauthorizedException("No valid ambient session.")
     _set_refresh_cookie(response, oauth_token.refresh_token)
     return SPAOAuthTokenResponse(
         access_token=oauth_token.access_token,
