@@ -184,10 +184,9 @@ def hot_field(
     return field_with_metadata(default, metadata=metadata, **kwargs)
 
 
-#: Name of the opt-in class attribute a subclass may declare to attach markers
-#: to fields it *inherits* from a base model without redeclaring each field. It
-#: maps an inherited field name to a marker dict using the same keys the field
-#: metadata channel carries (``"reload"``, ``"advanced"``, ``"materializer"``).
+#: Opt-in class attribute mapping an inherited field name to a marker dict, so a
+#: subclass can mark inherited fields without redeclaring them. Keys match the
+#: field metadata channel (``"reload"``, ``"advanced"``, ``"materializer"``).
 INHERITED_MARKERS_ATTR = "INHERITED_MARKERS"
 
 #: Type of an :data:`INHERITED_MARKERS_ATTR` overlay: field name -> marker dict.
@@ -201,16 +200,9 @@ def _effective_field_markers(
 ) -> dict[str, Any]:
     """Return a field's effective markers: its own metadata plus the owner's overlay.
 
-    Reads the field's own ``CustomFieldMetadata`` and, when both ``owner_cls``
-    and ``field_name`` are supplied, unions in the owning class's opt-in
-    ``INHERITED_MARKERS`` overlay (see :data:`INHERITED_MARKERS_ATTR`). The
-    field's own metadata takes precedence -- the overlay only supplies markers
-    for keys the field does not already carry -- so an overlay can *add* markers
-    to an inherited field but never silently un-mark an explicit declaration.
-
-    When ``owner_cls``/``field_name`` are omitted, the owning class declares no
-    overlay, or the overlay has no entry for the field, the result is identical
-    to reading ``field.metadata`` alone -- the backward-compatible fast path.
+    The field's own metadata takes precedence -- the ``INHERITED_MARKERS_ATTR``
+    overlay only fills keys the field does not already carry, so it can *add*
+    markers to an inherited field but never un-mark an explicit declaration.
 
     :param field_info: The Pydantic field metadata to read.
     :param owner_cls: The class that owns ``field_info``, if known.
@@ -226,9 +218,7 @@ def _effective_field_markers(
     entry = overlay.get(field_name)
     if not isinstance(entry, Mapping):
         return markers
-    for key, value in entry.items():
-        markers.setdefault(key, value)
-    return markers
+    return {**entry, **markers}
 
 
 def is_hot_reloadable(settings_cls: type[BaseModel], field_name: str) -> bool:

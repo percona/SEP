@@ -297,13 +297,8 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     :type check_cert_expiry_interval: IntervalSchedule | None
     """
 
-    # TLS leaves are inherited (frozen) from ``BaseRemoteAPI``. Rather than
-    # redeclare each one solely to attach the display-only ``advanced`` + HOT
-    # markers -- which would replace the inherited ``FieldInfo`` and force a
-    # repeated ``frozen=True`` to keep the executor's identity hash stable --
-    # they are marked in-place via this opt-in overlay. ``endpoint`` is
-    # intentionally omitted so it stays inherited and unmarked. The registry
-    # classifiers union this overlay with each field's own metadata.
+    # Overlay, not redeclaration: redeclaring would drop the inherited frozen
+    # ``FieldInfo`` and force ``frozen=True`` repeated. ``endpoint`` left unmarked.
     INHERITED_MARKERS: ClassVar[InheritedMarkers] = {
         "verify_ssl": {"reload": ReloadClassification.HOT, "advanced": True},
         "ssl_cafile": {"reload": ReloadClassification.HOT, "advanced": True},
